@@ -1,0 +1,5 @@
+scope	path	long_name	start	end	ccn_std	ccn_mod	ccn	nloc	params	nesting	cognitive
+py	pylib/mod.py	guarded( a , b )	1	4	5	5	5	4	2	3	0
+src	src/app.ts	dispatch ( kind )	1	13	7	2	2	12	1	5	0
+src	src/app.ts	plain ( x )	13	19	2	2	2	7	1	1	0
+src	src/app.ts	inner ( y )	14	14	2	2	2	1	1	1	0

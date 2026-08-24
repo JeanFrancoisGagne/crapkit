@@ -1,0 +1,12 @@
+#!/bin/sh
+# crapkit gates its own development: hard cc <= 6 on any staged function.
+# CRAPKIT_OVERRIDE_REASON grants only through the full three-record audit.
+if python -c "import crapkit" 2>/dev/null; then
+    if ! python -m crapkit hook-precommit; then
+        echo "crapkit: commit blocked by the complexity gate."
+        exit 1
+    fi
+else
+    echo "crapkit: NOT INSTALLED - the complexity gate cannot run; install with 'pip install -e .'" >&2
+    exit 1
+fi

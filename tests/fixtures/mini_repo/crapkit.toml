@@ -1,0 +1,32 @@
+[crapkit]
+target = 6
+alert_command = "python append_alert.py"
+
+[[scope]]
+name = "src"
+paths = ["src"]
+languages = ["typescript"]
+
+[[scope]]
+name = "py"
+paths = ["pylib"]
+languages = ["python"]
+
+[exclude]
+globs = ["**/node_modules/**", "**/*.test.ts", "**/test_*.py", "make_cov.py", "append_alert.py"]
+
+[[lane]]
+name = "unit"
+command = "python make_cov.py"
+artifact = "coverage/coverage-final.json"
+parser = "istanbul"
+scopes = ["src"]
+
+[[lane]]
+name = "py"
+command = "python -m pytest pylib -n 2 -p no:cacheprovider --cov=pylib --cov-branch --cov-report=json:coverage-py.json --junitxml=junit.xml -q"
+artifact = "coverage-py.json"
+parser = "coveragepy"
+scopes = ["py"]
+full_suite = false
+results_artifact = "junit.xml"

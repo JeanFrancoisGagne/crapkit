@@ -1,0 +1,89 @@
+"""Change coupling from the churn git log. Pure.
+
+Files that keep landing in the same commits are coupled, whatever the import
+graph says — the hidden dependency the compiler cannot show. Bulk commits are
+skipped for pairing: a 40-file sweep says nothing about any particular pair.
+"""
+from __future__ import annotations
+
+from collections.abc import Iterable, Iterator
+from itertools import combinations
+
+MAX_COMMIT_FILES = 30
+
+
+def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
+    """One file set per commit, yielded as the log streams past.
+
+    A %x01 line opens a commit and every non-blank line until the next one is a
+    path. Empty sets are yielded rather than skipped: they add no file counts
+    and form no pairs, so the caller cannot tell them from a skip.
+    """
+    files: set[str] = set()
+    past_header = False
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("\x01"):
+            yield files
+            files, past_header = set(), True
+            continue
+        if past_header and line:
+            files.add(line.replace("\\", "/"))
+        past_header = True  # a log starting mid-commit opens on a severed header
+    yield files
+
+
+def _rank_pairs(file_counts: dict, pair_counts: dict, min_support: int,
+                min_confidence: float, top: int | None) -> list[dict]:
+    out = []
+    for (a, b), support in pair_counts.items():
+        if support < min_support:
+            continue
+        confidence = max(support / file_counts[a], support / file_counts[b])
+        if confidence < min_confidence:
+            continue
+        out.append({"files": [a, b], "support": support, "confidence": round(confidence, 4)})
+    out.sort(key=lambda p: (-p["support"] * p["confidence"], p["files"]))
+    return out if top is None else out[:top]
+
+
+def _partner(pair: dict, path: str) -> dict:
+    a, b = pair["files"]
+    return {"path": b if a == path else a, "support": pair["support"],
+            "confidence": pair["confidence"]}
+
+
+def partners(lines: Iterable[str], path: str, *, min_support: int = 5,
+             min_confidence: float = 0.5, top: int = 5) -> list[dict]:
+    """One file's coupled partners, best first.
+
+    Ranked over EVERY qualifying pair before the cut: a global top applied first
+    would drop a quiet file's own partners behind the repo's noisiest pairs and
+    report it as uncoupled.
+    """
+    ranked = change_coupling_lines(lines, min_support=min_support,
+                                   min_confidence=min_confidence, top=None)
+    return [_partner(p, path) for p in ranked if path in p["files"]][:top]
+
+
+def change_coupling(log_text: str, *, min_support: int = 5, min_confidence: float = 0.5,
+                    top: int | None = 50) -> list[dict]:
+    """Whole-text entrypoint: the log already in hand."""
+    return change_coupling_lines(log_text.splitlines(), min_support=min_support,
+                                 min_confidence=min_confidence, top=top)
+
+
+def change_coupling_lines(lines: Iterable[str], *, min_support: int = 5,
+                          min_confidence: float = 0.5, top: int | None = 50) -> list[dict]:
+    """Streaming entrypoint: the log is consumed once, one commit at a time."""
+    commits = _commit_file_sets(lines)
+    file_counts: dict[str, int] = {}
+    pair_counts: dict[tuple[str, str], int] = {}
+    for files in commits:
+        for f in files:
+            file_counts[f] = file_counts.get(f, 0) + 1
+        if len(files) > MAX_COMMIT_FILES:
+            continue
+        for pair in combinations(sorted(files), 2):
+            pair_counts[pair] = pair_counts.get(pair, 0) + 1
+    return _rank_pairs(file_counts, pair_counts, min_support, min_confidence, top)

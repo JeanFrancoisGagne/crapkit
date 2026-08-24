@@ -1,0 +1,13 @@
+# pre-commit framework manifest: lets any consumer repo add the gate with
+#   repos:
+#     - repo: https://github.com/JeanFrancoisGagne/crapkit
+#       rev: <tag>
+#       hooks:
+#         - id: crapkit-gate
+- id: crapkit-gate
+  name: crapkit complexity gate
+  description: every staged new/edited function must sit at min-CCN <= its scope target
+  entry: crapkit hook-precommit
+  language: python
+  pass_filenames: false
+  always_run: true

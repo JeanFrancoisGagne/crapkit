@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The crapkit Handbook</title>
+<style>
+  :root {
+    --paper: #FAF8F4; --ink: #211C17; --muted: #6E6459; --faint: #94897C;
+    --line: #E5DFD5; --card: #FFFFFF; --card-line: #EAE4DA;
+    --accent: #A6391F; --accent-soft: #F7E9E4;
+    --ok: #2E7D46; --ok-soft: #E7F2EA;
+    --warn: #A66A00; --warn-soft: #F8EFDC;
+    --info: #3B5B8C; --info-soft: #E8EEF7;
+    --data1: #A6391F; --data2: #B8860B; --data3: #3E6B8F; --data4: #2E7D46;
+    --code-bg: #F1EDE5; --grid: #E9E3D8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #17140F; --ink: #EAE4DB; --muted: #A79C8D; --faint: #7E7466;
+      --line: #322C24; --card: #1F1B15; --card-line: #373128;
+      --accent: #E0714F; --accent-soft: #33211B;
+      --ok: #6FBF8A; --ok-soft: #1E2E23;
+      --warn: #D9A250; --warn-soft: #302716;
+      --info: #8AA8D4; --info-soft: #1E2634;
+      --data1: #E0714F; --data2: #D9A250; --data3: #7FA3C8; --data4: #6FBF8A;
+      --code-bg: #262119; --grid: #2C271F;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 16px/1.62 system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+  .shell { max-width: 980px; margin: 0 auto; padding: 40px 24px 90px; }
+  .serif { font-family: Charter, "Bitstream Charter", Cambria, Georgia, serif; }
+  code, pre, .mono { font-family: ui-monospace, Consolas, "Cascadia Mono", Menlo, monospace; }
+  code { font-size: .87em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre { background: var(--code-bg); border: 1px solid var(--card-line); border-radius: 8px;
+        padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+  pre code { background: none; padding: 0; }
+
+  header.hero { padding: 34px 0 26px; border-bottom: 3px solid var(--accent); position: relative; overflow: hidden; }
+  header.hero::after { content: "ccn²"; position: absolute; right: -10px; top: -30px;
+    font: 700 170px/1 Charter, Cambria, Georgia, serif; color: var(--accent);
+    opacity: .06; pointer-events: none; user-select: none; }
+  .aside { max-width: 62ch; font-size: 14.5px; color: var(--muted); font-style: italic;
+           border-left: 3px solid var(--line); padding-left: 14px; margin: 14px 0 0; }
+  .aside strong { color: var(--accent); font-style: normal; }
+  .kicker { font: 600 12px/1 system-ui, sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 16px; }
+  h1 { font-family: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+       font-size: clamp(42px, 7vw, 64px); font-weight: 700; line-height: 1.02;
+       letter-spacing: -.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { max-width: 64ch; font-size: 18px; color: var(--muted); margin: 0; }
+  .standfirst strong { color: var(--ink); }
+  .formula { margin: 26px 0 4px; padding: 18px 22px; background: var(--card);
+             border: 1px solid var(--card-line); border-left: 4px solid var(--accent);
+             border-radius: 8px; font-size: clamp(18px, 3.4vw, 26px); overflow-x: auto; white-space: nowrap; }
+  .formula sup { font-size: .6em; }
+
+  nav.toc { margin: 26px 0 0; columns: 2; column-gap: 32px; font-size: 14px; }
+  nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; break-inside: avoid; }
+  nav.toc a:hover { color: var(--accent); }
+  nav.toc a b { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-weight: 600; margin-right: 8px; }
+
+  h2 { font-family: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+       font-size: 30px; font-weight: 700; margin: 64px 0 8px; padding-top: 22px;
+       border-top: 1px solid var(--line); text-wrap: balance; }
+  h2 .sn { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-size: 16px; margin-right: 12px; }
+  h3 { font-size: 18px; font-weight: 700; margin: 30px 0 8px; }
+  p { max-width: 68ch; margin: 0 0 14px; }
+  .lede { color: var(--muted); font-size: 16.5px; max-width: 66ch; }
+  p strong, li strong { color: var(--ink); }
+  ul, ol { max-width: 70ch; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  li::marker { color: var(--accent); }
+  a { color: var(--info); }
+
+  figure { margin: 22px 0; }
+  figure.panel { background: var(--card); border: 1px solid var(--card-line); border-radius: 10px; padding: 18px 18px 10px; overflow-x: auto; }
+  figcaption { font-size: 13px; color: var(--faint); margin-top: 8px; max-width: 70ch; }
+  svg { display: block; max-width: 100%; height: auto; }
+  svg text { font-family: system-ui, "Segoe UI", sans-serif; fill: var(--ink); }
+  svg .lbl { font-size: 12px; }
+  svg .sm { font-size: 10.5px; fill: var(--muted); }
+  svg .mono { font-family: ui-monospace, Consolas, monospace; }
+  svg .box { fill: var(--card); stroke: var(--card-line); stroke-width: 1.5; }
+  svg .boxa { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  svg .boxi { fill: var(--info-soft); stroke: var(--info); stroke-width: 1.5; }
+  svg .boxo { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.5; }
+  svg .boxw { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.5; }
+  svg .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; marker-end: url(#arr); }
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+  svg .axis { stroke: var(--muted); stroke-width: 1.5; }
+
+  .tw { overflow-x: auto; border: 1px solid var(--card-line); border-radius: 8px; background: var(--card); margin: 16px 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+  th { font: 700 11px/1.3 system-ui, sans-serif; letter-spacing: .09em; text-transform: uppercase;
+       text-align: left; color: var(--muted); padding: 11px 14px 9px; border-bottom: 2px solid var(--line); }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td, table tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+  td.mono { white-space: nowrap; font-size: 13px; }
+
+  .chip { display: inline-block; font: 700 10.5px/1 system-ui, sans-serif; letter-spacing: .07em;
+          text-transform: uppercase; padding: 4px 8px 3px; border-radius: 3px; white-space: nowrap; }
+  .chip.a { background: var(--accent-soft); color: var(--accent); }
+  .chip.o { background: var(--ok-soft); color: var(--ok); }
+  .chip.w { background: var(--warn-soft); color: var(--warn); }
+  .chip.i { background: var(--info-soft); color: var(--info); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft);
+             padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 20px 0; max-width: 72ch; }
+  .callout.info { border-color: var(--info); background: var(--info-soft); }
+  .callout p { margin: 0; font-size: 14.5px; }
+  .callout p + p { margin-top: 8px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 18px 0; }
+  .card { background: var(--card); border: 1px solid var(--card-line); border-radius: 8px; padding: 14px 16px 12px; }
+  .card h4 { margin: 0 0 6px; font-size: 14.5px; }
+  .card h4 code { font-size: .95em; }
+  .card p { font-size: 13.5px; color: var(--muted); margin: 0; }
+
+  .xanno { font-size: 12.5px; color: var(--faint); }
+  footer { margin-top: 70px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--faint); font-size: 13.5px; max-width: 72ch; }
+  a { color: var(--info); text-decoration-color: color-mix(in srgb, var(--info) 40%, transparent); text-underline-offset: 3px; }
+  a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+  pre { border-left: 3px solid var(--card-line); }
+  ::selection { background: var(--accent-soft); }
+  @media (max-width: 640px) { nav.toc { columns: 1; } .shell { padding: 28px 16px 60px; } header.hero::after { display: none; } }
+  @media print {
+    body { background: #fff; color: #111; }
+    nav.toc, header.hero::after { display: none; }
+    h2 { break-after: avoid; } figure, .tw, pre { break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+  </marker>
+</defs></svg>
+<div class="shell">
+
+<header class="hero">
+  <p class="kicker">The Handbook · self-contained · reads offline from a clone</p>
+  <h1>crapkit</h1>
+  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for TypeScript, TSX, JavaScript and Python. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
+  <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
+  <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> — Change Risk Anti-Patterns — was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
+  <nav class="toc">
+    <a href="#intro"><b>01</b>Why crapkit exists</a>
+    <a href="#score"><b>02</b>The score</a>
+    <a href="#how"><b>03</b>How it works</a>
+    <a href="#queue"><b>04</b>The queue: two views of one run</a>
+    <a href="#packet"><b>05</b>The packet</a>
+    <a href="#gate"><b>06</b>The gate and its four routes</a>
+    <a href="#ratchet"><b>07</b>The ratchet</a>
+    <a href="#baseline"><b>08</b>The trusted baseline</a>
+    <a href="#lanes"><b>09</b>Lanes: how coverage arrives</a>
+    <a href="#agents"><b>10</b>Built for agents</a>
+    <a href="#install"><b>11</b>Install and first run</a>
+    <a href="#moments"><b>12</b>Where each command earns its keep</a>
+    <a href="#cabinet"><b>13</b>The analysis cabinet</a>
+    <a href="#campaign"><b>14</b>The campaign: fixing a whole codebase</a>
+    <a href="#principles"><b>15</b>Design principles</a>
+  </nav>
+</header>
+
+<!-- ============================ 01 INTRO ============================ -->
+<h2 id="intro"><span class="sn">01</span>Why crapkit exists</h2>
+<p class="lede">Two facts about production defects meet in one number.</p>
+<p>Complex functions break more, and untested functions break silently. The CRAP metric multiplies the two: cyclomatic complexity squared, times the <em>cube</em> of what your tests never touch. A simple covered function scores near its complexity. A complex uncovered one explodes — the largest one crapkit has scored in the field was an anonymous handler at ccn 220 with no tests, CRAP 48,620.</p>
+<p>Plenty of tools report complexity, and plenty report coverage. crapkit's reason to exist is what it does <em>after</em> the arithmetic:</p>
+<ul>
+  <li><strong>It ranks by consequence.</strong> Debt in a file that changes weekly outranks identical debt in a file nobody has touched in a year — the risk map is ordered by <code>ccn × churn weight</code>, not by score alone, and the hand-out queue takes the worst CRAP first.</li>
+  <li><strong>It gates the future, never the past.</strong> A brownfield repo turns the gate on the same day it installs: standing debt is recorded in a committed ratchet and pardoned; only <em>touched</em> functions are judged. A repo-wide day-one gate fails forever and gets disabled — crapkit refuses to be that tool.</li>
+  <li><strong>It briefs the fixer.</strong> One command emits a start-editing packet: the function's own source, every sibling in its file, the ceiling it will be judged by, the lane that measures it, the exact commands to run, and the repo's written-down traps. A session starts editing instead of exploring.</li>
+  <li><strong>It is deterministic.</strong> Same tree, same config, same answer, byte for byte. Every read command emits JSON with a pinned <code>schema</code> (under <code>--json</code>; <code>next-item</code> always; <code>digest</code> alone stays plain lines by design), because half the callers are coding agents.</li>
+</ul>
+
+<figure class="panel">
+<svg viewBox="0 0 900 150" role="img" aria-label="The four audiences of crapkit">
+  <rect class="boxa" x="10" y="45" width="180" height="60" rx="8"/>
+  <text x="100" y="70" text-anchor="middle" class="lbl" font-weight="700">crapkit</text>
+  <text x="100" y="88" text-anchor="middle" class="sm">one store, one score</text>
+  <path class="arrow" d="M195 60 H 255"/>
+  <path class="arrow" d="M195 75 H 255"/>
+  <path class="arrow" d="M195 90 H 255"/>
+  <path class="arrow" d="M195 105 H 255"/>
+  <rect class="box" x="260" y="8" width="290" height="30" rx="6"/><text x="405" y="28" text-anchor="middle" class="lbl">a developer mid-feature: <tspan class="mono">rescore --gate</tspan>, <tspan class="mono">brief</tspan></text>
+  <rect class="box" x="260" y="44" width="290" height="30" rx="6"/><text x="405" y="64" text-anchor="middle" class="lbl">a coding agent on a debt item: the packet</text>
+  <rect class="box" x="260" y="80" width="290" height="30" rx="6"/><text x="405" y="100" text-anchor="middle" class="lbl">CI on a pull request: <tspan class="mono">verify --baseline-tsv</tspan></text>
+  <rect class="box" x="260" y="116" width="290" height="30" rx="6"/><text x="405" y="136" text-anchor="middle" class="lbl">a human reading the weekly <tspan class="mono">digest</tspan></text>
+  <path class="arrow" d="M555 23 H 615"/>
+  <path class="arrow" d="M555 131 H 615"/>
+  <rect class="boxo" x="620" y="8" width="270" height="30" rx="6"/><text x="755" y="28" text-anchor="middle" class="lbl">commits that add no new debt</text>
+  <rect class="boxo" x="620" y="116" width="270" height="30" rx="6"/><text x="755" y="136" text-anchor="middle" class="lbl">debt burned down worst-first</text>
+</svg>
+<figcaption>Four callers, one deterministic store. Everything below explains the pipeline between them.</figcaption>
+</figure>
+
+<!-- ============================ 02 SCORE ============================ -->
+<h2 id="score"><span class="sn">02</span>The score</h2>
+<p><code>ccn</code> is cyclomatic complexity — the count of independent paths through a function — taken as the <strong>smaller</strong> of lizard's standard and modified counts (modified treats a whole <code>switch</code>/<code>match</code> as one decision). Comprehension <code>for</code>/<code>if</code>, ternaries, and <code>and</code>/<code>or</code> all count. <code>cov</code> is branch coverage inside the function's span; with no branches it falls back to statement coverage, and with no statements to invoked-or-not, so a half-executed straight-line function never reads as fully covered.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 460 268" role="img" aria-label="CRAP versus ccn at four coverage levels">
+  <line class="grid" x1="50" y1="220" x2="440" y2="220"/>
+  <line class="grid" x1="50" y1="170" x2="440" y2="170"/>
+  <line class="grid" x1="50" y1="120" x2="440" y2="120"/>
+  <line class="grid" x1="50" y1="70" x2="440" y2="70"/>
+  <line class="grid" x1="50" y1="20" x2="440" y2="20"/>
+  <line class="axis" x1="50" y1="20" x2="50" y2="220"/>
+  <line class="axis" x1="50" y1="220" x2="440" y2="220"/>
+  <text x="42" y="224" text-anchor="end" class="sm">0</text>
+  <text x="42" y="174" text-anchor="end" class="sm">40</text>
+  <text x="42" y="124" text-anchor="end" class="sm">80</text>
+  <text x="42" y="74" text-anchor="end" class="sm">120</text>
+  <text x="42" y="24" text-anchor="end" class="sm">160</text>
+  <text x="50" y="238" text-anchor="middle" class="sm">1</text>
+  <text x="227" y="238" text-anchor="middle" class="sm">6</text>
+  <text x="333" y="238" text-anchor="middle" class="sm">9</text>
+  <text x="440" y="238" text-anchor="middle" class="sm">12</text>
+  <text x="245" y="258" text-anchor="middle" class="sm">ccn →</text>
+  <text x="18" y="120" class="sm" transform="rotate(-90 18 120)" text-anchor="middle">CRAP →</text>
+  <line x1="227" y1="20" x2="227" y2="220" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="232" y="32" class="sm" fill="var(--accent)">target 6</text>
+  <polyline fill="none" stroke="var(--data1)" stroke-width="2.5"
+    points="50,217.5 85,212.5 121,205 156,195 192,182.5 227,167.5 263,150 298,130 334,107.5 369,82.5 405,55 440,25"/>
+  <polyline fill="none" stroke="var(--data2)" stroke-width="2.5"
+    points="50,218.3 85,215.8 121,212.4 156,208.1 192,203.0 227,197.1 263,190.2 298,182.6 334,174.0 369,164.6 405,154.4 440,143.3"/>
+  <polyline fill="none" stroke="var(--data3)" stroke-width="2.5"
+    points="50,218.7 85,217.2 121,215.5 156,213.7 192,211.7 227,209.6 263,207.3 298,204.9 334,202.3 369,199.5 405,196.6 440,193.5"/>
+  <polyline fill="none" stroke="var(--data4)" stroke-width="2.5"
+    points="50,218.8 85,217.5 121,216.3 156,215 192,213.8 227,212.5 263,211.3 298,210 334,208.8 369,207.5 405,206.3 440,205"/>
+  <text x="352" y="70" class="sm" fill="var(--data1)">cov 0%</text>
+  <text x="380" y="152" class="sm" fill="var(--data2)">cov 30%</text>
+  <text x="380" y="188" class="sm" fill="var(--data3)">cov 60%</text>
+  <text x="352" y="215" class="sm" fill="var(--data4)">cov ~100% (= ccn)</text>
+</svg>
+<figcaption>The cube is the story: coverage collapses the curve toward the <code>+ ccn</code> floor, but never below it. At 100% coverage, CRAP <em>equals</em> ccn.</figcaption>
+</figure>
+
+<h3>The ceiling theorem</h3>
+<p>Because full coverage still leaves <code>CRAP = ccn</code>, a target is secretly two rules in one. At the default target of 6 — a <code>crapkit.toml</code> knob, set per repo or per scope, and the number every packet and every gate message calls the <em>ceiling</em> — a function at ccn 7 with <strong>100% coverage scores 7 and fails</strong>. Above the ceiling, coverage cannot save you — the only clearing move is decomposition. Below it, the target prescribes exactly how much coverage each complexity owes:</p>
+
+<figure class="panel">
+<svg viewBox="0 0 460 190" role="img" aria-label="Minimum coverage per ccn at target 6">
+  <line class="axis" x1="90" y1="18" x2="90" y2="160"/>
+  <text x="245" y="184" text-anchor="middle" class="sm">minimum branch coverage to pass at target 6</text>
+  <g>
+    <text x="82" y="36" text-anchor="end" class="sm mono">ccn 1–2</text><rect x="90" y="24" width="6" height="16" fill="var(--data4)" rx="2"/><text x="104" y="36" class="sm">0% — the +ccn floor already passes</text>
+    <text x="82" y="64" text-anchor="end" class="sm mono">ccn 3</text><rect x="90" y="52" width="103" height="16" fill="var(--data4)" rx="2"/><text x="201" y="64" class="sm">31%</text>
+    <text x="82" y="92" text-anchor="end" class="sm mono">ccn 4</text><rect x="90" y="80" width="165" height="16" fill="var(--data2)" rx="2"/><text x="263" y="92" class="sm">50%</text>
+    <text x="82" y="120" text-anchor="end" class="sm mono">ccn 5</text><rect x="90" y="108" width="218" height="16" fill="var(--data2)" rx="2"/><text x="316" y="120" class="sm">66%</text>
+    <text x="82" y="148" text-anchor="end" class="sm mono">ccn 6</text><rect x="90" y="136" width="330" height="16" fill="var(--data1)" rx="2"/><text x="426" y="148" class="sm">100%</text>
+  </g>
+</svg>
+<figcaption>The coverage ladder: what each complexity owes in tests before it clears a ceiling of 6. One step past the top rung, no amount pays the bill.</figcaption>
+</figure>
+
+<figure class="panel">
+<svg viewBox="0 0 900 132" role="img" aria-label="The grade scale from A+ to F">
+  <text x="20" y="30" class="lbl" font-weight="700">the repo grade</text>
+  <text x="20" y="48" class="sm">from every scored run's totals</text>
+  <g>
+    <rect x="230" y="22" width="88" height="56" rx="8" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.5"/>
+    <text x="274" y="50" text-anchor="middle" class="lbl" font-weight="700" fill="var(--ok)">A+</text>
+    <text x="274" y="68" text-anchor="middle" class="sm">zero debt</text>
+    <rect x="326" y="22" width="70" height="56" rx="8" class="box"/><text x="361" y="56" text-anchor="middle" class="lbl" font-weight="700">A</text>
+    <rect x="404" y="22" width="70" height="56" rx="8" class="box"/><text x="439" y="56" text-anchor="middle" class="lbl" font-weight="700">B</text>
+    <rect x="482" y="22" width="70" height="56" rx="8" class="box"/><text x="517" y="56" text-anchor="middle" class="lbl" font-weight="700">C</text>
+    <rect x="560" y="22" width="70" height="56" rx="8" class="box"/><text x="595" y="56" text-anchor="middle" class="lbl" font-weight="700">D</text>
+    <rect x="638" y="22" width="88" height="56" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="682" y="50" text-anchor="middle" class="lbl" font-weight="700" fill="var(--accent)">F</text>
+    <text x="682" y="68" text-anchor="middle" class="sm">💩</text>
+    <path class="arrow" d="M740 50 H 790"/>
+    <text x="800" y="46" class="sm">past F, the</text>
+    <text x="800" y="60" class="sm">name takes over</text>
+  </g>
+  <text x="450" y="112" text-anchor="middle" class="sm">crapkit's own repo grades A+ — zero functions over target — and its author commits through its own gate</text>
+</svg>
+<figcaption>Every scored run prints a grade.</figcaption>
+</figure>
+
+<p>A Sonar-spec <strong>cognitive complexity</strong> column rides along in the brief and next-item payloads as a second opinion on readability. It reports; it never gates — the gate is min-ccn only, so the rule a commit is judged by has one definition.</p>
+
+<!-- ============================ 03 HOW ============================ -->
+<h2 id="how"><span class="sn">03</span>How it works</h2>
+<p class="lede">One pass of analysis, your own test commands for coverage, one SQLite store, many views.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 330" role="img" aria-label="The crapkit pipeline">
+  <rect class="box" x="10" y="12" width="180" height="52" rx="8"/>
+  <text x="100" y="34" text-anchor="middle" class="lbl mono">git ls-files</text>
+  <text x="100" y="52" text-anchor="middle" class="sm">tracked source only</text>
+  <rect class="boxi" x="10" y="80" width="180" height="52" rx="8"/>
+  <text x="100" y="102" text-anchor="middle" class="lbl mono">crapkit.toml</text>
+  <text x="100" y="120" text-anchor="middle" class="sm">scopes · excludes · lanes · notes</text>
+  <path class="arrow" d="M195 38 C 240 38 240 70 275 82"/>
+  <path class="arrow" d="M195 106 C 235 106 240 100 275 96"/>
+  <rect class="box" x="280" y="60" width="200" height="60" rx="8"/>
+  <text x="380" y="83" text-anchor="middle" class="lbl">complexity inventory</text>
+  <text x="380" y="101" text-anchor="middle" class="sm">one lizard pass · std+modified ccn</text>
+  <text x="380" y="114" text-anchor="middle" class="sm">+ cognitive · content-hash cached</text>
+  <rect class="boxw" x="280" y="150" width="200" height="76" rx="8"/>
+  <text x="380" y="172" text-anchor="middle" class="lbl">coverage lanes</text>
+  <text x="380" y="190" text-anchor="middle" class="sm">your own test commands run</text>
+  <text x="380" y="204" text-anchor="middle" class="sm">artifacts: istanbul · coverage.py</text>
+  <text x="380" y="218" text-anchor="middle" class="sm">timeouts · retries · flake retest</text>
+  <path class="arrow" d="M485 90 C 530 90 540 120 560 140"/>
+  <path class="arrow" d="M485 188 C 525 188 540 170 560 156"/>
+  <rect class="boxa" x="565" y="118" width="150" height="56" rx="8"/>
+  <text x="640" y="141" text-anchor="middle" class="lbl">the join</text>
+  <text x="640" y="158" text-anchor="middle" class="sm">cov per function span</text>
+  <path class="arrow" d="M720 146 H 760"/>
+  <rect class="boxi" x="765" y="106" width="125" height="80" rx="8"/>
+  <text x="827" y="130" text-anchor="middle" class="lbl mono">.crapkit/</text>
+  <text x="827" y="148" text-anchor="middle" class="sm mono">crap.sqlite</text>
+  <text x="827" y="164" text-anchor="middle" class="sm">runs · identities</text>
+  <text x="827" y="178" text-anchor="middle" class="sm">claims · overrides</text>
+  <path class="arrow" d="M827 190 V 226"/>
+  <rect class="box" x="330" y="252" width="560" height="62" rx="8"/>
+  <text x="610" y="274" text-anchor="middle" class="lbl">the views — every one deterministic, every one JSON-able</text>
+  <text x="610" y="296" text-anchor="middle" class="sm mono">worklist · next-item · brief · explain · trend · digest · doctor · verify · mcp</text>
+  <rect class="box" x="10" y="170" width="180" height="52" rx="8"/>
+  <text x="100" y="192" text-anchor="middle" class="lbl mono">git log</text>
+  <text x="100" y="210" text-anchor="middle" class="sm">churn window, cached deflated</text>
+  <path class="arrow" d="M100 228 C 100 300 200 283 322 283"/>
+  <text x="150" y="308" class="sm">churn weights rank the views</text>
+</svg>
+<figcaption>The pipeline. crapkit never guesses at your test setup — the lanes run the commands your repo already has, and crapkit reads the artifacts they leave.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Scopes</strong> carve the repo into named territories (<code>src</code>, <code>ui</code>, <code>py</code>…), each with its languages, an optional per-scope target, and free-text <code>notes</code> — the written-down operational traps that ride into every packet.</li>
+  <li><strong>The inventory</strong> is one lizard tokenization per file, content-hash cached, producing both ccn variants and cognitive complexity for every function.</li>
+  <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code> — visible, never fatal, never a baseline.</li>
+  <li><strong>The store</strong> keeps scored runs compactly (function identity written once, referenced per run), plus claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
+  <li><strong>Churn</strong> comes from the git log over a configurable window, cached deflated and refreshed incrementally, so the expensive walk happens rarely.</li>
+</ul>
+
+<h3>Most of what you just read is a dial</h3>
+<p>Almost every behavior above is a <code>crapkit.toml</code> key with a deliberate default, not a constant. The ones people reach for first:</p>
+<pre><code>[crapkit]
+target = 6                  # THE dial: the CRAP ceiling, and with it the ccn ceiling
+churn_window_months = 12    # how far back "hot" looks
+worklist_floor = 5          # admission floor for the risk map (never hides over-ceiling debt)
+diff_uncovered_max = 40     # optional: verify exit 9 when a change leaves more dark lines
+max_parallel_lanes = 3      # how many coverage lanes run at once
+notes = ["…"]               # repo traps, delivered inside every packet
+
+[[scope]]
+name = "legacy"
+target = 10                 # a scope can carry its own ceiling…
+coverage_optional = true    # …or opt out of coverage entirely (crap = ccn, cc-only)
+
+[[lane]]
+timeout_seconds = 2400      # per-lane watchdog
+retries = 1                 # and how often a flaky lane gets another shot</code></pre>
+<p>Per-scope targets are how a repo holds new code to 6 while a quarantined legacy tree ratchets down from 10. Every key, with type, default, and what it does, is in <a href="configuration.md">docs/configuration.md</a> — and <code>doctor</code> tells you when the file and the repo have drifted apart.</p>
+
+<!-- ============================ 04 QUEUE ============================ -->
+<h2 id="queue"><span class="sn">04</span>The queue: two views of one run</h2>
+<p class="lede">One scored run, two deliberately different lenses — a map for judgment, a queue for hands.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 260" role="img" aria-label="worklist versus next-item">
+  <rect class="boxi" x="330" y="10" width="240" height="46" rx="8"/>
+  <text x="450" y="30" text-anchor="middle" class="lbl">the newest scored run</text>
+  <text x="450" y="46" text-anchor="middle" class="sm">every function, every score</text>
+  <path class="arrow" d="M400 62 C 360 85 300 90 260 100"/>
+  <path class="arrow" d="M500 62 C 540 85 600 90 640 100"/>
+  <rect class="box" x="30" y="105" width="380" height="140" rx="10"/>
+  <text x="220" y="130" text-anchor="middle" class="lbl" font-weight="700">worklist — the risk map</text>
+  <text x="220" y="152" text-anchor="middle" class="sm">ranked by risk = ccn × churn weight</text>
+  <text x="220" y="170" text-anchor="middle" class="sm">shows finished rows (marked ok)</text>
+  <text x="220" y="188" text-anchor="middle" class="sm">shows unmeasured rows (marked no-lane)</text>
+  <text x="220" y="206" text-anchor="middle" class="sm">never empties — a done repo is all ok markers</text>
+  <text x="220" y="230" text-anchor="middle" class="sm" font-style="italic">for: humans and planners deciding where risk lives</text>
+  <rect class="box" x="490" y="105" width="380" height="140" rx="10"/>
+  <text x="680" y="130" text-anchor="middle" class="lbl" font-weight="700">next-item — the actionable queue</text>
+  <text x="680" y="152" text-anchor="middle" class="sm">ranked by crap descending</text>
+  <text x="680" y="170" text-anchor="middle" class="sm">drops ok and no-lane rows</text>
+  <text x="680" y="188" text-anchor="middle" class="sm">carries budget estimates and dark lines</text>
+  <text x="680" y="206" text-anchor="middle" class="sm">empty: true is the stop signal (with two riders)</text>
+  <text x="680" y="230" text-anchor="middle" class="sm" font-style="italic">for: the session asking “what do I fix next”</text>
+</svg>
+<figcaption>The same run through two lenses. The worklist has no stop condition on purpose; <code>next-item</code> carries the only one.</figcaption>
+</figure>
+
+<h3>Reading a worklist row</h3>
+<pre><code>risk      5.4  ccn   6 (  6 std)    5c/1a w   0.90  src/crapkit/cli/reports.py:62  cmd_digest( args )
+
+  risk 5.4 .......... ccn x churn weight - what ranks this map
+  ccn 6 (6 std) ..... min(standard, modified) ccn, standard in parentheses
+  5c/1a w 0.90 ...... 5 commits, 1 author in the window, recency weight 0.90
+  path:62 ........... file and the line the function opens on
+  cmd_digest( args )  the long name - paste it straight into `crapkit brief`</code></pre>
+<p>Risk is <code>ccn × churn weight</code>, where the weight favors recent activity: five commits last month outrank one commit each of five months. A function over its ceiling is admitted whatever its ccn — the admission floor (<code>worklist_floor</code>, default ccn 5) trims the list, it never hides debt. Hot-but-simple code appears too (that is the map doing its job); the <code>ok</code> marker says no action is owed.</p>
+
+<h3>The termination rule: knowing when a burn-down is done</h3>
+<p>Three conditions, all at once, from <code>next-item</code>: <code>empty: true</code>, no items skipped because another session claims them, and no <code>no_lane_over_target</code> count in the reasons — debt a wiring gap keeps unreachable is still debt. One flag alone is not done.</p>
+
+<!-- ============================ 05 PACKET ============================ -->
+<h2 id="packet"><span class="sn">05</span>The packet</h2>
+<p class="lede">The first half hour of any refactor is reading. <code>brief</code> deletes it.</p>
+<p>Ask about one function and the reply is a <strong>start-editing packet</strong>: everything a session would otherwise assemble with an editor, a grep, and three git commands. The fields group into five questions:</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 356" role="img" aria-label="Anatomy of the brief packet">
+  <rect class="boxa" x="330" y="10" width="240" height="40" rx="8"/>
+  <text x="450" y="35" text-anchor="middle" class="lbl mono">crapkit brief PATH NAME --json</text>
+  <path class="arrow" d="M380 56 C 300 70 200 76 150 88"/>
+  <path class="arrow" d="M420 56 C 400 72 370 78 345 88"/>
+  <path class="arrow" d="M480 56 C 500 72 530 78 555 88"/>
+  <path class="arrow" d="M520 56 C 600 70 700 76 750 88"/>
+  <path class="arrow" d="M450 56 V 88"/>
+  <rect class="box" x="20" y="92" width="230" height="108" rx="8"/>
+  <text x="135" y="112" text-anchor="middle" class="lbl" font-weight="700">what am I looking at</text>
+  <text x="135" y="132" text-anchor="middle" class="sm mono">source · params · handle</text>
+  <text x="135" y="148" text-anchor="middle" class="sm mono">scored (16 metrics) · remedy</text>
+  <text x="135" y="164" text-anchor="middle" class="sm mono">est_splits · est_uncovered_paths</text>
+  <text x="135" y="180" text-anchor="middle" class="sm mono">uncovered_lines (+note)</text>
+  <rect class="box" x="260" y="92" width="185" height="108" rx="8"/>
+  <text x="352" y="112" text-anchor="middle" class="lbl" font-weight="700">what surrounds it</text>
+  <text x="352" y="132" text-anchor="middle" class="sm mono">file_functions · file_totals</text>
+  <text x="352" y="148" text-anchor="middle" class="sm mono">duplication_twins</text>
+  <text x="352" y="164" text-anchor="middle" class="sm mono">coupling (is_test flagged)</text>
+  <text x="352" y="180" text-anchor="middle" class="sm mono">churn</text>
+  <rect class="box" x="455" y="92" width="185" height="108" rx="8"/>
+  <text x="547" y="112" text-anchor="middle" class="lbl" font-weight="700">what I'm judged by</text>
+  <text x="547" y="132" text-anchor="middle" class="sm mono">gate_rule: ceiling · binds</text>
+  <text x="547" y="148" text-anchor="middle" class="sm mono">ratchet_mark · mark_age_days</text>
+  <text x="547" y="164" text-anchor="middle" class="sm mono">target (= the ceiling) · stale</text>
+  <text x="547" y="180" text-anchor="middle" class="sm mono">versions</text>
+  <rect class="box" x="650" y="92" width="230" height="108" rx="8"/>
+  <text x="765" y="112" text-anchor="middle" class="lbl" font-weight="700">what to run</text>
+  <text x="765" y="132" text-anchor="middle" class="sm mono">commands.gate</text>
+  <text x="765" y="148" text-anchor="middle" class="sm mono">commands.scoped_tests</text>
+  <text x="765" y="164" text-anchor="middle" class="sm mono">commands.verify · refresh</text>
+  <text x="765" y="180" text-anchor="middle" class="sm mono">lane (command · artifact · cwd)</text>
+  <rect class="box" x="230" y="220" width="440" height="76" rx="8"/>
+  <text x="450" y="242" text-anchor="middle" class="lbl" font-weight="700">what this repo knows that you don't</text>
+  <text x="450" y="262" text-anchor="middle" class="sm mono">notes.repo · notes.scope — the written-down traps</text>
+  <text x="450" y="280" text-anchor="middle" class="sm mono">attempts · regrowth — has someone tried this before, did it hold</text>
+  <path class="arrow" d="M450 206 V 216"/>
+  <text x="450" y="330" text-anchor="middle" class="sm">28 top-level fields · additive-only · schema pinned at 1 · full reference in docs/agent-json.md</text>
+</svg>
+<figcaption>The packet, grouped by the question each field answers. Nothing here requires opening the file.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Batch mode:</strong> <code>brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process — one store open, one churn load, one source read per file. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
+  <li><strong>Four name forms:</strong> the long name the worklist prints, the bare name, the start line, or the ordinal handle <code>(anonymous)#N</code> — the Nth anonymous function in the file by start order, a name that survives edits shifting lines above it. <code>claims</code> accepts the same forms.</li>
+  <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD; <code>uncovered_lines: null</code> plus a note names the lane that abstained (never conflated with "nothing to cover"); <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
+</ul>
+
+<!-- ============================ 06 GATE ============================ -->
+<h2 id="gate"><span class="sn">06</span>The gate and its four routes</h2>
+<p class="lede">One rule — every <em>touched</em> function at or under its scope's ceiling — enforced at four distances from the keyboard.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 300" role="img" aria-label="The four gate routes">
+  <rect class="box" x="20" y="20" width="200" height="56" rx="8"/>
+  <text x="120" y="42" text-anchor="middle" class="lbl" font-weight="700">1 · while editing</text>
+  <text x="120" y="62" text-anchor="middle" class="sm mono">rescore FILE --gate</text>
+  <rect class="box" x="245" y="20" width="200" height="56" rx="8"/>
+  <text x="345" y="42" text-anchor="middle" class="lbl" font-weight="700">2 · at commit</text>
+  <text x="345" y="62" text-anchor="middle" class="sm mono">hook-precommit</text>
+  <rect class="box" x="470" y="20" width="200" height="56" rx="8"/>
+  <text x="570" y="42" text-anchor="middle" class="lbl" font-weight="700">3 · before merge</text>
+  <text x="570" y="62" text-anchor="middle" class="sm mono">verify [--base REF]</text>
+  <rect class="box" x="695" y="20" width="185" height="56" rx="8"/>
+  <text x="787" y="42" text-anchor="middle" class="lbl" font-weight="700">4 · in CI</text>
+  <text x="787" y="62" text-anchor="middle" class="sm mono">verify --baseline-tsv</text>
+  <text x="120" y="100" text-anchor="middle" class="sm">sub-second cc preview; pardons marked</text>
+  <text x="120" y="114" text-anchor="middle" class="sm">functions — the hook is the authority</text>
+  <text x="345" y="100" text-anchor="middle" class="sm">staged blobs, in memory,</text>
+  <text x="345" y="114" text-anchor="middle" class="sm">cc-only — no store needed</text>
+  <text x="570" y="100" text-anchor="middle" class="sm">the full verdict: gate, ratchet,</text>
+  <text x="570" y="114" text-anchor="middle" class="sm">new test failures, dark diff lines</text>
+  <text x="787" y="100" text-anchor="middle" class="sm">a fresh clone verifies against a committed</text>
+  <text x="787" y="114" text-anchor="middle" class="sm">baseline (add --sarif PATH · --github)</text>
+  <path class="arrow" d="M120 122 V 152"/>
+  <path class="arrow" d="M345 122 V 152"/>
+  <path class="arrow" d="M570 122 V 152"/>
+  <path class="arrow" d="M787 122 V 152"/>
+  <rect class="boxa" x="20" y="156" width="860" height="50" rx="8"/>
+  <text x="450" y="178" text-anchor="middle" class="lbl" font-weight="700">the one rule: every touched function at or under its scope ceiling</text>
+  <text x="450" y="196" text-anchor="middle" class="sm">touched = the diff intersects its span · min-ccn only at routes 1–2 · full CRAP at routes 3–4</text>
+  <rect class="boxw" x="20" y="226" width="420" height="56" rx="8"/>
+  <text x="230" y="248" text-anchor="middle" class="lbl">refusal → decompose (read the packet, then cuts)</text>
+  <text x="230" y="268" text-anchor="middle" class="sm">a refusal is design feedback, not a threshold to widen</text>
+  <rect class="boxi" x="460" y="226" width="420" height="56" rx="8"/>
+  <text x="670" y="248" text-anchor="middle" class="lbl">attended escape: an audited override</text>
+  <text x="670" y="268" text-anchor="middle" class="sm">reason + snapshot + auto-staged ratchet debt — three records or nothing</text>
+</svg>
+<figcaption>The same rule at four distances. Routes 1–2 are instant and coverage-blind; routes 3–4 bring coverage, the ratchet, and the test suite into the verdict.</figcaption>
+</figure>
+
+<h3>Exit codes are the API</h3>
+<div class="tw"><table>
+  <tr><th>Exit</th><th>Meaning</th><th>The move</th></tr>
+  <tr><td class="mono">0</td><td>Verdict clean</td><td>Proceed. (For <code>verify</code>, this is the green that ends a loop iteration.)</td></tr>
+  <tr><td class="mono">1</td><td>Overloaded: no data yet, a <code>doctor</code> FAIL, or a debt-policy breach</td><td>Read the message; it names the command that creates the missing run, or the FAIL line. README's exit table splits the three.</td></tr>
+  <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused; check the flag spelling and order.</td></tr>
+  <tr><td class="mono">3</td><td>Config gap</td><td>A scope without a template, a metric-stamp mismatch — fix <code>crapkit.toml</code> or restamp.</td></tr>
+  <tr><td class="mono">4</td><td>Git error</td><td>Not a repository, or a baseline commit rewritten out of history (a force-push under <code>verify --base</code>).</td></tr>
+  <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact or timed out past retries, an alert command failed</td><td>For the no-artifact case: fix the lane, not the code — four root causes, triaged in <code>docs/lanes.md</code>.</td></tr>
+  <tr><td class="mono">6</td><td>Gate: touched function over its ceiling</td><td>Decompose until every piece fits.</td></tr>
+  <tr><td class="mono">7</td><td>Ratchet regression</td><td>A standing mark got worse. On a function you never edited: suspect test rot first.</td></tr>
+  <tr><td class="mono">8</td><td>New test failures vs baseline</td><td>The flake retest already ran if configured; what remains is real.</td></tr>
+  <tr><td class="mono">9</td><td>Changed lines nobody covered</td><td>Only in repos that set <code>diff_uncovered_max</code>.</td></tr>
+</table></div>
+<p class="xanno"><code>verify</code> reports the first of 6, 7, 8, 9 that fires, in that order — a CI script branches on one code per run.</p>
+
+<!-- ============================ 07 RATCHET ============================ -->
+<h2 id="ratchet"><span class="sn">07</span>The ratchet</h2>
+<p class="lede">How a brownfield repo turns the gate on today instead of “after the cleanup”.</p>
+<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code> — a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score: the function may stay bad, but it may not get <em>worse</em>, and when someone improves it the mark tightens automatically at the next green verify. Debt can only shrink. That is the ratchet.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 240" role="img" aria-label="Ratchet mark lifecycle">
+  <rect class="boxw" x="20" y="90" width="170" height="56" rx="10"/>
+  <text x="105" y="112" text-anchor="middle" class="lbl" font-weight="700">mark stands</text>
+  <text x="105" y="132" text-anchor="middle" class="sm mono">path · long_name · crap</text>
+  <path class="arrow" d="M105 84 C 110 40 220 30 300 30"/>
+  <rect class="box" x="305" y="12" width="250" height="38" rx="8"/>
+  <text x="430" y="36" text-anchor="middle" class="sm">score improves → next green verify <tspan font-weight="700">tightens</tspan> the mark</text>
+  <path class="arrow" d="M560 32 C 640 34 660 70 560 96 C 400 130 250 120 196 118"/>
+  <path class="arrow" d="M196 130 H 280"/>
+  <rect class="boxo" x="285" y="112" width="200" height="38" rx="8"/>
+  <text x="385" y="136" text-anchor="middle" class="sm">fixed to the ceiling → mark <tspan font-weight="700">repaid</tspan>, row gone</text>
+  <path class="arrow" d="M105 152 C 110 190 220 200 300 200"/>
+  <rect class="box" x="305" y="182" width="250" height="38" rx="8"/>
+  <text x="430" y="206" text-anchor="middle" class="sm">code deleted or renamed → <tspan class="mono">ratchet prune</tspan> follows git</text>
+  <rect class="box" x="620" y="112" width="260" height="90" rx="8"/>
+  <text x="750" y="134" text-anchor="middle" class="lbl" font-weight="700">merging branches?</text>
+  <text x="750" y="154" text-anchor="middle" class="sm mono">crapkit ratchet merge</text>
+  <text x="750" y="172" text-anchor="middle" class="sm">registered as a git merge driver:</text>
+  <text x="750" y="188" text-anchor="middle" class="sm">changed-side-wins, min on conflict — never by hand</text>
+</svg>
+<figcaption>A mark's life. Every transition is a command, so the file needs no manual editing — and hand-resolving its merge conflicts is the one classic mistake the tooling exists to prevent.</figcaption>
+</figure>
+
+<p>Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare marks across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
+
+<!-- ============================ 08 BASELINE ============================ -->
+<h2 id="baseline"><span class="sn">08</span>The trusted baseline</h2>
+<p class="lede">Every verdict compares against one earlier run. Which one is a rule, not a guess.</p>
+<p>Qualifying runs are <code>coverage</code> runs and <em>passing</em> verifies. A failed verify never qualifies — and more: it <strong>taints</strong> what follows. Runs taken after a failure are skipped by default baseline selection until some verify passes, so nobody retires findings by quietly re-running <code>coverage</code> on the refused tree.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 170" role="img" aria-label="The tainted baseline timeline">
+  <line class="axis" x1="30" y1="85" x2="870" y2="85"/>
+  <rect class="boxo" x="60" y="60" width="120" height="50" rx="8"/>
+  <text x="120" y="82" text-anchor="middle" class="sm mono">run 19</text>
+  <text x="120" y="99" text-anchor="middle" class="sm">coverage ✓</text>
+  <rect class="boxw" x="250" y="60" width="120" height="50" rx="8"/>
+  <text x="310" y="82" text-anchor="middle" class="sm mono">run 20</text>
+  <text x="310" y="99" text-anchor="middle" class="sm">verify FAILED</text>
+  <rect class="box" x="440" y="60" width="120" height="50" rx="8"/>
+  <text x="500" y="82" text-anchor="middle" class="sm mono">run 21</text>
+  <text x="500" y="99" text-anchor="middle" class="sm">coverage (tainted)</text>
+  <rect class="box" x="630" y="60" width="120" height="50" rx="8"/>
+  <text x="690" y="82" text-anchor="middle" class="sm mono">run 22…</text>
+  <text x="690" y="99" text-anchor="middle" class="sm">still tainted</text>
+  <path d="M120 54 C 300 8 600 8 780 50" class="arrow"/>
+  <text x="450" y="26" text-anchor="middle" class="sm" fill="var(--accent)">verify keeps comparing against run 19 — the findings stay visible</text>
+  <text x="450" y="146" text-anchor="middle" class="sm">escapes: fix the findings and let a verify pass · or accept a newer run explicitly with <tspan class="mono">verify --baseline N</tspan></text>
+</svg>
+<figcaption>The taint rule. Without it, a coverage run on the refused tree becomes the new baseline and the flagged function stops counting as touched — the finding evaporates unexamined.</figcaption>
+</figure>
+
+<p><code>runs list</code> marks the row verify compares against today, and warns when a moved HEAD makes the snapshot stale. For repos with no store at all — a CI clone — <code>verify --emit-baseline</code> on the main branch writes a commit-stamped TSV that <code>verify --baseline-tsv</code> reads in the PR, with <code>--github</code> annotations on the diff.</p>
+
+<!-- ============================ 09 LANES ============================ -->
+<h2 id="lanes"><span class="sn">09</span>Lanes: how coverage arrives</h2>
+<p class="lede">crapkit runs no test framework of its own. A lane is your command, its artifact, and a parser.</p>
+<pre><code>[[lane]]
+name     = "unit"
+command  = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/unit"
+artifact = ".crapkit/cov/unit/coverage-final.json"
+parser   = "istanbul"          # or "coveragepy"
+scopes   = ["src"]</code></pre>
+<ul>
+  <li><strong>Provenance:</strong> every artifact is stamped with the commit and duration that produced it; stale artifacts are named, never silently reused. <code>--reuse-unchanged</code> reruns only lanes whose scope files moved.</li>
+  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code> and <code>retries</code>; a configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first.</li>
+  <li><strong>Honest failure:</strong> a lane that produces no artifact marks its scopes <code>no-lane</code> and the run <code>partial</code> — the queue counts what it cannot see instead of pretending. The four classic causes (a coverage provider not installed, a red suite with report-on-failure unset, a report landing where the lane does not look, a watchdog kill) are triaged in <a href="lanes.md">docs/lanes.md</a>.</li>
+  <li><strong>The test template:</strong> a <code>[crapkit.scoped_tests]</code> entry per scope says how to run that scope's tests in isolation — it is what <code>crapkit test-scoped</code> executes, what the packet's <code>commands.scoped_tests</code> carries, and what <code>doctor</code> warns about when a laned scope has none.</li>
+  <li><strong>Housekeeping:</strong> everything writes under <code>.crapkit/</code>; <code>doctor</code> warns about lanes littering the repo root, dead commands, unclaimed files, and scopes with no test template.</li>
+</ul>
+
+<!-- ============================ 10 AGENTS ============================ -->
+<h2 id="agents"><span class="sn">10</span>Built for agents</h2>
+<p class="lede">Half of crapkit's callers are language models. The tool treats that as a design constraint, not an afterthought.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 270" role="img" aria-label="The five-step burn-down loop">
+  <rect class="boxa" x="360" y="12" width="180" height="46" rx="10"/>
+  <text x="450" y="32" text-anchor="middle" class="lbl" font-weight="700">1 · take the packet</text>
+  <text x="450" y="48" text-anchor="middle" class="sm mono">next-item → brief --json</text>
+  <path class="arrow" d="M545 45 C 660 60 720 90 730 120"/>
+  <rect class="box" x="620" y="125" width="220" height="46" rx="10"/>
+  <text x="730" y="145" text-anchor="middle" class="lbl" font-weight="700">2 · do the work</text>
+  <text x="730" y="161" text-anchor="middle" class="sm">decompose / test at the packet's seams</text>
+  <path class="arrow" d="M725 177 C 700 215 640 228 590 232"/>
+  <rect class="box" x="360" y="212" width="220" height="46" rx="10"/>
+  <text x="470" y="232" text-anchor="middle" class="lbl" font-weight="700">3 · gate the edit</text>
+  <text x="470" y="248" text-anchor="middle" class="sm mono">commands.gate  (exit 6 → step 2)</text>
+  <path class="arrow" d="M355 232 C 290 228 245 215 222 180"/>
+  <rect class="box" x="80" y="125" width="220" height="46" rx="10"/>
+  <text x="190" y="145" text-anchor="middle" class="lbl" font-weight="700">4 · run the scope's tests</text>
+  <text x="190" y="161" text-anchor="middle" class="sm mono">commands.scoped_tests (= crapkit test-scoped)</text>
+  <path class="arrow" d="M185 120 C 190 85 260 62 350 48"/>
+  <rect class="boxo" x="45" y="30" width="200" height="46" rx="10"/>
+  <text x="145" y="50" text-anchor="middle" class="lbl" font-weight="700">5 · verify, then commit</text>
+  <text x="145" y="66" text-anchor="middle" class="sm mono">commands.verify → green → commit</text>
+  <path class="arrow" d="M250 46 H 352"/>
+</svg>
+<figcaption>The loop from AGENTS.md. The commands in steps 3–5 arrive inside the packet with paths filled in — retyping them is how a lane flag silently drops.</figcaption>
+</figure>
+
+<div class="cards">
+  <div class="card"><h4>Claims</h4><p>Parallel sessions coordinate through <code>next-item --claim</code>: a claimed item is skipped by everyone else, released on green verify or by hand. Handles survive line shifts.</p></div>
+  <div class="card"><h4>Batches</h4><p><code>worklist --batches N</code> cuts the queue into file-disjoint batches (co-changing files kept together) — a fleet plan with no overlap by construction.</p></div>
+  <div class="card"><h4>MCP server</h4><p><code>crapkit mcp</code>: a dependency-free stdio server exposing the read side as tools. Register globally; in an unmeasured directory it answers with guidance instead of dying.</p></div>
+  <div class="card"><h4>Skills</h4><p><code>skills/</code> in this repo ships agent skills (the loop, the failure router, a decomposition catalogue). A contract test pins their text to the CLI so they cannot drift.</p></div>
+  <div class="card"><h4>Notes</h4><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet — the channel for hard-won operational traps, delivered at the moment of use.</p></div>
+  <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code> (<code>next-item</code> always; <code>digest</code> alone is plain lines by design); payloads carry <code>schema: 1</code> and change additively only.</p></div>
+</div>
+
+<!-- ============================ 11 INSTALL ============================ -->
+<h2 id="install"><span class="sn">11</span>Install and first run</h2>
+<pre><code>pip install git+https://github.com/JeanFrancoisGagne/crapkit.git   # or: pip install . from a clone</code></pre>
+<p>Python 3.11+. One runtime dependency (<code>lizard</code>). Then, in the repo you want scored:</p>
+<div class="tw"><table>
+  <tr><th>Step</th><th>Command</th><th>What happens</th></tr>
+  <tr><td>1</td><td class="mono">crapkit init</td><td>Sniffs tracked source into scopes; detects pytest/vitest/jest from the repo's own files and writes live lanes; scaffolds <code>.gitignore</code> and a test template for runners it could prove.</td></tr>
+  <tr><td>2</td><td class="mono">crapkit doctor</td><td>Checks the config against reality: unknown keys, unclaimed files, dead lane commands. Exits 1 only on FAIL.</td></tr>
+  <tr><td>3</td><td class="mono">crapkit coverage</td><td>Runs the lanes, joins coverage onto a fresh inventory, writes the first scored run and its grade.</td></tr>
+  <tr><td>4</td><td class="mono">crapkit ratchet seed</td><td>Pardons standing debt into <code>crapkit-ratchet.tsv</code>; commit it.</td></tr>
+  <tr><td>5</td><td class="mono">crapkit worklist</td><td>Read the risk map: what is worst, and how hot it runs.</td></tr>
+  <tr><td>6</td><td class="mono">printf '#!/bin/sh
+exec python -m crapkit hook-precommit
+' &gt; .git/hooks/pre-commit &amp;&amp; chmod +x .git/hooks/pre-commit</td><td>Arm the gate. From here every commit is judged — new debt only; the seeded marks pardon the old. The README's gate section has the committed-hooks-dir, pre-commit-framework, and CI routes.</td></tr>
+</table></div>
+<p>The full walked-through quickstarts (Python and TypeScript, with real transcripts) live in the <a href="../README.md">README</a>; the judgment calls — scope granularity, exclude versus lane, the first-verify hazard — in <a href="adoption.md">docs/adoption.md</a>.</p>
+
+<!-- ============================ 12 MOMENTS ============================ -->
+<h2 id="moments"><span class="sn">12</span>Where each command earns its keep</h2>
+<p class="lede">Most days are not a campaign (that is <a href="#campaign">§14</a>). These are the everyday moments, mapped.</p>
+<div class="tw"><table>
+  <tr><th>You are…</th><th>Reach for</th><th>Because</th></tr>
+  <tr><td>about to edit an unfamiliar file</td><td class="mono">brief PATH NAME --json</td><td>Source, siblings, churn, coupled files, the ceiling, and the repo's traps — before the file is even open.</td></tr>
+  <tr><td>wondering if the hook will refuse your commit</td><td class="mono">rescore FILE --gate</td><td>The same verdict the hook gives, sub-second, before you stage.</td></tr>
+  <tr><td>deciding where new code should live</td><td class="mono">worklist · coupling · duplication</td><td>Hot fragile files are a design input; a near-twin means the helper already exists.</td></tr>
+  <tr><td>writing tests for a change</td><td class="mono">uncovered_lines · est_uncovered_paths</td><td>The packet names the dark branches; the estimate sizes the work.</td></tr>
+  <tr><td>opening a PR</td><td class="mono">verify --base REF --sarif out.sarif --github</td><td>Did this branch add debt against the fork point — SARIF and inline annotations for the review.</td></tr>
+  <tr><td>wondering if a past refactor held</td><td class="mono">explain PATH NAME</td><td>The score's trajectory across runs, plus <code>regrowth</code> when a split quietly un-split itself.</td></tr>
+  <tr><td>back from lunch on a shared repo</td><td class="mono">digest</td><td>The delta between the last two runs — silent when nothing changed, which is the healthy reading.</td></tr>
+  <tr><td>already in a file anyway</td><td class="mono">file_functions in any brief</td><td>The boy-scout check: a sibling one point over its ceiling is cheapest to fix while context is hot.</td></tr>
+  <tr><td>watching scores while you edit</td><td class="mono">watch</td><td>Rescores tracked files as they change, in a terminal pane.</td></tr>
+</table></div>
+
+<!-- ============================ 13 CABINET ============================ -->
+<h2 id="cabinet"><span class="sn">13</span>The analysis cabinet</h2>
+<div class="cards">
+  <div class="card"><h4><code>mutate</code> — are the tests real?</h4><p>Diff-scoped mutation testing: flips comparisons and boolean logic on the lines you changed, runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
+  <div class="card"><h4><code>duplication</code> — does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
+  <div class="card"><h4><code>coupling</code> — what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor.</p></div>
+  <div class="card"><h4><code>trend</code> — is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data.</p></div>
+  <div class="card"><h4><code>doctor</code> — does the config still fit?</h4><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
+  <div class="card"><h4><code>overrides</code> — who granted what?</h4><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
+</div>
+
+<!-- ============================ 14 CAMPAIGN ============================ -->
+<h2 id="campaign"><span class="sn">14</span>The campaign: fixing a whole codebase</h2>
+<p class="lede">Everything above composes into one flow when the goal is the whole repo. Four phases — and the gate goes on <em>first</em>, not after the cleanup.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 330" role="img" aria-label="The four campaign phases">
+  <rect class="boxa" x="20" y="16" width="860" height="62" rx="10"/>
+  <text x="40" y="40" class="lbl" font-weight="700">phase 0 · wire it, then stop the bleeding</text>
+  <text x="40" y="60" class="sm mono">init → doctor → coverage → ratchet seed → commit the TSV → install the hook</text>
+  <text x="860" y="50" text-anchor="end" class="sm">standing debt pardoned · new debt blocked · the hole stops deepening while you dig</text>
+  <path class="arrow" d="M450 82 V 100"/>
+  <rect class="boxi" x="20" y="104" width="860" height="62" rx="10"/>
+  <text x="40" y="128" class="lbl" font-weight="700">phase 1 · size the mountain (the grade coverage just printed), cut the map</text>
+  <text x="40" y="148" class="sm mono">worklist --batches N → brief --batch N --json</text>
+  <text x="860" y="138" text-anchor="end" class="sm">file-disjoint batches, co-changing files together — a fleet plan with</text>
+  <text x="860" y="152" text-anchor="end" class="sm">no two agents share a source file · one process deals every packet</text>
+  <path class="arrow" d="M450 170 V 188"/>
+  <rect class="box" x="20" y="192" width="860" height="72" rx="10"/>
+  <text x="40" y="216" class="lbl" font-weight="700">phase 2 · the loop, solo or as a fleet</text>
+  <text x="40" y="236" class="sm mono">claim → packet → decompose or cover → gate → scoped tests → green verify → commit</text>
+  <text x="40" y="254" class="sm">every green verify tightens the ratchet — progress is monotone; <tspan class="mono">regrowth</tspan> flags a split that un-split; <tspan class="mono">mutate</tspan> audits a batch closed by tests alone</text>
+  <path class="arrow" d="M450 268 V 286"/>
+  <rect class="boxo" x="20" y="290" width="860" height="34" rx="10"/>
+  <text x="40" y="312" class="lbl" font-weight="700">phase 3 · steady state</text>
+  <text x="860" y="312" text-anchor="end" class="sm">the termination rule ends the campaign · <tspan class="mono">digest</tspan> is the watchtower · the gate holds the line</text>
+</svg>
+<figcaption>The campaign. Phase 0's ordering is the part teams get backwards: seed and gate before fixing anything, so the cleanup outruns an inflow you already shut off.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Doctor's warnings are the first work items.</strong> Debt in a scope no lane measures cannot be burned down, only wired up — on one large consumer, wiring six extra lanes took measured functions from 95k to 113k of 141k before a single function was edited.</li>
+  <li><strong>The stop signal is the termination rule</strong> (<a href="#queue">§04</a>), never an empty-looking worklist. A finished repo is a worklist full of <code>ok</code> markers.</li>
+  <li><strong>Value is front-loaded, so stopping early is rational.</strong> The risk map is worst-first by <code>ccn × churn</code> and the hand-out queue by CRAP; the top of it is where incidents live. “Fix the worst slice and gate the rest forever” is the same campaign ended earlier — and the ratchet holds whatever line you reach. (The shared ratchet file is the one file every branch touches; that is what the <code>ratchet merge</code> driver exists for.)</li>
+  <li><strong>The summit items are redesigns.</strong> A whole command handler at extreme ccn is not a split, it is an architecture session; the packet's <code>est_splits</code> saying dozens is the tell.</li>
+  <li><strong>Proof it composes:</strong> crapkit's own repo ran this exact campaign against its own gate — every standing mark repaid, the ratchet file now header-only, grade A+.</li>
+</ul>
+
+<!-- ============================ 15 PRINCIPLES ============================ -->
+<h2 id="principles"><span class="sn">15</span>Design principles</h2>
+<ul>
+  <li><strong>Deterministic or wrong.</strong> Same tree, same config, same bytes out. Randomness, wall-clock dependence, and unstable orderings are treated as defects.</li>
+  <li><strong>The gate binds the future.</strong> Standing debt is pardoned and ratcheted; only touched functions are judged. A gate a team turns off is worse than no gate.</li>
+  <li><strong>Above the ceiling, decompose.</strong> Coverage cannot save a function past its target — the design pressure is the point, and crapkit's own source is held to its own rule.</li>
+  <li><strong>Additive JSON, pinned schema.</strong> Fields are added, never renamed or removed; <code>schema: 1</code> means an agent's parser written today keeps working.</li>
+  <li><strong>Your test commands, not ours.</strong> Lanes run what the repo already runs; crapkit reads artifacts. There is no embedded test framework to fight.</li>
+  <li><strong>Failure is data.</strong> A failed lane, a stale artifact, an abstaining scope — each is counted and named, never papered over with a zero that reads as health.</li>
+  <li><strong>Docs are contracts.</strong> Tests diff the README's command table against the argument parser, and the shipped skills against the CLI, both directions. Documentation that can drift, will — so it is not allowed to.</li>
+  <li><strong>Dependency-light.</strong> Python stdlib plus lizard. The MCP server, the parsers, the store — no framework underneath to version-chase.</li>
+</ul>
+
+<footer>
+  <p><strong>Where to next.</strong> <a href="../README.md">README</a> for the full command reference and quickstart transcripts · <a href="../AGENTS.md">AGENTS.md</a> for the working agent contract · <a href="configuration.md">configuration</a>, <a href="lanes.md">lanes</a>, <a href="ratchet.md">ratchet</a>, <a href="agent-json.md">agent-json</a>, <a href="adoption.md">adoption</a> for the deep references. MIT licensed. This handbook is self-contained by design: no network, no scripts, system fonts only — it reads the same from a fresh clone, a fork, or a file:// double-click.</p>
+</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+.crapkit/
+__pycache__/
+*.pyc
+.coverage*
+dist/
+build/
+*.egg-info/
+.venv/
+.crapkit-selfrun.*
+crapkit-junit.xml
+coverage-py.json
