@@ -10,6 +10,14 @@ import sys
 from .. import __version__
 from ..errors import CrapkitError
 
+# The claude-* namespace, named here rather than read off the parser, because the
+# guard has to answer before argparse sees the argv at all. A plugin's hooks.json
+# ships machine-wide and can name a subcommand an older installed CLI does not
+# have; argparse answers that with exit 2 and a usage dump, which on PostToolUse
+# lands in the model's context on every edit. Silence is the only safe answer,
+# and it is what makes every future plugin-ahead-of-CLI drift harmless.
+_CLAUDE_SUBCOMMANDS = frozenset({"claude-hook"})
+
 
 class _Handler:
     """A subcommand's handler, named at parser-build time and imported when it runs.
@@ -289,6 +297,16 @@ def build_parser() -> argparse.ArgumentParser:
     hook.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
     hook.set_defaults(func=_Handler("verifying", "cmd_hook_precommit"))
 
+    # No --repo: the root comes from the edited file's own path, walked upward to
+    # the first crapkit.toml and never past a .git entry. A session root passed in
+    # would resolve a worktree edit to the mainline checkout's store.
+    chk = sub.add_parser("claude-hook", help="advisory ccn check for one Claude Code "
+                                             "PostToolUse edit read from stdin; silent "
+                                             "unless a changed function is over its ceiling")
+    chk.add_argument("--protocol", default="1", metavar="N",
+                     help="hook payload protocol (default 1); anything else exits 0 silent")
+    chk.set_defaults(func=_Handler("claude_hook", "cmd_claude_hook"))
+
     wl = sub.add_parser("worklist", help="ranked risk map: every admitted function, "
                                          "finished and no-lane rows included, so it never empties")
     wl.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
@@ -314,6 +332,10 @@ def build_parser() -> argparse.ArgumentParser:
     doc.add_argument("--tune", action="store_true",
                      help="print suggested [crapkit] parallelism knobs for this machine from "
                           "cpu count and recorded lane durations; writes nothing")
+    doc.add_argument("--plugin-root", default=None, metavar="PATH",
+                     help="check an installed Claude Code plugin against this CLI instead of "
+                          "reading a repo: manifest version and hook protocol, one line per "
+                          "disagreement, silent when they agree")
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")
@@ -372,11 +394,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Piped output (git hooks, CI, agents) reads as UTF-8 everywhere modern;
-    # Windows hands pipes the legacy codepage instead, which renders as mojibake.
-    # A tty keeps its native encoding. Either way errors degrade to '?' — an
-    # exotic console must never turn an exit code into a traceback.
+def _reconfigure_streams() -> None:
+    """Piped output (git hooks, CI, agents) reads as UTF-8 everywhere modern;
+    Windows hands pipes the legacy codepage instead, which renders as mojibake.
+    A tty keeps its native encoding. Either way errors degrade to '?' — an
+    exotic console must never turn an exit code into a traceback."""
     for stream in (sys.stdout, sys.stderr):
         if not hasattr(stream, "reconfigure"):
             continue
@@ -384,6 +406,25 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
         else:
             stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _unknown_claude_command(argv: list[str] | None) -> bool:
+    """A `claude-*` first argument this build does not define.
+
+    Answered before `parse_args` so argparse never gets to print its usage dump.
+    Only this namespace is covered: a human's typo on any other subcommand is
+    still an argparse error, because a human is there to read it.
+    """
+    args = sys.argv[1:] if argv is None else argv
+    if not args or not args[0].startswith("claude-"):
+        return False
+    return args[0] not in _CLAUDE_SUBCOMMANDS
+
+
+def main(argv: list[str] | None = None) -> int:
+    _reconfigure_streams()
+    if _unknown_claude_command(argv):
+        return 0
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

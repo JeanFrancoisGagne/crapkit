@@ -569,9 +569,79 @@ def _doctor_tune(root: Path, cfg) -> int:
     return 0
 
 
+def _plugin_json(path: Path):
+    """One JSON file off an installed plugin, or None.
+
+    Missing, unreadable and half-written all read the same, because doctor's job
+    here is to name the file rather than to raise inside it. A plugin cache is
+    written by an installer this process does not control.
+    """
+    import json
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _hook_handlers(hooks: dict) -> list[dict]:
+    """Every command handler in a hooks.json, flat across events and matchers."""
+    return [handler for event in hooks.get("hooks", {}).values()
+            for matcher in event for handler in matcher.get("hooks", [])]
+
+
+def _named_protocol(handler: dict) -> str | None:
+    """The `--protocol` value one handler spawns crapkit with, or None.
+
+    Paired off the arg list rather than indexed past the flag: a handler whose
+    args end at `--protocol` is malformed, and reading it must not raise.
+    """
+    args = handler.get("args", [])
+    return dict(zip(args, args[1:])).get("--protocol")
+
+
+def _hook_protocols(root: Path) -> tuple[str, ...] | None:
+    """Every protocol the plugin's hooks name, or None when it ships no hooks
+    file. The empty tuple is the third state: a hooks file naming no protocol,
+    which argparse defaults to the supported one."""
+    hooks = _plugin_json(root / "hooks" / "hooks.json")
+    if not isinstance(hooks, dict):
+        return None
+    named = [_named_protocol(handler) for handler in _hook_handlers(hooks)]
+    return tuple(p for p in named if p is not None)
+
+
+def _manifest_version(root: Path) -> str | None:
+    manifest = _plugin_json(root / ".claude-plugin" / "plugin.json")
+    return manifest.get("version") if isinstance(manifest, dict) else None
+
+
+def _doctor_plugin(plugin_root: str) -> int:
+    """`--plugin-root PATH`: the installed plugin against this CLI.
+
+    No repo is read. The plugin cache is not a repo, and an operator asking
+    whether their plugin is behind their CLI is rarely standing in one.
+
+    `PROTOCOL` comes from the hook module itself, so the number doctor promises
+    and the number `claude-hook` accepts cannot drift apart.
+    """
+    from ..doctor import plugin_handshake
+    from .claude_hook import PROTOCOL
+
+    root = Path(plugin_root)
+    lines = plugin_handshake(where=str(root), version=_manifest_version(root),
+                             cli_version=__version__, protocols=_hook_protocols(root),
+                             supported=PROTOCOL)
+    for line in lines:
+        print(line)
+    return 1 if lines else 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     import tomllib
 
+    if args.plugin_root:
+        return _doctor_plugin(args.plugin_root)
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)  # a config that does not parse already exits 3 here
     if args.tune:

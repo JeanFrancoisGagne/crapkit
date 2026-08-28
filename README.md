@@ -450,11 +450,15 @@ without touching the repo-wide cache, and refuses the commit when a staged funct
 its scope ceiling. It needs no coverage data and no snapshot, so it costs the size of the
 commit, not the size of the repo.
 
-Two limits to know. The gate judges files a `[[scope]]` claims; a staged source file no
+Three limits to know. The gate judges files a `[[scope]]` claims; a staged source file no
 scope claims is not gated, and the hook says so on stderr (`N staged file(s) belong to no
 scope and were not gated`) so the hole is visible the moment a new top-level directory
-appears. And git runs hooks outside your shell's activated venv: bare `python` must resolve
-to an interpreter that has crapkit installed, or use the absolute form
+appears. A function the committed ratchet already carries a mark for is not gated either,
+so touching signed debt does not refuse the commit; the hook reports the count on stderr
+(`N staged function(s) carry a ratchet mark and were not gated`) and `crapkit verify` is
+what fails a mark that rose. And git runs hooks outside your shell's activated venv: bare
+`python` must resolve to an interpreter that has crapkit installed, or use the absolute
+form
 (`exec /path/to/venv/Scripts/python -m crapkit hook-precommit`).
 
 ### Route 1: `.git/hooks/pre-commit` (local, not committed)
@@ -703,7 +707,8 @@ advances the baseline nor tightens the ratchet, exit 9 included.
 ## Subcommands
 
 Every subcommand takes `--repo PATH` (default `.`), and the flag goes **after** the
-subcommand:
+subcommand. `claude-hook` is the one exception: it has no `--repo`, because it takes its
+root from the file named in the hook payload it reads.
 
 ```
 $ crapkit worklist --repo /path/to/repo --scope util --top 1
@@ -724,7 +729,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | Command | What it does |
 |---|---|
 | `init` | Sniffs tracked source into per-directory scopes, writes a self-validated starter `crapkit.toml` whose lanes report into `.crapkit/cov/`, and appends `.crapkit/` plus each runner's own droppings to `.gitignore`. Writes a live `[[lane]]` when it can detect the test runner, otherwise a commented template. Refuses to clobber an existing config. |
-| `doctor [--show-files] [--json] [--tune]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files, lanes writing their artifacts at the repo root instead of under `.crapkit/` (WARN), committed hooks under `core.hooksPath` that are not executable in the index (WARN), directories whose functions are all `untested` while their tests exist (WARN), and scopes a lane measures with no `[crapkit.scoped_tests]` template behind them (WARN), which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. See [docs/agent-json.md](docs/agent-json.md#doctor---json). |
+| `doctor [--show-files] [--json] [--tune] [--plugin-root PATH]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files, lanes writing their artifacts at the repo root instead of under `.crapkit/` (WARN), committed hooks under `core.hooksPath` that are not executable in the index (WARN), directories whose functions are all `untested` while their tests exist (WARN), and scopes a lane measures with no `[crapkit.scoped_tests]` template behind them (WARN), which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. `--plugin-root PATH` reads no repo at all: it checks an installed [plugin](plugin/) against this CLI, comparing `.claude-plugin/plugin.json`'s version against the running crapkit and every `--protocol` in `hooks/hooks.json` against the protocol `claude-hook` answers, one line per disagreement and silence when they agree. See [docs/agent-json.md](docs/agent-json.md#doctor---json). |
 | `inventory [--db PATH] [--export PATH] [--json]` | Two lizard passes over every in-scope file into a SQLite snapshot run, cached by content hash. `--db` is the only way to point crapkit at a store outside `.crapkit/`, and only this command accepts it. |
 | `coverage [--lane NAME] [--reuse-artifacts] [--reuse-unchanged] [--export PATH] [--sarif PATH] [--github] [--json]` | Runs the lanes, joins branch coverage onto a fresh inventory, writes a scored run. A failed lane is recorded, not fatal: its scopes fall back to `no-lane` and the run is typed `partial`, so it can never serve as a baseline. See [docs/lanes.md](docs/lanes.md). |
 | `verify [--baseline ID \| --base REF \| --baseline-tsv PATH] [--emit-baseline PATH] [--override REASON] [--reuse-artifacts] [--reuse-unchanged] [--sarif PATH] [--github] [--json]` | The full verdict against the trusted baseline: gate on touched functions, ratchet, no new test failures, optional diff-coverage ceiling. The three baseline selectors are mutually exclusive; `--baseline ID` also bypasses the taint rule ([The trusted baseline](#the-trusted-baseline)), and `--baseline-tsv` reads a commit-stamped file so a fresh clone verifies with no store. Findings a dirty tree produced are tagged `dirty` and counted apart. |
@@ -745,6 +750,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `mutate [--files F ...] [--max-mutants N] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
 | `hook-precommit` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. |
+| `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed and nothing is blocked, and `hook-precommit` stays the enforcement point. Exit 2 with three lines on stderr is the only thing it ever says. No `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure: exit 0, silence, empty stderr. Takes no `--repo` — the root is the first `crapkit.toml` above the edited file and the upward walk stops at a `.git` entry, so a worktree never borrows its parent's config. It opens no snapshot, writes nothing, and leaves stdout empty. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing nine read-only tools. See [docs/agent-json.md](docs/agent-json.md#mcp-server). |
 
@@ -758,7 +764,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | [docs/ratchet.md](docs/ratchet.md) | Seeding, pruning, the git merge driver, metric stamps, debt policy, overrides. |
 | [docs/agent-json.md](docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
 | [docs/adoption.md](docs/adoption.md) | The judgment layer over the quickstarts: scope granularity, exclude vs lane, scoped_tests wiring, the first-verify taint hazard. |
-| [skills/](skills/) | Agent skills shipped with the repo (`crapkit`, `crapkit-recover`, `crapkit-onboard`) — install by copying to your agent runtime's skills directory. |
+| [plugin/](plugin/) | The Claude Code plugin: three skills (`crapkit`, `crapkit-recover`, `crapkit-onboard`), the read-side MCP server, and the advisory PostToolUse hook. Install with `claude plugin marketplace add JeanFrancoisGagne/crapkit` then `claude plugin install crapkit@crapkit`; other runtimes copy `plugin/skills/*` into their skills directory. |
 
 [crapkit.schema.json](crapkit.schema.json) is the authority on the config file shape.
 

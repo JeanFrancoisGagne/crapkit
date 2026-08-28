@@ -1,13 +1,14 @@
 ---
 name: crapkit
-description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, or when a commit is refused with \"crapkit gate: ... exceed the complexity ceiling\". Not for eslint, husky, or any other pre-commit gate."
+description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, or when a commit is refused with \"crapkit: commit blocked by the complexity gate\" or \"decompose before committing\" (older gates print \"crapkit gate: ... exceed the complexity ceiling\"). Not for eslint, husky, or any other pre-commit gate."
 ---
 
 # Working a crapkit item
 
 One item at a time. The packet carries the file so you never open it, `gate_rule.ceiling`
 is the number the edit is judged against, and `crapkit verify` is the only authoritative
-verdict. Doc anchors below name pages in the crapkit project.
+verdict. Doc links below point into the crapkit repo on GitHub, so they resolve from
+whatever repo this session is working in.
 
 ## What answers each moment
 
@@ -25,8 +26,8 @@ verdict. Doc anchors below name pages in the crapkit project.
 | Handing the state to a human who will not run a command | `crapkit report`, which writes one self-contained HTML page and prints its path |
 | Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
 
-Field semantics live in `docs/agent-json.md#brief`; the five-step loop lives in
-`AGENTS.md#1-the-packet`.
+Field semantics live in [docs: the brief payload](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#brief);
+the five-step loop lives in [AGENTS: the packet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#1-the-packet).
 
 ## Open the packet dark-eyed
 
@@ -64,7 +65,8 @@ touched it) go to `crapkit explain PATH NAME`, which answers them far cheaper.
 
 A trap you learn about the repo goes into its `crapkit.toml` `notes`, repo-wide or under
 the owning scope, where every future packet carries it. Keys are documented in
-`docs/configuration.md`. This file stays repo-free.
+[docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md).
+This file stays repo-free.
 
 ## Naming an anonymous function
 

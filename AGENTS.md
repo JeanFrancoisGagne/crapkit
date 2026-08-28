@@ -12,7 +12,8 @@ Two audiences, two sections. Read the one that matches the repo you are in:
   itself.
 
 Every command below runs as `crapkit <sub>` (console script) or
-`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`, default `.`.
+`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`, default `.`, except
+`claude-hook`, which reads its root from the hook payload on stdin.
 
 ---
 

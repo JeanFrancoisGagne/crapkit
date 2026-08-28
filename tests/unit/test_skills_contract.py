@@ -14,10 +14,10 @@ import pytest
 from crapkit.cli import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-CRAPKIT_SKILL = "skills/crapkit/SKILL.md"
-CUTS = "skills/crapkit/cuts.md"
-RECOVER_SKILL = "skills/crapkit-recover/SKILL.md"
-ONBOARD_SKILL = "skills/crapkit-onboard/SKILL.md"
+CRAPKIT_SKILL = "plugin/skills/crapkit/SKILL.md"
+CUTS = "plugin/skills/crapkit/cuts.md"
+RECOVER_SKILL = "plugin/skills/crapkit-recover/SKILL.md"
+ONBOARD_SKILL = "plugin/skills/crapkit-onboard/SKILL.md"
 ADOPTION = "docs/adoption.md"
 PAGES = (CRAPKIT_SKILL, CUTS, RECOVER_SKILL, ONBOARD_SKILL, ADOPTION)
 AUTO_SKILLS = (CRAPKIT_SKILL, RECOVER_SKILL)

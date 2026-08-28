@@ -1,0 +1,19 @@
+{
+  "case": "missing_file_path",
+  "why": "NotebookEdit carries notebook_path, not file_path, and it is out of protocol 1. Any other tool whose input names no file is the same case: nothing to judge.",
+  "fixture": "measured_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "NotebookEdit",
+    "tool_input": {
+      "notebook_path": "{REPO}/calc/grade.ipynb",
+      "new_source": "def sprawl(n):"
+    }
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

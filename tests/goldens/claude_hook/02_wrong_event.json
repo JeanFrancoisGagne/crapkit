@@ -1,0 +1,20 @@
+{
+  "case": "wrong_event",
+  "why": "Protocol 1 judges PostToolUse and nothing else. PreToolUse arrives before the edit lands, and a Stop hook that exits 2 blocks the stop, which on a filesystem-fed verdict is an infinite loop.",
+  "fixture": "measured_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    }
+  },
+  "expect": {"exit": 0, "stderr": []}
+}
