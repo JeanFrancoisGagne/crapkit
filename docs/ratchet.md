@@ -316,9 +316,23 @@ Comparison happens at the precision the mark is stored at (four decimals). `cov`
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
 tree against its own mark.
 
-The pre-commit gate reads the ratchet too: `rescore --gate` skips functions a mark already
-covers at or under its recorded value. At or under the mark, the function is exactly the
-debt the repo signed up for.
+The pre-commit gate reads the ratchet too, and the two gates ask it different questions.
+`rescore --gate` holds a scored row, so it skips functions a mark already covers **at or
+under its recorded value**. At or under the mark, the function is exactly the debt the repo
+signed up for.
+
+`hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
+a ccn and no CRAP, and there is nothing to compare against a mark. The hook therefore skips
+a function on the **existence** of a `(path, long_name)` mark, and says how many it skipped:
+
+```
+crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises
+```
+
+That is deliberately looser than the flag: editing a marked function past its mark still
+commits. `verify` compares the numbers and exits 7, which is where a risen mark is caught.
+Without the exemption the alternative is worse — a comment inside any of a seeded repo's
+marked functions refuses the commit, so a repo that ratcheted its debt cannot touch it.
 
 ---
 
