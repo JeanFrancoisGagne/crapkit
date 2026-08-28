@@ -1,12 +1,16 @@
-"""Rust and shell all the way through: git ls-files, the pool, the store.
+"""Rust, shell and PowerShell all the way through: git ls-files, the pool, the store.
 
-The unit tests measure both readers in this process, where they are registered
+The unit tests measure the readers in this process, where they are registered
 because the test module imported them. The path that actually runs a repo does
 not: `analyze_jobs` hands the file list to a ProcessPoolExecutor once there are
 16 or more of them, and a spawned child on Windows imports `crapkit.analyze` and
 nothing else. Registration wired anywhere but that module's scope leaves the
-children measuring `.rs` with the reader that counts no match arm and `.sh` with
-lizard's C reader, and both answers come back shaped like right ones.
+children measuring `.rs` with the reader that counts no match arm and `.sh` and
+`.ps1` with lizard's C reader, and every answer comes back shaped like a right one.
+
+The same is true of decoding, which is why the PowerShell file here is cp1252
+bytes: a child that let `io.open` choose the encoding names its function
+differently on Windows and on Linux.
 
 So this repo carries enough files to force the pool, and the numbers below are
 hand-counted from the sources above them.
@@ -59,10 +63,32 @@ RELOAD = """function reload {
 """
 RELOAD_CCN = 2
 
+# Six arms plus a default, base 1 + 6 = 7. Read as C this reports a function
+# named `if` and never sees Invoke-Route at all. The `é` is the second half of
+# the file's job: it is one cp1252 byte, so a worker that decoded by the
+# machine's locale would write `Invoke-Rout` on a UTF-8 box.
+ROUTE = """function Invoke-Route {
+    param([int]$Code, [switch]$Force)
+    switch ($Code) {
+        1 { return "un" }
+        2 { return "deux" }
+        3 { return "trois" }
+        4 { return "quatre" }
+        5 { return "cinq" }
+        6 { return "café" }
+        default { return "" }
+    }
+}
+"""
+ROUTE_CCN = 7
+ROUTE_BYTES = ROUTE.replace("é", "\xe9").encode("cp1252")
+
 TOML = ('[crapkit]\ntarget = 6\n\n'
         '[[scope]]\nname = "rs"\npaths = ["src"]\nlanguages = ["rust"]\n'
         'coverage_optional = true\n\n'
         '[[scope]]\nname = "sh"\npaths = ["scripts"]\nlanguages = ["shell"]\n'
+        'coverage_optional = true\n\n'
+        '[[scope]]\nname = "ps"\npaths = ["tools"]\nlanguages = ["powershell"]\n'
         'coverage_optional = true\n')
 
 # analyze.analyze_jobs pools at 16 jobs. 18 Rust files plus 2 shell ones clears
@@ -87,6 +113,8 @@ def polyglot_repo(tmp_path: Path) -> Path:
         write(tmp_path / "src" / f"m{i:02d}.rs", CLASSIFY)
     write(tmp_path / "scripts" / "deploy.sh", DEPLOY)
     write(tmp_path / "scripts" / "reload.bash", RELOAD)
+    (tmp_path / "tools").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tools" / "route.ps1").write_bytes(ROUTE_BYTES)
     for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
                 ["git", "-c", "user.email=t@t", "-c", "user.name=t",
                  "commit", "-q", "-m", "init"]):
@@ -100,17 +128,33 @@ def store_rows(repo: Path, run_id: int) -> dict[str, int]:
     return {row.path: row.ccn for row in store.read_rows(run_id)}
 
 
-def test_rust_and_shell_land_in_the_store_with_the_hand_counted_ccn(polyglot_repo: Path):
+def test_rust_shell_and_powershell_land_in_the_store_with_the_hand_counted_ccn(
+        polyglot_repo: Path):
     res = run_cli(polyglot_repo, "inventory", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
     summary = json.loads(res.stdout)
 
-    assert summary["files"] == RUST_FILES + 2
-    assert summary["functions"] == RUST_FILES + 2
+    assert summary["files"] == RUST_FILES + 3
+    assert summary["functions"] == RUST_FILES + 3
     by_path = store_rows(polyglot_repo, summary["run_id"])
     assert by_path["src/m00.rs"] == CLASSIFY_CCN
     assert by_path["scripts/deploy.sh"] == DEPLOY_CCN
     assert by_path["scripts/reload.bash"] == RELOAD_CCN
+    assert by_path["tools/route.ps1"] == ROUTE_CCN
+
+
+def test_a_pool_worker_decoded_the_cp1252_powershell_file_by_content(polyglot_repo: Path):
+    """The name is the assertion. A worker that let `io.open` pick the encoding
+    writes `Invoke-Rout` where the locale is UTF-8 and `Invoke-RoutÃ©`-shaped
+    mojibake where it is cp1252, and the ratchet keys on path::long_name."""
+    res = run_cli(polyglot_repo, "inventory", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+
+    store = SnapshotStore(polyglot_repo / ".crapkit" / "crap.sqlite")
+    names = [row.long_name for row in store.read_rows(json.loads(res.stdout)["run_id"])
+             if row.path == "tools/route.ps1"]
+
+    assert names == ["Invoke-Route"]
 
 
 def test_every_pool_worker_measured_rust_the_same_way(polyglot_repo: Path):
@@ -133,13 +177,13 @@ def test_the_scopes_claim_their_own_files(polyglot_repo: Path):
     store = SnapshotStore(polyglot_repo / ".crapkit" / "crap.sqlite")
     scopes = {row.scope for row in store.read_rows(json.loads(res.stdout)["run_id"])}
 
-    assert scopes == {"rs", "sh"}
+    assert scopes == {"rs", "sh", "ps"}
 
 
 def test_doctor_passes_on_a_cc_only_rust_and_shell_repo(polyglot_repo: Path):
-    """Neither language has a coverage parser, so both scopes declare
-    `coverage_optional`. Without it a lane-less scope is a doctor FAIL, which is
-    the whole reason the flag exists."""
+    """No coverage parser reads any of the three languages, so all three scopes
+    declare `coverage_optional`. Without it a lane-less scope is a doctor FAIL,
+    which is the whole reason the flag exists."""
     run_cli(polyglot_repo, "inventory", "--json")
 
     res = run_cli(polyglot_repo, "doctor", "--json")

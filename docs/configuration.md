@@ -31,7 +31,7 @@ Four tables: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
 | `alert_command` | string | `""` | A shell command that receives a digest or override body on **stdin**. `digest --alert` uses it, and an override refuses to grant without it. Never interpolated into the shell string. |
 | `scoped_tests` | table | none | Written as its own table, `[crapkit.scoped_tests]`, mapping scope name to a command template. `test-scoped` fills `{files}` with the quoted file list; a template with no `{files}` runs as written, which is how a scope runs its whole suite when its tests live outside its own `paths`. It is also step 4 of the burn-down loop and `brief`'s `commands.scoped_tests`, so **doctor warns** about a scope a lane measures with no template behind it: `null` there leaves a session with nothing to run between the gate and verify. |
 | `notes` | array of string | `[]` | House rules for this repo, in the config rather than in a file an agent has to find. `brief` carries them into the packet as `notes`, repo-wide lines first, then the scope's own. crapkit never parses them. |
-| `mutation_command` | string | `""` | The suite run once per mutant. A nonzero exit means the mutant was killed. `mutate` refuses to run without it. Shell files in the diff are skipped and named on stderr: `<` and `>` are redirections in shell, so their mutants would be noise. |
+| `mutation_command` | string | `""` | The suite run once per mutant. A nonzero exit means the mutant was killed. `mutate` refuses to run without it. Shell and PowerShell files in the diff are skipped and named on stderr: `<` and `>` are redirections in both, so their mutants would be noise. |
 | `mutation_timeout_seconds` | int >= 1 | `300` | Per-mutant timeout. Expiry counts as killed. At the default cap of 100 mutants this bounds one `mutate` run at over 8 hours, so lower it for a slow suite. |
 | `mutation_workers` | int >= 1 | `1` | Mutants run at once. `1` applies them to the live working tree one at a time. Above 1, crapkit adds that many detached git worktrees, deals mutants round-robin, and removes every worktree on the way out, raise included. |
 | `diff_uncovered_max` | int >= 0 | absent | Ceiling on changed lines that never ran. **Absent means warn only**: `verify` still prints `warning: N changed line(s) have no coverage` on stderr and lists the first 20, but exits 0. Set it and a breach exits 9. |
@@ -59,7 +59,7 @@ languages. Every tracked source file in a declared language must belong to a sco
 |---|---|---|---|---|
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring). |
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file. |
-| `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`. A file joins the scope only when both its path prefix and its extension match. |
+| `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
 | `coverage_optional` | bool | no | `false` | Code no test can reach. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
@@ -76,10 +76,24 @@ Extensions per language:
 | `go` | `.go` |
 | `rust` | `.rs` |
 | `shell` | `.sh`, `.bash` |
+| `powershell` | `.ps1`, `.psm1` |
 
-`shell` reports functions only. Statements outside any function belong to lizard's
-`*global*` pseudo-function, exactly like Python module-level code, so a script that is one
-long top-level sequence reports nothing — that is the answer, not a parse failure.
+`shell` and `powershell` report functions only. Statements outside any function belong to
+lizard's `*global*` pseudo-function, exactly like Python module-level code, so a script that
+is one long top-level sequence reports nothing — that is the answer, not a parse failure.
+
+`powershell` counts one point per `switch` arm, the way `case` is counted in C, and `default`
+is free. Its keywords are matched case-sensitively as written: `If (` in code counts nothing.
+
+Pester names its test files `Foo.Tests.ps1`, beside the source they test, and **no default
+exclude claims that spelling** — `**/*.test.*` does not match `.Tests.ps1`, and crapkit does
+not invent a glob that would delete production files from repos that name scripts that way.
+A repo with a Pester suite adds one line itself:
+
+```toml
+[exclude]
+globs = ["**/*.Tests.ps1"]
+```
 
 Scopes are tried in declaration order; the first whose path prefix **and** extension both
 match wins. A prefix-only match does not stop the search, so two scopes sharing a prefix but

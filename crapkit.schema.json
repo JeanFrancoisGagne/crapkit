@@ -37,7 +37,7 @@
         "properties": {
           "name": {"type": "string"},
           "paths": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-          "languages": {"type": "array", "items": {"enum": ["typescript", "tsx", "javascript", "python", "swift", "go", "rust", "shell"]}, "minItems": 1},
+          "languages": {"type": "array", "items": {"enum": ["typescript", "tsx", "javascript", "python", "swift", "go", "rust", "shell", "powershell"]}, "minItems": 1},
           "target": {"type": "integer", "minimum": 1, "description": "per-scope ceiling overriding the repo target"},
           "coverage_optional": {"type": "boolean", "description": "code no test can reach: scored cc-only (crap = ccn), needs no lane"},
           "notes": {"type": "array", "items": {"type": "string"}, "description": "operational traps specific to this scope, quoted verbatim to whoever edits its files"}

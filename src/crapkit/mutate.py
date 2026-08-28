@@ -6,9 +6,10 @@ boolean connectives, and boolean literals — the mutants that catch a test
 suite asserting nothing. String literals are masked and comment lines skipped:
 a survivor in dead text would erode trust in the survivor list.
 
-The language decides the table, and one language has no table at all. Shell
-spells redirection with the same `<` and `>` this module treats as comparisons,
-so it is refused rather than mutated — see `UNMUTABLE` for the measurement.
+The language decides the table, and two languages have no table at all. Shell
+and PowerShell both spell redirection with the same `<` and `>` this module
+treats as comparisons, so both are refused rather than mutated — see
+`UNMUTABLE` for the measurement.
 """
 from __future__ import annotations
 
@@ -50,7 +51,8 @@ _STRING_RE = re.compile(r"'[^']*'|\"[^\"]*\"|`[^`]*`")
 # `!=`, `<`, `>`, `&&`, `||`, `true` and `false` exactly as C does, and its `..`
 # and `..=` ranges contain none of those tokens, so they need no `_PROTECT` entry
 # the way Swift's `0..<n` did (measured on a range-heavy function: zero mutants).
-_LANGUAGE_BY_SUFFIX = {".py": "python", ".rs": "rust", ".sh": "shell", ".bash": "shell"}
+_LANGUAGE_BY_SUFFIX = {".py": "python", ".rs": "rust", ".sh": "shell", ".bash": "shell",
+                       ".ps1": "powershell", ".psm1": "powershell"}
 
 # Languages this module refuses, with the reason a user reads. Shell's `<` and
 # `>` are redirections: on a 9-line function 8 of 11 mutants flipped one
@@ -61,6 +63,9 @@ _LANGUAGE_BY_SUFFIX = {".py": "python", ".rs": "rust", ".sh": "shell", ".bash": 
 UNMUTABLE = {
     "shell": "'<' and '>' are redirections in shell, not comparisons, and its "
              "comparisons ('-eq', '-gt', '-lt') are no part of crapkit's operator table",
+    "powershell": "'<' and '>' are redirections in PowerShell, not comparisons, and its "
+                  "comparisons ('-eq', '-gt', '-lt') are no part of crapkit's operator "
+                  "table; '-and'/'-or' are its boolean connectives and are not either",
 }
 
 

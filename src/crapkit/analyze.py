@@ -5,6 +5,7 @@ nested node_modules (measured hang on the first consumer repo).
 """
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ from ._pygdefer import deferred_pygments
 with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
 
+    from .lizardpowershell import register as _register_powershell
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
 
@@ -25,26 +27,28 @@ from .errors import ToolError
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord
 
-# lizard picks a reader by extension off a hardcoded list, and neither of these
-# is on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
-# and `.sh` resolves to nothing at all, which lizard answers with CLikeReader
-# rather than a failure. Both belong HERE, at the module scope of the module a
-# ProcessPoolExecutor child imports, or spawned workers measure with the readers
-# lizard shipped and report plausible wrong numbers.
+# lizard picks a reader by extension off a hardcoded list, and none of these is
+# on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
+# and `.sh` and `.ps1` resolve to nothing at all, which lizard answers with
+# CLikeReader rather than a failure. All three belong HERE, at the module scope
+# of the module a ProcessPoolExecutor child imports, or spawned workers measure
+# with the readers lizard shipped and report plausible wrong numbers.
 #
-# lizardshell already registers itself on import and lizardrust deliberately does
-# not (rebinding a name in another package's namespace is not something an import
-# should do quietly). Calling both keeps the wiring readable in one place and
-# costs nothing: each is idempotent.
+# lizardshell and lizardpowershell already register themselves on import and
+# lizardrust deliberately does not (rebinding a name in another package's
+# namespace is not something an import should do quietly). Calling all three
+# keeps the wiring readable in one place and costs nothing: each is idempotent.
 _register_rust()
 _register_shell()
+_register_powershell()
 
 _POOL_THRESHOLD = 16
 
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 5  # 5: Rust match arms count, and .sh/.bash are read as shell
+ANALYSIS_VERSION = 6  # 6: .ps1/.psm1 are read as PowerShell, and source bytes
+#                          decode utf-8 then cp1252 instead of by machine locale
 
 # The three tokens lizard's modified rule reacts to. Membership is checked before
 # anything else runs, so the common token pays one frozenset lookup.
@@ -137,6 +141,87 @@ def _record(rel_path: str, fn) -> FunctionRecord:
         nesting=getattr(fn, "max_nesting_depth", 0) or 0,
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
     )
+
+
+# --- how a source file's bytes become text -------------------------------------
+#
+# lizard opens a source file with `io.open(path, 'r')` and no encoding, so the
+# MACHINE'S LOCALE decides what a repo scores. Measured on one function,
+# `function Write-Café`, written once as UTF-8 and once as cp1252, read on a
+# cp1252 interpreter and on a UTF-8 one:
+#
+#     source     cp1252 reader        utf-8 reader
+#     utf-8      no function at all   Write-Café
+#     cp1252     Write-Café           Write-Caf
+#
+# The empty cell is not a rounding error: `é` arrives as `Ã` plus `©`, the `©`
+# is no word character, and the declaration stops being one. The ratchet keys on
+# path::long_name, so those are three different rows for one commit, and a
+# Windows developer and a Linux CI cannot see each other's baseline.
+#
+# utf-8 first, cp1252 second, replacement for the five bytes cp1252 leaves
+# undefined. That is the whole rule and it is fixed rather than environmental:
+# all four cells above read `Write-Café`. The fallback is cp1252 rather than
+# latin-1 because Windows PowerShell 5.1 writes cp1252, and because latin-1
+# decodes every byte and so can never say it was wrong.
+#
+# UTF-16 is NOT handled. `Out-File` and the ISE write it, and such a file
+# decodes here as NUL-separated cp1252 text that reports no function; it
+# reported none before this change either, so nothing regressed and the narrow
+# rule stays narrow.
+
+
+def _characters(raw: bytes) -> str:
+    if raw.startswith(codecs.BOM_UTF8):
+        raw = raw[len(codecs.BOM_UTF8):]
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", "replace")
+
+
+def decode_source(raw: bytes) -> str:
+    """Source bytes as text, decoded by content rather than by machine locale.
+
+    The single rule for every path into lizard: a file on disk, and a staged
+    blob the pre-commit gate never writes down. Those two must agree or the
+    gate judges different content than the inventory scores.
+
+    Line endings are normalized the way `io.open(path, 'r')` normalized them,
+    because that is what lizard did and every recorded line number and NLOC in
+    every cache depends on it: a lone `\\r` left in the stream is one more
+    whitespace token, not one more line.
+    """
+    return _characters(raw).replace("\r\n", "\n").replace("\r", "\n")
+
+
+def read_source(path: str) -> str:
+    return decode_source(Path(path).read_bytes())
+
+
+def _install_decoder() -> None:
+    """Point lizard's own file read at `read_source`. Idempotent.
+
+    A rebind rather than a replacement for `FileAnalyzer.__call__`, so lizard
+    keeps the IOError branch that answers a file deleted mid-run with an empty
+    result instead of a traceback, and keeps reading each file exactly once.
+    `lizard.py` binds `auto_read` into its own module namespace at import, and
+    `FileAnalyzer.__call__` resolves it there on every call.
+
+    Raises when that name is gone, which is what a lizard release that reads
+    source some other way would look like. Loud beats an attribute nobody
+    reads and a decode that silently went back to the locale's.
+    """
+    if not hasattr(lizard, "auto_read"):
+        raise RuntimeError(
+            f"crapkit.analyze._install_decoder() found no lizard.auto_read to "
+            f"rebind: lizard {lizard.version} reads source some other way. "
+            f"Rewrite this against the new mechanism; leaving it undone makes "
+            f"every non-ASCII file score by the machine's locale.")
+    lizard.auto_read = read_source
+
+
+_install_decoder()
 
 
 def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:

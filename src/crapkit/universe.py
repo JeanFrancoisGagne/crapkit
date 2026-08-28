@@ -22,6 +22,7 @@ LANGUAGE_EXTENSIONS = {
     "go": (".go",),
     "rust": (".rs",),
     "shell": (".sh", ".bash"),
+    "powershell": (".ps1", ".psm1"),
 }
 
 # Test directories are excluded case-insensitively: Swift convention capitalizes Tests/.

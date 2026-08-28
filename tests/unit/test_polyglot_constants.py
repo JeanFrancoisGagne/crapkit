@@ -220,7 +220,7 @@ def test_the_closed_range_operator_shields_the_tokens_inside_it():
 
 DISPLAY = {"typescript": "TypeScript", "tsx": "TSX", "javascript": "JavaScript",
            "python": "Python", "swift": "Swift", "go": "Go", "rust": "Rust",
-           "shell": "shell"}
+           "shell": "shell", "powershell": "PowerShell"}
 
 
 def test_every_supported_language_has_a_display_name():
