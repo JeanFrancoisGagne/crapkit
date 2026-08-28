@@ -2,9 +2,10 @@
 
 crapkit scores every function in your repo on complexity times uncovered risk, ranks the
 worst ones by how often the file changes, and blocks commits that add more. It reads
-TypeScript, TSX, JavaScript and Python through [lizard](https://github.com/terryyin/lizard),
+TypeScript, TSX, JavaScript, Python, Swift and Go through [lizard](https://github.com/terryyin/lizard),
 and joins per-function branch coverage from istanbul or coverage.py artifacts your own test
-command already produces. Every read-side command speaks JSON with a pinned schema, because
+command already produces. Swift and Go have no coverage parser: declare those scopes
+`coverage_optional` and they score on complexity alone. Every read-side command speaks JSON with a pinned schema, because
 half the callers are coding agents.
 
 ```
@@ -104,7 +105,7 @@ paths = ["calc"]
 languages = ["python"]
 
 [exclude]
-globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
+globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
 
 [[lane]]
 name = "py"

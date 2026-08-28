@@ -6,7 +6,7 @@ importlib.metadata, email, zipfile and socket. Measured on this box: 42ms with
 pygments, 16ms without, paid by every process that touches the analysis stack,
 the pre-commit hook included.
 
-crapkit analyzes five languages (typescript, tsx, javascript, python, swift).
+crapkit analyzes six languages (typescript, tsx, javascript, python, swift, go).
 Erlang is not one of them and no scope can name it. The readers that need
 pygments are still SHIPPED, not removed: `deferred_pygments()` puts proxies in
 sys.modules for the duration of the lizard import, so the readers bind stand-ins
