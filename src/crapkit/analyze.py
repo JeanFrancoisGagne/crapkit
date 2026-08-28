@@ -17,17 +17,34 @@ from ._pygdefer import deferred_pygments
 with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
 
+    from .lizardrust import register as _register_rust
+    from .lizardshell import register as _register_shell
+
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord
+
+# lizard picks a reader by extension off a hardcoded list, and neither of these
+# is on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
+# and `.sh` resolves to nothing at all, which lizard answers with CLikeReader
+# rather than a failure. Both belong HERE, at the module scope of the module a
+# ProcessPoolExecutor child imports, or spawned workers measure with the readers
+# lizard shipped and report plausible wrong numbers.
+#
+# lizardshell already registers itself on import and lizardrust deliberately does
+# not (rebinding a name in another package's namespace is not something an import
+# should do quietly). Calling both keeps the wiring readable in one place and
+# costs nothing: each is idempotent.
+_register_rust()
+_register_shell()
 
 _POOL_THRESHOLD = 16
 
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 4  # 4: cognitive stopped reading 0 for every Swift and Kotlin function
+ANALYSIS_VERSION = 5  # 5: Rust match arms count, and .sh/.bash are read as shell
 
 # The three tokens lizard's modified rule reacts to. Membership is checked before
 # anything else runs, so the common token pays one frozenset lookup.

@@ -51,17 +51,30 @@ def _mutation_targets(root: Path, files: list | None) -> dict:
     return targets
 
 
-def _collect_mutants(root: Path, targets: dict, max_mutants: int) -> list:
-    from ..mutate import file_mutants
+def _file_mutants(root: Path, rel: str, lines) -> list:
+    """One file's mutants: none when it is gone, none when crapkit refuses its
+    language. A refusal is printed with the file named — mutate is diff-scoped,
+    so an unmutable file arrives beside the ones the run was aimed at, and
+    dropping it silently would leave a score built on fewer files than it says.
+    """
+    from ..mutate import file_mutants, mutation_language, refusal
 
+    path = root / rel
+    if not path.is_file():
+        return []
+    language = mutation_language(rel)
+    reason = refusal(language)
+    if reason:
+        print(f"crapkit: not mutating {rel}: {reason}", file=sys.stderr)
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return [m._replace(path=rel) for m in file_mutants(text, lines, language)]
+
+
+def _collect_mutants(root: Path, targets: dict, max_mutants: int) -> list:
     out = []
     for rel, lines in sorted(targets.items()):
-        p = root / rel
-        if not p.is_file():
-            continue
-        language = "python" if rel.endswith(".py") else "typescript"
-        for m in file_mutants(p.read_text(encoding="utf-8", errors="replace"), lines, language):
-            out.append(m._replace(path=rel))
+        out += _file_mutants(root, rel, lines)
     if len(out) > max_mutants:
         print(f"crapkit: capping at {max_mutants} of {len(out)} mutants "
               f"(raise --max-mutants to run them all)", file=sys.stderr)
