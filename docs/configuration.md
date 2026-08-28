@@ -59,7 +59,7 @@ languages. Every tracked source file in a declared language must belong to a sco
 |---|---|---|---|---|
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring). |
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file. |
-| `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`. A file joins the scope only when both its path prefix and its extension match. |
+| `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
 | `coverage_optional` | bool | no | `false` | Code no test can reach. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
@@ -73,6 +73,7 @@ Extensions per language:
 | `javascript` | `.js`, `.jsx`, `.mjs`, `.cjs` |
 | `python` | `.py` |
 | `swift` | `.swift` |
+| `go` | `.go` |
 
 Scopes are tried in declaration order; the first whose path prefix **and** extension both
 match wins. A prefix-only match does not stop the search, so two scopes sharing a prefix but
@@ -151,7 +152,7 @@ globs = ["**/dist/**", "dist/**"]
 
 ```toml
 [exclude]
-globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
+globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
 ```
 
 The six `*.config.*` entries keep runner config files (`vitest.config.ts` and friends) out

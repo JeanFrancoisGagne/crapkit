@@ -11,6 +11,9 @@ _EXT_LANGUAGE = {ext: lang for lang, exts in LANGUAGE_EXTENSIONS.items() for ext
 DEFAULT_EXCLUDES = (
     "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
     "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py",
+    # Go puts its tests beside the source, so the test-directory rule never
+    # fires on them and every _test.go file would score as production code
+    "**/*_test.go",
     # runner config files the docs themselves tell users to create; globs are
     # whole-path, so the root form and the nested form are both required
     "*.config.ts", "*.config.js", "*.config.mts",

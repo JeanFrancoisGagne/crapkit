@@ -6,11 +6,14 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 
-SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift"})
+SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift", "go"})
 SUPPORTED_PARSERS = frozenset({"istanbul", "coveragepy"})
 DEFAULT_TARGET = 6
 
-_SOURCE_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs", ".py")
+# Only what a vitest command line can carry: this tuple guards istanbul lane
+# commands against a positional file filter, and no .swift or .go path appears
+# in one.
+_SOURCE_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs", ".cjs", ".py")
 
 
 class Scope(NamedTuple):

@@ -19,6 +19,7 @@ LANGUAGE_EXTENSIONS = {
     "javascript": (".js", ".jsx", ".mjs", ".cjs"),
     "python": (".py",),
     "swift": (".swift",),
+    "go": (".go",),
 }
 
 # Test directories are excluded case-insensitively: Swift convention capitalizes Tests/.

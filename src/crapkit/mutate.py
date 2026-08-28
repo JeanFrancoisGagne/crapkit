@@ -32,8 +32,10 @@ _OPS = {
                    "&&": ("||",), "||": ("&&",), "true": ("false",), "false": ("true",)},
 }
 # a short token matching INSIDE one of these is not that operator (== in ===,
-# > in => arrows, < in <=): skip the occurrence entirely
-_PROTECT = ("===", "!==", "==", "!=", "<=", ">=", "=>", "->")
+# > in => arrows, < in <=, < in a Swift half-open range): skip the occurrence
+# entirely. `0..<b` mutated to `0..<=b` does not compile, so the mutant dies on
+# the compiler and reads as killed by a test that never ran.
+_PROTECT = ("===", "!==", "==", "!=", "<=", ">=", "=>", "->", "..<", "...")
 _COMMENT_PREFIXES = ("#", "//", "/*", "*")
 _STRING_RE = re.compile(r"'[^']*'|\"[^\"]*\"|`[^`]*`")
 

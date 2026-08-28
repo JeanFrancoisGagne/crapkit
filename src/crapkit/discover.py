@@ -217,11 +217,15 @@ def _indent(line: str) -> int:
 
 
 def _def_pattern(identifier: str) -> re.Pattern[str]:
-    """A line that DEFINES the name: the keyword forms of both language
-    families, plus the method shorthand a class body uses."""
+    """A line that DEFINES the name: the keyword forms of every language family
+    crapkit reads, plus the method shorthand a class body uses.
+
+    `function` sits before `func` and `fun` in the alternation so a JavaScript
+    definition never matches on a prefix of its own keyword.
+    """
     name = re.escape(identifier)
     return re.compile(r"^\s*" + _DEF_MODIFIERS
-                      + r"(?:(?:def|class|function|const|let|var)\s+" + name + r"\b"
+                      + r"(?:(?:def|class|function|func|fun|const|let|var)\s+" + name + r"\b"
                       + r"|" + name + r"\s*\([^)]*\)\s*[:{])")
 
 
