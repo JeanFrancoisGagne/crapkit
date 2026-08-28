@@ -108,8 +108,18 @@ own `notes` when it binds one tree only.
 living in a commit message nobody reads. Keys are documented in
 [configuration.md](configuration.md).
 
-## Install the skills last
+## Install the agent surface last
 
-Once the repo scores and `crapkit doctor` is clean, copy `skills/*` into `~/.claude/skills`,
-or your agent runtime's equivalent. Installed earlier, `crapkit-onboard` points at a config
-that does not exist yet and `crapkit` points at a store with no run in it.
+Once the repo scores and `crapkit doctor` is clean, install the plugin:
+
+```
+claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin install crapkit@crapkit
+```
+
+It carries the three skills, the read-side MCP server, and the advisory PostToolUse hook in
+one artifact whose version tracks the CLI's. A runtime with no plugin marketplace copies
+`plugin/skills/*` into `~/.claude/skills` instead and gets the skills alone.
+
+Installed earlier, `crapkit-onboard` points at a config that does not exist yet and
+`crapkit` points at a store with no run in it.

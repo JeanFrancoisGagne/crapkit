@@ -5,23 +5,25 @@ description: "Recover a crapkit run that refused: which exit code means what, th
 
 # Recovering a refused run
 
-Route by the string the command printed. Every row names the page that owns the failure and
-the one command to run before deciding anything.
+Route by the string the command printed. Every row links the page that owns the failure and
+names the one command to run before deciding anything. The links point into the crapkit
+repo on GitHub, so they resolve from whatever repo this session is working in.
 
 ## By exit code
 
 | Exit | What refused | Owner | First command |
 |---|---|---|---|
-| 3 | config: `crapkit.toml` unparseable, a metric-stamp mismatch, a `test-scoped` file under no templated scope | `docs/configuration.md` | `crapkit doctor` |
-| 4 | git: not a repository, or a baseline commit rewritten out of the history | `README.md#exit-codes` | `crapkit runs list` |
-| 5 | a lane produced no artifact, timed out past its retries, or refused a container | `docs/lanes.md#what-a-failed-lane-does-to-scoring` | `crapkit coverage --lane NAME` |
-| 6 | gate: a function the diff touched is over its ceiling | `AGENTS.md#3-gate-the-edit` | `crapkit rescore FILE --gate` |
-| 7 | ratchet: a marked function scores worse than its recorded mark | `docs/ratchet.md#how-verify-uses-the-ratchet` | `crapkit explain PATH NAME` |
-| 8 | a test that passed in the baseline fails now | `README.md#exit-codes` | `crapkit test-scoped FILE` |
-| 9 | more uncovered changed lines than `diff_uncovered_max` | `docs/configuration.md` | `crapkit verify --json` |
+| 3 | config: `crapkit.toml` unparseable, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
+| 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
+| 5 | a lane produced no artifact, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
+| 6 | gate: a function the diff touched is over its ceiling | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
+| 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
+| 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
+| 9 | more uncovered changed lines than `diff_uncovered_max` | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit verify --json` |
 
 `verify` reports the first of 6, 7, 8, 9 that fires, so a fixed 6 can uncover a 7 underneath
-it. Exit 1 is three unrelated things at once: `README.md#exit-1-means-one-of-three-things`
+it. Exit 1 is three unrelated things at once:
+[README: exit 1 means one of three things](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-1-means-one-of-three-things)
 splits them by command.
 
 ## "produced no artifact": four causes
@@ -31,10 +33,10 @@ quotes its tail.
 
 | Cause | Signature in the log | Owner |
 |---|---|---|
-| No coverage provider installed | `MISSING DEPENDENCY '@vitest/coverage-v8'`, or pytest rejecting `--cov` without pytest-cov | `docs/lanes.md#getting-an-artifact-out-of-vitest` |
-| Tests failed, so the runner wrote no report | a red suite and no file, vitest with `reportOnFailure` unset | `docs/lanes.md#reportonfailure` |
-| The report landed somewhere the lane does not name | the suite passed and `artifact` still points at nothing | `docs/lanes.md#where-artifacts-live` |
-| Killed or refused before it could write | `timed out after Ns (attempt N)`, or `host-only (container runs OOM)` | `docs/lanes.md#timeouts-and-retries` |
+| No coverage provider installed | `MISSING DEPENDENCY '@vitest/coverage-v8'`, or pytest rejecting `--cov` without pytest-cov | [docs: getting an artifact out of vitest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#getting-an-artifact-out-of-vitest) |
+| Tests failed, so the runner wrote no report | a red suite and no file, vitest with `reportOnFailure` unset | [docs: reportOnFailure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#reportonfailure) |
+| The report landed somewhere the lane does not name | the suite passed and `artifact` still points at nothing | [docs: where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live) |
+| Killed or refused before it could write | `timed out after Ns (attempt N)`, or `host-only (container runs OOM)` | [docs: timeouts and retries](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#timeouts-and-retries) |
 
 This is tooling, not your code. The run still happened: the failed lane's scopes fall back
 to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all.
@@ -55,8 +57,8 @@ legitimate:
 - Fix the findings the older baseline still shows, then rerun `crapkit verify`.
 - Accept the newer run by name: `crapkit verify --baseline N`, a visible act somebody can audit later.
 
-Owner: `README.md#the-trusted-baseline`. `crapkit runs list` prints `verdict=-` on runs that
-rendered no verdict.
+Owner: [README: the trusted baseline](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-trusted-baseline).
+`crapkit runs list` prints `verdict=-` on runs that rendered no verdict.
 
 ## A conflicted crapkit-ratchet.tsv
 
@@ -70,6 +72,6 @@ the merge:
 
     git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
 
-Owner: `docs/ratchet.md#the-git-merge-driver`. When the driver itself refuses
-(`marks from different metric versions cannot merge`), re-baseline one side with
-`crapkit ratchet seed` and merge again.
+Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
+When the driver itself refuses (`marks from different metric versions cannot merge`),
+re-baseline one side with `crapkit ratchet seed` and merge again.

@@ -1,0 +1,272 @@
+"""The plugin is the distribution artifact: three skills, one hook, one MCP server.
+
+Nothing in it is generated at install time, so drift between a manifest and the code
+it points at ships silently to every machine that installed the plugin. Four pins
+hold it: the manifest version against pyproject, the handler list against crapkit's
+own language->extension map, the event set against the safety contract, and every
+skill link against the blob URL, because `docs/lanes.md` resolves nowhere in the
+repo an agent is actually working in.
+"""
+from __future__ import annotations
+
+import json
+import re
+import tomllib
+from functools import lru_cache
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+PLUGIN = "plugin"
+PLUGIN_JSON = f"{PLUGIN}/.claude-plugin/plugin.json"
+HOOKS_JSON = f"{PLUGIN}/hooks/hooks.json"
+MCP_JSON = f"{PLUGIN}/.mcp.json"
+CRAPKIT_SKILL = f"{PLUGIN}/skills/crapkit/SKILL.md"
+RECOVER_SKILL = f"{PLUGIN}/skills/crapkit-recover/SKILL.md"
+ONBOARD_SKILL = f"{PLUGIN}/skills/crapkit-onboard/SKILL.md"
+SKILLS = (CRAPKIT_SKILL, RECOVER_SKILL, ONBOARD_SKILL)
+
+BLOB = "https://github.com/JeanFrancoisGagne/crapkit/blob/main/"
+# The two tools whose payload carries `tool_input.file_path`. NotebookEdit names
+# `notebook_path` and is out of protocol 1 on purpose.
+TOOLS = ("Edit", "Write")
+
+# A page that lives in the crapkit repo and nowhere else: bare, it points an agent
+# at a file the repo it is working in does not have.
+_REPO_PAGE = re.compile(r"docs/[\w.-]+\.(?:md|html)|README\.md|AGENTS\.md")
+_FLOOR = re.compile(r"crapkit (\d+\.\d+\.\d+) or newer")
+_LINK = re.compile(re.escape(BLOB) + r"([\w./-]+?)(?:#([\w-]+))?\)")
+_HEADING = re.compile(r"^#{1,6} +(.+?)\s*$", re.MULTILINE)
+_NOT_IN_SLUG = re.compile(r"[^\w\- ]")
+
+
+@lru_cache(maxsize=None)
+def _doc(name: str) -> str:
+    page = ROOT / name
+    assert page.is_file(), f"{name} does not exist"
+    return page.read_text(encoding="utf-8")
+
+
+def _json(name: str) -> dict:
+    return json.loads(_doc(name))
+
+
+def _frontmatter(page: str) -> str:
+    _, _, rest = _doc(page).partition("---\n")
+    block, _, _ = rest.partition("\n---\n")
+    assert block, f"{page} carries no frontmatter block"
+    return block
+
+
+def _field(page: str, key: str) -> str:
+    (line,) = [ln for ln in _frontmatter(page).splitlines() if ln.startswith(f"{key}:")]
+    return line.partition(":")[2].strip()
+
+
+def _bare_repo_page_mentions(text: str) -> list[str]:
+    """Every crapkit-repo page named without the blob URL in front of it."""
+    return [m.group(0) for m in _REPO_PAGE.finditer(text)
+            if not text[:m.start()].endswith(BLOB)]
+
+
+# --- A1: the skill pages ------------------------------------------------------
+
+def test_skill_links_absolute_and_descriptions_present():
+    """A skill installs into ~/.claude or a plugin cache and is read from inside
+    some other repo. `docs/ratchet.md` resolves there to nothing, so every repo
+    page a skill names carries its full blob URL. And a skill with no description
+    is a skill the model never reaches for."""
+    bare = {(page, mention) for page in SKILLS
+            for mention in _bare_repo_page_mentions(_doc(page))}
+    assert bare == set(), "each names a crapkit repo page that does not exist where it runs"
+
+    missing = [page for page in SKILLS if not _field(page, "description")]
+    assert missing == [], "no description is no pointer"
+
+
+def test_the_link_detector_sees_a_bare_reference_and_ignores_an_absolute_one():
+    """Guards the test above, which passes on a detector that finds nothing."""
+    assert _bare_repo_page_mentions("read `docs/lanes.md#timeouts` first") == ["docs/lanes.md"]
+    assert _bare_repo_page_mentions(f"read [lanes]({BLOB}docs/lanes.md#timeouts)") == []
+    assert _bare_repo_page_mentions("`README.md#exit-codes` owns it") == ["README.md"]
+
+
+def _slug(heading: str) -> str:
+    """GitHub's anchor form: lowered, punctuation dropped, spaces hyphenated."""
+    return _NOT_IN_SLUG.sub("", heading.lower()).replace(" ", "-")
+
+
+@lru_cache(maxsize=None)
+def _anchors(page: str) -> frozenset[str]:
+    return frozenset(_slug(heading) for heading in _HEADING.findall(_doc(page)))
+
+
+def _link_is_broken(path: str, anchor: str) -> bool:
+    """A link with no anchor only has to name a file that exists."""
+    if not (ROOT / path).is_file():
+        return True
+    return bool(anchor) and anchor not in _anchors(path)
+
+
+def test_every_skill_link_lands_on_a_page_and_heading_that_exist():
+    """An absolute URL fails silently: it 404s in a browser the agent is not
+    driving. Renaming a heading in docs/ has to break here instead."""
+    broken = {(page, path, anchor) for page in SKILLS
+              for path, anchor in _LINK.findall(_doc(page))
+              if _link_is_broken(path, anchor)}
+    assert broken == set(), "each link names a page or heading the repo does not hold"
+
+
+def test_the_slug_rule_matches_the_headings_it_is_pointed_at():
+    """Guards the test above: a slug rule that mangles every heading also passes
+    it, because the anchors then match nothing and the set comprehension is
+    filtered by `anchor and ...`."""
+    assert _slug('"produced no artifact": four causes') == "produced-no-artifact-four-causes"
+    assert "exit-codes" in _anchors("README.md")
+    assert "reportonfailure" in _anchors("docs/lanes.md")
+
+
+def test_the_skill_pages_still_link_out_at_all():
+    """Guards both link tests from the other side: a page that stopped naming any
+    repo page passes the absolute-link test by saying nothing, and a link
+    extractor that matches nothing passes the anchor test the same way."""
+    counted = {page: len(_LINK.findall(_doc(page))) for page in SKILLS}
+    assert min(counted.values()) >= 3, f"a skill page dropped its links: {counted}"
+    assert sum(counted.values()) >= 13
+
+
+def test_the_crapkit_description_quotes_both_strings_a_refused_commit_prints():
+    """A description quoting a string nothing prints is a pointer that never fires.
+    The two strings come out of two different files: the shell wrapper prints one,
+    the gate itself prints the other, and an agent reading the terminal sees both."""
+    from crapkit.cli import verifying
+
+    described = _field(CRAPKIT_SKILL, "description")
+    for text, quoted in ((_doc("git-hooks/pre-commit"), "commit blocked by the complexity gate"),
+                         (Path(verifying.__file__).read_text(encoding="utf-8"),
+                          "decompose before committing")):
+        assert quoted in text, f"the gate reworded {quoted!r}"
+        assert quoted in described, f"the description no longer quotes {quoted!r}"
+
+
+def test_the_onboarding_skill_leads_with_the_marketplace_flow():
+    """Copy-install is the fallback. The two marketplace lines come first, in
+    order, or a human types the fallback and never gets the hook or the MCP
+    server that only the plugin carries."""
+    text = _doc(ONBOARD_SKILL)
+    add = text.index("claude plugin marketplace add JeanFrancoisGagne/crapkit")
+    install = text.index("claude plugin install crapkit@crapkit")
+    copied = text.index("plugin/skills/")
+    assert add < install < copied, "the fallback is printed before the flow it falls back from"
+
+
+# --- A2: the manifests --------------------------------------------------------
+
+def test_plugin_version_matches_pyproject():
+    """One artifact, one version. A plugin.json that lags pyproject tells `doctor
+    --plugin-root` the CLI is ahead when nothing moved."""
+    pyproject = tomllib.loads(_doc("pyproject.toml"))
+    assert _json(PLUGIN_JSON)["version"] == pyproject["project"]["version"]
+
+
+def test_the_plugin_manifest_names_itself_and_its_cli_floor():
+    manifest = _json(PLUGIN_JSON)
+    assert manifest["name"] == "crapkit"
+    assert _FLOOR.search(manifest["description"]), \
+        "the description names no `crapkit X.Y.Z or newer` floor"
+
+
+def test_the_plugin_ships_the_three_skills_the_repo_holds():
+    found = sorted(p.parent.name for p in (ROOT / PLUGIN / "skills").glob("*/SKILL.md"))
+    assert found == ["crapkit", "crapkit-onboard", "crapkit-recover"]
+
+
+def test_the_plugin_tree_holds_no_python():
+    """`source: ./plugin` copies this tree into the plugin cache. A .py in it is a
+    fifth crapkit source tree that never executes, and crapkit's own unscoped-source
+    warning fires on it at every commit."""
+    assert sorted((ROOT / PLUGIN).rglob("*.py")) == []
+
+
+# --- the hook: generated from the language map, PostToolUse only ---------------
+
+def _handler(tool: str, extension: str) -> dict:
+    return {
+        "type": "command",
+        "command": "crapkit",
+        "args": ["claude-hook", "--protocol", "1"],
+        "timeout": 20,
+        "statusMessage": "crapkit advisory",
+        "async": True,
+        "asyncRewake": True,
+        "if": f"{tool}(*{extension})",
+    }
+
+
+def _generated_handlers() -> list[dict]:
+    """One handler per (tool, extension) pair, extensions in map order.
+
+    The `if` filter skips the spawn itself, so an extension crapkit measures but
+    the map forgot here is an extension the advisory never sees.
+    """
+    from crapkit.universe import LANGUAGE_EXTENSIONS
+
+    return [_handler(tool, extension)
+            for extensions in LANGUAGE_EXTENSIONS.values()
+            for extension in extensions
+            for tool in TOOLS]
+
+
+def _generated_hooks() -> dict:
+    return {"hooks": {"PostToolUse": [{"matcher": "|".join(TOOLS),
+                                       "hooks": _generated_handlers()}]}}
+
+
+def test_hooks_json_is_what_the_language_extension_map_generates():
+    """The committed file is generated output. Regenerate it here and diff, so a
+    new language in `LANGUAGE_EXTENSIONS` cannot land without its handlers."""
+    assert _json(HOOKS_JSON) == _generated_hooks()
+
+
+def test_the_generator_covers_every_extension_crapkit_measures():
+    """Guards the diff above: two empty dicts also compare equal."""
+    from crapkit.universe import LANGUAGE_EXTENSIONS
+
+    extensions = [e for exts in LANGUAGE_EXTENSIONS.values() for e in exts]
+    filters = {h["if"] for h in _generated_handlers()}
+    assert len(filters) == len(extensions) * len(TOOLS) >= 20
+    assert {"Edit(*.py)", "Write(*.py)", "Edit(*.rs)", "Write(*.tsx)"} <= filters
+
+
+def test_the_plugin_registers_post_tool_use_and_nothing_else():
+    """Safety contract #2. Exit 2 on Stop blocks the stop, and the gate reads the
+    filesystem rather than the conversation, so every non-actionable verdict loops
+    forever."""
+    assert list(_json(HOOKS_JSON)["hooks"]) == ["PostToolUse"]
+
+
+@pytest.mark.parametrize("field,value", [("async", True), ("asyncRewake", True),
+                                         ("timeout", 20), ("command", "crapkit")])
+def test_every_handler_stays_async_bare_exe_and_bounded(field: str, value: object):
+    """Sync hooks run serially: a 19-edit batch becomes a 3.6 s pause. `python`
+    resolves to the WindowsApps stub and to six venvs without crapkit; the console
+    script is the real exe Windows exec form needs."""
+    handlers = _json(HOOKS_JSON)["hooks"]["PostToolUse"][0]["hooks"]
+    assert {h[field] for h in handlers} == {value}
+
+
+# --- the MCP server -----------------------------------------------------------
+
+def test_the_mcp_manifest_runs_the_subcommand_the_parser_defines():
+    """`.mcp.json` lives under plugin/ so it never lands in project scope, where
+    it would raise a scope conflict for anyone developing crapkit itself."""
+    import argparse
+
+    from crapkit.cli import build_parser
+
+    servers = _json(MCP_JSON)["mcpServers"]
+    assert servers == {"crapkit": {"command": "python", "args": ["-m", "crapkit", "mcp"]}}
+
+    subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
+    assert "mcp" in subs[0].choices, "the manifest launches a subcommand argparse dropped"

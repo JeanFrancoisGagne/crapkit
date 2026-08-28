@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "python",
+      "args": ["-m", "crapkit", "mcp"]
+    }
+  }
+}

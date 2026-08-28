@@ -24,6 +24,21 @@ jobs:
       - name: gate the diff crapkit-style
         run: python -m crapkit hook-precommit || true
 
+  # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
+  # test can schema-check: a malformed handler fails here with exit 1. It does not
+  # read the repo-root marketplace.json, so `validate .` joins this step only once
+  # that file exists (it lands after the CLI is on PyPI, on purpose).
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: the plugin manifest, hooks and skills validate
+        run: claude plugin validate plugin --strict
+
   dogfood:
     runs-on: ubuntu-latest
     steps:

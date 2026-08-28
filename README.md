@@ -756,7 +756,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | [docs/ratchet.md](docs/ratchet.md) | Seeding, pruning, the git merge driver, metric stamps, debt policy, overrides. |
 | [docs/agent-json.md](docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
 | [docs/adoption.md](docs/adoption.md) | The judgment layer over the quickstarts: scope granularity, exclude vs lane, scoped_tests wiring, the first-verify taint hazard. |
-| [skills/](skills/) | Agent skills shipped with the repo (`crapkit`, `crapkit-recover`, `crapkit-onboard`) — install by copying to your agent runtime's skills directory. |
+| [plugin/](plugin/) | The Claude Code plugin: three skills (`crapkit`, `crapkit-recover`, `crapkit-onboard`), the read-side MCP server, and the advisory PostToolUse hook. Install with `claude plugin marketplace add JeanFrancoisGagne/crapkit` then `claude plugin install crapkit@crapkit`; other runtimes copy `plugin/skills/*` into their skills directory. |
 
 [crapkit.schema.json](crapkit.schema.json) is the authority on the config file shape.
 
