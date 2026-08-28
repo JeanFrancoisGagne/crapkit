@@ -448,11 +448,15 @@ without touching the repo-wide cache, and refuses the commit when a staged funct
 its scope ceiling. It needs no coverage data and no snapshot, so it costs the size of the
 commit, not the size of the repo.
 
-Two limits to know. The gate judges files a `[[scope]]` claims; a staged source file no
+Three limits to know. The gate judges files a `[[scope]]` claims; a staged source file no
 scope claims is not gated, and the hook says so on stderr (`N staged file(s) belong to no
 scope and were not gated`) so the hole is visible the moment a new top-level directory
-appears. And git runs hooks outside your shell's activated venv: bare `python` must resolve
-to an interpreter that has crapkit installed, or use the absolute form
+appears. A function the committed ratchet already carries a mark for is not gated either,
+so touching signed debt does not refuse the commit; the hook reports the count on stderr
+(`N staged function(s) carry a ratchet mark and were not gated`) and `crapkit verify` is
+what fails a mark that rose. And git runs hooks outside your shell's activated venv: bare
+`python` must resolve to an interpreter that has crapkit installed, or use the absolute
+form
 (`exec /path/to/venv/Scripts/python -m crapkit hook-precommit`).
 
 ### Route 1: `.git/hooks/pre-commit` (local, not committed)

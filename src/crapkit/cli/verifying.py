@@ -538,6 +538,54 @@ def _warn_unscoped_staged(unscoped: list) -> None:
               "(see docs/configuration.md)", file=sys.stderr)
 
 
+def _split_marked(violations: list, entries: list) -> tuple[list, list]:
+    """Staged violations split into (gated, exempt) on ratchet-mark EXISTENCE.
+
+    Existence, not the `crap > mark` rule `rescore --gate` uses: the gate judges
+    staged blobs, a blob carries no coverage, and without coverage there is no
+    CRAP to compare against a mark. So the question the hook can answer is the
+    only one it asks — did the repo already sign for this function?
+
+    Without it, touching signed debt is a wall. A comment inside one of
+    openclaw's 40,303 marked rows refused the commit while `rescore --gate` on
+    the same tree passed, so a session of green advisories ended at a red
+    commit. `verify` keeps the numeric check and is what catches a mark that
+    actually rose.
+    """
+    marked = {(e.path, e.long_name) for e in entries}
+    gated, exempt = [], []
+    for v in violations:
+        (exempt if (v.path, v.long_name) in marked else gated).append(v)
+    return gated, exempt
+
+
+def _note_marked_staged(exempt: list) -> None:
+    """One line, never a list. The count says the exemption fired; the marks
+    themselves are in the committed TSV, and naming them at every commit would
+    reprint debt the repo reads through `crapkit ratchet report`."""
+    if exempt:
+        print(f"crapkit gate: {len(exempt)} staged function(s) carry a ratchet mark and "
+              "were not gated — `crapkit verify` fails a mark that rises", file=sys.stderr)
+
+
+def _gated_violations(root: Path, cfg, violations: list) -> list:
+    """The breaches the commit is actually refused for.
+
+    The marks file is read only once something breached: a clean commit is the
+    common case and must not pay to load 40,303 rows it has no question for.
+
+    Through `_load_ratchet_or_die`, so an unparseable marks file names itself
+    and exits 3. Reading it raw would end a `git commit` in a traceback, which
+    is the one thing a gate on the mandatory path must not do.
+    """
+    if not violations:
+        return []
+    entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
+    gated, exempt = _split_marked(violations, entries)
+    _note_marked_staged(exempt)
+    return gated
+
+
 def _staged_gate(root: Path, cfg):
     """The gate's verdict, with both git reads started before lizard is imported.
 
@@ -562,7 +610,7 @@ def cmd_hook_precommit(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     gate = _staged_gate(root, cfg)
     _warn_unscoped_staged(gate.unscoped)
-    violations = gate.violations
+    violations = _gated_violations(root, cfg, gate.violations)
     if not violations:
         return 0
     print(f"crapkit gate: {len(violations)} staged function(s) exceed the complexity ceiling of {cfg.target}:")
