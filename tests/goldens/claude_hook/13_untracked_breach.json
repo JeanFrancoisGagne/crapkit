@@ -1,0 +1,27 @@
+{
+  "case": "untracked_breach",
+  "why": "git diff cannot see a file it never recorded, so an empty diff on an untracked path would pass every function in it: the one state where the verdict lies. A file git tracks nothing of is judged in full, the same rule rescore --gate applies.",
+  "fixture": "untracked_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "{REPO}/calc/new.py",
+      "content": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/new.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 function(s) over ceiling 6 in calc/new.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/new.py:1  sprawl( n )",
+      "the commit gate enforces this; decompose there or mark the debt"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "case": "unknown_claude_subcommand",
+  "why": "The namespace guard. A plugin naming a claude-* subcommand this CLI does not have would otherwise hit argparse's exit 2 and inject a usage dump into every edit on the machine. Every future plugin-ahead-of-CLI drift lands here and stays quiet.",
+  "fixture": "measured_breach",
+  "argv": ["claude-anything", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

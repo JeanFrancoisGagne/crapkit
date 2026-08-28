@@ -1,0 +1,21 @@
+{
+  "case": "unscoped_file",
+  "why": "Python source in a directory no [[scope]] owns. The loud unscoped warning stays where it already lives, in hook-precommit at commit time; per edit, silence wins.",
+  "fixture": "unscoped_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/other/thing.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/other/thing.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

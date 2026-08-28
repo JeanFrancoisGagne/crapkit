@@ -1,0 +1,21 @@
+{
+  "case": "no_toml",
+  "why": "The edit landed in a repo crapkit does not measure. 12 of the 14 repos on the machine this was measured against, and 47.5% of 7,773 historical edits. A hook that spoke here would be unusable, so this rung diverges from the house exit-3 policy on purpose.",
+  "fixture": "no_toml",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

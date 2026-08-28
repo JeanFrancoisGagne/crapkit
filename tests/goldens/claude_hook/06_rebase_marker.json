@@ -1,0 +1,21 @@
+{
+  "case": "rebase_marker",
+  "why": "Mid-rebase, mid-merge and mid-cherry-pick the working tree holds foreign content: lizard reads live conflict markers as two coexisting copies of every function, and the changed-range rule inverts against the rebase's temporary HEAD, so the same function draws opposite verdicts depending on which way the rebase runs.",
+  "fixture": "rebase_marker",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}
