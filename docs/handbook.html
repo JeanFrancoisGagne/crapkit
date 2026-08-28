@@ -146,7 +146,7 @@
 <header class="hero">
   <p class="kicker">The Handbook · self-contained · reads offline from a clone</p>
   <h1>crapkit</h1>
-  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for TypeScript, TSX, JavaScript, Python, Swift, Go, Rust, shell, C and C++, Objective-C, Vue, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
+  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for TypeScript, TSX, JavaScript, Python, Swift, Go, Rust, shell, PowerShell, C and C++, Objective-C, Vue, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
   <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
   <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> — Change Risk Anti-Patterns — was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
   <nav class="toc">
@@ -340,8 +340,38 @@
   <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code> — visible, never fatal, never a baseline.</li>
   <li><strong>The store</strong> keeps scored runs compactly (function identity written once, referenced per run), plus claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
   <li><strong>Churn</strong> comes from the git log over a configurable window, cached deflated and refreshed incrementally, so the expensive walk happens rarely.</li>
-  <li><strong>Rust</strong> is measured on a corrected reader: lizard lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a seven-arm dispatch scored 2 while the if/else-if chain doing the same work scored 4. crapkit counts one point per non-wildcard arm and retires the reader the day upstream fixes the issue — a test pins the stock reader's wrong answer, and it fails on that release.</li>
-  <li><strong>shell</strong> (<code>.sh</code>, <code>.bash</code>) gets a reader lizard ships none of, and reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level. No coverage parser reads a shell suite, so shell scopes are <code>coverage_optional</code> and score cc-only.</li>
+  <li><strong>Languages</strong> are the table below. Two of them run on readers crapkit wrote and one on a reader crapkit corrected, because lizard's answer was wrong rather than missing.</li>
+</ul>
+
+<h3>What crapkit reads</h3>
+<p>The left column is the label a <code>crapkit.toml</code> spells in <code>languages = [...]</code>. A file joins a scope only when its path prefix <em>and</em> its extension both match. <strong>Coverage</strong> is how a percentage arrives: crapkit ships two artifact parsers and no more, so most of this table scores cc-only — <code>crap = ccn</code>, under <code>coverage_optional = true</code>, with no lane to run.</p>
+<div class="tw"><table id="languages">
+  <tr><th>Language</th><th>Extensions</th><th>Coverage</th></tr>
+  <tr><td class="mono">python</td><td class="mono">.py</td><td><code>coveragepy</code></td></tr>
+  <tr><td class="mono">typescript</td><td class="mono">.ts</td><td><code>istanbul</code></td></tr>
+  <tr><td class="mono">tsx</td><td class="mono">.tsx</td><td><code>istanbul</code></td></tr>
+  <tr><td class="mono">javascript</td><td class="mono">.js .jsx .mjs .cjs</td><td><code>istanbul</code></td></tr>
+  <tr><td class="mono">swift</td><td class="mono">.swift</td><td>cc-only</td></tr>
+  <tr><td class="mono">kotlin</td><td class="mono">.kt .kts</td><td><strong>not admitted</strong> — blocked upstream</td></tr>
+  <tr><td class="mono">go</td><td class="mono">.go</td><td>cc-only</td></tr>
+  <tr><td class="mono">rust</td><td class="mono">.rs</td><td>cc-only</td></tr>
+  <tr><td class="mono">shell</td><td class="mono">.sh .bash</td><td>cc-only</td></tr>
+  <tr><td class="mono">cpp</td><td class="mono">.c .cc .cpp .cxx .h .hpp</td><td>cc-only</td></tr>
+  <tr><td class="mono">objectivec</td><td class="mono">.m .mm</td><td>cc-only</td></tr>
+  <tr><td class="mono">vue</td><td class="mono">.vue</td><td><code>istanbul</code>, when your own vitest run reports on <code>.vue</code> files</td></tr>
+  <tr><td class="mono">java</td><td class="mono">.java</td><td>cc-only</td></tr>
+  <tr><td class="mono">zig</td><td class="mono">.zig</td><td>cc-only</td></tr>
+  <tr><td class="mono">powershell</td><td class="mono">.ps1 .psm1</td><td>cc-only</td></tr>
+</table></div>
+
+<p>What each row costs you to know:</p>
+<ul>
+  <li><strong>Rust</strong> runs on a corrected reader: lizard lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a seven-arm dispatch scored 2 while the if/else-if chain doing the same work scored 4. crapkit counts one point per non-wildcard arm and retires the reader the day upstream fixes the issue — a test pins the stock reader's wrong answer, and it fails on that release.</li>
+  <li><strong>shell</strong> gets a reader lizard ships none of, and reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level. A script that is one long top-level sequence reports nothing, and that is the answer rather than a parse failure.</li>
+  <li><strong>PowerShell</strong> gets a reader too, and it counts one point per <code>switch</code> arm rather than one for the block — a twelve-arm dispatcher should not score the same 2 as a one-arm one. Source bytes are decoded utf-8 first and cp1252 second, by content instead of by the machine's locale: Windows PowerShell writes cp1252 by default, and left to <code>io.open</code> the same file scored one way on Windows and another on Linux.</li>
+  <li><strong>C and C++</strong> are one label, <code>cpp</code>, C included: lizard resolves all six suffixes to one reader, so two labels could never measure differently, and <code>.h</code> is the header both dialects share. A <code>&amp;&amp;</code> before the opening brace declares an rvalue reference rather than deciding anything and costs no cognitive complexity — the same rule covers <code>objectivec</code>, since <code>.mm</code> is Objective-C++. Both arms of an <code>#ifdef</code> fork are textually present, so a platform shim defines one function twice in one file; a ratchet mark keys on <code>(path, long_name)</code> and keeps the last, and <code>analyze</code> prints one stderr line naming any file that happens in.</li>
+  <li><strong>Vue</strong> scores the <code>&lt;script&gt;</code> block. Template directives (<code>v-if</code>, <code>v-for</code>) are HTML attributes to lizard and contribute nothing, so a component that branches in its template reports only what its methods do. <strong>Zig</strong> counts a <code>switch</code>'s <code>else</code> prong as one more case, so a Zig switch reads one point above its hand count — inflation only, which can cost a refactor that was not needed but never hides one that was.</li>
+  <li><strong>Kotlin</strong> is measured correctly and still not admitted. lizard's KotlinReader records only brace-bodied functions, so <code>fun sign(x: Int) = if (x &gt; 0) 1 else if (x &lt; 0) -1 else 0</code> yields no function at all and its two decisions land nowhere, not even in <code>*global*</code>. A language that can hide arbitrary branching from the gate is worse than one crapkit refuses, so the label waits on upstream.</li>
 </ul>
 
 <h3>Most of what you just read is a dial</h3>

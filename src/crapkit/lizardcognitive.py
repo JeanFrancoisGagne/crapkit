@@ -3,7 +3,8 @@
 Rides lizard's language-aware tokenizers, so TS/TSX/JS/Python/Swift all pay the
 same rules with no second parse and no new dependency:
   +1 and +nesting for if / ternary / switch / loops / catch-except
-  +1 flat for else / elif (an else-if chain costs one per link, no deepening)
+  +1 flat for else / elif / elseif (an else-if chain costs one per link, no
+  deepening)
   +1 per boolean-operator run, +1 each time the operator alternates
   +1 for a labeled break/continue or goto, +1 once for direct recursion
   try / finally / case labels / with are free; nesting rises inside the
@@ -28,7 +29,20 @@ The whitepaper's worked examples in tests/unit/test_cognitive.py are the spec.
 from __future__ import annotations
 
 _COUNTING = frozenset({"if", "for", "foreach", "while", "do", "catch", "except", "switch"})
-_BOOL_OPS = frozenset({"&&", "||", "??", "and", "or"})
+
+# `-and` and `-or` are PowerShell's, where `&&` and `||` chain pipelines instead.
+# They reach here as single tokens only because crapkit's PowerShell reader adds
+# a `-\w+` rule to lizard's shared pattern; every other reader splits them into
+# `-` and a word, so widening this set moves no other language's score.
+_BOOL_OPS = frozenset({"&&", "||", "??", "and", "or", "-and", "-or"})
+
+# The keywords that pay a FLAT +1 with no nesting increment, which is what the
+# whitepaper gives an else-if link. `elseif` is one word in PowerShell (and in
+# PHP); it belongs here rather than in `_COUNTING`, where it would be charged
+# +1 + nesting and a chain inside a loop would cost more than the same chain at
+# the top of the function.
+_ELSE_KEYWORDS = frozenset({"else", "elif", "elseif"})
+
 _RUN_RESETS = frozenset({";", ",", "{", "}"})
 
 # The two readers whose files can spell a declarator `&&`: CLikeReader for
@@ -219,7 +233,7 @@ def _bool_op(state: _FnState, token: str) -> None:
 def _keywords(state: _FnState, token: str, is_python: bool) -> None:
     if token == "if":
         _if_token(state, is_python)
-    elif token in ("else", "elif"):
+    elif token in _ELSE_KEYWORDS:
         _else_token(state, token, is_python)
     elif token in _COUNTING:
         _structure_token(state, token, is_python)
@@ -262,7 +276,10 @@ def _else_token(state: _FnState, token: str, is_python: bool) -> None:
     if is_python and not state.at_line_start:
         return  # the else arm of a ternary expression is part of its +1
     state.total += 1
-    if token == "elif":
+    if token != "else":
+        # `elif` and `elseif` carry their own condition and their own block, so
+        # the block opens here; a bare `else` has to wait one token to find out
+        # whether an `if` follows it.
         _push_structure(state, is_python)
     else:
         state.else_pending = not is_python

@@ -12,7 +12,7 @@ from .errors import ConfigError
 # could assign to one of them.
 SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift",
                                  "go", "rust", "shell", "cpp", "objectivec", "vue",
-                                 "java", "zig"})
+                                 "java", "zig", "powershell"})
 SUPPORTED_PARSERS = frozenset({"istanbul", "coveragepy"})
 DEFAULT_TARGET = 6
 

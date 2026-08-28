@@ -229,10 +229,17 @@ def _def_pattern(identifier: str) -> re.Pattern[str]:
     subshell-bodied `name() (`, whose body opens with a paren the shorthand does
     not end on. It insists on EMPTY parens, so a curried call `f(a)(b)` at the
     start of a line is still a call.
+
+    PowerShell mostly writes `function`, which is already here. `filter` is its
+    other spelling and needs the keyword; `workflow` and `configuration` are the
+    remaining two and are left out, because neither appears once in the
+    106-script corpus this was measured against and both would widen the
+    alternation for nothing.
     """
     name = re.escape(identifier)
     return re.compile(r"^\s*" + _DEF_MODIFIERS
-                      + r"(?:(?:def|class|function|func|fun|fn|const|let|var)\s+" + name + r"\b"
+                      + r"(?:(?:def|class|function|func|fun|fn|filter|const|let|var)\s+"
+                      + name + r"\b"
                       + r"|" + name + r"\s*\([^)]*\)\s*[:{]"
                       + r"|" + name + r"\s*\(\s*\)\s*\()")
 

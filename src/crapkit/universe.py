@@ -33,6 +33,7 @@ LANGUAGE_EXTENSIONS = {
     "vue": (".vue",),
     "java": (".java",),
     "zig": (".zig",),
+    "powershell": (".ps1", ".psm1"),
 }
 
 # Test directories are excluded case-insensitively: Swift convention capitalizes Tests/.
