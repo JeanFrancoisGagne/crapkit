@@ -306,3 +306,58 @@ def unmeasured_directories(rows, tracked: list[str], *,
         if example:
             found.append(UnmeasuredDir(directory, stats.functions, example))
     return tuple(found)
+
+
+# --- the plugin handshake -----------------------------------------------------
+#
+# The plugin and the CLI are two artifacts with one version number between them.
+# A plugin ahead of the CLI spawns a subcommand argparse does not have and turns
+# every edit on the machine into a usage dump; a plugin behind it registers a
+# hook the CLI would answer and nobody asked. Neither side notices on its own,
+# so `doctor --plugin-root` asks. Pure: the caller reads the two files.
+
+def _version_gap(where: str, version: str, cli_version: str) -> str | None:
+    """One line naming both numbers and both repairs.
+
+    Which side is behind is not decided here. Version ordering across a
+    pre-release, a local build and a published wheel is a guess, and a guess
+    that names the wrong repair costs more than naming two.
+    """
+    if version == cli_version:
+        return None
+    return (f"crapkit doctor: the plugin at {where} is version {version}, this crapkit is "
+            f"{cli_version}. Reinstall whichever is behind: `claude plugin install "
+            f"crapkit@crapkit`, or `pip install -U crapkit`.")
+
+
+def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
+    """One line when the hook asks for a protocol this CLI does not answer.
+
+    A handler naming no `--protocol` at all is not a gap: argparse defaults it,
+    and the default is the supported one. `None` is the other thing entirely, a
+    plugin carrying no hooks file, which registers no advisory at all.
+    """
+    if protocols is None:
+        return (f"crapkit doctor: the plugin at {where} ships no hooks/hooks.json, so it "
+                f"registers no advisory hook.")
+    odd = sorted(set(protocols) - {supported})
+    if not odd:
+        return None
+    return (f"crapkit doctor: the plugin at {where} asks for hook protocol {', '.join(odd)}; "
+            f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit.")
+
+
+def plugin_handshake(*, where: str, version: str | None, cli_version: str,
+                     protocols: tuple[str, ...] | None, supported: str) -> list[str]:
+    """Every disagreement between an installed plugin and this CLI, one per line.
+
+    Empty is the answer that matters: the two agree, and a check that prints on
+    success is a check people stop reading.
+
+    A missing manifest ends it. There is no version to compare, and a protocol
+    line printed underneath would bury the one fact that explains both.
+    """
+    if version is None:
+        return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
+    return [line for line in (_version_gap(where, version, cli_version),
+                              _protocol_gap(where, protocols, supported)) if line]

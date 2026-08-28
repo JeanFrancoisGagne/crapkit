@@ -82,6 +82,13 @@ def test_explain_takes_the_json_flag_the_readme_documents():
     assert "--json" in flags("explain")
 
 
+def test_doctor_takes_the_plugin_root_flag_the_readme_documents():
+    """The plugin and the CLI ship apart, so the handshake between them is the
+    one `doctor` mode an operator reaches for without a repo in hand. A row
+    naming a flag argparse never got is a documented exit 2."""
+    assert "--plugin-root" in flags("doctor")
+
+
 # --- one parser build, one README read ---------------------------------------
 
 def test_the_parser_is_built_once_for_the_whole_module(monkeypatch):

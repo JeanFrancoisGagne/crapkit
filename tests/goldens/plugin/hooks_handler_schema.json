@@ -1,0 +1,24 @@
+{
+  "case": "post_tool_use_handler",
+  "source": "design-doc",
+  "why": "One PostToolUse handler, field for field, as Claude Code reads it. Every handler in plugin/hooks/hooks.json is this object with its `if` filter swapped, so this file is the schema and the committed hooks.json is generated output diffed against it.",
+  "provenance": "Recorded from the agent-distribution design's hooks.json block and its measured field notes, not from a captured session. Claude Code ignores a field it does not know rather than refusing it, so a misspelled `asyncRewake` is a hook that runs and never rewakes, silently. A live capture replaces this file and sets `source` to `live-capture`.",
+  "fields": {
+    "async": "true returns inter-write spacing to the model round trip. Sync handlers run strictly serially: a 19-edit batch becomes a 3.6 s pause.",
+    "asyncRewake": "true wakes the session on exit 2 so the advisory stderr reaches the model as a system reminder. Without it the breach is written to a stream nobody reads.",
+    "if": "Skips the spawn itself, not just the work: a .txt write costs zero, not even the 40 ms interpreter.",
+    "command": "The bare console script, a real PE, which is what Windows exec form needs. `python` resolves to the WindowsApps stub and to venvs without crapkit.",
+    "timeout": "20 s against a measured max of 245.6 ms.",
+    "statusMessage": "What the transcript shows while it runs."
+  },
+  "handler": {
+    "type": "command",
+    "command": "crapkit",
+    "args": ["claude-hook", "--protocol", "1"],
+    "timeout": 20,
+    "statusMessage": "crapkit advisory",
+    "async": true,
+    "asyncRewake": true,
+    "if": "Edit(*.py)"
+  }
+}

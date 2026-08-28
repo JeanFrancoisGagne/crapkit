@@ -630,7 +630,8 @@ scopes   = ["src"]</code></pre>
   <div class="card"><h4>Claims</h4><p>Parallel sessions coordinate through <code>next-item --claim</code>: a claimed item is skipped by everyone else, released on green verify or by hand. Handles survive line shifts.</p></div>
   <div class="card"><h4>Batches</h4><p><code>worklist --batches N</code> cuts the queue into file-disjoint batches (co-changing files kept together) — a fleet plan with no overlap by construction.</p></div>
   <div class="card"><h4>MCP server</h4><p><code>crapkit mcp</code>: a dependency-free stdio server exposing the read side as tools. Register globally; in an unmeasured directory it answers with guidance instead of dying.</p></div>
-  <div class="card"><h4>Skills</h4><p><code>skills/</code> in this repo ships agent skills (the loop, the failure router, a decomposition catalogue). A contract test pins their text to the CLI so they cannot drift.</p></div>
+  <div class="card"><h4>Plugin</h4><p><code>plugin/</code> is the agent surface as one installable artifact: three skills (the loop, the failure router, a decomposition catalogue), the MCP server, and an advisory <code>PostToolUse</code> hook. Contract tests pin their text and the hook's handlers to the CLI so they cannot drift.</p></div>
+  <div class="card"><h4>Per-edit advisory</h4><p>The plugin's hook runs <code>claude-hook</code> after each edit: a named function over its ceiling, on stderr, in a repo crapkit measures. It never blocks and never says it did, it subtracts the same ratchet marks the commit gate subtracts, and everywhere else it exits 0 silent. <code>hook-precommit</code> stays the only enforcement point.</p></div>
   <div class="card"><h4>Notes</h4><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet — the channel for hard-won operational traps, delivered at the moment of use.</p></div>
   <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code> (<code>next-item</code> always; <code>digest</code> alone is plain lines by design); payloads carry <code>schema: 1</code> and change additively only. <code>crapkit report</code> is the one human form: it renders those same payloads into one static HTML page.</p></div>
 </div>
@@ -649,6 +650,8 @@ scopes   = ["src"]</code></pre>
   <tr><td>6</td><td class="mono">printf '#!/bin/sh
 exec python -m crapkit hook-precommit
 ' &gt; .git/hooks/pre-commit &amp;&amp; chmod +x .git/hooks/pre-commit</td><td>Arm the gate. From here every commit is judged — new debt only; the seeded marks pardon the old. The README's gate section has the committed-hooks-dir, pre-commit-framework, and CI routes.</td></tr>
+  <tr><td>7</td><td class="mono">claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin install crapkit@crapkit</td><td>Optional, and last. Installs the skills, the MCP server and the per-edit advisory hook in one artifact whose version tracks the CLI's. A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> says whether an installed plugin and this CLI still agree.</td></tr>
 </table></div>
 <p>The full walked-through quickstarts (Python and TypeScript, with real transcripts) live in the <a href="../README.md">README</a>; the judgment calls — scope granularity, exclude versus lane, the first-verify hazard — in <a href="adoption.md">docs/adoption.md</a>.</p>
 

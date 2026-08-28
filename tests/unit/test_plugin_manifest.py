@@ -191,17 +191,37 @@ def test_the_plugin_tree_holds_no_python():
 
 # --- the hook: generated from the language map, PostToolUse only ---------------
 
+HANDLER_GOLDEN = Path(__file__).resolve().parent.parent / "goldens" / "plugin" / "hooks_handler_schema.json"
+
+
+@lru_cache(maxsize=None)
+def _recorded_handler() -> dict:
+    """The handler schema, held in one file outside the code that generates it.
+
+    Claude Code ignores a field it does not recognise instead of refusing it, so
+    a misspelled `asyncRewake` ships a hook that runs, never rewakes, and says
+    nothing about it. The golden is what the spelling is pinned against; the
+    generator below reads it rather than repeating it, so a rename cannot land
+    in both places at once and pass.
+    """
+    golden = json.loads(HANDLER_GOLDEN.read_text(encoding="utf-8"))
+    assert golden["source"] in ("design-doc", "live-capture"), \
+        "a schema golden with no provenance is a guess nobody can date"
+    return golden["handler"]
+
+
 def _handler(tool: str, extension: str) -> dict:
-    return {
-        "type": "command",
-        "command": "crapkit",
-        "args": ["claude-hook", "--protocol", "1"],
-        "timeout": 20,
-        "statusMessage": "crapkit advisory",
-        "async": True,
-        "asyncRewake": True,
-        "if": f"{tool}(*{extension})",
-    }
+    return {**_recorded_handler(), "if": f"{tool}(*{extension})"}
+
+
+def test_the_recorded_schema_spells_both_async_fields_the_way_the_harness_reads_them():
+    """Sync handlers run strictly serially, so a snake_case guess here is a
+    3.6 s pause on a 19-edit batch, and a hook that never rewakes is a breach
+    written to a stream nobody reads. Both failures are silent."""
+    handler = _recorded_handler()
+
+    assert {k for k in handler if "async" in k.lower()} == {"async", "asyncRewake"}
+    assert (handler["async"], handler["asyncRewake"]) == (True, True)
 
 
 def _generated_handlers() -> list[dict]:
@@ -239,6 +259,43 @@ def test_the_generator_covers_every_extension_crapkit_measures():
     assert {"Edit(*.py)", "Write(*.py)", "Edit(*.rs)", "Write(*.tsx)"} <= filters
 
 
+def _committed_handlers() -> list[dict]:
+    """Every handler the committed hooks.json registers, flat."""
+    return [handler for event in _json(HOOKS_JSON)["hooks"].values()
+            for matcher in event for handler in matcher["hooks"]]
+
+
+def _spawned_subcommand(handler: dict) -> str:
+    """What `crapkit <this>` a handler runs: the first arg that is not a flag."""
+    return next(arg for arg in handler["args"] if not arg.startswith("-"))
+
+
+def test_hooks_json_subcommands_exist_in_parser():
+    """The pin that would have caught `claude-hook` shipping ahead of the CLI.
+
+    The plugin and the CLI are released apart, and a handler naming a subcommand
+    argparse does not have exits 2 with a usage dump, on every matching edit, on
+    every machine that installed the plugin. Nothing on either side notices: the
+    hook is registered, it runs, and PostToolUse reads its exit 2 as a finding.
+    """
+    import argparse
+
+    from crapkit.cli import build_parser
+
+    subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
+    spawned = {_spawned_subcommand(h) for h in _committed_handlers()}
+
+    assert spawned - set(subs[0].choices) == set(), \
+        "hooks.json spawns a subcommand this CLI has no parser for"
+
+
+def test_the_subcommand_reader_finds_the_one_the_hook_actually_spawns():
+    """Guards the test above: an empty set is a subset of everything, and a
+    reader that returned the `--protocol` value instead would pass it too."""
+    assert {_spawned_subcommand(h) for h in _committed_handlers()} == {"claude-hook"}
+    assert _spawned_subcommand({"args": ["claude-hook", "--protocol", "1"]}) == "claude-hook"
+
+
 def test_the_plugin_registers_post_tool_use_and_nothing_else():
     """Safety contract #2. Exit 2 on Stop blocks the stop, and the gate reads the
     filesystem rather than the conversation, so every non-actionable verdict loops
@@ -252,8 +309,7 @@ def test_every_handler_stays_async_bare_exe_and_bounded(field: str, value: objec
     """Sync hooks run serially: a 19-edit batch becomes a 3.6 s pause. `python`
     resolves to the WindowsApps stub and to six venvs without crapkit; the console
     script is the real exe Windows exec form needs."""
-    handlers = _json(HOOKS_JSON)["hooks"]["PostToolUse"][0]["hooks"]
-    assert {h[field] for h in handlers} == {value}
+    assert {h[field] for h in _committed_handlers()} == {value}
 
 
 # --- the MCP server -----------------------------------------------------------
