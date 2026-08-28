@@ -59,7 +59,7 @@ languages. Every tracked source file in a declared language must belong to a sco
 |---|---|---|---|---|
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring). |
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file. |
-| `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`. A file joins the scope only when both its path prefix and its extension match. |
+| `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
 | `coverage_optional` | bool | no | `false` | Code no test can reach. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
@@ -76,10 +76,40 @@ Extensions per language:
 | `go` | `.go` |
 | `rust` | `.rs` |
 | `shell` | `.sh`, `.bash` |
+| `cpp` | `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp` |
+| `objectivec` | `.m`, `.mm` |
+| `vue` | `.vue` |
+| `java` | `.java` |
+| `zig` | `.zig` |
 
 `shell` reports functions only. Statements outside any function belong to lizard's
 `*global*` pseudo-function, exactly like Python module-level code, so a script that is one
 long top-level sequence reports nothing — that is the answer, not a parse failure.
+
+`cpp` is the whole C family, C included. There is no separate `c` label: lizard resolves
+every one of those six suffixes to one reader, so two labels could never measure
+differently, and `.h` is the header both dialects share. `.hh`, `.hxx` and `.ipp` are not
+claimed — no lizard reader declares them, and lizard serves an undeclared suffix from a
+silent fallback rather than from a mapping. Two things to know before you point a scope at C
+code:
+
+- Both arms of an `#ifdef` fork are textually present, so a platform shim defines the same
+  function twice in one file. A ratchet mark is keyed on `(path, long_name)`, so only the
+  last arm is marked and gated; `analyze` prints one stderr line naming any file this
+  happens in.
+- A `&&` before a function's opening brace declares an rvalue reference, not a decision, and
+  costs no cognitive complexity. The same rule covers `objectivec`, because `.mm` is
+  Objective-C++ and carries C++ move semantics. A `&&` inside a default argument is the one
+  case the rule reads wrong; lizard's cyclomatic column drops the whole parameter list
+  anyway, so the two columns agree about it.
+
+`vue` scores the `<script>` block. Template directives (`v-if`, `v-else-if`, `v-for`) are
+HTML attributes to lizard and contribute nothing, so a component whose branching lives in
+its template reports only what its methods do.
+
+`zig` counts a `switch`'s `else` prong as one more case, so a Zig switch reads one point
+above its hand count. The error is inflation only: it can cost a refactor that was not
+needed, never hide one that was.
 
 Scopes are tried in declaration order; the first whose path prefix **and** extension both
 match wins. A prefix-only match does not stop the search, so two scopes sharing a prefix but

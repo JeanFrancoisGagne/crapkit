@@ -2,12 +2,14 @@
 
 crapkit scores every function in your repo on complexity times uncovered risk, ranks the
 worst ones by how often the file changes, and blocks commits that add more. It reads
-TypeScript, TSX, JavaScript, Python, Swift, Go, Rust and shell through
-[lizard](https://github.com/terryyin/lizard),
+TypeScript, TSX, JavaScript, Python, Swift, Go, Rust, shell, C and C++, Objective-C, Vue,
+Java and Zig through [lizard](https://github.com/terryyin/lizard),
 and joins per-function branch coverage from istanbul or coverage.py artifacts your own test
-command already produces. Swift, Go, Rust and shell have no coverage parser: declare those
-scopes `coverage_optional` and they score on complexity alone. Every read-side command speaks JSON with a pinned schema, because
-half the callers are coding agents.
+command already produces. Those two parsers are the whole list, so Swift, Go, Rust, shell,
+C and C++, Objective-C, Java and Zig have no coverage to join: declare those scopes
+`coverage_optional` and they score on complexity alone. Vue joins istanbul coverage when
+your own vitest run reports on `.vue` files. Every read-side command speaks JSON with a
+pinned schema, because half the callers are coding agents.
 
 ```
 CRAP = ccn^2 * (1 - cov)^3 + ccn

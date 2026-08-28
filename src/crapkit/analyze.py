@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -24,6 +25,7 @@ from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord
+from .packet import bare_name
 
 # lizard picks a reader by extension off a hardcoded list, and neither of these
 # is on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
@@ -44,7 +46,7 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 5  # 5: Rust match arms count, and .sh/.bash are read as shell
+ANALYSIS_VERSION = 6  # 6: a C++ rvalue reference is no longer a cognitive condition
 
 # The three tokens lizard's modified rule reacts to. Membership is checked before
 # anything else runs, so the common token pays one frozenset lookup.
@@ -139,11 +141,64 @@ def _record(rel_path: str, fn) -> FunctionRecord:
     )
 
 
+# How many colliding names one warning prints before it stops. A generated file
+# can hold hundreds; the point is that the file needs looking at, not the list.
+_NAMES_SHOWN = 5
+
+
+def _colliding_names(records: list[FunctionRecord]) -> list[str]:
+    """Names this file gives to more than one function, in first-seen order.
+
+    Anonymous functions are exempt. lizard calls every one of them
+    `(anonymous)`, so a file with two arrow callbacks collides by construction
+    and a warning would name nothing anyone could act on; `packet.handles`
+    answers that collision with the `(anonymous)#N` ordinal instead.
+    """
+    seen: set[str] = set()
+    colliding: dict[str, None] = {}
+    for record in records:
+        if bare_name(record.long_name) and record.long_name in seen:
+            colliding[record.long_name] = None
+        seen.add(record.long_name)
+    return list(colliding)
+
+
+def _warn_on_collisions(rel_path: str, records: list[FunctionRecord]) -> None:
+    """One stderr line for a file whose records cannot all reach the ratchet.
+
+    A mark is keyed on (path, long_name), and so is the row a run writes, so the
+    last function under a colliding name is the only one marked and the only one
+    gated. C makes this ordinary: both arms of an `#ifdef` fork are textually
+    present, so a platform shim defines the same function twice in one file.
+    Python makes it ordinary too, because a method's long_name carries no class.
+    Neither is fixable here — the ratchet cannot key on a span, which drifts with
+    every edit — so the loss is announced rather than silent.
+    """
+    names = _colliding_names(records)
+    if not names:
+        return
+    print(f"crapkit: {rel_path} defines {_listed(names)} more than once; the ratchet keys "
+          f"on (path, long_name) and keeps the last, so the earlier ones are neither "
+          f"marked nor gated", file=sys.stderr)
+
+
+def _listed(names: list[str]) -> str:
+    if len(names) <= _NAMES_SHOWN:
+        return ", ".join(names)
+    return f"{', '.join(names[:_NAMES_SHOWN])} and {len(names) - _NAMES_SHOWN} more name(s)"
+
+
+def _file_records(rel_path: str, functions) -> list[FunctionRecord]:
+    records = [_record(rel_path, fn) for fn in functions]
+    _warn_on_collisions(rel_path, records)
+    return records
+
+
 def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     abs_path, rel_path = args
     try:
         analysis = lizard.FileAnalyzer(_extensions_for(rel_path))(abs_path)
-        return rel_path, [_record(rel_path, fn) for fn in analysis.function_list]
+        return rel_path, _file_records(rel_path, analysis.function_list)
     except Exception as exc:  # loud, with the file named
         raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
 
@@ -159,7 +214,7 @@ def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
     try:
         analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
-        return [_record(rel_path, fn) for fn in analysis.function_list]
+        return _file_records(rel_path, analysis.function_list)
     except Exception as exc:  # loud, with the file named
         raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
 

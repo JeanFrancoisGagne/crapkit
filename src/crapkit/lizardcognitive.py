@@ -9,6 +9,10 @@ same rules with no second parse and no new dependency:
   try / finally / case labels / with are free; nesting rises inside the
   block structures listed above.
 
+One language-specific rule: in C/C++ and Objective-C/C++ a `&&` before the
+function's opening brace declares an rvalue reference rather than deciding
+anything, and costs nothing. See `_declarator_and`.
+
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
 deepen nesting (a structure inside a ternary arm is rare enough to accept).
@@ -27,13 +31,22 @@ _COUNTING = frozenset({"if", "for", "foreach", "while", "do", "catch", "except",
 _BOOL_OPS = frozenset({"&&", "||", "??", "and", "or"})
 _RUN_RESETS = frozenset({";", ",", "{", "}"})
 
+# The two readers whose files can spell a declarator `&&`: CLikeReader for
+# C and C++, ObjCReader for `.m` and `.mm`, where Objective-C++ carries C++
+# move semantics wholesale. Exact names, not an issubclass test: JavaReader,
+# CSharpReader and TTCNReader inherit from CLikeReader too, and in those three
+# languages every `&&` is an operator, so a rule reaching them could only ever
+# lose a real one.
+_DECLARATOR_READERS = frozenset({"CLikeReader", "ObjCReader"})
+
 
 class _FnState:
     __slots__ = ("total", "stack", "brace_depth", "line_indent", "at_line_start",
                  "pending", "else_pending", "question_pending", "bool_op", "name",
-                 "recursed", "body_started", "prev", "label_check")
+                 "recursed", "body_started", "prev", "label_check", "c_family")
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, c_family: bool = False):
+        self.c_family = c_family
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.brace_depth = 0
@@ -61,12 +74,14 @@ class LizardExtension:
         # one, and that one would inherit a stranger's running total. Measured on
         # the consumer repo: 377-379 rows moved between two runs of the same commit.
         states: dict[object, _FnState] = {}
-        is_python = type(reader).__name__.lower().startswith("python")
+        reader_name = type(reader).__name__
+        is_python = reader_name.lower().startswith("python")
+        c_family = reader_name in _DECLARATOR_READERS
         for token in tokens:
             fn = reader.context.current_function
             state = states.get(fn)
             if state is None:
-                state = states[fn] = _FnState(getattr(fn, "name", ""))
+                state = states[fn] = _FnState(getattr(fn, "name", ""), c_family)
             _step(state, token, is_python)
             fn.cognitive_complexity = state.total
             yield token
@@ -171,7 +186,30 @@ def _close_brace(state: _FnState) -> None:
         state.stack.pop()
 
 
+def _declarator_and(state: _FnState, token: str) -> bool:
+    """True for a C++ or Objective-C++ `&&` that declares instead of deciding.
+
+    `T &&t` and `a && b` tokenize identically, so only position separates them.
+    A C++ function's declarator — its parameter list, its `&&` ref-qualifier, the
+    name of an `operator&&`, its member-initializer list — is everything before
+    the body's opening brace, and no statement can live there. Brace depth 0 in a
+    function lizard has already named IS that region.
+
+    A logical `&&` inside a default argument reads as a declarator here and
+    loses its point. lizard's cyclomatic column drops the whole parameter list
+    too (measured: `bool f(bool a = (kP && kQ))` reads ccn 1), so this makes the
+    two columns agree about that region rather than disagreeing about it.
+
+    `||` is left alone. Only `&&` doubles as a type declarator, so the one
+    spelling this misses is the NAME of an `operator||` overload, which still
+    costs 1.
+    """
+    return state.c_family and token == "&&" and state.brace_depth == 0
+
+
 def _bool_op(state: _FnState, token: str) -> None:
+    if _declarator_and(state, token):
+        return
     op = {"and": "&&", "or": "||"}.get(token, token)
     if op != state.bool_op:
         state.total += 1

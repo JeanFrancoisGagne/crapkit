@@ -22,6 +22,17 @@ LANGUAGE_EXTENSIONS = {
     "go": (".go",),
     "rust": (".rs",),
     "shell": (".sh", ".bash"),
+    # Exactly lizard's CLikeReader.ext, and deliberately not one suffix more.
+    # `.hh`, `.hxx` and `.ipp` are real C++ headers that no lizard reader
+    # declares, and lizard answers an undeclared suffix with `get_reader_for(f)
+    # or CLikeReader` — a silent fallback, right for those three by luck and
+    # wrong for anything else. Every claim here rests on a declared mapping;
+    # those three are an opt-in for whoever needs them.
+    "cpp": (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp"),
+    "objectivec": (".m", ".mm"),
+    "vue": (".vue",),
+    "java": (".java",),
+    "zig": (".zig",),
 }
 
 # Test directories are excluded case-insensitively: Swift convention capitalizes Tests/.

@@ -220,7 +220,20 @@ def test_the_closed_range_operator_shields_the_tokens_inside_it():
 
 DISPLAY = {"typescript": "TypeScript", "tsx": "TSX", "javascript": "JavaScript",
            "python": "Python", "swift": "Swift", "go": "Go", "rust": "Rust",
-           "shell": "shell"}
+           "shell": "shell", "cpp": "C++", "objectivec": "Objective-C",
+           "vue": "Vue", "java": "Java", "zig": "Zig"}
+
+
+def _unnamed(prose: str) -> list[str]:
+    """Display names this prose does not carry, as whole words.
+
+    `\\b` cannot express this: it asks for a word character on the inside of the
+    boundary, and `C++` ends in punctuation, so `\\bC\\+\\+\\b` matches nothing at
+    all. Asserting no word character sits on either side says what was meant and
+    still refuses `Rust` inside `Rusty`.
+    """
+    return [name for name in DISPLAY.values()
+            if not re.search(rf"(?<!\w){re.escape(name)}(?!\w)", prose)]
 
 
 def test_every_supported_language_has_a_display_name():
@@ -229,14 +242,10 @@ def test_every_supported_language_has_a_display_name():
 
 def test_the_readme_intro_names_every_supported_language():
     """README.md's opening paragraph is the only place a user learns the set."""
-    intro = _doc("README.md").split("```", 1)[0]
-    missing = [name for name in DISPLAY.values() if not re.search(rf"\b{name}\b", intro)]
-
-    assert missing == []
+    assert _unnamed(_doc("README.md").split("```", 1)[0]) == []
 
 
 def test_the_handbook_standfirst_names_every_supported_language():
     standfirst = _doc("docs/handbook.html").split('class="standfirst"', 1)[1].split("</p>", 1)[0]
-    missing = [name for name in DISPLAY.values() if not re.search(rf"\b{name}\b", standfirst)]
 
-    assert missing == []
+    assert _unnamed(standfirst) == []
