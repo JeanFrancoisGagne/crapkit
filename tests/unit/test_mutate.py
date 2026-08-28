@@ -60,12 +60,20 @@ RUST = (
 
 SHELL = 'save() {\n  echo "$1" > out.txt\n}\n'
 
+POWERSHELL = ('function Save-Line {\n'
+              '  param($Line)\n'
+              '  $Line | Out-File -Append "out.txt"\n'
+              '  Write-Output $Line > out.txt\n'
+              '}\n')
+
 
 def test_the_path_decides_the_operator_set():
     assert mutation_language("src/mod.py") == "python"
     assert mutation_language("src/lib.rs") == "rust"
     assert mutation_language("scripts/deploy.sh") == "shell"
     assert mutation_language("scripts/lib.bash") == "shell"
+    assert mutation_language("scripts/deploy.ps1") == "powershell"
+    assert mutation_language("scripts/Tools.psm1") == "powershell"
     assert mutation_language("src/app.ts") == "typescript"
 
 
@@ -89,6 +97,15 @@ def test_shell_is_refused_rather_than_mutated():
     mutation score built out of those is worse than no score."""
     with pytest.raises(ToolError, match="redirection"):
         file_mutants(SHELL, changed_lines=None, language="shell")
+
+
+def test_powershell_is_refused_for_the_same_reason_shell_is():
+    """`>` redirects in PowerShell too, and its comparisons are `-eq`/`-gt`/`-lt`
+    and its connectives `-and`/`-or`, none of which this module's table carries.
+    Left on the C-family default, every mutant it produced would flip a
+    redirection into `>=`."""
+    with pytest.raises(ToolError, match="redirection"):
+        file_mutants(POWERSHELL, changed_lines=None, language="powershell")
 
 
 def test_apply_mutant_replaces_exactly_one_line():

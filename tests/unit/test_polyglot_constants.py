@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from crapkit import discover, mutate
-from crapkit.config import (SUPPORTED_LANGUAGES, ConfigError, _SOURCE_SUFFIXES,
-                            load_config_text)
+from crapkit.config import (SUPPORTED_LANGUAGES, SUPPORTED_PARSERS, ConfigError,
+                            _SOURCE_SUFFIXES, load_config_text)
 from crapkit.discover import callers
 from crapkit.mutate import file_mutants
 from crapkit.universe import LANGUAGE_EXTENSIONS
@@ -216,11 +216,77 @@ def test_the_closed_range_operator_shields_the_tokens_inside_it():
     assert mutate._covered_by_longer("for i in 0...b", 10, "..") is True
 
 
+def test_no_admitted_language_mutates_to_nothing_without_saying_why():
+    """`file_mutants` reads `_OPS.get(language, _OPS["typescript"])`, so an
+    unnamed language takes the C-family table SILENTLY. Six languages arrived in
+    one wave on that fall-through. The rule that keeps it honest: an admitted
+    language either refuses out loud, or produces mutants for the one comparison
+    every table in this module holds. A silent empty list would read on a report
+    as a function nothing could mutate."""
+    comparison = "if (a > b) { return a; }\n"
+
+    silent = []
+    for language in sorted(SUPPORTED_LANGUAGES):
+        route = mutate.mutation_language(f"probe{LANGUAGE_EXTENSIONS[language][0]}")
+        if mutate.refusal(route):
+            continue
+        if not file_mutants(comparison, changed_lines={1}, language=route):
+            silent.append(language)
+
+    assert silent == []
+
+
+CPP_BRANCH = ("int pick(int a, int b) {\n"
+              "  if (a > b && a != 0) { return a; }\n"
+              "  return b;\n"
+              "}\n")
+
+
+def test_the_c_family_mutates_off_the_table_it_falls_through_to():
+    """C, C++, Objective-C, Java and Zig were admitted with no table of their
+    own, which is a decision rather than an omission: they spell `==`, `!=`,
+    `<`, `>`, `&&`, `||` exactly as the C-family table does."""
+    mutated = {m.mutated.strip()
+               for m in file_mutants(CPP_BRANCH, changed_lines={2},
+                                     language=mutate.mutation_language("src/pick.cpp"))}
+
+    assert mutated == {"if (a > b && a == 0) { return a; }",
+                       "if (a >= b && a != 0) { return a; }",
+                       "if (a <= b && a != 0) { return a; }",
+                       "if (a > b || a != 0) { return a; }"}
+
+
+def test_a_member_arrow_is_not_a_comparison():
+    """`->` is already in `_PROTECT` for Rust's return arrow, and C's member
+    access is the same two characters: without it `n->size` mutates to `n->=size`
+    and the mutant dies on the compiler, reading as killed by a test."""
+    src = "int deref(Node* n) {\n  if (n->size >= 2) { return 1; }\n  return 0;\n}\n"
+
+    mutated = {m.mutated.strip()
+               for m in file_mutants(src, changed_lines={2},
+                                     language=mutate.mutation_language("src/deref.c"))}
+
+    assert mutated == {"if (n->size > 2) { return 1; }", "if (n->size < 2) { return 1; }"}
+
+
 # --- the language set a user actually reads -----------------------------------
 
 DISPLAY = {"typescript": "TypeScript", "tsx": "TSX", "javascript": "JavaScript",
            "python": "Python", "swift": "Swift", "go": "Go", "rust": "Rust",
-           "shell": "shell"}
+           "shell": "shell", "cpp": "C++", "objectivec": "Objective-C",
+           "vue": "Vue", "java": "Java", "zig": "Zig", "powershell": "PowerShell"}
+
+
+def _unnamed(prose: str) -> list[str]:
+    """Display names this prose does not carry, as whole words.
+
+    `\\b` cannot express this: it asks for a word character on the inside of the
+    boundary, and `C++` ends in punctuation, so `\\bC\\+\\+\\b` matches nothing at
+    all. Asserting no word character sits on either side says what was meant and
+    still refuses `Rust` inside `Rusty`.
+    """
+    return [name for name in DISPLAY.values()
+            if not re.search(rf"(?<!\w){re.escape(name)}(?!\w)", prose)]
 
 
 def test_every_supported_language_has_a_display_name():
@@ -229,14 +295,84 @@ def test_every_supported_language_has_a_display_name():
 
 def test_the_readme_intro_names_every_supported_language():
     """README.md's opening paragraph is the only place a user learns the set."""
-    intro = _doc("README.md").split("```", 1)[0]
-    missing = [name for name in DISPLAY.values() if not re.search(rf"\b{name}\b", intro)]
-
-    assert missing == []
+    assert _unnamed(_doc("README.md").split("```", 1)[0]) == []
 
 
 def test_the_handbook_standfirst_names_every_supported_language():
     standfirst = _doc("docs/handbook.html").split('class="standfirst"', 1)[1].split("</p>", 1)[0]
-    missing = [name for name in DISPLAY.values() if not re.search(rf"\b{name}\b", standfirst)]
+
+    assert _unnamed(standfirst) == []
+
+
+def test_the_pygments_deferral_note_names_every_language_it_counts():
+    """`_pygdefer` justifies hiding pygments by listing what crapkit reads, and
+    the list is the argument: an Erlang reader is safe to stub only while no
+    scope can name Erlang. It went stale twice, once per language admitted in
+    the same wave, so the module's own docstring is pinned to the set."""
+    note = (ROOT / "src" / "crapkit" / "_pygdefer.py").read_text(encoding="utf-8")
+    header = note.split('"""', 2)[1]
+
+    missing = sorted(lang for lang in SUPPORTED_LANGUAGES
+                     if not re.search(rf"(?<!\w){lang}(?!\w)", header))
 
     assert missing == []
+
+
+# --- the handbook's language table --------------------------------------------
+
+_ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
+_CELL = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S)
+
+
+def _language_rows() -> dict[str, list[str]]:
+    """The handbook's language table as {label: [extensions cell, coverage cell]}.
+
+    Keyed on crapkit's own label rather than the display name, because the label
+    is what a `crapkit.toml` has to spell and a table a user reads to write one
+    has to show it.
+    """
+    table = _doc("docs/handbook.html").split('<table id="languages">', 1)[1].split("</table>", 1)[0]
+    rows = {}
+    for row in _ROW.findall(table):
+        cells = [re.sub(r"<[^>]+>", "", cell).strip() for cell in _CELL.findall(row)]
+        if len(cells) == 3 and cells[0] != "Language":
+            rows[cells[0]] = cells[1:]
+    return rows
+
+
+def test_the_handbook_table_carries_a_row_for_every_supported_language():
+    """The standfirst names the languages; only this table says what to write in
+    `languages = [...]` to get one, which is the sentence a user acts on."""
+    assert SUPPORTED_LANGUAGES <= set(_language_rows())
+
+
+def test_every_row_names_every_extension_its_language_claims():
+    rows = _language_rows()
+
+    unlisted = {lang: [ext for ext in exts if ext not in rows.get(lang, ("", ""))[0]]
+                for lang, exts in LANGUAGE_EXTENSIONS.items()}
+
+    assert {lang: missing for lang, missing in unlisted.items() if missing} == {}
+
+
+def test_a_row_for_a_language_no_scope_can_name_says_so():
+    """A table that lists what crapkit does NOT read earns its honesty the hard
+    way: every such row has to be marked, or the next reader takes it for an
+    admitted language whose config line just fails validation."""
+    extra = set(_language_rows()) - SUPPORTED_LANGUAGES
+
+    unmarked = [lang for lang in extra if "not admitted" not in " ".join(_language_rows()[lang])]
+
+    assert unmarked == []
+
+
+def test_no_row_claims_a_coverage_parser_crapkit_does_not_have():
+    """`cc-only` is a real answer and the two parsers are the only other ones.
+    A row naming a third would promise a join that nothing in crapkit performs."""
+    claims = [(lang, cells[1]) for lang, cells in _language_rows().items()]
+
+    unbacked = [(lang, claim) for lang, claim in claims
+                if "cc-only" not in claim and "not admitted" not in claim
+                and not any(parser in claim for parser in SUPPORTED_PARSERS)]
+
+    assert unbacked == []

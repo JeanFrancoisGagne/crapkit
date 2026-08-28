@@ -17,13 +17,11 @@ commit`, so it holds three rules the batch commands do not:
 """
 from __future__ import annotations
 
-import codecs
-import io
 import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
-from .analyze import analyze_jobs, analyze_source
+from .analyze import analyze_jobs, analyze_source, decode_source
 from .config import Config
 from .diffparse import changed_ranges
 from .gitio import GitReads
@@ -73,28 +71,6 @@ def _materialized(tmp: Path, blobs: dict[str, bytes]) -> list[tuple[str, str]]:
     return jobs
 
 
-def _text_of(blob: bytes) -> str:
-    """The blob as lizard's own auto_read would have read it back from a file.
-
-    Three things have to match or the records move: the UTF-8 BOM selects
-    utf-8-sig, everything else takes the same default encoding `io.open` takes,
-    and text mode translates line endings. A plain `blob.decode()` skips the
-    translation, so a CR-only file arrives as one line and lizard reports no
-    functions in it at all — the gate would then pass a file it never judged.
-    """
-    encoding = "utf-8-sig" if blob.startswith(codecs.BOM_UTF8) else None
-    return io.TextIOWrapper(io.BytesIO(blob), encoding=encoding, newline=None).read()
-
-
-def _decoded(blob: bytes) -> str:
-    """auto_read's last resort too: bytes no decoder accepts lose the bad ones
-    rather than failing the commit."""
-    try:
-        return _text_of(blob)
-    except UnicodeDecodeError:
-        return blob.decode("utf-8", "ignore")
-
-
 def staged_records(blobs: dict[str, bytes]) -> dict[str, list]:
     """Records for the staged blobs, pooled once a commit touches enough files.
 
@@ -104,7 +80,8 @@ def staged_records(blobs: dict[str, bytes]) -> dict[str, list]:
     materializes, because a worker process reads its own files.
     """
     if len(blobs) < _HOOK_POOL_THRESHOLD:
-        return {rel: analyze_source(rel, _decoded(blob)) for rel, blob in sorted(blobs.items())}
+        return {rel: analyze_source(rel, decode_source(blob))
+                for rel, blob in sorted(blobs.items())}
     with tempfile.TemporaryDirectory() as tmp:
         jobs = _materialized(Path(tmp), blobs)
         return analyze_jobs(jobs, workers=min(len(jobs), _HOOK_MAX_WORKERS),

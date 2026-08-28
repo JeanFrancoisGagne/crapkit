@@ -6,8 +6,13 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 
+# `cpp` is the whole C family, C included: lizard resolves every one of its
+# suffixes to a single CLikeReader, so a `c` label beside this one could never
+# measure differently — and `.h` is the header both dialects share, which no rule
+# could assign to one of them.
 SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift",
-                                 "go", "rust", "shell"})
+                                 "go", "rust", "shell", "cpp", "objectivec", "vue",
+                                 "java", "zig", "powershell"})
 SUPPORTED_PARSERS = frozenset({"istanbul", "coveragepy"})
 DEFAULT_TARGET = 6
 

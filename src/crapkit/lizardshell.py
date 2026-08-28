@@ -359,8 +359,6 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
 # Captured before register() wraps it, so a test can ask what lizard shipped.
 _stock_languages = lizard_languages.languages
 
-_MARK = "_crapkit_shell_reader"
-
 
 def register():
     """Make `lizard_languages.get_reader_for` resolve .sh and .bash to ShellReader.
@@ -368,15 +366,22 @@ def register():
     Idempotent: a second call is a no-op, and wrapping composes with any other
     reader registered the same way, because each wrapper calls the one it replaced.
     Appending rather than prepending leaves every stock reader's claim intact.
+
+    The guard asks the list whether it already carries this reader rather than
+    stamping the function it installed. A stamp only answers for the OUTERMOST
+    wrapper: with the PowerShell reader registered after this one, `languages` is
+    that module's function, this module's stamp is not on it, and a second call
+    here appends ShellReader a second time. Membership is the invariant the guard
+    was reaching for anyway, it composes at any depth and in any order, and it
+    costs one list build of 30 classes per call.
     """
-    if getattr(lizard_languages.languages, _MARK, False):
+    if ShellReader in lizard_languages.languages():
         return ShellReader
     inner = lizard_languages.languages
 
     def languages():
         return inner() + [ShellReader]
 
-    setattr(languages, _MARK, True)
     lizard_languages.languages = languages
     return ShellReader
 

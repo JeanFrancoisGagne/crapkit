@@ -2,12 +2,14 @@
 
 crapkit scores every function in your repo on complexity times uncovered risk, ranks the
 worst ones by how often the file changes, and blocks commits that add more. It reads
-TypeScript, TSX, JavaScript, Python, Swift, Go, Rust and shell through
-[lizard](https://github.com/terryyin/lizard),
+TypeScript, TSX, JavaScript, Python, Swift, Go, Rust, shell, PowerShell, C and C++,
+Objective-C, Vue, Java and Zig through [lizard](https://github.com/terryyin/lizard),
 and joins per-function branch coverage from istanbul or coverage.py artifacts your own test
-command already produces. Swift, Go, Rust and shell have no coverage parser: declare those
-scopes `coverage_optional` and they score on complexity alone. Every read-side command speaks JSON with a pinned schema, because
-half the callers are coding agents.
+command already produces. Those two parsers are the whole list, so Swift, Go, Rust, shell,
+PowerShell, C and C++, Objective-C, Java and Zig have no coverage to join: declare those
+scopes `coverage_optional` and they score on complexity alone. Vue joins istanbul coverage
+when your own vitest run reports on `.vue` files. Every read-side command speaks JSON with a
+pinned schema, because half the callers are coding agents.
 
 ```
 CRAP = ccn^2 * (1 - cov)^3 + ccn
@@ -740,7 +742,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing, opens no network connection, and carries no per-function CRAP or coverage, because no repo-wide payload has them; each row prints the `crapkit explain` call that does. |
 | `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. `--top` truncates the list. |
 | `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. |
-| `mutate [--files F ...] [--max-mutants N] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. |
+| `mutate [--files F ...] [--max-mutants N] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
 | `hook-precommit` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
