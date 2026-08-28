@@ -1,7 +1,7 @@
 """Cognitive complexity (Sonar spec) as a lizard token-stream extension.
 
-Rides lizard's language-aware tokenizers, so TS/TSX/JS/Python all pay the same
-rules with no second parse and no new dependency:
+Rides lizard's language-aware tokenizers, so TS/TSX/JS/Python/Swift all pay the
+same rules with no second parse and no new dependency:
   +1 and +nesting for if / ternary / switch / loops / catch-except
   +1 flat for else / elif (an else-if chain costs one per link, no deepening)
   +1 per boolean-operator run, +1 each time the operator alternates
@@ -12,6 +12,12 @@ rules with no second parse and no new dependency:
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
 deepen nesting (a structure inside a ternary arm is rare enough to accept).
+
+Where this extension sits in lizard's chain is load-bearing and differs by
+reader: the python rules read whitespace tokens that lizard's own
+`preprocessing` strips, while SwiftReader and KotlinReader drain the stream
+inside their `preprocess` and starve anything placed ahead of it. analyze._chain
+owns that placement.
 
 The whitepaper's worked examples in tests/unit/test_cognitive.py are the spec.
 """

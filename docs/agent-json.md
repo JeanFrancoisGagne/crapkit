@@ -102,7 +102,7 @@ $ crapkit next-item
 | `start`, `end` | int | 1-based inclusive line span. |
 | `ccn` | int | `min(ccn_std, ccn_mod)`. This is what the gate and the ratchet judge. |
 | `ccn_std` | int | Standard cyclomatic complexity. |
-| `cognitive` | int | Sonar-spec cognitive complexity. Reporting only, never gated. |
+| `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
 | `nloc` | int | Non-comment lines of code. |
 | `nesting` | int | Maximum nesting depth. |
 | `cov` | float | Branch coverage in the span, 0.0 to 1.0. |

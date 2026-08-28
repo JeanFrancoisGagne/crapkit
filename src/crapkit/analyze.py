@@ -27,7 +27,7 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 3  # 3: cognitive complexity column joined the standard pass
+ANALYSIS_VERSION = 4  # 4: cognitive stopped reading 0 for every Swift and Kotlin function
 
 # The three tokens lizard's modified rule reacts to. Membership is checked before
 # anything else runs, so the common token pays one frozenset lookup.
@@ -69,12 +69,39 @@ class _ModifiedDelta:
             yield token
 
 
-# Built once per process, not once per file: 14k files paid 14k chain builds.
-# Every extension in it keeps its state in the generator frame __call__ opens,
-# so one chain serves every file. Cognitive comes FIRST because lizard's own
-# preprocessors strip the whitespace tokens its python rules read; the delta
-# comes last, where the modified pass used to sit.
-_EXTENSIONS = [_Cognitive()] + lizard.get_extensions(["ND"]) + [_ModifiedDelta()]
+def _chain(cognitive_index: int) -> list:
+    """lizard's standard extensions with cognitive spliced in at one index.
+
+    Index 0 puts cognitive ahead of lizard's own `preprocessing`, which is where
+    it has to sit for Python: `preprocessing` strips the whitespace tokens the
+    python indent rules read, and behind it a 6-branch function scores 6 instead
+    of 10. The delta comes last either way, where the modified pass used to sit.
+    """
+    extensions = lizard.get_extensions(["ND"])
+    extensions.insert(cognitive_index, _Cognitive())
+    return extensions + [_ModifiedDelta()]
+
+
+# Two chains, built once per process each, not once per file: 14k files paid 14k
+# chain builds. Every extension keeps its state in the generator frame __call__
+# opens, so one chain serves every file of its kind.
+_EXTENSIONS = _chain(0)
+_PREPROCESSED_EXTENSIONS = _chain(1)
+
+# lizard's SwiftReplaceLabel.preprocess RETURNS a list where the other seven
+# preprocessors YIELD: it runs list() over its input, so every extension AHEAD of
+# `preprocessing` is drained to exhaustion before lizard has split the file into
+# functions. An extension at index 0 counts the whole file against one
+# placeholder FunctionInfo, and every real function comes out at 0. SwiftReader
+# and KotlinReader are the only two of lizard's 27 readers that inherit that
+# preprocessor, so only these suffixes take the second chain.
+_DRAINED_READER_SUFFIXES = (".swift", ".kt", ".kts")
+
+
+def _extensions_for(rel_path: str) -> list:
+    if rel_path.lower().endswith(_DRAINED_READER_SUFFIXES):
+        return _PREPROCESSED_EXTENSIONS
+    return _EXTENSIONS
 
 
 def _record(rel_path: str, fn) -> FunctionRecord:
@@ -98,7 +125,7 @@ def _record(rel_path: str, fn) -> FunctionRecord:
 def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     abs_path, rel_path = args
     try:
-        analysis = lizard.FileAnalyzer(_EXTENSIONS)(abs_path)
+        analysis = lizard.FileAnalyzer(_extensions_for(rel_path))(abs_path)
         return rel_path, [_record(rel_path, fn) for fn in analysis.function_list]
     except Exception as exc:  # loud, with the file named
         raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
@@ -110,10 +137,11 @@ def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
     analyze_source_code is what FileAnalyzer.__call__ runs once it has read the
     file, so nothing about the analysis depends on whether the source arrived
     from the disk or from a git blob the caller already holds; rel_path picks
-    the language exactly as the path on disk did.
+    the language, and with it the extension chain, exactly as the path on disk did.
     """
     try:
-        analysis = lizard.FileAnalyzer(_EXTENSIONS).analyze_source_code(rel_path, code)
+        analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
+        analysis = analyzer.analyze_source_code(rel_path, code)
         return [_record(rel_path, fn) for fn in analysis.function_list]
     except Exception as exc:  # loud, with the file named
         raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
