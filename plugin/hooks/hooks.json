@@ -339,6 +339,370 @@
             "async": true,
             "asyncRewake": true,
             "if": "Write(*.bash)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.c)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.c)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.cc)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.cc)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.cpp)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.cpp)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.cxx)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.cxx)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.h)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.h)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.hpp)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.hpp)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.m)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.m)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.mm)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.mm)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.vue)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.vue)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.java)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.java)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.zig)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.zig)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.ps1)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.ps1)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Edit(*.psm1)"
+          },
+          {
+            "type": "command",
+            "command": "crapkit",
+            "args": [
+              "claude-hook",
+              "--protocol",
+              "1"
+            ],
+            "timeout": 20,
+            "statusMessage": "crapkit advisory",
+            "async": true,
+            "asyncRewake": true,
+            "if": "Write(*.psm1)"
           }
         ]
       }
