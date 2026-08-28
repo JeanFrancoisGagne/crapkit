@@ -1,0 +1,21 @@
+{
+  "case": "marked_breach",
+  "why": "Same breach as scoped_breach, with a ratchet mark on the function. A mark is a recorded decision to carry that function as it stands; without this exemption the advisory fires on debt the repo already signed for, on every edit. Existence decides it, not the numeric high-water rule, because crap needs coverage and coverage needs the store this hook never opens.",
+  "fixture": "marked_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

@@ -701,7 +701,8 @@ advances the baseline nor tightens the ratchet, exit 9 included.
 ## Subcommands
 
 Every subcommand takes `--repo PATH` (default `.`), and the flag goes **after** the
-subcommand:
+subcommand. `claude-hook` is the one exception: it has no `--repo`, because it takes its
+root from the file named in the hook payload it reads.
 
 ```
 $ crapkit worklist --repo /path/to/repo --scope util --top 1
@@ -743,6 +744,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `mutate [--files F ...] [--max-mutants N] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
 | `hook-precommit` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. |
+| `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed and nothing is blocked, and `hook-precommit` stays the enforcement point. Exit 2 with three lines on stderr is the only thing it ever says. No `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure: exit 0, silence, empty stderr. Takes no `--repo` — the root is the first `crapkit.toml` above the edited file and the upward walk stops at a `.git` entry, so a worktree never borrows its parent's config. It opens no snapshot, writes nothing, and leaves stdout empty. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing nine read-only tools. See [docs/agent-json.md](docs/agent-json.md#mcp-server). |
 

@@ -1,0 +1,20 @@
+{
+  "case": "worktree_git_file",
+  "why": "A linked worktree carries a `.git` FILE and, until someone commits one there, no crapkit.toml. The upward walk stops at that file instead of borrowing the parent checkout's config, which is the same refusal _load_repo_config makes by never walking up at all.",
+  "fixture": "worktree_git_file",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}/wt",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "{REPO}/wt/calc/grade.py",
+      "content": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/wt/calc/grade.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

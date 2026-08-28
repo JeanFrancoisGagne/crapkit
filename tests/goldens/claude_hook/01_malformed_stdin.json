@@ -1,0 +1,8 @@
+{
+  "case": "malformed_stdin",
+  "why": "A truncated write, a harness that pipes nothing, a payload half-flushed. The hook reads one JSON object or it says nothing at all.",
+  "fixture": "measured_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "stdin": "{\"hook_event_name\": \"PostToolUse\", \"tool_input\": {\"file_pa",
+  "expect": {"exit": 0, "stderr": []}
+}
