@@ -70,23 +70,36 @@ def _absent_note(path: str, flag: str) -> str:
             f"nothing for it; write the first test that imports {path})")
 
 
+def _parse_missing(lane, root: Path, artifact: Path) -> dict[str, set[int]]:
+    """One lane's missing lines, read off the file.
+
+    Off the file, not out of a string: every declared lane's artifact would
+    otherwise be decoded whole, one after another, on one heap.
+
+    An unrecognised parser raises, in the same words `lanes._read_and_parse`
+    uses. This dispatch used to fall through to the coverage.py reader, so the
+    day a third parser joins SUPPORTED_PARSERS its lane would land here and
+    blame a perfectly good artifact for being unparseable.
+    """
+    from . import covstream
+    from .errors import ToolError
+
+    if lane.parser == "istanbul":
+        return covstream.parse_istanbul_missing_file(artifact, repo_root=str(root))
+    if lane.parser == "coveragepy":
+        return covstream.parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix)
+    raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
+
+
 def missing_by_path(root: Path, cfg) -> dict[str, set[int]]:
     """Union of the lanes' line-level truth; a file two lanes measured keeps a
     line dead only when NO lane ran it."""
-    from . import covstream
-
     missing: dict[str, set[int]] = {}
     for lane in cfg.lanes:
         artifact = root / lane.artifact
         if not artifact.is_file():
             continue
-        # Off the file, not out of a string: every declared lane's artifact
-        # would otherwise be decoded whole, one after another, on one heap.
-        parsed = (covstream.parse_istanbul_missing_file(artifact, repo_root=str(root))
-                  if lane.parser == "istanbul"
-                  else covstream.parse_coveragepy_missing_file(
-                      artifact, path_prefix=lane.path_prefix))
-        for path, lines in parsed.items():
+        for path, lines in _parse_missing(lane, root, artifact).items():
             missing[path] = missing[path] & lines if path in missing else set(lines)
     return missing
 

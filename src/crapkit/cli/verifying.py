@@ -17,14 +17,15 @@ from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
 from .scoring import _scored_run
 
 
-def _emit_verify_findings(root: Path, args, verdict) -> None:
+def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
     if not (args.sarif or args.github):
         return
-    from ..sarif import gate_results, regression_results
+    from ..sarif import diff_uncovered_results, gate_results, regression_results
 
     _emit_findings(root, args.sarif, args.github,
                    gate_results(verdict.gate_violations)
-                   + regression_results(verdict.ratchet_regressions))
+                   + regression_results(verdict.ratchet_regressions)
+                   + diff_uncovered_results(uncovered))
 
 
 def _no_baseline(root: Path) -> str:
@@ -366,7 +367,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override)
     _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored, cfg)
     _release_claims(store, git, cfg, scored)
-    _emit_verify_findings(root, args, verdict)
+    _emit_verify_findings(root, args, verdict, uncovered)
 
     _report_verify(args.json,
                    {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges, uncovered),
