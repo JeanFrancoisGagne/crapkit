@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0 — 2026-08-28
+
+### Correct cognitive complexity for Swift and Kotlin
+Every Swift and Kotlin function scored cognitive 0: lizard's `SwiftReplaceLabel.preprocess`
+materializes the token stream, draining any extension registered ahead of it. Those two
+readers now get their own extension chain with the cognitive extension after lizard's
+preprocessing; every other language keeps the existing chain. A 6-branch probe now scores
+cognitive 10 in Python, TypeScript, Swift, and Kotlin alike. `ANALYSIS_VERSION` is 4, so
+stores re-analyze on the next run. The upstream defects that block Kotlin and Rust
+admission are filed as lizard #493 (Kotlin expression bodies missing from the function
+list) and #494 (Rust match arms not counted).
+
+### Go, cc-only
+`go` joins the supported languages: complexity and the worklist, no coverage parser
+(the coverprofile format carries no function records, and mapping blocks to spans
+scored an untested function as fully covered in review — so it stays out).
+`**/*_test.go` joins the default excludes. Scopes that cannot have a coverage lane
+declare `coverage_optional = true`.
+
+### `crapkit report`
+One self-contained HTML page (`.crapkit/report.html`): the top-50 worklist, per-scope
+grades, and the trend series — rendered from the same payloads the JSON commands print,
+so the page cannot rank a different function first than the command just did. A per-lane
+staleness banner names exactly which lane's artifact no longer describes the tree.
+
+### verify emits uncovered changed lines as SARIF
+New rule `crapkit/diff-uncovered`: one warning-level finding per changed line no lane
+ran, the full list rather than the stderr 20-line preview. `uncovered` artifact reading
+now refuses unknown parsers with the same error lanes use, instead of silently reading
+them as coverage.py output.
+
+### Small fixes
+`.cjs` counts as a source suffix in lane-command checks; the caller-discovery pattern
+matches Go `func` and Kotlin/Swift `fun`/`func` definitions; Swift range operators
+`..<`/`...` are protected from mutation (two previously uncompilable mutants); the
+README names the actual supported language set.
+
 ## 0.2.0 — 2026-08-24
 
 ### The start-editing packet

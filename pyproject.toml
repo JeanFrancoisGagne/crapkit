@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crapkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Deterministic CRAP-score framework: per-function complexity x coverage risk, worklists, ratchets, refactor verification"
 readme = "README.md"
 license = { text = "MIT" }

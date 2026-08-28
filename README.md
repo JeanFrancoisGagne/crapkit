@@ -51,7 +51,7 @@ Check the install:
 
 ```
 $ crapkit --version
-crapkit 0.2.0
+crapkit 0.3.0
 ```
 
 `python -m crapkit` works identically to the `crapkit` console script, and is what to use
