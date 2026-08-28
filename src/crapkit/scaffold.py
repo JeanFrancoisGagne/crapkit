@@ -14,6 +14,12 @@ DEFAULT_EXCLUDES = (
     # Go puts its tests beside the source, so the test-directory rule never
     # fires on them and every _test.go file would score as production code
     "**/*_test.go",
+    # Nothing for rust or shell on purpose. Cargo keeps integration tests in
+    # `tests/`, which `_TEST_DIR` already cuts, and its unit tests live in a
+    # `#[cfg(test)] mod` inside the source file, which no path glob can reach.
+    # Shell has no `_test.sh` convention to claim — `deploy_test.sh` is
+    # production code in plenty of repos — and the two dotted spellings a shell
+    # suite does use are already covered by `**/*.test.*` and `**/*.spec.*`.
     # runner config files the docs themselves tell users to create; globs are
     # whole-path, so the root form and the nested form are both required
     "*.config.ts", "*.config.js", "*.config.mts",

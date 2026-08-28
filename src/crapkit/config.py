@@ -6,7 +6,8 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 
-SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift", "go"})
+SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift",
+                                 "go", "rust", "shell"})
 SUPPORTED_PARSERS = frozenset({"istanbul", "coveragepy"})
 DEFAULT_TARGET = 6
 

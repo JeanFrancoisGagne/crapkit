@@ -20,6 +20,8 @@ LANGUAGE_EXTENSIONS = {
     "python": (".py",),
     "swift": (".swift",),
     "go": (".go",),
+    "rust": (".rs",),
+    "shell": (".sh", ".bash"),
 }
 
 # Test directories are excluded case-insensitively: Swift convention capitalizes Tests/.

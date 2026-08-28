@@ -146,7 +146,7 @@
 <header class="hero">
   <p class="kicker">The Handbook · self-contained · reads offline from a clone</p>
   <h1>crapkit</h1>
-  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for TypeScript, TSX, JavaScript, Python, Swift and Go. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
+  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for TypeScript, TSX, JavaScript, Python, Swift, Go, Rust and shell. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
   <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
   <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> — Change Risk Anti-Patterns — was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
   <nav class="toc">
@@ -340,6 +340,8 @@
   <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code> — visible, never fatal, never a baseline.</li>
   <li><strong>The store</strong> keeps scored runs compactly (function identity written once, referenced per run), plus claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
   <li><strong>Churn</strong> comes from the git log over a configurable window, cached deflated and refreshed incrementally, so the expensive walk happens rarely.</li>
+  <li><strong>Rust</strong> is measured on a corrected reader: lizard lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a seven-arm dispatch scored 2 while the if/else-if chain doing the same work scored 4. crapkit counts one point per non-wildcard arm and retires the reader the day upstream fixes the issue — a test pins the stock reader's wrong answer, and it fails on that release.</li>
+  <li><strong>shell</strong> (<code>.sh</code>, <code>.bash</code>) gets a reader lizard ships none of, and reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level. No coverage parser reads a shell suite, so shell scopes are <code>coverage_optional</code> and score cc-only.</li>
 </ul>
 
 <h3>Most of what you just read is a dial</h3>

@@ -60,6 +60,22 @@ def test_boundary_mutant_survives_and_negation_dies(clamp_repo: Path):
     assert (clamp_repo / "clamp.py").read_bytes() == before, "the original always comes back"
 
 
+SHELL = 'save() {\n  echo "$1" > out.txt\n}\n'
+
+
+def test_a_shell_file_is_named_and_skipped_not_mutated(clamp_repo: Path):
+    """`mutate` is diff-scoped, so a changed .sh file arrives beside the .py ones
+    it was aimed at. Its mutants would flip redirections, so the file is refused
+    by name on stderr and the rest of the run still reports."""
+    (clamp_repo / "deploy.sh").write_text(SHELL, encoding="utf-8")
+
+    res = run_cli(clamp_repo, "mutate", "--files", "deploy.sh", "clamp.py", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert json.loads(res.stdout)["mutants"] == 2, "clamp.py's two mutants, and no more"
+    assert "deploy.sh" in res.stderr and "redirection" in res.stderr
+
+
 def test_mutate_without_changes_or_files_says_so(clamp_repo: Path):
     res = run_cli(clamp_repo, "mutate")
     assert res.returncode != 0
