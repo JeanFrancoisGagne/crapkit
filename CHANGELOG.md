@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.4.0 — 2026-08-28
+
+### Eight new languages
+`rust`, `shell`, `cpp` (the whole C family: `.c .cc .cpp .cxx .h .hpp`), `objectivec`,
+`vue`, `java`, `zig`, and `powershell` join the supported set — every one admitted only
+after a hand-counted probe battery against lizard 1.24.0, and three of them on
+crapkit-corrected readers:
+
+- **Rust** ships a corrected reader: upstream lizard scores a 7-arm `match` as ccn 2
+  (filed as lizard #494); crapkit counts each non-wildcard arm like a C `case`, so the
+  same match scores 7. The module retires itself the day upstream fixes it.
+- **shell** and **powershell** are new readers (lizard has neither): function-level
+  ccn and cognitive, heredoc/here-string/quote/comment hazards each pinned by test,
+  validated against real fleet scripts. PowerShell files in cp1252 decode via a
+  narrow fallback instead of erroring.
+- **C family**: one `cpp` label (lizard has a single reader for C and C++). Two
+  defects are mitigated in crapkit: `#ifdef` fork arms that produce duplicate
+  `(path, long_name)` records now warn at analyze time, and cognitive complexity no
+  longer counts rvalue-reference `&&` in C++ parameter lists.
+
+`ANALYSIS_VERSION` is 6; stores re-analyze on the next run. Coverage stays wherever a
+lane exists; the new languages score cc-only until then (`coverage_optional = true`).
+
+### The Claude Code plugin
+The repo now carries an installable plugin: three skills, the MCP server, and a
+per-edit advisory hook, installed once per user —
+
+```
+claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin install crapkit@crapkit
+```
+
+Repos without a `crapkit.toml` cost a silent sub-50 ms no-op per edit; repos with one
+get the full ladder with zero files added to the repo.
+
+### `crapkit claude-hook`
+A native subcommand speaking Claude Code's hook protocol (versioned: `--protocol 1`).
+Advisory by design — PostToolUse cannot block, so the wording says so — with a strict
+silence ladder: no config, unscoped file, mid-rebase, malformed input, or any internal
+error exits 0 with no output. It never opens the store and never writes a file. A
+breach prints the advisory to stderr and exits 2, which reaches the model as feedback.
+Unknown `claude-*` subcommands exit 0 silently, so a plugin newer than the CLI
+degrades to silence instead of an argparse usage dump.
+
+### The commit gate and the advisory now agree
+`hook-precommit` exempts functions that carry a ratchet mark (existence), matching the
+advisory's exemption: signed debt no longer refuses a commit when merely touched.
+`verify` still fails any mark that rises. One stderr line reports how many marked
+functions were exempted.
+
+### Faster rescore
+`rescore` reads only the rescored files' rows instead of the whole scored run
+(799.5 ms → 0.8 ms on a 100k-function store). `crapkit watch` inherits the win.
+
+### doctor --plugin-root
+Compares an installed plugin's version and hook protocol against the CLI and reports
+drift in one line.
+
 ## 0.3.0 — 2026-08-28
 
 ### Correct cognitive complexity for Swift and Kotlin
