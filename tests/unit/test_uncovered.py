@@ -1,6 +1,10 @@
 """Dark lines per function: the missing-line sets the coverage parsers already
 produce, cut to one function's span, plus the note that stands in when nothing
 on disk can answer. Pure seam — no lane runs here."""
+from types import SimpleNamespace
+
+import pytest
+
 from crapkit.config import load_config_text
 from crapkit.uncovered import MissingLines, load_uncovered
 
@@ -66,3 +70,40 @@ def test_a_repo_with_no_lane_says_that_rather_than_naming_one(tmp_path):
     cfg = load_config_text(CONFIG.split("[[lane]]")[0])
     note = load_uncovered(tmp_path, cfg).note_for("core/beta.py")
     assert "lane" in note and "cov.json" not in note
+
+
+# --- an unrecognised parser is a bug, not a coveragepy artifact ------------
+# The dispatch used to be an if/else whose else was coveragepy, so the day a
+# third parser lands in SUPPORTED_PARSERS its lane routes into the coverage.py
+# reader and blames a perfectly good artifact for being unparseable.
+
+def _unknown_parser_lane(tmp_path):
+    from crapkit.config import Lane
+
+    (tmp_path / "cov.xml").write_text("<coverage/>", encoding="utf-8")
+    return SimpleNamespace(lanes=[Lane(name="py", command="", artifact="cov.xml",
+                                       parser="cobertura", scopes=("core",))])
+
+
+def test_an_unknown_parser_raises_instead_of_reading_it_as_coveragepy(tmp_path):
+    from crapkit.errors import ToolError
+    from crapkit.uncovered import missing_by_path
+
+    with pytest.raises(ToolError) as exc:
+        missing_by_path(tmp_path, _unknown_parser_lane(tmp_path))
+    assert str(exc.value) == "lane 'py': parser 'cobertura' not implemented yet"
+
+
+def test_the_two_dispatches_word_the_same_refusal_the_same_way(tmp_path):
+    """lanes._read_and_parse already refuses; a reader who meets one message
+    should not have to learn a second one for the same cause."""
+    from crapkit.errors import ToolError
+    from crapkit.lanes import _read_and_parse
+    from crapkit.uncovered import missing_by_path
+
+    cfg = _unknown_parser_lane(tmp_path)
+    with pytest.raises(ToolError) as from_lanes:
+        _read_and_parse(cfg.lanes[0], tmp_path, tmp_path / "cov.xml")
+    with pytest.raises(ToolError) as from_uncovered:
+        missing_by_path(tmp_path, cfg)
+    assert str(from_uncovered.value) == str(from_lanes.value)

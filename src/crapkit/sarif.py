@@ -14,6 +14,8 @@ _RULES = (
      "shortDescription": {"text": "touched function over the complexity gate"}},
     {"id": "crapkit/ratchet-regression",
      "shortDescription": {"text": "a recorded CRAP mark got worse"}},
+    {"id": "crapkit/diff-uncovered",
+     "shortDescription": {"text": "a changed line no lane ever ran"}},
 )
 
 
@@ -52,6 +54,19 @@ def regression_results(regressions) -> list[dict]:
     return [_result("crapkit/ratchet-regression", "error", r.path, 1,
                     f"{r.long_name}: recorded {r.recorded} -> fresh {r.fresh_crap}")
             for r in regressions]
+
+
+def diff_uncovered_results(uncovered) -> list[dict]:
+    """One finding per changed line no lane ran, from verify's own list.
+
+    A warning, not an error: the count is what `diff_uncovered_max` gates on,
+    and a single dark line is not a refusal by itself. Before this, these lines
+    reached stderr and nothing else, so the output a code-scanning UI reads
+    dropped every one of them.
+    """
+    return [_result("crapkit/diff-uncovered", "warning", path, line,
+                    "changed line has no coverage: no lane ran it")
+            for path, line in uncovered]
 
 
 def sarif_document(results: list[dict]) -> dict:
