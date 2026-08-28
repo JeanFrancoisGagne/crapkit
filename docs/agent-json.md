@@ -830,6 +830,7 @@ respects neither `--json` nor `--show-files`.
 | `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. |
 | `claims --json` | Above. |
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
+| `report` | No payload of its own. It writes one self-contained HTML page and prints its path, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
 | `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. |
 
 ---

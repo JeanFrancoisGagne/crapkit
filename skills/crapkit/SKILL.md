@@ -22,6 +22,7 @@ verdict. Doc anchors below name pages in the crapkit project.
 | Before a PR | `crapkit verify --reuse-artifacts`, or `crapkit verify --base REF` |
 | Did the last refactor hold | `crapkit explain PATH NAME`, and the packet's `regrowth` |
 | What this session changed | `crapkit digest` |
+| Handing the state to a human who will not run a command | `crapkit report`, which writes one self-contained HTML page and prints its path |
 | Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
 
 Field semantics live in `docs/agent-json.md#brief`; the five-step loop lives in

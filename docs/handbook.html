@@ -630,7 +630,7 @@ scopes   = ["src"]</code></pre>
   <div class="card"><h4>MCP server</h4><p><code>crapkit mcp</code>: a dependency-free stdio server exposing the read side as tools. Register globally; in an unmeasured directory it answers with guidance instead of dying.</p></div>
   <div class="card"><h4>Skills</h4><p><code>skills/</code> in this repo ships agent skills (the loop, the failure router, a decomposition catalogue). A contract test pins their text to the CLI so they cannot drift.</p></div>
   <div class="card"><h4>Notes</h4><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet — the channel for hard-won operational traps, delivered at the moment of use.</p></div>
-  <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code> (<code>next-item</code> always; <code>digest</code> alone is plain lines by design); payloads carry <code>schema: 1</code> and change additively only.</p></div>
+  <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code> (<code>next-item</code> always; <code>digest</code> alone is plain lines by design); payloads carry <code>schema: 1</code> and change additively only. <code>crapkit report</code> is the one human form: it renders those same payloads into one static HTML page.</p></div>
 </div>
 
 <!-- ============================ 11 INSTALL ============================ -->
@@ -662,6 +662,7 @@ exec python -m crapkit hook-precommit
   <tr><td>opening a PR</td><td class="mono">verify --base REF --sarif out.sarif --github</td><td>Did this branch add debt against the fork point — SARIF and inline annotations for the review.</td></tr>
   <tr><td>wondering if a past refactor held</td><td class="mono">explain PATH NAME</td><td>The score's trajectory across runs, plus <code>regrowth</code> when a split quietly un-split itself.</td></tr>
   <tr><td>back from lunch on a shared repo</td><td class="mono">digest</td><td>The delta between the last two runs — silent when nothing changed, which is the healthy reading.</td></tr>
+  <tr><td>showing where the repo stands to someone who will not open a terminal</td><td class="mono">crapkit report --out debt.html</td><td>One self-contained page: the ranked worklist, the grade per scope, the trend, and a loud banner naming every stale lane. No network, and no per-function drill-down: each row prints the <code>explain</code> call that has it.</td></tr>
   <tr><td>already in a file anyway</td><td class="mono">file_functions in any brief</td><td>The boy-scout check: a sibling one point over its ceiling is cheapest to fix while context is hot.</td></tr>
   <tr><td>watching scores while you edit</td><td class="mono">watch</td><td>Rescores tracked files as they change, in a terminal pane.</td></tr>
 </table></div>
