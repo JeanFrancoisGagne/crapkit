@@ -104,10 +104,25 @@ def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
     return ""
 
 
+def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:
+    """(lane name, why its line numbers are unusable) for every declared lane,
+    "" for a lane whose artifact still describes the tree.
+
+    `load_uncovered` joins these into one note and throws the per-lane detail
+    away, which is the right shape for "no lines for any path" and the wrong one
+    for a reader who wants to know WHICH lane to rerun. The report's staleness
+    banner reads this list; the joined note is built from it, so a lane cannot be
+    fresh in one and stale in the other.
+    """
+    from .gitio import GitFacts
+
+    facts = git if git is not None else GitFacts(root)
+    return [(lane.name, _artifact_state(root, lane, cfg.scope_paths, facts))
+            for lane in cfg.lanes]
+
+
 def _staleness_note(root: Path, cfg, git) -> str:
-    return "; ".join(state for state in
-                     (_artifact_state(root, lane, cfg.scope_paths, git) for lane in cfg.lanes)
-                     if state)
+    return "; ".join(note for _, note in lane_states(root, cfg, git) if note)
 
 
 def load_uncovered(root: Path, cfg, git=None) -> MissingLines:

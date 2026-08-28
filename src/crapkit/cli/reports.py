@@ -114,19 +114,101 @@ def _print_trend(as_json: bool, rows_out: list, target: int) -> None:
               f"{r['over_target']} over target, load {r['crap_load']}, avg {r['avg']}")
 
 
-def cmd_trend(args: argparse.Namespace) -> int:
+def _trend_payload(cfg, store: SnapshotStore) -> dict:
+    """The whole series, shaped once. `trend --json` prints it and `report`
+    renders it, so the page and the payload cannot describe the same run
+    differently."""
     from ..store import trusted_runs
 
-    root = Path(args.repo).resolve()
-    cfg = _load_repo_config(root)
-    store = _open_store(root)
     # one GROUP BY for the whole history; this used to build every ScoredRow of
     # every trusted run to add up three numbers per run
     agg = store.run_totals(target=cfg.target, scope_targets=cfg.scope_targets)
     by_scope = store.run_scope_totals(target=cfg.target, scope_targets=cfg.scope_targets)
-    rows_out = [_trend_row(run, agg.get(run["id"], (0, 0, 0.0)), by_scope.get(run["id"], {}))
-                for run in trusted_runs(store)]
-    _print_trend(args.json, rows_out, cfg.target)
+    return {"target": cfg.target,
+            "runs": [_trend_row(run, agg.get(run["id"], (0, 0, 0.0)),
+                                by_scope.get(run["id"], {}))
+                     for run in trusted_runs(store)]}
+
+
+def cmd_trend(args: argparse.Namespace) -> int:
+    root = Path(args.repo).resolve()
+    cfg = _load_repo_config(root)
+    payload = _trend_payload(cfg, _open_store(root))
+    _print_trend(args.json, payload["runs"], cfg.target)
+    return 0
+
+
+# --- the static page ---------------------------------------------------------
+#
+# `report` measures nothing. It collects the payloads `worklist --json` and
+# `trend --json` already answer, at their defaults, adds the per-lane staleness
+# `load_uncovered` computes, and hands the lot to a pure renderer. Everything
+# below is collection; the markup lives in crapkit.report.
+
+def _report_worklist(root: Path, cfg, store: SnapshotStore) -> dict:
+    """The ranked queue through the SAME shaping `worklist --json` prints.
+
+    Reassembling it here would let the page rank one function first and the
+    command another, off one run.
+    """
+    from ..churn_cache import load_churn
+    from ..gitio import head_commit
+    from ..report import report_top
+    from ..worklist import build_worklist
+    from .queue import _pushdown_floor, _worklist_marks, _worklist_payload, _worklist_run
+
+    latest = _worklist_run(root, store)
+    rows = store.read_rows(latest["id"], min_ccn=_pushdown_floor(cfg), scopes=[])
+    wl = build_worklist(rows, load_churn(root, cfg.churn_window_months),
+                        floor=cfg.worklist_floor, top=report_top(cfg.worklist_top),
+                        marks=_worklist_marks(store, cfg, latest["id"], []))
+    return _worklist_payload(wl, latest, cfg, latest["commit"] != head_commit(root), None)
+
+
+def _report_lanes(root: Path, cfg) -> list[dict]:
+    """Per-lane staleness, the detail the joined note throws away."""
+    from ..uncovered import lane_states
+
+    return [{"name": name, "note": note} for name, note in lane_states(root, cfg)]
+
+
+def _report_payload(root: Path, cfg, store: SnapshotStore) -> dict:
+    from datetime import datetime, timezone
+
+    return {"generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "lanes": _report_lanes(root, cfg),
+            "repo": root.name,
+            "target": cfg.target,
+            "trend": _trend_payload(cfg, store),
+            "worklist": _report_worklist(root, cfg, store)}
+
+
+def _write_report(root: Path, out: str, page: str) -> Path:
+    """Write the page and say where it went.
+
+    `--out` is repo-relative, like `--export` and `--sarif`: a path that climbs
+    out of the tree writes somewhere nobody asked for. LF endings, because the
+    page is an artifact people diff and publish.
+    """
+    base = root.resolve()
+    path = (base / out).resolve()
+    if base not in path.parents:
+        raise ConfigError(f"report --out stays inside {base}, got {out!r}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(page, encoding="utf-8", newline="\n")
+    print(path)
+    return path
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """One self-contained page: the ranked worklist, the per-scope grades, the
+    trend series, and a banner when stale artifacts make them untrustworthy."""
+    from ..report import render_report
+
+    root = Path(args.repo).resolve()
+    cfg = _load_repo_config(root)
+    payload = _report_payload(root, cfg, _open_store(root))
+    _write_report(root, args.out, render_report(payload))
     return 0
 
 

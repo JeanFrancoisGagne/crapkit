@@ -1,0 +1,206 @@
+{
+ "generated_at": "2026-02-28T12:00:00Z",
+ "lanes": [
+  {
+   "name": "unit",
+   "note": ""
+  },
+  {
+   "name": "py",
+   "note": ""
+  }
+ ],
+ "repo": "mini-consumer",
+ "target": 6,
+ "trend": {
+  "runs": [
+   {
+    "avg": 17.5063,
+    "by_scope": {
+     "py": {
+      "crap_load": 85.0,
+      "functions": 4,
+      "grade": "F",
+      "over_target": 3
+     },
+     "src": {
+      "crap_load": 90.06,
+      "functions": 6,
+      "grade": "D",
+      "over_target": 1
+     }
+    },
+    "commit": "5e305fdcbd57b2ee1aaf492356503375a26b3b86",
+    "crap_load": 175.06,
+    "created_at": "2026-08-28T16:30:39Z",
+    "functions": 10,
+    "over_target": 4,
+    "run_id": 1
+   },
+   {
+    "avg": 17.5063,
+    "by_scope": {
+     "py": {
+      "crap_load": 85.0,
+      "functions": 4,
+      "grade": "F",
+      "over_target": 3
+     },
+     "src": {
+      "crap_load": 90.06,
+      "functions": 6,
+      "grade": "D",
+      "over_target": 1
+     }
+    },
+    "commit": "0e2681f2fd8176796209f714a90f53e42c8c888c",
+    "crap_load": 175.06,
+    "created_at": "2026-08-28T16:30:42Z",
+    "functions": 10,
+    "over_target": 4,
+    "run_id": 2
+   },
+   {
+    "avg": 17.5063,
+    "by_scope": {
+     "py": {
+      "crap_load": 85.0,
+      "functions": 4,
+      "grade": "F",
+      "over_target": 3
+     },
+     "src": {
+      "crap_load": 90.06,
+      "functions": 6,
+      "grade": "D",
+      "over_target": 1
+     }
+    },
+    "commit": "1de841281c9c2e9e603537908e4bdf5dd844a967",
+    "crap_load": 175.06,
+    "created_at": "2026-08-28T16:30:46Z",
+    "functions": 10,
+    "over_target": 4,
+    "run_id": 3
+   },
+   {
+    "avg": 17.5063,
+    "by_scope": {
+     "py": {
+      "crap_load": 85.0,
+      "functions": 4,
+      "grade": "F",
+      "over_target": 3
+     },
+     "src": {
+      "crap_load": 90.06,
+      "functions": 6,
+      "grade": "D",
+      "over_target": 1
+     }
+    },
+    "commit": "b130955c256d5ec82383e1f3cbf3b981fa0ced69",
+    "crap_load": 175.06,
+    "created_at": "2026-08-28T16:30:49Z",
+    "functions": 10,
+    "over_target": 4,
+    "run_id": 4
+   }
+  ],
+  "schema": 1,
+  "target": 6
+ },
+ "worklist": {
+  "active": [
+   {
+    "authors": 1,
+    "ccn": 3,
+    "ccn_std": 3,
+    "commits": 11,
+    "end": 9,
+    "flag": "measured",
+    "function": "bucket( value , low = 1 , high = 9 )",
+    "nloc": 6,
+    "path": "pylib/steady.py",
+    "remedy": "add-tests",
+    "risk": 2.6154,
+    "scope": "py",
+    "start": 4,
+    "weight": 0.8718
+   },
+   {
+    "authors": 1,
+    "ccn": 7,
+    "ccn_std": 7,
+    "commits": 4,
+    "end": 19,
+    "flag": "measured",
+    "function": "read_chunk( path , max_bytes = 1 < < 20 , mode = \"rb\" , retries = 0 , strict = False )",
+    "nloc": 15,
+    "path": "pylib/chunk.py",
+    "remedy": "decompose",
+    "risk": 0.0336,
+    "scope": "py",
+    "start": 4,
+    "weight": 0.0048
+   },
+   {
+    "authors": 1,
+    "ccn": 3,
+    "ccn_std": 3,
+    "commits": 4,
+    "end": 23,
+    "flag": "measured",
+    "function": "tidy( rows )",
+    "nloc": 2,
+    "path": "pylib/chunk.py",
+    "remedy": "add-tests",
+    "risk": 0.0144,
+    "scope": "py",
+    "start": 22,
+    "weight": 0.0048
+   }
+  ],
+  "churn_window_months": 12,
+  "commit": "b130955c256d5ec82383e1f3cbf3b981fa0ced69",
+  "dormant_count": 2,
+  "dormant_top": [
+   {
+    "authors": 0,
+    "ccn": 8,
+    "ccn_std": 8,
+    "commits": 0,
+    "end": 13,
+    "flag": "untested",
+    "function": "route ( kind , mode )",
+    "nloc": 12,
+    "path": "src/messy.ts",
+    "remedy": "decompose",
+    "risk": 0.0,
+    "scope": "src",
+    "start": 1,
+    "weight": 0.0
+   },
+   {
+    "authors": 0,
+    "ccn": 5,
+    "ccn_std": 5,
+    "commits": 0,
+    "end": 4,
+    "flag": "measured",
+    "function": "guarded( a , b )",
+    "nloc": 4,
+    "path": "pylib/mod.py",
+    "remedy": "ok",
+    "risk": 0.0,
+    "scope": "py",
+    "start": 1,
+    "weight": 0.0
+   }
+  ],
+  "floor": 5,
+  "run_id": 4,
+  "schema": 1,
+  "stale": false
+ }
+}

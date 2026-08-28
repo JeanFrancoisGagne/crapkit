@@ -247,6 +247,14 @@ def build_parser() -> argparse.ArgumentParser:
     trd.add_argument("--json", action="store_true", help="print as JSON")
     trd.set_defaults(func=_Handler("reports", "cmd_trend"))
 
+    rep = sub.add_parser("report", help="one self-contained HTML page: the ranked worklist, "
+                                        "the per-scope grades, the trend, and a staleness banner")
+    rep.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    rep.add_argument("--out", default=".crapkit/report.html", metavar="PATH",
+                     help="where to write the page, relative to the repo "
+                          "(default: .crapkit/report.html); the path is printed on stdout")
+    rep.set_defaults(func=_Handler("reports", "cmd_report"))
+
     tsc = sub.add_parser("test-scoped", help="run the configured isolated test command for the files' scope")
     tsc.add_argument("files", nargs="+", help="repo-relative test files")
     tsc.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
