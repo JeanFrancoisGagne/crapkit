@@ -29,6 +29,27 @@ Every key, including the optional ones, is tabled in
 
 ---
 
+## Which languages a lane can measure
+
+Short answer: whichever ones your runner reports in one of two formats.
+
+A parser reads an artifact format, not a language. `coveragepy` reads coverage.py's JSON
+report. `istanbul` reads `coverage-final.json`, which vitest, jest and every other
+istanbul-shaped runner write. If your suite writes one of those two files, declare a lane and
+crapkit measures it. In practice that is Python plus the JavaScript and TypeScript family.
+
+Anything else has no lane to declare today. Go's coverprofile, `cargo-llvm-cov`, Swift's
+llvm profdata, JaCoCo XML: crapkit reads none of them, and no config key unlocks one.
+Somebody writing the parser is the only thing that changes that.
+
+**Those scopes run cc-only, which is a real answer, not a failure.** Complexity, the
+worklist, the ratchet and the commit gate all work on a cc-only scope; `crap` is just `ccn`,
+because the coverage half was never measured. Set `coverage_optional = true` on the scope so
+`doctor` stops asking for a lane that cannot exist. See
+[configuration.md](configuration.md#coverage_optional--true).
+
+---
+
 ## Where artifacts live
 
 Point every `artifact` and `results_artifact` under `.crapkit/`. `crapkit init` ignores
@@ -48,11 +69,11 @@ file.
 | vitest | `--coverage.reportsDirectory=.crapkit/cov/js` | `.crapkit/cov/js/coverage-final.json` |
 | jest | `--coverageDirectory=.crapkit/cov/js` | `.crapkit/cov/js/coverage-final.json` |
 
-The two JS flags are not interchangeable: jest exits on vitest's spelling and vitest exits
-on jest's. `init` writes one only when `package.json` names exactly one of the two runners
-in `devDependencies` — `npm test` can run anything, and a wrong flag turns a working lane
-into an argument error. A repo naming neither or both keeps its runner's default directory,
-and `doctor` says so:
+The two JS flags are not interchangeable: jest exits on vitest's spelling and vitest exits on
+jest's. `init` writes one only when `package.json` names exactly one of the two runners in
+`devDependencies`. `npm test` can run anything, and a wrong flag turns a working lane into an
+argument error. A repo naming neither or both keeps its runner's default directory, and
+`doctor` says so:
 
 ```
 WARN lane 'js' writes coverage/coverage-final.json at the repo root — point it under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean
@@ -125,10 +146,10 @@ export default {
 };
 ```
 
-`crapkit init` excludes `*.config.ts` (and `.js`/`.mts`, at any depth) from scoring
-by default, so this file never trips doctor's unclaimed-file check. If you wrote your
-`[exclude]` list by hand, add `"*.config.ts"` — globs are whole-path, so the bare
-form matches the repo root and `**/*.config.ts` matches nested copies.
+`crapkit init` excludes `*.config.ts` (and `.js`/`.mts`, at any depth) from scoring by
+default, so this file never trips doctor's unclaimed-file check. If you wrote your
+`[exclude]` list by hand, add `"*.config.ts"`. Globs are whole-path, so the bare form matches
+the repo root and `**/*.config.ts` matches nested copies.
 
 ### `reportOnFailure`
 
@@ -324,6 +345,8 @@ container_ok = true
 
 ## Reusing artifacts
 
+Rerunning a suite crapkit already read is the slowest thing it does. Two flags skip it.
+
 Every artifact crapkit reads is stamped in `.crapkit/artifacts.json` with the commit it was
 built at, the lane that built it, and how long the lane took.
 
@@ -355,6 +378,8 @@ caller would read as "nothing left to cover".
 ---
 
 ## Timeouts and retries
+
+A hung suite would otherwise hang the run. Two keys bound it:
 
 ```toml
 timeout_seconds = 1800
@@ -418,6 +443,8 @@ Rules that keep this from hiding real failures:
 ---
 
 ## Running lanes in parallel
+
+Wall time, and nothing else. The scores come out identical.
 
 ```toml
 [crapkit]
