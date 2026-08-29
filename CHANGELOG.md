@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.4.2 — 2026-08-29
+
+Fixes from a fresh-user verification pass: five simulated strangers followed the
+published docs verbatim, and these are the places the tool or the docs lied.
+
+### cc-only repos can follow the 60-second start
+A repo whose languages all score on complexity alone (Go, Rust, shell, PowerShell,
+Swift, the C family, Java, Zig, Objective-C) dead-ended at `crapkit coverage`
+("no [[lane]] to run"). `init` now writes `coverage_optional = true` on every scope that
+cannot have a coverage lane, `coverage` writes a real scored run for such repos, and
+`worklist`, `next-item`, `rescore --gate`, `ratchet seed`, and `verify` all accept it.
+A mixed repo (Python plus Rust, say) scores its coverage lane and its cc-only scopes in
+the same run; nothing lands in `skipped_no_lane` for a scope that never needed a lane.
+
+### Bare names for Rust and Go
+`brief` and `next-item`'s `handle` derived the bare identifier by splitting the long
+name on `(`, which Rust and Go long names do not carry. The bare name now comes from
+the leading identifier, so `brief rust/lib.rs route` works. `explain` and `brief` share
+one match rule: exact name first, prefix only when nothing matches exactly.
+
+### Cognitive complexity counts a Rust `match`
+The corrected Rust reader fixed ccn but cognitive still read 0 for a `match`; it now
+counts like a switch (one plus nesting), so a match and its if/else-if twin agree.
+
+### CI
+Every test job failed, on both operating systems, because the suite's fixture lane
+assumed pytest-xdist and the CI install did not ship it; the badge told every visitor
+the project was broken. The dev extra now carries every plugin the fixture lanes need,
+CI installs that extra, and a contract test pins both. CI also stops swallowing
+crapkit's own gate: a commit over the ceiling now fails the build.
+
+### Docs
+Real `doctor` and `next-item` transcripts (the old samples predated 0.4.x); the gate
+table says what `git commit` actually returns (the hook exits 6, git reports 1); the
+vitest provider install is pinned to your vitest major; the published handbook's two
+links out no longer 404; the packet field count and the PowerShell switch-arm rule now
+match the code.
+
 ## 0.4.1 — 2026-08-29
 
 A documentation and packaging release. No scoring or gate behavior changed.
