@@ -100,7 +100,8 @@ def _warn_missing_pytest_cov(lanes: tuple) -> None:
     `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
     REPO's interpreter, so a crapkit dependency could only ever cover installs
     sharing the suite's venv. Probe the python the lane will actually run and
-    say the fix now, instead of `coverage` exiting 5 after the whole suite."""
+    say the fix now, instead of `coverage` exiting 5 with a lane log the first
+    run has to decode."""
     for lane in lanes:
         if lane.parser == "coveragepy" and "--cov" in lane.command \
                 and not _pytest_cov_probe(lane.command):
