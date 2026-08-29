@@ -91,6 +91,22 @@ source checkout. Every subcommand accepts `--repo PATH` (default: the current di
 so you never have to `cd` into the repo you are scoring. The flag goes after the
 subcommand; [Subcommands](#subcommands) shows both orders.
 
+### Upgrading on Windows
+
+`uv tool upgrade crapkit`, and `pip install -U` into a tool venv, fail with `os error 32`
+("The process cannot access the file because it is being used by another process") while a
+crapkit MCP server is live: an agent session spawns `crapkit.exe mcp`, which holds the
+launcher, and Windows will not overwrite a running executable. The venv upgrades before
+that copy fails, so `crapkit --version` already reports the new version and the launcher is
+the only stale piece. Quit the agent session and rerun the upgrade, or rename the locked
+exe aside (Windows allows renaming a running one) and copy the new one in; the `.old` file
+goes at the next reboot.
+
+```
+mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
+cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe
+```
+
 ## The Claude Code plugin
 
 ```
@@ -301,7 +317,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. |
 | `digest [--alert]` | The delta between the two newest runs with identical lane sets. Silent when nothing changed. `--alert` pipes the body to `alert_command` on stdin. Plain lines, never JSON. |
 | `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Per-function CRAP and coverage are absent because no repo-wide payload carries them; each row prints the `crapkit explain` call that does. |
-| `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. `--top` truncates the list. |
+| `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. `--top` truncates the list. A function and a function nested inside it never pair: their spans nest, they score 1.0 by construction, and nobody can deduplicate a factory from its own closure. |
 | `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. |
 | `mutate [--files F ...] [--max-mutants N] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |

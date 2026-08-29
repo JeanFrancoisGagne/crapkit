@@ -738,6 +738,11 @@ crapkit doctor      # config against reality: unknown keys, unclaimed files, dea
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
 <p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). Plain <code>pip install crapkit</code> works once the PyPI release lands. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
 
+<h3>Upgrading on Windows</h3>
+<p><code>uv tool upgrade crapkit</code>, and <code>pip install -U</code> into a tool venv, fail with <code>os error 32</code> ("The process cannot access the file because it is being used by another process") while a crapkit MCP server is live: an agent session spawns <code>crapkit.exe mcp</code>, which holds the launcher, and Windows will not overwrite a running executable. The venv upgrades before that copy fails, so <code>crapkit --version</code> already reports the new version and the launcher is the only stale piece. Quit the agent session and rerun the upgrade, or rename the locked exe aside (Windows allows renaming a running one) and copy the new one in; the <code>.old</code> file goes at the next reboot.</p>
+<pre><code>mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
+cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe</code></pre>
+
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
 claude plugin install crapkit@crapkit</code></pre>

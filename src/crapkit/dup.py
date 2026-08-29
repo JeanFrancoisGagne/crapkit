@@ -95,7 +95,12 @@ def _pair_payload(a: InventoryRow, b: InventoryRow, similarity: float) -> dict:
     functions = sorted(({"path": r.path, "long_name": r.long_name, "start": r.start,
                          "end": r.end, "nloc": r.nloc} for r in (a, b)),
                        key=lambda f: (f["path"], f["start"]))
-    return {"functions": functions, "similarity": round(similarity, 4)}
+    # `contained` is False on every pair that gets here, because find_duplicates
+    # drops the nested ones before building a payload. It is still emitted: a
+    # consumer that reads pairs and twins together gets one shape, and False is
+    # a claim about the spans rather than a key it has to guess the meaning of.
+    return {"functions": functions, "similarity": round(similarity, 4),
+            "contained": False}
 
 
 def _twin_payload(r: InventoryRow, similarity: float, contained: bool) -> dict:
@@ -113,8 +118,11 @@ def _nested_spans(a, b) -> bool:
 
     A nested function's normalized lines are a subset of its enclosing
     function's, so the pair scores 100% and reads as a perfect duplicate that
-    nobody can deduplicate. Only meaningful inside one file — the line numbers
+    nobody can deduplicate. Only meaningful inside one file: the line numbers
     of two different files never nest.
+
+    find_twins keeps such a pair and labels it, because a brief about one
+    function wants its enclosing function named. find_duplicates drops it.
     """
     return a.path == b.path and (_encloses(a, b) or _encloses(b, a))
 
@@ -159,6 +167,11 @@ def find_duplicates(rows: list[InventoryRow], load_sources, *,
                     top: int = 50) -> list[dict]:
     """Every near-duplicate pair in a snapshot, best containment first.
 
+    A pair whose two spans nest is skipped: a factory and the closure defined
+    inside it score a perfect 1.0 by construction, and no one can deduplicate
+    them. On the repo that reported this, 43 of 43 pairs were that shape, so
+    the report was 100% noise before the skip.
+
     `load_sources` is a CALLABLE returning {path: text}, not the texts
     themselves. Shingles are ints: a file's text is dead the moment its rows are
     indexed, and the pair counting below is where the heap actually goes. A
@@ -172,7 +185,7 @@ def find_duplicates(rows: list[InventoryRow], load_sources, *,
     for (ia, ib), count in _shared_counts(indexed).items():
         a, b = indexed[ia], indexed[ib]
         score = count / min(len(a[1]), len(b[1]))
-        if score >= similarity:
+        if score >= similarity and not _nested_spans(a[0], b[0]):
             pairs.append(_pair_payload(a[0], b[0], score))
     pairs.sort(key=lambda p: (-p["similarity"], p["functions"][0]["path"],
                               p["functions"][0]["start"]))

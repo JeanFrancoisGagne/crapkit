@@ -36,6 +36,27 @@ CLONE = (
     "    return [total, count, average, label]\n"
 )
 
+# A closure factory: lizard scores `reach_tool` at 1..14 and `reach` at 2..12,
+# and the inner body's normalized lines are all the outer body's too, so the two
+# score a perfect 1.0 against each other. Issue #1: that pair used to top the
+# report, and no one can deduplicate a function from the closure inside it.
+FACTORY = (
+    "def reach_tool(deps):\n"
+    "    def reach(name, depth=1):\n"
+    "        total = 0\n"
+    "        for step in range(depth):\n"
+    "            total = total + deps.weight(step)\n"
+    "        label = deps.label(name)\n"
+    "        parts = label.split('/')\n"
+    "        head = parts[0]\n"
+    "        tail = parts[-1]\n"
+    "        size = len(parts)\n"
+    "        return {'name': name, 'head': head, 'tail': tail,\n"
+    "                'size': size, 'total': total}\n"
+    "    deps.register(reach)\n"
+    "    return reach\n"
+)
+
 RATE_BEFORE = "def rate(x):\n    return x\n"
 RATE_AFTER = "def rate(x):\n    if x > 10:\n        return 10\n    return x\n"
 # The suite for the mutate repo: a script, so the repo root lands on sys.path.
@@ -94,10 +115,13 @@ def coupled_repo(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def clone_repo(tmp_path: Path) -> Path:
+    """Two real clones and one closure factory: the report has to find the first
+    pair and say nothing about the second."""
     repo = tmp_path / "clones"
     write(repo / "crapkit.toml", SRC_TOML)
     write(repo / "src" / "dup_a.py", CLONE.replace("NAME", "summarize_alpha"))
     write(repo / "src" / "dup_b.py", CLONE.replace("NAME", "summarize_beta"))
+    write(repo / "src" / "factory.py", FACTORY)
     git(repo, "init", "-q", "-b", "main")
     commit_all(repo, "clones")
     res = run_cli(repo, "inventory")
@@ -152,6 +176,16 @@ def test_duplication_json_pairs_the_two_clones(clone_repo: Path):
     (pair,) = payload["pairs"]
     assert [f["path"] for f in pair["functions"]] == ["src/dup_a.py", "src/dup_b.py"]
     assert pair["similarity"] == 0.875
+    assert pair["contained"] is False
+
+
+def test_duplication_json_leaves_a_closure_out_of_its_factorys_pairs(clone_repo: Path):
+    """The repo holds `reach_tool` and the `reach` defined inside it, a 1.0 pair
+    by construction. Nothing in the payload names either one."""
+    res = run_cli(clone_repo, "duplication", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+    named = [f["long_name"] for p in json.loads(res.stdout)["pairs"] for f in p["functions"]]
+    assert not [n for n in named if "reach" in n], named
 
 
 def test_duplication_plain_output_shows_both_functions(clone_repo: Path):
