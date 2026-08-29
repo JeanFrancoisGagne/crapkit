@@ -146,8 +146,8 @@ different powers:
 | Surface | Fires | Power |
 |---|---|---|
 | `crapkit claude-hook` | after an agent's edit lands | **advisory.** Names the breach on stderr. Blocks nothing, because PostToolUse runs after the write |
-| `crapkit rescore FILE --gate` | when you ask | **preview.** The commit gate's verdict on demand, sub-second, before you stage |
-| `crapkit hook-precommit` | `git commit` | **blocks.** Exit 6. Staged blobs only, so it costs the size of the commit and needs no coverage |
+| `crapkit rescore FILE --gate` | when you ask, after the first coverage run | **preview.** The commit gate's verdict on demand, sub-second, before you stage. With no run behind it, exit 1 and `no snapshot` |
+| `crapkit hook-precommit` | `git commit` | **blocks.** The hook exits 6; git reports 1. Staged blobs only, so it costs the size of the commit and needs no coverage |
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
 
 Both hooks exempt a function the committed ratchet already carries a mark for, so touching
@@ -207,7 +207,8 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 ```yaml
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
-    rev: v0.4.0
+    # crapkit's release step rewrites this line to the tag it just cut
+    rev: v0.4.1
     hooks:
       - id: crapkit-gate
 ```
@@ -243,7 +244,9 @@ crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
 decompose before committing (coverage cannot save a function above the target).
 ```
 
-Run directly, `crapkit hook-precommit` exits 6 on a violation and 0 otherwise.
+That commit exited **1**, not 6. Git collapses any failed hook to 1, so 6 is a code you
+only ever see by running the hook yourself: `crapkit hook-precommit` exits 6 on a
+violation and 0 otherwise. The stderr block above is the same either way.
 
 `CRAPKIT_OVERRIDE_REASON` is not a bypass. Setting it routes the commit through the full
 three-record audit: an alert line through `alert_command`, a ratchet entry staged into the
@@ -284,7 +287,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `next-item [--top N] [--exclude FRAG] [--scope NAME] [--claim]` | The actionable queue as JSON, with churn, budget estimates and uncovered lines. Same run and same admission floor as `worklist`, a different view of it: `no-lane` rows are skipped and counted in `skipped_no_lane`, and what is left is ranked by `crap` descending rather than by risk, so the item it hands out is often not the worklist's first row. `--exclude FRAG` (repeatable) skips items whose path or function name contains FRAG; `--scope NAME` (repeatable) is exact, not a substring. `--claim` holds what it hands out so a second session skips it. `stale` is true when the ranked run's commit is not HEAD, the same field `worklist` carries. Every item carries a `handle`: the bare identifier, or `(anonymous)#N` for a function with no name, which is the name form that survives the edit the item asks for. |
 | `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. |
 | `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, or `(anonymous)#N` for a function printed `(anonymous)`, counting the file's anonymous functions from the top. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store. |
-| `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
+| `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
 | `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions a ratchet mark already covers, and exits 6. |
 | `ratchet seed \| prune \| merge \| move \| report [--enforce] [--json]` | The mark lifecycle: seed new debt, prune gone code (a mark whose file git renamed follows it), merge as a git driver, move re-paths marks, report reads burn-down from the file's own git history. See [docs/ratchet.md](docs/ratchet.md). |
 | `runs [list \| prune [--keep N]] [--json]` | Run history, and retention. `list` marks the run `verify` compares against today `baseline`, and prints `verdict=-` for a run that produces no verdict rather than one that failed. See [The trusted baseline](#the-trusted-baseline). `--keep` (default 5) is a floor on the newest trusted runs, not a cap: the digest pair, every passing verify baseline, every run an override names, and the newest non-hook run are kept too. `prune` VACUUMs afterwards. |
@@ -504,6 +507,11 @@ makes it step 4 of the burn-down loop. Every key is in
 
 ```
 $ crapkit doctor
+ok   config keys all recognized
+ok   scope 'calc': 1 files
+ok   every tracked source file belongs to a scope
+ok   1 lane(s) declared
+ok   lizard 1.24.0
 doctor: no problems found
 ```
 
@@ -535,11 +543,12 @@ worklist has none.
 
 ```
 $ crapkit next-item
-{"commit": "fae4db93108b4841a00959f9117430679e7250ca", "empty": false, "item": {"authors": 1, "ccn": 14, "ccn_std": 14, "cognitive": 13, "commits": 1, "cov": 0.5, "crap": 38.5, "end": 28, "est_splits": 3, "est_uncovered_paths": 7, "flag": "measured", "function": "classify( score , attempts , late , bonus )", "nesting": 8, "nloc": 22, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 7, "target": 6, "uncovered_lines": [9, 11, 15, 17, 19, 24, 25, 26, 27, 28]}, "run_id": 1, "schema": 1, "skipped_no_lane": 0}
+{"commit": "fae4db93108b4841a00959f9117430679e7250ca", "empty": false, "item": {"authors": 1, "ccn": 14, "ccn_std": 14, "cognitive": 13, "commits": 1, "cov": 0.5, "crap": 38.5, "end": 28, "est_splits": 3, "est_uncovered_paths": 7, "flag": "measured", "function": "classify( score , attempts , late , bonus )", "handle": "classify", "nesting": 8, "nloc": 22, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 7, "target": 6, "uncovered_lines": [9, 11, 15, 17, 19, 24, 25, 26, 27, 28]}, "run_id": 1, "schema": 1, "skipped_no_lane": 0, "stale": false}
 ```
 
 `remedy: "decompose"`, `est_splits: 3` (this needs roughly three pieces to fit under 6),
-and `uncovered_lines` naming the ten lines no test walks. Every field is in
+and `uncovered_lines` naming the ten lines no test walks. `handle` is the name form to
+pass back, and `stale: false` says the run still describes HEAD. Every field is in
 [docs/agent-json.md](docs/agent-json.md).
 
 ### 5. Seed the ratchet
@@ -616,17 +625,21 @@ crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/cov
 crapkit: every lane failed: ...
 ```
 
-Install the provider, pinned to your vitest major or npm refuses the peer dependency:
+That failure **writes no run**. Every lane failed, so `coverage` exits before it opens a
+store: there is no `.crapkit/crap.sqlite` yet and the run ids below still start at 1.
+
+Install the provider, and pin the major yourself. Unpinned, npm resolves the newest
+provider against your older vitest and refuses the tree:
 
 ```
-npm i -D @vitest/coverage-v8
+npm i -D "@vitest/coverage-v8@<your vitest major>"
 ```
 
 | Question | Answer |
 |---|---|
 | Which provider? | Either works. `@vitest/coverage-v8` is vitest's default and needs no config. `@vitest/coverage-istanbul` also works and needs `coverage.provider = "istanbul"` in your vitest config. |
 | Which crapkit parser? | Both feed `parser = "istanbul"`. The provider name and the parser name are unrelated: v8 output is remapped to the istanbul JSON schema before it is written. |
-| Which version? | It must match your vitest major. npm refuses the install otherwise (`peer vitest@"4.x" from @vitest/coverage-v8@4.x`). On vitest 2, `npm i -D "@vitest/coverage-v8@2"`. |
+| Which version? | The provider's major has to match vitest's. On vitest 2 that is `npm i -D "@vitest/coverage-v8@2"`, on vitest 3 `npm i -D "@vitest/coverage-v8@3"`. Drop the pin and npm answers `ERESOLVE unable to resolve dependency tree`, naming the peer it could not satisfy. |
 
 The artifact crapkit wants is `coverage-final.json`, written by vitest's `json` coverage
 reporter, which is on by default. If your vitest config sets `coverage.reporter`

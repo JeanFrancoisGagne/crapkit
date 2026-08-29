@@ -144,7 +144,7 @@
 <div class="shell">
 
 <header class="hero">
-  <p class="kicker">The Handbook · v0.4.0 · self-contained · reads offline from a clone</p>
+  <p class="kicker">The Handbook · v0.4.1 · self-contained · reads offline from a clone</p>
   <h1>crapkit</h1>
   <p class="standfirst">A deterministic <strong>change-risk gate</strong> for Python, TypeScript, TSX, JavaScript, Vue, Go, Rust, shell, PowerShell, Swift, C and C++, Objective-C, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
   <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
@@ -290,7 +290,7 @@
 <figcaption>Every scored run prints a grade.</figcaption>
 </figure>
 
-<p>A Sonar-spec <strong>cognitive complexity</strong> column rides along in the brief and next-item payloads as a second opinion on readability, measured in every language crapkit scans. It reports and never gates. The gate is min-ccn only, so the rule a commit is judged by has exactly one definition.</p>
+<p>A Sonar-spec <strong>cognitive complexity</strong> column rides along in the brief and next-item payloads as a second opinion on readability, measured in every language crapkit scans. Running everywhere is not the same as modelling everything: a construct the reader for that language does not model reads 0, so a low cognitive number beside a high ccn is a question, not an all-clear. It reports and never gates. The gate is min-ccn only, so the rule a commit is judged by has exactly one definition.</p>
 
 <!-- ============================ 03 LANGUAGES ============================ -->
 <h2 id="languages"><span class="sn">03</span>What it reads</h2>
@@ -323,7 +323,7 @@
 <ul>
   <li><strong>Rust</strong> runs on a corrected reader. lizard 1.24.0 lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a dispatch table reads as trivial: a five-arm match that crapkit scores ccn 5 scores 2 upstream. crapkit counts one point per non-wildcard arm, exactly like a C <code>case</code>. A test pins the stock reader's wrong answer, so the module retires itself the day upstream lands the fix.</li>
   <li><strong>shell</strong> gets a reader lizard ships none of, counting <code>case</code> per arm rather than once per block. It reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level, so a script that is one long top-level sequence reports nothing. That is the answer, not a parse failure.</li>
-  <li><strong>PowerShell</strong> gets a reader too, one point per <code>switch</code> arm, because a twelve-arm dispatcher should not score the same 2 as a one-arm one. Source bytes decode utf-8 first and cp1252 second, by content rather than by the machine's locale. Windows PowerShell writes cp1252 by default, and left to <code>io.open</code> the same file scored one way on Windows and another on Linux.</li>
+  <li><strong>PowerShell</strong> gets a reader too: one point per non-default arm of a <code>switch</code>, because a twelve-arm dispatcher should not score the same 2 as a one-arm one. <code>default</code> is free, the same rule the Rust reader applies to a wildcard, so the same switch with and without one scores alike: it is the fall-through, not a decision. Source bytes decode utf-8 first and cp1252 second, by content rather than by the machine's locale. Windows PowerShell writes cp1252 by default, and left to <code>io.open</code> the same file scored one way on Windows and another on Linux.</li>
 </ul>
 <p><strong>Kotlin is measured correctly and still refused.</strong> lizard's KotlinReader records only brace-bodied functions, so <code>fun sign(x: Int) = if (x &gt; 0) 1 else if (x &lt; 0) -1 else 0</code> yields no function at all and its two decisions land nowhere. A language that can hide arbitrary branching from the gate is worse than one crapkit declines, so the label waits on upstream.</p>
 
@@ -453,7 +453,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <text x="40" y="276" class="lbl" font-weight="700">at commit · <tspan class="mono">crapkit hook-precommit</tspan> · THE GATE</text>
   <text x="860" y="276" text-anchor="end" class="lbl" font-weight="700" fill="var(--accent)">this one blocks</text>
   <text x="40" y="300" class="sm">reads the staged blobs in one <tspan class="mono">git cat-file --batch</tspan> · cc-only, no store, no coverage, no network</text>
-  <text x="40" y="318" class="sm">a breach: exit 6 and the commit does not happen · decompose, or sign for the debt</text>
+  <text x="40" y="318" class="sm">a breach: the hook exits 6, git reports 1, the commit does not happen · decompose, or sign for the debt</text>
   <text x="40" y="336" class="sm">exempt: any function the committed ratchet already marks, counted in one stderr line</text>
   <text x="40" y="354" class="sm">costs the size of the commit, not the size of the repo</text>
   <text x="860" y="354" text-anchor="end" class="sm"><tspan class="mono">crapkit verify</tspan> fails a mark that rises</text>
@@ -476,8 +476,8 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <div class="tw"><table>
   <tr><th>Where</th><th>Command</th><th>Blocks?</th><th>Sees coverage?</th><th>What it is for</th></tr>
   <tr><td>after every edit</td><td class="mono">crapkit claude-hook</td><td>no</td><td>no</td><td>Automatic, via the plugin. Names a function the edit pushed over its ceiling.</td></tr>
-  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>no</td><td>Sub-second preview of the commit gate's verdict, before you stage anything.</td></tr>
-  <tr><td>at <code>git commit</code></td><td class="mono">crapkit hook-precommit</td><td class="mono">exit 6</td><td>no</td><td>The enforcement point. Staged blobs, in memory, no store needed.</td></tr>
+  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>no</td><td>Sub-second preview of the commit gate's verdict, before you stage anything. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
+  <tr><td>at <code>git commit</code></td><td class="mono">crapkit hook-precommit</td><td class="mono">exit 6, git says 1</td><td>no</td><td>The enforcement point. Staged blobs, in memory, no store needed.</td></tr>
   <tr><td>before merge</td><td class="mono">crapkit verify --base REF</td><td class="mono">6 7 8 9</td><td>yes</td><td>The full verdict: gate, ratchet, new test failures, dark diff lines.</td></tr>
   <tr><td>in CI</td><td class="mono">crapkit verify --baseline-tsv FILE</td><td class="mono">6 7 8 9</td><td>yes</td><td>A fresh clone judged against a committed baseline. Add <code>--sarif PATH</code> or <code>--github</code>.</td></tr>
 </table></div>
@@ -661,7 +661,7 @@ scopes   = ["src"]</code></pre>
   <text x="450" y="262" text-anchor="middle" class="sm mono">notes.repo · notes.scope: the written-down traps</text>
   <text x="450" y="280" text-anchor="middle" class="sm mono">attempts · regrowth: has someone tried this before, did it hold</text>
   <path class="arrow" d="M450 206 V 216"/>
-  <text x="450" y="330" text-anchor="middle" class="sm">28 top-level fields · additive-only · schema pinned at 1 · full reference in docs/agent-json.md</text>
+  <text x="450" y="330" text-anchor="middle" class="sm">29 top-level fields (additive-only, so this number only grows) · schema pinned at 1 · full reference in docs/agent-json.md</text>
 </svg>
 <figcaption>The packet, grouped by the question each field answers. Nothing here requires opening the file.</figcaption>
 </figure>
@@ -753,7 +753,7 @@ chmod +x .git/hooks/pre-commit</code></pre>
 <h3>Then, whenever</h3>
 <pre><code>crapkit worklist            # the risk map: what is worst, and how hot it runs
 crapkit report              # renders .crapkit/report.html for people who will not open a terminal</code></pre>
-<p>Walked-through quickstarts for Python and TypeScript, with real transcripts, live in the <a href="../README.md">README</a>. The judgment calls, meaning scope granularity, exclude versus lane, and the first-verify hazard, are in <a href="adoption.md">docs/adoption.md</a>.</p>
+<p>Walked-through quickstarts for Python and TypeScript, with real transcripts, live in the <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md">README</a>. The judgment calls, meaning scope granularity, exclude versus lane, and the first-verify hazard, are in <a href="adoption.md">docs/adoption.md</a>.</p>
 
 <!-- ============================ 16 USES ============================ -->
 <h2 id="uses"><span class="sn">16</span>Six ways people run it</h2>
@@ -896,7 +896,7 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 </ul>
 
 <footer>
-  <p><strong>Where to next.</strong> <a href="../README.md">README</a> for the full command reference and quickstart transcripts · <a href="../AGENTS.md">AGENTS.md</a> for the working agent contract · <a href="configuration.md">configuration</a>, <a href="lanes.md">lanes</a>, <a href="ratchet.md">ratchet</a>, <a href="agent-json.md">agent-json</a>, <a href="adoption.md">adoption</a> for the deep references. MIT licensed. This handbook is self-contained by design: no network, no scripts, system fonts only. It reads the same from a fresh clone, a fork, or a file:// double-click.</p>
+  <p><strong>Where to next.</strong> <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md">README</a> for the full command reference and quickstart transcripts · <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md">AGENTS.md</a> for the working agent contract · <a href="configuration.md">configuration</a>, <a href="lanes.md">lanes</a>, <a href="ratchet.md">ratchet</a>, <a href="agent-json.md">agent-json</a>, <a href="adoption.md">adoption</a> for the deep references. MIT licensed. This handbook is self-contained by design: no network, no scripts, system fonts only. It reads the same from a fresh clone, a fork, or a file:// double-click.</p>
 </footer>
 </div>
 </body>
