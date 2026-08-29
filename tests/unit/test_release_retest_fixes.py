@@ -37,9 +37,15 @@ def test_coveragepy_lane_ignores_the_pytest_droppings():
 def test_lane_templates_carry_a_placeholder_scope_not_a_real_one():
     """init wrote the python project's real scope into the ISTANBUL template,
     pointing a TS lane at python sources."""
-    lines = "\n".join(_template_lines(set(), '"calc"'))
+    lines = "\n".join(_template_lines(set(), {"calc": ("python",)}))
     assert '"<your-scope>"' in lines
     assert '"calc"' not in lines
+
+
+def test_a_repo_with_no_coverable_language_gets_no_lane_template_at_all():
+    """Neither parser reads Go, so both templates would tell a Go repo to
+    declare a lane before running coverage — which is the step it has to skip."""
+    assert _template_lines(set(), {"cmd": ("go",)}) == []
 
 
 def test_missing_pytest_cov_failure_names_the_package():

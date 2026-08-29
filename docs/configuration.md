@@ -166,6 +166,10 @@ Two reasons to set it. Either no test can reach the code (entry points, deploy s
 generated shims), or nothing produces a coverage artifact crapkit reads for it (Go, Rust,
 Swift, C and the rest).
 
+`crapkit init` writes the key for the second reason on its own: a scope whose languages
+all lack a parser gets it, a scope holding one language a parser reads does not. The first
+reason is yours to declare, because only you know a test cannot reach the code.
+
 Four effects:
 
 - crapkit flags every function in the scope `cc-only` and scores it `crap = ccn`, skipping

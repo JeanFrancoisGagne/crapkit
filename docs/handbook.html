@@ -317,6 +317,7 @@
 
 <h3>cc-only is a real answer, not a gap</h3>
 <p>crapkit ships two artifact parsers and no more, so most of that table scores <code>crap = ccn</code> under <code>coverage_optional = true</code>, with no lane to run. That costs less than it sounds, because <strong>the ceiling is a ccn ceiling</strong> (<a href="#score">§02</a>). Coverage cannot rescue a function above target in any language. What a cc-only scope loses is the ability to <em>earn</em> a pass below the ceiling with tests, and the dark-lines detail in the packet. What it keeps is the whole gate: a ccn-9 function still fails, still ranks, still gets a packet.</p>
+<p><code>crapkit init</code> writes <code>coverage_optional = true</code> on every scope whose languages all sit in that cc-only half, and leaves it off any scope one parser can still reach. A repo made entirely of those scopes therefore declares no <code>[[lane]]</code> at all, and <code>crapkit coverage</code> runs it anyway: the scored run it writes is the baseline <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code> and <code>verify</code> all read. Exit 3 survives for the case it was written for — a scope with neither a lane nor the key — and the message names that scope.</p>
 <p>Write a coverage lane the day the language gets one. Nothing else in the config changes.</p>
 
 <h3>Three readers crapkit owns or corrects</h3>

@@ -1014,11 +1014,24 @@ def pick_baseline(runs: list[dict]) -> BaselinePick:
 
 
 def is_trusted(r: dict) -> bool:
-    """Trusted = a coverage run, or a verify run whose verdict passed."""
-    if not r["lanes"] or r["kind"] == "hook":
+    """Trusted = a full coverage run, or a verify run whose verdict passed.
+
+    `kind` decides it, not lane provenance. A repo whose every scope declares
+    `coverage_optional` scores with no lanes at all, and reading the empty
+    provenance as "nothing was measured" left it with a coverage run no
+    baseline reader would accept — worklist, next-item, rescore, ratchet seed
+    and verify all reported there was no scored run right after one.
+
+    `legacy` is the exception that keeps the old test: those rows were migrated
+    from before the column existed, so one label covers their inventory runs and
+    their coverage runs alike and only provenance tells the two apart.
+    """
+    if r["kind"] == "hook":
         return False
-    if r["kind"] in ("coverage", "legacy", None):
+    if r["kind"] == "coverage":
         return True
+    if r["kind"] in ("legacy", None):
+        return bool(r["lanes"])
     return r["kind"] == "verify" and r["verdict_ok"] is True
 
 

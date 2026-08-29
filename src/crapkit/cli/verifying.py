@@ -328,8 +328,12 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
-    if not cfg.lanes:
-        raise ConfigError("verify needs [[lane]] declarations — coverage is half the verdict")
+    # Not "no lanes at all": a cc-only repo has none and never will, and its
+    # verdict is the gate and the ratchet, which need no coverage number.
+    if cfg.lane_less_scopes:
+        raise ConfigError(f"verify needs a [[lane]] for scope(s) {', '.join(cfg.lane_less_scopes)}"
+                          " — coverage is half the verdict; a scope no coverage parser can read "
+                          "declares coverage_optional = true instead")
     store = _verify_store(root, args.baseline_tsv)
     _guard_ratchet_stamp(root / cfg.ratchet_file, cfg.ratchet_file)
     # One context for the whole command: the ancestry checks, the lane runner and

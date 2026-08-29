@@ -39,14 +39,30 @@ def _package_json(root: Path) -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
+def _next_step(scopes: dict, lanes: tuple) -> str:
+    """What to run next, which is not the same sentence in all three cases.
+
+    A repo whose every language is cc-only was told to declare a lane per
+    coverage command. There is no lane to declare: neither parser reads Go,
+    Rust, shell or the six others, `init` just wrote `coverage_optional` for
+    each scope, and `crapkit coverage` scores them from complexity alone.
+    """
+    from ..scaffold import cc_only_scope
+
+    if lanes:
+        return (f"detected {len(lanes)} lane(s) from this repo's own files: "
+                f"{', '.join(lane.name for lane in lanes)} — next: run `crapkit coverage`")
+    if all(cc_only_scope(languages) for languages in scopes.values()):
+        return ("no coverage parser reads this repo's languages, so every scope is "
+                "cc-only (coverage_optional = true) and needs no lane — next: run "
+                "`crapkit coverage`")
+    return ("next: declare a [[lane]] per coverage command (see the commented template), "
+            "then run `crapkit coverage`")
+
+
 def _print_init_summary(scopes: dict, lanes: tuple) -> None:
     print(f"wrote crapkit.toml with {len(scopes)} scope(s): {', '.join(scopes)}")
-    if lanes:
-        print(f"detected {len(lanes)} lane(s) from this repo's own files: "
-              f"{', '.join(lane.name for lane in lanes)} — next: run `crapkit coverage`")
-        return
-    print("next: declare a [[lane]] per coverage command (see the commented template), "
-          "then run `crapkit coverage`")
+    print(_next_step(scopes, lanes))
 
 
 def _no_scopes_reason(root: Path) -> str:
@@ -214,9 +230,13 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
 
 
 def _doctor_lane_summary(cfg) -> Finding:
+    """No lanes is a gap in most repos and the finished state in a cc-only one,
+    where every scope declares coverage_optional and `coverage` runs anyway."""
     if cfg.lanes:
         return Finding("ok", f"{len(cfg.lanes)} lane(s) declared")
-    return Finding("note", "no [[lane]] declared — inventory works; coverage needs one")
+    if cfg.lane_less_scopes:
+        return Finding("note", "no [[lane]] declared — inventory works; coverage needs one")
+    return Finding("ok", "no [[lane]] declared: every scope is cc-only, so none is needed")
 
 
 def _lane_problems(root: Path, cfg) -> list[str]:

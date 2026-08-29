@@ -133,6 +133,11 @@ lane. Nothing about it is provisional: the ceiling still binds and the gate stil
 a function over it. Add a coverage lane the day a parser exists and the same scope starts
 joining coverage.
 
+`crapkit init` writes that key itself, on every scope whose languages all lack a parser,
+and leaves it off any scope a lane could still measure. So the 60-second start above runs
+unchanged on a Go, Rust or shell repo: `crapkit coverage` scores it with no lane at all,
+and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify` read.
+
 Three readers are crapkit's own. lizard ships none for shell or PowerShell, so crapkit
 counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
 lizard #494), so crapkit counts each non-wildcard arm like a C `case` and retires the
