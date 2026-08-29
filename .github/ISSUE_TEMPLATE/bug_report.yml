@@ -1,0 +1,74 @@
+name: Bug report
+description: crapkit crashed, refused a run, or scored something wrong.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: crapkit --version
+      description: Paste the whole line.
+      placeholder: crapkit 0.4.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you ran, and what you expected
+      description: The exact command line first. Then one line on what should have come back.
+      placeholder: |
+        python -m crapkit coverage
+        Expected a scored run. Got exit 7 and no artifact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: lane
+    attributes:
+      label: Your crapkit.toml, lane and scope blocks only
+      description: >
+        Keep the shape even if you redact the paths. Most refusals are a lane
+        whose command writes an artifact somewhere the parser is not looking.
+      render: toml
+      placeholder: |
+        [[scope]]
+        name = "src"
+        paths = ["src"]
+        languages = ["python"]
+
+        [[lane]]
+        name = "py"
+        command = "python -m pytest --cov=mypkg --cov-branch --cov-report=json:.crapkit/cov/py.json"
+        artifact = ".crapkit/cov/py.json"
+        parser = "coveragepy"
+        scopes = ["src"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: stderr
+    attributes:
+      label: The exact stderr
+      description: >
+        Whole thing, wording untouched, plus the exit code. The exact string is
+        how we find the branch that raised it. A summary is not.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: crapkit doctor
+      description: Optional. It answers most of the follow-up questions in one paste.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: env
+    attributes:
+      label: OS and Python
+      placeholder: Windows 11, Python 3.12.4
+    validations:
+      required: true

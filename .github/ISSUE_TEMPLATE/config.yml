@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How do I set this up?
+    url: https://github.com/JeanFrancoisGagne/crapkit#readme
+    about: Install, crapkit.toml, scopes, lanes, and every command with its output.
+  - name: A run refused, or the ratchet flagged a function I never touched
+    url: https://github.com/JeanFrancoisGagne/crapkit/tree/main/docs
+    about: The lane, ratchet, and configuration pages. Read those before filing.
+  - name: I am writing a patch
+    url: https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md
+    about: Setup, the CCN 6 gate, and the test rules a pull request has to pass.

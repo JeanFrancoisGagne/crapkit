@@ -1,0 +1,39 @@
+name: Feature request
+description: A command, flag, or output shape crapkit is missing.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the task, not the feature. What are you staring at when you wish this existed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What do you do instead today?
+      description: The workaround, however ugly. If there is none, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What it would look like
+      description: The command line you want to type, and the output you want back.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: determinism
+    attributes:
+      label: Determinism
+      description: >
+        Same inputs, same bytes back. No wall-clock values in scored data, no
+        network while scoring. Half the callers are agents diffing two runs.
+      options:
+        - label: This fits that, or I said above why it cannot.
+          required: true
