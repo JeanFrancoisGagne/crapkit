@@ -319,6 +319,46 @@ def test_a_path_after_the_pytest_flags_still_narrows_a_full_suite_lane():
         _covpy_lane("python -m pytest --cov=pylib pylib/unit")
 
 
+# The three transcripts the guard used to refuse (issues #19, #22). Every one is
+# a flag's value written the space-separated way, which is how xdist, pytest's
+# ini override and the plugin switch are written everywhere.
+@pytest.mark.parametrize("command", [
+    "python -m pytest --cov --cov-report=json:coverage-py.json -n 8",
+    "python -m pytest -o timeout=300 -p no:randomly --cov=pylib",
+    "python -m pytest -p no:randomly --cov=pylib",
+    "python -m pytest -k smoke --cov=pylib",
+    "python -m pytest -m unit --cov=pylib",
+    "python -m pytest --deselect pylib/test_mod.py::test_slow --cov=pylib",
+])
+def test_a_space_separated_flag_value_is_not_a_positional_argument(command: str):
+    assert _covpy_lane(command).command == command
+
+
+def test_a_value_taking_flag_does_not_excuse_the_path_that_follows_its_value():
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane("python -m pytest -n 8 pylib/unit")
+
+
+def test_an_unknown_flag_swallows_a_word_but_never_a_path():
+    """A plugin flag crapkit has never heard of takes its value the same way, so
+    a word after one is that value. A path is the one token that outranks it."""
+    assert _covpy_lane("python -m pytest --dist loadscope").command
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane("python -m pytest -q pylib/unit")
+
+
+def test_the_refusal_names_the_attached_form_as_a_remedy():
+    """Dropping the token is the wrong fix when it really is a flag's value, and
+    the old message offered nothing else. `-n8` / `--numprocesses=8` is the edit
+    that both keeps the command working and satisfies the guard."""
+    with pytest.raises(ConfigError) as caught:
+        _covpy_lane("python -m pytest pylib/unit")
+    assert str(caught.value) == (
+        "lane 'py': positional argument 'pylib/unit' narrows a full-suite coverage run; "
+        "drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
+        "or set full_suite = false deliberately")
+
+
 # --- parse_git_log: malformed and mixed logs --------------------------------
 
 

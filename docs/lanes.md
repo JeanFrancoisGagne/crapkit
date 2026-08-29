@@ -193,6 +193,9 @@ crapkit: lane 'js': file filter 'src/grade.ts' combined with --coverage silently
 
 Exit 3.
 
+A path that is an option's value is not a filter: `--config vitest.ci.ts`,
+`--exclude src/legacy.cjs` and `--reporter ./tools/my-reporter.ts` all pass.
+
 ---
 
 ## jest
@@ -260,12 +263,26 @@ lane uses the module form for exactly that reason.
 A lane whose `parser` is `coveragepy` refuses a positional argument in a pytest command:
 
 ```
-crapkit: lane 'api': positional argument 'api' narrows a full-suite coverage run; drop it or set full_suite = false deliberately
+crapkit: lane 'api': positional argument 'api' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
 ```
 
 Subset coverage under a suite with cross-file pollution is run-order dependent, so the
 number moves for reasons that have nothing to do with your code. If your suite really is
 scoped and isolated, opt out explicitly with `full_suite = false` on the lane.
+
+A flag's value is not a positional. `-n 8`, `-o timeout=300`, `-p no:randomly` and
+`--deselect tests/test_x.py::test_slow` all pass: the guard knows the pytest options that
+read the next token, and treats a `key=value` token as a value everywhere. After a flag it
+does not know, a bare word is that flag's value too — only a path or a node id
+(`pylib/unit`, `tests/test_x.py::test_slow`) outranks the guess and is refused:
+
+```
+$ crapkit doctor       # command = "python -m pytest -q pylib/unit"
+crapkit: lane 'py': positional argument 'pylib/unit' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+```
+
+When the refused token really was a value, the attached form is the one-edit fix: dropping
+it breaks the command, because the flag then eats whatever comes next.
 
 ### Test attribution for `explain --tests`
 

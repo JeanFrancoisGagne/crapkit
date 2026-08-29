@@ -255,6 +255,62 @@ def test_route_two_creates_the_directory_it_writes_into():
     assert "exec python -m crapkit hook-precommit" in block, "no script body to write"
 
 
+# --- the full-suite rule -----------------------------------------------------
+
+def _full_suite_refusal(command: str) -> str:
+    """The guard's own words for one lane command, or "" when it allows it."""
+    from crapkit.config import load_config_text
+    from crapkit.errors import ConfigError
+
+    toml = ('[[scope]]\nname = "py"\npaths = ["pylib"]\nlanguages = ["python"]\n'
+            f'[[lane]]\nname = "py"\ncommand = "{command}"\n'
+            'artifact = "cov.json"\nparser = "coveragepy"\nscopes = ["py"]\n')
+    try:
+        load_config_text(toml)
+    except ConfigError as exc:
+        return str(exc)
+    return ""
+
+
+def test_the_lanes_page_prints_the_full_suite_refusal_the_guard_produces():
+    """Both transcripts under the rule are captured output. Reword the refusal
+    and this pins the page to the new text instead of leaving a reader chasing
+    a remedy the tool no longer offers."""
+    page = _doc("docs/lanes.md")
+    printed = _full_suite_refusal("python -m pytest -q pylib/unit")
+
+    assert printed, "the guard stopped refusing the command the page prints"
+    assert printed.replace("'py'", "'api'").replace("'pylib/unit'", "'api'") in page
+    assert printed in page, "the -q transcript goes stale silently"
+
+
+@pytest.mark.parametrize("command", ["python -m pytest -n 8",
+                                     "python -m pytest -o timeout=300",
+                                     "python -m pytest -p no:randomly",
+                                     "python -m pytest --deselect tests/test_x.py::test_slow"])
+def test_every_flag_value_the_lanes_page_calls_allowed_is_allowed(command: str):
+    """The page lists four commands as passing the guard. Each one runs here."""
+    assert command.split("pytest ", 1)[1] in _doc("docs/lanes.md")
+    assert _full_suite_refusal(command) == ""
+
+
+@pytest.mark.parametrize("flag_and_value", ["--config vitest.ci.ts",
+                                            "--exclude src/legacy.cjs",
+                                            "--reporter ./tools/my-reporter.ts"])
+def test_every_vitest_option_value_the_lanes_page_calls_allowed_is_allowed(flag_and_value: str):
+    """Same claim on the istanbul side: a source path that is an option's value
+    is not the file filter the coverage guard refuses."""
+    from crapkit.config import load_config_text
+
+    assert flag_and_value in _doc("docs/lanes.md")
+    toml = ('[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["javascript"]\n'
+            '[[lane]]\nname = "unit"\n'
+            f'command = "vitest run --coverage {flag_and_value}"\n'
+            'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
+
+    assert load_config_text(toml).lanes[0].name == "unit"
+
+
 # --- the trusted baseline ----------------------------------------------------
 
 def test_the_readme_prints_the_taint_warning_the_code_produces():

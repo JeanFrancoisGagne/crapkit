@@ -39,6 +39,17 @@ def test_a_cjs_filter_beside_coverage_is_rejected_like_a_js_one():
         load_config_text(_lane_toml("vitest run src/legacy.cjs --coverage"))
 
 
+@pytest.mark.parametrize("command", [
+    "vitest run --coverage --config vitest.ci.ts",
+    "vitest run --coverage --exclude src/legacy.cjs",
+    "vitest run --coverage --reporter ./tools/my-reporter.ts",
+])
+def test_a_source_path_that_is_a_flags_value_is_not_a_file_filter(command: str):
+    """The same misread the pytest guard had (#19, #22): `--exclude src/x.cjs`
+    is one option and its value, not a positional narrowing the include set."""
+    assert load_config_text(_lane_toml(command)).lanes[0].name == "unit"
+
+
 def test_the_filter_guard_knows_every_extension_an_istanbul_lane_can_run():
     """The guard reads vitest command strings, so it needs the js/ts family and
     nothing else: a .swift or .go filter never appears in one."""
