@@ -7,6 +7,10 @@ question: *has this function got worse than the day we agreed to live with it?*
 it; it fails the build instead. New debt enters only through `ratchet seed` or an audited
 override, both of which are visible in a diff.
 
+**Changed in 0.4.0: a commit that touches a marked function is no longer refused.** The
+pre-commit gate now treats a mark as an exemption, and `crapkit verify` is what fails a mark
+that rises. [The rule, and why it moved](#the-commit-gate-skips-marked-functions).
+
 Default file: `crapkit-ratchet.tsv` at the repo root, settable with `[crapkit] ratchet_file`.
 Commit it.
 
@@ -31,7 +35,41 @@ represents the key, so a regression cannot hide behind a clean sibling.
 
 ---
 
+## The commit gate skips marked functions
+
+New in 0.4.0, and it decides which commits get refused. Read it before you seed a repo.
+
+`hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
+a ccn and no CRAP, and there is nothing to compare a mark against. The hook asks the one
+question it can answer: does a `(path, long_name)` mark exist? If it does, that function is
+not gated, whatever the edit did to it. One stderr line reports the count, never a list:
+
+```
+crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises
+```
+
+The three gates read the file differently:
+
+| Gate | What it holds | What a mark does there |
+|---|---|---|
+| `hook-precommit` | a staged blob: ccn, no coverage | skips the function on the mark's **existence** |
+| `rescore --gate` | a scored row: ccn and CRAP | skips the function **at or under** the recorded value |
+| `verify` | a full run | **exit 7** when the fresh score is above the mark |
+
+Nothing about `verify` changed. It still compares the numbers, and it is still where a real
+regression is caught.
+
+The looseness is deliberate. Before it, a comment added inside a marked function refused the
+commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
+`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` exempts on
+existence too, so a session of green advisories no longer ends at a red commit.
+
+---
+
 ## Seeding
+
+Seeding is how a legacy repo gets a ratchet. It records today's over-target functions as
+accepted debt, so from then on the gate judges your edit instead of the repo's history.
 
 ```
 $ crapkit coverage
@@ -65,9 +103,9 @@ EXIT=1
 
 ## The metric stamp
 
-The first line of the file records the analysis version and the lizard that produced the
-numbers. Scores measured under different rules are not comparable, and comparing them
-silently is worse than refusing.
+Scores measured under different rules are not comparable. The file's first line records the
+analysis version and the lizard behind the numbers, so crapkit can refuse instead of
+comparing them silently.
 
 Three cases:
 
@@ -102,15 +140,15 @@ own marks until somebody re-seeds.
 
 ## Pruning, and renames
 
+`prune` drops marks whose function is absent from the latest run, and nothing else drops
+them. Absence alone is not proof the code left: an exclude glob or a lane outage removes rows
+too, and the per-verify update keeps stale entries rather than erasing an audited override's
+only diff-visible record. Running `prune` is you confirming.
+
 ```
 $ crapkit ratchet prune
 crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) — 2 mark(s) vs run 11 (7d09097ea8a)
 ```
-
-`prune` drops marks whose function is absent from the latest run. It is the human confirming
-the code really left, because absence alone is not proof: an exclude glob or a lane outage
-also removes rows, and the routine per-verify update deliberately keeps stale entries rather
-than erasing an audited override's only diff-visible record.
 
 **A rename follows instead of dropping.** Before pruning, crapkit asks git for renames since
 the store's first run and re-paths any mark that meets all three conditions:
@@ -222,6 +260,9 @@ directory. It is the one ratchet subcommand that needs no config.
 
 ## Reporting the burn-down
 
+`ratchet report` answers two questions: how much debt is still open, and how fast it is being
+repaid.
+
 ```
 $ crapkit ratchet report
 ratchet burn-down: 2 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)
@@ -316,23 +357,8 @@ Comparison happens at the precision the mark is stored at (four decimals). `cov`
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
 tree against its own mark.
 
-The pre-commit gate reads the ratchet too, and the two gates ask it different questions.
-`rescore --gate` holds a scored row, so it skips functions a mark already covers **at or
-under its recorded value**. At or under the mark, the function is exactly the debt the repo
-signed up for.
-
-`hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
-a ccn and no CRAP, and there is nothing to compare against a mark. The hook therefore skips
-a function on the **existence** of a `(path, long_name)` mark, and says how many it skipped:
-
-```
-crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises
-```
-
-That is deliberately looser than the flag: editing a marked function past its mark still
-commits. `verify` compares the numbers and exits 7, which is where a risen mark is caught.
-Without the exemption the alternative is worse — a comment inside any of a seeded repo's
-marked functions refuses the commit, so a repo that ratcheted its debt cannot touch it.
+The commit gates read the same file and ask it a looser question. See
+[The commit gate skips marked functions](#the-commit-gate-skips-marked-functions).
 
 ---
 

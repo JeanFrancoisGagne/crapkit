@@ -1,7 +1,22 @@
 # crapkit.toml
 
 One file at the repo root. `crapkit init` writes a working starter; this page is the whole
-key list. [crapkit.schema.json](../crapkit.schema.json) is the machine authority, and
+key list.
+
+Five dials carry almost every decision you will make. Everything else has a default you can
+leave alone:
+
+| Dial | Key | Decides |
+|---|---|---|
+| the ceiling | `[crapkit] target` | what counts as too complex, repo-wide or per scope |
+| the floor | `[crapkit] worklist_floor` | how small a function has to be before the queue ignores it |
+| what is scored at all | `[exclude] globs` | which files leave the corpus for good |
+| what is measured | `[[lane]]` | which command produces coverage, and for which scopes |
+| what an agent runs | `[crapkit.scoped_tests]` | the test command a packet hands back at step 4 of the loop |
+
+Four tables hold them: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
+
+[crapkit.schema.json](../crapkit.schema.json) is the machine authority, and
 `crapkit doctor` rejects any key not on it:
 
 ```
@@ -10,12 +25,9 @@ FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [cra
 doctor: 1 problem(s)
 ```
 
-The loader stays lenient so a config survives version skew: an unknown key is ignored at
-load time and only `doctor` fails on it. Every rejection the loader *does* make (a bad
-language, an unknown parser, a lane naming an undeclared scope, a negative
-`timeout_seconds`) exits 3.
-
-Four tables: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
+The loader stays lenient so a config survives version skew: it ignores an unknown key at load
+time, and only `doctor` fails on it. Every rejection the loader *does* make (a bad language,
+an unknown parser, a lane naming an undeclared scope, a negative `timeout_seconds`) exits 3.
 
 ---
 
@@ -61,8 +73,15 @@ languages. Every tracked source file in a declared language must belong to a sco
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file. |
 | `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
-| `coverage_optional` | bool | no | `false` | Code no test can reach. See below. |
+| `coverage_optional` | bool | no | `false` | Code no test can reach, or code no parser can measure. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
+
+Fourteen languages, two coverage parsers. A lane's `parser` is `coveragepy` or `istanbul` and
+nothing else, so a lane can measure a scope only when its runner writes coverage.py's JSON
+report or istanbul's `coverage-final.json`. In practice that means Python and the
+JavaScript/TypeScript family. A scope whose runner writes neither scores complexity alone and
+declares `coverage_optional = true`. See
+[lanes.md](lanes.md#which-languages-a-lane-can-measure).
 
 Extensions per language:
 
@@ -83,47 +102,59 @@ Extensions per language:
 | `java` | `.java` |
 | `zig` | `.zig` |
 
-`shell` and `powershell` report functions only. Statements outside any function belong to
-lizard's `*global*` pseudo-function, exactly like Python module-level code, so a script that
-is one long top-level sequence reports nothing — that is the answer, not a parse failure.
+### Per-language gotchas
 
-`powershell` counts one point per `switch` arm, the way `case` is counted in C, and `default`
-is free. Its keywords are matched case-sensitively as written: `If (` in code counts nothing.
+Read the ones you are about to point a scope at. Skip the rest.
 
-Pester names its test files `Foo.Tests.ps1`, beside the source they test, and **no default
-exclude claims that spelling** — `**/*.test.*` does not match `.Tests.ps1`, and crapkit does
-not invent a glob that would delete production files from repos that name scripts that way.
-A repo with a Pester suite adds one line itself:
+**`shell` and `powershell` report functions only.** Statements outside any function land in
+lizard's `*global*` pseudo-function, exactly like Python module-level code. A script that is
+one long top-level sequence reports nothing. That is the answer, not a parse failure.
+
+**`powershell` counts one point per `switch` arm**, the way `case` is counted in C, and
+`default` is free. Its keywords are matched case-sensitively as written, so `If (` in code
+counts nothing.
+
+**Pester test files need a glob of your own.** Pester names them `Foo.Tests.ps1`, beside the
+source they test, and no default exclude claims that spelling. `**/*.test.*` does not match
+`.Tests.ps1`, and crapkit will not invent a glob that deletes production files from repos
+naming scripts that way. One line does it:
 
 ```toml
 [exclude]
 globs = ["**/*.Tests.ps1"]
 ```
 
-`cpp` is the whole C family, C included. There is no separate `c` label: lizard resolves
-every one of those six suffixes to one reader, so two labels could never measure
-differently, and `.h` is the header both dialects share. `.hh`, `.hxx` and `.ipp` are not
-claimed — no lizard reader declares them, and lizard serves an undeclared suffix from a
-silent fallback rather than from a mapping. Two things to know before you point a scope at C
-code:
+**`cpp` is the whole C family, C included.** There is no separate `c` label. lizard resolves
+all six suffixes to one reader, so two labels could never measure differently, and `.h` is
+the header both dialects share. `.hh`, `.hxx` and `.ipp` are not claimed: no lizard reader
+declares them, and lizard serves an undeclared suffix from a silent fallback rather than from
+a mapping.
+
+Two more things before you point a scope at C code:
 
 - Both arms of an `#ifdef` fork are textually present, so a platform shim defines the same
   function twice in one file. A ratchet mark is keyed on `(path, long_name)`, so only the
-  last arm is marked and gated; `analyze` prints one stderr line naming any file this
+  last arm is marked and gated. `analyze` prints one stderr line naming any file this
   happens in.
 - A `&&` before a function's opening brace declares an rvalue reference, not a decision, and
-  costs no cognitive complexity. The same rule covers `objectivec`, because `.mm` is
+  costs no cognitive complexity. The rule covers `objectivec` too, because `.mm` is
   Objective-C++ and carries C++ move semantics. A `&&` inside a default argument is the one
-  case the rule reads wrong; lizard's cyclomatic column drops the whole parameter list
-  anyway, so the two columns agree about it.
+  case it reads wrong; lizard's cyclomatic column drops the whole parameter list anyway, so
+  the two columns agree about it.
 
-`vue` scores the `<script>` block. Template directives (`v-if`, `v-else-if`, `v-for`) are
-HTML attributes to lizard and contribute nothing, so a component whose branching lives in
-its template reports only what its methods do.
+**`vue` scores the `<script>` block.** Template directives (`v-if`, `v-else-if`, `v-for`) are
+HTML attributes to lizard and contribute nothing, so a component whose branching lives in its
+template reports only what its methods do.
 
-`zig` counts a `switch`'s `else` prong as one more case, so a Zig switch reads one point
-above its hand count. The error is inflation only: it can cost a refactor that was not
-needed, never hide one that was.
+**`zig` reads one point high on `switch`.** It counts the `else` prong as one more case. The
+error is inflation only: it can cost a refactor that was not needed, never hide one that was.
+
+**`rust`, `shell` and `powershell` run on crapkit's own readers.** lizard has neither a shell
+nor a PowerShell reader, and its Rust reader scores a 7-arm `match` as ccn 2 (filed upstream
+as lizard #494), so crapkit counts each non-wildcard arm the way C counts a `case`. The Rust
+module retires itself the day upstream fixes it.
+
+### Scope matching
 
 Scopes are tried in declaration order; the first whose path prefix **and** extension both
 match wins. A prefix-only match does not stop the search, so two scopes sharing a prefix but
@@ -131,15 +162,17 @@ declaring different languages do not black-hole each other's files.
 
 ### `coverage_optional = true`
 
-For production-only scripts, generated shims, entry points: code no test can reach. It
-changes four things:
+Two reasons to set it. Either no test can reach the code (entry points, deploy scripts,
+generated shims), or nothing produces a coverage artifact crapkit reads for it (Go, Rust,
+Swift, C and the rest).
 
-- Functions in the scope are flagged `cc-only` and scored `crap = ccn` instead of running
-  through the formula. Feeding them `cov = 0` would say `add-tests` about code no test can
-  reach.
-- `remedy` can then only be `ok` or `decompose`.
+Four effects:
+
+- crapkit flags every function in the scope `cc-only` and scores it `crap = ccn`, skipping
+  the formula. Feeding them `cov = 0` would say `add-tests` about code no test can reach.
+- `remedy` narrows to `ok` or `decompose`.
 - The scope needs no lane. Without this key, a lane-less scope is a `doctor` FAIL.
-- The scope is skipped by doctor's unmeasured-directory check.
+- doctor's unmeasured-directory check skips the scope.
 
 ```
 $ crapkit rescore scripts/deploy.py --json

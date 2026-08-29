@@ -1,9 +1,9 @@
 # Adoption
 
 The quickstarts in [README.md](../README.md) carry the mechanics: sniff the repo, check the
-config, score it, seed the ratchet, install the gate. This page carries the decisions those
-steps do not make for you, in the order you hit them. Read it before running `crapkit init`
-in a repo you care about.
+config, score it, seed the ratchet, install the gate. This page carries the decisions they do
+not make for you, in the order you hit them. Read it before you run `crapkit init` in a repo
+you care about.
 
 ## Cut fewer, broader scopes first
 
@@ -28,14 +28,19 @@ Three ways to stop a file reading as untested debt, and they are not interchange
 |---|---|---|
 | `[exclude] globs` | generated, vendored, minified, build output | the code leaves the corpus completely and never scores again |
 | a new `[[lane]]` | code you would test if a runner were wired to it | one command and one artifact path to keep true |
-| `coverage_optional = true` | code no test can reach: entry points, deploy scripts, generated shims | the scope still scores on complexity, and `remedy` narrows to `ok` or `decompose` |
+| `coverage_optional = true` | code no test can reach (entry points, deploy scripts, generated shims), and any scope whose language has no coverage parser | the scope still scores on complexity, and `remedy` narrows to `ok` or `decompose` |
 
 The wrong pick in either direction is expensive. Excluding real code hides its debt
 permanently and silently, and nothing ever reports what you excluded. Setting
-`coverage_optional` on testable code turns every `add-tests` verdict in that scope into
-`ok`. Prefer the lane whenever a runner could plausibly reach the code.
+`coverage_optional` on testable code turns every `add-tests` verdict in that scope into `ok`.
+Prefer the lane whenever a runner could plausibly reach the code.
 
-## When `no_lane_over_target` is a lane and when it is an exclude
+Sometimes none can. crapkit reads two coverage formats, coverage.py's JSON and istanbul's
+`coverage-final.json`, so a Go, Rust or Swift scope has no lane to prefer. There
+`coverage_optional` is the honest answer, not a shortcut. See
+[lanes.md](lanes.md#which-languages-a-lane-can-measure).
+
+## What to do about `no_lane_over_target`
 
 `reasons.no_lane_over_target` above zero in `crapkit next-item` blocks the stop condition:
 rows the queue cannot hand out are over their ceiling anyway. Three real answers, in order:
@@ -97,7 +102,7 @@ Once it has happened, two escapes, both legitimate:
 `crapkit runs list` prints `verdict=-` on runs that rendered no verdict. See
 [The trusted baseline](../README.md#the-trusted-baseline).
 
-## `notes` is the channel for repo traps
+## Put repo traps in `notes`
 
 Every repo teaches its agents something that no config key expresses: a module that must
 stay importable without side effects, a generated file that looks hand-written, a helper
@@ -110,16 +115,30 @@ living in a commit message nobody reads. Keys are documented in
 
 ## Install the agent surface last
 
-Once the repo scores and `crapkit doctor` is clean, install the plugin:
+Wire the harness once the repo scores and `crapkit doctor` is clean. Do it earlier and the
+`crapkit-onboard` skill points at a config that does not exist yet, while the `crapkit` skill
+points at a store with no run in it.
+
+**Claude Code users install the plugin.** One artifact, versioned against the CLI:
 
 ```
 claude plugin marketplace add JeanFrancoisGagne/crapkit
 claude plugin install crapkit@crapkit
 ```
 
-It carries the three skills, the read-side MCP server, and the advisory PostToolUse hook in
-one artifact whose version tracks the CLI's. A runtime with no plugin marketplace copies
-`plugin/skills/*` into `~/.claude/skills` instead and gets the skills alone.
+It carries three skills, the read-side MCP server, and one advisory PostToolUse hook that
+names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
+stays the only enforcement point. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
+compares the two and prints nothing when they agree.
 
-Installed earlier, `crapkit-onboard` points at a config that does not exist yet and
-`crapkit` points at a store with no run in it.
+Every other harness takes one of the two surfaces under it. The table is the whole list; no
+adapter beyond it exists yet.
+
+| Harness | What it gets |
+|---|---|
+| Claude Code | the plugin: three skills, the MCP server, the advisory hook |
+| any MCP client (Codex, Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: nine read-only tools, no skills, no hook |
+| anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
+
+A runtime with a skills directory but no marketplace can copy `plugin/skills/*` into it and
+get the skills alone. MCP wiring is in [agent-json.md](agent-json.md#mcp-server).
