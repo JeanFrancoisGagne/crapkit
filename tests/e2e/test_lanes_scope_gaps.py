@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit import config
 from crapkit.churn import parse_git_log
 from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
@@ -287,15 +288,23 @@ languages = ["python"]
 
 [[lane]]
 name = "py"
-command = "{command}"
+command = {command}
 artifact = "coverage-py.json"
 parser = "coveragepy"
 scopes = ["py"]
 """
 
 
+def _toml_string(command: str) -> str:
+    """A TOML string holding the command verbatim: literal when no single quote
+    is in the way, else basic with its backslashes and double quotes escaped."""
+    if "'" not in command:
+        return f"'{command}'"
+    return '"' + command.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def _covpy_lane(command: str):
-    return load_config_text(COVPY.format(command=command)).lanes[0]
+    return load_config_text(COVPY.format(command=_toml_string(command))).lanes[0]
 
 
 def test_a_command_that_does_not_run_pytest_keeps_its_positional_arguments():
@@ -340,11 +349,37 @@ def test_a_value_taking_flag_does_not_excuse_the_path_that_follows_its_value():
 
 
 def test_a_quoted_marker_expression_is_one_flag_value_not_four_positionals():
-    """The faro transcript: a whitespace split cut 'not live and not perf' into
-    five tokens and refused 'live' — an argument the shell never hands pytest."""
-    command = ("python -m pytest -m 'not live and not perf' --cov --cov-branch "
+    """The faro transcript: a whitespace split cut "not live and not perf" into
+    five tokens and refused 'live' — an argument the shell never hands pytest.
+    Double quotes are the portable spelling: sh and cmd.exe both read them."""
+    command = ('python -m pytest -m "not live and not perf" --cov --cov-branch '
                "--cov-report=json:.crapkit/cov/py.json")
     assert _covpy_lane(command).command == command
+
+
+def test_under_sh_a_single_quoted_marker_expression_is_one_value(monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    command = "python -m pytest -m 'not live and not perf' --cov=pylib"
+    assert _covpy_lane(command).command == command
+
+
+def test_under_cmd_a_single_quoted_marker_expression_is_refused_with_the_quote_hint(monkeypatch):
+    """cmd.exe knows no quote but the double one: it hands pytest `'not`, `live`,
+    `and`, `not`, `perf'`; pytest looks for a file called `perf'` and the lane
+    writes no artifact. Reading the command like sh would accept that lane."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="double quotes") as caught:
+        _covpy_lane("python -m pytest -m 'not live and not perf' --cov=pylib")
+    assert "'live'" in str(caught.value)
+
+
+def test_under_cmd_a_backslash_path_is_still_a_narrowing_positional(monkeypatch):
+    """POSIX shlex eats the backslash (`tests\\unit` -> `testsunit`), the token
+    stops looking like a path, and a lane that really narrows sails through."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(r"python -m pytest -x tests\unit --cov=pylib")
+    assert r"tests\unit" in str(caught.value), "the refusal names the token as written"
 
 
 def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():

@@ -1,6 +1,7 @@
 """crapkit.toml parsing. Pure: text in, Config out; every rejection is a ConfigError (exit 3)."""
 from __future__ import annotations
 
+import os
 import shlex
 import tomllib
 from typing import NamedTuple
@@ -63,16 +64,47 @@ _PYTEST_VALUE_FLAGS = frozenset({
 })
 
 
-def _shell_words(command: str) -> list[str]:
-    """The words the shell hands the runner. Lane commands run under shell=True,
-    so `-m 'not live and not perf'` is one argument there and must be one token
-    here — a whitespace split reads four positionals into it. A command shlex
-    refuses (an unbalanced quote) gets the whitespace read instead: a rough
-    lint on a command sh will refuse anyway beats a crash at config load."""
+# Lane commands run under shell=True: sh on POSIX, cmd.exe on Windows. The two
+# read a command line differently, and the guard has to read it like the one
+# that will run it, or it accepts a lane cmd.exe breaks and refuses one it runs.
+SHELL_IS_CMD = os.name == "nt"
+
+
+def shell_words(command: str, cmd: bool | None = None) -> list[str]:
+    """The words the shell hands the runner. `-m "not live and not perf"` is one
+    argument there and must be one token here — a whitespace split reads four
+    positionals into it. A command the shell would refuse (an unbalanced quote)
+    gets the whitespace read instead: a rough lint beats a crash at config load."""
+    cmd = SHELL_IS_CMD if cmd is None else cmd
     try:
-        return shlex.split(command)
+        return _cmd_words(command) if cmd else shlex.split(command)
     except ValueError:
         return command.split()
+
+
+def _cmd_words(command: str) -> list[str]:
+    """cmd.exe's reading: a double-quoted phrase is one word and loses its
+    quotes; a single quote is an ordinary character, so `'not live'` is two
+    words; a backslash separates path components and escapes nothing."""
+    lexer = shlex.shlex(command, posix=False)
+    lexer.whitespace_split = True
+    lexer.quotes = '"'
+    lexer.commenters = ""
+    return [_strip_double_quotes(word) for word in lexer]
+
+
+def _strip_double_quotes(word: str) -> str:
+    if len(word) >= 2 and word[0] == word[-1] == '"':
+        return word[1:-1]
+    return word
+
+
+def _quote_hint(command: str) -> str:
+    """The usual reason a Windows lane trips the guard: a value in single
+    quotes, which cmd.exe hands the runner one word per space."""
+    if SHELL_IS_CMD and "'" in command:
+        return " (cmd.exe does not treat ' as a quote: write the value in double quotes)"
+    return ""
 
 
 def _looks_like_a_test_path(tok: str) -> bool:
@@ -118,14 +150,14 @@ def _validate_coveragepy_command(name: str, command: str) -> None:
     # Subset coverage under a suite with cross-file pollution is run-order-dependent;
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
     # full_suite = false, an explicit and reviewable decision.
-    tokens = _shell_words(command)
+    tokens = shell_words(command)
     if "pytest" not in " ".join(tokens):
         return
     for tok in _narrowing_arguments(_tokens_after_pytest(tokens)):
         raise ConfigError(
-            f"lane {name!r}: positional argument {tok!r} narrows a full-suite coverage run; "
+            f"lane {name!r}: positional argument '{tok}' narrows a full-suite coverage run; "
             f"drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
-            f"or set full_suite = false deliberately")
+            f"or set full_suite = false deliberately{_quote_hint(command)}")
 
 
 def _asks_for_coverage(tokens: list[str]) -> bool:
@@ -144,8 +176,11 @@ def _first_filter_position(tokens: list[str]) -> int:
 # a filter here has to end in a source suffix already, so guessing that an unknown
 # flag swallows one would retire the check instead of sharpening it.
 _VITEST_VALUE_FLAGS = frozenset({
-    "-c", "--config", "--dir", "--environment", "--exclude", "--outputFile",
-    "--pool", "--project", "--reporter", "--root", "--shard",
+    "-c", "-t", "--config", "--coverage.exclude", "--coverage.include",
+    "--coverage.provider", "--coverage.reporter", "--coverage.reportsDirectory",
+    "--dir", "--environment", "--exclude", "--globalSetup", "--outputFile",
+    "--pool", "--project", "--reporter", "--root", "--setupFiles", "--shard",
+    "--testNamePattern",
 })
 
 
@@ -161,13 +196,13 @@ def _validate_istanbul_command(name: str, command: str) -> None:
     # The measured vitest trap: any file filter passed beside --coverage silently
     # narrows the coverage include set. A lane command is fixed configuration, so
     # the combination is a config error, not a runtime surprise.
-    tokens = _shell_words(command)
+    tokens = shell_words(command)
     if not _asks_for_coverage(tokens):
         return
     for i in range(_first_filter_position(tokens), len(tokens)):
         if _is_file_filter(tokens[i], tokens[i - 1]):
             raise ConfigError(
-                f"lane {name!r}: file filter {tokens[i]!r} combined with --coverage silently narrows "
+                f"lane {name!r}: file filter '{tokens[i]}' combined with --coverage silently narrows "
                 f"the coverage include set; drop the filter or use a dedicated config")
 
 

@@ -121,7 +121,7 @@ def _env_without_pytest_cov(tmp_path: Path) -> dict:
     (shim_dir / "pytest_cov.py").write_text(
         'raise ImportError("shimmed out for the init probe test")\n', encoding="utf-8")
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(shim_dir)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(shim_dir), env.get("PYTHONPATH", "")) if p)
     return env
 
 
@@ -137,6 +137,24 @@ def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tm
     assert "pytest_cov" in res.stderr and "pip install pytest-cov" in res.stderr
     assert "crapkit[py]" in res.stderr, "the extra is the same-venv shortcut"
     assert (pytest_repo / "crapkit.toml").is_file(), "a warning must not stop the scaffold"
+
+
+def test_init_does_not_probe_a_lane_it_did_not_write(tmp_path: Path):
+    """A TypeScript-only repo whose pyproject.toml only holds ruff config: the
+    py lane is detected, has no scope, and goes back to being a template. Its
+    probe must not tell the reader to install pytest-cov for a suite init never
+    wrote a lane for."""
+    repo = _bare_git_repo(tmp_path, "tsonly")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.ts").write_text("export function f(a: number) { return a ? 1 : 2; }\n",
+                                         encoding="utf-8")
+    (repo / "pyproject.toml").write_text("[tool.ruff]\nline-length = 100\n", encoding="utf-8")
+    _git_commit_all(repo, "init")
+    res = subprocess.run([sys.executable, "-m", "crapkit", "init"], cwd=repo,
+                         capture_output=True, text=True, timeout=120,
+                         env=_env_without_pytest_cov(tmp_path))
+    assert res.returncode == 0, res.stderr
+    assert "pytest_cov" not in res.stderr, "no lane was written for that python"
 
 
 def test_init_stays_quiet_when_pytest_cov_is_importable(pytest_repo: Path):

@@ -2,7 +2,8 @@
 import pytest
 
 from crapkit.errors import ConfigError
-from crapkit.config import Config, load_config_text
+from crapkit import config as config_module
+from crapkit.config import Config, load_config_text, shell_words
 
 
 MINIMAL = """
@@ -156,10 +157,11 @@ def test_positional_file_filter_still_rejected_beside_coverage():
             'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
 
 
-def test_a_quoted_file_filter_beside_coverage_is_still_a_filter():
+def test_a_quoted_file_filter_beside_coverage_is_still_a_filter(monkeypatch):
     """A whitespace split leaves the closing quote on the token, the suffix
     check misses, and a quoted positional filter sails past the guard."""
     import pytest as _pytest
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", False)  # sh reads '...'
     with _pytest.raises(ConfigError, match="narrows"):
         load_config_text(
             '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
@@ -167,12 +169,58 @@ def test_a_quoted_file_filter_beside_coverage_is_still_a_filter():
             'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
 
 
-def test_a_quoted_exclude_glob_value_is_not_a_file_filter():
+def test_a_quoted_exclude_glob_value_is_not_a_file_filter(monkeypatch):
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", False)  # sh reads '...'
     cfg = load_config_text(
         '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
         "[[lane]]\nname = \"unit\"\ncommand = \"vitest run --coverage --exclude 'src/**/*.test.ts'\"\n"
         'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
     assert cfg.lanes[0].name == "unit", "a value flag's quoted glob never narrows"
+
+
+def test_quoted_values_of_the_vitest_flags_that_take_a_path_or_glob_are_not_filters():
+    """`--coverage.exclude "**/*.d.ts"` and `--setupFiles "test/setup.ts"` are
+    values; closing the quoted-positional hole must not refuse them."""
+    cfg = load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
+        '[[lane]]\nname = "unit"\n'
+        "command = 'vitest run --coverage --coverage.exclude \"**/*.d.ts\" --setupFiles \"test/setup.ts\"'\n"
+        'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
+    assert cfg.lanes[0].name == "unit"
+
+
+def test_under_cmd_a_double_quoted_file_filter_is_still_a_filter(monkeypatch):
+    import pytest as _pytest
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", True)
+    with _pytest.raises(ConfigError, match="narrows"):
+        load_config_text(
+            '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
+            "[[lane]]\nname = \"unit\"\ncommand = 'vitest run --coverage \"src/foo.test.ts\"'\n"
+            'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
+
+
+def test_shell_words_reads_double_quotes_under_both_shells():
+    command = 'pytest -m "not live and not perf" --cov'
+    expected = ["pytest", "-m", "not live and not perf", "--cov"]
+    assert shell_words(command, cmd=True) == expected
+    assert shell_words(command, cmd=False) == expected
+
+
+def test_shell_words_under_cmd_keeps_backslashes_and_reads_a_single_quote_as_a_character():
+    """cmd.exe: `\\` separates path components and `'` quotes nothing, so a
+    single-quoted phrase reaches the runner as one word per space."""
+    assert shell_words(r"pytest tests\unit --cov-report=json:.crapkit\cov\py.json", cmd=True) == \
+        ["pytest", r"tests\unit", r"--cov-report=json:.crapkit\cov\py.json"]
+    assert shell_words("pytest -m 'not live'", cmd=True) == ["pytest", "-m", "'not", "live'"]
+
+
+def test_shell_words_under_sh_reads_single_quotes():
+    assert shell_words("pytest -m 'not live'", cmd=False) == ["pytest", "-m", "not live"]
+
+
+def test_shell_words_falls_back_to_the_whitespace_read_on_an_unbalanced_quote():
+    assert shell_words('pytest "unclosed --cov', cmd=True) == ["pytest", '"unclosed', "--cov"]
+    assert shell_words("pytest 'unclosed --cov", cmd=False) == ["pytest", "'unclosed", "--cov"]
 
 
 def test_scope_target_overrides_the_repo_default():

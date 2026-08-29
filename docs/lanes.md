@@ -275,8 +275,12 @@ scoped and isolated, opt out explicitly with `full_suite = false` on the lane.
 A flag's value is not a positional. `-n 8`, `-o timeout=300`, `-p no:randomly` and
 `--deselect tests/test_x.py::test_slow` all pass: the guard knows the pytest options that
 read the next token, and treats a `key=value` token as a value everywhere. The guard reads
-the command the way the shell running it will, so a quoted value is one token:
-`-m 'not live and not perf'` is one marker expression, not four positionals. After a flag it
+the command the way the shell running it will (sh on POSIX, cmd.exe on Windows), so a
+quoted value is one token: `-m "not live and not perf"` is one marker expression, not four
+positionals. Use double quotes: cmd.exe does not treat `'` as a quote, so a single-quoted
+value reaches pytest one word per space there, and the guard says so on Windows. In
+`crapkit.toml`, a single-quoted TOML string keeps the double quotes unescaped:
+`command = 'python -m pytest -m "not live and not perf" --cov=pylib ...'`. After a flag it
 does not know, a bare word is that flag's value too — only a path or a node id
 (`pylib/unit`, `tests/test_x.py::test_slow`) outranks the guess and is refused:
 

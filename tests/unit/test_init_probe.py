@@ -6,6 +6,7 @@ never guarantee. Only a probe of the python the lane will actually run can say
 whether the first `crapkit coverage` survives, and only a clean "no" may warn:
 a probe that cannot run is doctor's finding (a dead interpreter), not this one's.
 """
+import os
 import sys
 
 import pytest
@@ -28,6 +29,35 @@ def test_the_probe_says_no_where_the_import_fails(tmp_path, monkeypatch):
     shim.write_text('raise ImportError("shimmed out")\n', encoding="utf-8")
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
     assert _pytest_cov_probe(f"{sys.executable} -m pytest --cov") is False
+
+
+def _interpreter_shim(tmp_path, monkeypatch, exit_code: int) -> None:
+    """A `python` first on PATH, which the shell resolves before the real one."""
+    shim_dir = tmp_path / "shim"
+    shim_dir.mkdir()
+    if os.name == "nt":
+        (shim_dir / "python.bat").write_text(f"@exit /b {exit_code}\n", encoding="utf-8")
+    else:
+        shim = shim_dir / "python"
+        shim.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
+        shim.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shim_dir), os.environ.get("PATH", "")]))
+
+
+@pytest.mark.parametrize("exit_code, answer", [(1, False), (0, True)])
+def test_a_bare_name_resolves_through_the_shell_the_lane_runs_under(
+        tmp_path, monkeypatch, exit_code, answer):
+    """init writes `python -m pytest --cov`, a bare name. The lane runs it under
+    the shell, and the shell's PATH search (a .bat shim included) is the only
+    resolution whose answer means anything for that lane."""
+    _interpreter_shim(tmp_path, monkeypatch, exit_code)
+    assert _pytest_cov_probe("python -m pytest --cov") is answer
+
+
+def test_the_probe_quotes_an_interpreter_path_with_a_space():
+    path = r"C:\Program Files\Python\python.exe" if os.name == "nt" else "/opt/py thon/bin/python"
+    quoted = admin._shell_quote(path)
+    assert quoted[0] == quoted[-1] and quoted[0] in "\"'" and path in quoted
 
 
 def test_a_probe_that_cannot_run_says_yes():

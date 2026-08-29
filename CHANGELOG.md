@@ -1,16 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 — 2026-08-29
+
+Three field fixes from @nicolaschapados (PR #23) against a real pytest/uv project,
+plus the Windows half of the first one. No new capability.
 
 ### The lane guard reads a command line like the shell does
 Lane commands run under `shell=True`, but both lane lints tokenized them with a
-whitespace split. `python -m pytest -m 'not live and not perf' --cov ...` was
+whitespace split. `python -m pytest -m "not live and not perf" --cov ...` was
 refused with "positional argument 'live' narrows a full-suite coverage run" —
 an argument the shell never hands pytest — and on the istanbul side a QUOTED
 positional filter slipped past the guard, because the trailing quote defeated
-the suffix check. Both lints now split with shlex; a command shlex refuses (an
-unbalanced quote) falls back to the whitespace read instead of failing config
-load.
+the suffix check. Both lints now read the command the way the shell that runs
+it will: sh on POSIX, and on Windows cmd.exe, where `'` is an ordinary
+character and `\` a path separator. So `tests\unit` still reads as the path it
+is, and a single-quoted value is refused on Windows with a hint to write it in
+double quotes: cmd.exe would hand pytest five words and the lane would write no
+artifact. A command the shell would refuse (an unbalanced quote) falls back to
+the whitespace read instead of failing config load. The vitest guard learned the
+flags whose value can end in a source suffix (`--coverage.exclude`,
+`--coverage.include`, `--setupFiles`, `--globalSetup`, `-t`, ...), so a quoted
+glob after one is a value, not a filter. Refusals name the token as written.
 
 ### A crapkit root below the repo top no longer reads as all-dormant
 Scored rows are `git ls-files` paths, relative to the crapkit root; the churn
@@ -30,7 +40,10 @@ crapkit could never guarantee (a pipx or uv-tool install shares nothing with
 the suite's venv). `init` now probes the python its lane will run and prints
 the install command when `pytest_cov` is not importable, a new `crapkit[py]`
 extra pulls the plugin alongside crapkit for same-venv installs, and
-`coverage`'s exit-5 hint stays as the last resort.
+`coverage`'s exit-5 hint stays as the last resort. The probe runs through the
+same shell as the lane, so a bare `python` resolves to the interpreter the lane
+will get, and only a lane init actually wrote is probed: a TypeScript repo whose
+`pyproject.toml` holds ruff config gets no note about a suite it has no lane for.
 
 ## 0.4.3 — 2026-08-29
 

@@ -6,12 +6,13 @@ what moved)."""
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import __version__
-from ..config import load_config_text
+from ..config import load_config_text, shell_words
 from ..doctor import Finding
 from ..errors import ConfigError, ToolError
 from ..gitio import ls_files
@@ -83,16 +84,32 @@ def _no_scopes_reason(root: Path) -> str:
 
 
 def _pytest_cov_probe(command: str) -> bool:
-    """Can the interpreter this lane names import pytest_cov? True too when the
-    probe itself cannot run — only a clean "no" earns the warning, and a missing
-    interpreter is doctor's finding, not this one's."""
+    """Can the interpreter this lane names import pytest_cov? The probe runs
+    through the same shell as the lane, so a bare `python` resolves to the one
+    the lane will get (a .bat shim included), not the one CreateProcess finds.
+    True too when the probe cannot run — only a clean "no" earns the warning,
+    and a missing interpreter is doctor's finding, not this one's."""
+    import shutil
     import subprocess
 
+    words = shell_words(command)
+    if not words or shutil.which(words[0]) is None:
+        return True
+    probe = f'{_shell_quote(words[0])} -c "import pytest_cov"'
     try:
-        return subprocess.run([command.split()[0], "-c", "import pytest_cov"],
-                              capture_output=True, timeout=15).returncode == 0
+        return subprocess.run(probe, shell=True, capture_output=True,
+                              timeout=15).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return True
+
+
+def _shell_quote(word: str) -> str:
+    """One word, quoted for the shell the lane runs under."""
+    import shlex
+
+    if os.name != "nt":
+        return shlex.quote(word)
+    return f'"{word}"' if " " in word else word
 
 
 def _warn_missing_pytest_cov(lanes: tuple) -> None:
@@ -144,7 +161,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes)
-    _warn_missing_pytest_cov(lanes)
+    _warn_missing_pytest_cov(live_lanes(lanes, scopes))
     _extend_gitignore(root, live_lanes(lanes, scopes))
     return 0
 
