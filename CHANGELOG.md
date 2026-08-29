@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.4.3 — 2026-08-29
+
+Fixes from a second consumer repo's field reports (issues #1, #14–#19, #21, #22).
+No new capability; one key format grows, backward compatibly.
+
+### A run nobody finished is not a measurement (#21, #16)
+A lane's junit is now read as a trust check. pytest-xdist does not reschedule a
+crashed worker's queue; on a 15,300-test lane one dead worker left 4,626 tests
+unexecuted while coverage.py still wrote its JSON, and crapkit recorded a full
+baseline. A junit carrying `worker 'gwN' crashed` or a session-level error now
+fails the lane at exit 5 like a missing artifact, and `coverage` warns when a
+lane's test count drops more than 10% below the last trusted run. `ratchet seed`
+and `prune` now share `verify`'s trust rule: a failed verify never supplies the
+scores they read, and the output line says which run was skipped.
+
+### A measurement that bounced is not an improvement (#15)
+`verify` tightens marks on a clean pass, which turned nondeterministic coverage
+into a mark oscillator (20.0 → 72.0 → 20.0 on an unchanged tree). It now holds any
+mark whose CRAP moved by more than `tighten_max_jump` (default 2.0) against the same
+commit's previous scored run, printing one line per held mark; `--no-tighten` is
+the blunt escape.
+
+### Same-named functions each get their own key (#17)
+Several functions with one name in one file (dataclass `__post_init__`s, C `#ifdef`
+forks) shared a single ratchet/gate key, so only the last was marked or gated. The
+key now carries a file-order ordinal: the first twin keeps the bare name, then
+`name#2`, `name#3`. Existing marks stay valid as twin #1; no rewrite needed.
+
+### The lane guard reads a command line like pytest does (#19, #22)
+`-n 8`, `-o timeout=300`, `-p no:randomly` no longer fail as "narrowing
+positionals"; the guard knows which options take a value, treats `key=value` as
+never a path, and the refusal message names the attached-value rewrite.
+
+### `duplication` skips a closure and the factory around it (#1)
+Nesting pairs scored 1.0 by construction and drowned the report (43 of 43 pairs on
+the reporting repo). They are dropped; kept pairs carry a `contained` flag.
+
+### Plugin and docs (#14, #18)
+`plugin/.mcp.json` spawns the `crapkit` console script, the same rule the hooks
+use, so a `uv tool` install no longer gets a dead MCP server. The install docs gain
+an "Upgrading on Windows" note: a live MCP server holds the launcher exe, `uv tool
+upgrade` fails on the copy, and the rename-aside remedy.
+
 ## 0.4.2 — 2026-08-29
 
 Fixes from a fresh-user verification pass: five simulated strangers followed the
