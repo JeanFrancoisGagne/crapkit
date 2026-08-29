@@ -5,10 +5,12 @@ git diffing every commit's tree, and worklist, next-item and coupling each paid
 it in full on every invocation, at an unmoved HEAD. Every one of them reaches
 git through this module, so `.crapkit/churn-cache.json` has exactly one writer.
 
-The key is (HEAD sha, window months, UTC date). The sha pins the history; the
-window pins the command; the date is there because `--since=N months ago` is
-evaluated against the wall clock, so yesterday's cache describes a window one
-day wider than today's. Anything else is a miss, and a miss rebuilds.
+The key is (HEAD sha, window months, UTC date, path format). The sha pins the
+history; the window pins the command; the date is there because `--since=N
+months ago` is evaluated against the wall clock, so yesterday's cache describes
+a window one day wider than today's; the format marker retires maps whose
+paths predate `git log --relative`. Anything else is a miss, and a miss
+rebuilds.
 
 A cache is disposable: unreadable, corrupt or unkeyable content reads as cold,
 never as a crash. Uncommitted work is invisible to churn either way. The one
@@ -23,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .churn import FileChurn, parse_git_log_lines
-from .churn_log import has_cache, log_lines
+from .churn_log import RELATIVE_PATHS, has_cache, log_lines
 from .errors import GitError
 from .gitio import churn_log_lines, head_commit
 
@@ -64,7 +66,10 @@ def _cache_key(root: Path, months: int) -> dict | None:
         head = head_commit(root)
     except GitError:
         return None
-    return {"head": head, "months": months, "date": _utc_date()}
+    # `paths` marks the format, not a question: maps built before --relative
+    # hold top-relative paths in a subdirectory root, and must read as cold.
+    return {"head": head, "months": months, "date": _utc_date(),
+            "paths": RELATIVE_PATHS}
 
 
 def _read_cache(path: Path, key: dict | None) -> dict[str, FileChurn] | None:

@@ -53,6 +53,11 @@ Source = "https://github.com/JeanFrancoisGagne/crapkit"
 # without it. Left out of this list it took down 31 e2e tests on every one of
 # the six CI test jobs (run 33225190806), ubuntu and windows alike.
 dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3"]
+# The py lane's runtime half, for installs that share the suite's venv: the
+# lane init writes runs `pytest --cov`, and those flags come from pytest-cov.
+# An install elsewhere (pipx, uv tool) still needs pytest-cov beside the SUITE;
+# init probes for that and prints the fix.
+py = ["pytest-cov>=5"]
 
 [project.scripts]
 crapkit = "crapkit.cli:main"

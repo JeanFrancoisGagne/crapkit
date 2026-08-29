@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### The lane guard reads a command line like the shell does
+Lane commands run under `shell=True`, but both lane lints tokenized them with a
+whitespace split. `python -m pytest -m 'not live and not perf' --cov ...` was
+refused with "positional argument 'live' narrows a full-suite coverage run" —
+an argument the shell never hands pytest — and on the istanbul side a QUOTED
+positional filter slipped past the guard, because the trailing quote defeated
+the suffix check. Both lints now split with shlex; a command shlex refuses (an
+unbalanced quote) falls back to the whitespace read instead of failing config
+load.
+
+### A crapkit root below the repo top no longer reads as all-dormant
+Scored rows are `git ls-files` paths, relative to the crapkit root; the churn
+log came from `git log --name-only`, whose paths are relative to the repo top.
+With the root one directory down (a monorepo member, or a project nested
+inside a linked worktree's checkout) every churn lookup missed, and `worklist`
+filed the entire corpus under dormant ("0 active, 215 dormant" on a repo with
+90 commits that week). The churn log now runs with `--relative`, so its paths
+join against the rows everywhere — worklist, next-item, brief and coupling
+alike — and both churn caches carry a format marker that retires maps laid
+down with top-relative paths.
+
+### The first-run pytest-cov trap is named at init, not after the suite
+The generated py lane runs `pytest --cov`, and the `--cov` flags come from
+pytest-cov — a package of the repo's own interpreter, which a dependency on
+crapkit could never guarantee (a pipx or uv-tool install shares nothing with
+the suite's venv). `init` now probes the python its lane will run and prints
+the install command when `pytest_cov` is not importable, a new `crapkit[py]`
+extra pulls the plugin alongside crapkit for same-venv installs, and
+`coverage`'s exit-5 hint stays as the last resort.
+
 ## 0.4.3 — 2026-08-29
 
 Fixes from a second consumer repo's field reports (issues #1, #14–#19, #21, #22).

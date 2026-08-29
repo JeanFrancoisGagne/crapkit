@@ -210,6 +210,21 @@ def test_a_head_the_cache_is_not_behind_rebuilds(tmp_path, git):
     assert git.range_calls == []
 
 
+def test_a_log_without_the_paths_marker_is_never_served_or_refreshed(tmp_path, git):
+    """Logs laid down before `git log --relative` hold top-relative paths in a
+    subdirectory root. Serving one is wrong; carrying it forward through the
+    range refresh is the same wrong with fresh commits stacked on top."""
+    list(churn_log.log_lines(tmp_path, 12))
+    key_path = tmp_path / ".crapkit" / "churn-log.json"
+    doc = json.loads(key_path.read_text(encoding="utf-8"))
+    del doc["paths"]
+    key_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert git.window_calls == 2, "an old-format log is cold, at an unmoved HEAD too"
+    assert git.range_calls == []
+
+
 def test_the_key_file_records_what_it_keys_on(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
     doc = json.loads((tmp_path / ".crapkit" / "churn-log.json").read_text(encoding="utf-8"))

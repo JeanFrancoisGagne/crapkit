@@ -42,6 +42,11 @@ from .gitio import _git_lines, head_commit, is_ancestor
 LOG_NAME = "churn-log.z"
 LOG_FORMAT = "--format=%x01%an%x02%at%x02%ct"
 CHUNK = 1 << 20
+# The key's format marker: these logs hold root-relative paths (--relative),
+# the only kind that joins against ls-files rows when the root sits below the
+# repo top. A key without it names a top-relative log, and that one is cold —
+# served OR refreshed, it would feed every consumer paths that match nothing.
+RELATIVE_PATHS = "root-relative"
 
 
 def log_lines(root: Path, months: int) -> Iterator[str]:
@@ -103,7 +108,8 @@ def _cache_key(root: Path, months: int) -> dict | None:
         head = head_commit(root)
     except GitError:
         return None
-    return {"head": head, "months": months, "date": _utc_date()}
+    return {"head": head, "months": months, "date": _utc_date(),
+            "paths": RELATIVE_PATHS}
 
 
 def _key_path(path: Path) -> Path:
@@ -119,7 +125,7 @@ def _read_key(path: Path) -> dict | None:
 
 
 def _key_fields(doc: dict) -> dict:
-    return {field: doc.get(field) for field in ("head", "months", "date")}
+    return {field: doc.get(field) for field in ("head", "months", "date", "paths")}
 
 
 def _cached(path: Path, key: dict | None) -> Iterator[str] | None:
@@ -173,9 +179,12 @@ def _refreshed(root: Path, months: int, path: Path, key: dict | None) -> Iterato
 
 
 def _refreshable(root: Path, stored: dict | None, key: dict) -> bool:
-    """True only for a cached log this HEAD grew from: same window, and behind us."""
+    """True only for a cached log this HEAD grew from: same window, same path
+    format, and behind us."""
     if stored is None or stored.get("months") != key["months"]:
         return False
+    if stored.get("paths") != key["paths"]:
+        return False  # a top-relative log: prepending would stack fresh commits on wrong paths
     if stored.get("head") == key["head"]:
         return True
     return is_ancestor(root, str(stored.get("head")), key["head"])
@@ -262,13 +271,16 @@ def _keep(part: BinaryIO, path: Path, key: dict | None) -> None:
 
 
 def _window_log(root: Path, months: int) -> Iterator[str]:
-    """The whole window, from git. The expensive one."""
-    return _git_lines(root, "log", f"--since={months} months ago", LOG_FORMAT, "--name-only")
+    """The whole window, from git. The expensive one. --relative for the same
+    reason gitio.churn_log_lines carries it: consumers join these paths against
+    root-relative rows, and a root below the repo top matched nothing without it."""
+    return _git_lines(root, "log", "--relative", f"--since={months} months ago",
+                      LOG_FORMAT, "--name-only")
 
 
 def _range_log(root: Path, base: str, head: str) -> Iterator[str]:
     """Only what HEAD added on top of the cached log."""
-    return _git_lines(root, "log", f"{base}..{head}", LOG_FORMAT, "--name-only")
+    return _git_lines(root, "log", "--relative", f"{base}..{head}", LOG_FORMAT, "--name-only")
 
 
 def _window_cutoff(root: Path, months: int) -> int | None:
