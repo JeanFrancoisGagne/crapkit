@@ -837,6 +837,20 @@ class SnapshotStore:
             cur = self._conn.execute("DELETE FROM attempts WHERE created_at < ?", (floor,))
         return cur.rowcount
 
+    def prior_scored_run(self, *, commit: str, before: int) -> int | None:
+        """The newest earlier run of one commit that scored something.
+
+        Hook runs write no rows and inventory runs write no CRAP, so neither
+        can win it. An empty answer reads as "nothing moved", which is exactly
+        the licence a bouncing measurement needs to tighten a mark.
+        """
+        cur = self._conn.execute(
+            "SELECT MAX(id) FROM runs WHERE commit_sha = ? AND id < ? AND EXISTS "
+            "(SELECT 1 FROM functions f WHERE f.run_id = runs.id AND f.crap IS NOT NULL)",
+            (commit, before))
+        (rid,) = cur.fetchone()
+        return rid
+
     def latest_run(self, *, commit: str) -> int | None:
         cur = self._conn.execute("SELECT MAX(id) FROM runs WHERE commit_sha = ?", (commit,))
         (rid,) = cur.fetchone()

@@ -398,6 +398,25 @@ tree against its own mark.
 The commit gates read the same file and ask it a looser question. See
 [The commit gate skips marked functions](#the-commit-gate-skips-marked-functions).
 
+### Damping a measurement that bounces
+
+Tightening a mark claims the code improved, and one commit measured twice cannot have
+improved. So `verify` compares each marked function against what the same commit's previous
+scored run measured, and refuses to tighten a mark whose CRAP moved by more than
+`[crapkit] tighten_max_jump` (default `2.0`) between those two runs. The mark stays where it
+is and one line goes to stderr:
+
+```
+  NO TIGHTEN  app/hook.py  _judge( raw ): measurement moved 20.0 -> 72.0 on the same commit; not tightening
+```
+
+Without this, a coverage input that measures the same bytes two ways makes the gate a coin
+flip: the lucky run pulls the mark down to 20.0, the unlucky one fails it at exit 7, and the
+marks file churns 20 -> 72 -> 20 in commits. Real work moves a score by less than a
+measurement race does, so a stable improvement still tightens in full. A first run of a
+commit has nothing to compare against and tightens as it always did. `verify --no-tighten`
+is the blunt version: the verdict stands and the marks file is not rewritten at all.
+
 ---
 
 ## Overrides and the audit trail

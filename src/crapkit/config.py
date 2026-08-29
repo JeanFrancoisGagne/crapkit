@@ -145,6 +145,10 @@ class Config(NamedTuple):
     mutation_timeout_seconds: int = 300  # a mutant that loops forever counts as killed
     mutation_workers: int = 1  # >1 runs mutants in that many detached git worktrees
     diff_uncovered_max: int | None = None  # verify exit 9 past this many dead changed lines
+    # A tighten claims an improvement; one commit measured twice cannot have
+    # improved. Past this factor between two runs of the same commit, verify
+    # holds the mark instead of tightening it.
+    tighten_max_jump: float = 2.0
     debt_max_age_months: int | None = None  # ratchet report --enforce flags older marks
     repayment_min_per_30d: int | None = None  # --enforce flags a stalled burn-down
     max_parallel_lanes: int = 1  # lanes running at once; 1 = strictly serial
@@ -283,6 +287,7 @@ def _build_config(raw: dict) -> Config:
         mutation_timeout_seconds=int(main.get("mutation_timeout_seconds", 300)),
         mutation_workers=_positive_int(main, "mutation_workers", 1),
         diff_uncovered_max=_optional_int(main, "diff_uncovered_max"),
+        tighten_max_jump=_factor(main, "tighten_max_jump", 2.0),
         debt_max_age_months=_optional_int(main, "debt_max_age_months"),
         repayment_min_per_30d=_optional_int(main, "repayment_min_per_30d"),
         max_parallel_lanes=_bounded_int(main, "max_parallel_lanes", default=1, minimum=1),
@@ -297,6 +302,15 @@ def _bounded_int(main: dict, key: str, *, default: int, minimum: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
         raise ConfigError(f"{key} must be an int >= {minimum}, got {value!r}")
     return value
+
+
+def _factor(main: dict, key: str, default: float) -> float:
+    """A ratio knob: any number at or above 1. Below 1 would refuse a tighten
+    where nothing moved, which stops the ratchet falling and says nothing."""
+    value = main.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 1:
+        raise ConfigError(f"{key} must be a number >= 1, got {value!r}")
+    return float(value)
 
 
 def _positive_int(main: dict, key: str, default: int) -> int:
