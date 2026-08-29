@@ -316,13 +316,16 @@ def test_every_handler_stays_async_bare_exe_and_bounded(field: str, value: objec
 
 def test_the_mcp_manifest_runs_the_subcommand_the_parser_defines():
     """`.mcp.json` lives under plugin/ so it never lands in project scope, where
-    it would raise a scope conflict for anyone developing crapkit itself."""
+    it would raise a scope conflict for anyone developing crapkit itself. It spawns
+    the console script for the same reason the hook handlers do: bare `python` on
+    Windows resolves to the WindowsApps stub and to venvs without crapkit, which
+    makes a dead MCP server with no visible error."""
     import argparse
 
     from crapkit.cli import build_parser
 
     servers = _json(MCP_JSON)["mcpServers"]
-    assert servers == {"crapkit": {"command": "python", "args": ["-m", "crapkit", "mcp"]}}
+    assert servers == {"crapkit": {"command": "crapkit", "args": ["mcp"]}}
 
     subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
     assert "mcp" in subs[0].choices, "the manifest launches a subcommand argparse dropped"

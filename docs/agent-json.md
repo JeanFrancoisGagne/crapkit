@@ -960,8 +960,8 @@ Client wiring:
 {
   "mcpServers": {
     "crapkit": {
-      "command": "python",
-      "args": ["-m", "crapkit", "mcp", "--repo", "/absolute/path/to/your/repo"]
+      "command": "crapkit",
+      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"]
     }
   }
 }
