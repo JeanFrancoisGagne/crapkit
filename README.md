@@ -141,7 +141,8 @@ and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify
 Three readers are crapkit's own. lizard ships none for shell or PowerShell, so crapkit
 counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
 lizard #494), so crapkit counts each non-wildcard arm like a C `case` and retires the
-override the day upstream fixes it.
+override the day upstream fixes it. The cognitive column charges that same block once,
+the way Sonar charges a `switch`.
 
 ## The gate
 

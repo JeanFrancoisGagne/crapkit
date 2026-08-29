@@ -25,7 +25,7 @@ from itertools import takewhile
 from pathlib import Path
 from typing import NamedTuple
 
-from .packet import bare_name, handle_ordinal
+from .packet import bare_name, handle_ordinal, matching_names
 from .snapshot import InventoryRow
 
 # {table} so the migration can build the same shape under a temp name and swap
@@ -850,23 +850,34 @@ class SnapshotStore:
         return list(cur.fetchall())
 
     def find_functions(self, path: str, name_fragment: str) -> list[str]:
-        """Distinct long_names in a path containing the fragment, across all runs.
+        """The long_names in a path that one NAME resolves to, across all runs.
 
-        Joined to functions rather than read off identities alone: a prune drops
-        the rows of a run and leaves its identities behind, and a name no
-        surviving run scored is a name `brief` cannot resolve.
+        `packet.matching_names` is the rule, shared with `brief`: exact first,
+        the fragment only when nothing matches exactly. This used to be a SQL
+        `LIKE '%name%'` and nothing else, so `explain src/lib.rs route` printed
+        the trajectories of `route`, `route_chain` and `route_num` for a
+        question about one function. Matching in Python also makes `_` and `%`
+        the characters they are rather than LIKE's wildcards.
 
         `(anonymous)#N` is resolved by position instead: an anonymous function
-        carries no text for a LIKE to match, and the fragment would otherwise
-        hunt for a `#` no long_name has.
+        carries no text to match, and the fragment would otherwise hunt for a
+        `#` no long_name has.
         """
         ordinal = handle_ordinal(name_fragment)
         if ordinal is not None:
             return self._nth_anonymous(path, ordinal)
+        return matching_names(self._long_names(path), name_fragment)
+
+    def _long_names(self, path: str) -> list[str]:
+        """Every distinct long_name a surviving run scored in this path.
+
+        Joined to functions rather than read off identities alone: a prune drops
+        the rows of a run and leaves its identities behind, and a name no
+        surviving run scored is a name `brief` cannot resolve.
+        """
         cur = self._conn.execute(
-            f"SELECT DISTINCT i.long_name {_BY_PATH} "
-            "WHERE i.path = ? AND i.long_name LIKE ? ORDER BY i.long_name",
-            (path, f"%{name_fragment}%"))
+            f"SELECT DISTINCT i.long_name {_BY_PATH} WHERE i.path = ? "
+            "ORDER BY i.long_name", (path,))
         return [n for (n,) in cur]
 
     def _nth_anonymous(self, path: str, ordinal: int) -> list[str]:

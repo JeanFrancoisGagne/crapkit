@@ -10,9 +10,14 @@ same rules with no second parse and no new dependency:
   try / finally / case labels / with are free; nesting rises inside the
   block structures listed above.
 
-One language-specific rule: in C/C++ and Objective-C/C++ a `&&` before the
-function's opening brace declares an rvalue reference rather than deciding
-anything, and costs nothing. See `_declarator_and`.
+Two language-specific rules:
+  * in C/C++ and Objective-C/C++ a `&&` before the function's opening brace
+    declares an rvalue reference rather than deciding anything, and costs
+    nothing. See `_declarator_and`.
+  * in Rust a `match` is a switch and is charged as one, +1 and +nesting with
+    the arms free. It is read only for the Rust readers because `match` is a
+    soft keyword in Python, where the same spelling is an ordinary identifier.
+    See `_counting_match`.
 
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
@@ -53,14 +58,22 @@ _RUN_RESETS = frozenset({";", ",", "{", "}"})
 # lose a real one.
 _DECLARATOR_READERS = frozenset({"CLikeReader", "ObjCReader"})
 
+# The readers whose `match` is Rust's switch: lizard's own, and crapkit's
+# subclass of it. Exact names for the same reason `_DECLARATOR_READERS` uses
+# them — the discriminator is the language, and an issubclass test would also
+# catch anything a later lizard derives from RustReader for another one.
+_MATCH_READERS = frozenset({"RustReader", "CorrectedRustReader"})
+
 
 class _FnState:
     __slots__ = ("total", "stack", "brace_depth", "line_indent", "at_line_start",
                  "pending", "else_pending", "question_pending", "bool_op", "name",
-                 "recursed", "body_started", "prev", "label_check", "c_family")
+                 "recursed", "body_started", "prev", "label_check", "c_family",
+                 "match_kw")
 
-    def __init__(self, name: str, c_family: bool = False):
+    def __init__(self, name: str, c_family: bool = False, match_kw: bool = False):
         self.c_family = c_family
+        self.match_kw = match_kw
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.brace_depth = 0
@@ -91,11 +104,13 @@ class LizardExtension:
         reader_name = type(reader).__name__
         is_python = reader_name.lower().startswith("python")
         c_family = reader_name in _DECLARATOR_READERS
+        match_kw = reader_name in _MATCH_READERS
         for token in tokens:
             fn = reader.context.current_function
             state = states.get(fn)
             if state is None:
-                state = states[fn] = _FnState(getattr(fn, "name", ""), c_family)
+                state = states[fn] = _FnState(getattr(fn, "name", ""), c_family,
+                                              match_kw)
             _step(state, token, is_python)
             fn.cognitive_complexity = state.total
             yield token
@@ -235,10 +250,25 @@ def _keywords(state: _FnState, token: str, is_python: bool) -> None:
         _if_token(state, is_python)
     elif token in _ELSE_KEYWORDS:
         _else_token(state, token, is_python)
-    elif token in _COUNTING:
+    elif token in _COUNTING or _counting_match(state, token):
         _structure_token(state, token, is_python)
     else:
         _jumps_and_recursion(state, token, is_python)
+
+
+def _counting_match(state: _FnState, token: str) -> bool:
+    """True for a Rust `match`, which is a switch and is charged as one.
+
+    Not in `_COUNTING`, because that set is read by every language and `match`
+    is a soft keyword in Python: `match = re.match(...)` would cost a point and
+    open a block that never closes. The reader decides, the way it decides
+    whether a `&&` is a declarator.
+
+    The block itself pays +1 and the nesting it sits in; the arms pay nothing,
+    exactly as a C `case` pays nothing. Rust's cyclomatic column counts the arms
+    instead, so the two columns say different things about one block on purpose.
+    """
+    return token == "match" and state.match_kw
 
 
 def _structure_token(state: _FnState, token: str, is_python: bool) -> None:

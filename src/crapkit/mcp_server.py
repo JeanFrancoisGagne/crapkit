@@ -15,6 +15,14 @@ PROTOCOL_VERSION = "2024-11-05"
 
 _REPO = {"repo": {"type": "string", "description": "repo root (default: the server's)"}}
 
+# brief and explain resolve NAME by one rule, so they describe it with one
+# string. The bare identifier is the long name's leading token, which is all
+# there is before the parameters in Rust and Go.
+_NAME_DESCRIPTION = ("the bare identifier (classify, or route for a Rust "
+                     "`route cmd : & Cmd`) or the whole long_name next_item "
+                     "printed (classify( score , late )); both resolve, exact "
+                     "match first")
+
 TOOLS: tuple[dict, ...] = (
     {"name": "next_item", "argv": ["next-item"], "json_flag": False, "positional": (),
      "flags": {"top": "--top", "exclude": "--exclude"},
@@ -31,14 +39,12 @@ TOOLS: tuple[dict, ...] = (
      "description": "One function's whole context: scored row, ratchet mark, uncovered lines, "
                     "duplication twins, churn and change-coupling partners",
      "properties": {"path": {"type": "string", "description": "repo-relative source file"},
-                    "name": {"type": "string",
-                             "description": "the bare identifier (classify) or the whole "
-                                            "long_name next_item printed "
-                                            "(classify( score , late )); both resolve"}}},
+                    "name": {"type": "string", "description": _NAME_DESCRIPTION}}},
     {"name": "explain", "argv": ["explain"], "json_flag": False, "positional": ("path", "name"),
      "flags": {},
      "description": "One function's score trajectory across runs plus its ratchet mark",
-     "properties": {"path": {"type": "string"}, "name": {"type": "string"}}},
+     "properties": {"path": {"type": "string"},
+                    "name": {"type": "string", "description": _NAME_DESCRIPTION}}},
     {"name": "doctor", "argv": ["doctor"], "json_flag": False, "positional": (), "flags": {},
      "description": "Config/repo agreement check: typo keys, empty scopes, missing lane cwds",
      "properties": {}},

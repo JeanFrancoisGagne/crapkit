@@ -132,11 +132,46 @@ def commands(path: str, scoped: str | None, note: str = "") -> dict:
 def bare_name(long_name: str) -> str:
     """The identifier a long_name opens with, before its parameter list.
 
+    Two cuts, because lizard's readers spell a parameter list two ways. Python
+    and shell close the name with `(` — `classify( score , limit = 1 )`,
+    `classify()` — and Rust and Go print the parameters after a space with no
+    parenthesis at all: `route cmd : & Cmd`, `Classify n int`. Cutting only at
+    the `(` handed those back whole, so the handle a packet published was a
+    signature no command would accept back.
+
+    The leading token settles both. It moves no parenthesised language, because
+    none of those puts a space before the `(`: `n::K::m( int a)` keeps its
+    namespace and an Objective-C `doThing:( int )` keeps its selector colon.
+
     Empty for a function lizard could not name: both `(anonymous)` and
     `(anonymous) ( z )` open with the parenthesis, so an empty prefix IS the
     test for anonymity, with no second string to keep in step.
     """
-    return long_name.split("(")[0].strip()
+    head = long_name.split("(")[0].strip()
+    return head.split()[0] if head else ""
+
+
+def exact_names(names, name: str) -> list[str]:
+    """The long names `name` names outright: the whole string, or the bare one."""
+    return [n for n in names if name in (n, bare_name(n))]
+
+
+def matching_names(names, name: str) -> list[str]:
+    """The long names one NAME resolves to, in the order `names` arrived.
+
+    Exact first, the fragment second. `brief` matched only exactly and `explain`
+    only loosely, so `route` picked one function in one command and three —
+    `route`, `route_chain`, `route_num` — in the other, off the same string in
+    the same payload. Nesting names is the ordinary case, so the loose command
+    was wrong far more often than the strict one was unhelpful.
+
+    The fragment survives as the fallback because a name nobody owns is usually
+    a typo, and listing everything holding it is what tells a session which name
+    it meant. An empty NAME resolves to nothing rather than to everything.
+    """
+    if not name:
+        return []
+    return exact_names(names, name) or [n for n in names if name in n]
 
 
 def anonymous_starts(rows) -> list[int]:
