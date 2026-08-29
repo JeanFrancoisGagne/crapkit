@@ -23,6 +23,15 @@ join against the rows everywhere — worklist, next-item, brief and coupling
 alike — and both churn caches carry a format marker that retires maps laid
 down with top-relative paths.
 
+### The first-run pytest-cov trap is named at init, not after the suite
+The generated py lane runs `pytest --cov`, and the `--cov` flags come from
+pytest-cov — a package of the repo's own interpreter, which a dependency on
+crapkit could never guarantee (a pipx or uv-tool install shares nothing with
+the suite's venv). `init` now probes the python its lane will run and prints
+the install command when `pytest_cov` is not importable, a new `crapkit[py]`
+extra pulls the plugin alongside crapkit for same-venv installs, and
+`coverage`'s exit-5 hint stays as the last resort.
+
 ## 0.4.3 — 2026-08-29
 
 Fixes from a second consumer repo's field reports (issues #1, #14–#19, #21, #22).

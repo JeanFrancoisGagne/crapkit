@@ -102,6 +102,49 @@ def test_a_repo_with_no_source_at_all_still_blames_the_directory(tmp_path: Path)
     assert "is this the repo root" in res.stderr
 
 
+@pytest.fixture()
+def pytest_repo(tmp_path: Path) -> Path:
+    """A python repo with a pytest marker: init writes the py lane for it."""
+    repo = _bare_git_repo(tmp_path, "pyrepo")
+    (repo / "pylib").mkdir()
+    (repo / "pylib" / "mod.py").write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
+    (repo / "pyproject.toml").write_text('[project]\nname = "pyrepo"\n', encoding="utf-8")
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def _env_without_pytest_cov(tmp_path: Path) -> dict:
+    """An environment whose python cannot import pytest_cov: a PYTHONPATH shim
+    shadows the package, the same trick fixtures/shims plays on lizard."""
+    shim_dir = tmp_path / "no-cov-shim"
+    shim_dir.mkdir()
+    (shim_dir / "pytest_cov.py").write_text(
+        'raise ImportError("shimmed out for the init probe test")\n', encoding="utf-8")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(shim_dir)
+    return env
+
+
+def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tmp_path: Path):
+    """The first-run trap, caught at init instead of forty minutes into the
+    first `crapkit coverage`: the py lane runs `pytest --cov`, and those flags
+    come from pytest-cov — a package of the REPO's interpreter, which a
+    dependency on crapkit itself could never guarantee."""
+    res = subprocess.run([sys.executable, "-m", "crapkit", "init"], cwd=pytest_repo,
+                         capture_output=True, text=True, timeout=120,
+                         env=_env_without_pytest_cov(tmp_path))
+    assert res.returncode == 0, res.stderr
+    assert "pytest_cov" in res.stderr and "pip install pytest-cov" in res.stderr
+    assert "crapkit[py]" in res.stderr, "the extra is the same-venv shortcut"
+    assert (pytest_repo / "crapkit.toml").is_file(), "a warning must not stop the scaffold"
+
+
+def test_init_stays_quiet_when_pytest_cov_is_importable(pytest_repo: Path):
+    res = run_cli(pytest_repo, "init")
+    assert res.returncode == 0, res.stderr
+    assert "pytest_cov" not in res.stderr, "no warning when the probe answers yes"
+
+
 def test_init_ignores_its_own_store_in_the_consumers_gitignore(bare_repo: Path):
     res = run_cli(bare_repo, "init")
 

@@ -82,6 +82,34 @@ def _no_scopes_reason(root: Path) -> str:
             f"run `git add` first ({len(untracked)} untracked source file(s) found)")
 
 
+def _pytest_cov_probe(command: str) -> bool:
+    """Can the interpreter this lane names import pytest_cov? True too when the
+    probe itself cannot run — only a clean "no" earns the warning, and a missing
+    interpreter is doctor's finding, not this one's."""
+    import subprocess
+
+    try:
+        return subprocess.run([command.split()[0], "-c", "import pytest_cov"],
+                              capture_output=True, timeout=15).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+
+
+def _warn_missing_pytest_cov(lanes: tuple) -> None:
+    """The first-run trap, caught where it starts. The py lane shells out to
+    `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
+    REPO's interpreter, so a crapkit dependency could only ever cover installs
+    sharing the suite's venv. Probe the python the lane will actually run and
+    say the fix now, instead of `coverage` exiting 5 after the whole suite."""
+    for lane in lanes:
+        if lane.parser == "coveragepy" and "--cov" in lane.command \
+                and not _pytest_cov_probe(lane.command):
+            print(f"note: lane {lane.name!r} runs `pytest --cov`, and this python cannot "
+                  "import pytest_cov — pip install pytest-cov where the suite runs "
+                  "(pip install 'crapkit[py]' when that is crapkit's own environment), "
+                  "then `crapkit coverage`", file=sys.stderr)
+
+
 def _extend_gitignore(root: Path, lanes: tuple) -> None:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
@@ -115,6 +143,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes)
+    _warn_missing_pytest_cov(lanes)
     _extend_gitignore(root, live_lanes(lanes, scopes))
     return 0
 
