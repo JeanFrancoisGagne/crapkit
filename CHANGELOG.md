@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.4.5 — 2026-08-29
+
+Three more field findings from @nicolaschapados, out of one incident on a real
+pytest/uv project checked out twice through git worktrees. The incident itself was
+not a crapkit bug — the shell held checkout B's venv while crapkit ran in checkout
+A, and B's editable install pointed pytest at B's sources. crapkit made it far
+harder to find than it should have been, and one step away from answering it
+wrongly and confidently.
+
+### A failing lane now says where its log is
+`_raise_no_artifact` took the log path and never printed it. All a reporter saw was
+a 500-BYTE tail that began mid-line — `last output:  short test summary info ====`
+— with all ten collection tracebacks cut off above it and nothing naming
+`.crapkit/lane-py.log`; finding the log took a second agent. Every no-artifact
+refusal now carries `full log: <path>` before the tail it quotes. The tail is cut on
+line boundaries, so it can no longer open on a fragment that reads like the start of
+a message. And when the end of the log names no cause — pytest closes on a summary
+block of `ERROR path` lines saying which files broke and never why — the last few
+lines that DO name one are pulled up in front of it, with an ellipsis marking the
+output skipped between them.
+
+### An artifact that measured a different tree is refused, not scored
+Nothing checked that a lane's artifact was about this checkout. Coverage joins on
+path and nothing else, so an artifact whose paths reach none of the scopes its lane
+claims contributes exactly nothing and every function in those scopes reads
+`untested` — a confident `N untested … grade F` assembled out of a tooling mistake,
+which is worse than the exit 5 a missing artifact already earns because it looks
+like an answer. In the incident this failed loudly only because the two checkouts'
+APIs had diverged; had they matched, as two worktrees of one branch normally do, the
+suite would have passed and the grade would have been fiction. Such a lane now fails
+like any other: the message quotes a few of the paths the artifact does name, points
+at `path_prefix` as the legitimate remapping knob, and the scopes fall back to
+`no-lane` rather than `untested`. Zero overlap is the whole test — a partial overlap
+has honest readings and any threshold over zero would need tuning per repo.
+
+### `init` binds the lane to the environment the repo pins
+The scaffolded lane was a bare `python -m pytest`, which resolves through the shell's
+PATH to whichever venv happens to be active — the root cause of the whole report. A
+lockfile beside the pytest marker now names the manager that owns the environment,
+and `init` writes its `run`: `uv.lock` gives `uv run python -m pytest …`, and
+`poetry.lock`, `pdm.lock` and `Pipfile.lock` the same for theirs, first match in that
+order. The `[crapkit.scoped_tests]` entry takes the same prefix, read back off the
+lane so the two cannot drift. A managed lane is not probed for pytest-cov: `uv run`
+and its siblings create or sync the project environment before running anything, and
+`init` has no business provisioning one to ask a question about it.
+
 ## 0.4.4 — 2026-08-29
 
 Three field fixes from @nicolaschapados (PR #23) against a real pytest/uv project,

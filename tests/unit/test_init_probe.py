@@ -91,3 +91,55 @@ def test_only_a_cov_flagged_coveragepy_lane_is_probed(lane, monkeypatch, capsys)
     monkeypatch.setattr(admin, "_pytest_cov_probe", boom)
     _warn_missing_pytest_cov((lane,))
     assert capsys.readouterr().err == ""
+
+
+# --- a lane headed by an environment manager ---------------------------------
+#
+# `uv run python -m pytest` heads on `uv`, and `uv -c "import pytest_cov"` is not
+# a python invocation at all: it exits non-zero and the probe would warn about
+# pytest-cov on every uv repo. Probing the real thing is worse — `uv run` and its
+# siblings CREATE or sync the project environment first, and init has no business
+# provisioning one to ask a question about it.
+
+@pytest.mark.parametrize("command", [
+    "uv run python -m pytest --cov",
+    "poetry run python -m pytest --cov",
+    "pdm run python -m pytest --cov",
+    "pipenv run python -m pytest --cov",
+])
+def test_a_manager_headed_lane_is_left_alone(command, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("init must not run the manager to ask a question")
+
+    monkeypatch.setattr("subprocess.run", boom)
+    assert _pytest_cov_probe(command) is True
+
+
+def test_a_managed_lane_prints_no_pytest_cov_warning(capsys):
+    _warn_missing_pytest_cov((_lane("uv run python -m pytest --cov"),))
+
+    assert capsys.readouterr().err == ""
+
+
+# --- which interpreter init writes into the config ---------------------------
+
+def _repo(tmp_path, *names: str):
+    for name in names:
+        (tmp_path / name).write_text("", encoding="utf-8")
+    return tmp_path
+
+
+def test_a_lockfile_makes_init_write_the_managers_own_python(tmp_path):
+    assert admin._interpreter(_repo(tmp_path, "uv.lock")) == "uv run python"
+    assert admin._interpreter(_repo(tmp_path, "poetry.lock")) == "uv run python", \
+        "first match wins, and uv.lock is still there"
+
+
+def test_without_a_lockfile_the_name_that_resolves_is_the_one_written(tmp_path):
+    assert admin._interpreter(_repo(tmp_path, "Cargo.lock")) in ("python", "python3")
+
+
+def test_the_lockfiles_init_reads_are_the_ones_it_looks_for(tmp_path):
+    _repo(tmp_path, "pdm.lock", "package-lock.json")
+
+    assert admin._present_lockfiles(tmp_path) == frozenset({"pdm.lock"})

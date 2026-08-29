@@ -1,6 +1,6 @@
 {
   "name": "crapkit",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "crapkit's agent surface: three skills, the read-side MCP server, and one advisory PostToolUse hook that names functions an edit pushed over their ceiling. Needs the crapkit CLI on PATH, crapkit 0.4.0 or newer, which is the release that answers `crapkit claude-hook`. The commit gate stays the only enforcement point; this hook never blocks.",
   "author": {
     "name": "Jean-Francois Gagne"

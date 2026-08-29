@@ -492,7 +492,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused. Check the flag spelling and order.</td></tr>
   <tr><td class="mono">3</td><td>Config gap</td><td>A scope without a template, a metric-stamp mismatch. Fix <code>crapkit.toml</code> or restamp.</td></tr>
   <tr><td class="mono">4</td><td>Git error</td><td>Not a repository, or a baseline commit rewritten out of history by a force-push.</td></tr>
-  <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact or timed out past retries, an alert command failed</td><td>For the no-artifact case: fix the lane, not the code. Four root causes, triaged in <a href="lanes.md">docs/lanes.md</a>.</td></tr>
+  <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact (or one measuring a different tree) or timed out past retries, an alert command failed</td><td>For the artifact cases: fix the lane, not the code. The refusal names the lane log; root causes are triaged in <a href="lanes.md">docs/lanes.md</a>.</td></tr>
   <tr><td class="mono">6</td><td>Gate: touched function over its ceiling</td><td>Decompose until every piece fits.</td></tr>
   <tr><td class="mono">7</td><td>Ratchet regression</td><td>A standing mark got worse. On a function you never edited, suspect test rot first.</td></tr>
   <tr><td class="mono">8</td><td>New test failures vs baseline</td><td>The flake retest already ran if configured. What remains is real.</td></tr>

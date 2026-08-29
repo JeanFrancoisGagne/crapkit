@@ -21,11 +21,29 @@ from ..universe import assign_files, scan_files
 from ._shared import _file_sizer, _load_repo_config, _print_json
 
 
-def _interpreter() -> str:
-    """The interpreter name a committed config can call. sys.executable is this
-    machine's absolute path and would not survive the repo reaching anyone else."""
+def _present_lockfiles(root: Path) -> frozenset[str]:
+    from ..scaffold import LOCKFILE_RUNNERS
+
+    return frozenset(name for name, _ in LOCKFILE_RUNNERS if (root / name).is_file())
+
+
+def _interpreter(root: Path) -> str:
+    """The python invocation a committed config can call.
+
+    A lockfile at the root wins: `uv run python` and its siblings resolve to the
+    environment the repo pins, while a bare `python` resolves to whichever venv
+    the shell happens to have active — which in two worktrees of one branch is
+    how a lane measures the OTHER checkout and scores this one untested. Names
+    only, never sys.executable: that is this machine's absolute path and would
+    not survive the repo reaching anyone else.
+    """
     import shutil
 
+    from ..scaffold import lockfile_runner
+
+    runner = lockfile_runner(_present_lockfiles(root))
+    if runner:
+        return f"{runner} python"  # the manager's environment always spells it `python`
     return "python" if shutil.which("python") else "python3"
 
 
@@ -88,12 +106,22 @@ def _pytest_cov_probe(command: str) -> bool:
     through the same shell as the lane, so a bare `python` resolves to the one
     the lane will get (a .bat shim included), not the one CreateProcess finds.
     True too when the probe cannot run — only a clean "no" earns the warning,
-    and a missing interpreter is doctor's finding, not this one's."""
+    and a missing interpreter is doctor's finding, not this one's.
+
+    A lane headed by an environment manager is left alone. `uv run` and its
+    siblings CREATE or sync the project environment before running anything, and
+    `init` has no business provisioning one to ask a question about it — the
+    answer would describe an environment init had just built. Probing the head
+    word instead (`uv -c "import pytest_cov"`) is not the python the lane runs
+    and would warn about the wrong gap on every uv repo.
+    """
     import shutil
     import subprocess
 
+    from ..scaffold import ENV_MANAGERS
+
     words = shell_words(command)
-    if not words or shutil.which(words[0]) is None:
+    if not words or words[0] in ENV_MANAGERS or shutil.which(words[0]) is None:
         return True
     probe = f'{_shell_quote(words[0])} -c "import pytest_cov"'
     try:
@@ -156,7 +184,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # A config whose lanes are all commented out scores every function no-lane,
     # so a fresh repo cannot rank anything until somebody hand-writes a lane.
     lanes = detect_lanes(_present_markers(root), _package_json(root),
-                         interpreter=_interpreter())
+                         interpreter=_interpreter(root))
     text = starter_toml(scopes, lanes)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")

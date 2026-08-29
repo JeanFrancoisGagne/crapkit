@@ -8,7 +8,7 @@ import json
 
 from crapkit.config import load_config_text
 from crapkit.scaffold import (detect_lanes, gitignore_entries, gitignore_update, live_lanes,
-                              source_candidates, starter_toml)
+                              lockfile_runner, python_launcher, source_candidates, starter_toml)
 
 SCOPES = {"pylib": ("python",), "src": ("typescript",)}
 
@@ -319,3 +319,63 @@ def test_an_undetected_runner_keeps_its_scoped_tests_entry_commented():
     assert "src" in dict(cfg.scoped_tests)
     assert "ui" not in dict(cfg.scoped_tests)
     assert '# ui = "npx vitest run {files}"' in text
+
+
+# --- the environment the scaffolded lane binds to -----------------------------
+#
+# `python -m pytest` binds to whatever venv the shell has active. In two
+# worktrees of one branch that is how a lane run in checkout A imports checkout
+# B's sources through B's editable install — which either dies in collection or,
+# when the two APIs agree, measures B and scores A as untested. A lockfile is the
+# repo saying which environment is the right one, and the manager's `run` is the
+# only spelling that binds to it.
+
+def test_a_uv_lock_pins_the_lane_to_the_projects_own_environment():
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="uv run python")
+
+    assert lane.command == ("uv run python -m pytest --cov --cov-branch "
+                            "--cov-report=json:.crapkit/cov/py.json")
+
+
+def test_each_lockfile_names_the_manager_that_owns_the_environment():
+    assert lockfile_runner(frozenset({"uv.lock"})) == "uv run"
+    assert lockfile_runner(frozenset({"poetry.lock"})) == "poetry run"
+    assert lockfile_runner(frozenset({"pdm.lock"})) == "pdm run"
+    assert lockfile_runner(frozenset({"Pipfile.lock"})) == "pipenv run"
+
+
+def test_no_lockfile_leaves_the_interpreter_alone():
+    assert lockfile_runner(frozenset({"package-lock.json", "Cargo.lock"})) == ""
+
+
+def test_two_lockfiles_resolve_the_same_way_every_time():
+    """A repo mid-migration carries both. Declaration order decides, so the
+    config init writes does not depend on which name a set iterated first."""
+    assert lockfile_runner(frozenset({"poetry.lock", "uv.lock"})) == "uv run"
+
+
+def test_the_scoped_tests_entry_runs_the_same_python_the_lane_does():
+    """Step 3 measuring one environment and step 4 testing another is the same
+    bug one command later."""
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="uv run python")
+
+    cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
+
+    assert dict(cfg.scoped_tests)["src"] == (
+        "uv run python -m pytest {files} -q -p no:cacheprovider")
+
+
+def test_the_launcher_is_read_back_off_the_lane_rather_than_guessed():
+    assert python_launcher(detect_lanes(frozenset({"pytest.ini"}), "",
+                                        interpreter="poetry run python")) == "poetry run python"
+    assert python_launcher(()) == "python", "no pytest lane, no claim to make"
+    assert python_launcher(detect_lanes(frozenset(), _package(scripts={"test": "vitest run"}))) \
+        == "python", "a js lane says nothing about python"
+
+
+def test_a_managed_lane_still_reads_as_the_confirmed_pytest_runner():
+    """The `-m pytest` shape is what marks the python scoped-tests entry live;
+    a manager prefix in front of it must not retire that."""
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="pdm run python")
+
+    assert "src" in dict(load_config_text(starter_toml({"src": ("python",)}, lanes)).scoped_tests)

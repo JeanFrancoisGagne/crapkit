@@ -71,11 +71,29 @@ class _ScopeMatch(NamedTuple):
     extensions: tuple[str, ...]
 
 
+def scope_reach(paths) -> tuple[frozenset[str], tuple[str, ...]]:
+    """(exact paths, directory prefixes) for a scope's declared paths: the PATH
+    half of the rule `_owning_scope` assigns files by, with the language test
+    left out.
+
+    Public because a caller outside this module asks the same question from the
+    other end — the lane runner checks whether an artifact's measured paths
+    could be claimed by any scope its lane names — and a second hand-rolled
+    prefix test would drift. Exact paths matter: a scope may declare individual
+    files, and prefixes alone call every one of them unreachable.
+    """
+    declared = tuple(paths)
+    return frozenset(declared), tuple(p.rstrip("/") + "/" for p in declared)
+
+
+def in_scope_reach(reach: tuple[frozenset[str], tuple[str, ...]], path: str) -> bool:
+    exact, prefixes = reach
+    return path in exact or path.startswith(prefixes)
+
+
 def _scope_matchers(scopes: tuple[Scope, ...]) -> tuple[_ScopeMatch, ...]:
     return tuple(
-        _ScopeMatch(s.name, frozenset(s.paths),
-                    tuple(p.rstrip("/") + "/" for p in s.paths),
-                    _source_extensions(s.languages))
+        _ScopeMatch(s.name, *scope_reach(s.paths), _source_extensions(s.languages))
         for s in scopes
     )
 
@@ -86,7 +104,7 @@ def _owning_scope(path: str, matchers: tuple[_ScopeMatch, ...]) -> str | None:
     # a prefix-only match must not stop the search or shared-prefix scopes
     # silently black-hole each other's files.
     for m in matchers:
-        if path in m.exact or path.startswith(m.prefixes):
+        if in_scope_reach((m.exact, m.prefixes), path):
             if path.endswith(m.extensions):
                 return m.name
     return None

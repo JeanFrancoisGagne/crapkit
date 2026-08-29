@@ -177,6 +177,7 @@ _OWNER = {
     "_pick_function": "queue",
     "_plugin_json": "admin",
     "_policy_findings": "ratchet_cmds",
+    "_present_lockfiles": "admin",
     "_present_markers": "admin",
     "_present_on_disk": "scoring",
     "_prior_crap": "verifying",

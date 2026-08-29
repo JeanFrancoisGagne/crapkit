@@ -95,6 +95,33 @@ class LaneSpec(NamedTuple):
 
 PYTEST_MARKERS = ("pyproject.toml", "pytest.ini", "setup.cfg")
 
+# A lockfile is the repo saying it pins its own environment through a manager,
+# and only that manager's `run` binds a command to it. A bare `python` binds to
+# whatever venv the shell has active instead: the report this came from ran a
+# scaffolded lane in one worktree while the shell held another worktree's venv,
+# whose editable install pointed at the other checkout's sources, and pytest
+# collected ten ImportErrors. Detection is the same file-presence signal that
+# picks the lane itself, so nothing is executed to learn this.
+#
+# First match wins, so a repo carrying two lockfiles resolves the same way every
+# time rather than by dict order.
+LOCKFILE_RUNNERS = (("uv.lock", "uv run"), ("poetry.lock", "poetry run"),
+                    ("pdm.lock", "pdm run"), ("Pipfile.lock", "pipenv run"))
+
+# The word each runner heads its command with, for readers asking "does this
+# lane command go through a manager?"
+ENV_MANAGERS = frozenset(runner.split()[0] for _, runner in LOCKFILE_RUNNERS)
+
+
+def lockfile_runner(present: frozenset[str]) -> str:
+    """The manager prefix that pins a python invocation to THIS project's
+    environment, or "" when no lockfile in the repo names one."""
+    for name, runner in LOCKFILE_RUNNERS:
+        if name in present:
+            return runner
+    return ""
+
+
 _PY_LANGUAGES = ("python",)
 _JS_LANGUAGES = ("javascript", "tsx", "typescript")
 _JS_RUNNER_COMMAND = {"jest": "npx jest --coverage", "vitest": "npx vitest run --coverage"}
@@ -250,18 +277,34 @@ _TEMPLATES = {
 # is the runner that scope's language usually uses, and the whole block stays
 # commented because only the repo knows whether that command is the right one.
 _SCOPED_TEST_COMMANDS = {
-    "python": "python -m pytest {files} -q -p no:cacheprovider",
+    "python": "{python} -m pytest {files} -q -p no:cacheprovider",
     "javascript": "npx vitest run {files}",
     "tsx": "npx vitest run {files}",
     "typescript": "npx vitest run {files}",
 }
 _SCOPED_TEST_PLACEHOLDER = "<your test command> {files}"
+_DEFAULT_PYTHON = "python"
 
 
-def _scoped_test_command(languages: tuple[str, ...]) -> str:
+def python_launcher(lanes: tuple[LaneSpec, ...]) -> str:
+    """The python invocation the detected pytest lane already settled on.
+
+    Read back off the lane rather than passed in beside it, so the scoped-tests
+    entry runs the suite the way the coverage lane runs it and the two cannot
+    drift: a `uv run python` lane with a bare `python` step 4 would measure one
+    environment and test another.
+    """
+    for lane in lanes:
+        head, sep, _ = lane.command.partition(" -m pytest")
+        if sep:
+            return head
+    return _DEFAULT_PYTHON
+
+
+def _scoped_test_command(languages: tuple[str, ...], launcher: str) -> str:
     for language in languages:
         if language in _SCOPED_TEST_COMMANDS:
-            return _SCOPED_TEST_COMMANDS[language]
+            return _SCOPED_TEST_COMMANDS[language].replace("{python}", launcher)
     return _SCOPED_TEST_PLACEHOLDER
 
 
@@ -279,14 +322,16 @@ def _confirmed_languages(lanes: tuple[LaneSpec, ...]) -> frozenset[str]:
     return frozenset({"python"} if any(" -m pytest " in ln.command for ln in lanes) else ())
 
 
-def _scoped_entry_lines(scopes: dict[str, tuple[str, ...]], live: bool) -> list[str]:
+def _scoped_entry_lines(scopes: dict[str, tuple[str, ...]], live: bool,
+                        launcher: str) -> list[str]:
     prefix = "" if live else "# "
-    return [f'{prefix}{name} = "{_scoped_test_command(languages)}"'
+    return [f'{prefix}{name} = "{_scoped_test_command(languages, launcher)}"'
             for name, languages in scopes.items()]
 
 
 def _scoped_tests_stub(scopes: dict[str, tuple[str, ...]],
-                       confirmed: frozenset[str] = frozenset()) -> list[str]:
+                       confirmed: frozenset[str] = frozenset(),
+                       launcher: str = _DEFAULT_PYTHON) -> list[str]:
     """The [crapkit.scoped_tests] block: live entries for scopes whose runner a
     detected lane proves, commented templates for the rest.
 
@@ -299,20 +344,22 @@ def _scoped_tests_stub(scopes: dict[str, tuple[str, ...]],
     rest = {n: l for n, l in scopes.items() if n not in live}
     intro = ["# `crapkit test-scoped FILES` runs one command per scope, with {files}",
              "# replaced by that scope's files, each quoted."]
-    return intro + _live_block(live) + _commented_block(rest, bool(live)) + [""]
+    return (intro + _live_block(live, launcher)
+            + _commented_block(rest, bool(live), launcher) + [""])
 
 
-def _live_block(live: dict[str, tuple[str, ...]]) -> list[str]:
+def _live_block(live: dict[str, tuple[str, ...]], launcher: str) -> list[str]:
     if not live:
         return []
-    return ["[crapkit.scoped_tests]"] + _scoped_entry_lines(live, True)
+    return ["[crapkit.scoped_tests]"] + _scoped_entry_lines(live, True, launcher)
 
 
-def _commented_block(rest: dict[str, tuple[str, ...]], has_live: bool) -> list[str]:
+def _commented_block(rest: dict[str, tuple[str, ...]], has_live: bool,
+                     launcher: str) -> list[str]:
     if not rest:
         return []
     header = ["# Uncomment what fits:"] + ([] if has_live else ["# [crapkit.scoped_tests]"])
-    return header + _scoped_entry_lines(rest, False)
+    return header + _scoped_entry_lines(rest, False, launcher)
 
 
 def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]]) -> list[str]:
@@ -342,7 +389,8 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     lines += _exclude_stanza()
     live, covered = _live_lanes(lanes, scopes)
     return "\n".join(lines + live + _template_lines(covered, scopes)
-                     + _scoped_tests_stub(scopes, _confirmed_languages(lanes)))
+                     + _scoped_tests_stub(scopes, _confirmed_languages(lanes),
+                                          python_launcher(lanes)))
 
 
 _STORE_IGNORE = ".crapkit/"
