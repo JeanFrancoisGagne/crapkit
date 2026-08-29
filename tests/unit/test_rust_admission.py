@@ -20,6 +20,7 @@ from pathlib import Path
 import crapkit
 from crapkit.analyze import ANALYSIS_VERSION, analyze_source
 from crapkit.config import Config, Scope, load_config_text
+from crapkit.packet import bare_name
 from crapkit.scaffold import DEFAULT_EXCLUDES, sniff_scopes, source_candidates
 from crapkit.universe import scan_files
 
@@ -149,14 +150,25 @@ def test_rust_takes_the_standard_chain_with_cognitive_at_index_zero():
     assert (record.cognitive, record.ccn) == (10, 6)
 
 
-def test_a_match_block_costs_nothing_cognitive():
-    """The documented gap, pinned so it reads as a decision. The cognitive
-    extension's keyword set is the C family's and holds `switch`, not `match`;
-    widening it would move every Python `match` score too. Rust's cyclomatic
-    column is where match arms are counted."""
+def test_a_match_block_costs_one_cognitive_and_the_arms_cost_nothing():
+    """The two columns say different things about one block, on purpose: the
+    cyclomatic column counts each non-wildcard arm, the cognitive column charges
+    the decision once the way Sonar charges a switch. It read 0 until the
+    cognitive extension learned Rust's `match`; tests/unit/test_cognitive_rust_match.py
+    owns the rule."""
     (record,) = analyze_source("src/main.rs", CLASSIFY)
 
-    assert record.cognitive == 0
+    assert (record.ccn, record.cognitive) == (CLASSIFY_CCN, 1)
+
+
+def test_a_rust_long_name_hands_back_the_bare_identifier():
+    """lizard prints Rust parameters with no parentheses, so the whole signature
+    used to be the `handle` a packet published — a string no command took back.
+    """
+    (record,) = analyze_source("src/main.rs", CLASSIFY)
+
+    assert record.long_name == "classify n : i32"
+    assert bare_name(record.long_name) == "classify"
 
 
 def test_analysis_version_invalidates_caches_written_before_the_rust_fix():

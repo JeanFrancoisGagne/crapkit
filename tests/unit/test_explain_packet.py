@@ -129,9 +129,15 @@ def _seed_commit(repo: Path) -> tuple[str, str]:
 
 def _args(repo: Path, **flags) -> argparse.Namespace:
     """explain's namespace. `--json` is not on the parser in this tree yet, so
-    the default lives here; cmd_explain must read it as argparse will supply it."""
-    fields = {"history": False, "tests": False, "json": False, **flags}
-    return argparse.Namespace(repo=str(repo), path="pylib/mod.py", name="guarded", **fields)
+    the default lives here; cmd_explain must read it as argparse will supply it.
+
+    The default NAME is the fragment `guard`, not the name `guarded`. Both
+    functions hold the fragment and neither is called it, which is what makes
+    this a two-match command; `guarded` names one function outright and now
+    resolves to it alone.
+    """
+    fields = {"history": False, "tests": False, "json": False, "name": "guard", **flags}
+    return argparse.Namespace(repo=str(repo), path="pylib/mod.py", **fields)
 
 
 @pytest.fixture()
@@ -181,7 +187,17 @@ def test_json_is_one_object_at_schema_1_naming_what_was_asked(repo, capsys):
 
     assert payload["schema"] == 1
     assert payload["path"] == "pylib/mod.py"
-    assert payload["name"] == "guarded"
+    assert payload["name"] == "guard"
+
+
+def test_an_exact_name_resolves_to_one_function_not_to_everything_holding_it(
+        repo, capsys):
+    """`guarded` is a function's name AND a substring of `guarded_twin`. explain
+    ran a SQL LIKE and nothing else, so it printed two trajectories for a
+    question about one — while `brief`, on the same string, printed one."""
+    payload = _payload(repo, capsys, name="guarded")
+
+    assert [f["long_name"] for f in payload["functions"]] == ["guarded( a , b )"]
 
 
 def test_json_keys_are_sorted(repo, capsys):

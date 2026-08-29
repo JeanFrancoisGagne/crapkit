@@ -446,6 +446,18 @@ current commit. Another `brief` re-reads the same snapshot and reports the same 
 | the function's start line | `4` |
 | the ordinal handle | `"(anonymous)#2"` |
 
+The bare identifier is the leading token of the long name, before the parameter list.
+Only some of lizard's readers spell that list with parentheses: Rust prints
+`route cmd : & Cmd` and Go prints `Classify n int`, so the identifier there ends at the
+first space and the bare names are `route` and `Classify`.
+
+Matching is exact first. A NAME that IS a long name or a bare identifier resolves to
+that function alone, so `route` never also answers with `route_chain` and `route_num`.
+A NAME that names no function falls back to a substring search over the file's long
+names, which is what turns a half-remembered name into a list of candidates. `brief`
+and `explain` run the identical rule, so one string cannot name one function in a
+packet and three in a trajectory.
+
 The start line is the disambiguator: it settles a bare name two functions share.
 
 The ordinal handle names a function with no name of its own, which every payload prints

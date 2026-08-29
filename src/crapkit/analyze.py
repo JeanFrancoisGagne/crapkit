@@ -49,7 +49,12 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 6  # 6: five more C-family extension sets and .ps1/.psm1 are
+ANALYSIS_VERSION = 7  # 7: a Rust `match` is a cognitive condition (+1 and the
+#                          nesting it sits in), so every cached .rs record
+#                          carries a cognitive score measured without it. Rust
+#                          is the only language whose stored values move; ccn is
+#                          untouched in every language, Rust included.
+#                       6: five more C-family extension sets and .ps1/.psm1 are
 #                          admitted, a C++ rvalue reference is no longer a
 #                          cognitive condition, and source bytes decode utf-8
 #                          then cp1252 instead of by machine locale
