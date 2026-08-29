@@ -339,6 +339,26 @@ def test_a_value_taking_flag_does_not_excuse_the_path_that_follows_its_value():
         _covpy_lane("python -m pytest -n 8 pylib/unit")
 
 
+def test_a_quoted_marker_expression_is_one_flag_value_not_four_positionals():
+    """The faro transcript: a whitespace split cut 'not live and not perf' into
+    five tokens and refused 'live' — an argument the shell never hands pytest."""
+    command = ("python -m pytest -m 'not live and not perf' --cov --cov-branch "
+               "--cov-report=json:.crapkit/cov/py.json")
+    assert _covpy_lane(command).command == command
+
+
+def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane("python -m pytest 'pylib/sub dir' --cov=pylib")
+
+
+def test_an_unbalanced_quote_falls_back_to_the_whitespace_read():
+    """shlex refuses a command sh would refuse too; the lint still runs on the
+    naive split rather than crashing config load on a ValueError."""
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane("python -m pytest pylib/unit --cov 'unclosed")
+
+
 def test_an_unknown_flag_swallows_a_word_but_never_a_path():
     """A plugin flag crapkit has never heard of takes its value the same way, so
     a word after one is that value. A path is the one token that outranks it."""

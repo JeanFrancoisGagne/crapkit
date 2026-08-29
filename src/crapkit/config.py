@@ -1,6 +1,7 @@
 """crapkit.toml parsing. Pure: text in, Config out; every rejection is a ConfigError (exit 3)."""
 from __future__ import annotations
 
+import shlex
 import tomllib
 from typing import NamedTuple
 
@@ -62,6 +63,18 @@ _PYTEST_VALUE_FLAGS = frozenset({
 })
 
 
+def _shell_words(command: str) -> list[str]:
+    """The words the shell hands the runner. Lane commands run under shell=True,
+    so `-m 'not live and not perf'` is one argument there and must be one token
+    here — a whitespace split reads four positionals into it. A command shlex
+    refuses (an unbalanced quote) gets the whitespace read instead: a rough
+    lint on a command sh will refuse anyway beats a crash at config load."""
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return command.split()
+
+
 def _looks_like_a_test_path(tok: str) -> bool:
     """The shapes a pytest positional actually takes: a path or a node id."""
     return "/" in tok or "\\" in tok or "::" in tok or tok.endswith(".py")
@@ -105,7 +118,7 @@ def _validate_coveragepy_command(name: str, command: str) -> None:
     # Subset coverage under a suite with cross-file pollution is run-order-dependent;
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
     # full_suite = false, an explicit and reviewable decision.
-    tokens = command.split()
+    tokens = _shell_words(command)
     if "pytest" not in " ".join(tokens):
         return
     for tok in _narrowing_arguments(_tokens_after_pytest(tokens)):
@@ -148,7 +161,7 @@ def _validate_istanbul_command(name: str, command: str) -> None:
     # The measured vitest trap: any file filter passed beside --coverage silently
     # narrows the coverage include set. A lane command is fixed configuration, so
     # the combination is a config error, not a runtime surprise.
-    tokens = command.split()
+    tokens = _shell_words(command)
     if not _asks_for_coverage(tokens):
         return
     for i in range(_first_filter_position(tokens), len(tokens)):

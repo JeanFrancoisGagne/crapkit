@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### The lane guard reads a command line like the shell does
+Lane commands run under `shell=True`, but both lane lints tokenized them with a
+whitespace split. `python -m pytest -m 'not live and not perf' --cov ...` was
+refused with "positional argument 'live' narrows a full-suite coverage run" —
+an argument the shell never hands pytest — and on the istanbul side a QUOTED
+positional filter slipped past the guard, because the trailing quote defeated
+the suffix check. Both lints now split with shlex; a command shlex refuses (an
+unbalanced quote) falls back to the whitespace read instead of failing config
+load.
+
+### A crapkit root below the repo top no longer reads as all-dormant
+Scored rows are `git ls-files` paths, relative to the crapkit root; the churn
+log came from `git log --name-only`, whose paths are relative to the repo top.
+With the root one directory down (a monorepo member, or a project nested
+inside a linked worktree's checkout) every churn lookup missed, and `worklist`
+filed the entire corpus under dormant ("0 active, 215 dormant" on a repo with
+90 commits that week). The churn log now runs with `--relative`, so its paths
+join against the rows everywhere — worklist, next-item, brief and coupling
+alike — and both churn caches carry a format marker that retires maps laid
+down with top-relative paths.
+
 ## 0.4.3 — 2026-08-29
 
 Fixes from a second consumer repo's field reports (issues #1, #14–#19, #21, #22).

@@ -99,6 +99,18 @@ def test_a_cache_of_the_wrong_shape_reads_as_cold(tmp_path, git):
     assert git.log_calls == 1
 
 
+def test_a_cache_without_the_paths_marker_reads_as_cold(tmp_path, git):
+    """Caches laid down before `git log --relative` hold top-relative paths in
+    a subdirectory root; the format marker retires them at the next read."""
+    churn_cache.load_churn(tmp_path, 12)
+    path = tmp_path / ".crapkit" / "churn-cache.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    del doc["key"]["paths"]
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    churn_cache.load_churn(tmp_path, 12)
+    assert git.log_calls == 2
+
+
 def test_an_unreadable_head_still_answers_and_writes_nothing(tmp_path, git, monkeypatch):
     def no_head(root):
         raise GitError("no HEAD commit")

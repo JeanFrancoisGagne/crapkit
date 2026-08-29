@@ -338,8 +338,14 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
 
 def churn_log_lines(root: Path, months: int) -> Iterator[str]:
     """The churn window's log, streamed. On a big repo this is 21 MB of text and
-    the single most expensive call crapkit makes, so it is never held whole."""
-    return _git_lines(root, "log", f"--since={months} months ago",
+    the single most expensive call crapkit makes, so it is never held whole.
+
+    --relative, because every consumer joins these paths against root-relative
+    ls-files rows: log --name-only answers relative to the repo top, so a root
+    one directory down (a monorepo member, a project nested in a worktree)
+    read every scored file as zero-churn. At the top the flag changes nothing.
+    """
+    return _git_lines(root, "log", "--relative", f"--since={months} months ago",
                       "--format=%x01%an%x02%at", "--name-only")
 
 

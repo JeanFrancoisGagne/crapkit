@@ -156,6 +156,25 @@ def test_positional_file_filter_still_rejected_beside_coverage():
             'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
 
 
+def test_a_quoted_file_filter_beside_coverage_is_still_a_filter():
+    """A whitespace split leaves the closing quote on the token, the suffix
+    check misses, and a quoted positional filter sails past the guard."""
+    import pytest as _pytest
+    with _pytest.raises(ConfigError, match="narrows"):
+        load_config_text(
+            '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
+            "[[lane]]\nname = \"unit\"\ncommand = \"vitest run --coverage 'src/foo.test.ts'\"\n"
+            'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
+
+
+def test_a_quoted_exclude_glob_value_is_not_a_file_filter():
+    cfg = load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
+        "[[lane]]\nname = \"unit\"\ncommand = \"vitest run --coverage --exclude 'src/**/*.test.ts'\"\n"
+        'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
+    assert cfg.lanes[0].name == "unit", "a value flag's quoted glob never narrows"
+
+
 def test_scope_target_overrides_the_repo_default():
     cfg = load_config_text(
         '[crapkit]\ntarget = 6\n'
