@@ -144,40 +144,43 @@
 <div class="shell">
 
 <header class="hero">
-  <p class="kicker">The Handbook · self-contained · reads offline from a clone</p>
+  <p class="kicker">The Handbook · v0.4.0 · self-contained · reads offline from a clone</p>
   <h1>crapkit</h1>
-  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for TypeScript, TSX, JavaScript, Python, Swift, Go, Rust, shell, PowerShell, C and C++, Objective-C, Vue, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
+  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for Python, TypeScript, TSX, JavaScript, Vue, Go, Rust, shell, PowerShell, Swift, C and C++, Objective-C, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
   <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
-  <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> — Change Risk Anti-Patterns — was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
+  <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> (Change Risk Anti-Patterns) was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
   <nav class="toc">
     <a href="#intro"><b>01</b>Why crapkit exists</a>
     <a href="#score"><b>02</b>The score</a>
-    <a href="#how"><b>03</b>How it works</a>
-    <a href="#queue"><b>04</b>The queue: two views of one run</a>
-    <a href="#packet"><b>05</b>The packet</a>
-    <a href="#gate"><b>06</b>The gate and its four routes</a>
-    <a href="#ratchet"><b>07</b>The ratchet</a>
-    <a href="#baseline"><b>08</b>The trusted baseline</a>
-    <a href="#lanes"><b>09</b>Lanes: how coverage arrives</a>
-    <a href="#agents"><b>10</b>Built for agents</a>
-    <a href="#install"><b>11</b>Install and first run</a>
-    <a href="#moments"><b>12</b>Where each command earns its keep</a>
-    <a href="#cabinet"><b>13</b>The analysis cabinet</a>
-    <a href="#campaign"><b>14</b>The campaign: fixing a whole codebase</a>
-    <a href="#principles"><b>15</b>Design principles</a>
+    <a href="#languages"><b>03</b>What it reads</a>
+    <a href="#how"><b>04</b>How it works</a>
+    <a href="#dials"><b>05</b>The dials</a>
+    <a href="#twogates"><b>06</b>The two gates</a>
+    <a href="#ladder"><b>07</b>The rest of the ladder</a>
+    <a href="#ratchet"><b>08</b>The ratchet</a>
+    <a href="#baseline"><b>09</b>The trusted baseline</a>
+    <a href="#lanes"><b>10</b>Lanes: how coverage arrives</a>
+    <a href="#queue"><b>11</b>The queue: two views of one run</a>
+    <a href="#packet"><b>12</b>The packet</a>
+    <a href="#agents"><b>13</b>Built for agents</a>
+    <a href="#cabinet"><b>14</b>The analysis cabinet</a>
+    <a href="#install"><b>15</b>Install</a>
+    <a href="#uses"><b>16</b>Six ways people run it</a>
+    <a href="#campaign"><b>17</b>The campaign</a>
+    <a href="#principles"><b>18</b>Design principles</a>
   </nav>
 </header>
 
 <!-- ============================ 01 INTRO ============================ -->
 <h2 id="intro"><span class="sn">01</span>Why crapkit exists</h2>
-<p class="lede">Two facts about production defects meet in one number.</p>
-<p>Complex functions break more, and untested functions break silently. The CRAP metric multiplies the two: cyclomatic complexity squared, times the <em>cube</em> of what your tests never touch. A simple covered function scores near its complexity. A complex uncovered one explodes — the largest one crapkit has scored in the field was an anonymous handler at ccn 220 with no tests, CRAP 48,620.</p>
-<p>Plenty of tools report complexity, and plenty report coverage. crapkit's reason to exist is what it does <em>after</em> the arithmetic:</p>
+<p class="lede">You need to know which function will bite you next. One number answers that.</p>
+<p>Complex functions break more. Untested functions break silently. CRAP multiplies the two: cyclomatic complexity squared, times the <em>cube</em> of what your tests never touch. A simple covered function scores near its complexity. A complex uncovered one explodes. The worst crapkit has scored in the field was an anonymous handler at ccn 220 with no tests, CRAP 48,620.</p>
+<p>Plenty of tools report complexity. Plenty report coverage. crapkit earns its place with what happens <em>after</em> the arithmetic.</p>
 <ul>
-  <li><strong>It ranks by consequence.</strong> Debt in a file that changes weekly outranks identical debt in a file nobody has touched in a year — the risk map is ordered by <code>ccn × churn weight</code>, not by score alone, and the hand-out queue takes the worst CRAP first.</li>
-  <li><strong>It gates the future, never the past.</strong> A brownfield repo turns the gate on the same day it installs: standing debt is recorded in a committed ratchet and pardoned; only <em>touched</em> functions are judged. A repo-wide day-one gate fails forever and gets disabled — crapkit refuses to be that tool.</li>
-  <li><strong>It briefs the fixer.</strong> One command emits a start-editing packet: the function's own source, every sibling in its file, the ceiling it will be judged by, the lane that measures it, the exact commands to run, and the repo's written-down traps. A session starts editing instead of exploring.</li>
-  <li><strong>It is deterministic.</strong> Same tree, same config, same answer, byte for byte. Every read command emits JSON with a pinned <code>schema</code> (under <code>--json</code>; <code>next-item</code> always; <code>digest</code> alone stays plain lines by design), because half the callers are coding agents.</li>
+  <li><strong>It ranks by consequence.</strong> Debt in a file that changes weekly outranks identical debt in a file nobody has touched in a year. The risk map orders by <code>ccn × churn weight</code>, not by score alone.</li>
+  <li><strong>It gates the future, never the past.</strong> A brownfield repo turns the gate on the day it installs. Standing debt goes into a committed ratchet and is pardoned; only <em>touched</em> functions are judged. A repo-wide day-one gate fails forever and gets switched off.</li>
+  <li><strong>It briefs the fixer.</strong> One command emits a start-editing packet: the function's source, its siblings, the ceiling it is judged by, the lane that measures it, the commands to run, and the repo's written-down traps.</li>
+  <li><strong>It is deterministic.</strong> Same tree, same config, same bytes out. Every read command emits JSON with a pinned <code>schema</code>, because half the callers are coding agents.</li>
 </ul>
 
 <figure class="panel">
@@ -189,7 +192,7 @@
   <path class="arrow" d="M195 75 H 255"/>
   <path class="arrow" d="M195 90 H 255"/>
   <path class="arrow" d="M195 105 H 255"/>
-  <rect class="box" x="260" y="8" width="290" height="30" rx="6"/><text x="405" y="28" text-anchor="middle" class="lbl">a developer mid-feature: <tspan class="mono">rescore --gate</tspan>, <tspan class="mono">brief</tspan></text>
+  <rect class="box" x="260" y="8" width="290" height="30" rx="6"/><text x="405" y="28" text-anchor="middle" class="lbl">a developer mid-feature: <tspan class="mono">rescore --gate</tspan></text>
   <rect class="box" x="260" y="44" width="290" height="30" rx="6"/><text x="405" y="64" text-anchor="middle" class="lbl">a coding agent on a debt item: the packet</text>
   <rect class="box" x="260" y="80" width="290" height="30" rx="6"/><text x="405" y="100" text-anchor="middle" class="lbl">CI on a pull request: <tspan class="mono">verify --baseline-tsv</tspan></text>
   <rect class="box" x="260" y="116" width="290" height="30" rx="6"/><text x="405" y="136" text-anchor="middle" class="lbl">a human reading the weekly <tspan class="mono">digest</tspan></text>
@@ -203,7 +206,9 @@
 
 <!-- ============================ 02 SCORE ============================ -->
 <h2 id="score"><span class="sn">02</span>The score</h2>
-<p><code>ccn</code> is cyclomatic complexity — the count of independent paths through a function — taken as the <strong>smaller</strong> of lizard's standard and modified counts (modified treats a whole <code>switch</code>/<code>match</code> as one decision). Comprehension <code>for</code>/<code>if</code>, ternaries, and <code>and</code>/<code>or</code> all count. <code>cov</code> is branch coverage inside the function's span; with no branches it falls back to statement coverage, and with no statements to invoked-or-not, so a half-executed straight-line function never reads as fully covered.</p>
+<p class="lede">Two inputs, and the second one has an exponent on it. That is the whole design.</p>
+<p><code>ccn</code> is cyclomatic complexity, the count of independent paths through a function. crapkit takes the <strong>smaller</strong> of lizard's standard and modified counts, where modified treats a whole <code>switch</code> or <code>match</code> as one decision. Comprehension <code>for</code> and <code>if</code>, ternaries, and <code>and</code>/<code>or</code> all count.</p>
+<p><code>cov</code> is branch coverage inside the function's span. With no branches it falls back to statement coverage, and with no statements to invoked-or-not. A half-executed straight-line function never reads as fully covered.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 460 268" role="img" aria-label="CRAP versus ccn at four coverage levels">
@@ -240,18 +245,18 @@
   <text x="380" y="188" class="sm" fill="var(--data3)">cov 60%</text>
   <text x="352" y="215" class="sm" fill="var(--data4)">cov ~100% (= ccn)</text>
 </svg>
-<figcaption>The cube is the story: coverage collapses the curve toward the <code>+ ccn</code> floor, but never below it. At 100% coverage, CRAP <em>equals</em> ccn.</figcaption>
+<figcaption>The cube is the story. Coverage collapses the curve toward the <code>+ ccn</code> floor, but never below it. At 100% coverage, CRAP <em>equals</em> ccn.</figcaption>
 </figure>
 
 <h3>The ceiling theorem</h3>
-<p>Because full coverage still leaves <code>CRAP = ccn</code>, a target is secretly two rules in one. At the default target of 6 — a <code>crapkit.toml</code> knob, set per repo or per scope, and the number every packet and every gate message calls the <em>ceiling</em> — a function at ccn 7 with <strong>100% coverage scores 7 and fails</strong>. Above the ceiling, coverage cannot save you — the only clearing move is decomposition. Below it, the target prescribes exactly how much coverage each complexity owes:</p>
+<p>Full coverage still leaves <code>CRAP = ccn</code>, so a target is secretly two rules. At the default target of 6, a function at ccn 7 with <strong>100% coverage scores 7 and fails</strong>. Above the ceiling, coverage cannot save you and the only clearing move is decomposition. Below it, the target prescribes how much coverage each complexity owes.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 460 190" role="img" aria-label="Minimum coverage per ccn at target 6">
   <line class="axis" x1="90" y1="18" x2="90" y2="160"/>
   <text x="245" y="184" text-anchor="middle" class="sm">minimum branch coverage to pass at target 6</text>
   <g>
-    <text x="82" y="36" text-anchor="end" class="sm mono">ccn 1–2</text><rect x="90" y="24" width="6" height="16" fill="var(--data4)" rx="2"/><text x="104" y="36" class="sm">0% — the +ccn floor already passes</text>
+    <text x="82" y="36" text-anchor="end" class="sm mono">ccn 1–2</text><rect x="90" y="24" width="6" height="16" fill="var(--data4)" rx="2"/><text x="104" y="36" class="sm">0% (the +ccn floor already passes)</text>
     <text x="82" y="64" text-anchor="end" class="sm mono">ccn 3</text><rect x="90" y="52" width="103" height="16" fill="var(--data4)" rx="2"/><text x="201" y="64" class="sm">31%</text>
     <text x="82" y="92" text-anchor="end" class="sm mono">ccn 4</text><rect x="90" y="80" width="165" height="16" fill="var(--data2)" rx="2"/><text x="263" y="92" class="sm">50%</text>
     <text x="82" y="120" text-anchor="end" class="sm mono">ccn 5</text><rect x="90" y="108" width="218" height="16" fill="var(--data2)" rx="2"/><text x="316" y="120" class="sm">66%</text>
@@ -280,15 +285,57 @@
     <text x="800" y="46" class="sm">past F, the</text>
     <text x="800" y="60" class="sm">name takes over</text>
   </g>
-  <text x="450" y="112" text-anchor="middle" class="sm">crapkit's own repo grades A+ — zero functions over target — and its author commits through its own gate</text>
+  <text x="450" y="112" text-anchor="middle" class="sm">crapkit's own repo grades A+, zero functions over target, and its author commits through its own gate</text>
 </svg>
 <figcaption>Every scored run prints a grade.</figcaption>
 </figure>
 
-<p>A Sonar-spec <strong>cognitive complexity</strong> column rides along in the brief and next-item payloads as a second opinion on readability, measured in every language crapkit scans. It reports; it never gates — the gate is min-ccn only, so the rule a commit is judged by has one definition.</p>
+<p>A Sonar-spec <strong>cognitive complexity</strong> column rides along in the brief and next-item payloads as a second opinion on readability, measured in every language crapkit scans. It reports and never gates. The gate is min-ccn only, so the rule a commit is judged by has exactly one definition.</p>
 
-<!-- ============================ 03 HOW ============================ -->
-<h2 id="how"><span class="sn">03</span>How it works</h2>
+<!-- ============================ 03 LANGUAGES ============================ -->
+<h2 id="languages"><span class="sn">03</span>What it reads</h2>
+<p class="lede">Two questions before you install: can crapkit score my repo, and will coverage ever join the score.</p>
+<p>Fourteen languages, two coverage parsers. The left column is the label a <code>crapkit.toml</code> spells in <code>languages = [...]</code>. A file joins a scope only when its path prefix <em>and</em> its extension both match.</p>
+<div class="tw"><table id="languages">
+  <tr><th>Language</th><th>Extensions</th><th>Coverage</th></tr>
+  <tr><td class="mono">python</td><td class="mono">.py</td><td><code>coveragepy</code></td></tr>
+  <tr><td class="mono">typescript</td><td class="mono">.ts</td><td><code>istanbul</code></td></tr>
+  <tr><td class="mono">tsx</td><td class="mono">.tsx</td><td><code>istanbul</code></td></tr>
+  <tr><td class="mono">javascript</td><td class="mono">.js .jsx .mjs .cjs</td><td><code>istanbul</code></td></tr>
+  <tr><td class="mono">vue</td><td class="mono">.vue</td><td><code>istanbul</code>, when your own vitest run reports on <code>.vue</code> files</td></tr>
+  <tr><td class="mono">go</td><td class="mono">.go</td><td>cc-only</td></tr>
+  <tr><td class="mono">rust</td><td class="mono">.rs</td><td>cc-only</td></tr>
+  <tr><td class="mono">shell</td><td class="mono">.sh .bash</td><td>cc-only</td></tr>
+  <tr><td class="mono">powershell</td><td class="mono">.ps1 .psm1</td><td>cc-only</td></tr>
+  <tr><td class="mono">swift</td><td class="mono">.swift</td><td>cc-only</td></tr>
+  <tr><td class="mono">cpp</td><td class="mono">.c .cc .cpp .cxx .h .hpp</td><td>cc-only</td></tr>
+  <tr><td class="mono">objectivec</td><td class="mono">.m .mm</td><td>cc-only</td></tr>
+  <tr><td class="mono">java</td><td class="mono">.java</td><td>cc-only</td></tr>
+  <tr><td class="mono">zig</td><td class="mono">.zig</td><td>cc-only</td></tr>
+  <tr><td class="mono">kotlin</td><td class="mono">.kt .kts</td><td><strong>not admitted</strong>, blocked upstream</td></tr>
+</table></div>
+
+<h3>cc-only is a real answer, not a gap</h3>
+<p>crapkit ships two artifact parsers and no more, so most of that table scores <code>crap = ccn</code> under <code>coverage_optional = true</code>, with no lane to run. That costs less than it sounds, because <strong>the ceiling is a ccn ceiling</strong> (<a href="#score">§02</a>). Coverage cannot rescue a function above target in any language. What a cc-only scope loses is the ability to <em>earn</em> a pass below the ceiling with tests, and the dark-lines detail in the packet. What it keeps is the whole gate: a ccn-9 function still fails, still ranks, still gets a packet.</p>
+<p>Write a coverage lane the day the language gets one. Nothing else in the config changes.</p>
+
+<h3>Three readers crapkit owns or corrects</h3>
+<ul>
+  <li><strong>Rust</strong> runs on a corrected reader. lizard 1.24.0 lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a dispatch table reads as trivial: a five-arm match that crapkit scores ccn 5 scores 2 upstream. crapkit counts one point per non-wildcard arm, exactly like a C <code>case</code>. A test pins the stock reader's wrong answer, so the module retires itself the day upstream lands the fix.</li>
+  <li><strong>shell</strong> gets a reader lizard ships none of, counting <code>case</code> per arm rather than once per block. It reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level, so a script that is one long top-level sequence reports nothing. That is the answer, not a parse failure.</li>
+  <li><strong>PowerShell</strong> gets a reader too, one point per <code>switch</code> arm, because a twelve-arm dispatcher should not score the same 2 as a one-arm one. Source bytes decode utf-8 first and cp1252 second, by content rather than by the machine's locale. Windows PowerShell writes cp1252 by default, and left to <code>io.open</code> the same file scored one way on Windows and another on Linux.</li>
+</ul>
+<p><strong>Kotlin is measured correctly and still refused.</strong> lizard's KotlinReader records only brace-bodied functions, so <code>fun sign(x: Int) = if (x &gt; 0) 1 else if (x &lt; 0) -1 else 0</code> yields no function at all and its two decisions land nowhere. A language that can hide arbitrary branching from the gate is worse than one crapkit declines, so the label waits on upstream.</p>
+
+<h3>Three quirks worth knowing before you read a number</h3>
+<ul>
+  <li><strong>C and C++ share one label</strong>, <code>cpp</code>, C included: lizard resolves all six suffixes to one reader, and <code>.h</code> is the header both dialects share. A <code>&amp;&amp;</code> before the opening brace declares an rvalue reference rather than deciding anything, and costs no cognitive complexity; the same rule covers <code>objectivec</code>, since <code>.mm</code> is Objective-C++. Both arms of an <code>#ifdef</code> fork are textually present, so a platform shim defines one function twice in one file. A ratchet mark keys on <code>(path, long_name)</code> and keeps the last, and crapkit prints one stderr line naming any file that happens in.</li>
+  <li><strong>Vue scores the <code>&lt;script&gt;</code> block.</strong> Template directives (<code>v-if</code>, <code>v-for</code>) are HTML attributes to lizard and contribute nothing, so a component that branches in its template reports only what its methods do.</li>
+  <li><strong>Zig counts a <code>switch</code>'s <code>else</code> prong</strong> as one more case, so a Zig switch reads one point above its hand count. Inflation only. It can cost a refactor that was not needed; it never hides one that was.</li>
+</ul>
+
+<!-- ============================ 04 HOW ============================ -->
+<h2 id="how"><span class="sn">04</span>How it works</h2>
 <p class="lede">One pass of analysis, your own test commands for coverage, one SQLite store, many views.</p>
 
 <figure class="panel">
@@ -323,65 +370,35 @@
   <text x="827" y="178" text-anchor="middle" class="sm">claims · overrides</text>
   <path class="arrow" d="M827 190 V 226"/>
   <rect class="box" x="330" y="252" width="560" height="62" rx="8"/>
-  <text x="610" y="274" text-anchor="middle" class="lbl">the views — every one deterministic, every one JSON-able</text>
-  <text x="610" y="296" text-anchor="middle" class="sm mono">worklist · next-item · brief · explain · trend · digest · doctor · verify · mcp</text>
+  <text x="610" y="274" text-anchor="middle" class="lbl">the views, every one deterministic, every one JSON-able</text>
+  <text x="610" y="296" text-anchor="middle" class="sm mono">worklist · next-item · brief · explain · trend · digest · doctor · verify · report · mcp</text>
   <rect class="box" x="10" y="170" width="180" height="52" rx="8"/>
   <text x="100" y="192" text-anchor="middle" class="lbl mono">git log</text>
   <text x="100" y="210" text-anchor="middle" class="sm">churn window, cached deflated</text>
   <path class="arrow" d="M100 228 C 100 300 200 283 322 283"/>
   <text x="150" y="308" class="sm">churn weights rank the views</text>
 </svg>
-<figcaption>The pipeline. crapkit never guesses at your test setup — the lanes run the commands your repo already has, and crapkit reads the artifacts they leave.</figcaption>
+<figcaption>The pipeline. crapkit never guesses at your test setup. The lanes run the commands your repo already has, and crapkit reads the artifacts they leave.</figcaption>
 </figure>
 
 <ul>
-  <li><strong>Scopes</strong> carve the repo into named territories (<code>src</code>, <code>ui</code>, <code>py</code>…), each with its languages, an optional per-scope target, and free-text <code>notes</code> — the written-down operational traps that ride into every packet.</li>
+  <li><strong>Scopes</strong> carve the repo into named territories (<code>src</code>, <code>ui</code>, <code>py</code>), each with its languages, an optional per-scope target, and free-text <code>notes</code>: the written-down operational traps that ride into every packet.</li>
   <li><strong>The inventory</strong> is one lizard tokenization per file, content-hash cached, producing both ccn variants and cognitive complexity for every function.</li>
-  <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code> — visible, never fatal, never a baseline.</li>
-  <li><strong>The store</strong> keeps scored runs compactly (function identity written once, referenced per run), plus claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
+  <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code>. Visible, never fatal, never a baseline.</li>
+  <li><strong>The store</strong> keeps scored runs compactly: function identity is written once and referenced per run, alongside claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
   <li><strong>Churn</strong> comes from the git log over a configurable window, cached deflated and refreshed incrementally, so the expensive walk happens rarely.</li>
-  <li><strong>Languages</strong> are the table below. Two of them run on readers crapkit wrote and one on a reader crapkit corrected, because lizard's answer was wrong rather than missing.</li>
 </ul>
 
-<h3>What crapkit reads</h3>
-<p>The left column is the label a <code>crapkit.toml</code> spells in <code>languages = [...]</code>. A file joins a scope only when its path prefix <em>and</em> its extension both match. <strong>Coverage</strong> is how a percentage arrives: crapkit ships two artifact parsers and no more, so most of this table scores cc-only — <code>crap = ccn</code>, under <code>coverage_optional = true</code>, with no lane to run.</p>
-<div class="tw"><table id="languages">
-  <tr><th>Language</th><th>Extensions</th><th>Coverage</th></tr>
-  <tr><td class="mono">python</td><td class="mono">.py</td><td><code>coveragepy</code></td></tr>
-  <tr><td class="mono">typescript</td><td class="mono">.ts</td><td><code>istanbul</code></td></tr>
-  <tr><td class="mono">tsx</td><td class="mono">.tsx</td><td><code>istanbul</code></td></tr>
-  <tr><td class="mono">javascript</td><td class="mono">.js .jsx .mjs .cjs</td><td><code>istanbul</code></td></tr>
-  <tr><td class="mono">swift</td><td class="mono">.swift</td><td>cc-only</td></tr>
-  <tr><td class="mono">kotlin</td><td class="mono">.kt .kts</td><td><strong>not admitted</strong> — blocked upstream</td></tr>
-  <tr><td class="mono">go</td><td class="mono">.go</td><td>cc-only</td></tr>
-  <tr><td class="mono">rust</td><td class="mono">.rs</td><td>cc-only</td></tr>
-  <tr><td class="mono">shell</td><td class="mono">.sh .bash</td><td>cc-only</td></tr>
-  <tr><td class="mono">cpp</td><td class="mono">.c .cc .cpp .cxx .h .hpp</td><td>cc-only</td></tr>
-  <tr><td class="mono">objectivec</td><td class="mono">.m .mm</td><td>cc-only</td></tr>
-  <tr><td class="mono">vue</td><td class="mono">.vue</td><td><code>istanbul</code>, when your own vitest run reports on <code>.vue</code> files</td></tr>
-  <tr><td class="mono">java</td><td class="mono">.java</td><td>cc-only</td></tr>
-  <tr><td class="mono">zig</td><td class="mono">.zig</td><td>cc-only</td></tr>
-  <tr><td class="mono">powershell</td><td class="mono">.ps1 .psm1</td><td>cc-only</td></tr>
-</table></div>
-
-<p>What each row costs you to know:</p>
-<ul>
-  <li><strong>Rust</strong> runs on a corrected reader: lizard lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a seven-arm dispatch scored 2 while the if/else-if chain doing the same work scored 4. crapkit counts one point per non-wildcard arm and retires the reader the day upstream fixes the issue — a test pins the stock reader's wrong answer, and it fails on that release.</li>
-  <li><strong>shell</strong> gets a reader lizard ships none of, and reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level. A script that is one long top-level sequence reports nothing, and that is the answer rather than a parse failure.</li>
-  <li><strong>PowerShell</strong> gets a reader too, and it counts one point per <code>switch</code> arm rather than one for the block — a twelve-arm dispatcher should not score the same 2 as a one-arm one. Source bytes are decoded utf-8 first and cp1252 second, by content instead of by the machine's locale: Windows PowerShell writes cp1252 by default, and left to <code>io.open</code> the same file scored one way on Windows and another on Linux.</li>
-  <li><strong>C and C++</strong> are one label, <code>cpp</code>, C included: lizard resolves all six suffixes to one reader, so two labels could never measure differently, and <code>.h</code> is the header both dialects share. A <code>&amp;&amp;</code> before the opening brace declares an rvalue reference rather than deciding anything and costs no cognitive complexity — the same rule covers <code>objectivec</code>, since <code>.mm</code> is Objective-C++. Both arms of an <code>#ifdef</code> fork are textually present, so a platform shim defines one function twice in one file; a ratchet mark keys on <code>(path, long_name)</code> and keeps the last, and <code>analyze</code> prints one stderr line naming any file that happens in.</li>
-  <li><strong>Vue</strong> scores the <code>&lt;script&gt;</code> block. Template directives (<code>v-if</code>, <code>v-for</code>) are HTML attributes to lizard and contribute nothing, so a component that branches in its template reports only what its methods do. <strong>Zig</strong> counts a <code>switch</code>'s <code>else</code> prong as one more case, so a Zig switch reads one point above its hand count — inflation only, which can cost a refactor that was not needed but never hides one that was.</li>
-  <li><strong>Kotlin</strong> is measured correctly and still not admitted. lizard's KotlinReader records only brace-bodied functions, so <code>fun sign(x: Int) = if (x &gt; 0) 1 else if (x &lt; 0) -1 else 0</code> yields no function at all and its two decisions land nowhere, not even in <code>*global*</code>. A language that can hide arbitrary branching from the gate is worse than one crapkit refuses, so the label waits on upstream.</li>
-</ul>
-
-<h3>Most of what you just read is a dial</h3>
-<p>Almost every behavior above is a <code>crapkit.toml</code> key with a deliberate default, not a constant. The ones people reach for first:</p>
+<!-- ============================ 05 DIALS ============================ -->
+<h2 id="dials"><span class="sn">05</span>The dials</h2>
+<p class="lede">Every threshold in this handbook is a default, not a constant. These are the keys people change first.</p>
 <pre><code>[crapkit]
 target = 6                  # THE dial: the CRAP ceiling, and with it the ccn ceiling
 churn_window_months = 12    # how far back "hot" looks
 worklist_floor = 5          # admission floor for the risk map (never hides over-ceiling debt)
+worklist_top = 50           # rows the worklist prints, and rows the report page renders
 diff_uncovered_max = 40     # optional: verify exit 9 when a change leaves more dark lines
-max_parallel_lanes = 3      # how many coverage lanes run at once
+max_parallel_lanes = 3      # coverage lanes at once (default 1, so this one is a raise)
 notes = ["…"]               # repo traps, delivered inside every packet
 
 [[scope]]
@@ -392,11 +409,176 @@ coverage_optional = true    # …or opt out of coverage entirely (crap = ccn, cc
 [[lane]]
 timeout_seconds = 2400      # per-lane watchdog
 retries = 1                 # and how often a flaky lane gets another shot</code></pre>
-<p>Per-scope targets are how a repo holds new code to 6 while a quarantined legacy tree ratchets down from 10. Every key, with type, default, and what it does, is in <a href="configuration.md">docs/configuration.md</a> — and <code>doctor</code> tells you when the file and the repo have drifted apart.</p>
+<p>Per-scope targets are how a repo holds new code to 6 while a quarantined legacy tree ratchets down from 10. Every key, with type, default and effect, is in <a href="configuration.md">docs/configuration.md</a>. <code>doctor</code> tells you when the file and the repo have drifted apart, and <code>doctor --tune</code> proposes numbers that fit what it found.</p>
 
-<!-- ============================ 04 QUEUE ============================ -->
-<h2 id="queue"><span class="sn">04</span>The queue: two views of one run</h2>
-<p class="lede">One scored run, two deliberately different lenses — a map for judgment, a queue for hands.</p>
+<!-- ============================ 06 TWO GATES ============================ -->
+<h2 id="twogates"><span class="sn">06</span>The two gates</h2>
+<p class="lede">Two hooks fire on their own. Only one of them can stop you, and knowing which is the difference between reading a note and losing a commit.</p>
+<p>The <strong>advisory</strong> runs after every edit and annotates. The <strong>commit gate</strong> runs at <code>git commit</code> and blocks. They read the same ceiling map and subtract the same ratchet marks, so they cannot disagree about a function.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 392" role="img" aria-label="The per-edit advisory and the commit gate across one editing session">
+  <rect class="boxw" x="20" y="10" width="860" height="118" rx="10" stroke-dasharray="7 5"/>
+  <text x="40" y="36" class="lbl" font-weight="700">per edit · <tspan class="mono">crapkit claude-hook</tspan> · ADVISORY</text>
+  <text x="860" y="36" text-anchor="end" class="lbl" font-weight="700" fill="var(--warn)">never blocks</text>
+  <text x="40" y="60" class="sm">fires after every Edit and Write, in every repo on the machine</text>
+  <text x="40" y="78" class="sm">reads the file on disk plus <tspan class="mono">git diff HEAD</tspan> for that one path · never opens the store · writes nothing</text>
+  <text x="40" y="96" class="sm">a breach: three lines on stderr and exit 2 · the model reads them and keeps working</text>
+  <text x="40" y="114" class="sm">no crapkit.toml · file in no scope · mid-rebase · bad input · any internal error → exit 0, silent</text>
+
+  <text x="140" y="146" text-anchor="middle" class="sm">silent</text>
+  <text x="290" y="146" text-anchor="middle" class="sm">silent</text>
+  <text x="440" y="146" text-anchor="middle" class="sm" fill="var(--warn)">ccn 9 named</text>
+  <text x="590" y="146" text-anchor="middle" class="sm">silent</text>
+  <path class="arrow" d="M140 152 V 168"/>
+  <path class="arrow" d="M290 152 V 168"/>
+  <path class="arrow" d="M440 152 V 168"/>
+  <path class="arrow" d="M590 152 V 168"/>
+
+  <path class="arrow" d="M40 176 H 866"/>
+  <circle cx="140" cy="176" r="4.5" fill="var(--muted)"/>
+  <circle cx="290" cy="176" r="4.5" fill="var(--muted)"/>
+  <circle cx="440" cy="176" r="4.5" fill="var(--warn)"/>
+  <circle cx="590" cy="176" r="4.5" fill="var(--muted)"/>
+  <circle cx="790" cy="176" r="6" fill="var(--accent)"/>
+  <text x="140" y="196" text-anchor="middle" class="sm">edit</text>
+  <text x="290" y="196" text-anchor="middle" class="sm">edit</text>
+  <text x="440" y="196" text-anchor="middle" class="sm">edit</text>
+  <text x="590" y="196" text-anchor="middle" class="sm">edit</text>
+  <text x="790" y="196" text-anchor="middle" class="sm mono" fill="var(--accent)">git commit</text>
+  <text x="866" y="164" text-anchor="end" class="sm">one session →</text>
+
+  <path class="arrow" d="M790 204 V 246"/>
+  <rect class="boxa" x="20" y="250" width="860" height="126" rx="10"/>
+  <text x="40" y="276" class="lbl" font-weight="700">at commit · <tspan class="mono">crapkit hook-precommit</tspan> · THE GATE</text>
+  <text x="860" y="276" text-anchor="end" class="lbl" font-weight="700" fill="var(--accent)">this one blocks</text>
+  <text x="40" y="300" class="sm">reads the staged blobs in one <tspan class="mono">git cat-file --batch</tspan> · cc-only, no store, no coverage, no network</text>
+  <text x="40" y="318" class="sm">a breach: exit 6 and the commit does not happen · decompose, or sign for the debt</text>
+  <text x="40" y="336" class="sm">exempt: any function the committed ratchet already marks, counted in one stderr line</text>
+  <text x="40" y="354" class="sm">costs the size of the commit, not the size of the repo</text>
+  <text x="860" y="354" text-anchor="end" class="sm"><tspan class="mono">crapkit verify</tspan> fails a mark that rises</text>
+</svg>
+<figcaption>Two hooks, one ceiling map, one set of ratchet marks. That agreement is why a session of green advisories cannot end at a refused commit.</figcaption>
+</figure>
+
+<h3>Why the advisory is deliberately toothless</h3>
+<p>PostToolUse runs <em>after</em> the write. The edit is already on disk, so a hook that claimed to block would be lying. It says the opposite outright: the head line ends <code>(the edit landed; nothing was blocked)</code>.</p>
+<p>Silence everywhere else is the other half of the design. This hook is installed once per user and then fires on every edit that user makes, anywhere. 47.5% of the edits it was measured against land in repos with no <code>crapkit.toml</code>. A hook that spoke there would be unbearable within a day, so an unmeasured repo costs one <code>stat</code> and an exit 0.</p>
+
+<h3>What changed in 0.4.0</h3>
+<p>Before this release the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate now exempts marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
+<p class="xanno">Existence, not the numeric rule, because the gate judges staged blobs. A blob carries no coverage, so there is no CRAP to compare against a mark. The only question the gate can answer is the one it asks: did the repo already sign for this function?</p>
+
+<!-- ============================ 07 LADDER ============================ -->
+<h2 id="ladder"><span class="sn">07</span>The rest of the ladder</h2>
+<p class="lede">One rule, checked at five distances from the keyboard: every <em>touched</em> function at or under its scope's ceiling.</p>
+<p>Touched means the diff intersects the function's span. The two automatic checks are <a href="#twogates">§06</a>. The other three you invoke.</p>
+<div class="tw"><table>
+  <tr><th>Where</th><th>Command</th><th>Blocks?</th><th>Sees coverage?</th><th>What it is for</th></tr>
+  <tr><td>after every edit</td><td class="mono">crapkit claude-hook</td><td>no</td><td>no</td><td>Automatic, via the plugin. Names a function the edit pushed over its ceiling.</td></tr>
+  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>no</td><td>Sub-second preview of the commit gate's verdict, before you stage anything.</td></tr>
+  <tr><td>at <code>git commit</code></td><td class="mono">crapkit hook-precommit</td><td class="mono">exit 6</td><td>no</td><td>The enforcement point. Staged blobs, in memory, no store needed.</td></tr>
+  <tr><td>before merge</td><td class="mono">crapkit verify --base REF</td><td class="mono">6 7 8 9</td><td>yes</td><td>The full verdict: gate, ratchet, new test failures, dark diff lines.</td></tr>
+  <tr><td>in CI</td><td class="mono">crapkit verify --baseline-tsv FILE</td><td class="mono">6 7 8 9</td><td>yes</td><td>A fresh clone judged against a committed baseline. Add <code>--sarif PATH</code> or <code>--github</code>.</td></tr>
+</table></div>
+<p>A refusal is design feedback, not a threshold to widen. The attended escape is an audited override: a reason, a snapshot record, and auto-staged ratchet debt. All three land or none do.</p>
+
+<h3>Exit codes are the API</h3>
+<div class="tw"><table>
+  <tr><th>Exit</th><th>Meaning</th><th>The move</th></tr>
+  <tr><td class="mono">0</td><td>Verdict clean</td><td>Proceed. For <code>verify</code>, this is the green that ends a loop iteration.</td></tr>
+  <tr><td class="mono">1</td><td>Overloaded: no data yet, a <code>doctor</code> FAIL, or a debt-policy breach</td><td>Read the message. It names the command that creates the missing run, or the FAIL line.</td></tr>
+  <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused. Check the flag spelling and order.</td></tr>
+  <tr><td class="mono">3</td><td>Config gap</td><td>A scope without a template, a metric-stamp mismatch. Fix <code>crapkit.toml</code> or restamp.</td></tr>
+  <tr><td class="mono">4</td><td>Git error</td><td>Not a repository, or a baseline commit rewritten out of history by a force-push.</td></tr>
+  <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact or timed out past retries, an alert command failed</td><td>For the no-artifact case: fix the lane, not the code. Four root causes, triaged in <a href="lanes.md">docs/lanes.md</a>.</td></tr>
+  <tr><td class="mono">6</td><td>Gate: touched function over its ceiling</td><td>Decompose until every piece fits.</td></tr>
+  <tr><td class="mono">7</td><td>Ratchet regression</td><td>A standing mark got worse. On a function you never edited, suspect test rot first.</td></tr>
+  <tr><td class="mono">8</td><td>New test failures vs baseline</td><td>The flake retest already ran if configured. What remains is real.</td></tr>
+  <tr><td class="mono">9</td><td>Changed lines nobody covered</td><td>Only in repos that set <code>diff_uncovered_max</code>.</td></tr>
+</table></div>
+<p class="xanno"><code>verify</code> reports the first of 6, 7, 8, 9 that fires, in that order, so a CI script branches on one code per run.</p>
+
+<!-- ============================ 08 RATCHET ============================ -->
+<h2 id="ratchet"><span class="sn">08</span>The ratchet</h2>
+<p class="lede">How a brownfield repo turns the gate on today instead of after the cleanup.</p>
+<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code>, a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score. The function may stay bad; it may not get <em>worse</em>. Improve it and the mark tightens at the next green verify. Debt can only shrink. That is the ratchet.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 240" role="img" aria-label="Ratchet mark lifecycle">
+  <rect class="boxw" x="20" y="90" width="170" height="56" rx="10"/>
+  <text x="105" y="112" text-anchor="middle" class="lbl" font-weight="700">mark stands</text>
+  <text x="105" y="132" text-anchor="middle" class="sm mono">path · long_name · crap</text>
+  <path class="arrow" d="M105 84 C 110 40 220 30 300 30"/>
+  <rect class="box" x="305" y="12" width="250" height="38" rx="8"/>
+  <text x="430" y="36" text-anchor="middle" class="sm">score improves → next green verify <tspan font-weight="700">tightens</tspan> the mark</text>
+  <path class="arrow" d="M560 32 C 640 34 660 70 560 96 C 400 130 250 120 196 118"/>
+  <path class="arrow" d="M196 130 H 280"/>
+  <rect class="boxo" x="285" y="112" width="200" height="38" rx="8"/>
+  <text x="385" y="136" text-anchor="middle" class="sm">fixed to the ceiling → mark <tspan font-weight="700">repaid</tspan>, row gone</text>
+  <path class="arrow" d="M105 152 C 110 190 220 200 300 200"/>
+  <rect class="box" x="305" y="182" width="250" height="38" rx="8"/>
+  <text x="430" y="206" text-anchor="middle" class="sm">code deleted or renamed → <tspan class="mono">ratchet prune</tspan> follows git</text>
+  <rect class="box" x="620" y="112" width="260" height="90" rx="8"/>
+  <text x="750" y="134" text-anchor="middle" class="lbl" font-weight="700">merging branches?</text>
+  <text x="750" y="154" text-anchor="middle" class="sm mono">crapkit ratchet merge</text>
+  <text x="750" y="172" text-anchor="middle" class="sm">registered as a git merge driver:</text>
+  <text x="750" y="188" text-anchor="middle" class="sm">changed-side-wins, min on conflict, never by hand</text>
+</svg>
+<figcaption>A mark's life. Every transition is a command, so the file needs no manual editing. Hand-resolving its merge conflicts is the one classic mistake the tooling exists to prevent.</figcaption>
+</figure>
+
+<p>A mark does three jobs at once. It pardons the commit gate (<a href="#twogates">§06</a>), it silences the per-edit advisory, and it sets the high-water line <code>verify</code> refuses to let rise. Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
+
+<!-- ============================ 09 BASELINE ============================ -->
+<h2 id="baseline"><span class="sn">09</span>The trusted baseline</h2>
+<p class="lede">Every verdict compares against one earlier run. Which one is a rule, not a guess.</p>
+<p>Qualifying runs are <code>coverage</code> runs and <em>passing</em> verifies. A failed verify never qualifies, and it <strong>taints</strong> what follows. Runs taken after a failure are skipped by default baseline selection until some verify passes, so nobody retires findings by quietly re-running <code>coverage</code> on the refused tree.</p>
+
+<figure class="panel">
+<svg viewBox="0 0 900 170" role="img" aria-label="The tainted baseline timeline">
+  <line class="axis" x1="30" y1="85" x2="870" y2="85"/>
+  <rect class="boxo" x="60" y="60" width="120" height="50" rx="8"/>
+  <text x="120" y="82" text-anchor="middle" class="sm mono">run 19</text>
+  <text x="120" y="99" text-anchor="middle" class="sm">coverage ✓</text>
+  <rect class="boxw" x="250" y="60" width="120" height="50" rx="8"/>
+  <text x="310" y="82" text-anchor="middle" class="sm mono">run 20</text>
+  <text x="310" y="99" text-anchor="middle" class="sm">verify FAILED</text>
+  <rect class="box" x="440" y="60" width="120" height="50" rx="8"/>
+  <text x="500" y="82" text-anchor="middle" class="sm mono">run 21</text>
+  <text x="500" y="99" text-anchor="middle" class="sm">coverage (tainted)</text>
+  <rect class="box" x="630" y="60" width="120" height="50" rx="8"/>
+  <text x="690" y="82" text-anchor="middle" class="sm mono">run 22…</text>
+  <text x="690" y="99" text-anchor="middle" class="sm">still tainted</text>
+  <path d="M120 54 C 300 8 600 8 780 50" class="arrow"/>
+  <text x="450" y="26" text-anchor="middle" class="sm" fill="var(--accent)">verify keeps comparing against run 19, so the findings stay visible</text>
+  <text x="450" y="146" text-anchor="middle" class="sm">escapes: fix the findings and let a verify pass · or accept a newer run with <tspan class="mono">verify --baseline N</tspan></text>
+</svg>
+<figcaption>The taint rule. Without it, a coverage run on the refused tree becomes the new baseline, the flagged function stops counting as touched, and the finding evaporates unexamined.</figcaption>
+</figure>
+
+<p><code>runs list</code> marks the row verify compares against today, and warns when a moved HEAD makes the snapshot stale. For a repo with no store at all, such as a CI clone, <code>verify --emit-baseline</code> on the main branch writes a commit-stamped TSV that <code>verify --baseline-tsv</code> reads in the pull request.</p>
+
+<!-- ============================ 10 LANES ============================ -->
+<h2 id="lanes"><span class="sn">10</span>Lanes: how coverage arrives</h2>
+<p class="lede">crapkit runs no test framework of its own. A lane is your command, its artifact, and a parser.</p>
+<pre><code>[[lane]]
+name     = "unit"
+command  = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/unit"
+artifact = ".crapkit/cov/unit/coverage-final.json"
+parser   = "istanbul"          # or "coveragepy"
+scopes   = ["src"]</code></pre>
+<ul>
+  <li><strong>Provenance:</strong> every artifact is stamped with the commit and duration that produced it. Stale artifacts are named, never silently reused. <code>--reuse-unchanged</code> reruns only lanes whose scope files moved.</li>
+  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code> and <code>retries</code>. A configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first.</li>
+  <li><strong>Honest failure:</strong> a lane that produces no artifact marks its scopes <code>no-lane</code> and the run <code>partial</code>. The queue counts what it cannot see instead of pretending. The four classic causes are triaged in <a href="lanes.md">docs/lanes.md</a>.</li>
+  <li><strong>The test template:</strong> a <code>[crapkit.scoped_tests]</code> entry per scope says how to run that scope's tests in isolation. It is what <code>crapkit test-scoped</code> executes, what the packet's <code>commands.scoped_tests</code> carries, and what <code>doctor</code> warns about when a laned scope has none.</li>
+  <li><strong>Housekeeping:</strong> everything writes under <code>.crapkit/</code>. <code>doctor</code> warns about lanes littering the repo root, dead commands, unclaimed files, and scopes with no test template.</li>
+</ul>
+
+<!-- ============================ 11 QUEUE ============================ -->
+<h2 id="queue"><span class="sn">11</span>The queue: two views of one run</h2>
+<p class="lede">Two commands rank the same run differently on purpose. Pick the wrong one and you get the wrong answer.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 260" role="img" aria-label="worklist versus next-item">
@@ -406,14 +588,14 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <path class="arrow" d="M400 62 C 360 85 300 90 260 100"/>
   <path class="arrow" d="M500 62 C 540 85 600 90 640 100"/>
   <rect class="box" x="30" y="105" width="380" height="140" rx="10"/>
-  <text x="220" y="130" text-anchor="middle" class="lbl" font-weight="700">worklist — the risk map</text>
+  <text x="220" y="130" text-anchor="middle" class="lbl" font-weight="700">worklist: the risk map</text>
   <text x="220" y="152" text-anchor="middle" class="sm">ranked by risk = ccn × churn weight</text>
   <text x="220" y="170" text-anchor="middle" class="sm">shows finished rows (marked ok)</text>
   <text x="220" y="188" text-anchor="middle" class="sm">shows unmeasured rows (marked no-lane)</text>
-  <text x="220" y="206" text-anchor="middle" class="sm">never empties — a done repo is all ok markers</text>
+  <text x="220" y="206" text-anchor="middle" class="sm">never empties: a done repo is all ok markers</text>
   <text x="220" y="230" text-anchor="middle" class="sm" font-style="italic">for: humans and planners deciding where risk lives</text>
   <rect class="box" x="490" y="105" width="380" height="140" rx="10"/>
-  <text x="680" y="130" text-anchor="middle" class="lbl" font-weight="700">next-item — the actionable queue</text>
+  <text x="680" y="130" text-anchor="middle" class="lbl" font-weight="700">next-item: the actionable queue</text>
   <text x="680" y="152" text-anchor="middle" class="sm">ranked by crap descending</text>
   <text x="680" y="170" text-anchor="middle" class="sm">drops ok and no-lane rows</text>
   <text x="680" y="188" text-anchor="middle" class="sm">carries budget estimates and dark lines</text>
@@ -431,15 +613,15 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   5c/1a w 0.90 ...... 5 commits, 1 author in the window, recency weight 0.90
   path:62 ........... file and the line the function opens on
   cmd_digest( args )  the long name - paste it straight into `crapkit brief`</code></pre>
-<p>Risk is <code>ccn × churn weight</code>, where the weight favors recent activity: five commits last month outrank one commit each of five months. A function over its ceiling is admitted whatever its ccn — the admission floor (<code>worklist_floor</code>, default ccn 5) trims the list, it never hides debt. Hot-but-simple code appears too (that is the map doing its job); the <code>ok</code> marker says no action is owed.</p>
+<p>The weight favors recent activity: five commits last month outrank one commit each of five months. A function over its ceiling is admitted whatever its ccn, so the admission floor (<code>worklist_floor</code>, default ccn 5) trims the list without ever hiding debt. Hot-but-simple code appears too, which is the map doing its job; the <code>ok</code> marker says no action is owed.</p>
 
-<h3>The termination rule: knowing when a burn-down is done</h3>
-<p>Three conditions, all at once, from <code>next-item</code>: <code>empty: true</code>, no items skipped because another session claims them, and no <code>no_lane_over_target</code> count in the reasons — debt a wiring gap keeps unreachable is still debt. One flag alone is not done.</p>
+<h3>The termination rule</h3>
+<p>Three conditions from <code>next-item</code>, all at once: <code>empty: true</code>, no items skipped because another session claims them, and no <code>no_lane_over_target</code> count in the reasons. Debt a wiring gap keeps unreachable is still debt. One flag alone is not done.</p>
 
-<!-- ============================ 05 PACKET ============================ -->
-<h2 id="packet"><span class="sn">05</span>The packet</h2>
+<!-- ============================ 12 PACKET ============================ -->
+<h2 id="packet"><span class="sn">12</span>The packet</h2>
 <p class="lede">The first half hour of any refactor is reading. <code>brief</code> deletes it.</p>
-<p>Ask about one function and the reply is a <strong>start-editing packet</strong>: everything a session would otherwise assemble with an editor, a grep, and three git commands. The fields group into five questions:</p>
+<p>Ask about one function and the reply is a <strong>start-editing packet</strong>: everything a session would otherwise assemble with an editor, a grep and three git commands. The fields group into five questions.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 356" role="img" aria-label="Anatomy of the brief packet">
@@ -476,8 +658,8 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <text x="765" y="180" text-anchor="middle" class="sm mono">lane (command · artifact · cwd)</text>
   <rect class="box" x="230" y="220" width="440" height="76" rx="8"/>
   <text x="450" y="242" text-anchor="middle" class="lbl" font-weight="700">what this repo knows that you don't</text>
-  <text x="450" y="262" text-anchor="middle" class="sm mono">notes.repo · notes.scope — the written-down traps</text>
-  <text x="450" y="280" text-anchor="middle" class="sm mono">attempts · regrowth — has someone tried this before, did it hold</text>
+  <text x="450" y="262" text-anchor="middle" class="sm mono">notes.repo · notes.scope: the written-down traps</text>
+  <text x="450" y="280" text-anchor="middle" class="sm mono">attempts · regrowth: has someone tried this before, did it hold</text>
   <path class="arrow" d="M450 206 V 216"/>
   <text x="450" y="330" text-anchor="middle" class="sm">28 top-level fields · additive-only · schema pinned at 1 · full reference in docs/agent-json.md</text>
 </svg>
@@ -485,150 +667,14 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 </figure>
 
 <ul>
-  <li><strong>Batch mode:</strong> <code>brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process — one store open, one churn load, one source read per file. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
-  <li><strong>Four name forms:</strong> the long name the worklist prints, the bare name, the start line, or the ordinal handle <code>(anonymous)#N</code> — the Nth anonymous function in the file by start order, a name that survives edits shifting lines above it. <code>claims</code> accepts the same forms.</li>
-  <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD; <code>uncovered_lines: null</code> plus a note names the lane that abstained (never conflated with "nothing to cover"); <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
+  <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
+  <li><strong>Four name forms:</strong> the long name the worklist prints, the bare name, the start line, or the ordinal handle <code>(anonymous)#N</code>, meaning the Nth anonymous function in the file by start order. That last one survives edits shifting lines above it, and <code>claims</code> accepts the same forms.</li>
+  <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
 </ul>
 
-<!-- ============================ 06 GATE ============================ -->
-<h2 id="gate"><span class="sn">06</span>The gate and its four routes</h2>
-<p class="lede">One rule — every <em>touched</em> function at or under its scope's ceiling — enforced at four distances from the keyboard.</p>
-
-<figure class="panel">
-<svg viewBox="0 0 900 300" role="img" aria-label="The four gate routes">
-  <rect class="box" x="20" y="20" width="200" height="56" rx="8"/>
-  <text x="120" y="42" text-anchor="middle" class="lbl" font-weight="700">1 · while editing</text>
-  <text x="120" y="62" text-anchor="middle" class="sm mono">rescore FILE --gate</text>
-  <rect class="box" x="245" y="20" width="200" height="56" rx="8"/>
-  <text x="345" y="42" text-anchor="middle" class="lbl" font-weight="700">2 · at commit</text>
-  <text x="345" y="62" text-anchor="middle" class="sm mono">hook-precommit</text>
-  <rect class="box" x="470" y="20" width="200" height="56" rx="8"/>
-  <text x="570" y="42" text-anchor="middle" class="lbl" font-weight="700">3 · before merge</text>
-  <text x="570" y="62" text-anchor="middle" class="sm mono">verify [--base REF]</text>
-  <rect class="box" x="695" y="20" width="185" height="56" rx="8"/>
-  <text x="787" y="42" text-anchor="middle" class="lbl" font-weight="700">4 · in CI</text>
-  <text x="787" y="62" text-anchor="middle" class="sm mono">verify --baseline-tsv</text>
-  <text x="120" y="100" text-anchor="middle" class="sm">sub-second cc preview; pardons marked</text>
-  <text x="120" y="114" text-anchor="middle" class="sm">functions — the hook is the authority</text>
-  <text x="345" y="100" text-anchor="middle" class="sm">staged blobs, in memory,</text>
-  <text x="345" y="114" text-anchor="middle" class="sm">cc-only — no store needed</text>
-  <text x="570" y="100" text-anchor="middle" class="sm">the full verdict: gate, ratchet,</text>
-  <text x="570" y="114" text-anchor="middle" class="sm">new test failures, dark diff lines</text>
-  <text x="787" y="100" text-anchor="middle" class="sm">a fresh clone verifies against a committed</text>
-  <text x="787" y="114" text-anchor="middle" class="sm">baseline (add --sarif PATH · --github)</text>
-  <path class="arrow" d="M120 122 V 152"/>
-  <path class="arrow" d="M345 122 V 152"/>
-  <path class="arrow" d="M570 122 V 152"/>
-  <path class="arrow" d="M787 122 V 152"/>
-  <rect class="boxa" x="20" y="156" width="860" height="50" rx="8"/>
-  <text x="450" y="178" text-anchor="middle" class="lbl" font-weight="700">the one rule: every touched function at or under its scope ceiling</text>
-  <text x="450" y="196" text-anchor="middle" class="sm">touched = the diff intersects its span · min-ccn only at routes 1–2 · full CRAP at routes 3–4</text>
-  <rect class="boxw" x="20" y="226" width="420" height="56" rx="8"/>
-  <text x="230" y="248" text-anchor="middle" class="lbl">refusal → decompose (read the packet, then cuts)</text>
-  <text x="230" y="268" text-anchor="middle" class="sm">a refusal is design feedback, not a threshold to widen</text>
-  <rect class="boxi" x="460" y="226" width="420" height="56" rx="8"/>
-  <text x="670" y="248" text-anchor="middle" class="lbl">attended escape: an audited override</text>
-  <text x="670" y="268" text-anchor="middle" class="sm">reason + snapshot + auto-staged ratchet debt — three records or nothing</text>
-</svg>
-<figcaption>The same rule at four distances. Routes 1–2 are instant and coverage-blind; routes 3–4 bring coverage, the ratchet, and the test suite into the verdict.</figcaption>
-</figure>
-
-<h3>Exit codes are the API</h3>
-<div class="tw"><table>
-  <tr><th>Exit</th><th>Meaning</th><th>The move</th></tr>
-  <tr><td class="mono">0</td><td>Verdict clean</td><td>Proceed. (For <code>verify</code>, this is the green that ends a loop iteration.)</td></tr>
-  <tr><td class="mono">1</td><td>Overloaded: no data yet, a <code>doctor</code> FAIL, or a debt-policy breach</td><td>Read the message; it names the command that creates the missing run, or the FAIL line. README's exit table splits the three.</td></tr>
-  <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused; check the flag spelling and order.</td></tr>
-  <tr><td class="mono">3</td><td>Config gap</td><td>A scope without a template, a metric-stamp mismatch — fix <code>crapkit.toml</code> or restamp.</td></tr>
-  <tr><td class="mono">4</td><td>Git error</td><td>Not a repository, or a baseline commit rewritten out of history (a force-push under <code>verify --base</code>).</td></tr>
-  <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact or timed out past retries, an alert command failed</td><td>For the no-artifact case: fix the lane, not the code — four root causes, triaged in <code>docs/lanes.md</code>.</td></tr>
-  <tr><td class="mono">6</td><td>Gate: touched function over its ceiling</td><td>Decompose until every piece fits.</td></tr>
-  <tr><td class="mono">7</td><td>Ratchet regression</td><td>A standing mark got worse. On a function you never edited: suspect test rot first.</td></tr>
-  <tr><td class="mono">8</td><td>New test failures vs baseline</td><td>The flake retest already ran if configured; what remains is real.</td></tr>
-  <tr><td class="mono">9</td><td>Changed lines nobody covered</td><td>Only in repos that set <code>diff_uncovered_max</code>.</td></tr>
-</table></div>
-<p class="xanno"><code>verify</code> reports the first of 6, 7, 8, 9 that fires, in that order — a CI script branches on one code per run.</p>
-
-<!-- ============================ 07 RATCHET ============================ -->
-<h2 id="ratchet"><span class="sn">07</span>The ratchet</h2>
-<p class="lede">How a brownfield repo turns the gate on today instead of “after the cleanup”.</p>
-<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code> — a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score: the function may stay bad, but it may not get <em>worse</em>, and when someone improves it the mark tightens automatically at the next green verify. Debt can only shrink. That is the ratchet.</p>
-
-<figure class="panel">
-<svg viewBox="0 0 900 240" role="img" aria-label="Ratchet mark lifecycle">
-  <rect class="boxw" x="20" y="90" width="170" height="56" rx="10"/>
-  <text x="105" y="112" text-anchor="middle" class="lbl" font-weight="700">mark stands</text>
-  <text x="105" y="132" text-anchor="middle" class="sm mono">path · long_name · crap</text>
-  <path class="arrow" d="M105 84 C 110 40 220 30 300 30"/>
-  <rect class="box" x="305" y="12" width="250" height="38" rx="8"/>
-  <text x="430" y="36" text-anchor="middle" class="sm">score improves → next green verify <tspan font-weight="700">tightens</tspan> the mark</text>
-  <path class="arrow" d="M560 32 C 640 34 660 70 560 96 C 400 130 250 120 196 118"/>
-  <path class="arrow" d="M196 130 H 280"/>
-  <rect class="boxo" x="285" y="112" width="200" height="38" rx="8"/>
-  <text x="385" y="136" text-anchor="middle" class="sm">fixed to the ceiling → mark <tspan font-weight="700">repaid</tspan>, row gone</text>
-  <path class="arrow" d="M105 152 C 110 190 220 200 300 200"/>
-  <rect class="box" x="305" y="182" width="250" height="38" rx="8"/>
-  <text x="430" y="206" text-anchor="middle" class="sm">code deleted or renamed → <tspan class="mono">ratchet prune</tspan> follows git</text>
-  <rect class="box" x="620" y="112" width="260" height="90" rx="8"/>
-  <text x="750" y="134" text-anchor="middle" class="lbl" font-weight="700">merging branches?</text>
-  <text x="750" y="154" text-anchor="middle" class="sm mono">crapkit ratchet merge</text>
-  <text x="750" y="172" text-anchor="middle" class="sm">registered as a git merge driver:</text>
-  <text x="750" y="188" text-anchor="middle" class="sm">changed-side-wins, min on conflict — never by hand</text>
-</svg>
-<figcaption>A mark's life. Every transition is a command, so the file needs no manual editing — and hand-resolving its merge conflicts is the one classic mistake the tooling exists to prevent.</figcaption>
-</figure>
-
-<p>Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare marks across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
-
-<!-- ============================ 08 BASELINE ============================ -->
-<h2 id="baseline"><span class="sn">08</span>The trusted baseline</h2>
-<p class="lede">Every verdict compares against one earlier run. Which one is a rule, not a guess.</p>
-<p>Qualifying runs are <code>coverage</code> runs and <em>passing</em> verifies. A failed verify never qualifies — and more: it <strong>taints</strong> what follows. Runs taken after a failure are skipped by default baseline selection until some verify passes, so nobody retires findings by quietly re-running <code>coverage</code> on the refused tree.</p>
-
-<figure class="panel">
-<svg viewBox="0 0 900 170" role="img" aria-label="The tainted baseline timeline">
-  <line class="axis" x1="30" y1="85" x2="870" y2="85"/>
-  <rect class="boxo" x="60" y="60" width="120" height="50" rx="8"/>
-  <text x="120" y="82" text-anchor="middle" class="sm mono">run 19</text>
-  <text x="120" y="99" text-anchor="middle" class="sm">coverage ✓</text>
-  <rect class="boxw" x="250" y="60" width="120" height="50" rx="8"/>
-  <text x="310" y="82" text-anchor="middle" class="sm mono">run 20</text>
-  <text x="310" y="99" text-anchor="middle" class="sm">verify FAILED</text>
-  <rect class="box" x="440" y="60" width="120" height="50" rx="8"/>
-  <text x="500" y="82" text-anchor="middle" class="sm mono">run 21</text>
-  <text x="500" y="99" text-anchor="middle" class="sm">coverage (tainted)</text>
-  <rect class="box" x="630" y="60" width="120" height="50" rx="8"/>
-  <text x="690" y="82" text-anchor="middle" class="sm mono">run 22…</text>
-  <text x="690" y="99" text-anchor="middle" class="sm">still tainted</text>
-  <path d="M120 54 C 300 8 600 8 780 50" class="arrow"/>
-  <text x="450" y="26" text-anchor="middle" class="sm" fill="var(--accent)">verify keeps comparing against run 19 — the findings stay visible</text>
-  <text x="450" y="146" text-anchor="middle" class="sm">escapes: fix the findings and let a verify pass · or accept a newer run explicitly with <tspan class="mono">verify --baseline N</tspan></text>
-</svg>
-<figcaption>The taint rule. Without it, a coverage run on the refused tree becomes the new baseline and the flagged function stops counting as touched — the finding evaporates unexamined.</figcaption>
-</figure>
-
-<p><code>runs list</code> marks the row verify compares against today, and warns when a moved HEAD makes the snapshot stale. For repos with no store at all — a CI clone — <code>verify --emit-baseline</code> on the main branch writes a commit-stamped TSV that <code>verify --baseline-tsv</code> reads in the PR, with <code>--github</code> annotations on the diff.</p>
-
-<!-- ============================ 09 LANES ============================ -->
-<h2 id="lanes"><span class="sn">09</span>Lanes: how coverage arrives</h2>
-<p class="lede">crapkit runs no test framework of its own. A lane is your command, its artifact, and a parser.</p>
-<pre><code>[[lane]]
-name     = "unit"
-command  = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/unit"
-artifact = ".crapkit/cov/unit/coverage-final.json"
-parser   = "istanbul"          # or "coveragepy"
-scopes   = ["src"]</code></pre>
-<ul>
-  <li><strong>Provenance:</strong> every artifact is stamped with the commit and duration that produced it; stale artifacts are named, never silently reused. <code>--reuse-unchanged</code> reruns only lanes whose scope files moved.</li>
-  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code> and <code>retries</code>; a configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first.</li>
-  <li><strong>Honest failure:</strong> a lane that produces no artifact marks its scopes <code>no-lane</code> and the run <code>partial</code> — the queue counts what it cannot see instead of pretending. The four classic causes (a coverage provider not installed, a red suite with report-on-failure unset, a report landing where the lane does not look, a watchdog kill) are triaged in <a href="lanes.md">docs/lanes.md</a>.</li>
-  <li><strong>The test template:</strong> a <code>[crapkit.scoped_tests]</code> entry per scope says how to run that scope's tests in isolation — it is what <code>crapkit test-scoped</code> executes, what the packet's <code>commands.scoped_tests</code> carries, and what <code>doctor</code> warns about when a laned scope has none.</li>
-  <li><strong>Housekeeping:</strong> everything writes under <code>.crapkit/</code>; <code>doctor</code> warns about lanes littering the repo root, dead commands, unclaimed files, and scopes with no test template.</li>
-</ul>
-
-<!-- ============================ 10 AGENTS ============================ -->
-<h2 id="agents"><span class="sn">10</span>Built for agents</h2>
-<p class="lede">Half of crapkit's callers are language models. The tool treats that as a design constraint, not an afterthought.</p>
+<!-- ============================ 13 AGENTS ============================ -->
+<h2 id="agents"><span class="sn">13</span>Built for agents</h2>
+<p class="lede">Half of crapkit's callers are language models. That is a design constraint here, not an afterthought.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 270" role="img" aria-label="The five-step burn-down loop">
@@ -653,69 +699,154 @@ scopes   = ["src"]</code></pre>
   <text x="145" y="66" text-anchor="middle" class="sm mono">commands.verify → green → commit</text>
   <path class="arrow" d="M250 46 H 352"/>
 </svg>
-<figcaption>The loop from AGENTS.md. The commands in steps 3–5 arrive inside the packet with paths filled in — retyping them is how a lane flag silently drops.</figcaption>
+<figcaption>The loop from AGENTS.md. The commands in steps 3 to 5 arrive inside the packet with paths filled in. Retyping them is how a lane flag silently drops.</figcaption>
 </figure>
 
 <div class="cards">
   <div class="card"><h4>Claims</h4><p>Parallel sessions coordinate through <code>next-item --claim</code>: a claimed item is skipped by everyone else, released on green verify or by hand. Handles survive line shifts.</p></div>
-  <div class="card"><h4>Batches</h4><p><code>worklist --batches N</code> cuts the queue into file-disjoint batches (co-changing files kept together) — a fleet plan with no overlap by construction.</p></div>
-  <div class="card"><h4>MCP server</h4><p><code>crapkit mcp</code>: a dependency-free stdio server exposing the read side as tools. Register globally; in an unmeasured directory it answers with guidance instead of dying.</p></div>
-  <div class="card"><h4>Plugin</h4><p><code>plugin/</code> is the agent surface as one installable artifact: three skills (the loop, the failure router, a decomposition catalogue), the MCP server, and an advisory <code>PostToolUse</code> hook. Contract tests pin their text and the hook's handlers to the CLI so they cannot drift.</p></div>
-  <div class="card"><h4>Per-edit advisory</h4><p>The plugin's hook runs <code>claude-hook</code> after each edit: a named function over its ceiling, on stderr, in a repo crapkit measures. It never blocks and never says it did, it subtracts the same ratchet marks the commit gate subtracts, and everywhere else it exits 0 silent. <code>hook-precommit</code> stays the only enforcement point.</p></div>
-  <div class="card"><h4>Notes</h4><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet — the channel for hard-won operational traps, delivered at the moment of use.</p></div>
-  <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code> (<code>next-item</code> always; <code>digest</code> alone is plain lines by design); payloads carry <code>schema: 1</code> and change additively only. <code>crapkit report</code> is the one human form: it renders those same payloads into one static HTML page.</p></div>
+  <div class="card"><h4>Batches</h4><p><code>crapkit worklist --batches N</code> cuts the queue into file-disjoint batches, co-changing files kept together. A fleet plan with no overlap by construction.</p></div>
+  <div class="card"><h4>MCP server</h4><p><code>crapkit mcp</code> is a dependency-free stdio server exposing the read side as tools. Register it globally; in an unmeasured directory it answers with guidance instead of dying.</p></div>
+  <div class="card"><h4>The plugin</h4><p><code>plugin/</code> is the agent surface as one installable artifact: three skills (the loop, the failure router, the onboarding walk), the MCP server, and the advisory hook. Contract tests pin their text and the hook's handlers to the CLI so they cannot drift.</p></div>
+  <div class="card"><h4>Notes</h4><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet. The channel for hard-won operational traps, delivered at the moment of use.</p></div>
+  <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code>, with <code>next-item</code> always and <code>digest</code> alone staying plain lines by design. Payloads carry <code>schema: 1</code> and change additively only.</p></div>
 </div>
 
-<!-- ============================ 11 INSTALL ============================ -->
-<h2 id="install"><span class="sn">11</span>Install and first run</h2>
-<pre><code>pip install git+https://github.com/JeanFrancoisGagne/crapkit.git   # or: pip install . from a clone</code></pre>
-<p>Python 3.11+. One runtime dependency (<code>lizard</code>). Then, in the repo you want scored:</p>
-<div class="tw"><table>
-  <tr><th>Step</th><th>Command</th><th>What happens</th></tr>
-  <tr><td>1</td><td class="mono">crapkit init</td><td>Sniffs tracked source into scopes; detects pytest/vitest/jest from the repo's own files and writes live lanes; scaffolds <code>.gitignore</code> and a test template for runners it could prove.</td></tr>
-  <tr><td>2</td><td class="mono">crapkit doctor</td><td>Checks the config against reality: unknown keys, unclaimed files, dead lane commands. Exits 1 only on FAIL.</td></tr>
-  <tr><td>3</td><td class="mono">crapkit coverage</td><td>Runs the lanes, joins coverage onto a fresh inventory, writes the first scored run and its grade.</td></tr>
-  <tr><td>4</td><td class="mono">crapkit ratchet seed</td><td>Pardons standing debt into <code>crapkit-ratchet.tsv</code>; commit it.</td></tr>
-  <tr><td>5</td><td class="mono">crapkit worklist</td><td>Read the risk map: what is worst, and how hot it runs.</td></tr>
-  <tr><td>6</td><td class="mono">printf '#!/bin/sh
-exec python -m crapkit hook-precommit
-' &gt; .git/hooks/pre-commit &amp;&amp; chmod +x .git/hooks/pre-commit</td><td>Arm the gate. From here every commit is judged — new debt only; the seeded marks pardon the old. The README's gate section has the committed-hooks-dir, pre-commit-framework, and CI routes.</td></tr>
-  <tr><td>7</td><td class="mono">claude plugin marketplace add JeanFrancoisGagne/crapkit
-claude plugin install crapkit@crapkit</td><td>Optional, and last. Installs the skills, the MCP server and the per-edit advisory hook in one artifact whose version tracks the CLI's. A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> says whether an installed plugin and this CLI still agree.</td></tr>
-</table></div>
-<p>The full walked-through quickstarts (Python and TypeScript, with real transcripts) live in the <a href="../README.md">README</a>; the judgment calls — scope granularity, exclude versus lane, the first-verify hazard — in <a href="adoption.md">docs/adoption.md</a>.</p>
+<!-- ============================ 14 CABINET ============================ -->
+<h2 id="cabinet"><span class="sn">14</span>The analysis cabinet</h2>
+<p class="lede">Six read-only commands that answer a question the score cannot.</p>
+<div class="cards">
+  <div class="card"><h4><code>mutate</code>: are the tests real?</h4><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed, runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
+  <div class="card"><h4><code>duplication</code>: does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
+  <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor.</p></div>
+  <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data.</p></div>
+  <div class="card"><h4><code>doctor</code>: does the config still fit?</h4><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
+  <div class="card"><h4><code>overrides</code>: who granted what?</h4><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
+</div>
 
-<!-- ============================ 12 MOMENTS ============================ -->
-<h2 id="moments"><span class="sn">12</span>Where each command earns its keep</h2>
-<p class="lede">Most days are not a campaign (that is <a href="#campaign">§14</a>). These are the everyday moments, mapped.</p>
+<!-- ============================ 15 INSTALL ============================ -->
+<h2 id="install"><span class="sn">15</span>Install</h2>
+<p class="lede">One base install everyone shares. Then pick the surfaces you want, in any order.</p>
+
+<h3>The base: the CLI, then one repo</h3>
+<pre><code>pip install git+https://github.com/JeanFrancoisGagne/crapkit.git   # or: pip install . from a clone
+cd your-repo
+crapkit init        # sniffs tracked source into scopes, writes live lanes it can prove
+crapkit doctor      # config against reality: unknown keys, unclaimed files, dead lane commands
+crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
+<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). Plain <code>pip install crapkit</code> works once the PyPI release lands. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+
+<h3>Claude Code: two commands, once per user, zero files per repo</h3>
+<pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin install crapkit@crapkit</code></pre>
+<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a <strong>machine-wide</strong> install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
+<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> says in one line whether an installed plugin and this CLI still agree.</p>
+
+<h3>Enforcement: seed the ratchet, then arm the hook</h3>
+<pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
+git add crapkit-ratchet.tsv &amp;&amp; git commit -m "seed the crapkit ratchet"
+
+printf '#!/bin/sh\nexec python -m crapkit hook-precommit\n' &gt; .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit</code></pre>
+<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
+<div class="callout info"><p>Two things bite here. Git runs hooks outside your shell's activated venv, so bare <code>python</code> must resolve to an interpreter that has crapkit installed, or write the absolute path. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the pre-commit-framework route, and CI.</p></div>
+
+<h3>Then, whenever</h3>
+<pre><code>crapkit worklist            # the risk map: what is worst, and how hot it runs
+crapkit report              # renders .crapkit/report.html for people who will not open a terminal</code></pre>
+<p>Walked-through quickstarts for Python and TypeScript, with real transcripts, live in the <a href="../README.md">README</a>. The judgment calls, meaning scope granularity, exclude versus lane, and the first-verify hazard, are in <a href="adoption.md">docs/adoption.md</a>.</p>
+
+<!-- ============================ 16 USES ============================ -->
+<h2 id="uses"><span class="sn">16</span>Six ways people run it</h2>
+<p class="lede">The same store, six different days. Find yours.</p>
+
+<h3>1 · Solo, mid-feature</h3>
+<p>You are writing code. crapkit stays out of the way until a function crosses the line, and then it tells you twice: once as a note you can ignore, once as a commit that stops.</p>
+<pre><code>… you edit auth/session.ts, the advisory says nothing …
+… you edit it again, and now it has something to say:
+
+crapkit advisory: 1 function(s) over ceiling 6 in auth/session.ts (the edit landed; nothing was blocked)
+  ccn 9  auth/session.ts:41  refreshToken ( req , store )
+the commit gate enforces this; decompose there or mark the debt
+
+$ crapkit rescore auth/session.ts --gate      # the same verdict, on demand, sub-second
+$ crapkit brief auth/session.ts refreshToken  # the packet, if you want the seams handed to you
+… split it, then …
+$ git commit -m "refresh tokens through a store adapter"   # gate runs, exit 0, commit lands</code></pre>
+<p>The advisory and the gate agree by construction (<a href="#twogates">§06</a>). If you skip the advisory entirely, nothing changes: the gate is the enforcement point either way.</p>
+
+<h3>2 · An agent burning down debt</h3>
+<p>You hand a coding session the queue and walk away. The loop is <a href="#agents">§13</a>. These are the commands it runs.</p>
+<pre><code>$ crapkit next-item --claim            # worst by crap, claimed so no sibling session takes it
+$ crapkit brief PATH NAME --json       # source, siblings, ceiling, lane, commands, repo traps
+… decompose or cover, at the seams the packet named …
+$ crapkit rescore PATH --gate          # exit 6 sends you back to the edit
+$ crapkit test-scoped PATH             # just this scope's tests, from its template
+$ crapkit verify                       # the full verdict; green releases the claim</code></pre>
+<p>Stop when <code>next-item</code> reports <code>empty: true</code> <em>and</em> nothing is skipped as claimed <em>and</em> no <code>no_lane_over_target</code> count appears (<a href="#queue">§11</a>). An empty-looking worklist is not the stop signal.</p>
+
+<h3>3 · Day one on a polyglot repo</h3>
+<p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, the other two get scored anyway.</p>
+<pre><code>$ crapkit init
+wrote crapkit.toml with 4 scope(s): api, infra, ops, ui
+detected 2 lane(s) from this repo's own files: py, js — next: run `crapkit coverage`
+added to .gitignore: .crapkit/, .coverage, __pycache__/
+
+$ crapkit doctor
+ok   every tracked source file belongs to a scope
+FAIL scope 'infra' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)
+FAIL scope 'ops' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)
+doctor: 2 problem(s)
+
+$ crapkit inventory                    # complexity alone, no lanes needed
+run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
+
+$ crapkit worklist
+worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) — 4 active, 0 dormant
+  risk      0.0  ccn   7 (  7 std)    1c/1a w   0.00  api/grade.py:1  grade( n , total )
+  risk      0.0  ccn   6 (  6 std)    1c/1a w   0.00  ui/panel.ts:1  label ( kind , hot )
+  risk      0.0  ccn   5 (  5 std)    1c/1a w   0.00  infra/main.rs:1  route kind : u8
+  risk      0.0  ccn   5 (  5 std)    1c/1a w   0.00  ops/deploy.sh:1  release()</code></pre>
+<p>Read those two FAILs as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
+<p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
+
+<h3>4 · CI on a pull request</h3>
+<p>A CI job runs on a fresh clone, so it has no <code>.crapkit/</code> store and bare <code>crapkit verify</code> exits 1. Running <code>coverage</code> first would make the pull request's own tree the baseline, which is a gate that can never fail. The portable baseline is the mechanism.</p>
+<pre><code># on the default branch, after a passing verify: commit this file
+$ crapkit verify --emit-baseline crapkit-baseline.tsv
+
+# in the PR job, against the committed baseline
+$ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
+<p><code>--github</code> emits annotations that land on the pull request diff; <code>--sarif PATH</code> writes SARIF 2.1.0 for code-scanning upload. Refresh the committed baseline whenever the default branch's verify passes. Branch on the exit code: 6 is complexity, 7 is a ratchet regression, 8 is new test failures, 9 is uncovered changed lines.</p>
+
+<h3>5 · Showing someone who will not open a terminal</h3>
+<pre><code>$ crapkit report        # writes .crapkit/report.html, prints the path it wrote</code></pre>
+<p>One self-contained page, three sections, rendered from the same payloads the JSON commands print. It cannot rank a different function first than <code>worklist</code> just did.</p>
+<ul>
+  <li><strong>Grades by scope</strong> at the top: functions, over-target count, CRAP load, and a colored grade chip per scope. This is the slide.</li>
+  <li><strong>The worklist</strong>, ranked, at <code>worklist_top</code> rows (default 50). Each row prints the <code>crapkit explain PATH NAME</code> call that opens it, because no repo-wide payload carries per-function CRAP and the page refuses to invent one.</li>
+  <li><strong>The trend</strong>: CRAP load per scored run as one polyline, down is better, plus the numbers underneath.</li>
+</ul>
+<p>A banner across the top names every lane whose artifact no longer describes the tree. Read the banner before you read the grades.</p>
+
+<h3>6 · The whole codebase</h3>
+<p>That is a campaign, and it has its own section: <a href="#campaign">§17</a>.</p>
+
+<h3>Everyday lookups</h3>
 <div class="tw"><table>
   <tr><th>You are…</th><th>Reach for</th><th>Because</th></tr>
-  <tr><td>about to edit an unfamiliar file</td><td class="mono">brief PATH NAME --json</td><td>Source, siblings, churn, coupled files, the ceiling, and the repo's traps — before the file is even open.</td></tr>
+  <tr><td>about to edit an unfamiliar file</td><td class="mono">brief PATH NAME --json</td><td>Source, siblings, churn, coupled files, the ceiling and the repo's traps, before the file is even open.</td></tr>
   <tr><td>wondering if the hook will refuse your commit</td><td class="mono">rescore FILE --gate</td><td>The same verdict the hook gives, sub-second, before you stage.</td></tr>
   <tr><td>deciding where new code should live</td><td class="mono">worklist · coupling · duplication</td><td>Hot fragile files are a design input; a near-twin means the helper already exists.</td></tr>
   <tr><td>writing tests for a change</td><td class="mono">uncovered_lines · est_uncovered_paths</td><td>The packet names the dark branches; the estimate sizes the work.</td></tr>
-  <tr><td>opening a PR</td><td class="mono">verify --base REF --sarif out.sarif --github</td><td>Did this branch add debt against the fork point — SARIF and inline annotations for the review.</td></tr>
   <tr><td>wondering if a past refactor held</td><td class="mono">explain PATH NAME</td><td>The score's trajectory across runs, plus <code>regrowth</code> when a split quietly un-split itself.</td></tr>
-  <tr><td>back from lunch on a shared repo</td><td class="mono">digest</td><td>The delta between the last two runs — silent when nothing changed, which is the healthy reading.</td></tr>
-  <tr><td>showing where the repo stands to someone who will not open a terminal</td><td class="mono">crapkit report --out debt.html</td><td>One self-contained page: the ranked worklist, the grade per scope, the trend, and a loud banner naming every stale lane. No network, and no per-function drill-down: each row prints the <code>explain</code> call that has it.</td></tr>
+  <tr><td>back from lunch on a shared repo</td><td class="mono">digest</td><td>The delta between the last two runs. Silent when nothing changed, which is the healthy reading.</td></tr>
   <tr><td>already in a file anyway</td><td class="mono">file_functions in any brief</td><td>The boy-scout check: a sibling one point over its ceiling is cheapest to fix while context is hot.</td></tr>
   <tr><td>watching scores while you edit</td><td class="mono">watch</td><td>Rescores tracked files as they change, in a terminal pane.</td></tr>
 </table></div>
 
-<!-- ============================ 13 CABINET ============================ -->
-<h2 id="cabinet"><span class="sn">13</span>The analysis cabinet</h2>
-<div class="cards">
-  <div class="card"><h4><code>mutate</code> — are the tests real?</h4><p>Diff-scoped mutation testing: flips comparisons and boolean logic on the lines you changed, runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
-  <div class="card"><h4><code>duplication</code> — does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
-  <div class="card"><h4><code>coupling</code> — what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor.</p></div>
-  <div class="card"><h4><code>trend</code> — is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data.</p></div>
-  <div class="card"><h4><code>doctor</code> — does the config still fit?</h4><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
-  <div class="card"><h4><code>overrides</code> — who granted what?</h4><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
-</div>
-
-<!-- ============================ 14 CAMPAIGN ============================ -->
-<h2 id="campaign"><span class="sn">14</span>The campaign: fixing a whole codebase</h2>
-<p class="lede">Everything above composes into one flow when the goal is the whole repo. Four phases — and the gate goes on <em>first</em>, not after the cleanup.</p>
+<!-- ============================ 17 CAMPAIGN ============================ -->
+<h2 id="campaign"><span class="sn">17</span>The campaign: fixing a whole codebase</h2>
+<p class="lede">Everything above composes into one flow when the goal is the whole repo. Four phases, and the gate goes on <em>first</em>.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 330" role="img" aria-label="The four campaign phases">
@@ -725,46 +856,47 @@ claude plugin install crapkit@crapkit</td><td>Optional, and last. Installs the s
   <text x="860" y="50" text-anchor="end" class="sm">standing debt pardoned · new debt blocked · the hole stops deepening while you dig</text>
   <path class="arrow" d="M450 82 V 100"/>
   <rect class="boxi" x="20" y="104" width="860" height="62" rx="10"/>
-  <text x="40" y="128" class="lbl" font-weight="700">phase 1 · size the mountain (the grade coverage just printed), cut the map</text>
+  <text x="40" y="128" class="lbl" font-weight="700">phase 1 · size the mountain, cut the map</text>
   <text x="40" y="148" class="sm mono">worklist --batches N → brief --batch N --json</text>
-  <text x="860" y="138" text-anchor="end" class="sm">file-disjoint batches, co-changing files together — a fleet plan with</text>
+  <text x="860" y="138" text-anchor="end" class="sm">file-disjoint batches, co-changing files together: a fleet plan where</text>
   <text x="860" y="152" text-anchor="end" class="sm">no two agents share a source file · one process deals every packet</text>
   <path class="arrow" d="M450 170 V 188"/>
   <rect class="box" x="20" y="192" width="860" height="72" rx="10"/>
   <text x="40" y="216" class="lbl" font-weight="700">phase 2 · the loop, solo or as a fleet</text>
   <text x="40" y="236" class="sm mono">claim → packet → decompose or cover → gate → scoped tests → green verify → commit</text>
-  <text x="40" y="254" class="sm">every green verify tightens the ratchet — progress is monotone; <tspan class="mono">regrowth</tspan> flags a split that un-split; <tspan class="mono">mutate</tspan> audits a batch closed by tests alone</text>
+  <text x="40" y="254" class="sm">every green verify tightens the ratchet, so progress is monotone; <tspan class="mono">regrowth</tspan> flags a split that un-split; <tspan class="mono">mutate</tspan> audits a batch closed by tests alone</text>
   <path class="arrow" d="M450 268 V 286"/>
   <rect class="boxo" x="20" y="290" width="860" height="34" rx="10"/>
   <text x="40" y="312" class="lbl" font-weight="700">phase 3 · steady state</text>
   <text x="860" y="312" text-anchor="end" class="sm">the termination rule ends the campaign · <tspan class="mono">digest</tspan> is the watchtower · the gate holds the line</text>
 </svg>
-<figcaption>The campaign. Phase 0's ordering is the part teams get backwards: seed and gate before fixing anything, so the cleanup outruns an inflow you already shut off.</figcaption>
+<figcaption>Phase 0's ordering is the part teams get backwards. Seed and gate before fixing anything, so the cleanup outruns an inflow you already shut off.</figcaption>
 </figure>
 
 <ul>
-  <li><strong>Doctor's warnings are the first work items.</strong> Debt in a scope no lane measures cannot be burned down, only wired up — on one large consumer, wiring six extra lanes took measured functions from 95k to 113k of 141k before a single function was edited.</li>
-  <li><strong>The stop signal is the termination rule</strong> (<a href="#queue">§04</a>), never an empty-looking worklist. A finished repo is a worklist full of <code>ok</code> markers.</li>
-  <li><strong>Value is front-loaded, so stopping early is rational.</strong> The risk map is worst-first by <code>ccn × churn</code> and the hand-out queue by CRAP; the top of it is where incidents live. “Fix the worst slice and gate the rest forever” is the same campaign ended earlier — and the ratchet holds whatever line you reach. (The shared ratchet file is the one file every branch touches; that is what the <code>ratchet merge</code> driver exists for.)</li>
-  <li><strong>The summit items are redesigns.</strong> A whole command handler at extreme ccn is not a split, it is an architecture session; the packet's <code>est_splits</code> saying dozens is the tell.</li>
-  <li><strong>Proof it composes:</strong> crapkit's own repo ran this exact campaign against its own gate — every standing mark repaid, the ratchet file now header-only, grade A+.</li>
+  <li><strong>Doctor's warnings are the first work items.</strong> Debt in a scope no lane measures cannot be burned down, only wired up. On one large consumer, wiring six extra lanes took measured functions from 95k to 113k of 141k before a single function was edited.</li>
+  <li><strong>The stop signal is the termination rule</strong> (<a href="#queue">§11</a>), never an empty-looking worklist. A finished repo is a worklist full of <code>ok</code> markers.</li>
+  <li><strong>Value is front-loaded, so stopping early is rational.</strong> The risk map is worst-first by <code>ccn × churn</code> and the hand-out queue by CRAP, and the top of it is where incidents live. "Fix the worst slice and gate the rest forever" is the same campaign ended earlier, and the ratchet holds whatever line you reach.</li>
+  <li><strong>The summit items are redesigns.</strong> A whole command handler at extreme ccn is not a split, it is an architecture session. The packet's <code>est_splits</code> saying dozens is the tell.</li>
+  <li><strong>Proof it composes:</strong> crapkit's own repo ran this exact campaign against its own gate. Every standing mark repaid, the ratchet file now header-only, grade A+.</li>
 </ul>
 
-<!-- ============================ 15 PRINCIPLES ============================ -->
-<h2 id="principles"><span class="sn">15</span>Design principles</h2>
+<!-- ============================ 18 PRINCIPLES ============================ -->
+<h2 id="principles"><span class="sn">18</span>Design principles</h2>
 <ul>
-  <li><strong>Deterministic or wrong.</strong> Same tree, same config, same bytes out. Randomness, wall-clock dependence, and unstable orderings are treated as defects.</li>
+  <li><strong>Deterministic or wrong.</strong> Same tree, same config, same bytes out. Randomness, wall-clock dependence and unstable orderings are treated as defects.</li>
   <li><strong>The gate binds the future.</strong> Standing debt is pardoned and ratcheted; only touched functions are judged. A gate a team turns off is worse than no gate.</li>
-  <li><strong>Above the ceiling, decompose.</strong> Coverage cannot save a function past its target — the design pressure is the point, and crapkit's own source is held to its own rule.</li>
-  <li><strong>Additive JSON, pinned schema.</strong> Fields are added, never renamed or removed; <code>schema: 1</code> means an agent's parser written today keeps working.</li>
-  <li><strong>Your test commands, not ours.</strong> Lanes run what the repo already runs; crapkit reads artifacts. There is no embedded test framework to fight.</li>
-  <li><strong>Failure is data.</strong> A failed lane, a stale artifact, an abstaining scope — each is counted and named, never papered over with a zero that reads as health.</li>
-  <li><strong>Docs are contracts.</strong> Tests diff the README's command table against the argument parser, and the shipped skills against the CLI, both directions. Documentation that can drift, will — so it is not allowed to.</li>
-  <li><strong>Dependency-light.</strong> Python stdlib plus lizard. The MCP server, the parsers, the store — no framework underneath to version-chase.</li>
+  <li><strong>Above the ceiling, decompose.</strong> Coverage cannot save a function past its target. The design pressure is the point, and crapkit's own source is held to its own rule.</li>
+  <li><strong>One enforcement point.</strong> Advisories annotate; the commit gate blocks. Two things that can refuse your work are two rules to keep in your head.</li>
+  <li><strong>Additive JSON, pinned schema.</strong> Fields are added, never renamed or removed. <code>schema: 1</code> means an agent's parser written today keeps working.</li>
+  <li><strong>Your test commands, not ours.</strong> Lanes run what the repo already runs and crapkit reads artifacts. There is no embedded test framework to fight.</li>
+  <li><strong>Failure is data.</strong> A failed lane, a stale artifact, an abstaining scope: each is counted and named, never papered over with a zero that reads as health.</li>
+  <li><strong>Docs are contracts.</strong> Tests diff this page and the README against the argument parser, and the shipped skills against the CLI, both directions. Documentation that can drift, will, so it is not allowed to.</li>
+  <li><strong>Dependency-light.</strong> Python stdlib plus lizard. The MCP server, the parsers, the store: no framework underneath to version-chase.</li>
 </ul>
 
 <footer>
-  <p><strong>Where to next.</strong> <a href="../README.md">README</a> for the full command reference and quickstart transcripts · <a href="../AGENTS.md">AGENTS.md</a> for the working agent contract · <a href="configuration.md">configuration</a>, <a href="lanes.md">lanes</a>, <a href="ratchet.md">ratchet</a>, <a href="agent-json.md">agent-json</a>, <a href="adoption.md">adoption</a> for the deep references. MIT licensed. This handbook is self-contained by design: no network, no scripts, system fonts only — it reads the same from a fresh clone, a fork, or a file:// double-click.</p>
+  <p><strong>Where to next.</strong> <a href="../README.md">README</a> for the full command reference and quickstart transcripts · <a href="../AGENTS.md">AGENTS.md</a> for the working agent contract · <a href="configuration.md">configuration</a>, <a href="lanes.md">lanes</a>, <a href="ratchet.md">ratchet</a>, <a href="agent-json.md">agent-json</a>, <a href="adoption.md">adoption</a> for the deep references. MIT licensed. This handbook is self-contained by design: no network, no scripts, system fonts only. It reads the same from a fresh clone, a fork, or a file:// double-click.</p>
 </footer>
 </div>
 </body>
