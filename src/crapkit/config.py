@@ -111,6 +111,23 @@ class Config(NamedTuple):
         return frozenset(s.name for s in self.scopes if s.coverage_optional)
 
     @property
+    def lane_less_scopes(self) -> tuple[str, ...]:
+        """Scopes no lane measures and no `coverage_optional` excuses.
+
+        Empty is the licence to run with no lanes at all: every scope is either
+        measured by one or scored cc-only, so there is nothing left for a lane
+        to say.
+
+        The two readers weigh a non-empty answer differently, and the difference
+        is deliberate. `verify` refuses outright and names the list. `coverage`
+        refuses only when it also selected no lane, and otherwise scores the
+        scope and flags every row `no-lane` — a flag it could not print at all
+        if owing a lane refused the run. `doctor` is what says so out of band.
+        """
+        covered = {s for lane in self.lanes for s in lane.scopes} | self.coverage_optional_scopes
+        return tuple(s.name for s in self.scopes if s.name not in covered)
+
+    @property
     def scope_paths(self) -> dict[str, tuple[str, ...]]:
         """Every scope's declared paths, by name — what a lane's scopes resolve to."""
         return {s.name: s.paths for s in self.scopes}

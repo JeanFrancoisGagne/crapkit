@@ -366,6 +366,18 @@ def test_a_row_for_a_language_no_scope_can_name_says_so():
     assert unmarked == []
 
 
+def test_the_cc_only_rows_are_exactly_the_languages_init_writes_the_key_for():
+    """The table is where a reader learns their language has no parser; the set
+    is what makes `crapkit init` write `coverage_optional` for their scope. Two
+    answers to one question, so they have to be the same answer."""
+    from crapkit.scaffold import COVERABLE_LANGUAGES
+
+    marked = {lang for lang, cells in _language_rows().items()
+              if cells[1] == "cc-only" and lang in SUPPORTED_LANGUAGES}
+
+    assert marked == SUPPORTED_LANGUAGES - COVERABLE_LANGUAGES
+
+
 def test_no_row_claims_a_coverage_parser_crapkit_does_not_have():
     """`cc-only` is a real answer and the two parsers are the only other ones.
     A row naming a third would promise a join that nothing in crapkit performs."""

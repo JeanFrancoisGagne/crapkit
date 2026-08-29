@@ -320,6 +320,23 @@ def _report_verify(as_json: bool, out: dict, verdict, overridden) -> None:
     _print_finding_split(verdict)
 
 
+def _refuse_lane_less_verify(cfg) -> None:
+    """Refuse a verdict on a scope nothing measures and no key excuses.
+
+    Stricter than `coverage`, on purpose. `coverage` scores such a scope and
+    flags every row `no-lane`, because scoring is its whole job; `verify` calls
+    coverage half the verdict, so an unmeasured scope leaves it with half an
+    answer and it says so instead. The test that a cc-only repo passes is that
+    `lane_less_scopes` is empty, not that lanes exist: such a repo has none and
+    never will, and its verdict is the gate and the ratchet, neither of which
+    needs a coverage number.
+    """
+    if cfg.lane_less_scopes:
+        raise ConfigError(f"verify needs a [[lane]] for scope(s) {', '.join(cfg.lane_less_scopes)}"
+                          " — coverage is half the verdict; a scope no coverage parser can read "
+                          "declares coverage_optional = true instead")
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import changed_ranges
     from ..gitio import GitFacts, diff_since
@@ -328,8 +345,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
-    if not cfg.lanes:
-        raise ConfigError("verify needs [[lane]] declarations — coverage is half the verdict")
+    _refuse_lane_less_verify(cfg)
     store = _verify_store(root, args.baseline_tsv)
     _guard_ratchet_stamp(root / cfg.ratchet_file, cfg.ratchet_file)
     # One context for the whole command: the ancestry checks, the lane runner and

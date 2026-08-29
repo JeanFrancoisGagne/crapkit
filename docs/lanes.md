@@ -44,9 +44,14 @@ Somebody writing the parser is the only thing that changes that.
 
 **Those scopes run cc-only, which is a real answer, not a failure.** Complexity, the
 worklist, the ratchet and the commit gate all work on a cc-only scope; `crap` is just `ccn`,
-because the coverage half was never measured. Set `coverage_optional = true` on the scope so
-`doctor` stops asking for a lane that cannot exist. See
-[configuration.md](configuration.md#coverage_optional--true).
+because the coverage half was never measured. The scope carries `coverage_optional = true`
+so `doctor` stops asking for a lane that cannot exist, and `crapkit init` writes that key
+for you. See [configuration.md](configuration.md#coverage_optional--true).
+
+A repo where **every** scope is cc-only declares no `[[lane]]` at all, and both `coverage`
+and `verify` run on it: the lane list is empty because there is nothing left to measure,
+not because something is unwired. They still exit 3 for a scope that has neither a lane nor
+the key, and the message names that scope.
 
 ---
 

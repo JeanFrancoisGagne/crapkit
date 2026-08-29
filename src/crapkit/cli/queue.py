@@ -359,8 +359,13 @@ def cmd_claims(args: argparse.Namespace) -> int:
 
 
 def _name_prefix(long_name: str) -> str:
-    """The identifier a long_name opens with, before its parameter list."""
-    return long_name.split("(")[0].strip()
+    """The identifier a long_name opens with, before its parameter list.
+
+    packet.bare_name is the definition. This was a second copy of the cut, and
+    it is what kept `brief` rejecting a Rust or Go bare name after the packet
+    that published it had already been fixed.
+    """
+    return packet.bare_name(long_name)
 
 
 def _name_matches(long_name: str, name: str) -> bool:
@@ -375,7 +380,13 @@ def _name_matches(long_name: str, name: str) -> bool:
 
 
 def _matching_rows(rows: list, name: str) -> list:
-    return [r for r in rows if _name_matches(r.long_name, name)]
+    """The rows NAME resolves to, by the rule `explain` runs on the same string.
+
+    Both commands go through `packet.matching_names`, so a name that picks one
+    function in a packet cannot pick three in a trajectory.
+    """
+    wanted = set(packet.matching_names([r.long_name for r in rows], name))
+    return [r for r in rows if r.long_name in wanted]
 
 
 def _no_match_message(path: str, name: str, rows: list, candidates: list) -> str:

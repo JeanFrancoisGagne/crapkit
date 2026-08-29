@@ -37,7 +37,9 @@ Prefer the lane whenever a runner could plausibly reach the code.
 
 Sometimes none can. crapkit reads two coverage formats, coverage.py's JSON and istanbul's
 `coverage-final.json`, so a Go, Rust or Swift scope has no lane to prefer. There
-`coverage_optional` is the honest answer, not a shortcut. See
+`coverage_optional` is the honest answer, not a shortcut, and `crapkit init` already wrote
+it: any scope whose languages all lack a parser comes out of `init` carrying the key. What
+is left for you is the first reason — code a test could reach but never will. See
 [lanes.md](lanes.md#which-languages-a-lane-can-measure).
 
 ## What to do about `no_lane_over_target`

@@ -154,6 +154,12 @@ nor a PowerShell reader, and its Rust reader scores a 7-arm `match` as ccn 2 (fi
 as lizard #494), so crapkit counts each non-wildcard arm the way C counts a `case`. The Rust
 module retires itself the day upstream fixes it.
 
+The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
+in, arms free. The two columns therefore say different things about one block on purpose.
+The 7-arm match above is ccn 7 and cognitive 1: seven ways through it, one decision to
+read. The rule is Rust's alone, because `match` is a soft keyword in Python and an
+ordinary identifier anywhere else.
+
 ### Scope matching
 
 Scopes are tried in declaration order; the first whose path prefix **and** extension both
@@ -165,6 +171,10 @@ declaring different languages do not black-hole each other's files.
 Two reasons to set it. Either no test can reach the code (entry points, deploy scripts,
 generated shims), or nothing produces a coverage artifact crapkit reads for it (Go, Rust,
 Swift, C and the rest).
+
+`crapkit init` writes the key for the second reason on its own: a scope whose languages
+all lack a parser gets it, a scope holding one language a parser reads does not. The first
+reason is yours to declare, because only you know a test cannot reach the code.
 
 Four effects:
 

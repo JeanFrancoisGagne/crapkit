@@ -8,6 +8,23 @@ from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, excluded
 
 _EXT_LANGUAGE = {ext: lang for lang, exts in LANGUAGE_EXTENSIONS.items() for ext in exts}
 
+# The languages a coverage parser can read: coverage.py reads python, istanbul
+# reads the JavaScript family and the .vue files a vitest run reports on. Every
+# other supported language scores on complexity alone, which is what
+# `coverage_optional = true` declares — so init writes the key for a scope built
+# entirely from the rest, rather than leaving it to score `no-lane` forever
+# against a lane nobody can write.
+COVERABLE_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx", "vue"})
+
+
+def cc_only_scope(languages: tuple[str, ...]) -> bool:
+    """True when no coverage parser reads any of this scope's languages.
+
+    One coverable language is enough to keep the key off: a lane can still
+    measure that part, and `coverage_optional` would forgive the whole scope.
+    """
+    return not any(lang in COVERABLE_LANGUAGES for lang in languages)
+
 DEFAULT_EXCLUDES = (
     "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
     "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py",
@@ -174,8 +191,9 @@ def _quoted(names) -> str:
 
 
 def _scope_stanza(name: str, languages: tuple[str, ...]) -> list[str]:
+    optional = ["coverage_optional = true"] if cc_only_scope(languages) else []
     return ["[[scope]]", f'name = "{name}"', f'paths = ["{name}"]',
-            f"languages = [{_quoted(languages)}]", ""]
+            f"languages = [{_quoted(languages)}]", *optional, ""]
 
 
 def _exclude_stanza() -> list[str]:
@@ -297,10 +315,17 @@ def _commented_block(rest: dict[str, tuple[str, ...]], has_live: bool) -> list[s
     return header + _scoped_entry_lines(rest, False)
 
 
-def _template_lines(covered: set[str], scope_list: str) -> list[str]:
+def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]]) -> list[str]:
+    """Commented lane templates for the parsers no live lane covers.
+
+    None at all when every scope is cc-only. Neither parser reads any language
+    in the repo, so both templates would be a step the reader cannot take, under
+    a heading telling them to take it before running `crapkit coverage`.
+    """
+    if all(cc_only_scope(languages) for languages in scopes.values()):
+        return []
     # the template's scope is a placeholder on purpose: writing a real scope
     # name pointed a TS lane template at a python project's sources
-    del scope_list
     lines: list[str] = []
     for parser in sorted(_TEMPLATES):
         if parser not in covered:
@@ -316,7 +341,7 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
         lines += _scope_stanza(name, languages)
     lines += _exclude_stanza()
     live, covered = _live_lanes(lanes, scopes)
-    return "\n".join(lines + live + _template_lines(covered, _quoted(scopes))
+    return "\n".join(lines + live + _template_lines(covered, scopes)
                      + _scoped_tests_stub(scopes, _confirmed_languages(lanes)))
 
 

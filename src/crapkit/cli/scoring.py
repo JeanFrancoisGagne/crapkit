@@ -194,7 +194,9 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
         stamps[lane.artifact] = outcome.stamp
         succeeded.append(lane)
     write_stamps(root, stamps)
-    if not succeeded:
+    # `lane_errors` and not `lanes`: a cc-only repo declares no lanes, so nothing
+    # succeeded and nothing failed either, and that run is still a scored run.
+    if lane_errors and not succeeded:
         raise ToolError(f"every lane failed: {'; '.join(lane_errors.values())}")
     return coverage_by_path, provenance, lane_errors, succeeded
 
@@ -254,11 +256,30 @@ def _run_kind(lanes, cfg, failures) -> str:
     return "coverage" if full else "partial"
 
 
+def _refuse_empty_lane_run(cfg, requested) -> None:
+    """Refuse a run that selected no lane, unless running with none is right.
+
+    Right for a repo whose every scope declares `coverage_optional`: nine of the
+    fourteen languages have no coverage parser at all, such a repo is scored
+    from complexity alone, and demanding a lane refused exactly the repos that
+    can never supply one. Wrong the moment one scope has neither, which is what
+    the message names — the scopes, not the empty list, because the list is a
+    symptom and the scopes are the gap.
+    """
+    if requested is not None:
+        raise ConfigError(f"no lane named {requested!r}")
+    if cfg.lane_less_scopes:
+        raise ConfigError(
+            f"no [[lane]] to run for scope(s) {', '.join(cfg.lane_less_scopes)} — declare a "
+            "[[lane]] measuring them in crapkit.toml, or set coverage_optional = true on a "
+            "scope no coverage parser can read")
+
+
 def _select_lanes(cfg, requested):
+    """The lanes this run executes; an empty list is a legitimate answer."""
     lanes = [l for l in cfg.lanes if requested is None or l.name == requested]
     if not lanes:
-        raise ConfigError("no [[lane]] to run — declare lanes in crapkit.toml" if not cfg.lanes
-                          else f"no lane named {requested!r}")
+        _refuse_empty_lane_run(cfg, requested)
     return lanes
 
 

@@ -85,7 +85,13 @@ do next.
 - the function's start line (`67`)
 - the ordinal handle on a function with no name (`"(anonymous)#2"`)
 
-A bare name that two functions share exits 1 and lists the candidates. Pass the long
+Exact first: a NAME that IS a function's long name or bare identifier resolves to that
+function alone, even when other names contain it — `route` is `route`, never
+`route_chain`. A NAME that names no function falls back to a substring search, so a
+half-remembered fragment still finds what holds it. `brief` and `explain` run the same
+rule on the same string.
+
+A name that two functions answer to exits 1 and lists the candidates. Pass the long
 name or the start line instead:
 
     crapkit: 'render' in calc/report.py is ambiguous — candidates: render( counts , width , header , sort_desc ), render( self , rows )

@@ -19,10 +19,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install -e .[dev]
+      # The dev extra is the whole install: the suite's fixture lanes shell out
+      # to pytest with plugin flags, so anything they spell has to arrive here.
+      # Quoted because zsh globs the bare `.[dev]` and pip never sees the extra.
+      - run: pip install -e ".[dev]"
       - run: python -m pytest -q
+      # The gate reads staged blobs and a fresh checkout stages nothing, so what
+      # this proves is that the hook runs clean against the repo's own
+      # crapkit.toml on a bare install. `|| true` hid even a crash; the tree
+      # passes the gate with all 298 files staged, so the exit code can stand.
       - name: gate the diff crapkit-style
-        run: python -m crapkit hook-precommit || true
+        run: python -m crapkit hook-precommit
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
   # test can schema-check: a malformed handler fails here with exit 1. It does not
@@ -48,7 +55,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .[dev]
+      - run: pip install -e ".[dev]"
       - name: crapkit scores itself
         run: |
           python -m crapkit coverage --json > coverage.json
