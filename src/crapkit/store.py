@@ -838,18 +838,23 @@ class SnapshotStore:
         return cur.rowcount
 
     def prior_scored_run(self, *, commit: str, before: int) -> int | None:
-        """The newest earlier run of one commit that scored something.
+        """The newest earlier TRUSTED run of one commit, for the tighten damping.
 
-        Hook runs write no rows and inventory runs write no CRAP, so neither
-        can win it. An empty answer reads as "nothing moved", which is exactly
-        the licence a bouncing measurement needs to tighten a mark.
+        `trusted_runs` and nothing else, which is the list `ratchet seed` picks
+        its baseline out of: one question about run history deserves one answer.
+        It drops hook runs (no rows) and inventory runs (no CRAP) the way the
+        "scored something" row test used to, and it also drops the two the row
+        test admitted — a FAILED verify, whose scores can come off a red tree,
+        and a `partial` run, whose coverage is a fraction of the suite's and
+        whose CRAP is inflated to match. Damping a mark against either freezes
+        it at a number no other reader will accept.
+
+        An empty answer reads as "nothing moved", which is exactly the licence a
+        bouncing measurement needs to tighten a mark.
         """
-        cur = self._conn.execute(
-            "SELECT MAX(id) FROM runs WHERE commit_sha = ? AND id < ? AND EXISTS "
-            "(SELECT 1 FROM functions f WHERE f.run_id = runs.id AND f.crap IS NOT NULL)",
-            (commit, before))
-        (rid,) = cur.fetchone()
-        return rid
+        earlier = [r for r in trusted_runs(self)
+                   if r["commit"] == commit and r["id"] < before]
+        return earlier[-1]["id"] if earlier else None
 
     def latest_run(self, *, commit: str) -> int | None:
         cur = self._conn.execute("SELECT MAX(id) FROM runs WHERE commit_sha = ?", (commit,))

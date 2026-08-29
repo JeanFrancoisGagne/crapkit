@@ -395,7 +395,9 @@ baseline**. `crapkit runs list` marks which one that is today.
 never qualifies, and neither does a `partial` run (a lane failed, so some scope fell back
 to `no-lane`) nor a `hook` override record, which carries no scored rows at all. In `runs
 list`, `verdict=-` marks a run that produces no verdict rather than one that failed: only
-`verify` renders a verdict.
+`verify` renders a verdict. Three readers ask this one question and get this one answer:
+the baseline pick here, `ratchet seed` and `prune`, and the tighten damping that compares a
+mark against the same commit's previous run.
 
 **What advances it.** Any qualifying run. `coverage` writes one wherever HEAD is, so a
 dashboard cron advances the baseline exactly as CI does. A passing `verify` advances it

@@ -114,9 +114,14 @@ def test_a_held_mark_is_not_dropped_by_a_run_that_reads_under_the_ceiling():
     assert marks[(JUDGE, NAME)] == 72.0, "a repayment nobody can reproduce is not a repayment"
 
 
-def test_the_worst_twin_is_what_the_jump_is_measured_against():
-    """Twins share (path, long_name) and the worst one owns the mark, so the
-    fresh side of the comparison has to be the same twin the mark answers to."""
+def test_the_worst_row_is_what_the_jump_is_measured_against():
+    """Two rows on ONE span: two scopes claiming one path score it twice, and
+    `keys` gives that one ordinal rather than inventing a twin. The worst of them
+    owns the mark, so the fresh side has to be the worst one too.
+
+    Real twins open on different lines and each hold their own key, which
+    `test_shared_trust_and_twin_keys` pins end to end.
+    """
     fresh = [scored(20.0), scored(72.0)]
 
     (refusal,) = unstable_marks([RatchetEntry(JUDGE, NAME, 90.0)], fresh,

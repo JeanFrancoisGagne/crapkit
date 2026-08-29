@@ -18,13 +18,20 @@ def test_round_trip_sorted_and_stable():
 
 
 def test_update_tightens_improved_entries_and_drops_fixed_ones():
-    prior = [RatchetEntry("src/a.ts", "f( )", 30.0), RatchetEntry("src/gone.ts", "h( )", 12.0)]
+    """`src/ok.ts` is MARKED and now scores under the ceiling: that is the drop.
+
+    It used to be absent from `prior`, so the last assertion held for the wrong
+    reason — an unmarked function has no entry to lose — and the drop path was
+    never walked.
+    """
+    prior = [RatchetEntry("src/a.ts", "f( )", 30.0), RatchetEntry("src/gone.ts", "h( )", 12.0),
+             RatchetEntry("src/ok.ts", "k( )", 20.0)]
     fresh = [scored("src/a.ts", "f( )", 5, 0.5), scored("src/ok.ts", "k( )", 3, 1.0)]
     updated = update_ratchet(prior, fresh, target=6)
     by_key = {(e.path, e.long_name): e for e in updated}
     assert by_key[("src/a.ts", "f( )")].crap < 30.0, "improvement lowers the high-water mark"
     assert by_key[("src/gone.ts", "h( )")].crap == 12.0,         "absent from scored rows is not proof the code is gone; the mark survives"
-    assert ("src/ok.ts", "k( )") not in by_key, "under-target functions carry no entry"
+    assert ("src/ok.ts", "k( )") not in by_key, "a mark that fell to the ceiling leaves the file"
 
 
 def test_update_never_raises_an_entry():

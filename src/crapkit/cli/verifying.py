@@ -203,17 +203,28 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
 
 
 def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
-    """What the same commit's last scored run measured, worst twin per key.
+    """What the same commit's last trusted run measured, by RATCHET KEY.
 
-    Worst twin on both sides or the comparison is between two different
-    functions that happen to share a name.
+    Keyed the way the marks it will be compared against are keyed, twin ordinal
+    included: a module's second `__post_init__` answers to `__post_init__#2`, and
+    reading its score under the bare name asks about a different function. The
+    fresh side of the same comparison is keyed by `verify.rows_by_key`, so the
+    two agree by construction.
+
+    Worst per key covers the one collision the ordinal leaves — two scopes
+    claiming one path score one span twice — or the comparison is between two
+    measurements of different things.
     """
+    from ..keys import key_names, key_of
+
     prior_id = store.prior_scored_run(commit=commit, before=run_id)
     if prior_id is None:
         return {}
+    rows = store.read_scored(prior_id)
+    names = key_names(rows)
     worst: dict[tuple[str, str], float] = {}
-    for row in store.read_crap(prior_id):
-        key = (row.path, row.long_name)
+    for row in rows:
+        key = key_of(names, row)
         worst[key] = max(worst.get(key, 0.0), round(row.crap, 4))
     return worst
 

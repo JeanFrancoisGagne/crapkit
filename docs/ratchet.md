@@ -300,6 +300,11 @@ app/b.py	bar( y )	22.0000
 side that changed wins over the side that did not; when both changed the **lower** value
 wins, because a mark can only fall and `prune` is re-runnable.
 
+Per key means per twin. One branch tightening `__post_init__` and the other tightening
+`__post_init__#2` in the same file is not a conflict, because those are two keys; the driver
+needs no ordinal knowledge to get that right. The `#` sits in the name field, so a marks line
+never opens with the `#` that introduces the metric stamp.
+
 The driver refuses to merge across metric versions, and git falls back to a normal text
 conflict for you to resolve after re-seeding one side:
 
@@ -422,7 +427,7 @@ The commit gates read the same file and ask it a looser question. See
 
 Tightening a mark claims the code improved, and one commit measured twice cannot have
 improved. So `verify` compares each marked function against what the same commit's previous
-scored run measured, and refuses to tighten a mark whose CRAP moved by more than
+**trusted** run measured, and refuses to tighten a mark whose CRAP moved by more than
 `[crapkit] tighten_max_jump` (default `2.0`) between those two runs. The mark stays where it
 is and one line goes to stderr:
 
@@ -436,6 +441,14 @@ marks file churns 20 -> 72 -> 20 in commits. Real work moves a score by less tha
 measurement race does, so a stable improvement still tightens in full. A first run of a
 commit has nothing to compare against and tightens as it always did. `verify --no-tighten`
 is the blunt version: the verdict stands and the marks file is not rewritten at all.
+
+**Trusted** is the same word `ratchet seed` uses, and the same rule: a failed verify and a
+`partial` run are invisible here too. Both carry numbers no other reader accepts — a failed
+verify's can come off a red tree, and a `partial` run measured a fraction of the suite, so
+its coverage is low and its CRAP is high to match. Damping against either would hold a mark
+at a value nothing vouches for. The comparison is per ratchet key, so a file's second
+`__post_init__` is compared against `__post_init__#2`'s earlier score and not against its
+twin's ([Twins: one name, several functions](#twins-one-name-several-functions)).
 
 ---
 
