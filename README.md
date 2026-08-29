@@ -134,12 +134,13 @@ override the day upstream fixes it.
 
 ## The gate
 
-Three surfaces ask the same question, ccn against the scope's ceiling, with three
+Four surfaces ask the same question, ccn against the scope's ceiling, with four
 different powers:
 
 | Surface | Fires | Power |
 |---|---|---|
 | `crapkit claude-hook` | after an agent's edit lands | **advisory.** Names the breach on stderr. Blocks nothing, because PostToolUse runs after the write |
+| `crapkit rescore FILE --gate` | when you ask | **preview.** The commit gate's verdict on demand, sub-second, before you stage |
 | `crapkit hook-precommit` | `git commit` | **blocks.** Exit 6. Staged blobs only, so it costs the size of the commit and needs no coverage |
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
 
@@ -200,14 +201,14 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 ```yaml
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
-    rev: 5ffd6361605469a4e7e1212876ab19177354b37b
+    rev: v0.4.0
     hooks:
       - id: crapkit-gate
 ```
 
-`rev` is a git ref pre-commit resolves against that remote, and the repo carries no tags
-yet, so pin a commit sha. The first release will ship a `v0.1.0` tag; pin that instead
-once it exists, since `pre-commit autoupdate` only moves between tags.
+`rev` is a git ref pre-commit resolves against that remote. Pin a release tag, not a
+branch: `pre-commit autoupdate` only moves between tags, and a moving `main` would change
+your gate under you.
 
 ### Route 4: CI
 
@@ -216,7 +217,7 @@ exits 1. Running `coverage` first would make the PR's own tree the baseline, a g
 can never fail. The portable baseline is the mechanism:
 
 ```
-# on the default branch, after a passing verify — commit this file
+# on the default branch, after a passing verify: commit this file
 crapkit verify --emit-baseline crapkit-baseline.tsv
 
 # in the PR job, against the committed baseline

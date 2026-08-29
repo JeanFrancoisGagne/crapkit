@@ -30,9 +30,10 @@ python -m pytest tests/e2e      # 481 tests, ~6m
 ```
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
-`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else. The suite runs serially, so
-no `-n 0` is needed to isolate a failure. With pytest-randomly installed globally, add
-`-p no:randomly` to pin the order.
+`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else. This suite runs serially, so
+no `-n 0` is needed to isolate a failure. The `pytest-xdist` above is for a different
+process: the fixture lane's own inner `pytest`, not this one. With pytest-randomly
+installed globally, add `-p no:randomly` to pin the order.
 
 `tests/unit` covers pure seams. `tests/e2e` drives `python -m crapkit` against real git
 repos in tmp dirs and asserts through the CLI only. Each e2e command injects its own git
