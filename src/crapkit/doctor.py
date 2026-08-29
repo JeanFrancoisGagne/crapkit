@@ -10,7 +10,7 @@ _KNOWN = {
                 "ratchet_file", "alert_command", "scoped_tests", "notes",
                 "mutation_command", "mutation_timeout_seconds", "mutation_workers",
                 "diff_uncovered_max", "debt_max_age_months", "repayment_min_per_30d",
-                "max_parallel_lanes", "analysis_workers"},
+                "max_parallel_lanes", "analysis_workers", "tighten_max_jump"},
     "scope": {"name", "paths", "languages", "target", "coverage_optional", "notes"},
     "lane": {"name", "command", "artifact", "parser", "scopes", "cwd", "path_prefix", "env",
              "full_suite", "container_ok", "results_artifact", "timeout_seconds", "retries",

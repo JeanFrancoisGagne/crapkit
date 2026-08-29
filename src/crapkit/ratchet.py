@@ -24,6 +24,14 @@ class RatchetEntry(NamedTuple):
     crap: float
 
 
+class TightenRefusal(NamedTuple):
+    """One mark a bouncing measurement was not allowed to pull down."""
+    path: str
+    long_name: str
+    previous: float
+    fresh: float
+
+
 def stamp_text(analysis_version: int, lizard_version: str) -> str:
     """The metric identity a set of marks was measured under, as one line."""
     return f"crapkit-analysis={analysis_version} lizard={lizard_version}"
@@ -215,19 +223,60 @@ def prune_ratchet(prior: list[RatchetEntry],
     return kept, len(prior) - len(kept)
 
 
+def _jumped(previous: float, fresh: float, factor: float) -> bool:
+    """True when two measurements of one commit differ by more than `factor`.
+
+    Written as a multiplication, not a ratio: a division would have to special-case
+    a zero, and the comparison is the same one either way.
+    """
+    low, high = sorted((previous, fresh))
+    return high > low * factor
+
+
+def unstable_marks(prior: list[RatchetEntry], fresh: list[ScoredRow],
+                   previous: dict[tuple[str, str], float], *,
+                   max_jump: float) -> list[TightenRefusal]:
+    """Marks whose measurement moved too far between two runs of the SAME commit.
+
+    A tighten claims the code improved. One commit measured twice cannot have
+    improved, so a score that jumped past `max_jump` in either direction is
+    reporting the measurement's own noise: the lucky half lowers the mark and
+    the unlucky half then fails it, and the gate becomes a coin flip on an
+    unchanged tree. Only marked functions can be tightened, so only they are
+    walked; a key the earlier run never scored has nothing to disagree with.
+    """
+    from .verify import worst_twins
+
+    worst = worst_twins(fresh)
+    refusals = []
+    for entry in prior:
+        key = (entry.path, entry.long_name)
+        row, was = worst.get(key), previous.get(key)
+        if row is None or was is None or not _jumped(was, round(row.crap, 4), max_jump):
+            continue
+        refusals.append(TightenRefusal(entry.path, entry.long_name, was, round(row.crap, 4)))
+    return refusals
+
+
 def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: int,
-                   scope_targets: dict[str, int] | None = None) -> list[RatchetEntry]:
+                   scope_targets: dict[str, int] | None = None,
+                   hold: frozenset[tuple[str, str]] = frozenset()) -> list[RatchetEntry]:
+    """`hold` names keys whose mark this run may not move — `unstable_marks`
+    picks them. A held mark keeps its recorded value, drop included: leaving the
+    file is the deepest tighten there is."""
     from .verify import worst_twins
 
     fresh_by_key = worst_twins(fresh)
     updated = []
     for entry in prior:
         row = fresh_by_key.get((entry.path, entry.long_name))
-        if row is None:
-            # Absent from the scored rows is NOT proof the code is gone — an
-            # exclude glob or a lane outage also removes it, and dropping the
-            # entry would erase an audited override's only diff-visible record.
-            # Stale entries are inert (verify checks only present functions).
+        if row is None or (entry.path, entry.long_name) in hold:
+            # Two ways a mark passes through untouched. Absent from the scored
+            # rows is NOT proof the code is gone — an exclude glob or a lane
+            # outage also removes it, and dropping the entry would erase an
+            # audited override's only diff-visible record; stale entries are
+            # inert (verify checks only present functions). Held is a
+            # measurement this run cannot vouch for.
             updated.append(entry)
             continue
         if row.crap <= (scope_targets or {}).get(row.scope, target):
