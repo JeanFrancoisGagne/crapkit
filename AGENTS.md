@@ -35,7 +35,7 @@ gets dropped.
 
 `commands.refresh` is the fourth string and the only one that writes: it is a `coverage`
 run, reusing the artifacts of every lane whose scope files have not moved. That is what
-`stale: true` asks for — nothing else clears it, because nothing else lands a run on the
+`stale: true` asks for. Nothing else clears it, because nothing else lands a run on the
 current commit. `commands.refresh_writes_run: true` marks it, so a session with a
 read-only checkout can tell the one command it must not run from the three it may.
 
@@ -93,7 +93,7 @@ name or the start line instead:
 A function lizard could not name shows as `(anonymous)` in every payload, and every
 anonymous function in one file prints that same string. Its `handle` is the ordinal
 form: `(anonymous)#2` is the file's second anonymous function counting from the top,
-whatever line it sits on. Prefer it over the start line, which your own edit moves —
+whatever line it sits on. Prefer it over the start line, which your own edit moves:
 extract a helper above line 41 and `crapkit brief calc/report.py 41 --json` opens
 something else, while `"(anonymous)#2"` still opens the callback you claimed. `brief`,
 `explain` and `claims release` all take it. An ordinal past the end exits 1 and lists
@@ -215,7 +215,7 @@ This is the slow step and the only authoritative one.
 
 One verdict per run, in that order: 6 beats 7 beats 8, and 9 fires only when nothing
 else did. A run that exits non-zero never becomes a baseline and never tightens the
-ratchet, exit 9 included — and neither does any run taken after it until some verify
+ratchet, exit 9 included, and neither does any run taken after it until some verify
 passes. A `coverage` run on the refused tree would otherwise become the baseline and
 retire the finding. verify prints the run it refused and the two ways past it: fix the
 findings, or pass `--baseline ID` to accept the newer run deliberately.
@@ -236,6 +236,19 @@ so `rescore --gate` passes it, and CRAP 42 at 0% coverage still fails verify.
 
 Findings tagged `[dirty]` come from uncommitted tracked edits, and the summary line
 splits them. In a shared checkout, dirty findings may not be yours.
+
+## The advisory hook
+
+With the Claude Code plugin installed, `crapkit claude-hook` runs after every edit you
+make and writes three lines to stderr when that edit pushed a function over its ceiling:
+
+    crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)
+      ccn 9  calc/grade.py:67  curve( scores , mode , floor , ceiling , skip_none )
+    the commit gate enforces this; decompose there or mark the debt
+
+Nothing was blocked and nothing was written. Read it as the earliest warning that step 3
+will fail, not as a rejected edit. A function the committed ratchet already marks never
+triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
 
 ## Picking an item
 
@@ -320,7 +333,7 @@ emptied the queue rather than the work being finished:
 | `no_lane_over_target` | of those, the ones over their ceiling | the same wiring gap, now blocking the stop condition: declare the lane, or set `coverage_optional` if the scope is meant to go unmeasured |
 | `no_churn_in_window` | file has no commits inside `churn_window_months` | nothing, cold code; `crapkit worklist` lists it as dormant when you want to look |
 | `excluded_by_flag` | your own `--exclude` | drop the flag to see them |
-| `skipped_claimed` (sibling of `reasons`) | items an open claim hides — possibly your own | `crapkit claims` to see them, `claims release` to hand one back |
+| `skipped_claimed` (sibling of `reasons`) | items an open claim hides, possibly your own | `crapkit claims` to see them, `claims release` to hand one back |
 
 Check termination with a bare `crapkit next-item`. Under `--exclude` or `--scope`,
 `all_remaining_at_or_under_target` describes the filtered slice only, and both it and
@@ -415,7 +428,7 @@ Nine tools:
 | `ratchet_report` | none | JSON |
 | `explain` | `path`, `name` | plain text |
 | `doctor` | none | plain text |
-| `next_item` | `top` (int), `exclude` (array of strings — one fragment per element, each becoming its own `--exclude`) | JSON text |
+| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`) | JSON text |
 
 The server is read-only. Every tool shells to a read command, so nothing it exposes
 writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`,
@@ -442,8 +455,8 @@ rejected in review.
 ## Tests
 
     python -m pytest                      # both suites
-    python -m pytest tests/unit           # 649 tests, ~6s
-    python -m pytest tests/e2e            # 329 tests, ~5m
+    python -m pytest tests/unit           # 1,719 tests, ~30s
+    python -m pytest tests/e2e            # 481 tests, ~6m
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else. The suite runs serially:
@@ -454,6 +467,52 @@ the order.
 `tests/unit` covers pure seams. `tests/e2e` drives `python -m crapkit` against real git
 repos in tmp dirs and asserts through the CLI only. Each e2e command injects its own git
 identity, so no global git config is required.
+
+## Where code goes
+
+`src/crapkit/` is the pure core: analysis, scoring, the store, git, the ratchet, the
+report renderers. One module per concern, and none of them knows about argparse.
+
+`src/crapkit/cli/` is the command layer, split into ten family modules. `cli/__init__.py`
+holds no logic. It carries `_OWNER`, a name-to-module map, and a `__getattr__` that loads
+one family the first time a name is read. Eight eager imports used to load every family on
+every invocation, which put the cost of every subcommand on `crapkit --version`.
+
+| Family | Subcommands |
+|---|---|
+| `parser.py` | `main` and the argparse tree; owns no subcommand itself |
+| `scoring.py` | `inventory`, `coverage`, `rescore` |
+| `verifying.py` | `verify`, `hook-precommit`, `test-scoped` |
+| `queue.py` | `worklist`, `next-item`, `brief`, `claims` |
+| `reports.py` | `runs`, `trend`, `digest`, `explain`, `overrides`, `report` |
+| `ratchet_cmds.py` | `ratchet` |
+| `analyses.py` | `duplication`, `coupling`, `mutate`, `mcp` |
+| `admin.py` | `init`, `doctor`, `watch` |
+| `claude_hook.py` | `claude-hook` |
+| `_shared.py` | helpers more than one family reads |
+
+Add a name to a family module and add its `_OWNER` entry in the same commit. A name with
+no entry is not re-exported, and the suite reaches dozens of these helpers by name through
+`crapkit.cli`.
+
+`claude_hook.py` carries two rules the other families do not, and both are load-bearing.
+Its module scope imports stdlib only, because every edit on the machine pays for it. And
+it never opens the snapshot store: `SnapshotStore.__init__` runs migrations, so a per-edit
+hook would rewrite the schema of whatever store it touched.
+
+Four reader modules sit beside the core, all registered in `analyze.py`'s
+`deferred_pygments()` block:
+
+| Module | What it does |
+|---|---|
+| `lizardcognitive.py` | Sonar-spec cognitive complexity as a lizard token-stream extension, so every language pays the same rules with no second parse |
+| `lizardrust.py` | counts Rust `match` arms, which lizard does not (lizard #494) |
+| `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
+| `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
+
+Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child
+imports `analyze.py`, so a reader registered anywhere later leaves spawned workers
+measuring with the readers lizard shipped and reporting plausible wrong numbers.
 
 ## Tests first
 
@@ -472,6 +531,10 @@ Every function you add or edit must sit at min-CCN 6 or below. The pre-commit ho
 Exit 6 blocks the commit. Decompose until every touched function passes. A refusal is
 design feedback, not a threshold to widen.
 
+A function the committed ratchet already carries a mark for is exempt, and the hook
+reports the count on stderr. Touching signed debt does not refuse the commit; `crapkit
+verify` is what fails a mark that rises.
+
 `CRAPKIT_OVERRIDE_REASON` is a human granting audited debt (alert, ratchet entry and
 snapshot record, all three or nothing). Leave it alone.
 
@@ -483,11 +546,16 @@ snapshot record, all three or nothing). Leave it alone.
   commit in the log, so a fixed tree reports byte-identically.
 - JSON is sorted-keys and carries no timestamps in rows.
 
-## Keep the README table in sync
+## The docs are pinned to the code
 
 `tests/unit/test_cli_docs_contract.py` diffs README's `## Subcommands` table against the
 argparse parser in both directions. Add, rename or drop a subcommand and you update that
 table in the same commit, or the suite fails.
+
+`test_docs_claims_contract.py` and `test_handle_docs_contract.py` go further: a transcript
+quoted in the docs is compared against the string the code emits, and a documented field
+name against the payload that carries it. Reword a message and the page that quotes it
+fails, not a reader.
 
 ## crapkit scores itself
 
