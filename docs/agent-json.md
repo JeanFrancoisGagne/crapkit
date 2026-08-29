@@ -384,7 +384,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `notes` | array of string | no | The `notes` lines the config carries, repo-wide first then this scope's. Empty when the config declares none. See [configuration.md](configuration.md#crapkit). |
 | `attempts` | int | no | How many claims have already been opened on this function. `0` is a first attempt; above `0`, someone took it and stopped. |
 | `regrowth` | object | no | `{regrown, history}`. Below. |
-| `ratchet_mark` | float | **yes** | `null` when the function carries no mark, and also when the repo has no ratchet file at all. |
+| `ratchet_mark` | float | **yes** | `null` when the function carries no mark, and also when the repo has no ratchet file at all. Read under the function's own ratchet key, so twins sharing a long name report their own marks and not each other's. |
 | `churn` | object | **yes** | `{commits, authors, weight}`, or `null` when the file has no commits in the window. |
 | `coupling` | array | no | Up to 5 partners, each `{path, support, confidence, is_test}`. Empty when nothing clears support 5 and confidence 0.5. |
 | `duplication_twins` | array | no | Near-duplicate functions, each with `similarity` and `contained` plus its location. Empty is normal. |
@@ -437,7 +437,7 @@ current commit. Another `brief` re-reads the same snapshot and reports the same 
 
 ### Name resolution
 
-`NAME` takes four forms, all resolving to the same row:
+`NAME` takes five forms, all resolving to the same row:
 
 | Form | Example |
 |---|---|
@@ -445,6 +445,7 @@ current commit. Another `brief` re-reads the same snapshot and reports the same 
 | the bare identifier | `parse_row` |
 | the function's start line | `4` |
 | the ordinal handle | `"(anonymous)#2"` |
+| the twin selector | `"__post_init__#2"` |
 
 The bare identifier is the leading token of the long name, before the parameter list.
 Only some of lizard's readers spell that list with parentheses: Rust prints
@@ -476,12 +477,24 @@ functions share one history there: the handle picks the position, and `explain`'
 covers every anonymous function in the file.
 
 Twins sharing one long name are one candidate, not an ambiguity: the worst-scoring twin
-wins, the same rule the ratchet and the verdict use. Anything genuinely ambiguous or
-absent is exit 1 with the candidates listed:
+wins, the same rule the queue ranks on. Anything genuinely ambiguous or absent is exit 1
+with the candidates listed:
 
 ```
 crapkit: no function named 'nope' in calc/grade.py in the latest scored run — it holds: _adjusted, _band, classify, extra, summarize
 ```
+
+The twin selector picks one of them instead. `NAME#2` is the second function of that name
+in file order, `NAME#3` the third — the same ordinals the ratchet keys their marks on, so
+`ratchet_mark` in the packet belongs to the function the packet opened. An ordinal past
+the last twin is exit 1:
+
+```
+crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run — it holds 2 function(s) named '__post_init__'
+```
+
+Only a whole-number tail selects: a long name that merely contains a `#`, such as an
+Objective-C or C++ operator name, resolves as itself.
 
 ### `--batch N`
 
@@ -666,11 +679,17 @@ $ crapkit verify --json
 
 | Key | Shape | Fires exit |
 |---|---|---|
-| `gate_violations` | `{path, long_name, start, ccn, cov, crap, remedy, dirty}` | 6 |
+| `gate_violations` | `{path, long_name, start, ccn, cov, crap, remedy, dirty, key_name}` | 6 |
 | `ratchet_regressions` | `{path, long_name, recorded, fresh_crap, dirty}` | 7 |
 | `new_failures` | array of `classname::name` test ids | 8 |
 | `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
 | `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
+
+`key_name` on a gate violation is the ratchet key: the `long_name` when one function in
+the file holds that name, and `long_name#2` for the second function holding it. It is the
+string to look up in `crapkit-ratchet.tsv`, and `long_name` alone is not, whenever a file
+gives one name to several functions. `ratchet_regressions` carries the key in `long_name`
+already, because the entry it reports comes from the marks file.
 
 **`diff_uncovered` truncates at 50 entries; `diff_uncovered_count` does not.** Above 50 the
 two disagree on purpose. Trust the count.

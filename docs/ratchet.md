@@ -26,12 +26,50 @@ calc/report.py	render( rows , wide , totals , header )	56.0000
 ```
 
 A comment line carrying the metric stamp, a header, then one tab-separated row per mark:
-path, long name, CRAP to four decimals. Rows are sorted by `(path, long_name)`, so the file
-is diffable and merge conflicts are local.
+path, key name, CRAP to four decimals. Rows are sorted by that pair, so the file is
+diffable and merge conflicts are local.
 
-Identity is `(path, long_name)`, never the line number. Spans drift on every edit; names
-survive. When one long name appears at two spans (anonymous twins), the **worst** twin
-represents the key, so a regression cannot hide behind a clean sibling.
+Identity is `(path, key name)`, never the line number. Spans drift on every edit; names
+survive.
+
+---
+
+## Twins: one name, several functions
+
+A file can give one name to more than one function. Python does it whenever a module holds
+several dataclasses with a `__post_init__`, because a method's long name carries no class.
+C does it whenever a platform shim forks on `#ifdef`, because both arms are textually
+present. Neither is exotic; one repo reported three collisions.
+
+**Each twin gets its own key.** The first keeps the bare name; the second is `name#2`, the
+third `name#3`, counted in file order:
+
+```
+calc/iso_cost.py	__post_init__( self )	66.0714
+calc/iso_cost.py	__post_init__( self )#2	30.0000
+```
+
+The ordinal, not the start line, because a line is invalidated by any edit above it and
+would re-key marks nothing touched. Delete one twin and the rest renumber, which is honest:
+they really are different functions now, and `prune` drops the key that no longer names one.
+
+**Adopting it needs no migration.** Before the ordinal, all of a file's twins shared
+`(path, long_name)`. One of them owned the key and the rest were neither marked nor gated,
+so any of them could grow past every ceiling with no gate firing. Because twin #1 keeps the
+bare name, **every mark in an existing `crapkit-ratchet.tsv` already reads as twin #1** —
+there is nothing to rewrite. Run `crapkit ratchet seed` when you want the other twins'
+standing debt recorded too; it adds their marks and touches nothing else.
+
+`analyze` prints one line per file naming the colliding names, so a `#2` in a marks diff
+has an explanation:
+
+```
+crapkit: calc/iso_cost.py defines __post_init__( self ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+```
+
+To address one twin by hand, `brief` and `explain` take the same suffix:
+`crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves — to the
+worst twin, the one the queue ranks.
 
 ---
 
@@ -41,7 +79,7 @@ New in 0.4.0, and it decides which commits get refused. Read it before you seed 
 
 `hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
 a ccn and no CRAP, and there is nothing to compare a mark against. The hook asks the one
-question it can answer: does a `(path, long_name)` mark exist? If it does, that function is
+question it can answer: does a `(path, key name)` mark exist? If it does, that function is
 not gated, whatever the edit did to it. One stderr line reports the count, never a list:
 
 ```
@@ -155,7 +193,7 @@ the store's first run and re-paths any mark that meets all three conditions:
 
 1. The function is gone from its recorded path.
 2. git calls that path renamed.
-3. The same `long_name` exists at the destination.
+3. The same key name exists at the destination.
 
 A *copy* fails condition 1 (the source survives), so a copy never moves a mark. Before and
 after `git mv calc/grade.py calc/grading.py`:

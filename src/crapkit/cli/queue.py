@@ -13,6 +13,7 @@ from .. import packet
 from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit
+from ..keys import key_names, key_of, split_ordinal
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import admission, build_worklist, sql_floor
@@ -443,31 +444,50 @@ def _no_handle_message(path: str, name: str, rows: list) -> str:
 
 
 def _pick_function(path: str, rows: list, name: str):
-    """The one row `name` names, or an error listing what the file does hold.
-
-    Twins (one long_name at two spans) are ONE candidate, not an ambiguity: the
-    worst-scoring twin is what a burn-down item means, the same rule the ratchet
-    and the verdict use. The -start term keeps verify.worst_twins' tie-break —
-    equal-scoring twins resolve to the one that appears first in the file.
-    """
+    """The one row `name` names, or an error listing what the file does hold."""
     at_line = _row_at_line(path, rows, name)
     if at_line is not None:
         return at_line
     by_handle = _row_by_handle(path, rows, name)
     if by_handle is not None:
         return by_handle
-    matched = _matching_rows(rows, name)
+    wanted, ordinal = split_ordinal(name)
+    matched = _matching_rows(rows, wanted)
     candidates = sorted({r.long_name for r in matched})
     if len(candidates) != 1:
         raise CrapkitError(_no_match_message(path, name, rows, candidates))
-    return max(matched, key=lambda r: (r.crap, -r.start))
+    return _one_of(path, matched, name, wanted, ordinal)
 
 
-def _brief_mark(entries: list | None, row) -> float | None:
+def _one_of(path: str, matched: list, name: str, wanted: str, ordinal: int):
+    """Which of the same-named rows NAME meant.
+
+    A bare name means the burn-down item, and that is the worst twin — the rule
+    the ratchet, the verdict and `next-item` all run. The -start term is the
+    tie-break: equal-scoring twins resolve to the one that appears first.
+
+    `name#2` means the second of them in file order, which is the function its
+    own ratchet key `name#2` is about. That is how a session addresses the twin
+    a bare name does not pick.
+    """
+    if wanted == name:
+        return max(matched, key=lambda r: (r.crap, -r.start))
+    ordered = sorted(matched, key=lambda r: r.start)
+    if ordinal > len(ordered):
+        raise CrapkitError(_no_twin_message(path, name, wanted, len(ordered)))
+    return ordered[ordinal - 1]
+
+
+def _no_twin_message(path: str, name: str, wanted: str, held: int) -> str:
+    return (f"no {name} in {path} in the latest scored run"
+            f" — it holds {held} function(s) named {wanted!r}")
+
+
+def _brief_mark(entries: list | None, key: tuple[str, str]) -> float | None:
     """The committed mark on this function, or None when the repo carries none."""
     from ..ratchet import mark_for
 
-    return None if entries is None else mark_for(entries, row.path, row.long_name)
+    return None if entries is None else mark_for(entries, *key)
 
 
 def _brief_churn(churn: dict, path: str) -> dict | None:
@@ -505,6 +525,7 @@ class _BriefLoader:
         self.latest = latest
         self._whole_repo: dict = {}
         self._scored_files: dict = {}
+        self._file_keys: dict = {}
         self._attempts: dict = {}
 
     def _once(self, key: str, build):
@@ -555,9 +576,20 @@ class _BriefLoader:
             self._scored_files[path] = self.store.read_scored_file(self.latest["id"], path)
         return self._scored_files[path]
 
+    def key(self, row) -> tuple[str, str]:
+        """The row's ratchet key, counted over the whole file it lives in.
+
+        Cached per path beside the rows it is built from: a batch of packets
+        about one file would otherwise recount its ordinals per packet.
+        """
+        if row.path not in self._file_keys:
+            self._file_keys[row.path] = key_names(self.scored_file(row.path))
+        return key_of(self._file_keys[row.path], row)
+
     def mark(self, row) -> float | None:
         return _brief_mark(self._once("marks",
-                                      lambda: _ratchet_entries(self.root, self.cfg)), row)
+                                      lambda: _ratchet_entries(self.root, self.cfg)),
+                           self.key(row))
 
     def mark_age(self, row, mark: float | None) -> int | None:
         """How long the mark has stood. No mark, no history read: reading the
@@ -565,7 +597,7 @@ class _BriefLoader:
         if mark is None:
             return None
         return packet.mark_age_days(self._once("mark_events", self._read_mark_events),
-                                    (row.path, row.long_name))
+                                    self.key(row))
 
     def _read_mark_events(self) -> list:
         from ..gitio import file_log_patches

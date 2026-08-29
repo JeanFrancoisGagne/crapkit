@@ -133,9 +133,10 @@ a mapping.
 Two more things before you point a scope at C code:
 
 - Both arms of an `#ifdef` fork are textually present, so a platform shim defines the same
-  function twice in one file. A ratchet mark is keyed on `(path, long_name)`, so only the
-  last arm is marked and gated. `analyze` prints one stderr line naming any file this
-  happens in.
+  function twice in one file. Each arm takes its own ratchet key — the first as written,
+  later ones suffixed `#2`, `#3` in file order — so both are marked and both are gated.
+  `analyze` prints one stderr line naming any file this happens in. See
+  [Twins](ratchet.md#twins-one-name-several-functions).
 - A `&&` before a function's opening brace declares an rvalue reference, not a decision, and
   costs no cognitive complexity. The rule covers `objectivec` too, because `.mm` is
   Objective-C++ and carries C++ move semantics. A `&&` inside a default argument is the one

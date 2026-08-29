@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 from .errors import ConfigError, ToolError
+from .keys import stated_key
 from .ratchet import RatchetEntry, dump_ratchet, load_ratchet
 from .store import SnapshotStore
 from .verify import GateViolation
@@ -69,13 +70,14 @@ def _grant_ratchet_debt(ratchet_path: Path, violations: list[GateViolation], *,
     """The functional exemption: the debt enters the committed ratchet, diff-visible."""
     by_key = _marks_by_key(ratchet_path)
     for v in violations:
-        mark = _override_mark(by_key.get((v.path, v.long_name)), v.crap, raise_marks=raise_marks)
-        by_key[(v.path, v.long_name)] = RatchetEntry(v.path, v.long_name, round(mark, 4))
+        key = stated_key(v)
+        mark = _override_mark(by_key.get(key), v.crap, raise_marks=raise_marks)
+        by_key[key] = RatchetEntry(key[0], key[1], round(mark, 4))
     ratchet_path.write_text(dump_ratchet(list(by_key.values())), encoding="utf-8", newline="\n")
 
 
 def _marks_by_key(ratchet_path: Path) -> dict[tuple[str, str], RatchetEntry]:
-    """Prior marks by (path, long_name); an absent ratchet file is simply no marks."""
+    """Prior marks by (path, key name); an absent ratchet file is simply no marks."""
     existing = load_ratchet(ratchet_path.read_text(encoding="utf-8")) if ratchet_path.is_file() else []
     return {(e.path, e.long_name): e for e in existing}
 

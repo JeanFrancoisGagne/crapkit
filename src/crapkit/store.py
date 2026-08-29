@@ -25,6 +25,7 @@ from itertools import takewhile
 from pathlib import Path
 from typing import NamedTuple
 
+from .keys import split_ordinal
 from .packet import bare_name, handle_ordinal, matching_names
 from .snapshot import InventoryRow
 
@@ -862,11 +863,15 @@ class SnapshotStore:
         `(anonymous)#N` is resolved by position instead: an anonymous function
         carries no text to match, and the fragment would otherwise hunt for a
         `#` no long_name has.
+
+        A named `f#2` is the twin selector, so the `#2` comes off before the
+        match: no long_name carries it, and the caller re-attaches it to reach
+        that twin's ratchet key.
         """
         ordinal = handle_ordinal(name_fragment)
         if ordinal is not None:
             return self._nth_anonymous(path, ordinal)
-        return matching_names(self._long_names(path), name_fragment)
+        return matching_names(self._long_names(path), split_ordinal(name_fragment)[0])
 
     def _long_names(self, path: str) -> list[str]:
         """Every distinct long_name a surviving run scored in this path.

@@ -160,6 +160,7 @@ _OWNER = {
     "_no_line_message": "queue",
     "_no_match_message": "queue",
     "_no_scopes_reason": "admin",
+    "_no_twin_message": "queue",
     "_note_marked_staged": "verifying",
     "_note_stale_staged": "verifying",
     "_open_store": "_shared",

@@ -537,7 +537,8 @@ def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
     store = SnapshotStore(db_path)
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
-    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0, float(v.ccn * v.ccn + v.ccn), "decompose")
+    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
+                          float(v.ccn * v.ccn + v.ccn), "decompose", False, v.key_name)
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
@@ -568,10 +569,12 @@ def _split_marked(violations: list, entries: list) -> tuple[list, list]:
     commit. `verify` keeps the numeric check and is what catches a mark that
     actually rose.
     """
+    from ..keys import stated_key
+
     marked = {(e.path, e.long_name) for e in entries}
     gated, exempt = [], []
     for v in violations:
-        (exempt if (v.path, v.long_name) in marked else gated).append(v)
+        (exempt if stated_key(v) in marked else gated).append(v)
     return gated, exempt
 
 

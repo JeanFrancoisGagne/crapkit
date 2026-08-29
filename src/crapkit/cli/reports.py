@@ -318,6 +318,10 @@ class _ExplainCtx(NamedTuple):
     uncovered: MissingLines
     ratchet: list | None
     contexts: dict
+    # The twin NAME selected: 1 for a bare name, 2 for `f#2`. It is the ordinal
+    # in the ratchet key, and `(anonymous)#2` reads the same way — that handle
+    # and that twin's key are the same string.
+    ordinal: int = 1
 
 
 def cmd_explain(args: argparse.Namespace) -> int:
@@ -338,19 +342,24 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 
 def _explain_ctx(root: Path, cfg, store: SnapshotStore, args) -> _ExplainCtx:
+    from ..keys import split_ordinal
+
     runs = [r for r in store.list_runs() if r["kind"] != "hook"]
     return _ExplainCtx(root, args.path, runs[-1]["id"] if runs else None,
                        load_uncovered(root, cfg), _ratchet_entries(root, cfg),
-                       _contexts_for_path(root, cfg, args.path) if args.tests else {})
+                       _contexts_for_path(root, cfg, args.path) if args.tests else {},
+                       split_ordinal(args.name)[1])
 
 
 def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: str) -> dict:
     """One function's whole packet. The span is looked up once and passed down:
     dark lines, --history and --tests all want the same line range."""
+    from ..keys import key_name
+
     span = _latest_span(store, ctx.run_id, ctx.path, long_name)
     out = {"long_name": long_name,
            "history": store.function_history(ctx.path, long_name),
-           **_mark_fields(ctx.ratchet, ctx.path, long_name),
+           **_mark_fields(ctx.ratchet, ctx.path, key_name(long_name, ctx.ordinal)),
            **_dark_fields(ctx.uncovered, ctx.path, span)}
     if args.history:
         out.update(_commits_fields(ctx.root, ctx.path, span))
@@ -384,7 +393,11 @@ def _latest_span(store: SnapshotStore, run_id: int | None, path: str, long_name:
 
 def _mark_fields(ratchet: list | None, path: str, long_name: str) -> dict:
     """null and a note when the repo carries no marks file: an unmarked function
-    and a repo with no ratchet both read as null, and they want different moves."""
+    and a repo with no ratchet both read as null, and they want different moves.
+
+    `long_name` arrives as the KEY name, so `explain path f#2` reads the second
+    twin's mark and a bare `f` reads the first's.
+    """
     from ..ratchet import mark_for
 
     if ratchet is None:
