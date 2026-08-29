@@ -1,13 +1,33 @@
 ---
 name: crapkit-recover
-description: "Recover a crapkit run that refused: which exit code means what, the four causes behind \"produced no artifact\", the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 5/6/7/8/9, a lane reports \"produced no artifact\", a ratchet regression names a function you never touched, verify reports a tainted baseline, or git conflicts crapkit-ratchet.tsv."
+description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the four causes behind \"produced no artifact\", the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 5/6/7/8/9, a lane reports \"produced no artifact\", a ratchet regression names a function you never touched, verify reports a tainted baseline, git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
 ---
 
 # Recovering a refused run
 
-Route by the string the command printed. Every row links the page that owns the failure and
-names the one command to run before deciding anything. The links point into the crapkit
-repo on GitHub, so they resolve from whatever repo this session is working in.
+Route by the string the command printed. Every row names the one command to run before you
+decide anything. The links point at the crapkit repo on GitHub, because the repo this
+session works in does not hold those pages.
+
+## Lines that are not failures
+
+Start here. Each of these reads like a refusal and none of them stopped anything.
+
+| What printed | What it means | What to do |
+|---|---|---|
+| "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
+| "crapkit gate: N staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
+| "crapkit doctor: the plugin at PATH is version X, this crapkit is Y", exit 1 | The plugin and the CLI ship as separate artifacts and drifted apart | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
+
+Two more lines come out of `crapkit doctor --plugin-root`, same exit 1.
+"crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
+the CLI, so the advisory hook exits 0 in silence on every edit.
+"crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
+a plugin root. `crapkit claude-hook` and `crapkit doctor --plugin-root` are both specified in
+[README: subcommands](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands).
+
+Exit 2 from any other crapkit command is argparse: the subcommand or the flag does not exist
+in this version.
 
 ## By exit code
 
@@ -16,7 +36,7 @@ repo on GitHub, so they resolve from whatever repo this session is working in.
 | 3 | config: `crapkit.toml` unparseable, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
 | 5 | a lane produced no artifact, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
-| 6 | gate: a function the diff touched is over its ceiling | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
+| 6 | gate: a function the diff touched is over its ceiling and carries no ratchet mark | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit verify --json` |
@@ -38,8 +58,8 @@ quotes its tail.
 | The report landed somewhere the lane does not name | the suite passed and `artifact` still points at nothing | [docs: where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live) |
 | Killed or refused before it could write | `timed out after Ns (attempt N)`, or `host-only (container runs OOM)` | [docs: timeouts and retries](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#timeouts-and-retries) |
 
-This is tooling, not your code. The run still happened: the failed lane's scopes fall back
-to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all.
+This is tooling, not your code. The run still happened: the failed lane's scopes fall back to
+`no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all.
 
 ## Exit 7 on a function you never touched
 
@@ -50,8 +70,8 @@ stopped exercising it, and restore the coverage rather than the code.
 
 ## Tainted baseline
 
-`run N is not the baseline: verify run M FAILED with K finding(s)` means the newest run
-never cleared its findings, so an older one is being measured against. Two escapes, both
+`run N is not the baseline: verify run M FAILED with K finding(s)` means the newest run never
+cleared its findings, so an older one is being measured against. Two escapes, both
 legitimate:
 
 - Fix the findings the older baseline still shows, then rerun `crapkit verify`.
@@ -63,9 +83,9 @@ Owner: [README: the trusted baseline](https://github.com/JeanFrancoisGagne/crapk
 ## A conflicted crapkit-ratchet.tsv
 
 The `resolving-merge-conflicts` skill's always-resolve rule does not apply to this file. Do
-not resolve it by hand and do not take one side: hand-resolution is exactly where a mark
-gets raised, which the ratchet exists to forbid. `crapkit ratchet merge` is the resolver,
-and per key it takes the side that changed, or the lower value when both did.
+not resolve it by hand and do not take one side: hand-resolution is exactly where a mark gets
+raised, which the ratchet exists to forbid. `crapkit ratchet merge` is the resolver, and per
+key it takes the side that changed, or the lower value when both did.
 
 A conflict here means the merge driver is not installed in this clone. Install it, then redo
 the merge:

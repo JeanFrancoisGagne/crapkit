@@ -200,7 +200,7 @@ An empty queue must say what was filtered, or the silence reads as done.
 `reasons.no_lane_over_target` 0-or-absent.** `empty` alone says the queue has nothing to
 hand out, which two things cause without the work being done: a claim hides a row from
 every session, and a scope no lane measures can hold debt that never ranks. The
-`worklist_floor` is not one of them — it withheld no over-target row on its way here,
+`worklist_floor` is not one of them. It withheld no over-target row on its way here,
 whatever that row's ccn. Do not loop on "is there an item" either, because a function at
 ccn 6 with 100% coverage clears the `ccn >= 5` floor forever and would be handed back
 every time. The rule is stated once, with the moves, in
@@ -227,6 +227,8 @@ and `crapkit claims release` closes one by hand.
 ---
 
 ## `claims`
+
+Who is holding what. A fleet reads this to see why the queue handed back nothing.
 
 ```
 $ crapkit claims --json
@@ -417,8 +419,7 @@ scope routing, and a retyped `refresh` loses `--reuse-unchanged` and reruns ever
 
 `refresh` is what `stale: true` asks for, and the only thing that answers it. `stale`
 compares the run's commit against HEAD, so nothing clears it but a run landing on the
-current commit — another `brief` re-reads the same snapshot and reports the same
-staleness.
+current commit. Another `brief` re-reads the same snapshot and reports the same staleness.
 
 ### `regrowth`: did this get fixed before?
 
@@ -449,9 +450,9 @@ The start line is the disambiguator: it settles a bare name two functions share.
 
 The ordinal handle names a function with no name of its own, which every payload prints
 as `(anonymous)`. `N` counts the file's anonymous functions from the top, so
-`(anonymous)#2` is the second one wherever it has drifted to — which is why it, and not
-the start line, is what `handle` carries. An ordinal past the end is exit 1 listing the
-handles the file does hold:
+`(anonymous)#2` is the second one wherever it has drifted to. That is why `handle` carries
+it and not the start line. An ordinal past the end is exit 1 listing the handles the file
+does hold:
 
 ```
 crapkit: no (anonymous)#5 in app/parse_csv.py in the latest scored run — it holds: (anonymous)#1, (anonymous)#2
@@ -505,6 +506,9 @@ that keeps their diffs mergeable.
 
 ## `worklist`
 
+The risk map: every admitted function ranked by complexity times churn. It lists rows the
+queue will never hand out, so it never empties and carries no stop condition.
+
 ```
 $ crapkit worklist --json
 ```
@@ -549,9 +553,9 @@ $ crapkit worklist --json
 
 Each entry carries `scope`, `path`, `function`, `start`, `end`, `ccn`, `ccn_std`, `nloc`,
 `commits`, `authors`, `weight`, `risk`, plus `flag` and `remedy` from the run that scored
-it — both `null` on an inventory-only run, which scored no verdict. It has no `cov` or
-`crap`: `worklist` ranks on complexity times churn. Use `next-item` or `brief` when you
-need the scored numbers.
+it. Those last two are `null` on an inventory-only run, which scored no verdict. There is no
+`cov` and no `crap`: `worklist` ranks on complexity times churn. Use `next-item` or `brief`
+when you need the scored numbers.
 
 `floor` orders the list and withholds no debt. A function the ranked run scored over its
 ceiling is listed whatever its ccn. An inventory-only run has no such verdict to read, and
@@ -686,6 +690,9 @@ reasonably look at `committed_findings` alone.
 
 ## `coverage`
 
+The run summary: corpus size, the four flags counted, the grade, and provenance for every
+lane that spoke.
+
 ```
 $ crapkit coverage --json
 ```
@@ -784,9 +791,31 @@ output only. They are neither problems nor warnings.
 `doctor --tune` is a different command shape: it prints TOML lines, not JSON, and it
 respects neither `--json` nor `--show-files`.
 
+### `doctor --plugin-root PATH`
+
+The plugin and the CLI ship as two artifacts with one version number between them, and
+neither notices when they drift. This is the check, and it reads no repo at all.
+
+It compares the plugin's `.claude-plugin/plugin.json` version against the running crapkit,
+and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook` answers.
+One line per disagreement, silence when they agree, exit 1 when it printed anything:
+
+```
+$ crapkit doctor --plugin-root crapkit
+crapkit doctor: the plugin at crapkit is version 0.3.0, this crapkit is 0.4.0. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
+crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
+```
+
+A plugin with no manifest gets one line saying so and no protocol check: there is no version
+to compare, and the protocol line underneath would bury the fact that explains both. A plugin
+shipping no `hooks/hooks.json` registers no advisory hook, and the output says that instead.
+It prints no JSON and ignores `--json`.
+
 ---
 
 ## `ratchet report --json`
+
+How much debt is open, how much was repaid, and whether the configured policy is breached.
 
 ```json
 {
@@ -830,8 +859,70 @@ respects neither `--json` nor `--show-files`.
 | `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. |
 | `claims --json` | Above. |
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
-| `report` | No payload of its own. It writes one self-contained HTML page and prints its path, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
+| `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
 | `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. |
+
+---
+
+## `claude-hook`
+
+The one command on this page Claude Code runs for you, after every Edit or Write of a source
+file. It names functions that edit pushed over their ceiling, while the session can still act
+on it.
+
+```
+crapkit claude-hook --protocol 1
+```
+
+**In:** one Claude Code PostToolUse event, as JSON on stdin. **Out:** nothing on stdout,
+ever. Protocol 1 reserves stdout for a future JSON channel, and Claude Code parses stdout
+JSON on exit 0. There is no `--repo`: the root is the first `crapkit.toml` above the edited
+file. The plugin registers it async with a 20-second timeout, so no edit waits on it.
+
+| Exit | Means | Output |
+|---|---|---|
+| `0` | nothing to say | stdout and stderr both empty |
+| `2` | a changed function is over its ceiling | three or more lines on stderr, which reach the model |
+
+Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
+
+```
+crapkit advisory: 1 function(s) over ceiling 6 in app/m.py (the edit landed; nothing was blocked)
+  ccn 7  app/m.py:1  route( a , b , c , d )
+the commit gate enforces this; decompose there or mark the debt
+```
+
+**It is advisory, and the wording says so.** PostToolUse runs after the write, so the edit is
+already on disk and nothing can block it. `hook-precommit` stays the only enforcement point.
+The head line states that outright, because the reader is a model holding a nonzero exit
+code.
+
+It judges the functions the edit touched, not the whole file. Judging the file would fire on
+every edit in a repo with seeded debt and say nothing new. An untracked file is the one
+exception: `git diff` can see none of it, so every function in it counts.
+
+### The silence ladder
+
+Five rungs, each exiting 0 with both streams empty. Any uncaught exception does the same.
+
+| Rung | Silent when |
+|---|---|
+| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` |
+| repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config |
+| git state | mid-rebase, mid-merge or mid-cherry-pick |
+| protocol | `--protocol` is anything but `1` |
+| verdict | no scope claims the file, the source parses to no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+
+Silence is the design. PostToolUse renders every nonzero exit but 2 invisible, and 47.5% of
+the edits this was measured against land in repos with no `crapkit.toml`. A hook that fired
+there would be either useless or unbearable.
+
+The mark exemption is existence, not the numeric rule `verify` applies: the store is never
+opened, so the hook holds no CRAP to compare. Same rule as the commit gate, described in
+[ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions).
+
+An unknown `claude-*` subcommand exits 0 silently too, so a plugin newer than the installed
+CLI degrades to silence instead of an argparse usage dump on every edit.
 
 ---
 
@@ -877,7 +968,7 @@ can serve several checkouts.
 | `ratchet_report` | | JSON text |
 | `explain` | `path`, `name` | **plain text**, not JSON |
 | `doctor` | | **plain text**, not JSON |
-| `next_item` | `top` (int), `exclude` (array of strings — one fragment per element, each becoming its own `--exclude`) | JSON text |
+| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`) | JSON text |
 
 Results arrive as MCP text content. For the seven JSON tools the text is the payload; parse
 it. For `explain` and `doctor` it is the human output, which has no schema. `isError` is
