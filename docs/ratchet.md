@@ -87,7 +87,7 @@ score. It is idempotent, and it can only lower: rerunning after an improvement r
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
 `verify` still gates the diff, but the standing debt is unprotected.
 
-`ratchet seed` needs a `coverage` or `verify` run in the store:
+`ratchet seed` needs a **trusted** run in the store:
 
 ```
 $ crapkit ratchet seed            # no store at all
@@ -95,9 +95,29 @@ crapkit: no snapshot in /repo — run `crapkit coverage` first
 EXIT=1
 
 $ crapkit ratchet seed            # inventory ran, but no lanes ever did
-crapkit: no full coverage run to work from — run `crapkit coverage` first
+crapkit: no trusted full run to work from — run `crapkit coverage` first (failed verifies and hook runs never serve as baselines)
 EXIT=1
 ```
+
+### Seed and prune skip a failed verify
+
+Trusted means here what it means for `verify`: a `coverage` run, or a `verify` run whose
+verdict passed. A failed verify can carry the scores of a red tree — the failure is visible
+in the same run — so seeding from one would sign debt at values `verify` itself refuses as a
+comparison point. Both actions walk back to the newest trusted run and name what they
+stepped over:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 1 (bb83d64fc19), skipped failed verify run 2
+```
+
+The clause prints only when something was skipped, so the ordinary line is unchanged.
+
+`verify`'s pick is stricter by one rule: it also refuses a trusted run that a failed verify
+stands **in front of**, because moving the comparison point past those findings retires them
+([the trusted baseline](../README.md#the-trusted-baseline)). Seeding retires nothing, so it
+stops at the verdict.
 
 ---
 

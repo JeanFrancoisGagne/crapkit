@@ -270,6 +270,52 @@ def test_the_readme_prints_the_taint_warning_the_code_produces():
     assert f"warning: {_taint_note(pick)}" in _doc("README.md")
 
 
+def test_the_ratchet_page_prints_the_refusal_seed_raises_on_an_untrusted_store(tmp_path):
+    """docs/ratchet.md quotes the refusal a store with no trusted run produces."""
+    from crapkit.cli.ratchet_cmds import _latest_full_run
+    from crapkit.errors import CrapkitError
+    from crapkit.snapshot import InventoryRow
+    from crapkit.store import SnapshotStore
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    store.write_run(commit="a" * 40, tool_versions={},
+                    rows=[InventoryRow("src", "src/a.py", "f( )", 1, 9, 7, 5, 5, 8, 1, 2)],
+                    kind="inventory")
+    with pytest.raises(CrapkitError) as exc:
+        _latest_full_run(store)
+
+    assert f"crapkit: {exc.value}" in _doc("docs/ratchet.md")
+
+
+def test_the_ratchet_page_prints_the_skip_clause_the_seed_line_appends():
+    from crapkit.cli.ratchet_cmds import _skip_note
+
+    assert _skip_note([{"id": 2}]) in _doc("docs/ratchet.md")
+    assert _skip_note([]) == "", "the ordinary line stays as it was"
+
+
+def test_the_lanes_page_prints_the_crashed_worker_refusal_the_parser_raises():
+    """The lane transcript is a captured refusal. Reword the message and this
+    pins the page to the new text instead of leaving a line nobody reproduces."""
+    from crapkit.errors import ToolError
+    from crapkit.junitparse import suite_summary
+
+    crashed = (ROOT / "tests" / "fixtures" / "recorded"
+               / "junit_xdist_worker_crash.xml").read_text(encoding="utf-8")
+    with pytest.raises(ToolError) as exc:
+        suite_summary(crashed)
+
+    assert f"crapkit: lane 'py' FAILED: {exc.value}" in _doc("docs/lanes.md")
+
+
+def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
+    from crapkit.lanes import SUITE_DROP_FRACTION, suite_drops
+
+    assert f"**{SUITE_DROP_FRACTION:.0%}**" in _doc("docs/lanes.md")
+    (note,) = suite_drops({"py": {"tests_total": 20}}, {"py": {"tests_total": 12}})
+    assert f"crapkit: {note}" in _doc("docs/lanes.md")
+
+
 def test_the_trusted_baseline_subsection_carries_every_clause():
     section = _section(_doc("README.md"), "### The trusted baseline")
 

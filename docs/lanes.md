@@ -482,6 +482,52 @@ claiming every core.
 
 ---
 
+## A junit that says the run did not finish
+
+A `results_artifact` is read as a trust check, not only as a failure list. A report that
+admits the runner stopped early fails the lane with exit 5, exactly the way a missing
+coverage artifact does:
+
+```
+$ crapkit coverage
+crapkit: lane 'py' FAILED: junit reports a run that did not finish, so its coverage measures a partial suite: worker 'gw1' crashed while running 'tests/integration/test_pipeline.py::test_bulk_extract'
+EXIT=5
+```
+
+Two signatures are refused:
+
+| In the junit | What it means |
+|---|---|
+| an `<error>` naming `worker 'gwN' crashed while running '<nodeid>'` | pytest-xdist lost a worker mid-run |
+| an `<error>` outside every `<testcase>` | the runner errored the session itself |
+
+pytest-xdist 3.8 does not reschedule a crashed worker's queue. On a 15,300-test lane one dead
+worker left 4,626 tests unexecuted; coverage.py still wrote its JSON at session end, so the
+lane read as a complete suite and a quarter of the scope scored `cov 0`. The untested count,
+the CRAP load and the ratchet were all wrong, and the run was written as a coverage baseline.
+
+Now the lane fails, its scopes fall back to `no-lane`, and the run is typed `partial`, which
+no baseline reader will take. `verify` refuses to conclude at all.
+
+A clean junit changes nothing, and an ordinary errored test is still just a failed test.
+
+### The test count is the second check
+
+A runner killed from outside — an OOM, a signal — writes no crash into its report at all, and
+then the count is the only signature left. `coverage` compares each lane's junit total
+against the last trusted run's and warns past a **10%** drop:
+
+```
+$ crapkit coverage
+crapkit: lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 — check the runner's log for a worker that died without reporting it
+run 2 @ df858be0149: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 2.0, grade A+
+```
+
+A warning, never a failure: deleting a test file is a legitimate way to get there. `verify`
+reports **any** shrink against its own baseline, which is the strict half of the same check.
+
+---
+
 ## What a failed lane does to scoring
 
 A lane failure is recorded, not fatal. The run still happens:
