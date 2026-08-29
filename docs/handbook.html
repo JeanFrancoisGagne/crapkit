@@ -330,7 +330,7 @@
 
 <h3>Three quirks worth knowing before you read a number</h3>
 <ul>
-  <li><strong>C and C++ share one label</strong>, <code>cpp</code>, C included: lizard resolves all six suffixes to one reader, and <code>.h</code> is the header both dialects share. A <code>&amp;&amp;</code> before the opening brace declares an rvalue reference rather than deciding anything, and costs no cognitive complexity; the same rule covers <code>objectivec</code>, since <code>.mm</code> is Objective-C++. Both arms of an <code>#ifdef</code> fork are textually present, so a platform shim defines one function twice in one file. A ratchet mark keys on <code>(path, long_name)</code> and keeps the last, and crapkit prints one stderr line naming any file that happens in.</li>
+  <li><strong>C and C++ share one label</strong>, <code>cpp</code>, C included: lizard resolves all six suffixes to one reader, and <code>.h</code> is the header both dialects share. A <code>&amp;&amp;</code> before the opening brace declares an rvalue reference rather than deciding anything, and costs no cognitive complexity; the same rule covers <code>objectivec</code>, since <code>.mm</code> is Objective-C++. Both arms of an <code>#ifdef</code> fork are textually present, so a platform shim defines one function twice in one file. Each arm takes its own ratchet key, the first as written and later ones suffixed <code>#2</code>, <code>#3</code> in file order, so both are marked and both are gated; crapkit prints one stderr line naming any file that happens in.</li>
   <li><strong>Vue scores the <code>&lt;script&gt;</code> block.</strong> Template directives (<code>v-if</code>, <code>v-for</code>) are HTML attributes to lizard and contribute nothing, so a component that branches in its template reports only what its methods do.</li>
   <li><strong>Zig counts a <code>switch</code>'s <code>else</code> prong</strong> as one more case, so a Zig switch reads one point above its hand count. Inflation only. It can cost a refactor that was not needed; it never hides one that was.</li>
 </ul>
@@ -531,6 +531,8 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 
 <p>A mark does three jobs at once. It pardons the commit gate (<a href="#twogates">§06</a>), it silences the per-edit advisory, and it sets the high-water line <code>verify</code> refuses to let rise. Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
 
+<p><strong>Tightening is damped, because a tighten claims the code improved and one commit measured twice cannot have.</strong> Some suites measure the same bytes two ways: a coverage attribution that races a subprocess reported one function at CRAP 20.0 on one run of a commit and 72.0 on the next. Tighten on the lucky half of that and the unlucky half fails the mark, so the gate becomes a coin flip on an unchanged tree and the marks file churns 20 to 72 and back in commits. So <code>verify</code> compares each marked function against the same commit's previous <em>trusted</em> run — the same word <code>ratchet seed</code> uses, so a failed verify and a partial run are invisible to both — and holds any mark whose score moved by more than <code>tighten_max_jump</code> (default 2x), naming the function and both values on stderr. Real work moves a score by less than a measurement race does, so a stable improvement still tightens in full; <code>verify --no-tighten</code> holds the whole file when you want the verdict without the rewrite.</p>
+
 <!-- ============================ 09 BASELINE ============================ -->
 <h2 id="baseline"><span class="sn">09</span>The trusted baseline</h2>
 <p class="lede">Every verdict compares against one earlier run. Which one is a rule, not a guess.</p>
@@ -669,7 +671,7 @@ scopes   = ["src"]</code></pre>
 
 <ul>
   <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
-  <li><strong>Four name forms:</strong> the long name the worklist prints, the bare name, the start line, or the ordinal handle <code>(anonymous)#N</code>, meaning the Nth anonymous function in the file by start order. That last one survives edits shifting lines above it, and <code>claims</code> accepts the same forms. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>.</li>
+  <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>.</li>
   <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
 </ul>
 
@@ -735,6 +737,11 @@ crapkit init        # sniffs tracked source into scopes, writes live lanes it ca
 crapkit doctor      # config against reality: unknown keys, unclaimed files, dead lane commands
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
 <p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). Plain <code>pip install crapkit</code> works once the PyPI release lands. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+
+<h3>Upgrading on Windows</h3>
+<p><code>uv tool upgrade crapkit</code>, and <code>pip install -U</code> into a tool venv, fail with <code>os error 32</code> ("The process cannot access the file because it is being used by another process") while a crapkit MCP server is live: an agent session spawns <code>crapkit.exe mcp</code>, which holds the launcher, and Windows will not overwrite a running executable. The venv upgrades before that copy fails, so <code>crapkit --version</code> already reports the new version and the launcher is the only stale piece. Quit the agent session and rerun the upgrade, or rename the locked exe aside (Windows allows renaming a running one) and copy the new one in; the <code>.old</code> file goes at the next reboot.</p>
+<pre><code>mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
+cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe</code></pre>
 
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit

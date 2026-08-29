@@ -21,7 +21,7 @@ Four tables hold them: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
 
 ```
 $ crapkit doctor
-FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, worklist_floor, worklist_top
+FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, tighten_max_jump, worklist_floor, worklist_top
 doctor: 1 problem(s)
 ```
 
@@ -51,6 +51,7 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 | `repayment_min_per_30d` | int >= 0 | absent | `ratchet report --enforce` flags a burn-down that repaid fewer marks than this in the last 30 days while debt is open. |
 | `max_parallel_lanes` | int >= 1 | `1` | Lanes running at once. `1` is strictly serial. See [lanes.md](lanes.md#running-lanes-in-parallel). |
 | `analysis_workers` | int >= 0 | `0` | The lizard process pool size. `0` means one worker per core. Set it when the analysis pass runs beside something else. |
+| `tighten_max_jump` | number >= 1 | `2.0` | How far a function's CRAP may move between two runs of the **same commit** and still tighten its mark. Past this factor, `verify` holds the mark and prints one `NO TIGHTEN` line on stderr naming the function and both values. One commit measured twice cannot have improved, so a jump that size is the measurement talking, not the code. See [ratchet.md](ratchet.md#damping-a-measurement-that-bounces). |
 
 ### The debt policy
 
@@ -133,9 +134,10 @@ a mapping.
 Two more things before you point a scope at C code:
 
 - Both arms of an `#ifdef` fork are textually present, so a platform shim defines the same
-  function twice in one file. A ratchet mark is keyed on `(path, long_name)`, so only the
-  last arm is marked and gated. `analyze` prints one stderr line naming any file this
-  happens in.
+  function twice in one file. Each arm takes its own ratchet key — the first as written,
+  later ones suffixed `#2`, `#3` in file order — so both are marked and both are gated.
+  `analyze` prints one stderr line naming any file this happens in. See
+  [Twins](ratchet.md#twins-one-name-several-functions).
 - A `&&` before a function's opening brace declares an rvalue reference, not a decision, and
   costs no cognitive complexity. The rule covers `objectivec` too, because `.mm` is
   Objective-C++ and carries C++ move semantics. A `&&` inside a default argument is the one
@@ -205,9 +207,9 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 | `cwd` | string | no | repo root | Repo-relative working directory for the command. `doctor` fails when it does not exist. |
 | `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. |
 | `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory. |
-| `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. Set it false deliberately for a genuinely scoped suite. |
+| `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass). Set it false deliberately for a genuinely scoped suite. |
 | `container_ok` | bool | no | `false` | Lets a `coveragepy` lane run inside a container. Without it such a lane refuses with exit 5 whenever `/.dockerenv` exists or `CRAPKIT_INSIDE_CONTAINER=1`. |
-| `results_artifact` | string | no | `""` | A JUnit XML report, under `.crapkit/cov/` for the same reason as `artifact`. It feeds the no-new-failures check (exit 8) and the suite-shrink warning. Declared but missing is exit 5, so the check can never pass vacuously. |
+| `results_artifact` | string | no | `""` | A JUnit XML report, under `.crapkit/cov/` for the same reason as `artifact`. It feeds the no-new-failures check (exit 8) and the suite-shrink warning. Declared but missing is exit 5, so the check can never pass vacuously, and so is a report saying the run never finished — [a crashed xdist worker or a session error](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | `timeout_seconds` | int >= 0 | no | `0` | crapkit kills the command past this. `0` means no crapkit-owned timeout. |
 | `retries` | int >= 0 | no | `0` | Reruns after a timeout or a missing artifact. Each attempt appends to the lane log under an `--- attempt N ---` header. |
 | `retest_command` | string | no | `""` | Rerun template for newly failed tests, before exit 8 is decided. See [lanes.md](lanes.md#flake-retest). |

@@ -25,6 +25,7 @@ from itertools import takewhile
 from pathlib import Path
 from typing import NamedTuple
 
+from .keys import split_ordinal
 from .packet import bare_name, handle_ordinal, matching_names
 from .snapshot import InventoryRow
 
@@ -836,6 +837,25 @@ class SnapshotStore:
             cur = self._conn.execute("DELETE FROM attempts WHERE created_at < ?", (floor,))
         return cur.rowcount
 
+    def prior_scored_run(self, *, commit: str, before: int) -> int | None:
+        """The newest earlier TRUSTED run of one commit, for the tighten damping.
+
+        `trusted_runs` and nothing else, which is the list `ratchet seed` picks
+        its baseline out of: one question about run history deserves one answer.
+        It drops hook runs (no rows) and inventory runs (no CRAP) the way the
+        "scored something" row test used to, and it also drops the two the row
+        test admitted — a FAILED verify, whose scores can come off a red tree,
+        and a `partial` run, whose coverage is a fraction of the suite's and
+        whose CRAP is inflated to match. Damping a mark against either freezes
+        it at a number no other reader will accept.
+
+        An empty answer reads as "nothing moved", which is exactly the licence a
+        bouncing measurement needs to tighten a mark.
+        """
+        earlier = [r for r in trusted_runs(self)
+                   if r["commit"] == commit and r["id"] < before]
+        return earlier[-1]["id"] if earlier else None
+
     def latest_run(self, *, commit: str) -> int | None:
         cur = self._conn.execute("SELECT MAX(id) FROM runs WHERE commit_sha = ?", (commit,))
         (rid,) = cur.fetchone()
@@ -862,11 +882,15 @@ class SnapshotStore:
         `(anonymous)#N` is resolved by position instead: an anonymous function
         carries no text to match, and the fragment would otherwise hunt for a
         `#` no long_name has.
+
+        A named `f#2` is the twin selector, so the `#2` comes off before the
+        match: no long_name carries it, and the caller re-attaches it to reach
+        that twin's ratchet key.
         """
         ordinal = handle_ordinal(name_fragment)
         if ordinal is not None:
             return self._nth_anonymous(path, ordinal)
-        return matching_names(self._long_names(path), name_fragment)
+        return matching_names(self._long_names(path), split_ordinal(name_fragment)[0])
 
     def _long_names(self, path: str) -> list[str]:
         """Every distinct long_name a surviving run scored in this path.

@@ -49,6 +49,58 @@ class Lane(NamedTuple):
     retest_command: str = ""  # {tests} template for the flake retry before exit 8
 
 
+# pytest options that read the NEXT token as their value. `-n 8` is eight
+# workers, not a test path, and refusing it sent two reporters (#19, #22) down a
+# dead end whose only exit was the attached form. Attached values (`-n8`,
+# `--numprocesses=8`) carry their own value and appear nowhere in this set.
+_PYTEST_VALUE_FLAGS = frozenset({
+    "-c", "-k", "-m", "-n", "-o", "-p", "-r", "-W",
+    "--basetemp", "--confcutdir", "--cov", "--cov-config", "--cov-context",
+    "--cov-report", "--deselect", "--dist", "--durations", "--ignore",
+    "--ignore-glob", "--import-mode", "--junitxml", "--log-file", "--maxfail",
+    "--numprocesses", "--rootdir", "--timeout",
+})
+
+
+def _looks_like_a_test_path(tok: str) -> bool:
+    """The shapes a pytest positional actually takes: a path or a node id."""
+    return "/" in tok or "\\" in tok or "::" in tok or tok.endswith(".py")
+
+
+def _consumes_next(flag: str, following: str) -> bool:
+    """Does `flag` read `following` as its value rather than leave it positional?"""
+    if "=" in flag:
+        return False  # --cov-report=json:x.json already holds its value
+    if flag in _PYTEST_VALUE_FLAGS:
+        return True
+    # An unknown plugin flag takes its value the same way, so a bare word after
+    # one belongs to it. A path is the one token that outranks the guess.
+    return not _looks_like_a_test_path(following)
+
+
+def _flag_value_positions(tokens: list[str]) -> set[int]:
+    """Indexes of the tokens a flag in front of them swallows."""
+    return {i + 1 for i, tok in enumerate(tokens[:-1])
+            if tok.startswith("-") and _consumes_next(tok, tokens[i + 1])}
+
+
+def _tokens_after_pytest(tokens: list[str]) -> list[str]:
+    """What pytest itself parses: everything past the `pytest` token, or nothing
+    when the word only appears inside another token (`tox -e pytest-lane`)."""
+    for i, tok in enumerate(tokens):
+        if tok.endswith("pytest"):
+            return tokens[i + 1:]
+    return []
+
+
+def _narrowing_arguments(tokens: list[str]) -> list[str]:
+    """The positionals left once flags and their values are accounted for. A
+    `key=value` token is never one: it is an ini override or an attached value."""
+    values = _flag_value_positions(tokens)
+    return [tok for i, tok in enumerate(tokens)
+            if i not in values and not tok.startswith("-") and "=" not in tok]
+
+
 def _validate_coveragepy_command(name: str, command: str) -> None:
     # Subset coverage under a suite with cross-file pollution is run-order-dependent;
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
@@ -56,15 +108,11 @@ def _validate_coveragepy_command(name: str, command: str) -> None:
     tokens = command.split()
     if "pytest" not in " ".join(tokens):
         return
-    seen_pytest = False
-    for tok in tokens:
-        if tok.endswith("pytest"):
-            seen_pytest = True
-            continue
-        if seen_pytest and not tok.startswith("-"):
-            raise ConfigError(
-                f"lane {name!r}: positional argument {tok!r} narrows a full-suite coverage run; "
-                f"drop it or set full_suite = false deliberately")
+    for tok in _narrowing_arguments(_tokens_after_pytest(tokens)):
+        raise ConfigError(
+            f"lane {name!r}: positional argument {tok!r} narrows a full-suite coverage run; "
+            f"drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
+            f"or set full_suite = false deliberately")
 
 
 def _asks_for_coverage(tokens: list[str]) -> bool:
@@ -77,10 +125,23 @@ def _first_filter_position(tokens: list[str]) -> int:
     return tokens.index("run") + 1 if "run" in tokens else 0
 
 
+# vitest options that read the NEXT token as their value. A source path after one
+# of these is that value — the config file, an exclude glob, a reporter module —
+# not a positional filter. Unlike the pytest guard this list is the whole licence:
+# a filter here has to end in a source suffix already, so guessing that an unknown
+# flag swallows one would retire the check instead of sharpening it.
+_VITEST_VALUE_FLAGS = frozenset({
+    "-c", "--config", "--dir", "--environment", "--exclude", "--outputFile",
+    "--pool", "--project", "--reporter", "--root", "--shard",
+})
+
+
 def _is_file_filter(tok: str, preceding: str) -> bool:
     if tok.startswith("-"):
         return False  # a flag (e.g. --coverage.exclude=**/*.test.ts) is never a positional filter
-    return tok.endswith(_SOURCE_SUFFIXES) and preceding != "--config"
+    if preceding in _VITEST_VALUE_FLAGS:
+        return False
+    return tok.endswith(_SOURCE_SUFFIXES)
 
 
 def _validate_istanbul_command(name: str, command: str) -> None:
@@ -145,6 +206,10 @@ class Config(NamedTuple):
     mutation_timeout_seconds: int = 300  # a mutant that loops forever counts as killed
     mutation_workers: int = 1  # >1 runs mutants in that many detached git worktrees
     diff_uncovered_max: int | None = None  # verify exit 9 past this many dead changed lines
+    # A tighten claims an improvement; one commit measured twice cannot have
+    # improved. Past this factor between two runs of the same commit, verify
+    # holds the mark instead of tightening it.
+    tighten_max_jump: float = 2.0
     debt_max_age_months: int | None = None  # ratchet report --enforce flags older marks
     repayment_min_per_30d: int | None = None  # --enforce flags a stalled burn-down
     max_parallel_lanes: int = 1  # lanes running at once; 1 = strictly serial
@@ -283,6 +348,7 @@ def _build_config(raw: dict) -> Config:
         mutation_timeout_seconds=int(main.get("mutation_timeout_seconds", 300)),
         mutation_workers=_positive_int(main, "mutation_workers", 1),
         diff_uncovered_max=_optional_int(main, "diff_uncovered_max"),
+        tighten_max_jump=_factor(main, "tighten_max_jump", 2.0),
         debt_max_age_months=_optional_int(main, "debt_max_age_months"),
         repayment_min_per_30d=_optional_int(main, "repayment_min_per_30d"),
         max_parallel_lanes=_bounded_int(main, "max_parallel_lanes", default=1, minimum=1),
@@ -297,6 +363,15 @@ def _bounded_int(main: dict, key: str, *, default: int, minimum: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
         raise ConfigError(f"{key} must be an int >= {minimum}, got {value!r}")
     return value
+
+
+def _factor(main: dict, key: str, default: float) -> float:
+    """A ratio knob: any number at or above 1. Below 1 would refuse a tighten
+    where nothing moved, which stops the ratchet falling and says nothing."""
+    value = main.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 1:
+        raise ConfigError(f"{key} must be a number >= 1, got {value!r}")
+    return float(value)
 
 
 def _positive_int(main: dict, key: str, default: int) -> int:

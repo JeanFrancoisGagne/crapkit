@@ -160,10 +160,11 @@ _NAMES_SHOWN = 5
 def _colliding_names(records: list[FunctionRecord]) -> list[str]:
     """Names this file gives to more than one function, in first-seen order.
 
-    Anonymous functions are exempt. lizard calls every one of them
+    Anonymous functions are exempt from the line. lizard calls every one of them
     `(anonymous)`, so a file with two arrow callbacks collides by construction
-    and a warning would name nothing anyone could act on; `packet.handles`
-    answers that collision with the `(anonymous)#N` ordinal instead.
+    and the line would name nothing anyone could act on. They take the same
+    ordinal keys as any other twin; `packet.handles` already addresses them as
+    `(anonymous)#N`.
     """
     seen: set[str] = set()
     colliding: dict[str, None] = {}
@@ -174,23 +175,26 @@ def _colliding_names(records: list[FunctionRecord]) -> list[str]:
     return list(colliding)
 
 
-def _warn_on_collisions(rel_path: str, records: list[FunctionRecord]) -> None:
-    """One stderr line for a file whose records cannot all reach the ratchet.
+def _note_twin_keys(rel_path: str, records: list[FunctionRecord]) -> None:
+    """One stderr line for a file that gives one name to more than one function.
 
-    A mark is keyed on (path, long_name), and so is the row a run writes, so the
-    last function under a colliding name is the only one marked and the only one
-    gated. C makes this ordinary: both arms of an `#ifdef` fork are textually
-    present, so a platform shim defines the same function twice in one file.
-    Python makes it ordinary too, because a method's long_name carries no class.
-    Neither is fixable here — the ratchet cannot key on a span, which drifts with
-    every edit — so the loss is announced rather than silent.
+    Information, not a warning. Until 0.4.2 it was the second: a mark keyed on
+    (path, long_name) meant one twin owned the key and the rest were neither
+    marked nor gated, which is the loss this announced. `keys` ends that by
+    giving each twin its own ordinal, so the line now says what a reader will
+    see in `crapkit-ratchet.tsv` and nothing is lost.
+
+    Still printed, because a `#2` appearing in a committed marks file is
+    otherwise unexplained. C makes the shape ordinary — both arms of an `#ifdef`
+    fork are textually present — and so does Python, whose method long_names
+    carry no class.
     """
     names = _colliding_names(records)
     if not names:
         return
-    print(f"crapkit: {rel_path} defines {_listed(names)} more than once; the ratchet keys "
-          f"on (path, long_name) and keeps the last, so the earlier ones are neither "
-          f"marked nor gated", file=sys.stderr)
+    print(f"crapkit: {rel_path} defines {_listed(names)} more than once; each one takes "
+          f"its own ratchet key — the first as written, later ones suffixed #2, #3 in "
+          f"file order", file=sys.stderr)
 
 
 def _listed(names: list[str]) -> str:
@@ -201,7 +205,7 @@ def _listed(names: list[str]) -> str:
 
 def _file_records(rel_path: str, functions) -> list[FunctionRecord]:
     records = [_record(rel_path, fn) for fn in functions]
-    _warn_on_collisions(rel_path, records)
+    _note_twin_keys(rel_path, records)
     return records
 
 

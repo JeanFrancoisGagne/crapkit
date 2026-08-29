@@ -286,6 +286,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="rerun only lanes whose scope files changed since their artifact; reuse the rest")
     ver.add_argument("--override", default=None, metavar="REASON",
                      help="audited exemption for gate violations: alert + ratchet debt + snapshot record")
+    ver.add_argument("--no-tighten", action="store_true",
+                     help="pass the verdict without rewriting the ratchet; marks stay where they are")
     ver.add_argument("--sarif", default=None, metavar="PATH",
                      help="write gate/ratchet findings as SARIF 2.1.0, relative to the repo")
     ver.add_argument("--github", action="store_true",

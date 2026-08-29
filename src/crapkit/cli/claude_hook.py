@@ -154,7 +154,7 @@ def _judge(root: Path, rel: str) -> int:
     records = _records(root, rel)
     ranges = _changed(root, rel, diff.communicate()[0])
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
-    return _report(root, cfg, rel, breaches, ceiling)
+    return _report(root, cfg, rel, breaches, ceiling, _keys(records))
 
 
 def _config(root: Path):
@@ -260,11 +260,21 @@ def _answerable(over: list, ranges) -> list:
     return [rec for rec in over if _touches(rec, ranges)]
 
 
-def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int) -> int:
+def _keys(records: list) -> dict:
+    """The file's ratchet keys, built from every record rather than the breaching
+    ones: the ordinal counts same-named functions in file order."""
+    from ..keys import key_names
+
+    return key_names(records)
+
+
+def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, keys: dict) -> int:
     """Rung 9. stdout stays empty whatever happens: protocol 1 reserves it for a
     future JSON channel, and Claude Code parses stdout JSON on exit 0."""
+    from ..keys import key_of
+
     marked = _marks_for(root / cfg.ratchet_file, rel)
-    unmarked = [rec for rec in breaches if rec.long_name not in marked]
+    unmarked = [rec for rec in breaches if key_of(keys, rec)[1] not in marked]
     if not unmarked:
         return 0
     for line in _advisory_lines(rel, unmarked, ceiling):
@@ -273,7 +283,7 @@ def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int) -> int:
 
 
 def _marks_for(marks_path: Path, rel: str) -> set[str]:
-    """The function names one file carries ratchet marks for.
+    """The ratchet KEY names one file carries marks for, `#N` ordinals included.
 
     Existence, not the numeric high-water rule `verify` applies: crap needs
     coverage, coverage needs the store, and the store stays closed. A mark is a

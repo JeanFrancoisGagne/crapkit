@@ -26,12 +26,50 @@ calc/report.py	render( rows , wide , totals , header )	56.0000
 ```
 
 A comment line carrying the metric stamp, a header, then one tab-separated row per mark:
-path, long name, CRAP to four decimals. Rows are sorted by `(path, long_name)`, so the file
-is diffable and merge conflicts are local.
+path, key name, CRAP to four decimals. Rows are sorted by that pair, so the file is
+diffable and merge conflicts are local.
 
-Identity is `(path, long_name)`, never the line number. Spans drift on every edit; names
-survive. When one long name appears at two spans (anonymous twins), the **worst** twin
-represents the key, so a regression cannot hide behind a clean sibling.
+Identity is `(path, key name)`, never the line number. Spans drift on every edit; names
+survive.
+
+---
+
+## Twins: one name, several functions
+
+A file can give one name to more than one function. Python does it whenever a module holds
+several dataclasses with a `__post_init__`, because a method's long name carries no class.
+C does it whenever a platform shim forks on `#ifdef`, because both arms are textually
+present. Neither is exotic; one repo reported three collisions.
+
+**Each twin gets its own key.** The first keeps the bare name; the second is `name#2`, the
+third `name#3`, counted in file order:
+
+```
+calc/iso_cost.py	__post_init__( self )	66.0714
+calc/iso_cost.py	__post_init__( self )#2	30.0000
+```
+
+The ordinal, not the start line, because a line is invalidated by any edit above it and
+would re-key marks nothing touched. Delete one twin and the rest renumber, which is honest:
+they really are different functions now, and `prune` drops the key that no longer names one.
+
+**Adopting it needs no migration.** Before the ordinal, all of a file's twins shared
+`(path, long_name)`. One of them owned the key and the rest were neither marked nor gated,
+so any of them could grow past every ceiling with no gate firing. Because twin #1 keeps the
+bare name, **every mark in an existing `crapkit-ratchet.tsv` already reads as twin #1** —
+there is nothing to rewrite. Run `crapkit ratchet seed` when you want the other twins'
+standing debt recorded too; it adds their marks and touches nothing else.
+
+`analyze` prints one line per file naming the colliding names, so a `#2` in a marks diff
+has an explanation:
+
+```
+crapkit: calc/iso_cost.py defines __post_init__( self ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+```
+
+To address one twin by hand, `brief` and `explain` take the same suffix:
+`crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves — to the
+worst twin, the one the queue ranks.
 
 ---
 
@@ -41,7 +79,7 @@ New in 0.4.0, and it decides which commits get refused. Read it before you seed 
 
 `hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
 a ccn and no CRAP, and there is nothing to compare a mark against. The hook asks the one
-question it can answer: does a `(path, long_name)` mark exist? If it does, that function is
+question it can answer: does a `(path, key name)` mark exist? If it does, that function is
 not gated, whatever the edit did to it. One stderr line reports the count, never a list:
 
 ```
@@ -87,7 +125,7 @@ score. It is idempotent, and it can only lower: rerunning after an improvement r
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
 `verify` still gates the diff, but the standing debt is unprotected.
 
-`ratchet seed` needs a `coverage` or `verify` run in the store:
+`ratchet seed` needs a **trusted** run in the store:
 
 ```
 $ crapkit ratchet seed            # no store at all
@@ -95,9 +133,29 @@ crapkit: no snapshot in /repo — run `crapkit coverage` first
 EXIT=1
 
 $ crapkit ratchet seed            # inventory ran, but no lanes ever did
-crapkit: no full coverage run to work from — run `crapkit coverage` first
+crapkit: no trusted full run to work from — run `crapkit coverage` first (failed verifies and hook runs never serve as baselines)
 EXIT=1
 ```
+
+### Seed and prune skip a failed verify
+
+Trusted means here what it means for `verify`: a `coverage` run, or a `verify` run whose
+verdict passed. A failed verify can carry the scores of a red tree — the failure is visible
+in the same run — so seeding from one would sign debt at values `verify` itself refuses as a
+comparison point. Both actions walk back to the newest trusted run and name what they
+stepped over:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 1 (bb83d64fc19), skipped failed verify run 2
+```
+
+The clause prints only when something was skipped, so the ordinary line is unchanged.
+
+`verify`'s pick is stricter by one rule: it also refuses a trusted run that a failed verify
+stands **in front of**, because moving the comparison point past those findings retires them
+([the trusted baseline](../README.md#the-trusted-baseline)). Seeding retires nothing, so it
+stops at the verdict.
 
 ---
 
@@ -155,7 +213,7 @@ the store's first run and re-paths any mark that meets all three conditions:
 
 1. The function is gone from its recorded path.
 2. git calls that path renamed.
-3. The same `long_name` exists at the destination.
+3. The same key name exists at the destination.
 
 A *copy* fails condition 1 (the source survives), so a copy never moves a mark. Before and
 after `git mv calc/grade.py calc/grading.py`:
@@ -241,6 +299,11 @@ app/b.py	bar( y )	22.0000
 `foo` kept main's tightened 31.5 and `bar` arrived from the feature branch. Per key, the
 side that changed wins over the side that did not; when both changed the **lower** value
 wins, because a mark can only fall and `prune` is re-runnable.
+
+Per key means per twin. One branch tightening `__post_init__` and the other tightening
+`__post_init__#2` in the same file is not a conflict, because those are two keys; the driver
+needs no ordinal knowledge to get that right. The `#` sits in the name field, so a marks line
+never opens with the `#` that introduces the metric stamp.
 
 The driver refuses to merge across metric versions, and git falls back to a normal text
 conflict for you to resolve after re-seeding one side:
@@ -359,6 +422,33 @@ tree against its own mark.
 
 The commit gates read the same file and ask it a looser question. See
 [The commit gate skips marked functions](#the-commit-gate-skips-marked-functions).
+
+### Damping a measurement that bounces
+
+Tightening a mark claims the code improved, and one commit measured twice cannot have
+improved. So `verify` compares each marked function against what the same commit's previous
+**trusted** run measured, and refuses to tighten a mark whose CRAP moved by more than
+`[crapkit] tighten_max_jump` (default `2.0`) between those two runs. The mark stays where it
+is and one line goes to stderr:
+
+```
+  NO TIGHTEN  app/hook.py  _judge( raw ): measurement moved 20.0 -> 72.0 on the same commit; not tightening
+```
+
+Without this, a coverage input that measures the same bytes two ways makes the gate a coin
+flip: the lucky run pulls the mark down to 20.0, the unlucky one fails it at exit 7, and the
+marks file churns 20 -> 72 -> 20 in commits. Real work moves a score by less than a
+measurement race does, so a stable improvement still tightens in full. A first run of a
+commit has nothing to compare against and tightens as it always did. `verify --no-tighten`
+is the blunt version: the verdict stands and the marks file is not rewritten at all.
+
+**Trusted** is the same word `ratchet seed` uses, and the same rule: a failed verify and a
+`partial` run are invisible here too. Both carry numbers no other reader accepts — a failed
+verify's can come off a red tree, and a `partial` run measured a fraction of the suite, so
+its coverage is low and its CRAP is high to match. Damping against either would hold a mark
+at a value nothing vouches for. The comparison is per ratchet key, so a file's second
+`__post_init__` is compared against `__post_init__#2`'s earlier score and not against its
+twin's ([Twins: one name, several functions](#twins-one-name-several-functions)).
 
 ---
 

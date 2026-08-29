@@ -202,17 +202,74 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
     return verdict._replace(ok=True, gate_violations=[]), overridden
 
 
+def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
+    """What the same commit's last trusted run measured, by RATCHET KEY.
+
+    Keyed the way the marks it will be compared against are keyed, twin ordinal
+    included: a module's second `__post_init__` answers to `__post_init__#2`, and
+    reading its score under the bare name asks about a different function. The
+    fresh side of the same comparison is keyed by `verify.rows_by_key`, so the
+    two agree by construction.
+
+    Worst per key covers the one collision the ordinal leaves — two scopes
+    claiming one path score one span twice — or the comparison is between two
+    measurements of different things.
+    """
+    from ..keys import key_names, key_of
+
+    prior_id = store.prior_scored_run(commit=commit, before=run_id)
+    if prior_id is None:
+        return {}
+    rows = store.read_scored(prior_id)
+    names = key_names(rows)
+    worst: dict[tuple[str, str], float] = {}
+    for row in rows:
+        key = key_of(names, row)
+        worst[key] = max(worst.get(key, 0.0), round(row.crap, 4))
+    return worst
+
+
+def _no_tighten_line(refusal) -> str:
+    """One mark this run left alone, and the two numbers that decided it."""
+    return (f"  NO TIGHTEN  {refusal.path}  {refusal.long_name}: measurement moved "
+            f"{refusal.previous} -> {refusal.fresh} on the same commit; not tightening")
+
+
+def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
+                scored) -> frozenset[tuple[str, str]]:
+    """Marks a bouncing measurement may not pull down, named on stderr as it decides.
+
+    stderr, not stdout: `--json` prints one object and nothing else, and this is
+    a warning about the measurement rather than part of the verdict.
+    """
+    from ..ratchet import unstable_marks
+
+    if not ratchet:
+        return frozenset()  # no marks, nothing a tighten could move
+    refusals = unstable_marks(ratchet, scored, _prior_crap(store, commit, run_id),
+                              max_jump=cfg.tighten_max_jump)
+    for refusal in refusals:
+        print(_no_tighten_line(refusal), file=sys.stderr)
+    return frozenset((r.path, r.long_name) for r in refusals)
+
+
 def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
-                   ratchet_path: Path, ratchet, scored, cfg) -> None:
-    """Stamp the verdict; a clean pass (not an override) tightens the ratchet."""
+                   ratchet_path: Path, ratchet, scored, cfg, *, args, commit: str) -> None:
+    """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
+
+    `--no-tighten` is the blunt escape: the verdict still stands, the marks file
+    is simply not rewritten.
+    """
     from ..ratchet import dump_ratchet, update_ratchet
     from ..verify import dirty_counts
 
     store.set_verdict_ok(run_id, verdict.ok, findings=sum(dirty_counts(verdict)))
-    if verdict.ok and not overridden:
-        updated = update_ratchet(ratchet, scored, target=cfg.target,
-                                 scope_targets=cfg.scope_targets)
-        ratchet_path.write_text(dump_ratchet(updated), encoding="utf-8", newline="\n")
+    if not verdict.ok or overridden or args.no_tighten:
+        return
+    hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
+    updated = update_ratchet(ratchet, scored, target=cfg.target,
+                             scope_targets=cfg.scope_targets, hold=hold)
+    ratchet_path.write_text(dump_ratchet(updated), encoding="utf-8", newline="\n")
 
 
 def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
@@ -381,7 +438,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=provenance, kind="verify")
     verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override)
-    _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored, cfg)
+    _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored, cfg,
+                   args=args, commit=commit)
     _release_claims(store, git, cfg, scored)
     _emit_verify_findings(root, args, verdict, uncovered)
 
@@ -537,7 +595,8 @@ def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
     store = SnapshotStore(db_path)
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
-    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0, float(v.ccn * v.ccn + v.ccn), "decompose")
+    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
+                          float(v.ccn * v.ccn + v.ccn), "decompose", False, v.key_name)
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
@@ -568,10 +627,12 @@ def _split_marked(violations: list, entries: list) -> tuple[list, list]:
     commit. `verify` keeps the numeric check and is what catches a mark that
     actually rose.
     """
+    from ..keys import stated_key
+
     marked = {(e.path, e.long_name) for e in entries}
     gated, exempt = [], []
     for v in violations:
-        (exempt if (v.path, v.long_name) in marked else gated).append(v)
+        (exempt if stated_key(v) in marked else gated).append(v)
     return gated, exempt
 
 

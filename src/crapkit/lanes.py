@@ -283,6 +283,36 @@ def _results_provenance(root: Path, lane: Lane) -> dict:
             "tests_total": counts["tests"], "tests_skipped": counts["skipped"]}
 
 
+SUITE_DROP_FRACTION = 0.1
+
+
+def _tests_total(prov: dict) -> int:
+    return prov.get("tests_total") or 0
+
+
+def suite_drops(previous: dict, current: dict, *,
+                fraction: float = SUITE_DROP_FRACTION) -> list[str]:
+    """Lanes whose junit counted far fewer tests than the last trusted run's.
+
+    The cheap half of the crashed-worker check, for the runner that dies without
+    writing the crash into its own report: then the count is the only signature
+    left. The lane this came from wrote 10,674 of 15,300 collected tests after
+    one xdist worker died, and reported success.
+
+    A tenth is wide enough that deleting a test file does not cry wolf, and
+    narrow enough that a dead worker's whole queue cannot hide under it. Both
+    arguments are lane-name -> provenance, the shape a run records.
+    """
+    notes = []
+    for name, prov in sorted(current.items()):
+        before, now = _tests_total(previous.get(name, {})), _tests_total(prov)
+        if before and now < before * (1 - fraction):
+            notes.append(f"lane {name!r} ran {now} tests, {before - now} fewer than the "
+                         f"last trusted run's {before} — check the runner's log for a "
+                         "worker that died without reporting it")
+    return notes
+
+
 def build_retest_command(template: str, tests: set[str]) -> str:
     """Fill a retest template. {tests}: sorted quoted ids verbatim (pytest style).
     {files}: unique quoted classnames — vitest's junit classname IS the test file.

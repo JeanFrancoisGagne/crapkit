@@ -12,11 +12,40 @@ from ..store import SnapshotStore
 from ._shared import _load_ratchet_or_die, _load_repo_config, _open_store, _print_json
 
 
-def _latest_full_run(store: SnapshotStore) -> dict:
-    runs = [r for r in store.list_runs() if r["kind"] in ("coverage", "verify")]
-    if not runs:
-        raise CrapkitError("no full coverage run to work from — run `crapkit coverage` first")
-    return runs[-1]
+def _is_failed_verify(run: dict) -> bool:
+    return run["kind"] == "verify" and run["verdict_ok"] is False
+
+
+def _skipped_failed_verifies(runs: list[dict], chosen_id: int) -> list[dict]:
+    """The failed verifies newer than the run this seed or prune settled on."""
+    return [r for r in runs if r["id"] > chosen_id and _is_failed_verify(r)]
+
+
+def _latest_full_run(store: SnapshotStore) -> tuple[dict, list[dict]]:
+    """The newest TRUSTED run to work from, and the failed verifies passed over.
+
+    `verify`'s own rule, shared: a failed verify never serves as a baseline
+    because it can carry the scores of a red tree, and the failure is visible in
+    the same run. Seeding from one signs debt at values verify itself will not
+    accept as a comparison point. Before this, seed took the newest run whose
+    kind was coverage or verify and never read the verdict (#16).
+    """
+    from ..store import is_trusted
+
+    runs = store.list_runs()
+    trusted = [r for r in runs if is_trusted(r)]
+    if not trusted:
+        raise CrapkitError("no trusted full run to work from — run `crapkit coverage` first "
+                           "(failed verifies and hook runs never serve as baselines)")
+    return trusted[-1], _skipped_failed_verifies(runs, trusted[-1]["id"])
+
+
+def _skip_note(skipped: list[dict]) -> str:
+    """Why the line names an older run than the newest one in the store."""
+    if not skipped:
+        return ""
+    ids = ", ".join(str(r["id"]) for r in skipped)
+    return f", skipped failed verify {'runs' if len(skipped) > 1 else 'run'} {ids}"
 
 
 def _merge_stamp(texts: list[str]) -> str:
@@ -108,7 +137,7 @@ def _print_ratchet_report(report: dict, violations: list, ratchet_file: str) -> 
 
 
 def _working_marks(root: Path, ratchet_file: str) -> dict:
-    """The marks on disk, keyed (path, long_name) -> crap. Ages come from the
+    """The marks on disk, keyed (path, key name) -> crap. Ages come from the
     file's git history, but which marks are OPEN is a question about now, and a
     seed prints "added 1" long before anybody commits the TSV."""
     entries = _load_ratchet_or_die(root / ratchet_file, ratchet_file)
@@ -156,7 +185,7 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     if args.action == "move":  # a hand-declared rename needs no run to follow
         return _ratchet_move(root, cfg, args.files)
     store = _open_store(root)
-    latest = _latest_full_run(store)
+    latest, skipped = _latest_full_run(store)
     fresh = store.read_scored(latest["id"])
     ratchet_path = root / cfg.ratchet_file
     prior = _load_ratchet_or_die(ratchet_path, cfg.ratchet_file)
@@ -168,5 +197,5 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
         entries, note = _pruned(root, store, prior, fresh)
     ratchet_path.write_text(dump_ratchet(entries), encoding="utf-8", newline="\n")
     print(f"{cfg.ratchet_file}: {note} — {len(entries)} mark(s) vs run {latest['id']} "
-          f"({latest['commit'][:11]})")
+          f"({latest['commit'][:11]}){_skip_note(skipped)}")
     return 0

@@ -25,7 +25,8 @@
         "debt_max_age_months": {"type": "integer", "minimum": 0, "description": "ratchet report --enforce flags marks older than this"},
         "repayment_min_per_30d": {"type": "integer", "minimum": 0, "description": "ratchet report --enforce flags fewer repayments than this while debt is open"},
         "max_parallel_lanes": {"type": "integer", "minimum": 1, "description": "lanes running at once during coverage/verify; 1 = strictly serial (default 1)"},
-        "analysis_workers": {"type": "integer", "minimum": 0, "description": "lizard process pool size; 0 = one worker per core (default 0)"}
+        "analysis_workers": {"type": "integer", "minimum": 0, "description": "lizard process pool size; 0 = one worker per core (default 0)"},
+        "tighten_max_jump": {"type": "number", "minimum": 1, "description": "verify holds a mark whose CRAP moved by more than this factor between two runs of the same commit (default 2.0)"}
       }
     },
     "scope": {

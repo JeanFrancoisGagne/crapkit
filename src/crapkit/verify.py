@@ -14,6 +14,7 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Iterator
 from typing import NamedTuple
 
+from .keys import key_names, key_of
 from .ratchet import RatchetEntry
 from .score import ScoredRow, parse_scored_tsv, scored_tsv_lines
 
@@ -72,6 +73,10 @@ class GateViolation(NamedTuple):
     crap: float
     remedy: str
     dirty: bool = False
+    # The ratchet key this function is judged under, which is its long_name plus
+    # an ordinal when the file gives that name to more than one function. Empty
+    # means nobody keyed it, and `keys.stated_key` reads that as the bare name.
+    key_name: str = ""
 
 
 class RatchetRegression(NamedTuple):
@@ -132,21 +137,29 @@ def touched_rows(rows: list[ScoredRow],
     return [r for r in rows if _touched(r, changed_ranges)]
 
 
-def worst_twins(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
-    """Twins share (path, long_name); the WORST twin represents the key, so a
-    regression can never hide behind (nor a clean sibling tighten past) it."""
+def rows_by_key(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
+    """Scored rows by their ratchet key: `keys.key_names` gives each twin its own.
+
+    Twins used to share (path, long_name) and the worst of them represented the
+    key, which let a repaid twin's high mark pardon a sibling's growth. The
+    ordinal ends that. The worst-wins rule stays for the one collision left —
+    two scopes claiming one path score the same span twice — so a regression
+    still cannot hide behind a clean sibling.
+    """
+    names = key_names(fresh)
     worst: dict[tuple[str, str], ScoredRow] = {}
     for r in fresh:
-        key = (r.path, r.long_name)
+        key = key_of(names, r)
         if key not in worst or r.crap > worst[key].crap:
             worst[key] = r
     return worst
 
 
 def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty) -> list[GateViolation]:
+    names = key_names(fresh)
     gate = [
         GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
-                      r.path in dirty)
+                      r.path in dirty, key_of(names, r)[1])
         for r in fresh
         if r.crap > (scope_targets or {}).get(r.scope, target) and _touched(r, changed_ranges)
     ]
@@ -155,7 +168,7 @@ def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty) -> lis
 
 
 def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
-    worst_by_key = worst_twins(fresh)
+    worst_by_key = rows_by_key(fresh)
     regressions = []
     for entry in ratchet:
         row = worst_by_key.get((entry.path, entry.long_name))
