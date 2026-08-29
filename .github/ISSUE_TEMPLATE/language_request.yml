@@ -1,0 +1,65 @@
+name: Language request
+description: You want crapkit to score a language it does not read yet.
+labels: ["language"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        crapkit reads 14 languages today: typescript, tsx, javascript, python,
+        swift, go, rust, shell, powershell, cpp, objectivec, vue, java, zig.
+
+        Complexity comes from lizard. Coverage comes from two parsers and no
+        others: `istanbul` and `coveragepy`. A language with neither still
+        scores. Mark the scope `coverage_optional` and it ranks on complexity
+        alone, which is what swift, go, rust, shell and powershell do here.
+
+  - type: input
+    id: language
+    attributes:
+      label: The language
+      placeholder: kotlin
+    validations:
+      required: true
+
+  - type: input
+    id: extensions
+    attributes:
+      label: Extensions crapkit should claim for it
+      placeholder: .kt, .kts
+    validations:
+      required: true
+
+  - type: dropdown
+    id: lizard
+    attributes:
+      label: Does lizard parse it already?
+      description: >
+        Run `lizard yourfile.ext` and look for function rows with a CCN column.
+        The language list lives at https://github.com/terryyin/lizard. This is
+        the answer that decides whether the work is a config line or a new reader.
+      options:
+        - Yes, lizard prints functions and CCN for my files
+        - No, lizard prints nothing for my files
+        - I have not checked
+    validations:
+      required: true
+
+  - type: input
+    id: coverage_tool
+    attributes:
+      label: The coverage tool projects in this language use
+      description: >
+        Name the tool and the report format it writes. Put "none" if the
+        ecosystem has no per-line or per-branch coverage worth joining.
+      placeholder: kover, writes an XML report
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: A short source file, and the lizard output for it
+      description: Paste the file, then `lizard thatfile` underneath.
+      render: shell
+    validations:
+      required: false
