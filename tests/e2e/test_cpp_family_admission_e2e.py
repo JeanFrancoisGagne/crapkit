@@ -5,7 +5,7 @@ imported. The path that runs a repo does not: `analyze_jobs` hands the file list
 to a ProcessPoolExecutor once there are 16 or more of them, and a spawned child
 on Windows imports `crapkit.analyze` and nothing else. Rust and shell needed that
 because they register readers; these five need it for the other half of the
-wiring — the cognitive extension's C++ rule, and the duplicate-name warning,
+wiring — the cognitive extension's C++ rule, and the duplicate-name line,
 both of which run inside the child and would be invisible if they ran anywhere
 else.
 
@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.keys import key_names
 from crapkit.store import SnapshotStore
 
 # `take` is straight-line code: `&&` marks an rvalue reference. `classify` is
@@ -50,7 +51,8 @@ static inline int clamp(int v, int lo, int hi) {
 CLAMP = ("clamp( int v , int lo , int hi)", 3)
 
 # Both arms of the fork are textually present, so one file defines one name
-# twice. The ratchet keys on (path, long_name), so only the last is gated.
+# twice. Each arm takes its own ratchet key: `plat_open( const char * p)` and
+# the same name suffixed `#2`, counted in file order.
 PLATFORM_FORK = """#ifdef _WIN32
 static int plat_open(const char *p) {
     if (!p) return -1;
@@ -221,24 +223,25 @@ def test_every_pool_worker_applied_the_rvalue_rule(family_repo: Path):
     assert take == {TAKE[2]}, "an rvalue-reference parameter is not a condition"
 
 
-def test_a_pool_worker_warns_about_the_platform_fork(family_repo: Path):
-    """The warning is printed where the analysis happens, which for a repo this
-    size is a spawned child. A warning written only on the parent's path would
-    pass every unit test and never fire on a real run."""
+def test_a_pool_worker_reports_the_platform_fork(family_repo: Path):
+    """The line is printed where the analysis happens, which for a repo this
+    size is a spawned child. A line written only on the parent's path would pass
+    every unit test and never fire on a real run."""
     err = inventory(family_repo)["stderr"]
 
     assert PLAT_OPEN in err
     assert "src/plat.c" in err
 
 
-def test_the_fork_leaves_one_gated_row_per_name(family_repo: Path):
-    """What the warning is about, measured. The file defines `plat_open` twice
-    and the store keeps one row for it."""
-    rows = store_rows(family_repo, inventory(family_repo)["summary"]["run_id"])
+def test_both_arms_of_the_fork_land_with_their_own_key(family_repo: Path):
+    """What the line is about, measured. Both arms are scored and each takes its
+    own ratchet key, so neither can grow behind the other's mark."""
+    run_id = inventory(family_repo)["summary"]["run_id"]
+    store = SnapshotStore(family_repo / ".crapkit" / "crap.sqlite")
+    fork = [r for r in store.read_rows(run_id) if r.path == "src/plat.c"]
 
-    fork = [key for key in rows if key[0] == "src/plat.c"]
-
-    assert fork == [("src/plat.c", PLAT_OPEN)]
+    assert [r.long_name for r in fork] == [PLAT_OPEN, PLAT_OPEN]
+    assert sorted(key_names(fork).values()) == [PLAT_OPEN, f"{PLAT_OPEN}#2"]
 
 
 def test_doctor_passes_on_a_cc_only_polyglot_repo(family_repo: Path):

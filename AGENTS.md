@@ -78,12 +78,13 @@ do next.
 
 ### Naming the function
 
-`NAME` takes four forms and they all resolve to the same row:
+`NAME` takes five forms and they all resolve to the same row:
 
 - the long name next-item printed, passed verbatim
 - the bare identifier (`curve`)
 - the function's start line (`67`)
 - the ordinal handle on a function with no name (`"(anonymous)#2"`)
+- the twin selector on a name one file gives to several functions (`"__post_init__#2"`)
 
 Exact first: a NAME that IS a function's long name or bare identifier resolves to that
 function alone, even when other names contain it — `route` is `route`, never
@@ -106,6 +107,15 @@ something else, while `"(anonymous)#2"` still opens the callback you claimed. `b
 the handles the file does hold:
 
     crapkit: no (anonymous)#5 in calc/report.py in the latest scored run — it holds: (anonymous)#1, (anonymous)#2
+
+One file can also give one name to several NAMED functions: several dataclasses each
+with a `__post_init__`, both arms of an `#ifdef` fork. A bare name resolves to the worst
+of them, which is the one the queue ranks. `NAME#2` selects the second in file order and
+`NAME#3` the third — the same ordinals the ratchet keys their marks on, so the mark in a
+packet is the mark on the function that packet opened. An ordinal past the last twin
+exits 1:
+
+    crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run — it holds 2 function(s) named '__post_init__'
 
 ### One call for a batch of packets
 

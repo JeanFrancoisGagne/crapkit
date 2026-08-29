@@ -3,7 +3,11 @@
 Pure text <-> entries. Marks only ever tighten: an improvement lowers or drops
 an entry on update; a regression NEVER raises one (it surfaces as a verdict
 failure instead); brand-new debt enters only through the audited override.
-Identity is (path, long_name): spans drift with every edit, names survive.
+
+Identity is (path, key name): spans drift with every edit, names survive. A key
+name is the function's long_name, plus a `#N` ordinal when the file gives that
+name to more than one function — see `keys`. The first twin keeps the bare name,
+so a marks file written before the ordinal reads unchanged.
 
 The file opens with a metric stamp comment naming the analysis version and the
 lizard that produced the numbers. Marks measured under different rules are not
@@ -78,7 +82,12 @@ def load_ratchet(text: str) -> list[RatchetEntry]:
 
 
 def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | None:
-    """One function's recorded high-water mark, or None when it carries no mark."""
+    """One function's recorded high-water mark, or None when it carries no mark.
+
+    `long_name` is the KEY name: bare for a name only one function in the file
+    holds, `name#2` for the second function holding it. `keys.key_names` builds
+    it from the rows; passing a raw long_name for a twin asks about twin #1.
+    """
     for e in entries:
         if e.path == path and e.long_name == long_name:
             return e.crap
@@ -126,12 +135,12 @@ def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: i
                  scope_targets: dict[str, int] | None = None) -> tuple[list[RatchetEntry], int, int]:
     """First-class mark entry: record every over-ceiling function at its current
     CRAP. A mark never rises, seeding included — an existing lower mark stays."""
-    from .verify import worst_twins
+    from .verify import rows_by_key
 
     ceilings = scope_targets or {}
     marks = {(e.path, e.long_name): e for e in prior}
     added = tightened = 0
-    for key, row in worst_twins(fresh).items():
+    for key, row in rows_by_key(fresh).items():
         if row.crap <= ceilings.get(row.scope, target):
             continue
         a, t = _seed_mark(marks, key, row.crap)
@@ -182,7 +191,7 @@ def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -
     """Where a mark should follow a renamed file, or None to leave it alone.
 
     Three conditions, all required: the function is gone from its recorded path,
-    git calls that path renamed, and the SAME long_name exists at the new one. A
+    git calls that path renamed, and the SAME key name exists at the new one. A
     copy fails the first (the source survives), so its mark never travels.
     """
     if (entry.path, entry.long_name) in present:
@@ -197,9 +206,9 @@ def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
                    renames: dict[str, str]) -> tuple[list[RatchetEntry], int]:
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
     move, not as code that left the repo and forfeits its high-water mark."""
-    from .verify import worst_twins
+    from .verify import rows_by_key
 
-    present = set(worst_twins(fresh))
+    present = set(rows_by_key(fresh))
     return _repath(prior, lambda e: _rename_target(e, present, renames))
 
 
@@ -208,18 +217,18 @@ def prune_ratchet(prior: list[RatchetEntry],
     """Deliberate mark exit: drop entries whose function is absent from the run.
     The automatic update keeps them (an exclude glob or a lane outage also removes
     rows); prune is the human confirming the code is really gone."""
-    from .verify import worst_twins
+    from .verify import rows_by_key
 
-    present = set(worst_twins(fresh))
+    present = set(rows_by_key(fresh))
     kept = [e for e in prior if (e.path, e.long_name) in present]
     return kept, len(prior) - len(kept)
 
 
 def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: int,
                    scope_targets: dict[str, int] | None = None) -> list[RatchetEntry]:
-    from .verify import worst_twins
+    from .verify import rows_by_key
 
-    fresh_by_key = worst_twins(fresh)
+    fresh_by_key = rows_by_key(fresh)
     updated = []
     for entry in prior:
         row = fresh_by_key.get((entry.path, entry.long_name))

@@ -434,13 +434,23 @@ def _rescore_json(overlay, latest: dict) -> None:
     })
 
 
-def _ceiling_breaches(rows, ceilings: dict[str, int]) -> list:
+def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) -> list:
     """The pre-commit hook's policy over already-scored rows: ccn against the
     file's ceiling, coverage ignored. Shaped as gate violations so verify's
-    printer serves this verdict too."""
+    printer serves this verdict too.
+
+    `keys` is the ratchet key map over the WHOLE file, because `rows` here is
+    the touched subset: counting ordinals over it would call an untouched
+    file's second twin the first and hand it the first's mark. Defaulted from
+    the rows for a caller holding nothing else, which is right for one function
+    per name and the only shape that arises.
+    """
+    from ..keys import key_names, key_of
     from ..verify import GateViolation
 
-    breaches = [GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy)
+    names = key_names(rows) if keys is None else keys
+    breaches = [GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
+                              False, key_of(names, r)[1])
                 for r in rows if r.ccn > ceilings[r.path]]
     breaches.sort(key=lambda v: (-v.ccn, v.path, v.start))
     return breaches
@@ -467,11 +477,12 @@ def _unmarked_breaches(breaches: list, entries: list) -> list:
     it the function is exactly the debt the repo signed up for; past it, verify's
     ratchet check would fail too, so the gate says so early.
     """
+    from ..keys import stated_key
     from ..ratchet import mark_for
 
     kept = []
     for v in breaches:
-        mark = mark_for(entries, v.path, v.long_name)
+        mark = mark_for(entries, *stated_key(v))
         if mark is None or round(v.crap, 4) > mark:
             kept.append(v)
     return kept
@@ -495,10 +506,12 @@ def _warn_untracked(untracked: set[str]) -> None:
 def _rescore_gate(root: Path, cfg, overlay, ceilings: dict[str, int]) -> int:
     """The commit's verdict, hours before the commit. Reported on stderr so
     `--json` stdout stays one parseable object."""
+    from ..keys import key_names
+
     untracked = _untracked_of(root, overlay)
     _warn_untracked(untracked)
     candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
-    touched = _ceiling_breaches(candidates, ceilings)
+    touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
     breaches = _unmarked_breaches(touched, _ratchet_entries(root, cfg) or [])
     if not breaches:
         return 0

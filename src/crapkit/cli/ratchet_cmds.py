@@ -108,7 +108,7 @@ def _print_ratchet_report(report: dict, violations: list, ratchet_file: str) -> 
 
 
 def _working_marks(root: Path, ratchet_file: str) -> dict:
-    """The marks on disk, keyed (path, long_name) -> crap. Ages come from the
+    """The marks on disk, keyed (path, key name) -> crap. Ages come from the
     file's git history, but which marks are OPEN is a question about now, and a
     seed prints "added 1" long before anybody commits the TSV."""
     entries = _load_ratchet_or_die(root / ratchet_file, ratchet_file)

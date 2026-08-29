@@ -25,6 +25,7 @@ from .analyze import analyze_jobs, analyze_source, decode_source
 from .config import Config
 from .diffparse import changed_ranges
 from .gitio import GitReads
+from .keys import key_names, key_of
 from .merge import FunctionRecord
 from .universe import _source_extensions, assign_files, exclude_matcher, excluded
 
@@ -43,6 +44,10 @@ class Violation(NamedTuple):
     long_name: str
     start: int
     ccn: int
+    # The ratchet key, carried from where the whole file's records were in hand:
+    # the ordinal counts every function of that name in the file, and a gate
+    # handed only the breaching ones would number the second twin as the first.
+    key_name: str = ""
 
 
 class StagedGate(NamedTuple):
@@ -97,14 +102,24 @@ def file_ceilings(cfg, in_scope, checked_files) -> dict[str, int]:
     return {rel: ceilings.get(scope_of.get(rel, ""), cfg.target) for rel in checked_files}
 
 
+def _file_violations(rel: str, records: list, ranges, ceiling: int) -> list[Violation]:
+    """One file's breaches, each carrying the ratchet key it will be judged under.
+
+    Keyed here because this is where the file's whole record list is in hand:
+    the ordinal counts same-named functions in file order, and the breaching
+    subset alone cannot say which twin a record is.
+    """
+    keys = key_names(records)
+    return [Violation(rel, rec.long_name, rec.start, rec.ccn, key_of(keys, rec)[1])
+            for rec in records if rec.ccn > ceiling and _touches(rec, ranges)]
+
+
 def _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope) -> list[Violation]:
     by_file = file_ceilings(cfg, in_scope, checked_files)
     violations = []
     for rel in checked_files:
-        ceiling = by_file[rel]
-        for rec in records_by_path[rel]:
-            if rec.ccn > ceiling and _touches(rec, ranges_by_path[rel]):
-                violations.append(Violation(rel, rec.long_name, rec.start, rec.ccn))
+        violations.extend(_file_violations(rel, records_by_path[rel], ranges_by_path[rel],
+                                           by_file[rel]))
     violations.sort(key=lambda v: (-v.ccn, v.path, v.start))
     return violations
 
