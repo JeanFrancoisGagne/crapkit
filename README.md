@@ -1,5 +1,10 @@
 # crapkit
 
+[![ci](https://github.com/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml/badge.svg)](https://github.com/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/crapkit)](https://pypi.org/project/crapkit/)
+[![Python](https://img.shields.io/pypi/pyversions/crapkit)](https://pypi.org/project/crapkit/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 crapkit scores every function in your repo on complexity times uncovered risk, ranks the
 worst ones by how often the file changes, and blocks commits that add more. It reads
 Python, TypeScript, TSX, JavaScript, Swift, Go, Rust, shell, PowerShell, C and C++,
@@ -29,7 +34,7 @@ it.
 ## The 60-second start
 
 ```
-pip install git+https://github.com/JeanFrancoisGagne/crapkit.git
+pip install crapkit
 cd your-repo
 crapkit init        # writes crapkit.toml: scopes, a coverage lane, .gitignore lines
 crapkit coverage    # runs the lane, joins coverage, stores a scored run
@@ -60,24 +65,25 @@ error. The two quickstarts below walk a real repo end to end.
 ## Install
 
 ```
+pip install crapkit
+```
+
+That is the release on [PyPI](https://pypi.org/project/crapkit/). For the unreleased tip
+of `main`, or from a local clone (run at the clone root):
+
+```
 pip install git+https://github.com/JeanFrancoisGagne/crapkit.git
-```
-
-From a clone of this repo, run at the clone root:
-
-```
 pip install .
 ```
 
-Either install pulls one dependency, `lizard>=1.24.0`, a normal PyPI wheel, so an offline
-mirror installs fine and no `git` binary is needed for the dependency itself. Requires
-Python 3.11 or newer. Once the PyPI release lands, plain `pip install crapkit` will work
-too. The `pip install -e ".[dev]"` under [Development](#development) is a different thing:
-it adds the test extra, for people changing crapkit.
+Every route pulls one dependency, `lizard>=1.24.0`, a normal PyPI wheel, so an offline
+mirror installs fine. Requires Python 3.11 or newer. The `pip install -e ".[dev]"` under
+[Development](#development) is a different thing: it adds the test extra, for people
+changing crapkit.
 
 ```
 $ crapkit --version
-crapkit 0.4.0
+crapkit 0.4.1
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
@@ -747,7 +753,7 @@ that block is advisory unless `diff_uncovered_max` is set
 
 | Page | Covers |
 |---|---|
-| [docs/handbook.html](docs/handbook.html) | **Start here for anything deeper.** The illustrated handbook: what crapkit is, how every piece works, and where each command earns its keep. Self-contained HTML, so open it straight from a clone. |
+| [The handbook](https://jeanfrancoisgagne.github.io/crapkit/handbook.html) | **Start here for anything deeper.** The illustrated handbook: what crapkit is, how every piece works, and where each command earns its keep. Also at [docs/handbook.html](docs/handbook.html), self-contained, so it opens straight from a clone. |
 | [docs/adoption.md](docs/adoption.md) | The judgment layer over the quickstarts: scope granularity, exclude vs lane, scoped_tests wiring, the first-verify taint hazard. |
 | [docs/configuration.md](docs/configuration.md) | Every `crapkit.toml` key: type, default, and what it does. |
 | [docs/lanes.md](docs/lanes.md) | The lane model, vitest and jest and pytest recipes, artifact reuse, flake retest, containers. |

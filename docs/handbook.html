@@ -728,7 +728,7 @@ scopes   = ["src"]</code></pre>
 <p class="lede">One base install everyone shares. Then pick the surfaces you want, in any order.</p>
 
 <h3>The base: the CLI, then one repo</h3>
-<pre><code>pip install git+https://github.com/JeanFrancoisGagne/crapkit.git   # or: pip install . from a clone
+<pre><code>pip install crapkit                 # the PyPI release; git+https://github.com/JeanFrancoisGagne/crapkit.git for main
 cd your-repo
 crapkit init        # sniffs tracked source into scopes, writes live lanes it can prove
 crapkit doctor      # config against reality: unknown keys, unclaimed files, dead lane commands

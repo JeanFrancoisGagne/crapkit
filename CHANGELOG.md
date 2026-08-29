@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.1 — 2026-08-29
+
+A documentation and packaging release. No scoring or gate behavior changed.
+
+- Every document rewritten for the 0.4.0 feature set in plain language: the README leads
+  with the 60-second start and the plugin, the handbook gains a "two gates" section
+  (the per-edit advisory versus the commit gate) and a walk-through for each of the six
+  ways people run the tool, `docs/ratchet.md` leads with the changed gate semantics, and
+  the skills name the new agent moments.
+- The handbook is published at https://jeanfrancoisgagne.github.io/crapkit/handbook.html.
+- PyPI metadata: project links, true classifiers, keywords; `pip install crapkit` is now
+  the documented install everywhere.
+- Contributor files: issue forms (bug, feature, language request), a pull-request
+  template, `CODE_OF_CONDUCT.md`, and `SECURITY.md` with the tool's threat surface.
+- Corrected the supported-language count: fourteen (TypeScript and TSX count separately).
+
 ## 0.4.0 — 2026-08-28
 
 ### Eight new languages
