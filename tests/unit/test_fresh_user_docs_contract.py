@@ -282,12 +282,22 @@ def test_the_cognitive_sentence_admits_an_unmodelled_construct_reads_zero():
 
 @pytest.mark.parametrize("page", [README, HANDBOOK])
 def test_no_page_claims_this_repos_ci_blocks_on_the_ratchet(page: str):
-    """`.github/workflows/ci.yml` runs the gate with `|| true`. A page saying
-    otherwise promises an enforcement point that is not armed."""
+    """The ratchet verdict is the half of this repo's CI that is not armed.
+
+    Two different lines, two different answers. The diff gate does block: the
+    `test` job runs `python -m crapkit hook-precommit` and the exit code stands
+    (`test_ci_does_not_swallow_the_crapkit_gate_exit_code` holds it there). The
+    `dogfood` job's `verify` still ends in `|| true`, so a rising mark, a new
+    test failure or a dark diff line is reported and not enforced. A page
+    claiming otherwise promises an enforcement point nothing arms, which is why
+    the anchor below is the `verify` line rather than the gate's.
+    """
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     text = " ".join(_doc(page).lower().split())
 
-    assert "hook-precommit || true" in workflow, "the caveat below is about this line"
+    assert "verify --json > verdict.json || true" in workflow, (
+        "the caveat below is about this line; arm it and these claims become "
+        "sayable")
     for claim in ("ci blocks", "ci enforces", "ci fails the", "blocked in ci",
                   "enforced in ci", "ratchet in ci"):
         assert claim not in text, f"{page}: {claim!r}"

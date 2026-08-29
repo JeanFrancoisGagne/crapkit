@@ -212,6 +212,7 @@ _OWNER = {
     "_records": "claude_hook",
     "_records_by_scope": "scoring",
     "_refuse_empty_lane_run": "scoring",
+    "_refuse_lane_less_verify": "verifying",
     "_release_claims": "verifying",
     "_release_target": "queue",
     "_report": "claude_hook",

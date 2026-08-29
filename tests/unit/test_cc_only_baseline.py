@@ -15,7 +15,7 @@ that scope really is unmeasured.
 """
 import pytest
 
-from crapkit.cli import _select_lanes
+from crapkit.cli import _refuse_lane_less_verify, _select_lanes
 from crapkit.config import Config, Lane, Scope
 from crapkit.errors import ConfigError
 from crapkit.snapshot import InventoryRow
@@ -23,8 +23,11 @@ from crapkit.store import SnapshotStore, default_baseline, is_trusted
 
 GO = Scope(name="cmd", paths=("cmd",), languages=("go",), coverage_optional=True)
 PY = Scope(name="calc", paths=("calc",), languages=("python",))
+JS = Scope(name="web", paths=("web",), languages=("typescript",))
 PY_LANE = Lane(name="py", command="pytest", artifact="cov.json",
                parser="coveragepy", scopes=("calc",))
+JS_LANE = Lane(name="js", command="vitest", artifact="cov-final.json",
+               parser="istanbul", scopes=("web",))
 
 
 def rows():
@@ -73,6 +76,34 @@ def test_naming_a_lane_that_does_not_exist_is_still_its_own_refusal():
 
 def test_a_named_lane_still_selects_itself():
     assert _select_lanes(Config(scopes=(PY,), lanes=(PY_LANE,)), "py") == [PY_LANE]
+
+
+# --- coverage and verify do not answer this the same way ----------------------
+#
+# Measured on a Python+Rust repo whose rust scope had lost its key: `coverage`
+# exited 0 and scored `5 functions — 2 measured / 0 untested / 3 no-lane`, while
+# `verify` on the same config exited 3 naming `rustsrc`. Both are right for what
+# they do, and the pair is easy to write down backwards, so both are pinned.
+
+def test_coverage_scores_a_lane_less_scope_rather_than_refusing_when_a_lane_exists():
+    """`no-lane` is a flag `coverage` prints, which it could not be if a scope
+    owing a lane refused the run. The refusal is for a run with no lane at all."""
+    cfg = Config(scopes=(GO, PY, JS), lanes=(JS_LANE,))
+
+    assert cfg.lane_less_scopes == ("calc",)
+    assert _select_lanes(cfg, None) == [JS_LANE]
+
+
+def test_verify_refuses_the_same_config_coverage_scores():
+    """verify names every lane-less scope, whatever else the repo declares:
+    coverage is half its verdict, so an unmeasured scope has no verdict."""
+    cfg = Config(scopes=(GO, PY, JS), lanes=(JS_LANE,))
+
+    with pytest.raises(ConfigError) as exc:
+        _refuse_lane_less_verify(cfg)
+
+    assert "calc" in str(exc.value)
+    assert "cmd" not in str(exc.value), "the cc-only scope owes nothing"
 
 
 # --- what counts as a scored baseline afterwards ------------------------------
