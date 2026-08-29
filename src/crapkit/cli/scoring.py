@@ -333,6 +333,24 @@ def _print_coverage(as_json: bool, summary: dict, cfg, failures: dict) -> None:
         print(f"  lane {name!r} FAILED: {err}")
 
 
+def _warn_suite_drop(store: SnapshotStore, provenance: dict) -> None:
+    """Say when a lane ran far fewer tests than the last trusted run measured.
+
+    Read before this run is written, so the comparison point is a run nothing in
+    this command has touched. `verify` already reports any shrink against its
+    baseline; `coverage` is the command that WRITES a baseline, and until now it
+    said nothing at all about a suite that halved.
+    """
+    from ..lanes import suite_drops
+    from ..store import trusted_runs
+
+    trusted = trusted_runs(store)
+    if not trusted:
+        return
+    for note in suite_drops(trusted[-1]["lanes"], provenance):
+        print(f"crapkit: {note}", file=sys.stderr)
+
+
 def cmd_coverage(args: argparse.Namespace) -> int:
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
@@ -344,6 +362,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     db_path = root / ".crapkit" / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
+    _warn_suite_drop(store, provenance)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=provenance, kind=_run_kind(lanes, cfg, failures))
     if args.export:

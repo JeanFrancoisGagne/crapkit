@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" errors="1" failures="0" skipped="1" tests="4" time="1841.209" timestamp="2026-08-27T03:14:52.118344+00:00" hostname="aurora">
+    <testcase classname="tests.unit.test_grade" name="test_grade_bands" time="0.003" />
+    <testcase classname="tests.unit.test_grade" name="test_grade_empty" time="0.002" />
+    <testcase classname="tests.unit.test_slow" name="test_needs_network" time="0.001">
+      <skipped type="pytest.skip" message="no network">/repo/tests/unit/test_slow.py:12: no network</skipped>
+    </testcase>
+    <testcase classname="tests.integration.test_pipeline" name="test_bulk_extract" time="0.000">
+      <error message="failed on setup with &quot;worker 'gw1' crashed while running 'tests/integration/test_pipeline.py::test_bulk_extract'&quot;">worker 'gw1' crashed while running 'tests/integration/test_pipeline.py::test_bulk_extract'</error>
+    </testcase>
+  </testsuite>
+</testsuites>
