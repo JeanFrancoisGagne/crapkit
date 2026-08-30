@@ -343,8 +343,9 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 def _explain_ctx(root: Path, cfg, store: SnapshotStore, args) -> _ExplainCtx:
     from ..keys import split_ordinal
+    from ..store import rowful_runs
 
-    runs = [r for r in store.list_runs() if r["kind"] != "hook"]
+    runs = rowful_runs(store)
     return _ExplainCtx(root, args.path, runs[-1]["id"] if runs else None,
                        load_uncovered(root, cfg), _ratchet_entries(root, cfg),
                        _contexts_for_path(root, cfg, args.path) if args.tests else {},

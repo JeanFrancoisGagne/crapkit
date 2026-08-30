@@ -1,6 +1,17 @@
-"""Worklist seam: inventory rows + churn in, ranked queue and dormant list out. Pure."""
+"""Worklist seam: inventory rows + churn in, ranked queue and dormant list out.
+
+The ranking itself is pure. The last section is the other half of the seam:
+WHICH run gets ranked, which `worklist` and `next-item` have to answer the same
+way or the two commands describe different states.
+"""
+import pytest
+
 from crapkit.churn import FileChurn
+from crapkit.cli._shared import _latest_scored
+from crapkit.cli.queue import _worklist_run
+from crapkit.errors import CrapkitError
 from crapkit.snapshot import InventoryRow
+from crapkit.store import SnapshotStore
 from crapkit.worklist import build_worklist
 
 
@@ -70,3 +81,62 @@ def test_hot_simple_code_is_promoted_past_the_floor():
     wl = build_worklist(rows, churn, floor=5, top=50)
     assert any(e.path == "src/burning.ts" for e in wl.active), \
         "the floor applied before churn hides hot simple code (Tornhill)"
+
+
+# --- which run gets ranked ---------------------------------------------------
+
+def _run(store: SnapshotStore, kind: str, *, ok: bool | None = None) -> int:
+    run_id = store.write_run(commit="c1", tool_versions={}, rows=[row()],
+                             kind=kind, lanes={"unit": {}})
+    if ok is not None:
+        store.set_verdict_ok(run_id, ok, findings=0 if ok else 1)
+    return run_id
+
+
+def test_worklist_ranks_the_run_next_item_ranks(tmp_path):
+    """runs = [coverage, partial]: worklist ranked the partial run and next-item
+    picked its item off the coverage run, so the two commands described
+    different states while queue.py claimed they described one.
+
+    A partial run measures a fraction of the suite and its CRAP is inflated to
+    match, so a ranking off it is a ranking no other reader accepts.
+    """
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    coverage = _run(store, "coverage")
+    _run(store, "partial")
+
+    assert _worklist_run(tmp_path, store)["id"] == coverage
+    assert _latest_scored(store)["id"] == coverage
+
+
+def test_a_failed_verify_is_not_the_run_worklist_ranks(tmp_path):
+    """Its scores can come off a red tree. Verify refuses it as a comparison
+    point and the view refuses it for the same reason."""
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    coverage = _run(store, "coverage")
+    _run(store, "verify", ok=False)
+
+    assert _worklist_run(tmp_path, store)["id"] == coverage
+
+
+def test_an_inventory_only_repo_still_gets_a_ranking(tmp_path):
+    """Why the rule is not simply "the trusted run": `inventory` writes no
+    trusted run, next-item refuses that repo, and worklist still ranks
+    complexity alone until the first coverage run."""
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    inventory = _run(store, "inventory")
+
+    assert _worklist_run(tmp_path, store)["id"] == inventory
+    assert _latest_scored(store) is None
+
+
+def test_a_store_with_only_a_hook_run_names_the_command_to_run(tmp_path):
+    """Hook runs carry no rows, so there is nothing to rank and the error has to
+    say which command writes rows."""
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    _run(store, "hook")
+
+    with pytest.raises(CrapkitError) as excinfo:
+        _worklist_run(tmp_path, store)
+
+    assert "crapkit coverage" in str(excinfo.value)

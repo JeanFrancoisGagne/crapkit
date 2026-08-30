@@ -127,3 +127,74 @@ def test_seeded_marks_come_from_the_trusted_run_not_the_failed_verify(tmp_path, 
 
     marks = (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()
     assert marks[-1] == "src/a.py\thot( n )\t72.0000", "the trusted run's 8*8+8, not 20*20+20"
+
+
+# --- trust alone is not the rule: the taint rule is --------------------------
+
+LAUNDER_SHA = "7c2d1bb0e4c3f6879201b3c4d5e6f7081920a3b4"
+SECOND_FAIL_SHA = "9e4f3dd2f6e5081a9b23d5e6f708192a3b4c5d6e"
+
+
+def test_seed_takes_the_run_verify_takes_not_the_one_that_launders_it(tmp_path):
+    """runs = [coverage, failed verify, coverage]: seed signed marks off run 3,
+    the run `verify` refuses.
+
+    Trust does not catch this one. Run 3 IS trusted; what disqualifies it is
+    that it was taken after a failed verify, so making it the comparison point
+    moves the findings out of view. `pick_baseline` is the rule that sees it,
+    and seed has to run the rule verify runs, not a weaker one that agrees with
+    it most of the time.
+    """
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    trusted = coverage_run(store)
+    failed = verify_run(store, False)
+    coverage_run(store, commit=LAUNDER_SHA)
+
+    latest, skipped = _latest_full_run(store)
+
+    assert latest["id"] == trusted
+    assert [r["id"] for r in skipped] == [failed]
+
+
+def test_the_note_names_every_failed_verify_above_the_run_it_used(tmp_path):
+    """The note is the whole reason a reader accepts an older run id on the seed
+    line. Two failures stand between here, and naming one of them tells half the
+    story."""
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    trusted = coverage_run(store)
+    first = verify_run(store, False)
+    coverage_run(store, commit=LAUNDER_SHA)
+    second = verify_run(store, False, commit=SECOND_FAIL_SHA)
+
+    latest, skipped = _latest_full_run(store)
+
+    assert latest["id"] == trusted
+    assert [r["id"] for r in skipped] == [first, second]
+
+
+def test_the_seed_line_names_both_skipped_verifies(tmp_path, capsys):
+    repo, store = repo_with_store(tmp_path)
+    trusted = coverage_run(store)
+    first = verify_run(store, False)
+    coverage_run(store, commit=LAUNDER_SHA)
+    second = verify_run(store, False, commit=SECOND_FAIL_SHA)
+
+    assert seed(repo) == 0
+
+    line = capsys.readouterr().out.strip()
+    assert f"vs run {trusted} ({TRUSTED_SHA[:11]})" in line
+    assert line.endswith(f", skipped failed verify runs {first}, {second}")
+
+
+def test_a_failed_verify_with_nothing_older_names_the_verify_that_blocks(tmp_path):
+    """A store whose only trusted run sits above an unanswered failure has no run
+    to seed from, and the error has to say which verify blocks it rather than
+    ask for a `coverage` run that would change nothing."""
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    failed = verify_run(store, False)
+    coverage_run(store, commit=LAUNDER_SHA)
+
+    with pytest.raises(CrapkitError) as excinfo:
+        _latest_full_run(store)
+
+    assert f"verify run {failed} FAILED" in str(excinfo.value)
