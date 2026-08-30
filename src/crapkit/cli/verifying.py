@@ -480,13 +480,38 @@ def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
     """Suite decay passes a pass/fail check silently; say it out loud."""
     for name, prov in provenance.items():
         base = baseline.get("lanes", {}).get(name, {})
-        b_total, b_skip = base.get("tests_total"), base.get("tests_skipped")
-        if b_total and prov.get("tests_total", 0) < b_total:
-            print(f"warning: lane {name!r} runs {b_total - prov['tests_total']} "
-                  f"fewer tests than the baseline", file=sys.stderr)
-        if b_skip is not None and prov.get("tests_skipped", 0) > b_skip:
-            print(f"warning: lane {name!r} skips {prov['tests_skipped'] - b_skip} "
-                  f"more tests than the baseline", file=sys.stderr)
+        for line in _suite_size_lines(name, base, prov):
+            print(f"warning: {line}", file=sys.stderr)
+
+
+def _suite_size_lines(name: str, base: dict, prov: dict) -> list[str]:
+    """How the suite's size moved since the baseline, or why that cannot be said.
+
+    Both counts are optional. A baseline recorded before the lane declared a
+    `results_artifact` carries none and compares nothing. A lane that wrote no
+    junit THIS run (an older commit gated against a newer baseline, an artifact
+    that went missing) has nothing to compare either; reading its absent count
+    as zero once turned every such run into a KeyError after the lane had run.
+    """
+    b_total = base.get("tests_total")
+    if b_total and prov.get("tests_total") is None:
+        return [f"lane {name!r} wrote no test counts this run (no results_artifact was "
+                f"parsed), so the baseline's {b_total} tests cannot be compared"]
+    lines = (_fewer_tests_line(name, b_total, prov.get("tests_total")),
+             _more_skips_line(name, base.get("tests_skipped"), prov.get("tests_skipped")))
+    return [line for line in lines if line]
+
+
+def _fewer_tests_line(name: str, base_n, fresh_n) -> str | None:
+    if base_n and fresh_n is not None and fresh_n < base_n:
+        return f"lane {name!r} runs {base_n - fresh_n} fewer tests than the baseline"
+    return None
+
+
+def _more_skips_line(name: str, base_n, fresh_n) -> str | None:
+    if base_n is not None and fresh_n is not None and fresh_n > base_n:
+        return f"lane {name!r} skips {fresh_n - base_n} more tests than the baseline"
+    return None
 
 
 def _under_scope_path(path: str, scope_path: str) -> bool:
