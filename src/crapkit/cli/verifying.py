@@ -53,7 +53,7 @@ def _taint_note(pick) -> str:
 # table rather than a chain of ifs keeps the helper under the ccn 6 gate with
 # room to spare, so one untested branch cannot lift its CRAP past the target.
 _UNTRUSTED_KINDS = {"hook": "a hook run",
-                    "partial": "a partial run (a subset of the lanes)",
+                    "partial": "a partial run (a lane subset, or a lane that failed)",
                     "inventory": "an inventory run (no coverage was measured)"}
 
 
