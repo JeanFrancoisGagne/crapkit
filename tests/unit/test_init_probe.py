@@ -16,8 +16,9 @@ import uuid
 import pytest
 
 from crapkit import config, mutate_pool
-from crapkit.cli import _pytest_cov_probe, _warn_missing_pytest_cov
+from crapkit.cli import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
+from crapkit.config import Lane
 from crapkit.mutate import Mutant
 from crapkit.scaffold import LaneSpec
 
@@ -125,8 +126,75 @@ def test_the_probe_quotes_an_interpreter_path_with_a_space():
 
 def test_a_probe_that_cannot_run_says_yes():
     """A missing interpreter must not warn about pytest-cov: the message would
-    name the wrong gap, and doctor already flags the executable itself."""
-    assert _pytest_cov_probe("no-such-interpreter-7f3a -m pytest --cov") is True
+    name the wrong gap, and doctor already flags the executable itself. The
+    name has to be a python, or the runner gate below answers first and this
+    proves nothing about which()."""
+    assert _pytest_cov_probe("/no/such/7f3a/python -m pytest --cov") is True
+
+
+# --- only a python can be asked to import pytest_cov -------------------------
+#
+# The probe assumed the first word is an interpreter. `coverage run -m pytest
+# --cov=pylib && coverage json` starts with `coverage`, so it shelled
+# `coverage -c "import pytest_cov"`, read coverage's own argument error as a
+# missing package, and printed the pip note where pytest_cov imports fine.
+
+@pytest.mark.parametrize("command, probed", [
+    ("python -m pytest --cov", True),
+    ("python3 -m pytest --cov", True),
+    ("py -3 -m pytest --cov", True),
+    ("/usr/bin/python3.12 -m pytest --cov", True),
+    ('"C:/Program Files/Python311/python.exe" -m pytest --cov', True),
+    ("npm run build && python -m pytest --cov", True),
+    ("coverage run -m pytest --cov=pylib && coverage json", False),
+    ("tox -e py311 -- --cov", False),  # no pytest on the line at all
+    ("npx vitest run --coverage", False),
+])
+def test_only_a_python_running_pytest_is_probe_able(command, probed):
+    assert (admin._probe_interpreter(command) is not None) is probed
+
+
+def _recorded_probe(monkeypatch) -> list[str]:
+    """Every command the probe hands the shell. Empty means it asked nothing."""
+    from crapkit import procs
+
+    seen: list[str] = []
+
+    def record(command: str, timeout: float) -> int:
+        seen.append(command)
+        return 0
+
+    monkeypatch.setattr(procs, "run_bounded", record)
+    return seen
+
+
+def test_a_lane_that_runs_pytest_through_coverage_is_asked_nothing(monkeypatch):
+    """`coverage -c "import pytest_cov"` is an argument error, not an answer
+    about pytest-cov, and running it proves nothing either way."""
+    seen = _recorded_probe(monkeypatch)
+
+    assert _pytest_cov_probe("coverage run -m pytest --cov=pylib && coverage json") is True
+
+    assert seen == [], seen
+
+
+def test_the_probed_segment_is_the_one_that_runs_pytest(tmp_path, monkeypatch):
+    """A build step in front of the suite does not move the interpreter. The
+    first word answered for the whole line, so the segment holding pytest was
+    never read."""
+    shim = tmp_path / "pytest_cov.py"
+    shim.write_text('raise ImportError("shimmed out")\n', encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+
+    assert _pytest_cov_probe(f'echo building && "{sys.executable}" -m pytest --cov') is False
+
+
+def test_a_coverage_run_lane_earns_no_pytest_cov_warning(capsys):
+    """The whole defect, at init's own surface: the pip note fired on a machine
+    whose pytest_cov imports, because coverage rejected the -c flag."""
+    _warn_missing_pytest_cov((_lane("coverage run -m pytest --cov=pylib && coverage json"),))
+
+    assert capsys.readouterr().err == ""
 
 
 def test_a_probe_the_shell_itself_cannot_start_says_yes(monkeypatch):
@@ -276,6 +344,68 @@ def test_doctor_leaves_an_unresolvable_runner_to_the_path_check(monkeypatch):
     nothing would prove nothing: one gap, one line."""
     monkeypatch.setattr(config, "SHELL_IS_CMD", os.name == "nt")
     assert admin._lane_start_problem(_lane("no-such-runner-7f3a --coverage")) is None
+
+
+# --- and doctor reads the command with the lexer that will run it ------------
+#
+# The lane check split the command on whitespace while the rest of the tree
+# reads it with config.shell_words. Three wrong answers came out of that one
+# split: a quoted interpreter path, a runner after `&&`, and a quoted -k value.
+
+def _doctor_lane(command: str, cwd: str = "") -> Lane:
+    return Lane(name="py", command=command, artifact="cov.json",
+                parser="coveragepy", scopes=("py",), cwd=cwd)
+
+
+def _python_at_a_spaced_path(tmp_path) -> str:
+    """A real interpreter under a directory whose name holds a space. copy()
+    carries the executable bit, so which() answers for it on POSIX too."""
+    home = tmp_path / "spacey dir"
+    home.mkdir()
+    target = home / os.path.basename(sys.executable)
+    shutil.copy(sys.executable, target)
+    return target.as_posix()
+
+
+def test_doctor_reads_a_quoted_interpreter_path_as_one_word(tmp_path):
+    """The reported shape: an absolute python under Program Files. The split
+    named '"C:/Program', which resolves nowhere, so doctor failed a lane whose
+    interpreter is installed, on disk and resolvable by which()."""
+    path = _python_at_a_spaced_path(tmp_path)
+    assert shutil.which(path), "the fixture interpreter has to resolve"
+
+    problems = _lane_command_problems(tmp_path, _doctor_lane(f'"{path}" -m pytest --cov'))
+
+    assert problems == []
+
+
+def test_doctor_flags_a_missing_runner_in_a_chained_segment(tmp_path):
+    """Only the first word was checked, so a lane chaining a second command
+    passed doctor and died at the second step 40 minutes in."""
+    command = "npm run build && no-such-runner-anywhere vitest run --coverage"
+
+    problems = _lane_command_problems(tmp_path, _doctor_lane(command))
+
+    assert [p for p in problems if "no-such-runner-anywhere" in p], problems
+
+
+def test_doctor_names_one_missing_runner_per_segment(tmp_path):
+    """A first segment that resolves leaves exactly the second one's finding."""
+    command = f'"{sys.executable}" -m pytest --cov && no-such-runner-anywhere report'
+
+    problems = _lane_command_problems(tmp_path, _doctor_lane(command))
+
+    assert problems == ["lane 'py': executable 'no-such-runner-anywhere' "
+                        "does not resolve on PATH"]
+
+
+def test_doctor_says_nothing_about_a_test_path_inside_a_quoted_value(tmp_path):
+    """-k "tests/gone.py or x" is one argument to pytest, not a file the repo
+    owes. The split read '"tests/gone.py' as a named script and doctor failed a
+    lane that runs."""
+    command = f'"{sys.executable}" -m pytest -k "tests/gone.py or x"'
+
+    assert _lane_command_problems(tmp_path, _doctor_lane(command)) == []
 
 
 # --- timeout= has to bound the wall clock, here and in the mutant runner -----
