@@ -196,9 +196,11 @@ Exit 3.
 A path after one of the vitest options the guard knows is that option's value, not a
 filter: `--config vitest.ci.ts`, `--exclude src/legacy.cjs` and
 `--reporter ./tools/my-reporter.ts` all pass, and so do `-c`, `-t`, `--coverage.exclude`,
-`--coverage.include`, `--coverage.provider`, `--coverage.reporter`,
-`--coverage.reportsDirectory`, `--dir`, `--environment`, `--globalSetup`, `--outputFile`,
-`--pool`, `--project`, `--root`, `--setupFiles`, `--shard` and `--testNamePattern`. That
+`--coverage.extension`, `--coverage.include`, `--coverage.provider`,
+`--coverage.reporter`, `--coverage.reportsDirectory`, `--diff`, `--dir`,
+`--environment`, `--globalSetup`, `--outputFile`, `--pool`, `--project`, `--root`,
+`--setupFiles`, `--shard`, `--snapshotEnvironment`, `--testNamePattern`,
+`--typecheck.tsconfig` and `--workspace`. That
 list is the whole licence, not a rule about values: after any other flag, a path ending in
 a source suffix is read as a filter and refused. Attach it
 (`--coverage.customProviderModule=./tools/prov.ts`) and it passes.

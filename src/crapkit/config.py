@@ -286,11 +286,12 @@ def _first_filter_position(tokens: list[str]) -> int:
 # a filter here has to end in a source suffix already, so guessing that an unknown
 # flag swallows one would retire the check instead of sharpening it.
 _VITEST_VALUE_FLAGS = frozenset({
-    "-c", "-t", "--config", "--coverage.exclude", "--coverage.include",
-    "--coverage.provider", "--coverage.reporter", "--coverage.reportsDirectory",
-    "--dir", "--environment", "--exclude", "--globalSetup", "--outputFile",
-    "--pool", "--project", "--reporter", "--root", "--setupFiles", "--shard",
-    "--testNamePattern",
+    "-c", "-t", "--config", "--coverage.exclude", "--coverage.extension",
+    "--coverage.include", "--coverage.provider", "--coverage.reporter",
+    "--coverage.reportsDirectory", "--diff", "--dir", "--environment",
+    "--exclude", "--globalSetup", "--outputFile", "--pool", "--project",
+    "--reporter", "--root", "--setupFiles", "--shard", "--snapshotEnvironment",
+    "--testNamePattern", "--typecheck.tsconfig", "--workspace",
 })
 
 

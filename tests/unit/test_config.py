@@ -236,6 +236,20 @@ def test_a_quoted_operator_beside_coverage_starts_no_new_command(monkeypatch, sh
         _istanbul_lane('npx vitest run --coverage "&&" src/a.ts')
 
 
+@pytest.mark.parametrize("option, value", [
+    ("--workspace", "vitest.workspace.ts"),
+    ("--diff", "vitest.diff.ts"),
+    ("--snapshotEnvironment", "./env.ts"),
+    ("--coverage.extension", ".ts"),
+    ("--typecheck.tsconfig", "tsconfig.ts"),
+])
+def test_the_vitest_options_that_take_a_path_are_all_licensed(option, value):
+    """Each of these reads the next token, so the path behind it is the option's
+    value. Missing from the closed list, each was refused as a file filter that
+    narrows the coverage include set, and the lane runs fine."""
+    assert _istanbul_lane(f"npx vitest run --coverage {option} {value}").name == "unit"
+
+
 def test_the_lanes_page_names_every_vitest_option_the_guard_licenses():
     """The guard works from a closed list, so the page has to print the list. It
     read as a rule about values while the frozenset grew from 11 names to 20
