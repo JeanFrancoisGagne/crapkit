@@ -7,9 +7,11 @@ whether the first `crapkit coverage` survives, and only a clean "no" may warn:
 a probe that cannot run is doctor's finding (a dead interpreter), not this one's.
 """
 import os
+import shutil
 import sys
 import time
 import types
+import uuid
 
 import pytest
 
@@ -146,7 +148,7 @@ def test_a_probe_that_raises_oserror_says_yes(monkeypatch):
     def boom(*args, **kwargs):
         raise OSError(2, "The system cannot find the file specified")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "Popen", boom)
     assert _pytest_cov_probe(f"{sys.executable} -m pytest --cov") is True
 
 
@@ -235,3 +237,88 @@ def test_a_mutant_that_outlives_its_timeout_dies_at_the_timeout(tmp_path):
     assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
     assert time.perf_counter() - start < _CEILING
     assert source.read_text(encoding="utf-8") == "flag = True\n"
+
+
+# --- and the deadline has to kill the tree, not just the shell ---------------
+#
+# The shell is the child; the program it started is a grandchild. Killing the
+# shell returns the wall clock to the caller and leaves the program running
+# with nothing waiting on it: `mutate` scored the mutant killed and left its
+# suite running, one per mutant, all of them at once on the default path.
+
+_ORPHAN_SLEEP = 30      # long enough that a survivor is unmistakable
+_ORPHAN_POLL = 3.0
+
+
+def _process_lister() -> str:
+    return "powershell" if os.name == "nt" else "ps"
+
+
+_COUNT_PYTHON = ("Get-CimInstance Win32_Process | "
+                 "Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*%s*' } "
+                 "| Measure-Object | Select-Object -ExpandProperty Count")
+
+
+def _alive(token: str) -> bool:
+    """Is a process whose command line holds this token still running? The
+    Windows query filters on python.exe, so the PowerShell being asked - whose
+    own command line carries the token - is not counted as the answer."""
+    import subprocess
+
+    if os.name == "nt":
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", _COUNT_PYTHON % token],
+                             capture_output=True, text=True)
+        return out.stdout.strip() not in ("", "0")
+    out = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True)
+    return token in out.stdout
+
+
+def _gone(token: str) -> bool:
+    """Nothing is running that token, giving a dying tree a moment to go."""
+    deadline = time.time() + _ORPHAN_POLL
+    while time.time() < deadline:
+        if not _alive(token):
+            return True
+        time.sleep(0.2)
+    return not _alive(token)
+
+
+def _long_sleeper(tmp_path) -> tuple:
+    """A command that reports it started and then outlives any timeout. Run
+    through the shell, so the interpreter is the shell's child: the orphan."""
+    script = tmp_path / f"orphan_{uuid.uuid4().hex}.py"
+    script.write_text("import pathlib, time\n"
+                      "pathlib.Path(__file__).with_suffix('.started').touch()\n"
+                      f"time.sleep({_ORPHAN_SLEEP})\n", encoding="utf-8")
+    return f'"{sys.executable}" "{script}"', script.name, script.with_suffix(".started")
+
+
+_NO_LISTER = shutil.which(_process_lister()) is None
+
+
+@pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
+def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path):
+    """The timeout says the mutant is dead. A mutation command still running
+    after that is a whole test suite the run stopped counting on: sixteen
+    mutants on one worker put sixteen of them on the machine at once."""
+    command, token, started = _long_sleeper(tmp_path)
+    (tmp_path / "m.py").write_text("flag = True\n", encoding="utf-8")
+    cfg = types.SimpleNamespace(mutation_command=command, mutation_timeout_seconds=_TIMEOUT)
+    mutant = Mutant("m.py", 1, "flag = True", "flag = False", "True -> False")
+
+    start = time.perf_counter()
+    assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
+    assert time.perf_counter() - start < _CEILING
+    assert started.is_file(), "the command never started: this proved nothing"
+    assert _gone(token), "the mutation command outlived the timeout that killed it"
+
+
+@pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
+def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkeypatch):
+    """Same leak on init's side: one interpreter per timed-out probe, left
+    running under an init that already printed its summary and returned."""
+    _sleeping_interpreter(tmp_path, monkeypatch)
+    monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
+
+    assert _pytest_cov_probe("python -m pytest --cov") is True
+    assert _gone(f"time.sleep({_SLEEP})"), "the probe left its interpreter running"

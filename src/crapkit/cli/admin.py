@@ -116,24 +116,22 @@ def _pytest_cov_probe(command: str) -> bool:
     True too when the probe cannot run — only a clean "no" earns the warning,
     and a missing interpreter is doctor's finding, not this one's."""
     import shutil
-    import subprocess
+
+    from ..procs import run_bounded
 
     words = shell_words(command)
     if not words or shutil.which(words[0]) is None:
         return True
     probe = f'{_shell_quote(words[0])} -c "import pytest_cov"'
     try:
-        # DEVNULL, not capture_output: the answer is the exit code, and a pipe
-        # would outlive the timeout. shell=True makes the shell the child and
-        # the interpreter a grandchild; on TimeoutExpired run() kills the shell
-        # and then drains the pipes with no deadline, so the call returns when
-        # the grandchild that inherited them exits. The 15 would bound nothing.
-        result = subprocess.run(probe, shell=True, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                timeout=_PROBE_TIMEOUT_SECONDS)
-    except (OSError, subprocess.TimeoutExpired):
+        # run_bounded: the interpreter is the shell's child, and run()'s timeout
+        # kills the shell alone. The 15 bounded nothing and left one interpreter
+        # running per timeout. None here is that deadline, and it is not an
+        # answer about pytest_cov.
+        code = run_bounded(probe, _PROBE_TIMEOUT_SECONDS)
+    except OSError:
         return True
-    return not _probe_answered_no(result.returncode)
+    return code is None or not _probe_answered_no(code)
 
 
 def _shell_quote(word: str) -> str:

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +26,7 @@ from pathlib import Path
 
 from .gitio import worktree_add, worktree_remove
 from .mutate import apply_mutant
+from .procs import run_bounded
 
 
 def run_one(tree: Path, cfg, mutant) -> bool:
@@ -41,18 +41,14 @@ def run_one(tree: Path, cfg, mutant) -> bool:
     try:
         p.write_text(apply_mutant(original.decode("utf-8", "replace"), mutant),
                      encoding="utf-8", newline="")
-        # DEVNULL, not capture_output: only the exit code decides, and a pipe
-        # would outlive the timeout. shell=True makes the shell the child and
-        # the suite a grandchild; on TimeoutExpired run() kills the shell and
-        # then drains the pipes with no deadline, so a mutant that loops forever
-        # holds the worker for as long as it loops instead of dying here.
-        proc = subprocess.run(cfg.mutation_command, shell=True, cwd=tree,
-                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, env=env,
-                              timeout=cfg.mutation_timeout_seconds)
-        return proc.returncode != 0
-    except subprocess.TimeoutExpired:
-        return True  # a mutant that loops forever is dead
+        # run_bounded, not subprocess.run: the command is a whole test suite
+        # under a shell, and the timeout has to kill the tree. run()'s timeout
+        # kills the shell alone and leaves the suite running, so a mutant that
+        # loops forever was scored dead while its suite ran on to the end -
+        # one of them per mutant, all at once on the single-worker path.
+        # None is the deadline: a mutant that loops forever is dead.
+        return run_bounded(cfg.mutation_command, cfg.mutation_timeout_seconds,
+                           cwd=tree, env=env) != 0
     finally:
         p.write_bytes(original)
 
