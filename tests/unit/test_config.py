@@ -1,4 +1,6 @@
 """Config seam: crapkit.toml in, validated Config out. Pure: bytes/str in, dataclass out."""
+from pathlib import Path
+
 import pytest
 
 from crapkit.errors import ConfigError
@@ -199,6 +201,66 @@ def test_under_cmd_a_double_quoted_file_filter_is_still_a_filter(monkeypatch):
             'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
 
 
+def _istanbul_lane(command: str):
+    """A TOML literal string, so a command's double quotes reach the guard."""
+    return load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
+        f"[[lane]]\nname = \"unit\"\ncommand = '{command}'\n"
+        'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n').lanes[0]
+
+
+def test_a_script_path_in_a_step_chained_after_the_run_is_not_a_file_filter():
+    """`&&` starts a new process: vitest never sees `scripts/post.mjs`, so
+    calling it a filter that narrows the coverage include set refused a lane
+    that runs correctly, and full_suite = false does not clear this guard."""
+    assert _istanbul_lane("vitest run --coverage && node scripts/post.mjs src/a.ts").name
+    assert _istanbul_lane("vitest run --coverage | tee run.log").name
+
+
+def test_a_run_chained_after_another_command_is_still_checked_for_a_filter():
+    """The runner in the second segment is still the runner: stopping at the
+    first operator would let a real filter through."""
+    import pytest as _pytest
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane("npm run build && vitest run --coverage src/a.ts")
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane("vitest run --coverage && vitest run --coverage src/b.ts")
+
+
+def test_the_lanes_page_names_every_vitest_option_the_guard_licenses():
+    """The guard works from a closed list, so the page has to print the list. It
+    read as a rule about values while the frozenset grew from 11 names to 20
+    behind it, and a reader whose flag was missing had nothing to grep for."""
+    from crapkit.config import _VITEST_VALUE_FLAGS
+
+    page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(encoding="utf-8")
+    assert [flag for flag in sorted(_VITEST_VALUE_FLAGS) if f"`{flag}" not in page] == []
+
+
+def test_under_cmd_a_caret_escaped_file_filter_is_still_a_filter(monkeypatch):
+    """`^"src/a.ts^"` reaches vitest as the filter `src/a.ts`: leaving the caret
+    in the token hid the suffix and the narrowing lane loaded clean."""
+    import pytest as _pytest
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", True)
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane('npx vitest run --coverage ^"src/a.ts^"')
+
+
+def test_shell_words_under_cmd_reads_a_caret_as_the_escape_cmd_reads():
+    """Outside a quoted run cmd.exe drops `^` and hands the runner the character
+    behind it, so `-k ^"not slow^"` is one value. Inside a quoted run cmd.exe
+    leaves the caret alone, and the runner gets it."""
+    assert shell_words('pytest --cov -k ^"not slow^"', cmd=True) == \
+        ["pytest", "--cov", "-k", "not slow"]
+    assert shell_words('pytest -k "a^b"', cmd=True) == ["pytest", "-k", "a^b"]
+    assert shell_words('pytest -k "a^^b"', cmd=True) == ["pytest", "-k", "a^^b"]
+
+
+def test_shell_words_under_sh_leaves_a_caret_alone():
+    """sh has no caret escape: it is an ordinary character in the word."""
+    assert shell_words('pytest -k ^"not slow^"', cmd=False) == ["pytest", "-k", "^not slow^"]
+
+
 def test_shell_words_reads_double_quotes_under_both_shells():
     command = 'pytest -m "not live and not perf" --cov'
     expected = ["pytest", "-m", "not live and not perf", "--cov"]
@@ -212,6 +274,19 @@ def test_shell_words_under_cmd_keeps_backslashes_and_reads_a_single_quote_as_a_c
     assert shell_words(r"pytest tests\unit --cov-report=json:.crapkit\cov\py.json", cmd=True) == \
         ["pytest", r"tests\unit", r"--cov-report=json:.crapkit\cov\py.json"]
     assert shell_words("pytest -m 'not live'", cmd=True) == ["pytest", "-m", "'not", "live'"]
+
+
+def test_shell_words_reads_a_quote_that_opens_mid_token_under_both_shells():
+    """Quoting the part that holds the space is how a Windows path gets written.
+    cmd.exe closes the word on the quote wherever the quote sits, so
+    `--cov-report=json:"a b\\py.json"` is one argument to the runner and one
+    token here; splitting it named a positional the operator never wrote."""
+    assert shell_words(r'pytest --cov-report=json:"a b\py.json"', cmd=True) == \
+        ["pytest", r"--cov-report=json:a b\py.json"]
+    assert shell_words('pytest tests/"a b"/test_x.py', cmd=True) == \
+        ["pytest", "tests/a b/test_x.py"]
+    assert shell_words('pytest tests/"a b"/test_x.py', cmd=False) == \
+        ["pytest", "tests/a b/test_x.py"]
 
 
 def test_shell_words_under_sh_reads_single_quotes():

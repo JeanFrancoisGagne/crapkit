@@ -382,6 +382,72 @@ def test_under_cmd_a_backslash_path_is_still_a_narrowing_positional(monkeypatch)
     assert r"tests\unit" in str(caught.value), "the refusal names the token as written"
 
 
+def test_a_step_chained_after_the_run_is_not_the_runner_arguments():
+    """`&&` starts a new process, and the shell hands pytest only the words in
+    its own segment. Reading the whole line flat refused `coverage run -m pytest
+    && coverage json`, the standard workflow, naming the second command's own
+    program as a positional pytest never sees."""
+    assert _covpy_lane("python -m pytest --cov=pylib && echo done").command
+    assert _covpy_lane("python -m pytest --cov=pylib & echo done").command
+    assert _covpy_lane("python -m pytest --cov=pylib || echo failed").command
+    assert _covpy_lane("python -m pytest --cov=pylib | tee run.log").command
+
+
+def test_a_step_chained_before_the_run_still_leaves_the_run_checked():
+    assert _covpy_lane("cd tests && python -m pytest --cov=pylib").command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("cd tests && python -m pytest --cov=pylib pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_every_chained_segment_that_runs_pytest_is_checked():
+    """Stopping at the first operator would hide a second run that really does
+    narrow: both segments are pytest argv, so both are read."""
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("python -m pytest --cov=pylib && python -m pytest pylib/unit --cov-append")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_an_operator_inside_a_quoted_value_is_part_of_the_word():
+    """`-k "a && b"` is one marker expression, not two commands."""
+    assert _covpy_lane('python -m pytest -k "a && b" --cov=pylib').command
+
+
+def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(r"python -m pytest -x tests\unit --cov=pylib && echo x")
+    assert r"'tests\unit'" in str(caught.value)
+    assert "echo" not in str(caught.value)
+
+
+def test_under_cmd_a_caret_escaped_quote_holds_the_flag_value_together(monkeypatch):
+    """cmd.exe hands pytest `-k` and `not slow`. Keeping the caret in the token
+    split the value and refused the lane, naming 'slow^"', two pieces of shell
+    syntax glued together and nothing the operator can drop."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = 'python -m pytest --cov=pylib -k ^"not slow^"'
+    assert _covpy_lane(command).command == command
+
+
+def test_under_cmd_a_quoted_path_inside_a_flag_value_is_not_a_positional(monkeypatch):
+    """cmd.exe hands pytest `--cov-report=json:a b\\py.json`, one argument, so the
+    lane runs. Reading the quote as a word boundary refused it and named
+    'b\\py.json"', a token that is no argument the operator wrote."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = r'python -m pytest --cov --cov-report=json:"a b\py.json"'
+    assert _covpy_lane(command).command == command
+
+
+def test_under_cmd_a_mid_token_quote_in_a_real_positional_is_named_as_written(monkeypatch):
+    """The refusal has to name the argument pytest gets, not a fragment of the
+    line: `tests/"a b"/test_x.py` is the one path `tests/a b/test_x.py`."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane('python -m pytest --cov=pylib tests/"a b"/test_x.py')
+    assert "'tests/a b/test_x.py'" in str(caught.value)
+
+
 def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
     with pytest.raises(ConfigError, match="narrows a full-suite"):
         _covpy_lane("python -m pytest 'pylib/sub dir' --cov=pylib")
