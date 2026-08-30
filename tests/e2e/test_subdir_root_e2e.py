@@ -22,6 +22,7 @@ MAKE_COV = ('import json\n'
 CONFIG = """[crapkit]
 target = 6
 worklist_floor = 5
+mutation_command = "python -c pass"
 
 [[scope]]
 name = "core"
@@ -97,3 +98,129 @@ def test_a_subdir_root_inside_a_linked_worktree_matches(nested: Path):
     wl = _worklist(wt / "app")
     assert [e["path"] for e in wl["active"]] == ["core/hot.py"]
     assert wl["dormant_count"] == 0
+
+
+# --- the staged diff, which reads the same way ------------------------------
+#
+# `git diff` prints paths relative to the repo TOP too, so every reader that
+# joins a diff path against a scored row missed under a nested root: the commit
+# gate passed a ccn 12 function, `rescore --gate` and `verify` scored it and
+# gated nothing, lane reuse read a changed scope as unchanged and published
+# coverage from a stale artifact, and mutate resolved none of its targets on
+# disk. All of them are the one shape below.
+
+
+def _run_hook(app: Path, payload: dict) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-m", "crapkit", "claude-hook", "--protocol", "1"],
+                          cwd=app, input=json.dumps(payload), capture_output=True,
+                          text=True, timeout=180, env=dict(os.environ))
+
+
+def _stage_breach(nested: Path) -> Path:
+    """core/hot.py rewritten to ccn 12 and staged. Returns the crapkit root."""
+    app = nested / "app"
+    (app / "core" / "hot.py").write_text(_source(11), encoding="utf-8")
+    _git(nested, "add", "app/core/hot.py")
+    return app
+
+
+def test_a_subdir_root_gates_a_staged_function_over_the_ceiling(nested: Path):
+    """The issue: the pre-commit gate let a ccn 12 function through and said the
+    file belonged to no scope, because the diff named it `app/core/hot.py` while
+    the scope claims `core/`."""
+    app = _stage_breach(nested)
+
+    res = run_cli(app, "hook-precommit")
+
+    assert res.returncode == 6, res.stdout + res.stderr
+    assert "core/hot.py:1" in res.stdout
+    assert "app/core/hot.py" not in res.stdout
+    assert "belong to no scope" not in res.stderr
+
+
+def test_a_subdir_root_reads_the_staged_blob_it_gates(nested: Path):
+    """`git cat-file --batch` reads `:<path>` from the repo top whatever the cwd,
+    so a root-relative request needs the `./` gitrevisions spells out. Both
+    readers build it: the prefetched pair the hook uses and the fallback."""
+    from crapkit import gitio
+
+    app = _stage_breach(nested)
+
+    with gitio.staged_reads(app) as reads:
+        prefetched = reads.staged_blobs(["core/hot.py"])
+    fallback = gitio.staged_blobs(app, ["core/hot.py"])
+
+    assert b"def hot(a, b):" in prefetched["core/hot.py"]
+    assert fallback == prefetched
+
+
+def test_a_subdir_root_advises_on_an_edited_file(nested: Path):
+    """The claude-hook sibling: it spawns its own diff, so gitio's flag does not
+    reach it. stdout stays empty either way — protocol 1 reserves it."""
+    app = _stage_breach(nested)
+
+    res = _run_hook(app, {"hook_event_name": "PostToolUse", "tool_name": "Edit",
+                          "cwd": str(app),
+                          "tool_input": {"file_path": str(app / "core" / "hot.py")}})
+
+    assert res.returncode == 2, res.stderr
+    assert "core/hot.py:1" in res.stderr
+    assert res.stdout == ""
+
+
+def test_a_subdir_root_gates_on_rescore_and_verify(nested: Path):
+    """Both scoring gates filter on `diff_since(root, ...)`, so under a nested
+    root no scored row was ever a candidate and both exited 0 on a crap 156 row."""
+    app = _stage_breach(nested)
+    assert run_cli(app, "coverage").returncode == 0
+
+    gated = run_cli(app, "rescore", "--gate", "core/hot.py")
+    verified = run_cli(app, "verify")
+
+    assert gated.returncode == 6, gated.stdout + gated.stderr
+    assert verified.returncode == 6, verified.stdout + verified.stderr
+
+
+def test_a_subdir_root_reruns_a_lane_whose_scope_changed(nested: Path):
+    """The one sibling that publishes a wrong number rather than skipping a
+    check: reuse read every scope as unchanged and scored against stale
+    coverage."""
+    app = nested / "app"
+    assert run_cli(app, "coverage").returncode == 0
+    _git(nested, "add", "-A")
+    _git(nested, "commit", "-q", "-m", "scored")
+    (app / "core" / "hot.py").write_text(_source(7), encoding="utf-8")
+
+    res = run_cli(app, "coverage", "--reuse-unchanged")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "still matches its scopes" not in res.stderr
+
+
+def test_a_subdir_root_reruns_a_lane_for_a_new_untracked_file(nested: Path):
+    """A file git has never seen is the most common way a lane goes stale, and
+    `git status --untracked-files=no` could not see it. The union that replaced
+    it asks `ls-files --others` too."""
+    app = nested / "app"
+    assert run_cli(app, "coverage").returncode == 0
+    _git(nested, "add", "-A")
+    _git(nested, "commit", "-q", "-m", "scored")
+    (app / "core" / "fresh.py").write_text(_source(1), encoding="utf-8")
+
+    res = run_cli(app, "coverage", "--reuse-unchanged")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "still matches its scopes" not in res.stderr
+
+
+def test_a_subdir_root_mutates_the_lines_it_changed(nested: Path):
+    """mutate built targets from top-relative diff keys, then read `<root>/app/
+    core/hot.py`, missed every one and reported a mutation score over zero
+    mutants."""
+    app = nested / "app"
+    (app / "core" / "hot.py").write_text(_source(7), encoding="utf-8")
+
+    res = run_cli(app, "mutate", "--json", "--max-mutants", "2")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert json.loads(res.stdout)["mutants"] > 0

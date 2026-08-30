@@ -607,6 +607,9 @@ def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
 
 
 def _warn_unscoped_staged(unscoped: list) -> None:
+    """Staged source no scope claims. A staged file ABOVE the crapkit root is
+    never named here by design: the gate reads a diff relative to the root, and
+    a file outside the root is outside the universe crapkit can score."""
     if unscoped:
         print(f"crapkit gate: {len(unscoped)} staged file(s) belong to no scope and were "
               f"not gated: {', '.join(unscoped)} — add a [[scope]] claiming them "

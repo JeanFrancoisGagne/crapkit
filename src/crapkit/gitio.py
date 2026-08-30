@@ -14,10 +14,20 @@ from .errors import GitError
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
+# Every path this module hands out is joined against root-relative rows, because
+# `git ls-files` answers relative to the cwd. Diffs do not: git names their files
+# relative to the repo TOP, so under a root one directory down (a monorepo
+# member, a project nested in a worktree) `app/core/x.py` met rows saying
+# `core/x.py` and every join missed — the commit gate passed a ccn 12 function,
+# lane reuse read a changed scope as unchanged. One config flag on the process
+# covers every diff command here, so a reader added later is right by default.
+_RELATIVE = ("-c", "diff.relative=true")
+
 
 def _git(root: Path, *args: str) -> str:
     try:
-        res = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8")
+        res = subprocess.run(["git", *_RELATIVE, *args], cwd=root,
+                             capture_output=True, text=True, encoding="utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
@@ -32,7 +42,7 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     consumer never mistakes an empty stream for an empty history.
     """
     try:
-        proc = subprocess.Popen(["git", *args], cwd=root, stdout=subprocess.PIPE,
+        proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, encoding="utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
@@ -106,8 +116,13 @@ def unstaged_paths(root: Path) -> set[str]:
     git-for-windows' installer default — because the blob holds LF and the
     checkout holds CRLF by design.
     """
-    out = _git(root, "diff", "--name-only", "--no-renames")
-    return {line.strip().replace("\\", "/") for line in out.splitlines() if line.strip()}
+    return set(_diff_names(root))
+
+
+def _diff_names(root: Path, *args: str) -> list[str]:
+    """One `git diff --name-only` answer, slash-normalized."""
+    out = _git(root, "diff", "--name-only", "--no-renames", *args)
+    return [line.strip().replace("\\", "/") for line in out.splitlines() if line.strip()]
 
 
 def diff_since(root: Path, commit: str) -> str:
@@ -116,8 +131,7 @@ def diff_since(root: Path, commit: str) -> str:
 
 def diff_names_since(root: Path, commit: str) -> list[str]:
     """Files with committed changes between a commit and HEAD."""
-    out = _git(root, "diff", "--name-only", "--no-renames", commit, "HEAD")
-    return [line.strip().replace("\\", "/") for line in out.splitlines() if line.strip()]
+    return _diff_names(root, commit, "HEAD")
 
 
 def _rename_pairs(fields: list[str]) -> dict[str, str]:
@@ -150,9 +164,23 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
 
 
 def status_names(root: Path) -> list[str]:
-    """Files with uncommitted (staged or unstaged) changes in the working tree."""
-    out = _git(root, "status", "--porcelain", "--untracked-files=no")
-    return [line[3:].strip().replace("\\", "/") for line in out.splitlines() if len(line) > 3]
+    """Files with uncommitted changes: staged, unstaged, or never added.
+
+    Two diffs and an ls-files rather than `git status --porcelain`, which names
+    its files relative to the repo TOP and cannot be talked out of it —
+    `status.relativePaths=true` and `--porcelain=v1` both still print
+    `app/core/x.py` from a root one directory down, while every caller joins
+    these names against root-relative rows. The diffs take `diff.relative` like
+    the rest of this module and `ls-files --others` answers relative to the cwd
+    already.
+
+    Untracked files are in the set because lane reuse reads it: a test file that
+    exists and git has never seen still makes that lane's coverage stale. The
+    dirty-file set verify builds from this only ever meets tracked rows, so the
+    wider answer cannot relabel a finding there.
+    """
+    return sorted({*_diff_names(root, "--cached"), *_diff_names(root),
+                   *untracked_files(root)})
 
 
 def merge_base(root: Path, ref: str) -> str:
@@ -220,8 +248,15 @@ def staged_blobs(root: Path, rel_paths: list[str]) -> dict[str, bytes]:
     """
     if not rel_paths:
         return {}
-    requests = "".join(f":{rel}\n" for rel in rel_paths).encode("utf-8")
-    return _framed_blobs(_batch_stream(root, requests), rel_paths)
+    return _framed_blobs(_batch_stream(root, _batch_requests(rel_paths)), rel_paths)
+
+
+def _batch_requests(rel_paths: list[str]) -> bytes:
+    """`:./<path>` per line: `git cat-file` reads a bare `:<path>` from the repo
+    TOP whatever the cwd is, so a root-relative name asked for that way is
+    `is not in the index` under a nested root. The `./` is gitrevisions' own
+    spelling for cwd-relative and is a no-op at the top."""
+    return "".join(f":./{rel}\n" for rel in rel_paths).encode("utf-8")
 
 
 class _Started:
@@ -238,7 +273,7 @@ class _Started:
         self._args, self._root, self._text = args, root, text
         try:
             self._proc = subprocess.Popen(
-                ["git", *args], cwd=root,
+                ["git", *_RELATIVE, *args], cwd=root,
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=text, encoding="utf-8" if text else None)
@@ -292,7 +327,7 @@ class _StartedReads:
     def staged_blobs(self, rel_paths: list[str]) -> dict[str, bytes]:
         if not rel_paths:
             return {}
-        stream = self._batch.result("".join(f":{rel}\n" for rel in rel_paths).encode("utf-8"))
+        stream = self._batch.result(_batch_requests(rel_paths))
         return _framed_blobs(stream, rel_paths)
 
     def close(self) -> None:

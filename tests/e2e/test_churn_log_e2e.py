@@ -107,7 +107,16 @@ def traced(repo: Path, tmp_path: Path, tag: str, *args: str):
     env = dict(os.environ)
     env["GIT_TRACE2_EVENT"] = str(trace)
     res = run_cli(repo, *args, env=env)
-    return res, [argv for argv in _argvs(trace) if argv[1:2] == ["log"]]
+    return res, [argv for argv in _argvs(trace) if _subcommand(argv) == "log"]
+
+
+def _subcommand(argv: list[str]) -> str:
+    """The git subcommand, past git's own flags: crapkit spawns every git with
+    `-c diff.relative=true`, so the subcommand is not argv[1]."""
+    i = 1
+    while argv[i:i + 1] == ["-c"]:
+        i += 2
+    return argv[i] if i < len(argv) else ""
 
 
 def window_walks(walks: list[list[str]]) -> list[list[str]]:
