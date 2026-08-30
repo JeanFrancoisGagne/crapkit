@@ -373,6 +373,9 @@ def build_parser() -> argparse.ArgumentParser:
     mut.add_argument("--files", nargs="*", default=None,
                      help="mutate these whole files instead of the working-tree diff vs HEAD")
     mut.add_argument("--max-mutants", type=int, default=100, help="hard cap per run (default 100)")
+    mut.add_argument("--drop-pool", action="store_true",
+                     help="remove the worktrees mutation_workers > 1 keeps in "
+                          ".crapkit/mutate-pool/ and exit")
     mut.add_argument("--json", action="store_true", help="machine output")
     mut.set_defaults(func=_Handler("analyses", "cmd_mutate"))
 

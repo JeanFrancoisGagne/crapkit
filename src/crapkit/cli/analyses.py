@@ -138,10 +138,26 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     return serve(root)
 
 
+def _drop_mutate_pool(root: Path) -> int:
+    """`--drop-pool`: the worktrees `mutation_workers > 1` keeps between runs,
+    gone. No config is read first, because the reason to reach for this is a
+    repo whose pool outlived whatever built it, and a crapkit.toml that no
+    longer parses must not stand between a user and four checkouts of their own
+    repo taking up disk."""
+    from ..mutate_pool import drop_pool, pool_dir
+
+    removed = drop_pool(root)
+    print(f"removed {len(removed)} pooled worktrees from {pool_dir(root)}"
+          if removed else f"no mutation worktree pool at {pool_dir(root)}")
+    return 0
+
+
 def cmd_mutate(args: argparse.Namespace) -> int:
     from ..mutate_pool import reporter, run_mutants
 
     root = Path(args.repo).resolve()
+    if args.drop_pool:
+        return _drop_mutate_pool(root)
     cfg = _load_repo_config(root)
     if not cfg.mutation_command:
         raise ConfigError("mutate needs [crapkit] mutation_command — the suite run once per mutant")
