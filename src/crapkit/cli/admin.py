@@ -375,19 +375,31 @@ def _missing_named_script(cwd: Path, tok: str) -> bool:
     return not (cwd / tok).is_file()
 
 
-def _lane_command_problems(root: Path, lane) -> list[str]:
-    """Config rot a lane would only reveal 40 minutes in: a runner that no
-    longer resolves, a named script that left the repo. Nothing is executed."""
+def _segment_problems(name: str, cwd: Path, tokens: list[str]) -> list[str]:
+    """One command's argv: its runner, then the files it names. Nothing is
+    executed."""
     import shutil
 
-    problems = []
-    tokens = lane.command.split()
-    if tokens and shutil.which(tokens[0]) is None:
-        problems.append(f"lane {lane.name!r}: executable {tokens[0]!r} does not resolve on PATH")
+    if not tokens:
+        return []
+    runner = ([f"lane {name!r}: executable {tokens[0]!r} does not resolve on PATH"]
+              if shutil.which(tokens[0]) is None else [])
+    return runner + [f"lane {name!r}: command names {tok!r}, which does not exist"
+                     for tok in tokens[1:] if _missing_named_script(cwd, tok)]
+
+
+def _lane_command_problems(root: Path, lane) -> list[str]:
+    """Config rot a lane would only reveal 40 minutes in: a runner that no
+    longer resolves, a named script that left the repo.
+
+    Read by the shell that will run the lane, one segment at a time. A
+    whitespace split answered three questions wrong: it broke a quoted
+    interpreter path at its space (`'"C:/Program'` resolves nowhere), it never
+    looked past the first word, so a dead runner after `&&` passed doctor, and
+    it read a quoted `-k "tests/gone.py or x"` as a test file the repo owes."""
     cwd = root / lane.cwd if lane.cwd else root
-    problems += [f"lane {lane.name!r}: command names {tok!r}, which does not exist"
-                 for tok in tokens[1:] if _missing_named_script(cwd, tok)]
-    return problems
+    return [problem for segment in config.shell_segments(lane.command)
+            for problem in _segment_problems(lane.name, cwd, segment)]
 
 
 def _lane_start_problem(lane) -> str | None:

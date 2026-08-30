@@ -16,8 +16,9 @@ import uuid
 import pytest
 
 from crapkit import config, mutate_pool
-from crapkit.cli import _pytest_cov_probe, _warn_missing_pytest_cov
+from crapkit.cli import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
+from crapkit.config import Lane
 from crapkit.mutate import Mutant
 from crapkit.scaffold import LaneSpec
 
@@ -276,6 +277,68 @@ def test_doctor_leaves_an_unresolvable_runner_to_the_path_check(monkeypatch):
     nothing would prove nothing: one gap, one line."""
     monkeypatch.setattr(config, "SHELL_IS_CMD", os.name == "nt")
     assert admin._lane_start_problem(_lane("no-such-runner-7f3a --coverage")) is None
+
+
+# --- and doctor reads the command with the lexer that will run it ------------
+#
+# The lane check split the command on whitespace while the rest of the tree
+# reads it with config.shell_words. Three wrong answers came out of that one
+# split: a quoted interpreter path, a runner after `&&`, and a quoted -k value.
+
+def _doctor_lane(command: str, cwd: str = "") -> Lane:
+    return Lane(name="py", command=command, artifact="cov.json",
+                parser="coveragepy", scopes=("py",), cwd=cwd)
+
+
+def _python_at_a_spaced_path(tmp_path) -> str:
+    """A real interpreter under a directory whose name holds a space. copy()
+    carries the executable bit, so which() answers for it on POSIX too."""
+    home = tmp_path / "spacey dir"
+    home.mkdir()
+    target = home / os.path.basename(sys.executable)
+    shutil.copy(sys.executable, target)
+    return target.as_posix()
+
+
+def test_doctor_reads_a_quoted_interpreter_path_as_one_word(tmp_path):
+    """The reported shape: an absolute python under Program Files. The split
+    named '"C:/Program', which resolves nowhere, so doctor failed a lane whose
+    interpreter is installed, on disk and resolvable by which()."""
+    path = _python_at_a_spaced_path(tmp_path)
+    assert shutil.which(path), "the fixture interpreter has to resolve"
+
+    problems = _lane_command_problems(tmp_path, _doctor_lane(f'"{path}" -m pytest --cov'))
+
+    assert problems == []
+
+
+def test_doctor_flags_a_missing_runner_in_a_chained_segment(tmp_path):
+    """Only the first word was checked, so a lane chaining a second command
+    passed doctor and died at the second step 40 minutes in."""
+    command = "npm run build && no-such-runner-anywhere vitest run --coverage"
+
+    problems = _lane_command_problems(tmp_path, _doctor_lane(command))
+
+    assert [p for p in problems if "no-such-runner-anywhere" in p], problems
+
+
+def test_doctor_names_one_missing_runner_per_segment(tmp_path):
+    """A first segment that resolves leaves exactly the second one's finding."""
+    command = f'"{sys.executable}" -m pytest --cov && no-such-runner-anywhere report'
+
+    problems = _lane_command_problems(tmp_path, _doctor_lane(command))
+
+    assert problems == ["lane 'py': executable 'no-such-runner-anywhere' "
+                        "does not resolve on PATH"]
+
+
+def test_doctor_says_nothing_about_a_test_path_inside_a_quoted_value(tmp_path):
+    """-k "tests/gone.py or x" is one argument to pytest, not a file the repo
+    owes. The split read '"tests/gone.py' as a named script and doctor failed a
+    lane that runs."""
+    command = f'"{sys.executable}" -m pytest -k "tests/gone.py or x"'
+
+    assert _lane_command_problems(tmp_path, _doctor_lane(command)) == []
 
 
 # --- timeout= has to bound the wall clock, here and in the mutant runner -----
