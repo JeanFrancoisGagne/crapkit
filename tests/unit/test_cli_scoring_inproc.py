@@ -85,6 +85,18 @@ def test_inventory_writes_the_db_it_was_pointed_at(repo, capsys, tmp_path):
     assert not (repo / ".crapkit" / "crap.sqlite").exists()
 
 
+def test_inventory_skips_a_tracked_file_deleted_from_the_working_tree(repo, capsys):
+    """git still tracks it, so it is in the universe; it has no records because
+    there is nothing on disk to analyze. The run scores what is left."""
+    (repo / "web" / "ui.ts").unlink()
+
+    code, out, err = run(["inventory"], repo, capsys)
+
+    assert code == 0
+    assert "tracked file missing from working tree, skipped: web/ui.ts" in err, err
+    assert "2 functions in 1 files" in out, out
+
+
 def test_inventory_outside_a_configured_repo_names_the_file_it_wanted(tmp_path, capsys):
     code, _, err = run(["inventory"], tmp_path, capsys)
 
