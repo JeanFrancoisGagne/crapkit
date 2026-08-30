@@ -97,6 +97,15 @@ CREATE TABLE IF NOT EXISTS attempts (
     closed_at TEXT,
     handle TEXT
 );
+CREATE TABLE IF NOT EXISTS run_rollup (
+    run_id INTEGER NOT NULL REFERENCES runs(id),
+    ceiling_key TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    functions INTEGER NOT NULL,
+    over_target INTEGER NOT NULL,
+    crap_load REAL NOT NULL,
+    PRIMARY KEY (run_id, ceiling_key, scope)
+) WITHOUT ROWID;
 """
 
 # Indexes run after the migration, never with it: on a store still in the old
@@ -281,15 +290,9 @@ def _own_ceilings(target: int, scope_targets: dict[str, int] | None) -> list[tup
 
 
 class _Ceiling(NamedTuple):
-    """The CRAP ceiling a row is compared against, as SQL.
-
-    `per_scope` says whether the expression reads i.scope. It decides whether a
-    whole-run total has to join the identity table at all, which is the only
-    reason that query ever joined it.
-    """
+    """The CRAP ceiling a row is compared against, as SQL."""
     expr: str
     params: list
-    per_scope: bool
 
 
 def _ceiling_expr(target: int, scope_targets: dict[str, int] | None) -> _Ceiling:
@@ -301,9 +304,45 @@ def _ceiling_expr(target: int, scope_targets: dict[str, int] | None) -> _Ceiling
         params.extend((scope, ceiling))
     params.append(target)
     if not own:
-        return _Ceiling("?", params, False)  # a CASE with no WHEN is not SQL
+        return _Ceiling("?", params)  # a CASE with no WHEN is not SQL
     return _Ceiling(f"CASE i.scope {' '.join('WHEN ? THEN ?' for _ in own)} ELSE ? END",
-                    params, True)
+                    params)
+
+
+def _ceiling_key(target: int, scope_targets: dict[str, int] | None) -> str:
+    """The rollup cache key: the ceiling every stored number was decided against.
+
+    _own_ceilings, not the raw dict. A scope whose target IS the repo target
+    changes no answer, and keying on it would split the cache and pay for a
+    second full scan of history for nothing. Nothing else belongs in the key:
+    a run's rows never change after it is written, so within one ceiling a
+    stored number cannot go stale.
+    """
+    return json.dumps([target, _own_ceilings(target, scope_targets)],
+                      separators=(",", ":"), sort_keys=True)
+
+
+# The rollup, cut per (run, scope): run_scope_totals answers it as-is and
+# run_totals adds each run's scopes up, so one scan feeds both. `scope = ''` is
+# the marker a filled run leaves whether or not it scored anything, and every
+# read excludes it.
+_ROLLUP_COLS = "run_id, ceiling_key, scope, functions, over_target, crap_load"
+_ROLLUP_READ = ("SELECT run_id, scope, functions, over_target, crap_load FROM run_rollup "
+                "WHERE ceiling_key = ? AND scope <> '' ORDER BY run_id, scope")
+
+
+def _summed(by_scope: dict[str, tuple]) -> tuple:
+    """One run's scopes added back up into the whole-run triple."""
+    parts = list(by_scope.values())
+    return (sum(n for n, _o, _l in parts), sum(o for _n, o, _l in parts),
+            sum(load for *_x, load in parts))
+
+
+def _by_run(rows) -> dict[int, dict[str, tuple]]:
+    out: dict[int, dict[str, tuple]] = {}
+    for run_id, scope, n, over, load in rows:
+        out.setdefault(run_id, {})[scope] = (n, over, load)
+    return out
 
 
 def _scored_rows(cur, flags: dict, remedies: dict) -> list:
@@ -676,40 +715,80 @@ class SnapshotStore:
             (run_id, min_ccn, *names))
         return cur.fetchone()[0]
 
-    def run_totals(self, *, target: int,
-                   scope_targets: dict[str, int] | None = None) -> dict[int, tuple]:
-        """Per-run (functions, over_target, crap_load) summed inside the scan.
+    def _unrolled(self, key: str) -> list[int]:
+        """The runs this ceiling has never been summed for, oldest first."""
+        cur = self._conn.execute(
+            "SELECT id FROM runs WHERE id NOT IN "
+            "(SELECT run_id FROM run_rollup WHERE ceiling_key = ?) ORDER BY id", (key,))
+        return [rid for (rid,) in cur]
 
-        trend used to build every ScoredRow of every trusted run to add up three
-        numbers and throw the rows away. The identity table is joined only when
-        the ceiling really is per-scope: a repo whose scopes all take the repo
-        target reads the rows and skips 1.12 M index seeks.
+    def _fill_rollup(self, key: str, run_ids: list[int], target: int,
+                     scope_targets: dict[str, int] | None) -> dict[int, dict[str, tuple]]:
+        """Sum the named runs per scope, store the result, and hand it back.
+
+        The GROUP BY is the one trend used to run over the whole table on every
+        invocation, narrowed to the runs nothing has summed yet. Handing the
+        numbers back rather than re-reading them is what lets the write fail
+        without failing the command.
         """
         ceiling = _ceiling_expr(target, scope_targets)
-        source = _JOINED if ceiling.per_scope else "FROM functions f"
+        holes = ",".join("?" * len(run_ids))
         cur = self._conn.execute(
-            f"SELECT f.run_id, COUNT(*), SUM(f.crap > {ceiling.expr}), SUM(f.crap) {source} "
-            "WHERE f.crap IS NOT NULL GROUP BY f.run_id", ceiling.params)
-        return {run_id: (n, over, load) for run_id, n, over, load in cur}
+            f"SELECT f.run_id, i.scope, COUNT(*), SUM(f.crap > {ceiling.expr}), "
+            f"SUM(f.crap) {_JOINED} WHERE f.crap IS NOT NULL AND f.run_id IN ({holes}) "
+            "GROUP BY f.run_id, i.scope ORDER BY f.run_id, i.scope",
+            (*ceiling.params, *run_ids))
+        scored = cur.fetchall()
+        # the marker first, so a run that scored nothing still reads as filled
+        self._store_rollup([(rid, key, "", 0, 0, 0.0) for rid in run_ids]
+                           + [(rid, key, scope, n, over, load)
+                              for rid, scope, n, over, load in scored])
+        return _by_run(scored)
+
+    def _store_rollup(self, rows: list[tuple]) -> None:
+        """Best effort. trend and report WRITE now, and two crapkit processes
+        reading one store can collide on the fill; losing the cache is a cost,
+        losing the command is a bug."""
+        try:
+            with self._conn:
+                self._conn.executemany(
+                    f"INSERT OR REPLACE INTO run_rollup ({_ROLLUP_COLS}) VALUES (?, ?, ?, ?, ?, ?)",
+                    rows)
+        except sqlite3.OperationalError:
+            pass  # another process holds the write lock
+
+    def _rollup(self, target: int,
+                scope_targets: dict[str, int] | None) -> dict[int, dict[str, tuple]]:
+        """Every run's (functions, over_target, crap_load) per scope, off the cache.
+
+        trend and report used to re-derive this from every scored row of every
+        run, twice, on every invocation. A run is immutable once written, so the
+        only thing that can change its numbers is the ceiling they were decided
+        against, and that is the key.
+        """
+        key = _ceiling_key(target, scope_targets)
+        missing = self._unrolled(key)
+        filled = self._fill_rollup(key, missing, target, scope_targets) if missing else {}
+        out = _by_run(self._conn.execute(_ROLLUP_READ, (key,)))
+        out.update(filled)  # the fill wins: its write may have lost the lock
+        return out
+
+    def run_totals(self, *, target: int,
+                   scope_targets: dict[str, int] | None = None) -> dict[int, tuple]:
+        """Per-run (functions, over_target, crap_load), added up from the rollup.
+
+        Summing the per-scope rows is what keeps the whole history one scan
+        instead of two: the per-scope cut is the finer one, and the whole-run
+        numbers fall out of it.
+        """
+        return {run_id: _summed(by_scope)
+                for run_id, by_scope in self._rollup(target, scope_targets).items()}
 
     def run_scope_totals(self, *, target: int,
                          scope_targets: dict[str, int] | None = None) -> dict[int, dict[str, tuple]]:
         """run_totals cut one level finer: (functions, over_target, crap_load) per
-        (run, scope), summed inside the same scan rather than by reading rows.
-
-        This one groups BY the scope, so it joins the identity whatever shape the
-        ceiling takes.
-        """
-        ceiling = _ceiling_expr(target, scope_targets)
-        cur = self._conn.execute(
-            f"SELECT f.run_id, i.scope, COUNT(*), SUM(f.crap > {ceiling.expr}), "
-            f"SUM(f.crap) {_JOINED} WHERE f.crap IS NOT NULL "
-            "GROUP BY f.run_id, i.scope ORDER BY f.run_id, i.scope",
-            ceiling.params)
-        out: dict[int, dict[str, tuple]] = {}
-        for run_id, scope, n, over, load in cur:
-            out.setdefault(run_id, {})[scope] = (n, over, load)
-        return out
+        (run, scope). The grain the rollup is stored at, so this is the raw read."""
+        return self._rollup(target, scope_targets)
 
     def function_span(self, run_id: int, path: str, long_name: str) -> tuple | None:
         """One function's (start, end) in one run, off the identity path index.
