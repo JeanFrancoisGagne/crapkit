@@ -256,6 +256,27 @@ def test_shell_words_under_cmd_reads_a_caret_as_the_escape_cmd_reads():
     assert shell_words('pytest -k "a^^b"', cmd=True) == ["pytest", "-k", "a^^b"]
 
 
+def test_shell_words_keeps_the_empty_argument_a_pair_of_quotes_writes():
+    """cmd.exe hands the program the empty argument `""` wrote (verified argv:
+    `-k "" tests/unit` -> ["-k", "", "tests/unit"]). Dropping it moved every
+    later token one place left, so the flag in front swallowed the wrong word
+    and a narrowing lane loaded clean."""
+    assert shell_words('pytest -k "" tests/unit', cmd=True) == \
+        ["pytest", "-k", "", "tests/unit"]
+    assert shell_words('pytest -k "" tests/unit', cmd=False) == \
+        ["pytest", "-k", "", "tests/unit"]
+    assert shell_words('pytest "" ""', cmd=True) == ["pytest", "", ""]
+
+
+def test_an_empty_quoted_value_does_not_hand_the_next_path_to_the_flag(monkeypatch):
+    """`--testNamePattern ""` takes the empty word, so `src/a.ts` behind it is a
+    positional filter and still narrows the coverage include set."""
+    import pytest as _pytest
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", True)
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane('npx vitest run --coverage --testNamePattern "" src/a.ts')
+
+
 def test_shell_words_under_sh_leaves_a_caret_alone():
     """sh has no caret escape: it is an ordinary character in the word."""
     assert shell_words('pytest -k ^"not slow^"', cmd=False) == ["pytest", "-k", "^not slow^"]

@@ -110,18 +110,20 @@ def _cmd_words(command: str) -> list[str]:
     nothing. A quote that never closes raises, and shell_words falls back."""
     words: list[str] = []
     word = ""
+    quoted = False
     in_quote = False
     for char in _uncaret(command):
         if char == '"':
             in_quote = not in_quote
+            quoted = True
         elif _ends_the_word(char, in_quote):
-            words += _kept(word)
-            word = ""
+            words += _kept(word, quoted)
+            word, quoted = "", False
         else:
             word += char
     if in_quote:
         raise ValueError(f"no closing quotation: {command}")
-    return words + _kept(word)
+    return words + _kept(word, quoted)
 
 
 def _ends_the_word(char: str, in_quote: bool) -> bool:
@@ -129,9 +131,12 @@ def _ends_the_word(char: str, in_quote: bool) -> bool:
     return char.isspace() and not in_quote
 
 
-def _kept(word: str) -> list[str]:
-    """The word so far, or nothing when the run of whitespace was empty."""
-    return [word] if word else []
+def _kept(word: str, quoted: bool) -> list[str]:
+    """The word so far. A run of whitespace ends no word, but a pair of quotes
+    writes one: cmd.exe hands the program the empty argument in `-k "" tests`,
+    and dropping it moved every later token one place left, so the flag in
+    front swallowed a path that is really a positional."""
+    return [word] if word or quoted else []
 
 
 # The operators that end one command and start another. sh and cmd.exe share

@@ -448,6 +448,18 @@ def test_under_cmd_a_mid_token_quote_in_a_real_positional_is_named_as_written(mo
     assert "'tests/a b/test_x.py'" in str(caught.value)
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("flag", ["-k", "-p"])
+def test_an_empty_quoted_value_leaves_the_path_behind_it_positional(monkeypatch, flag, shell_is_cmd):
+    """Both shells hand pytest the empty argument `""` wrote (verified cmd.exe
+    argv: `-k "" tests/unit` -> ["-k", "", "tests/unit"]). Dropping it let `-k`
+    read `pylib/unit` as its value, and the lane that really narrows loaded."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(f'python -m pytest --cov=pylib {flag} "" pylib/unit')
+    assert "'pylib/unit'" in str(caught.value)
+
+
 def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
     with pytest.raises(ConfigError, match="narrows a full-suite"):
         _covpy_lane("python -m pytest 'pylib/sub dir' --cov=pylib")
