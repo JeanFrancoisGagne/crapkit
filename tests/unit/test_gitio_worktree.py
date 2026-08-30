@@ -16,10 +16,11 @@ import pytest
 
 from crapkit import gitio
 from crapkit.errors import GitError
-from crapkit.gitio import worktree_add
+from crapkit.gitio import worktree_add, worktree_reset
 
 ROOT = Path("repo")
 TREE = Path("trees/w1")
+LONG = ("-c", "core.longpaths=true")
 
 # Real messages, copied from the reproduction. The prefix is what GitError adds.
 PREFIX = "git worktree add --detach trees\\w1 failed in repo: "
@@ -69,8 +70,63 @@ def test_a_clean_add_spawns_git_once(monkeypatch, sleeps) -> None:
 
     worktree_add(ROOT, TREE)
 
-    assert fake.calls == [(ROOT, ("worktree", "add", "--detach", str(TREE)))]
+    assert fake.calls == [(ROOT, (*LONG, "worktree", "add", "--detach", str(TREE)))]
     assert sleeps == []
+
+
+def test_the_add_asks_git_for_the_long_path_api(monkeypatch, sleeps) -> None:
+    """Without it, all four parallel adds on a 31,459-file repo died "Filename
+    too long" and git removed its own half-built checkout: 40 s spent, nothing
+    created. The retry above cannot help, because the second attempt dies the
+    same way."""
+    fake = install(monkeypatch, GitError(PLAIN))
+
+    worktree_add(ROOT, TREE)
+
+    assert [call[1][:2] for call in fake.calls] == [LONG, LONG]
+
+
+def test_the_remove_asks_for_it_too(monkeypatch) -> None:
+    """The remove hits the same limit on the same tree, and its fallback is an
+    rmtree that leaves the directory: `worktree prune` drops the admin entry and
+    reports success over a checkout still on disk."""
+    fake = install(monkeypatch)
+
+    gitio.worktree_remove(ROOT, TREE)
+
+    assert fake.calls == [(ROOT, (*LONG, "worktree", "remove", "--force", str(TREE)))]
+
+
+def test_a_reset_refuses_a_directory_that_is_not_a_worktree(monkeypatch, tmp_path) -> None:
+    """Both commands walk UP for their repository. The mutate pool keeps its
+    trees inside the repo, so a tree whose `.git` pointer is gone would send
+    `checkout --force` and `clean -xdff` into the user's own working tree."""
+    fake = install(monkeypatch)
+    orphan = tmp_path / "w0"
+    orphan.mkdir()
+
+    with pytest.raises(GitError) as caught:
+        worktree_reset(orphan, "0123456789abcdef0123456789abcdef01234567")
+
+    assert "not a git worktree" in str(caught.value)
+    assert fake.calls == [], "nothing was run anywhere"
+
+
+def test_a_reset_names_the_commit_and_then_cleans(monkeypatch, tmp_path) -> None:
+    """`HEAD` here is the TREE's own detached head, the commit it was built at,
+    so a pool kept across a commit would restore the old content. The sha the
+    caller read from the repository is the only spelling that cannot be stale."""
+    fake = install(monkeypatch)
+    tree = tmp_path / "w1"
+    tree.mkdir()
+    (tree / ".git").write_text("gitdir: ../repo/.git/worktrees/w1", encoding="utf-8")
+
+    worktree_reset(tree, "0123456789abcdef0123456789abcdef01234567")
+
+    assert fake.calls == [
+        (tree, (*LONG, "checkout", "--force", "0123456789abcdef0123456789abcdef01234567")),
+        (tree, (*LONG, "clean", "-xdff")),
+    ]
 
 
 @pytest.mark.parametrize("message", [PLAIN, PLAIN_ENOENT, SUBMODULE, SEPARATE_GIT_DIR],

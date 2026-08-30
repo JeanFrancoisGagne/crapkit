@@ -418,6 +418,17 @@ def churn_log_lines(root: Path, months: int) -> Iterator[str]:
                       "--format=%x01%an%x02%at", "--name-only")
 
 
+# core.longpaths on the worktree calls, and on those alone. On a 31,459-file
+# repo every one of four parallel `worktree add` calls died "Filename too long"
+# without it — git deleted its own half-built checkout each time, so four adds
+# cost 40 s and produced nothing — and `worktree remove` then failed the same
+# way on a tree that DID materialize, leaving the directory behind and only the
+# admin entry pruned. The limit is Windows' 260 characters, reached by any base
+# plus the repo's own deepest path, and the setting is git's switch to the
+# long-path API. Every other platform ignores it.
+_LONGPATHS = ("-c", "core.longpaths=true")
+
+
 def worktree_add(root: Path, path: Path) -> None:
     """A detached checkout of HEAD at `path`: a second working tree that shares
     the object store, so a worker can edit files without touching the real one.
@@ -434,14 +445,14 @@ def worktree_add(root: Path, path: Path) -> None:
     add that dies in the scan leaves neither the target directory nor an entry.
     """
     try:
-        _git(root, "worktree", "add", "--detach", str(path))
+        _git(root, *_LONGPATHS, "worktree", "add", "--detach", str(path))
         return
     except GitError as first:
         message = str(first)
         if "worktrees/" not in message or "commondir" not in message:
             raise
     time.sleep(0.05)
-    _git(root, "worktree", "add", "--detach", str(path))
+    _git(root, *_LONGPATHS, "worktree", "add", "--detach", str(path))
 
 
 def worktree_remove(root: Path, path: Path) -> None:
@@ -451,10 +462,45 @@ def worktree_remove(root: Path, path: Path) -> None:
     Parallel removes survive the same admin-entry enumeration that kills a
     parallel add (0 failures in 320 concurrent removes measured), so no retry."""
     try:
-        _git(root, "worktree", "remove", "--force", str(path))
+        _git(root, *_LONGPATHS, "worktree", "remove", "--force", str(path))
     except GitError:
         shutil.rmtree(path, ignore_errors=True)
         _prune_quietly(root)
+
+
+def worktree_reset(tree: Path, commit: str) -> None:
+    """A worktree back to `commit`, content and all, without a fresh checkout.
+    35.5 s of `worktree add` on a 31,459-file tree against 0.44 s here.
+
+    `commit` is a sha the CALLER read from the repository it cares about, never
+    the literal HEAD: HEAD inside a linked worktree is that worktree's own
+    detached head, which is the commit it was created at. A pool kept across a
+    commit would restore the old content under a run that believes it is
+    mutating the new one. Naming the sha also means a reused tree needs no
+    stale-state check: whatever it held, it holds `commit` afterwards.
+
+    `checkout --force <sha>` rather than the pathspec form `-- .`, because a
+    file the new commit DELETED stays on disk and in the index under a pathspec
+    checkout, and the tree's own head keeps pointing at the old commit. Both
+    forms cost the same (0.44 s against 0.61 s for four 31,459-file trees).
+
+    Then clean: checkout restores tracked files and leaves every artifact the
+    last suite wrote. -x because an ignored one (a stale coverage file, a
+    node_modules) is what the next suite reads, -d for directories, -ff to
+    descend into a checkout something left nested inside.
+
+    The guard is not a courtesy. Both commands find their repository by walking
+    UP from the cwd, and a caller keeping worktrees inside the repo (the mutate
+    pool lives at `.crapkit/mutate-pool/`) hands this a directory whose `.git`
+    pointer a killed run may have taken with it. Without the guard, `checkout
+    --force` and `clean -xdff` would find the MAIN repository and run there:
+    every uncommitted line and every untracked file gone, from a function whose
+    job is to tidy a scratch tree.
+    """
+    if not (tree / ".git").exists():
+        raise GitError(f"{tree} is not a git worktree")
+    _git(tree, *_LONGPATHS, "checkout", "--force", commit)
+    _git(tree, *_LONGPATHS, "clean", "-xdff")
 
 
 def _prune_quietly(root: Path) -> None:
