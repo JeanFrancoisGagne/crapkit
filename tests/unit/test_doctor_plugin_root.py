@@ -208,3 +208,77 @@ def test_a_missing_manifest_stops_the_comparison_it_cannot_make():
                                 {"protocols": ("99",)}, {"version": None}])
 def test_each_fault_alone_produces_exactly_one_line(kw):
     assert len(_lines(**kw)) == 1
+
+
+# --- finding the plugin (#28) --------------------------------------------------
+#
+# Claude Code caches an install at cache/<marketplace>/<plugin>/<version>/ and
+# keeps the old version beside the new one after an update. The newest is the
+# one it runs, so that is the one checked, and the operator may point at any
+# directory above it, or at nothing at all.
+
+def test_a_directory_above_the_install_resolves_to_the_newest_version(tmp_path, capsys):
+    cache = tmp_path / "cache" / "crapkit" / "crapkit"
+    plugin(cache / "0.4.2", version="0.4.2")
+    plugin(cache / CLI)
+
+    code, lines, err = check(tmp_path / "cache", capsys)
+
+    assert (code, lines, err) == (0, [], "")
+
+
+def test_the_newest_is_decided_by_version_not_by_name_order(tmp_path, capsys):
+    cache = tmp_path / "cache" / "m" / "crapkit"
+    plugin(cache / "0.10.0", version="0.10.0")
+    plugin(cache / "0.9.0", version="0.9.0")
+
+    code, lines, _ = check(cache, capsys)
+
+    assert code == 1 and len(lines) == 1 and "0.10.0" in lines[0], lines
+
+
+def test_no_path_reads_claude_code_s_plugin_cache(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+
+    code = main(["doctor", "--plugin-root"])
+    out = capsys.readouterr()
+
+    assert (code, out.out, out.err) == (0, "", "")
+
+
+def test_no_path_honours_the_installer_s_record(tmp_path, capsys, monkeypatch):
+    """installed_plugins.json names the install directory, so a record pointing
+    outside the cache layout still resolves."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    root = plugin(tmp_path / "elsewhere" / "crapkit-plugin", version="0.1.0")
+    _write(tmp_path / "plugins" / "installed_plugins.json",
+           {"plugins": {"crapkit@crapkit": [{"installPath": str(root), "version": "0.1.0"}]}})
+
+    code = main(["doctor", "--plugin-root"])
+    lines = capsys.readouterr().out.splitlines()
+
+    assert code == 1 and len(lines) == 1 and "0.1.0" in lines[0], lines
+
+
+def test_no_path_and_no_install_is_one_line_naming_where_it_looked(tmp_path, capsys,
+                                                                   monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+    code = main(["doctor", "--plugin-root"])
+    lines = capsys.readouterr().out.splitlines()
+
+    assert code == 1 and len(lines) == 1, lines
+    assert str(tmp_path / "plugins") in lines[0], lines[0]
+    assert "claude plugin install crapkit@crapkit" in lines[0], lines[0]
+
+
+def test_a_path_with_no_manifest_anywhere_under_it_still_names_the_file(tmp_path, capsys):
+    """The line for a wrong directory survives the search under it."""
+    (tmp_path / "empty").mkdir()
+
+    code, lines, _ = check(tmp_path / "empty", capsys)
+
+    assert code == 1
+    assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'empty'} has no "
+                     ".claude-plugin/plugin.json"], lines
