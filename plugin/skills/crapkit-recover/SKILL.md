@@ -1,6 +1,6 @@
 ---
 name: crapkit-recover
-description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the four causes behind \"produced no artifact\", the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 5/6/7/8/9, a lane reports \"produced no artifact\", a ratchet regression names a function you never touched, verify reports a tainted baseline, git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
+description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the five causes behind \"produced no artifact\", the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 5/6/7/8/9, a lane reports \"produced no artifact\", a ratchet regression names a function you never touched, verify reports a tainted baseline, git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
 ---
 
 # Recovering a refused run
@@ -46,14 +46,15 @@ it. Exit 1 is three unrelated things at once:
 [README: exit 1 means one of three things](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-1-means-one-of-three-things)
 splits them by command.
 
-## "produced no artifact": four causes
+## "produced no artifact": five causes
 
 The lane log names which one. It sits at `.crapkit/lane-<name>.log`, and the failure line
 quotes its tail.
 
 | Cause | Signature in the log | Owner |
 |---|---|---|
-| No coverage provider installed | `MISSING DEPENDENCY '@vitest/coverage-v8'`, or pytest rejecting `--cov` without pytest-cov | [docs: getting an artifact out of vitest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#getting-an-artifact-out-of-vitest) |
+| No coverage provider installed, vitest | `MISSING DEPENDENCY '@vitest/coverage-v8'` | [docs: getting an artifact out of vitest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#getting-an-artifact-out-of-vitest) |
+| No coverage provider installed, pytest | `unrecognized arguments: --cov`, so pytest-cov is missing from the environment the SUITE runs in, which a pipx or uv-tool install of crapkit never shares | [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | Tests failed, so the runner wrote no report | a red suite and no file, vitest with `reportOnFailure` unset | [docs: reportOnFailure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#reportonfailure) |
 | The report landed somewhere the lane does not name | the suite passed and `artifact` still points at nothing | [docs: where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live) |
 | Killed or refused before it could write | `timed out after Ns (attempt N)`, or `host-only (container runs OOM)` | [docs: timeouts and retries](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#timeouts-and-retries) |

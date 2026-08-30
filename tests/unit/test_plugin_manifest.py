@@ -122,9 +122,21 @@ def test_the_slug_rule_matches_the_headings_it_is_pointed_at():
     """Guards the test above: a slug rule that mangles every heading also passes
     it, because the anchors then match nothing and the set comprehension is
     filtered by `anchor and ...`."""
-    assert _slug('"produced no artifact": four causes') == "produced-no-artifact-four-causes"
+    assert _slug('"produced no artifact": five causes') == "produced-no-artifact-five-causes"
     assert "exit-codes" in _anchors("README.md")
     assert "reportonfailure" in _anchors("docs/lanes.md")
+
+
+def test_the_pytest_cause_in_the_recover_table_owns_the_pytest_section():
+    """One row carried both providers and linked the vitest section alone. The
+    agent that got there from a pytest lane read about @vitest/coverage-v8 and
+    never saw that pytest-cov belongs to the interpreter the suite runs in."""
+    rows = [line for line in _doc(RECOVER_SKILL).splitlines() if "pytest-cov" in line]
+
+    assert rows, "the recover table stopped naming the pytest cause"
+    for row in rows:
+        assert f"{BLOB}docs/lanes.md#pytest)" in row, \
+            f"the pytest cause links elsewhere: {row}"
 
 
 def test_the_skill_pages_still_link_out_at_all():

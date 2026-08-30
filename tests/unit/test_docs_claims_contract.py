@@ -680,6 +680,42 @@ def test_the_doctor_transcript_lists_the_keys_doctor_accepts():
         in _doc("docs/configuration.md")
 
 
+# --- a crapkit root below the git top ----------------------------------------
+
+_LANES_LINK = re.compile(r"docs/lanes\.md#([\w-]+)")
+_HEADING = re.compile(r"^#{1,6} +(.+?)\s*$", re.M)
+
+
+def _lane_anchors() -> set[str]:
+    """GitHub's anchor form for every heading on the lanes page."""
+    return {re.sub(r"[^\w\- ]", "", head.lower()).replace(" ", "-")
+            for head in _HEADING.findall(_doc("docs/lanes.md"))}
+
+
+def test_the_quickstart_pointer_links_the_lanes_sections_it_names():
+    """It sent readers to lanes.md "for jest, pytest, monorepo and per-package
+    recipes" with no anchor, and lanes.md had neither a monorepo heading nor a
+    per-package one. Two of the four names led nowhere."""
+    (pointer,) = [para for para in _doc("README.md").split("\n\n")
+                  if "istanbul `coverage-final.json` works" in para]
+    linked = set(_LANES_LINK.findall(pointer))
+
+    assert linked, "the pointer names sections in prose and links none of them"
+    assert linked <= _lane_anchors(), f"lanes.md holds no {linked - _lane_anchors()}"
+
+
+def test_the_lanes_page_documents_a_root_below_the_git_top():
+    """0.4.4 made the churn log root-relative, so a crapkit.toml one directory
+    down scores and joins churn. CHANGELOG.md was the only page that said so,
+    and nobody reads a changelog to answer a how-do-I question."""
+    section = _section(_doc("docs/lanes.md"), "## A crapkit root below the repo top")
+
+    assert build_parser().parse_args(["worklist", "--repo", "packages/api"]).repo \
+        == "packages/api", "the flag the section prints moved"
+    assert "crapkit worklist --repo packages/api" in section
+    assert "churn" in section, "the root-relative half is the whole fix"
+
+
 # --- the README rows an agent picks a command from ---------------------------
 
 def test_the_brief_row_documents_the_packet_and_its_batch_form():

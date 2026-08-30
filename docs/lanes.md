@@ -359,6 +359,43 @@ file, so every function fell to `untested` and scored as if nothing tested it.
 
 ---
 
+## A crapkit root below the repo top
+
+The crapkit root is wherever `crapkit.toml` sits, and it does not have to be the git top. A
+package one directory down inside a bigger repo is a supported shape. There is no monorepo
+mode and no config key for it: point crapkit at the package.
+
+```
+$ crapkit coverage --repo packages/api
+run 1 @ 387e938f537: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 13.12, grade F
+$ crapkit worklist --repo packages/api
+worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
+  risk     10.5  ccn   7 (  7 std)    6c/1a w   1.50  calc/grade.py:1  classify( score , attempts , late , bonus )
+```
+
+`--repo` names the crapkit root, never the git top, and every subcommand that reads a repo
+takes it. Running the same two commands from inside `packages/api` with no flag does the
+same thing.
+
+Both halves of a row are root-relative. The scored path comes from `git ls-files`, which
+answers relative to its cwd. The churn count comes from `git log --relative`, which answers
+the same way. The `6c/1a` above is 6 commits and 1 author against `calc/grade.py`, joined
+out of a history whose own paths read `packages/api/calc/grade.py`.
+
+Before 0.4.4 the churn log ran without `--relative`, so every lookup missed and `worklist`
+filed the whole corpus under dormant: `0 active, 215 dormant` on a repo with 90 commits that
+week. If you see that, check the version before you check your config. Both churn caches
+carry a format marker, so a map laid down with top-relative paths is dropped rather than
+reused on the first run after the upgrade.
+
+One piece was still git-top-relative in 0.4.4: the pre-commit gate reads staged paths from
+`git diff --cached`, which answers from the git top whatever the root is. Those paths matched
+no scope under a nested root, so the gate gated nothing and printed
+`staged file(s) belong to no scope and were not gated` naming files that start with the
+package directory. 0.4.5 fixes it. Scoring, worklist and churn are unaffected.
+
+---
+
 ## Containers
 
 A `coveragepy` lane refuses to run inside a container and exits 5:
