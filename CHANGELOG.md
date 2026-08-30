@@ -51,8 +51,8 @@ then waited on pipes the grandchild still held, so a 15 s timeout returned after
 spawn (`procs.run_bounded`): the command starts in its own process group and a
 deadline kills the whole tree (`taskkill /T` on Windows, `killpg` on POSIX) and
 waits for it, so no orphan suite keeps running after `mutate` gives up on a
-mutant. A lane's own timeout (`lanes.py`) still uses the plain spawn; that is
-the next item.
+mutant or a lane's `timeout_seconds` expires; the lane log still streams as
+before.
 
 ### init on Windows
 A PATH holding only the `py` launcher got a lane naming `python3`, which the
