@@ -12,7 +12,7 @@ from pathlib import Path
 from .. import packet
 from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
-from ..gitio import head_commit
+from ..gitio import head_commit, ls_files
 from ..keys import key_names, key_of, split_ordinal
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
@@ -557,7 +557,7 @@ class _BriefLoader:
         from ..coupling import change_coupling_lines
 
         return change_coupling_lines(log_lines(self.root, self.cfg.churn_window_months),
-                                     top=None)
+                                     top=None, tracked=set(ls_files(self.root)))
 
     def uncovered(self):
         return self._once("uncovered", lambda: load_uncovered(self.root, self.cfg))
@@ -956,7 +956,8 @@ def _split_worklist(root: Path, cfg, active: list, count: int) -> list:
     from ..worklist import BATCH_CONTAINMENT, BATCH_PAIR_LIMIT, split_batches
 
     pairs = change_coupling_lines(log_lines(root, cfg.churn_window_months),
-                                  min_confidence=BATCH_CONTAINMENT, top=BATCH_PAIR_LIMIT)
+                                  min_confidence=BATCH_CONTAINMENT, top=BATCH_PAIR_LIMIT,
+                                  tracked=set(ls_files(root)))
     return split_batches(active, pairs, batches=count)
 
 

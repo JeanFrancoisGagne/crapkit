@@ -10,17 +10,20 @@ from pathlib import Path
 
 from ..churn_log import log_lines
 from ..errors import ConfigError, CrapkitError
+from ..gitio import ls_files
 from ._shared import _load_repo_config, _load_sources, _open_store, _print_json
 
 
 def cmd_coupling(args: argparse.Namespace) -> int:
+    """Ranked over the tracked set: a pair naming a path git no longer has is a
+    recommendation to open a file that is not there."""
     from ..coupling import change_coupling_lines
 
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
     pairs = change_coupling_lines(log_lines(root, cfg.churn_window_months),
                                   min_support=args.min_support, min_confidence=args.min_confidence,
-                                  top=args.top)
+                                  top=args.top, tracked=set(ls_files(root)))
     if args.json:
         _print_json({"pairs": pairs, "window_months": cfg.churn_window_months})
         return 0
