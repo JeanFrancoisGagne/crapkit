@@ -716,6 +716,25 @@ def test_the_lanes_page_documents_a_root_below_the_git_top():
     assert "churn" in section, "the root-relative half is the whole fix"
 
 
+_CAUSE_HEADING = re.compile(r'^## "produced no artifact": (\w+) causes$', re.M)
+_COUNT_WORDS = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+
+
+def test_the_handbook_counts_the_no_artifact_causes_the_skill_lists():
+    """Two published surfaces of one list. Splitting the coverage-provider row
+    into a vitest one and a pytest one made it five in the recover skill and
+    left the handbook telling readers to look for four."""
+    skill = _doc("plugin/skills/crapkit-recover/SKILL.md")
+    (word,) = _CAUSE_HEADING.findall(skill)
+    table = _section(skill, f'## "produced no artifact": {word} causes').splitlines()
+    rows = [ln for ln in table if ln.startswith("| ")]
+
+    assert len(rows) - 1 == _COUNT_WORDS[word], "the skill's own heading and table disagree"
+    handbook = _doc("docs/handbook.html")
+    assert f"The {word} classic causes" in handbook
+    assert f"{word.capitalize()} root causes" in handbook, "the exit-5 row counts them too"
+
+
 # --- the README rows an agent picks a command from ---------------------------
 
 def test_the_brief_row_documents_the_packet_and_its_batch_form():
