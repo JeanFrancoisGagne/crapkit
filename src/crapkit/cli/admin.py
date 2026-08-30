@@ -23,10 +23,20 @@ from ._shared import _file_sizer, _load_repo_config, _print_json
 
 def _interpreter() -> str:
     """The interpreter name a committed config can call. sys.executable is this
-    machine's absolute path and would not survive the repo reaching anyone else."""
+    machine's absolute path and would not survive the repo reaching anyone else.
+
+    `py` comes last because it is the one name that does not travel: the Windows
+    launcher exists nowhere else, so a committed `py -m pytest` fails every Unix
+    collaborator's doctor. It is still better than the alternative it replaces.
+    On Windows `python3` resolves only through the same WindowsApps alias that
+    supplies `python`, so where the first name is missing the second is missing
+    too, and writing it names an interpreter this very machine cannot run."""
     import shutil
 
-    return "python" if shutil.which("python") else "python3"
+    for name in ("python", "python3", "py"):
+        if shutil.which(name):
+            return name
+    return "python3"
 
 
 def _present_markers(root: Path) -> frozenset[str]:

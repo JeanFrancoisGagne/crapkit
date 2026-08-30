@@ -58,6 +58,43 @@ def test_a_bare_name_resolves_through_the_shell_the_lane_runs_under(
     assert _pytest_cov_probe("python -m pytest --cov") is answer
 
 
+def _name_only_on_path(tmp_path, monkeypatch, *names: str) -> None:
+    """A PATH holding these interpreter names and nothing else. Never the
+    machine's own PATH: the answer has to come from the fixture."""
+    only = tmp_path / "onlypath"
+    only.mkdir()
+    for name in names:
+        if os.name == "nt":
+            (only / f"{name}.bat").write_text("@exit /b 0\n", encoding="utf-8")
+        else:
+            shim = only / name
+            shim.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shim.chmod(0o755)
+    monkeypatch.setenv("PATH", str(only))
+
+
+def test_the_interpreter_falls_back_to_the_windows_launcher(tmp_path, monkeypatch):
+    """Where `python` does not resolve on Windows, `python3` does not either:
+    both names come from the one WindowsApps alias. init used to write the
+    python3 lane anyway, so the config named an interpreter that does not exist
+    on the machine that wrote it and the first `crapkit coverage` exited 5.
+    py.exe installs to C:\\Windows and is on PATH without Add to PATH ticked."""
+    _name_only_on_path(tmp_path, monkeypatch, "py")
+    assert admin._interpreter() == "py"
+
+
+@pytest.mark.parametrize("present, chosen", [
+    (("python", "python3", "py"), "python"),
+    (("python3", "py"), "python3"),
+])
+def test_the_launcher_is_the_last_resort_not_the_first_choice(
+        tmp_path, monkeypatch, present, chosen):
+    """`py` is Windows-only, and the config it writes gets committed. It may
+    only be reached where no portable name resolves at all."""
+    _name_only_on_path(tmp_path, monkeypatch, *present)
+    assert admin._interpreter() == chosen
+
+
 @pytest.mark.skipif(os.name != "nt", reason="9009 is cmd.exe's own exit code")
 def test_the_windows_store_python_alias_earns_no_pytest_cov_warning(tmp_path, monkeypatch):
     """%LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe is on a stock Windows 11
