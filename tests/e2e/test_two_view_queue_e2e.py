@@ -11,13 +11,13 @@ a stub coverage.py artifact so every CRAP value here is hand-computable:
 crap = ccn^2 * (1 - cov)^3 + ccn, and cov = covered branches over branches.
 """
 import json
-import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 MAKE_COV = '''"""Fixture coverage generator: a coverage.py artifact from cov_plan.json.
 
@@ -89,10 +89,7 @@ COV_PLAN = {
 }
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          timeout=180, env=dict(os.environ))
+run_cli = cli_runner(timeout=180, encoding="utf-8")
 
 
 def _source(name: str, ifs: int) -> str:

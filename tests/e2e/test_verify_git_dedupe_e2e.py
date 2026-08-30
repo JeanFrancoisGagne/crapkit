@@ -20,6 +20,8 @@ import pytest
 from crapkit import gitio
 from crapkit.cli import build_parser, cmd_verify
 
+from conftest import cli_runner
+
 PY = sys.executable
 
 CLEAN = "def alpha(n):\n    if n > 1:\n        n = n + 1\n    return n\n"
@@ -78,9 +80,7 @@ def commit(repo: Path, message: str) -> None:
     git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", message)
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([PY, "-m", "crapkit", *args], cwd=repo, capture_output=True,
-                          text=True, encoding="utf-8", timeout=300)
+run_cli = cli_runner(timeout=300, encoding="utf-8")
 
 
 def base_repo(tmp_path: Path, lane_args: str = "") -> Path:

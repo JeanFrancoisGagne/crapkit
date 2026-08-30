@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import cli_runner
+
 MAKE_COV = ('import json\n'
             'json.dump({"meta": {"branch_coverage": True}, "files": {}},'
             ' open("cov.json", "w"))\n')
@@ -39,10 +41,7 @@ full_suite = false
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=180,
-                          env=dict(os.environ))
+run_cli = cli_runner(timeout=180)
 
 
 def _git(repo: Path, *args: str) -> None:

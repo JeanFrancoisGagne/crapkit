@@ -6,12 +6,12 @@ function came back 20.0 on one run of a commit and 72.0 on the next. Tightening
 on the lucky half of that and failing on the unlucky half turns a nondeterministic
 input into a coin-flip gate, so verify holds the mark and says so.
 """
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -47,9 +47,7 @@ RATCHET = "crapkit-ratchet.tsv"
 MARK = "src/tangled.ts\ttangled ( a , b )\t200.0000\n"
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180, env=dict(os.environ))
+run_cli = cli_runner(timeout=180)
 
 
 def set_mode(repo: Path, mode: str) -> None:

@@ -6,12 +6,13 @@ applies the hook's own ccn-only policy to the rescored functions and exits 6.
 The hermetic istanbul generator stands in for a coverage tool.
 """
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -51,11 +52,8 @@ with open(artifact, "w", encoding="utf-8") as fh:
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return subprocess.run([PY, "-m", "crapkit", *args], cwd=repo, capture_output=True,
-                          text=True, encoding="utf-8", errors="replace", timeout=300, env=env)
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
+                     env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
 
 def git(repo: Path, *args: str) -> str:

@@ -6,12 +6,13 @@ and its artifact is exactly what the test asked for. Lines carrying the DEAD
 marker are the ones the generator reports as never executed.
 """
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -64,12 +65,9 @@ sys.exit(subprocess.run([sys.executable, "gen_cov.py", "cov/b.json", "srcb/mod_b
 BAD_LANE = "# a runner that never writes its artifact\nraise SystemExit(3)\n"
 
 
-def run_cli(repo: Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)  # an inherited grant would rewrite the verdict
-    return subprocess.run([PY, "-m", "crapkit", *args], cwd=repo, input=stdin,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=300, env=env)
+# an inherited grant would rewrite the verdict
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
+                     env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
 
 def git(repo: Path, *args: str) -> None:

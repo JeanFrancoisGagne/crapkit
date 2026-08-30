@@ -11,13 +11,14 @@ an interrupt during that same sleep.
 """
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 import pytest
 
 from crapkit.cli import build_parser, cmd_watch
+
+from conftest import cli_runner
 
 APP = "def branchy(a, b):\n    if a > 0:\n        b += 1\n    return a + b\n"
 
@@ -42,10 +43,7 @@ TOML = (
 )
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180,
-                          encoding="utf-8", errors="replace", env=dict(os.environ))
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def write(path: Path, text: str) -> None:

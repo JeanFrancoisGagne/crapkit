@@ -8,10 +8,11 @@ that a lane going stale under an edit turns the banner on.
 """
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 APP_TS = """export function plain(x: number): number {
   const a = x + 1;
@@ -72,10 +73,7 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180,
-                          encoding="utf-8", errors="replace")
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def git(repo: Path, *args: str) -> None:
