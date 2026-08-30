@@ -471,8 +471,8 @@ rejected in review.
 ## Tests
 
     python -m pytest                      # both suites
-    python -m pytest tests/unit           # 2,140 tests, ~30s
-    python -m pytest tests/e2e -n 8       # 578 tests, ~1m30 (6m serial)
+    python -m pytest tests/unit           # 2,236 tests, ~45s
+    python -m pytest tests/e2e -n 8       # 592 tests, ~1m30 (6m serial)
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else. The suite runs serially:

@@ -103,6 +103,32 @@ coverage from the unit suite alone), and `tests/e2e` shares one CLI runner in
 structural item open: `discover.py` (384 lines, no importer since birth) is
 either wired into the packet or removed in a later release.
 
+### Performance, measured at consumer scale and refereed
+A benchmark of every subsystem on a 31,459-file consumer (152k functions, 41,544
+marks, 541 MB of lane artifacts, 72,653 commits) produced 76 improvement
+candidates; skeptics re-implemented and re-measured each one, killed most, and
+these six survived and shipped, each with its A/B on that corpus:
+`coupling`, `worklist --batches` and `brief` stop re-pairing the churn log on
+every warm run (a ranked-pairs cache beside the churn caches, keyed on HEAD plus
+a digest of the tracked set; off-default thresholds bypass it): warm `coupling`
+1.05 s -> 0.11 s, batches -62%, single `brief` -25%. `brief --batch N` shingles
+the snapshot once instead of once per packet: batch 5 in 11.8 s -> 5.2 s, output
+byte-identical (an on-disk shingle cache was refuted outright: shingles are
+built on Python's per-process randomized hash). `doctor` probes each distinct
+lane runner once, not once per lane: 7.5 s -> 1.4 s on 14 lanes over 2 runners.
+`trend` and `report` read per-run rollups (new `run_rollup` table, filled once
+per run, pruned with its run) instead of rescanning 4.3 M rows: `trend`
+4.58 s -> 0.04 s warm, `report` -76%. `verify` reads each istanbul artifact once
+for coverage, dead lines and its digest together, and skips the artifact walk on
+an empty diff: 25.5 s -> 18.9 s (peak +55 MB, all digests byte-identical).
+`mutate` keeps its worker worktrees under `.crapkit/mutate-pool` and re-prepares
+them per run (30.6 s -> 0.46 s of setup on the big tree; `--drop-pool` reclaims
+the disk; single-worker runs are untouched). Also refereed and REJECTED, so
+nobody rebuilds them: skipping verify when HEAD and dirty names are unchanged
+(the key cannot see a second edit to an already-dirty file), serving MCP tool
+calls from a kept process (stale `source` breaks the packet contract), parallel
+git date slices for the churn walk, and a faster JSON decoder.
+
 ### Docs
 A section on running crapkit with its root below the repo top; the vitest guard
 page lists every option whose value it licenses, pinned by a test; the
