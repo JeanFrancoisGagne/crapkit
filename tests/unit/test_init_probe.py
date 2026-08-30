@@ -8,11 +8,15 @@ a probe that cannot run is doctor's finding (a dead interpreter), not this one's
 """
 import os
 import sys
+import time
+import types
 
 import pytest
 
+from crapkit import mutate_pool
 from crapkit.cli import _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
+from crapkit.mutate import Mutant
 from crapkit.scaffold import LaneSpec
 
 
@@ -91,3 +95,61 @@ def test_only_a_cov_flagged_coveragepy_lane_is_probed(lane, monkeypatch, capsys)
     monkeypatch.setattr(admin, "_pytest_cov_probe", boom)
     _warn_missing_pytest_cov((lane,))
     assert capsys.readouterr().err == ""
+
+
+# --- timeout= has to bound the wall clock, here and in the mutant runner -----
+#
+# Both calls run under shell=True, so the shell is the child and the program is
+# a grandchild. subprocess.run's timeout kills the shell and then drains the
+# pipes with no deadline at all, and the grandchild inherited those pipes: the
+# call returns when that process dies, not when the timeout expires. Neither
+# call reads the output, so neither needs the pipes.
+
+_SLEEP = 8      # the program outlives the timeout by a wide margin
+_TIMEOUT = 2
+_CEILING = 5    # between the two: only the pipe wait can push past it
+
+
+def _sleep_command() -> str:
+    return f'"{sys.executable}" -c "import time; time.sleep({_SLEEP})"'
+
+
+def _sleeping_interpreter(tmp_path, monkeypatch) -> None:
+    """A `python` first on PATH that outlives the probe's timeout. It does not
+    exec, so the shell stays between the probe and the sleeper: killing the
+    shell leaves the sleeper holding whatever the shell handed it."""
+    shim_dir = tmp_path / "slow"
+    shim_dir.mkdir()
+    if os.name == "nt":
+        (shim_dir / "python.bat").write_text(f"@echo off\n{_sleep_command()}\n", encoding="utf-8")
+    else:
+        shim = shim_dir / "python"
+        shim.write_text(f"#!/bin/sh\n{_sleep_command()}\n", encoding="utf-8")
+        shim.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shim_dir), os.environ.get("PATH", "")]))
+
+
+def test_the_probe_gives_up_when_its_timeout_expires(tmp_path, monkeypatch):
+    """init writes crapkit.toml, prints the summary, probes, and only then
+    extends .gitignore — and re-running init refuses once crapkit.toml exists.
+    A probe that waits on the interpreter instead of on its own timeout strands
+    the user there with a half-scaffolded repo."""
+    _sleeping_interpreter(tmp_path, monkeypatch)
+    monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
+    start = time.perf_counter()
+    assert _pytest_cov_probe("python -m pytest --cov") is True
+    assert time.perf_counter() - start < _CEILING
+
+
+def test_a_mutant_that_outlives_its_timeout_dies_at_the_timeout(tmp_path):
+    """`except TimeoutExpired: return True` says "a mutant that loops forever is
+    dead". A run that only returns when the mutant's suite ends is not that."""
+    source = tmp_path / "m.py"
+    source.write_text("flag = True\n", encoding="utf-8")
+    cfg = types.SimpleNamespace(mutation_command=_sleep_command(),
+                                mutation_timeout_seconds=_TIMEOUT)
+    mutant = Mutant("m.py", 1, "flag = True", "flag = False", "True -> False")
+    start = time.perf_counter()
+    assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
+    assert time.perf_counter() - start < _CEILING
+    assert source.read_text(encoding="utf-8") == "flag = True\n"

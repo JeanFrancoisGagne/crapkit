@@ -83,6 +83,9 @@ def _no_scopes_reason(root: Path) -> str:
             f"run `git add` first ({len(untracked)} untracked source file(s) found)")
 
 
+_PROBE_TIMEOUT_SECONDS = 15
+
+
 def _pytest_cov_probe(command: str) -> bool:
     """Can the interpreter this lane names import pytest_cov? The probe runs
     through the same shell as the lane, so a bare `python` resolves to the one
@@ -97,8 +100,14 @@ def _pytest_cov_probe(command: str) -> bool:
         return True
     probe = f'{_shell_quote(words[0])} -c "import pytest_cov"'
     try:
-        return subprocess.run(probe, shell=True, capture_output=True,
-                              timeout=15).returncode == 0
+        # DEVNULL, not capture_output: the answer is the exit code, and a pipe
+        # would outlive the timeout. shell=True makes the shell the child and
+        # the interpreter a grandchild; on TimeoutExpired run() kills the shell
+        # and then drains the pipes with no deadline, so the call returns when
+        # the grandchild that inherited them exits. The 15 would bound nothing.
+        return subprocess.run(probe, shell=True, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              timeout=_PROBE_TIMEOUT_SECONDS).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return True
 

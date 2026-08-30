@@ -41,8 +41,15 @@ def run_one(tree: Path, cfg, mutant) -> bool:
     try:
         p.write_text(apply_mutant(original.decode("utf-8", "replace"), mutant),
                      encoding="utf-8", newline="")
-        proc = subprocess.run(cfg.mutation_command, shell=True, cwd=tree, capture_output=True,
-                              env=env, timeout=cfg.mutation_timeout_seconds)
+        # DEVNULL, not capture_output: only the exit code decides, and a pipe
+        # would outlive the timeout. shell=True makes the shell the child and
+        # the suite a grandchild; on TimeoutExpired run() kills the shell and
+        # then drains the pipes with no deadline, so a mutant that loops forever
+        # holds the worker for as long as it loops instead of dying here.
+        proc = subprocess.run(cfg.mutation_command, shell=True, cwd=tree,
+                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, env=env,
+                              timeout=cfg.mutation_timeout_seconds)
         return proc.returncode != 0
     except subprocess.TimeoutExpired:
         return True  # a mutant that loops forever is dead
