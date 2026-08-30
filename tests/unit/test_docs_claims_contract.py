@@ -716,6 +716,45 @@ def test_the_lanes_page_documents_a_root_below_the_git_top():
     assert "churn" in section, "the root-relative half is the whole fix"
 
 
+def _without_repo() -> list[str]:
+    """Subcommands the parser gives no --repo."""
+    import argparse
+
+    subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
+    return sorted(name for name, sub in subs[0].choices.items()
+                  if "--repo" not in {opt for act in sub._actions for opt in act.option_strings})
+
+
+def test_the_root_section_names_the_one_subcommand_without_repo():
+    """The section said "every subcommand that reads a repo takes it". One does
+    not: `claude-hook` has no --repo and reads a repo anyway, walking up from
+    the edited file to find crapkit.toml."""
+    section = _section(_doc("docs/lanes.md"), "## A crapkit root below the repo top")
+
+    assert _without_repo() == ["claude-hook"], "the exception the section names moved"
+    assert "claude-hook" in section
+    assert "every subcommand that reads a repo takes it" not in section
+
+
+_CAUSE_HEADING = re.compile(r'^## "produced no artifact": (\w+) causes$', re.M)
+_COUNT_WORDS = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+
+
+def test_the_handbook_counts_the_no_artifact_causes_the_skill_lists():
+    """Two published surfaces of one list. Splitting the coverage-provider row
+    into a vitest one and a pytest one made it five in the recover skill and
+    left the handbook telling readers to look for four."""
+    skill = _doc("plugin/skills/crapkit-recover/SKILL.md")
+    (word,) = _CAUSE_HEADING.findall(skill)
+    table = _section(skill, f'## "produced no artifact": {word} causes').splitlines()
+    rows = [ln for ln in table if ln.startswith("| ")]
+
+    assert len(rows) - 1 == _COUNT_WORDS[word], "the skill's own heading and table disagree"
+    handbook = _doc("docs/handbook.html")
+    assert f"The {word} classic causes" in handbook
+    assert f"{word.capitalize()} root causes" in handbook, "the exit-5 row counts them too"
+
+
 # --- the README rows an agent picks a command from ---------------------------
 
 def test_the_brief_row_documents_the_packet_and_its_batch_form():

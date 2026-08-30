@@ -15,7 +15,7 @@ from .. import __version__, config
 from ..config import load_config_text, shell_words
 from ..doctor import Finding
 from ..errors import ConfigError, ToolError
-from ..gitio import ls_files
+from ..gitio import _common_dir, _git_dir, ls_files
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
 from ._shared import _file_sizer, _load_repo_config, _print_json
@@ -565,29 +565,26 @@ _CG_SIGNATURE = b"CGPH"
 _BLOOM_CHUNK = b"BIDX"  # the changed-path Bloom filter index
 
 
-def _git_dir(root: Path) -> Path:
-    """This repo's git directory. `.git` is a FILE in a linked worktree and in a
-    submodule, and its one line names the directory it stands for."""
-    dot = root / ".git"
-    if not dot.is_file():
-        return dot
-    named = dot.read_text(encoding="utf-8").partition("gitdir:")[2].strip()
-    return (root / named).resolve()
+def _object_info_dir(root: Path) -> Path | None:
+    """Where the commit-graph lives, or None when there is no repository here.
 
-
-def _object_info_dir(root: Path) -> Path:
-    """Where the commit-graph lives. A linked worktree keeps its own git
-    directory and shares the main one's objects, which `commondir` names."""
+    gitio finds the git directory the way git does — walking up to the first
+    ancestor holding a .git, following a `gitdir:` pointer relative to its
+    holder, and reading `commondir` so a linked worktree lands on the object
+    store it shares. A private copy here looked at `root/.git` alone, so under a
+    crapkit root one directory below the repo top it named a path that does not
+    exist and the check went silent.
+    """
     gitdir = _git_dir(root)
-    common = gitdir / "commondir"
-    if common.is_file():
-        gitdir = (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
-    return gitdir / "objects" / "info"
+    return _common_dir(gitdir) / "objects" / "info" if gitdir else None
 
 
-def _graph_files(info: Path) -> list[Path]:
+def _graph_files(info: Path | None) -> list[Path]:
     """Every commit-graph layer this repo has: the single file, or the layers a
-    chain file names. `git maintenance` writes the chain, `gc` writes the file."""
+    chain file names. `git maintenance` writes the chain, `gc` writes the file.
+    No object store (no repository) means no layers."""
+    if info is None:
+        return []
     chain = info / "commit-graphs" / "commit-graph-chain"
     if not chain.is_file():
         single = info / "commit-graph"

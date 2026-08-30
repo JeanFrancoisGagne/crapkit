@@ -111,24 +111,38 @@ def test_a_cache_without_the_paths_marker_reads_as_cold(tmp_path, git):
     assert git.log_calls == 2
 
 
-def test_a_cache_under_the_old_name_is_neither_read_nor_overwritten(tmp_path, git):
-    """0.4.3 and 0.4.4 keyed different fields into one file name, so each read
-    the other's cache as cold and rewrote it: two installs on one tree rebuilt
-    the map on every run. The format marker is in the name now, so another
-    version's cache is another file — never read, never clobbered."""
-    old = tmp_path / ".crapkit" / "churn-cache.json"
-    old.parent.mkdir(parents=True)
-    doc = {"key": {"head": HEAD, "months": 12, "date": churn_cache._utc_date(),
+def _old_cache(tmp_path, head: str):
+    old = tmp_path / ".crapkit" / churn_cache.LEGACY_NAME
+    old.parent.mkdir(parents=True, exist_ok=True)
+    doc = {"key": {"head": head, "months": 12, "date": churn_cache._utc_date(),
                    "paths": churn_cache.RELATIVE_PATHS},
            "files": {"src/old.ts": [9, 9, 9.0]}}
     old.write_text(json.dumps(doc), encoding="utf-8")
+    return old
+
+
+def test_a_warm_cache_under_the_old_name_is_adopted_not_rewalked(tmp_path, git):
+    """0.4.4 wrote this exact key shape under the unversioned name. Renaming the
+    file without reading it made every upgrade pay one full `git log
+    --name-only` walk for a map already on disk."""
+    old = _old_cache(tmp_path, HEAD)
 
     churn = churn_cache.load_churn(tmp_path, 12)
 
-    assert churn == parse_git_log(LOG), "an exact key under the old name is still not ours"
-    assert git.log_calls == 1
-    assert json.loads(old.read_text(encoding="utf-8")) == doc, "left where it lies"
+    assert churn == {"src/old.ts": FileChurn(9, 9, 9.0)}
+    assert git.log_calls == 0, "the map was on disk; the walk buys nothing"
+    assert not old.exists(), "adopted, so the old name is litter"
     assert (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).is_file()
+
+
+def test_a_stale_cache_under_the_old_name_is_dropped(tmp_path, git):
+    """A key that no longer answers is a miss like any other — and the file goes
+    anyway, because nothing reads that name again."""
+    old = _old_cache(tmp_path, "dead" * 10)
+
+    assert churn_cache.load_churn(tmp_path, 12) == parse_git_log(LOG)
+    assert git.log_calls == 1
+    assert not old.exists()
 
 
 def test_an_unreadable_head_still_answers_and_writes_nothing(tmp_path, git, monkeypatch):

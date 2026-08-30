@@ -83,3 +83,20 @@ def test_no_dirty_set_leaves_every_finding_committed():
 
     assert v.gate_violations[0].dirty is False
     assert v.dirty_failures == []
+
+
+def test_the_split_line_does_not_call_the_dirty_set_tracked(capsys):
+    """The dirty set is `status_names`, which unions `ls-files --others`, so a
+    new failure in a test file git has never seen is counted here. The line said
+    "uncommitted tracked edits", and that row is neither tracked nor an edit."""
+    from crapkit.cli.verifying import _print_finding_split
+
+    v = evaluate(fresh=[scored(ccn=2)], changed_ranges={}, ratchet=[],
+                 baseline_failures=set(), fresh_failures={"pylib.test_new::test_x"},
+                 target=6, dirty_paths={"pylib/test_new.py"})
+    _print_finding_split(v)
+    line = capsys.readouterr().out.strip()
+
+    assert line.startswith("findings: 0 committed / 1 dirty")
+    assert "uncommitted tracked edits" not in line
+    assert "untracked" in line, "the set includes files git has never seen"

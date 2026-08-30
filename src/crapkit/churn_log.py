@@ -43,6 +43,10 @@ from .gitio import _git_lines, head_commit, is_ancestor
 # writes another key shape writes another file, so two installs on one tree
 # both stay warm instead of rewriting each other's key on every run.
 LOG_NAME = "churn-log-v2.z"
+# The name 0.4.4 wrote, with this very key shape. Its pair is adopted where no
+# v2 log stands yet and deleted once one does: a 4.4 MB file nothing will read
+# again is not something to leave in every upgraded repo.
+LEGACY_NAME = "churn-log.z"
 LOG_FORMAT = "--format=%x01%an%x02%at%x02%ct"
 CHUNK = 1 << 20
 # The key's format marker: these logs hold root-relative paths (--relative),
@@ -70,8 +74,45 @@ def has_cache(root: Path) -> bool:
     return path.is_file() and _key_path(path).is_file()
 
 
+def sweep_legacy(root: Path) -> None:
+    """0.4.4's log pair: renamed onto the v2 names where none stand yet, deleted
+    once they do.
+
+    Adopted rather than validated here — the two key shapes are the same, so the
+    key check downstream decides warm or cold exactly as it would have. Both
+    files go either way, because nothing reads the old names again.
+    """
+    old = root / ".crapkit" / LEGACY_NAME
+    if not old.is_file():
+        return
+    path = root / ".crapkit" / LOG_NAME
+    if not path.exists() and not _key_path(path).exists():
+        _adopt(old, path)
+    _drop(old)
+    _drop(_key_path(old))
+
+
+def _adopt(old: Path, path: Path) -> None:
+    """Best effort, and either rename alone is safe: a log without its key reads
+    as cold, and a key without its log reads as cold too."""
+    try:
+        _key_path(old).replace(_key_path(path))
+        old.replace(path)
+    except OSError:
+        return
+
+
+def _drop(path: Path) -> None:
+    """Best effort: a read-only .crapkit keeps its litter, never loses a command."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        return
+
+
 def _stored_lines(root: Path, months: int) -> Iterator[str]:
     """The same log with its commit dates still attached — the on-disk form."""
+    sweep_legacy(root)
     path = root / ".crapkit" / LOG_NAME
     key = _cache_key(root, months)
     served = _cached(path, key)

@@ -225,23 +225,38 @@ def test_a_log_without_the_paths_marker_is_never_served_or_refreshed(tmp_path, g
     assert git.range_calls == []
 
 
-def test_a_log_under_the_old_name_is_neither_served_nor_overwritten(tmp_path, git):
-    """0.4.3 and 0.4.4 wrote different key shapes into one file name, and each
-    refresh rewrote the other's key. The format marker is in the name now, so
-    another version's log is another file — never served, never clobbered."""
-    old = tmp_path / ".crapkit" / "churn-log.z"
-    old.parent.mkdir(parents=True)
+def _old_log(tmp_path):
+    """0.4.4's pair, under the unversioned names, keyed exactly like this one."""
+    old = tmp_path / ".crapkit" / churn_log.LEGACY_NAME
+    old.parent.mkdir(parents=True, exist_ok=True)
     blob = zlib.compress("".join(NEW).encode("utf-8"), 1)
     old.write_bytes(blob)
-    (tmp_path / ".crapkit" / "churn-log.json").write_text(
+    churn_log._key_path(old).write_text(
         json.dumps({"head": HEAD_A, "months": 12, "date": churn_log._utc_date(),
                     "paths": churn_log.RELATIVE_PATHS, "size": len(blob),
                     "crc": zlib.crc32(blob)}), encoding="utf-8")
+    return old
+
+
+def test_a_warm_log_under_the_old_name_is_adopted_not_rewalked(tmp_path, git):
+    """The key shape did not change with the name, so the rename alone made
+    every upgrade re-walk the window it already had on disk."""
+    old = _old_log(tmp_path)
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == ["\x01carol\x021000009000\n", "src/c.py\n"]
+    assert git.window_calls == 0, "the log was on disk; the walk buys nothing"
+    assert not old.exists() and not churn_log._key_path(old).exists()
+    assert cache(tmp_path).is_file()
+
+
+def test_the_old_pair_is_swept_once_a_v2_log_exists(tmp_path, git):
+    """4.4 MB of dead weight per repo otherwise: nothing reads those names again."""
+    list(churn_log.log_lines(tmp_path, 12))
+    old = _old_log(tmp_path)
 
     assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
-    assert git.window_calls == 1, "an exact key under the old name is still not ours"
-    assert old.read_bytes() == blob, "left where it lies"
-    assert (tmp_path / ".crapkit" / churn_log.LOG_NAME).is_file()
+    assert git.window_calls == 1, "the v2 log still answers; only the litter goes"
+    assert not old.exists() and not churn_log._key_path(old).exists()
 
 
 def test_the_key_file_records_what_it_keys_on(tmp_path, git):
