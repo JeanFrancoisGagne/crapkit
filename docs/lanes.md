@@ -373,8 +373,9 @@ worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
   risk     10.5  ccn   7 (  7 std)    6c/1a w   1.50  calc/grade.py:1  classify( score , attempts , late , bonus )
 ```
 
-`--repo` names the crapkit root, never the git top, and every subcommand that reads a repo
-takes it. Running the same two commands from inside `packages/api` with no flag does the
+`--repo` names the crapkit root, never the git top, and every subcommand you invoke by hand
+takes it; `claude-hook` is the exception and finds the root by walking up from the edited
+file instead. Running the same two commands from inside `packages/api` with no flag does the
 same thing.
 
 Both halves of a row are root-relative. The scored path comes from `git ls-files`, which

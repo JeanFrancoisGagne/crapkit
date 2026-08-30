@@ -716,6 +716,26 @@ def test_the_lanes_page_documents_a_root_below_the_git_top():
     assert "churn" in section, "the root-relative half is the whole fix"
 
 
+def _without_repo() -> list[str]:
+    """Subcommands the parser gives no --repo."""
+    import argparse
+
+    subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
+    return sorted(name for name, sub in subs[0].choices.items()
+                  if "--repo" not in {opt for act in sub._actions for opt in act.option_strings})
+
+
+def test_the_root_section_names_the_one_subcommand_without_repo():
+    """The section said "every subcommand that reads a repo takes it". One does
+    not: `claude-hook` has no --repo and reads a repo anyway, walking up from
+    the edited file to find crapkit.toml."""
+    section = _section(_doc("docs/lanes.md"), "## A crapkit root below the repo top")
+
+    assert _without_repo() == ["claude-hook"], "the exception the section names moved"
+    assert "claude-hook" in section
+    assert "every subcommand that reads a repo takes it" not in section
+
+
 _CAUSE_HEADING = re.compile(r'^## "produced no artifact": (\w+) causes$', re.M)
 _COUNT_WORDS = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
 
