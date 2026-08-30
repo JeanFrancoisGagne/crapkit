@@ -75,6 +75,34 @@ check included), so the HEAD fast path fires below the top; `config_value`
 asks git for the repo's own setting and no longer reads the `diff.relative`
 flag crapkit injects into every spawn.
 
+### Ten defects an architecture review reproduced
+A review of the 0.4.5 tree proposed 37 deepening refactors; two skeptics per
+candidate refuted 36 of them (every seam they asked for already existed) and
+reproduced these defects on the way, each now fixed behind its existing seam:
+a dirty non-ASCII file was invisible to lane reuse (git quoted it, `ls-files`
+did not; every git spawn now runs with `core.quotePath=false`); `worklist`
+and `next-item` could describe different runs, and `ratchet seed`/`prune`
+could sign marks off a run `verify` had refused (both now pick the run their
+peer picks); `explain PATH LINE` resolves a start line as `brief` does; scope
+ownership was decided three ways (first-declared in scoring, longest-prefix in
+test-scoped, prefix-only for lane reuse) and the packet mixed two of them; one
+predicate in `universe` now answers everyone with deepest-declared-path
+winning, so a repo with NESTED scopes may see files move between scopes on
+its next scan; a file-valued scope path (`paths = ["core/hot.py"]`) marks its
+lane changed; `doctor` reads a lane command with the shell that runs it (a
+quoted interpreter, a runner after `&&`, a path inside a quoted `-k`); the
+pytest-cov probe asks the python that runs pytest, so `coverage run -m pytest`
+is left alone; shell cognitive complexity nests (`fi`/`done`/`esac` close a
+level; a 4-deep `if` reads 10 like every other language, not 4), which is
+analysis version 8; `_scored_run` returns named fields; `inventory` no longer
+dies when a tracked file is missing from the working tree; `verify` no longer
+dies when a lane lost its test count. `tests/unit` now drives `verify` and
+`coverage` in process (verifying 34% -> 100%, scoring 43% -> 99% statement
+coverage from the unit suite alone), and `tests/e2e` shares one CLI runner in
+`conftest.py` and runs in about 1m30 with `-n 8`. The review left one
+structural item open: `discover.py` (384 lines, no importer since birth) is
+either wired into the packet or removed in a later release.
+
 ### Docs
 A section on running crapkit with its root below the repo top; the vitest guard
 page lists every option whose value it licenses, pinned by a test; the
