@@ -83,6 +83,25 @@ def shell_words(command: str, cmd: bool | None = None) -> list[str]:
         return command.split()
 
 
+def _uncaret(command: str) -> str:
+    """cmd.exe's escape. Outside a quoted run `^` is dropped and the character
+    behind it is handed on untouched, so `-k ^"not slow^"` reaches the runner as
+    `-k "not slow"`. Inside a quoted run cmd.exe leaves the caret alone: `-k
+    "a^b"` reaches the runner with its caret, so stripping unconditionally would
+    misread the two spellings cmd.exe passes through."""
+    kept: list[str] = []
+    chars = iter(command)
+    in_quote = False
+    for char in chars:
+        if char == "^" and not in_quote:
+            kept.append(next(chars, ""))
+            continue
+        if char == '"':
+            in_quote = not in_quote
+        kept.append(char)
+    return "".join(kept)
+
+
 def _cmd_words(command: str) -> list[str]:
     """cmd.exe's reading: a double quote opens or closes a quoted run wherever it
     sits, so `--cov-report=json:"a b\\py.json"` is one word and the quotes
@@ -92,7 +111,7 @@ def _cmd_words(command: str) -> list[str]:
     words: list[str] = []
     word = ""
     in_quote = False
-    for char in command:
+    for char in _uncaret(command):
         if char == '"':
             in_quote = not in_quote
         elif _ends_the_word(char, in_quote):

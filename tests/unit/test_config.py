@@ -200,9 +200,10 @@ def test_under_cmd_a_double_quoted_file_filter_is_still_a_filter(monkeypatch):
 
 
 def _istanbul_lane(command: str):
+    """A TOML literal string, so a command's double quotes reach the guard."""
     return load_config_text(
         '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
-        f'[[lane]]\nname = "unit"\ncommand = "{command}"\n'
+        f"[[lane]]\nname = \"unit\"\ncommand = '{command}'\n"
         'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n').lanes[0]
 
 
@@ -222,6 +223,30 @@ def test_a_run_chained_after_another_command_is_still_checked_for_a_filter():
         _istanbul_lane("npm run build && vitest run --coverage src/a.ts")
     with _pytest.raises(ConfigError, match="narrows"):
         _istanbul_lane("vitest run --coverage && vitest run --coverage src/b.ts")
+
+
+def test_under_cmd_a_caret_escaped_file_filter_is_still_a_filter(monkeypatch):
+    """`^"src/a.ts^"` reaches vitest as the filter `src/a.ts`: leaving the caret
+    in the token hid the suffix and the narrowing lane loaded clean."""
+    import pytest as _pytest
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", True)
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane('npx vitest run --coverage ^"src/a.ts^"')
+
+
+def test_shell_words_under_cmd_reads_a_caret_as_the_escape_cmd_reads():
+    """Outside a quoted run cmd.exe drops `^` and hands the runner the character
+    behind it, so `-k ^"not slow^"` is one value. Inside a quoted run cmd.exe
+    leaves the caret alone, and the runner gets it."""
+    assert shell_words('pytest --cov -k ^"not slow^"', cmd=True) == \
+        ["pytest", "--cov", "-k", "not slow"]
+    assert shell_words('pytest -k "a^b"', cmd=True) == ["pytest", "-k", "a^b"]
+    assert shell_words('pytest -k "a^^b"', cmd=True) == ["pytest", "-k", "a^^b"]
+
+
+def test_shell_words_under_sh_leaves_a_caret_alone():
+    """sh has no caret escape: it is an ordinary character in the word."""
+    assert shell_words('pytest -k ^"not slow^"', cmd=False) == ["pytest", "-k", "^not slow^"]
 
 
 def test_shell_words_reads_double_quotes_under_both_shells():

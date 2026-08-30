@@ -421,6 +421,15 @@ def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(m
     assert "echo" not in str(caught.value)
 
 
+def test_under_cmd_a_caret_escaped_quote_holds_the_flag_value_together(monkeypatch):
+    """cmd.exe hands pytest `-k` and `not slow`. Keeping the caret in the token
+    split the value and refused the lane, naming 'slow^"', two pieces of shell
+    syntax glued together and nothing the operator can drop."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = 'python -m pytest --cov=pylib -k ^"not slow^"'
+    assert _covpy_lane(command).command == command
+
+
 def test_under_cmd_a_quoted_path_inside_a_flag_value_is_not_a_positional(monkeypatch):
     """cmd.exe hands pytest `--cov-report=json:a b\\py.json`, one argument, so the
     lane runs. Reading the quote as a word boundary refused it and named
