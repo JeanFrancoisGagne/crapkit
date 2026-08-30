@@ -233,11 +233,12 @@ def test_verify_baseline_refuses_a_missing_id_and_a_partial_run(pair_repo: Path)
 
     ghost = run_cli(pair_repo, "verify", "--baseline", "99")
     assert ghost.returncode == 1, ghost.stdout + ghost.stderr
-    assert "no trusted scored baseline" in ghost.stderr
+    assert "no run 99" in ghost.stderr and "trusted runs: 1" in ghost.stderr, ghost.stderr
 
     partial = run_cli(pair_repo, "verify", "--baseline", "2")
     assert partial.returncode == 1, partial.stdout + partial.stderr
-    assert "no trusted scored baseline" in partial.stderr
+    assert "run 2 is a partial run" in partial.stderr, partial.stderr
+    assert "--baseline 1" in partial.stderr, partial.stderr
 
     named = run_cli(pair_repo, "verify", "--baseline", "1", "--json")
     assert named.returncode == 0, named.stdout + named.stderr
