@@ -374,16 +374,34 @@ def _prune_quietly(root: Path) -> None:
 
 
 def _git_dir(root: Path) -> Path | None:
+    """The admin directory for `root`, found the way git finds it: walk up to
+    the first ancestor holding a .git, and read that one.
+
+    A crapkit root one directory below the repo top is the layout PR #23 added
+    support for, and looking only at `root/.git` made the HEAD fast path miss
+    every one of them — a spawn each, for a string sitting in a file two
+    directories up. The first .git found ends the walk whatever it holds, so a
+    submodule stops at its own and never answers with the superproject's HEAD.
+    """
+    for base in [root, *root.parents]:
+        if (base / ".git").exists():
+            return _git_dir_at(base)
+    return None
+
+
+def _git_dir_at(base: Path) -> Path | None:
     """.git is a directory in a normal clone and a `gitdir:` pointer in a linked
-    worktree or a submodule. The pointer may be relative to the working tree."""
-    dot = root / ".git"
+    worktree or a submodule. A relative pointer is relative to the directory
+    holding the file — `gitdir: ../../.git/modules/sub` joined anywhere else
+    misses."""
+    dot = base / ".git"
     if dot.is_dir():
         return dot
     text = _file_text(dot)
     if not text.startswith("gitdir:"):
         return None
     named = Path(text[len("gitdir:"):].strip())
-    return named if named.is_absolute() else (root / named)
+    return named if named.is_absolute() else (base / named)
 
 
 def _file_text(path: Path) -> str:

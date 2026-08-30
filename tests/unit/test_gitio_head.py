@@ -87,6 +87,42 @@ def test_a_worktree_on_a_branch_reads_the_shared_ref(repo, tmp_path, spawns):
     assert spawns == []
 
 
+def test_a_root_below_the_repo_top_reads_head_without_a_spawn(repo, spawns):
+    """The layout PR #23 shipped support for: the crapkit root one directory
+    under the git top. .git sits above it, so only a walk up finds it, and every
+    command that asks for HEAD free-standing paid a process here."""
+    below = repo / "pkg" / "nested"
+    below.mkdir(parents=True)
+
+    assert head_commit(below) == git(repo, "rev-parse", "HEAD")
+    assert spawns == [], "the answer was in the top's .git, two directories up"
+
+
+def test_a_root_inside_a_submodule_stops_at_the_submodules_own_git(repo, tmp_path, spawns):
+    """The walk may not cross a repo boundary, and a `gitdir:` pointer is
+    relative to the directory holding the .git file, not to the root the walk
+    started from: joined at the root, ../../.git/modules/sub misses."""
+    work = repo / "vendor" / "sub"
+    work.mkdir(parents=True)
+    (repo / ".git" / "modules").mkdir()
+    git(work, "init", "-q", "-b", "main", "--separate-git-dir",
+        str(repo / ".git" / "modules" / "sub"))
+    (work / "in.txt").write_text("in", encoding="utf-8")
+    git(work, "add", "-A")
+    git(work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub")
+    sha = git(work, "rev-parse", "HEAD")
+    # git wrote an absolute pointer and marked the file hidden, which Windows
+    # refuses to overwrite in place; a submodule's own pointer is relative.
+    (work / ".git").unlink()
+    (work / ".git").write_text("gitdir: ../../.git/modules/sub\n", encoding="utf-8")
+    deep = work / "pkg"
+    deep.mkdir()
+
+    assert head_commit(deep) == sha
+    assert head_commit(deep) != git(repo, "rev-parse", "HEAD"), "not the superproject's HEAD"
+    assert spawns == []
+
+
 def test_a_symref_chain_falls_back_to_git(repo, spawns):
     """A ref file holding another ref is a shape the reader does not resolve; git does."""
     sha = git(repo, "rev-parse", "HEAD")
