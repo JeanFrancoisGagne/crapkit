@@ -12,6 +12,11 @@ from itertools import combinations
 from .churn import _unquote_git_path
 
 MAX_COMMIT_FILES = 30
+# The thresholds the ranking answers when nobody names one. Named because
+# coupling_cache stores the ranking at exactly these, and cli/analyses has to
+# recognize a `coupling` invocation that asked for something wider.
+DEFAULT_MIN_SUPPORT = 5
+DEFAULT_MIN_CONFIDENCE = 0.5
 
 
 def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
@@ -75,8 +80,8 @@ def _partner(pair: dict, path: str) -> dict:
             "confidence": pair["confidence"]}
 
 
-def partners(lines: Iterable[str], path: str, *, min_support: int = 5,
-             min_confidence: float = 0.5, top: int = 5) -> list[dict]:
+def partners(lines: Iterable[str], path: str, *, min_support: int = DEFAULT_MIN_SUPPORT,
+             min_confidence: float = DEFAULT_MIN_CONFIDENCE, top: int = 5) -> list[dict]:
     """One file's coupled partners, best first.
 
     Ranked over EVERY qualifying pair before the cut: a global top applied first
@@ -88,15 +93,17 @@ def partners(lines: Iterable[str], path: str, *, min_support: int = 5,
     return [_partner(p, path) for p in ranked if path in p["files"]][:top]
 
 
-def change_coupling(log_text: str, *, min_support: int = 5, min_confidence: float = 0.5,
+def change_coupling(log_text: str, *, min_support: int = DEFAULT_MIN_SUPPORT,
+                    min_confidence: float = DEFAULT_MIN_CONFIDENCE,
                     top: int | None = 50, tracked: set[str] | None = None) -> list[dict]:
     """Whole-text entrypoint: the log already in hand."""
     return change_coupling_lines(log_text.splitlines(), min_support=min_support,
                                  min_confidence=min_confidence, top=top, tracked=tracked)
 
 
-def change_coupling_lines(lines: Iterable[str], *, min_support: int = 5,
-                          min_confidence: float = 0.5, top: int | None = 50,
+def change_coupling_lines(lines: Iterable[str], *, min_support: int = DEFAULT_MIN_SUPPORT,
+                          min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+                          top: int | None = 50,
                           tracked: set[str] | None = None) -> list[dict]:
     """Streaming entrypoint: the log is consumed once, one commit at a time.
 
