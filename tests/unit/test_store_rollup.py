@@ -8,15 +8,15 @@ flagship consumer's store, for thirty numbers.
 What this pins is the part that could go wrong quietly. The cache key has to
 carry the CEILING, or a config change prints yesterday's over_target. A run
 that scored no rows has to count as done, or it is rescanned forever. And a
-pruned run's rollup has to die with it, or an id AUTOINCREMENT hands out again
-serves another run's totals.
+pruned run's rollup has to die with it, or the store keeps answering for a run
+it no longer holds.
 """
 import sqlite3
 
 import pytest
 from crapkit.digest import totals
 from crapkit.score import ScoredRow
-from crapkit.store import SnapshotStore
+from crapkit.store import SnapshotStore, prune_keep_set
 
 SCOPES = ("api", "ui")
 
@@ -150,6 +150,22 @@ def test_only_the_new_run_is_scanned_when_history_is_already_rolled(tmp_path):
 
     assert rest == [], f"one fill statement, not one per run: {rest}"
     assert f"run_id IN ({fresh})" in fill, f"the fill scanned more than the new run: {fill}"
+
+
+def test_a_prune_takes_the_rollup_rows_with_the_run(tmp_path):
+    """A rollup row that outlives its run keeps answering for it: the store
+    would hand out totals for history it no longer holds."""
+    store = seeded(tmp_path, runs=3)
+    store.run_totals(target=6)
+    keep_ids = prune_keep_set(store.list_runs(), store.override_run_ids(), keep=1)
+    doomed = {r["id"] for r in store.list_runs()} - keep_ids
+    assert doomed, "the fixture must leave something to prune"
+
+    store.prune_runs(keep_ids)
+
+    left = {rid for (rid,) in store._conn.execute("SELECT DISTINCT run_id FROM run_rollup")}
+    assert left & doomed == set(), f"a pruned run kept its rollup: {left & doomed}"
+    assert set(store.run_totals(target=6)) & doomed == set(), "totals for a run that is gone"
 
 
 def test_a_locked_store_still_answers_with_the_numbers_it_computed(tmp_path):

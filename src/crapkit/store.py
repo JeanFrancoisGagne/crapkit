@@ -1064,10 +1064,17 @@ class SnapshotStore:
         Whole runs, never rows within a run: a run row that outlives its
         functions reads as a real run that scored zero, which is how a prune
         turns a silent digest into a false alarm and a trend into fiction.
+
+        The cached rollup goes in the same transaction, and for the same
+        reason: a rollup row that outlives its run keeps answering for it, so
+        run_totals would still hand out totals for a run the store no longer
+        holds. Ids come from AUTOINCREMENT and are never handed out twice, so
+        nothing else would ever overwrite the row.
         """
         doomed = self._doomed_ids(keep_ids)
         with self._conn:
             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
+            self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM runs WHERE id = ?", doomed)
         return len(doomed)
 
