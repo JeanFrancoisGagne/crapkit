@@ -46,7 +46,7 @@ def test_a_second_read_at_the_same_head_never_shells_git(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
     churn_cache.load_churn(tmp_path, 12)
     assert git.log_calls == 1, "the whole point: an unmoved HEAD pays git once"
-    assert (tmp_path / ".crapkit" / "churn-cache.json").is_file()
+    assert (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).is_file()
 
 
 def test_the_warm_read_is_byte_identical_to_the_cold_one(tmp_path, git):
@@ -83,14 +83,14 @@ def test_a_new_utc_day_rebuilds(tmp_path, git, monkeypatch):
 
 def test_a_torn_cache_file_reads_as_cold(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
-    (tmp_path / ".crapkit" / "churn-cache.json").write_text("{ truncated garbage",
-                                                            encoding="utf-8")
+    (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).write_text("{ truncated garbage",
+                                                                encoding="utf-8")
     assert churn_cache.load_churn(tmp_path, 12) == parse_git_log(LOG)
     assert git.log_calls == 2, "corrupt content is a miss, never a crash"
 
 
 def test_a_cache_of_the_wrong_shape_reads_as_cold(tmp_path, git):
-    path = tmp_path / ".crapkit" / "churn-cache.json"
+    path = tmp_path / ".crapkit" / churn_cache.CACHE_NAME
     path.parent.mkdir(parents=True)
     key = {"head": HEAD, "months": 12, "date": churn_cache._utc_date()}
     path.write_text(json.dumps({"key": key, "files": {"src/a.ts": "not a row"}}),
@@ -103,12 +103,32 @@ def test_a_cache_without_the_paths_marker_reads_as_cold(tmp_path, git):
     """Caches laid down before `git log --relative` hold top-relative paths in
     a subdirectory root; the format marker retires them at the next read."""
     churn_cache.load_churn(tmp_path, 12)
-    path = tmp_path / ".crapkit" / "churn-cache.json"
+    path = tmp_path / ".crapkit" / churn_cache.CACHE_NAME
     doc = json.loads(path.read_text(encoding="utf-8"))
     del doc["key"]["paths"]
     path.write_text(json.dumps(doc), encoding="utf-8")
     churn_cache.load_churn(tmp_path, 12)
     assert git.log_calls == 2
+
+
+def test_a_cache_under_the_old_name_is_neither_read_nor_overwritten(tmp_path, git):
+    """0.4.3 and 0.4.4 keyed different fields into one file name, so each read
+    the other's cache as cold and rewrote it: two installs on one tree rebuilt
+    the map on every run. The format marker is in the name now, so another
+    version's cache is another file — never read, never clobbered."""
+    old = tmp_path / ".crapkit" / "churn-cache.json"
+    old.parent.mkdir(parents=True)
+    doc = {"key": {"head": HEAD, "months": 12, "date": churn_cache._utc_date(),
+                   "paths": churn_cache.RELATIVE_PATHS},
+           "files": {"src/old.ts": [9, 9, 9.0]}}
+    old.write_text(json.dumps(doc), encoding="utf-8")
+
+    churn = churn_cache.load_churn(tmp_path, 12)
+
+    assert churn == parse_git_log(LOG), "an exact key under the old name is still not ours"
+    assert git.log_calls == 1
+    assert json.loads(old.read_text(encoding="utf-8")) == doc, "left where it lies"
+    assert (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).is_file()
 
 
 def test_an_unreadable_head_still_answers_and_writes_nothing(tmp_path, git, monkeypatch):
@@ -117,7 +137,7 @@ def test_an_unreadable_head_still_answers_and_writes_nothing(tmp_path, git, monk
 
     monkeypatch.setattr(churn_cache, "head_commit", no_head)
     assert churn_cache.load_churn(tmp_path, 12) == parse_git_log(LOG)
-    assert not (tmp_path / ".crapkit" / "churn-cache.json").exists(), \
+    assert not (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).exists(), \
         "nothing safe to key on means nothing to cache"
 
 

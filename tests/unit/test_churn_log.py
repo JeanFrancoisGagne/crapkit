@@ -79,7 +79,7 @@ def git(monkeypatch) -> FakeGit:
 
 
 def cache(tmp_path):
-    return tmp_path / ".crapkit" / "churn-log.z"
+    return tmp_path / ".crapkit" / churn_log.LOG_NAME
 
 
 def test_a_second_read_at_the_same_head_never_walks_the_window(tmp_path, git):
@@ -215,7 +215,7 @@ def test_a_log_without_the_paths_marker_is_never_served_or_refreshed(tmp_path, g
     subdirectory root. Serving one is wrong; carrying it forward through the
     range refresh is the same wrong with fresh commits stacked on top."""
     list(churn_log.log_lines(tmp_path, 12))
-    key_path = tmp_path / ".crapkit" / "churn-log.json"
+    key_path = churn_log._key_path(cache(tmp_path))
     doc = json.loads(key_path.read_text(encoding="utf-8"))
     del doc["paths"]
     key_path.write_text(json.dumps(doc), encoding="utf-8")
@@ -225,9 +225,28 @@ def test_a_log_without_the_paths_marker_is_never_served_or_refreshed(tmp_path, g
     assert git.range_calls == []
 
 
+def test_a_log_under_the_old_name_is_neither_served_nor_overwritten(tmp_path, git):
+    """0.4.3 and 0.4.4 wrote different key shapes into one file name, and each
+    refresh rewrote the other's key. The format marker is in the name now, so
+    another version's log is another file — never served, never clobbered."""
+    old = tmp_path / ".crapkit" / "churn-log.z"
+    old.parent.mkdir(parents=True)
+    blob = zlib.compress("".join(NEW).encode("utf-8"), 1)
+    old.write_bytes(blob)
+    (tmp_path / ".crapkit" / "churn-log.json").write_text(
+        json.dumps({"head": HEAD_A, "months": 12, "date": churn_log._utc_date(),
+                    "paths": churn_log.RELATIVE_PATHS, "size": len(blob),
+                    "crc": zlib.crc32(blob)}), encoding="utf-8")
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert git.window_calls == 1, "an exact key under the old name is still not ours"
+    assert old.read_bytes() == blob, "left where it lies"
+    assert (tmp_path / ".crapkit" / churn_log.LOG_NAME).is_file()
+
+
 def test_the_key_file_records_what_it_keys_on(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
-    doc = json.loads((tmp_path / ".crapkit" / "churn-log.json").read_text(encoding="utf-8"))
+    doc = json.loads(churn_log._key_path(cache(tmp_path)).read_text(encoding="utf-8"))
 
     assert doc["head"] == HEAD_A
     assert doc["months"] == 12
