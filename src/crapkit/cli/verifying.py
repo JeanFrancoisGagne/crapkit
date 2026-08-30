@@ -486,14 +486,22 @@ def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
     return verdict._replace(ok=ok, new_failures=sorted(survivors))
 
 
+def _shrink_line(name: str, b_total: int, total: int | None) -> str:
+    """How this lane's test count moved against the baseline. A lane that lost
+    its results_artifact reports no count at all, which is not a subtraction."""
+    if total is None:
+        return (f"warning: lane {name!r} reports no test count this run, "
+                f"against {b_total} in the baseline")
+    return f"warning: lane {name!r} runs {b_total - total} fewer tests than the baseline"
+
+
 def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
     """Suite decay passes a pass/fail check silently; say it out loud."""
     for name, prov in provenance.items():
         base = baseline.get("lanes", {}).get(name, {})
         b_total, b_skip = base.get("tests_total"), base.get("tests_skipped")
         if b_total and prov.get("tests_total", 0) < b_total:
-            print(f"warning: lane {name!r} runs {b_total - prov['tests_total']} "
-                  f"fewer tests than the baseline", file=sys.stderr)
+            print(_shrink_line(name, b_total, prov.get("tests_total")), file=sys.stderr)
         if b_skip is not None and prov.get("tests_skipped", 0) > b_skip:
             print(f"warning: lane {name!r} skips {prov['tests_skipped'] - b_skip} "
                   f"more tests than the baseline", file=sys.stderr)

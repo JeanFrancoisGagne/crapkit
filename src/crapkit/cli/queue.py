@@ -636,13 +636,14 @@ def _packet_scope(cfg, row) -> str:
     [[scope]] claims by prefix.
 
     universe's rule, the one that also set row.scope when the run scored this
-    file. It used to be verifying's respelling, which answered `b` for a nested
-    path where the scored row said `a`, so one packet named the deeper scope's
-    lane and test command beside the shallower scope's ceiling.
+    file: the deepest declared path whose languages claim the extension too.
+    Asked with the extension arm open it answered `b` for a nested path the
+    scored row put in `a`, so one packet named the deeper scope's lane and test
+    command beside the shallower scope's ceiling.
     """
-    from ..universe import owning_scope, path_matchers
+    from ..universe import owning_scope, scope_matchers
 
-    return owning_scope(row.path, path_matchers(cfg.scope_paths)) or row.scope
+    return owning_scope(row.path, scope_matchers(cfg.scopes)) or row.scope
 
 
 def _scope_config(cfg, name: str):

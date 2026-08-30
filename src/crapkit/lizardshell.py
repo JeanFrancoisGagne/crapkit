@@ -76,9 +76,9 @@ KNOWN LIMITS
       `do-thing() {` is reported under the name `thing`. It is still one function
       with the right span and ccn.
     - Cognitive complexity for shell is computed by crapkit's language-agnostic
-      extension, whose C-family rule counts `do` as a structure. A shell loop
-      therefore scores its keyword plus its `do`, and nesting stays flat because
-      shell blocks close with `fi`/`done`/`esac` rather than `}`.
+      extension, which reads a block by its words rather than its braces: `if`,
+      `case` and the loop keywords open a nesting level, `fi`/`done`/`esac` close
+      it, and `do`/`then`/`in` introduce a body already charged and cost nothing.
 
 REGISTRATION
     lizard resolves a filename through `lizard_languages.get_reader_for`, which

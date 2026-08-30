@@ -227,7 +227,9 @@ def _packet_keys(monkeypatch) -> set[str]:
     row = ScoredRow("core", "core/alpha.py", "alpha( a )", 1, 20, 8, 8, 8, 18, 1, 2,
                     0.5, "untested", 64.0, "decompose", 7)
     cfg = SimpleNamespace(churn_window_months=12, worklist_floor=1, target=6,
-                          scope_targets={"core": 6}, scopes=(SimpleNamespace(name="core"),),
+                          scope_targets={"core": 6},
+                          scopes=(SimpleNamespace(name="core", paths=("core",),
+                                                  languages=("python",)),),
                           scope_paths={"core": ("core",)}, lanes=(), scoped_tests=(),
                           diff_uncovered_max=None, ratchet_file="crapkit-ratchet.tsv")
     for name, answer in (("_load_sources", {"core/alpha.py": "x\n"}), ("load_churn", {}),

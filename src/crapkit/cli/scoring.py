@@ -38,9 +38,13 @@ def _present_on_disk(root: Path, tracked: list[str]) -> list[str]:
 
 
 def _records_by_scope(files_by_scope: dict, records_by_path: dict) -> dict:
-    """Regroup per-file analysis records under the scope that owns each file."""
+    """Regroup per-file analysis records under the scope that owns each file.
+
+    A scope's file list comes from git, so it can name a path the analysis never
+    saw — one `_present_on_disk` dropped. Those files contribute no records.
+    """
     return {
-        scope: [r for f in files for r in records_by_path[f]]
+        scope: [r for f in files for r in records_by_path.get(f, ())]
         for scope, files in files_by_scope.items()
     }
 

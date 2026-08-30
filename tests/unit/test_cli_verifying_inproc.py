@@ -393,6 +393,19 @@ def test_a_lane_running_fewer_tests_than_the_baseline_is_named(baselined, capsys
     assert "'ui'" not in err, "a lane the baseline never counted cannot have shrunk"
 
 
+def test_a_lane_that_lost_its_test_count_names_the_gap(baselined, capsys):
+    """The baseline counted this lane's tests, this run counted none: the lane
+    no longer declares a results_artifact. Say the count is gone rather than
+    subtract a number that does not exist."""
+    store_of(baselined).write_run(commit=head(baselined), tool_versions={}, rows=[],
+                                  lanes={"unit": {"tests_total": 100}}, kind="coverage")
+
+    code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert code == 0
+    assert "lane 'unit' reports no test count this run, against 100 in the baseline" in err, err
+
+
 def test_dead_lines_in_the_diff_warn_and_breach_the_ceiling(baselined, capsys):
     """Exit 9 is its own code because the tree is otherwise clean: nothing is
     over the gate, no mark rose, no test broke, and the change is still untested."""
