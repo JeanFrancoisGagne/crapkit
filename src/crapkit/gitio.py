@@ -157,7 +157,10 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
     Tree-to-tree, not a walk of history: a rename here is content similarity
     between the two endpoints, so widening the window costs nothing extra and
     cannot invent a pairing git does not already see. Copies are excluded — the
-    source still exists, so nothing about it moved.
+    source still exists, so nothing about it moved. Under diff.relative git
+    reports a rename that crosses INTO the crapkit root from above as an `A`,
+    so only renames wholly inside the root pair up here; a mark on a file moved
+    in from above the root reads as new.
     """
     out = _git(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD")
     return _rename_pairs(out.split("\0"))
@@ -414,7 +417,9 @@ def worktree_add(root: Path, path: Path) -> None:
 def worktree_remove(root: Path, path: Path) -> None:
     """Teardown. --force because the worker's tree is dirty by construction, and
     it never raises: a cleanup error must not mask the failure that caused it.
-    `prune` is the fallback that drops the admin entry a stuck directory leaves."""
+    `prune` is the fallback that drops the admin entry a stuck directory leaves.
+    Parallel removes survive the same admin-entry enumeration that kills a
+    parallel add (0 failures in 320 concurrent removes measured), so no retry."""
     try:
         _git(root, "worktree", "remove", "--force", str(path))
     except GitError:

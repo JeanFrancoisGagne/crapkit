@@ -384,9 +384,9 @@ out of a history whose own paths read `packages/api/calc/grade.py`.
 
 Before 0.4.4 the churn log ran without `--relative`, so every lookup missed and `worklist`
 filed the whole corpus under dormant: `0 active, 215 dormant` on a repo with 90 commits that
-week. If you see that, check the version before you check your config. Both churn caches
-carry a format marker, so a map laid down with top-relative paths is dropped rather than
-reused on the first run after the upgrade.
+week. If you see that, check the version before you check your config. The churn caches
+moved to new file names, so a map laid down with top-relative paths is ignored rather than
+reused, and a 0.4.3 sharing the repo keeps its own.
 
 One piece was still git-top-relative in 0.4.4: the pre-commit gate reads staged paths from
 `git diff --cached`, which answers from the git top whatever the root is. Those paths matched
