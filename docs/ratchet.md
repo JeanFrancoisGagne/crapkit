@@ -92,10 +92,12 @@ The three gates read the file differently:
 |---|---|---|
 | `hook-precommit` | a staged blob: ccn, no coverage | skips the function on the mark's **existence** |
 | `rescore --gate` | a scored row: ccn and CRAP | skips the function **at or under** the recorded value |
-| `verify` | a full run | **exit 7** when the fresh score is above the mark |
+| `verify` | a full run | skips a touched function **at or under** the mark, as `rescore --gate` does; **exit 7** when the fresh score is above it |
 
-Nothing about `verify` changed. It still compares the numbers, and it is still where a real
-regression is caught.
+The ratchet check in `verify` is unchanged: it still compares the numbers, and it is still
+where a real regression is caught. Its gate reads a mark the way `rescore --gate` does
+(#29): an edit inside a marked function that leaves it at or under its mark is the debt
+the repo signed for, not a new violation; push it past the mark and both checks fire.
 
 The looseness is deliberate. Before it, a comment added inside a marked function refused the
 commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while

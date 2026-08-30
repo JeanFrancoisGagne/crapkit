@@ -224,7 +224,7 @@ This is the slow step and the only authoritative one.
 |---|---|---|
 | 0 | pass | baseline advanced, ratchet tightened, finished claims released. Commit |
 | 5 | a lane produced no artifact | tooling, not your code: fix the lane command in crapkit.toml |
-| 6 | gate: a touched function is over its ceiling on CRAP | decompose it, or cover it |
+| 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries | decompose it, or cover it |
 | 7 | ratchet: a recorded score got worse | restore that function below its mark |
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | cover the changed lines |

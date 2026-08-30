@@ -2,7 +2,9 @@
 
 Three independent checks, all must hold:
 - Gate: every function a change touched sits at CRAP <= target (coverage cannot
-  save cc > target; that is the target's design).
+  save cc > target; that is the target's design), unless a ratchet mark carries
+  it at or under the recorded value: that is the debt the repo signed for, and
+  `rescore --gate` and the pre-commit hook already read it so (#29).
 - Ratchet: no function above target scores worse than its recorded high-water
   mark, touched or not (coverage rot regresses functions nobody edited).
 - Failures: the fresh failure set adds nothing over the baseline's (the suite
@@ -155,13 +157,35 @@ def rows_by_key(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
     return worst
 
 
-def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty) -> list[GateViolation]:
+def _ceiling(row: ScoredRow, target: int, scope_targets: dict[str, int] | None) -> int:
+    return (scope_targets or {}).get(row.scope, target)
+
+
+def _marks_of(ratchet: list[RatchetEntry]) -> dict[tuple[str, str], float]:
+    return {(e.path, e.long_name): e.crap for e in ratchet}
+
+
+def _within_mark(row: ScoredRow, key: tuple[str, str],
+                 marks: dict[tuple[str, str], float]) -> bool:
+    """Signed debt as `rescore --gate` reads it: a mark the fresh score sits at or
+    under, compared at the 4dp the mark is stored at. Above the mark the gate
+    fires, as rescore's does, and the ratchet check reports the rise beside it,
+    so the three gates agree on what an edit inside marked debt may do (#29).
+    The key is the twin-aware one the ratchet check looks marks up by."""
+    mark = marks.get(key)
+    return mark is not None and round(row.crap, 4) <= mark
+
+
+def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty,
+                     ratchet) -> list[GateViolation]:
     names = key_names(fresh)
+    marks = _marks_of(ratchet)
     gate = [
         GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
                       r.path in dirty, key_of(names, r)[1])
         for r in fresh
-        if r.crap > (scope_targets or {}).get(r.scope, target) and _touched(r, changed_ranges)
+        if r.crap > _ceiling(r, target, scope_targets) and _touched(r, changed_ranges)
+        and not _within_mark(r, key_of(names, r), marks)
     ]
     gate.sort(key=lambda v: (-v.crap, v.path, v.start))
     return gate
@@ -194,7 +218,7 @@ def evaluate(
     dirty_paths: set[str] | None = None,
 ) -> Verdict:
     dirty = dirty_paths or set()
-    gate = _gate_violations(fresh, changed_ranges, target, scope_targets, dirty)
+    gate = _gate_violations(fresh, changed_ranges, target, scope_targets, dirty, ratchet)
     regressions = _ratchet_regressions(fresh, ratchet, dirty)
     new_failures = sorted(fresh_failures - baseline_failures)
 

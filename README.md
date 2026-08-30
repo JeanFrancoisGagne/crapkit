@@ -445,7 +445,7 @@ always advances the baseline.
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a ratchet metric-stamp mismatch, a `test-scoped` file under no scope or under a scope with no template. |
 | 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
 | 5 | Tool error: lizard not importable, a lane produced no artifact, a lane timed out past its retries, an override alert command failed. |
-| 6 | Gate violation. A function the diff touched is over its ceiling, or `rescore --gate` found one, or `hook-precommit` did. |
+| 6 | Gate violation. A function the diff touched is over its ceiling and above any ratchet mark it carries, or `rescore --gate` found one, or `hook-precommit` did. |
 | 7 | Ratchet regression. A marked function scores worse than its recorded high-water mark, touched or not. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
 | 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. |
