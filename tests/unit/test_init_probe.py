@@ -90,6 +90,29 @@ def test_a_probe_that_cannot_run_says_yes():
     assert _pytest_cov_probe("no-such-interpreter-7f3a -m pytest --cov") is True
 
 
+def test_a_probe_the_shell_itself_cannot_start_says_yes(monkeypatch):
+    """The other half of "a probe that cannot run is doctor's finding". The
+    which() gate answers for a missing interpreter; nothing answered for a shell
+    that will not start, and shell=True builds `{COMSPEC} /c ...`, so a COMSPEC
+    pointing at nothing makes CreateProcess raise before any interpreter runs."""
+    if os.name != "nt":
+        pytest.skip("COMSPEC is cmd.exe's; POSIX shell=True is a hardcoded /bin/sh")
+    monkeypatch.setenv("COMSPEC", r"C:\no\such\shell-7f3a.exe")
+    assert _pytest_cov_probe(f"{sys.executable} -m pytest --cov") is True
+
+
+def test_a_probe_that_raises_oserror_says_yes(monkeypatch):
+    """The COMSPEC route above is Windows-only, and CI reads coverage on Linux.
+    This reaches the same two lines on either OS, at the raise itself."""
+    import subprocess
+
+    def boom(*args, **kwargs):
+        raise OSError(2, "The system cannot find the file specified")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert _pytest_cov_probe(f"{sys.executable} -m pytest --cov") is True
+
+
 def test_a_failing_probe_prints_both_install_commands(monkeypatch, capsys):
     monkeypatch.setattr(admin, "_pytest_cov_probe", lambda command: False)
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
