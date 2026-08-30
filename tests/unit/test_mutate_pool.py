@@ -133,8 +133,8 @@ def test_an_add_that_fails_leaves_no_tree_behind_not_even_a_slow_one(tmp_path, m
 
 
 def test_a_clean_run_leaves_the_pool_on_disk_for_the_next_one(tmp_path, monkeypatch):
-    """The change the pool IS: 35.5 s of `worktree add` on a 31,459-file tree
-    against 0.44 s to re-prepare what is already there."""
+    """The change the pool IS: 30.6 s of `worktree add` on a 31,459-file tree
+    against 0.46 s to re-prepare what is already there."""
     tried = _fake_git(monkeypatch)
 
     with _worktrees(tmp_path, 3) as trees:

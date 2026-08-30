@@ -470,7 +470,7 @@ def worktree_remove(root: Path, path: Path) -> None:
 
 def worktree_reset(tree: Path, commit: str) -> None:
     """A worktree back to `commit`, content and all, without a fresh checkout.
-    35.5 s of `worktree add` on a 31,459-file tree against 0.44 s here.
+    30.6 s of `worktree add` on a 31,459-file tree against 0.46 s here.
 
     `commit` is a sha the CALLER read from the repository it cares about, never
     the literal HEAD: HEAD inside a linked worktree is that worktree's own
@@ -482,7 +482,8 @@ def worktree_reset(tree: Path, commit: str) -> None:
     `checkout --force <sha>` rather than the pathspec form `-- .`, because a
     file the new commit DELETED stays on disk and in the index under a pathspec
     checkout, and the tree's own head keeps pointing at the old commit. Both
-    forms cost the same (0.44 s against 0.61 s for four 31,459-file trees).
+    forms cost the same (0.44 s against 0.61 s for four 31,459-file trees,
+    best of 5 with 4,000 untracked artifact files planted first).
 
     Then clean: checkout restores tracked files and leaves every artifact the
     last suite wrote. -x because an ignored one (a stale coverage file, a

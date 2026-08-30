@@ -15,12 +15,12 @@ at the main checkout, a global site-packages copy) would measure unmutated
 code and score every mutant a survivor: keep the command cwd-relative.
 
 Those worktrees are KEPT, at `<root>/.crapkit/mutate-pool/w0..wN`. Building four
-of them costs 35.5 s on a 31,459-file repo and re-preparing the kept four costs
-0.44 s, and `mutate` is diff-scoped, so that build was most of a run's wall
-clock. Re-preparing is `git checkout --force <sha>` naming the main repo's HEAD,
-then `git clean -xdff`: the last run's mutant goes back, the last suite's
-artifacts go away, and a commit made since lands. What is left on disk is four
-checkouts, which `crapkit mutate --drop-pool` removes.
+of them costs 30.6 s on a 31,459-file repo and re-preparing the kept four costs
+0.46 s (best of 5, interleaved), and `mutate` is diff-scoped, so that build was
+most of a run's wall clock. Re-preparing is `git checkout --force <sha>` naming
+the main repo's HEAD, then `git clean -xdff`: the last run's mutant goes back,
+the last suite's artifacts go away, and a commit made since lands. What is left
+on disk is four checkouts, which `crapkit mutate --drop-pool` removes.
 
 The pool is one directory shared by every run in the repo, where mkdtemp gave
 each run its own, so entry takes an exclusive lock on `.crapkit/mutate-pool/`.

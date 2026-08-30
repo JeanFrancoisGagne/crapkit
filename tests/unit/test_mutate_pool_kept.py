@@ -5,8 +5,8 @@ Real git here, unlike test_mutate_pool.py: what is under test is what a git
 worktree does to a directory across two runs, and a fake add that makes a folder
 would go green whether the re-prepare works or not. The repos are two files.
 
-A fresh set of four checkouts costs 35.5 s on a 31,459-file tree; re-preparing
-the kept set costs 0.44 s. That is the whole point of the pool, so the tests
+A fresh set of four checkouts costs 30.6 s on a 31,459-file tree; re-preparing
+the kept set costs 0.46 s. That is the whole point of the pool, so the tests
 that matter are the ones saying the reused tree is not a cheaper LIE: the last
 run's mutant is gone, the last suite's artifacts are gone, and a commit made
 between two runs is there.
