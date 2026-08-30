@@ -29,7 +29,10 @@ BETA = row("beta( a )", path="core/beta.py", ccn=7)
 
 CFG = SimpleNamespace(
     churn_window_months=12, worklist_floor=1, target=6,
-    scope_targets={"core": 6}, scopes=(SimpleNamespace(name="core"),),
+    scope_targets={"core": 6},
+    # paths and languages because the packet asks universe who owns the path,
+    # with the same extension-aware matchers that assigned row.scope
+    scopes=(SimpleNamespace(name="core", paths=("core",), languages=("python",)),),
     scope_paths={"core": ("core",)}, lanes=(), scoped_tests=(),
     diff_uncovered_max=None, ratchet_file="crapkit-ratchet.tsv")
 

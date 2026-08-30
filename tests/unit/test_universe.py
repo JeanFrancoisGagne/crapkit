@@ -175,3 +175,20 @@ def test_a_parent_scope_still_claims_what_the_nested_one_does_not_compile():
     assigned = assign_files(["src/deep/x.py", "src/deep/x.ts"], cfg)
 
     assert assigned == {"a": ["src/deep/x.py"], "b": ["src/deep/x.ts"]}
+
+
+def test_the_packet_reads_the_language_arm_the_scored_row_was_assigned_by():
+    """`b` claims the prefix but not this row's extension, so the universe
+    scored the file under `a` and the ceiling comes from `a`. The lane and the
+    scoped test command have to come from `a` too: extension-blind ownership
+    put scope `b` in the same packet as scope `a`'s ceiling."""
+    scopes = (Scope(name="a", paths=("src",), languages=("python",), target=5),
+              Scope(name="b", paths=("src/deep",), languages=("typescript",), target=9))
+    cfg = Config(target=6, scopes=scopes, exclude_globs=())
+    from crapkit.cli.queue import _row_ceiling
+
+    row = SimpleNamespace(path="src/deep/x.py", scope="a")
+
+    assert assign_files(["src/deep/x.py"], cfg)["a"] == ["src/deep/x.py"]
+    assert _packet_scope(cfg, row.path, row.scope) == "a"
+    assert _row_ceiling(cfg, row) == 5
