@@ -24,6 +24,7 @@ from .covstream import parse_coveragepy_file, parse_istanbul_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
 from .procs import run_bounded
+from .universe import owning_scope, path_matchers
 
 
 def _in_container() -> bool:
@@ -215,12 +216,19 @@ def lane_order(root: Path, lanes: list[Lane]) -> list[Lane]:
 
 
 def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: str) -> list[str]:
-    """Committed or working-tree changes under this lane's scope paths since a commit."""
-    prefixes = tuple(f"{p.rstrip('/')}/" for name in lane.scopes for p in scope_paths.get(name, ()))
-    if not prefixes:
+    """Committed or working-tree changes under this lane's scope paths since a commit.
+
+    Ownership is universe's, asked over this lane's scopes alone so a file a
+    NESTED scope owns cannot go stale on the parent's lane. Prefix matching on
+    its own missed a scope that declares a FILE rather than a directory — the
+    shape crapkit's own tests/e2e/test_parallel_lanes_e2e.py writes — and
+    editing that file read as no change at all.
+    """
+    matchers = path_matchers({name: scope_paths.get(name, ()) for name in lane.scopes})
+    if not matchers:
         return []
     changed = set(git.diff_names_since(since_commit)) | set(git.status_names())
-    return sorted(f for f in changed if f.startswith(prefixes))
+    return sorted(f for f in changed if owning_scope(f, matchers))
 
 
 def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) -> None:

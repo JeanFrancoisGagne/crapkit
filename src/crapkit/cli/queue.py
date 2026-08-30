@@ -633,10 +633,16 @@ def _row_ceiling(cfg, row) -> int:
 def _packet_scope(cfg, row) -> str:
     """The scope that OWNS the path, which is what routes a lane and a scoped
     test command. The scored row's scope is the fallback, for a path no
-    [[scope]] claims by prefix."""
-    from .verifying import _owning_scope
+    [[scope]] claims by prefix.
 
-    return _owning_scope(row.path, cfg.scope_paths) or row.scope
+    universe's rule, the one that also set row.scope when the run scored this
+    file. It used to be verifying's respelling, which answered `b` for a nested
+    path where the scored row said `a`, so one packet named the deeper scope's
+    lane and test command beside the shallower scope's ceiling.
+    """
+    from ..universe import owning_scope, path_matchers
+
+    return owning_scope(row.path, path_matchers(cfg.scope_paths)) or row.scope
 
 
 def _scope_config(cfg, name: str):

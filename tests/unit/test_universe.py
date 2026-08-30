@@ -1,5 +1,8 @@
 """Universe seam: tracked file list + config in, per-scope analyzable file lists out. Pure."""
 import fnmatch
+from types import SimpleNamespace
+
+import pytest
 
 from crapkit.config import Config, Scope
 from crapkit.universe import _TEST_DIR, assign_files, exclude_matcher, excluded
@@ -124,3 +127,51 @@ def test_two_scopes_sharing_a_path_prefix_split_files_by_language():
     )
     assigned = assign_files(["src/app.ts", "src/server.py"], cfg)
     assert assigned == {"frontend": ["src/app.ts"], "backend": ["src/server.py"]}
+
+
+# --- one owner, whoever is asking -------------------------------------------
+
+NESTED = Config(
+    target=6,
+    scopes=(
+        Scope(name="a", paths=("src",), languages=("python",)),
+        Scope(name="b", paths=("src/deep",), languages=("python",)),
+        Scope(name="hot", paths=("core/hot.py",), languages=("python",)),
+    ),
+    exclude_globs=(),
+)
+
+
+def _packet_scope(cfg, path: str, row_scope: str) -> str:
+    """What `brief --json` routes a lane and a scoped test command by."""
+    from crapkit.cli.queue import _packet_scope as packet_scope
+
+    return packet_scope(cfg, SimpleNamespace(path=path, scope=row_scope))
+
+
+@pytest.mark.parametrize(("path", "owner"), [
+    ("src/deep/x.py", "b"),
+    ("core/hot.py", "hot"),
+])
+def test_universe_verifying_and_the_packet_name_the_same_owner(path, owner):
+    """Three readers used to answer differently for a nested scope: universe took
+    the first scope declared, verifying took the deepest, and the packet mixed
+    them, taking the lane and the test command from one and the ceiling from the
+    other. Deepest wins, which is what README documents for test-scoped."""
+    from crapkit.cli.verifying import _owning_scope
+
+    assert assign_files([path], NESTED)[owner] == [path]
+    assert _owning_scope(path, NESTED.scope_paths) == owner
+    assert _packet_scope(NESTED, path, "a") == owner
+
+
+def test_a_parent_scope_still_claims_what_the_nested_one_does_not_compile():
+    """The deeper scope only wins where its languages claim the extension too,
+    or two scopes sharing a prefix black-hole each other's files."""
+    scopes = (Scope(name="a", paths=("src",), languages=("python",)),
+              Scope(name="b", paths=("src/deep",), languages=("typescript",)))
+    cfg = Config(target=6, scopes=scopes, exclude_globs=())
+
+    assigned = assign_files(["src/deep/x.py", "src/deep/x.ts"], cfg)
+
+    assert assigned == {"a": ["src/deep/x.py"], "b": ["src/deep/x.ts"]}

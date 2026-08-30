@@ -63,32 +63,70 @@ def _source_extensions(languages: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(e for lang in languages for e in LANGUAGE_EXTENSIONS[lang])
 
 
-class _ScopeMatch(NamedTuple):
-    """One scope's prefix and extension tests, precomputed once per run."""
+# `str.endswith("")` is true of every path, so the extension arm costs the same
+# whether a caller filters by language or not — no per-file branch to skip it.
+ANY_EXTENSION = ("",)
+
+
+class ScopeMatch(NamedTuple):
+    """One DECLARED SCOPE PATH's tests, precomputed once per run.
+
+    One entry per path rather than per scope, because depth is a property of the
+    path: a scope declaring both `src` and `packages/web/src` claims a file
+    under each at a different depth.
+    """
     name: str
-    exact: frozenset[str]
-    prefixes: tuple[str, ...]
+    path: str
+    prefix: str
     extensions: tuple[str, ...]
 
 
-def _scope_matchers(scopes: tuple[Scope, ...]) -> tuple[_ScopeMatch, ...]:
-    return tuple(
-        _ScopeMatch(s.name, frozenset(s.paths),
-                    tuple(p.rstrip("/") + "/" for p in s.paths),
-                    _source_extensions(s.languages))
-        for s in scopes
-    )
+def _ordered(matches) -> tuple[ScopeMatch, ...]:
+    """Deepest declared path first; ties keep declaration order (sort is stable).
+
+    Depth lives in the ORDER so that owning_scope stays a single pass that
+    returns on its first hit. Ranking inside the loop would pay for every
+    matcher on every path, and this loop runs once per file on a 31.6k-file scan.
+    """
+    return tuple(sorted(matches, key=lambda m: -len(m.path)))
 
 
-def _owning_scope(path: str, matchers: tuple[_ScopeMatch, ...]) -> str | None:
-    """Name of the scope that claims path, or None when no scope does."""
-    # First scope whose path prefix AND language extensions both match wins;
-    # a prefix-only match must not stop the search or shared-prefix scopes
-    # silently black-hole each other's files.
+def scope_matchers(scopes: tuple[Scope, ...]) -> tuple[ScopeMatch, ...]:
+    """Matchers for the scored corpus: a scope claims a path only when one of its
+    languages claims the extension too."""
+    return _ordered(ScopeMatch(s.name, p.rstrip("/"), p.rstrip("/") + "/",
+                               _source_extensions(s.languages))
+                    for s in scopes for p in s.paths)
+
+
+def path_matchers(scope_paths: dict[str, tuple[str, ...]]) -> tuple[ScopeMatch, ...]:
+    """Matchers for the callers that ask about any file at all, whatever it is.
+
+    Lane staleness counts a fixture, a .md or a config file under a scope, and
+    `test-scoped` routes files whose language no scope declares, so both read
+    ownership with the extension arm open.
+    """
+    return _ordered(ScopeMatch(name, p.rstrip("/"), p.rstrip("/") + "/", ANY_EXTENSION)
+                    for name, paths in scope_paths.items() for p in paths)
+
+
+def owning_scope(path: str, matchers: tuple[ScopeMatch, ...]) -> str | None:
+    """Name of the scope that claims path, or None when no scope does.
+
+    The deepest declared path wins, so a nested scope beats the parent that also
+    contains it — the rule README states for `test-scoped`. The scored corpus,
+    lane staleness and the brief packet all ask here: when they answered
+    separately, `brief` took a function's lane and test command from one scope
+    and its ceiling from another.
+
+    A scope matching by path but not by extension is skipped rather than ending
+    the search, or two scopes sharing a prefix silently black-hole each other's
+    files. The exact arm is what makes a scope that declares a FILE rather than
+    a directory own that file.
+    """
     for m in matchers:
-        if path in m.exact or path.startswith(m.prefixes):
-            if path.endswith(m.extensions):
-                return m.name
+        if (path == m.path or path.startswith(m.prefix)) and path.endswith(m.extensions):
+            return m.name
     return None
 
 
@@ -106,16 +144,16 @@ class Universe(NamedTuple):
     oversized: tuple[tuple[str, int], ...]
 
 
-def _candidate(path: str, matchers: tuple[_ScopeMatch, ...]) -> tuple[str | None, bool]:
+def _candidate(path: str, matchers: tuple[ScopeMatch, ...]) -> tuple[str | None, bool]:
     """(owning scope or None, whether any scope's language claims the extension)."""
-    owner = _owning_scope(path, matchers)
+    owner = owning_scope(path, matchers)
     if owner is not None:
         return owner, True
     return None, any(path.endswith(m.extensions) for m in matchers)
 
 
 def _candidates(files: list[str], cfg: Config,
-                matchers: tuple[_ScopeMatch, ...]) -> list[tuple[str, str | None]]:
+                matchers: tuple[ScopeMatch, ...]) -> list[tuple[str, str | None]]:
     match_glob = exclude_matcher(cfg.exclude_globs)
     out = []
     for raw_path in files:
@@ -160,7 +198,7 @@ def scan_files(files: list[str], cfg: Config, *,
     """The whole verdict. `size_of` is injected so this stays pure; the shell
     layer passes a working-tree stat, and callers with no tree pass nothing."""
     assigned, unclaimed, oversized = _partition(
-        _candidates(files, cfg, _scope_matchers(cfg.scopes)),
+        _candidates(files, cfg, scope_matchers(cfg.scopes)),
         cfg.scopes, cfg.max_file_bytes, size_of)
     return Universe({name: sorted(paths) for name, paths in assigned.items()},
                     tuple(sorted(unclaimed)), tuple(sorted(oversized)))

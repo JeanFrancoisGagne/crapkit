@@ -193,6 +193,17 @@ def test_a_lane_with_no_scope_prefixes_has_nothing_to_go_stale(repo: Path, scope
     assert lane_unchanged(repo, lane, scope_paths) is True
 
 
+def test_a_file_valued_scope_path_still_marks_its_lane_changed(repo: Path):
+    """A scope may declare a file rather than a directory — crapkit's own
+    tests/e2e/test_parallel_lanes_e2e.py writes that shape. Prefix matching
+    alone never matches the file itself, so editing it read as no change and the
+    lane reused an artifact that no longer described its code."""
+    lane = _the_lane(repo)
+    _run_and_stamp(repo, lane)
+    _touch_scope_file(repo)
+    assert lane_unchanged(repo, lane, {"src": ("src/app.ts",)}) is False
+
+
 def test_a_stamp_commit_that_left_history_is_not_unchanged(repo: Path):
     first = _git(repo, "rev-parse", "HEAD").strip()
     _touch_scope_file(repo)
