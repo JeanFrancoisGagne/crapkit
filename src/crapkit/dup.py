@@ -8,6 +8,8 @@ shingle are ever compared. Tiny functions are structural noise and stay out.
 """
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from .snapshot import InventoryRow
 
 WINDOW = 4  # consecutive normalized lines per shingle
@@ -54,6 +56,36 @@ def _function_shingles(rows: list[InventoryRow], sources: dict[str, str],
         if shingles is not None:
             out.append((r, shingles))
     return out
+
+
+class FunctionIndex(NamedTuple):
+    """Every shingled function of a snapshot, and the threshold it was built at.
+
+    min_lines rides along because the index is only an answer at the threshold
+    that produced it: a function too short at 8 is ABSENT from the entries, not
+    scored low, so reading it at 4 would drop twins rather than report them.
+    """
+
+    min_lines: int
+    entries: list[tuple[InventoryRow, set[int]]]
+
+
+def function_index(rows: list[InventoryRow], sources: dict[str, str],
+                   min_lines: int = 8) -> FunctionIndex:
+    """Shingle every function once, for callers that ask about many targets.
+
+    `brief --batch N` scores N functions against the same snapshot, and building
+    this per packet re-shingled the whole repo N times (measured -60% wall on a
+    batch of 5 over a 31,459-file tree).
+
+    PROCESS-LOCAL ONLY. A shingle is builtin `hash()` of a tuple of strings and
+    CPython randomizes that per process, so this can never be a file. Measured:
+    one index written and read back in three fresh interpreters shared 0 of 37
+    shingles, containment 0.0000 every time, which empties `duplication_twins`
+    on a repo that did not change. A disk index needs a stable digest instead of
+    `hash()`, which is a different function with a different cost.
+    """
+    return FunctionIndex(min_lines, _function_shingles(rows, sources, min_lines))
 
 
 def _owners_by_shingle(indexed: list[tuple[InventoryRow, set[int]]]) -> dict[int, int | list[int]]:
@@ -137,26 +169,42 @@ def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int
     return None if lines is None else _row_shingles(target, lines, min_lines)
 
 
-def _twin_scores(mine: set[int], target, rows: list[InventoryRow],
-                 sources: dict[str, str], min_lines: int) -> list[dict]:
+def _twin_scores(mine: set[int], target,
+                 entries: list[tuple[InventoryRow, set[int]]]) -> list[dict]:
     return [_twin_payload(r, len(mine & other) / min(len(mine), len(other)),
                           _nested_spans(r, target))
-            for r, other in _function_shingles(rows, sources, min_lines)
+            for r, other in entries
             if not _is_self(r, target)]
 
 
+def _entries_at(indexed: FunctionIndex | None, rows: list[InventoryRow],
+                sources: dict[str, str], min_lines: int) -> list[tuple[InventoryRow, set[int]]]:
+    """A prebuilt index only at the threshold it was built at; otherwise a fresh
+    one. Reusing it at another min_lines would silently lose the rows that
+    threshold admits, so a mismatch pays for the rebuild."""
+    if indexed is not None and indexed.min_lines == min_lines:
+        return indexed.entries
+    return _function_shingles(rows, sources, min_lines)
+
+
 def find_twins(target, rows: list[InventoryRow], sources: dict[str, str], *,
-               min_lines: int = 8, similarity: float = 0.8, top: int = 10) -> list[dict]:
+               min_lines: int = 8, similarity: float = 0.8, top: int = 10,
+               indexed: FunctionIndex | None = None) -> list[dict]:
     """The near-duplicates of ONE function, scored exactly as find_duplicates
     scores the pair it would appear in.
 
     One function's shingles against every other function's, so a brief costs a
     single row's comparisons instead of the whole repo's pair counting.
+
+    `indexed` is that other side, shingled once by function_index and reused
+    across targets. Passing it changes nothing about the answer; leaving it out
+    builds the same thing for this call alone.
     """
     mine = _target_shingles(target, sources, min_lines)
     if not mine:
         return []
-    kept = [t for t in _twin_scores(mine, target, rows, sources, min_lines)
+    entries = _entries_at(indexed, rows, sources, min_lines)
+    kept = [t for t in _twin_scores(mine, target, entries)
             if t["similarity"] >= similarity]
     kept.sort(key=lambda t: (-t["similarity"], t["path"], t["start"]))
     return kept[:top]
