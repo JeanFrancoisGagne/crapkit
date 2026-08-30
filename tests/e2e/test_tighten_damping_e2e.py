@@ -6,12 +6,11 @@ function came back 20.0 on one run of a commit and 72.0 on the next. Tightening
 on the lucky half of that and failing on the unlucky half turns a nondeterministic
 input into a coin-flip gate, so verify holds the mark and says so.
 """
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from conftest import cli_runner
+from conftest import cli_runner, git_commit_all, git_init_repo
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -62,9 +61,8 @@ def repo(tmp_path: Path) -> Path:
     (tmp_path / "make_cov.py").write_text(MAKE_COV, encoding="utf-8")
     (tmp_path / ".gitignore").write_text(".crapkit/\ncov.json\ncov_mode.txt\n", encoding="utf-8")
     set_mode(tmp_path, "lucky")
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True)
+    git_init_repo(tmp_path)
+    git_commit_all(tmp_path, "init")
     return tmp_path
 
 

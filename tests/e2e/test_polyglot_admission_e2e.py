@@ -16,14 +16,13 @@ So this repo carries enough files to force the pool, and the numbers below are
 hand-counted from the sources above them.
 """
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from crapkit.store import SnapshotStore
 
-from conftest import cli_runner
+from conftest import cli_runner, git_commit_all, git_init_repo
 
 # Four arms that match a value, plus the wildcard: base 1 + 4 = 5. The stock
 # reader reads 2 for this, whatever the arm count.
@@ -113,10 +112,8 @@ def polyglot_repo(tmp_path: Path) -> Path:
     write(tmp_path / "scripts" / "reload.bash", RELOAD)
     (tmp_path / "tools").mkdir(parents=True, exist_ok=True)
     (tmp_path / "tools" / "route.ps1").write_bytes(ROUTE_BYTES)
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t",
-                 "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True)
+    git_init_repo(tmp_path)
+    git_commit_all(tmp_path, "init")
     return tmp_path
 
 

@@ -12,7 +12,6 @@ else.
 Every number below is hand-counted from the source above it.
 """
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,7 @@ import pytest
 from crapkit.keys import key_names
 from crapkit.store import SnapshotStore
 
-from conftest import cli_runner
+from conftest import cli_runner, git_commit_all, git_init_repo
 
 # `take` is straight-line code: `&&` marks an rvalue reference. `classify` is
 # base 1 + three if links = 4, and Sonar-spec 3 (if +1, two else-ifs +1 each).
@@ -158,10 +157,8 @@ def family_repo(tmp_path: Path) -> Path:
     write(tmp_path / "ui" / "App.vue", VUE)
     write(tmp_path / "app" / "Probe.java", JAVA)
     write(tmp_path / "zigsrc" / "main.zig", ZIG)
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t",
-                 "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True)
+    git_init_repo(tmp_path)
+    git_commit_all(tmp_path, "init")
     return tmp_path
 
 
