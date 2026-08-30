@@ -637,8 +637,10 @@ The lane `init` wrote is
 `npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js`. It reads
 vitest's `json` reporter from `.crapkit/cov/js/coverage-final.json`; the
 `reportsDirectory` flag is what keeps that report out of your root. Anything that produces
-an istanbul `coverage-final.json` works; see [docs/lanes.md](docs/lanes.md) for jest,
-pytest, monorepo and per-package recipes.
+an istanbul `coverage-final.json` works; see [docs/lanes.md](docs/lanes.md) for the
+[jest](docs/lanes.md#jest) and [pytest](docs/lanes.md#pytest) recipes, a package
+[one directory down](docs/lanes.md#running-from-a-subdirectory), and a
+[crapkit root below the repo top](docs/lanes.md#a-crapkit-root-below-the-repo-top).
 
 ### 2. Install a coverage provider
 
