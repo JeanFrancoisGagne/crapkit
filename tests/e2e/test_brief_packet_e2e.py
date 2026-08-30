@@ -197,10 +197,10 @@ def test_the_packet_carries_the_commands_to_run_next(repo: Path):
     out = brief(repo, "core/alpha.py", "alpha")
 
     assert out["commands"] == {
-        "gate": "python -m crapkit rescore core/alpha.py --gate",
+        "gate": "crapkit rescore core/alpha.py --gate",
         "scoped_tests": 'python -m pytest "core/alpha.py"',
-        "verify": "python -m crapkit verify",
-        "refresh": "python -m crapkit coverage --reuse-unchanged",
+        "verify": "crapkit verify",
+        "refresh": "crapkit coverage --reuse-unchanged",
         "refresh_writes_run": True,
     }
 

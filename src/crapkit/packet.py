@@ -34,7 +34,14 @@ ANONYMOUS = "(anonymous)"
 # re-reads the snapshot that is already stale. `--reuse-unchanged` reruns only
 # the lanes whose scope files moved and parses the rest off the artifacts they
 # already have, so it is the cheapest call that still writes a run.
-REFRESH = "python -m crapkit coverage --reuse-unchanged"
+#
+# Every command the packet names is spelled as the console script, the
+# resolution the hooks and the plugin manifest already trust (#20, #37). Bare
+# `python` resolves to the WindowsApps stub, to a venv without crapkit, or,
+# for a child of a venv interpreter launched without a shell, to the base
+# interpreter the venv wraps: Windows searches the parent application's
+# directory before PATH, and a venv's python.exe is a trampoline for that base.
+REFRESH = "crapkit coverage --reuse-unchanged"
 
 
 def function_source(text: str | None, start: int, end: int) -> str | None:
@@ -119,9 +126,9 @@ def commands(path: str, scoped: str | None, note: str = "") -> dict:
     nothing on disk and that one does: a read-only session, or one holding a
     tree it is not allowed to score, has to know which of the four it may run.
     """
-    out = {"gate": f"python -m crapkit rescore {path} --gate",
+    out = {"gate": f"crapkit rescore {path} --gate",
            "scoped_tests": scoped,
-           "verify": "python -m crapkit verify",
+           "verify": "crapkit verify",
            "refresh": REFRESH,
            "refresh_writes_run": True}
     if scoped is None and note:

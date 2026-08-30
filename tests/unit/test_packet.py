@@ -112,12 +112,12 @@ def test_the_commands_carry_the_path_and_the_function_filled_in():
     out = packet.commands("core/alpha.py", 'pytest "core/alpha.py"')
 
     assert out == {
-        "gate": "python -m crapkit rescore core/alpha.py --gate",
+        "gate": "crapkit rescore core/alpha.py --gate",
         "scoped_tests": 'pytest "core/alpha.py"',
-        "verify": "python -m crapkit verify",
+        "verify": "crapkit verify",
         # a second `brief` re-reads the snapshot that is already stale, so the
         # field that answers `stale: true` has to be the one that writes a run
-        "refresh": "python -m crapkit coverage --reuse-unchanged",
+        "refresh": "crapkit coverage --reuse-unchanged",
         "refresh_writes_run": True,
     }
 

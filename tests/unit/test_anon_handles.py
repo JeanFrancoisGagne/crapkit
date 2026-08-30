@@ -211,5 +211,5 @@ def test_a_row_at_its_ceiling_needs_no_pieces():
 def test_the_refresh_command_writes_a_run_rather_than_rereading_one():
     out = packet.commands("core/alpha.py", 'pytest "core/alpha.py"')
 
-    assert out["refresh"] == "python -m crapkit coverage --reuse-unchanged"
+    assert out["refresh"] == "crapkit coverage --reuse-unchanged"
     assert out["refresh_writes_run"] is True
