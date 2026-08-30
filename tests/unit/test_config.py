@@ -214,6 +214,19 @@ def test_shell_words_under_cmd_keeps_backslashes_and_reads_a_single_quote_as_a_c
     assert shell_words("pytest -m 'not live'", cmd=True) == ["pytest", "-m", "'not", "live'"]
 
 
+def test_shell_words_reads_a_quote_that_opens_mid_token_under_both_shells():
+    """Quoting the part that holds the space is how a Windows path gets written.
+    cmd.exe closes the word on the quote wherever the quote sits, so
+    `--cov-report=json:"a b\\py.json"` is one argument to the runner and one
+    token here; splitting it named a positional the operator never wrote."""
+    assert shell_words(r'pytest --cov-report=json:"a b\py.json"', cmd=True) == \
+        ["pytest", r"--cov-report=json:a b\py.json"]
+    assert shell_words('pytest tests/"a b"/test_x.py', cmd=True) == \
+        ["pytest", "tests/a b/test_x.py"]
+    assert shell_words('pytest tests/"a b"/test_x.py', cmd=False) == \
+        ["pytest", "tests/a b/test_x.py"]
+
+
 def test_shell_words_under_sh_reads_single_quotes():
     assert shell_words("pytest -m 'not live'", cmd=False) == ["pytest", "-m", "not live"]
 

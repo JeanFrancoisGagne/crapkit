@@ -382,6 +382,24 @@ def test_under_cmd_a_backslash_path_is_still_a_narrowing_positional(monkeypatch)
     assert r"tests\unit" in str(caught.value), "the refusal names the token as written"
 
 
+def test_under_cmd_a_quoted_path_inside_a_flag_value_is_not_a_positional(monkeypatch):
+    """cmd.exe hands pytest `--cov-report=json:a b\\py.json`, one argument, so the
+    lane runs. Reading the quote as a word boundary refused it and named
+    'b\\py.json"', a token that is no argument the operator wrote."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = r'python -m pytest --cov --cov-report=json:"a b\py.json"'
+    assert _covpy_lane(command).command == command
+
+
+def test_under_cmd_a_mid_token_quote_in_a_real_positional_is_named_as_written(monkeypatch):
+    """The refusal has to name the argument pytest gets, not a fragment of the
+    line: `tests/"a b"/test_x.py` is the one path `tests/a b/test_x.py`."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane('python -m pytest --cov=pylib tests/"a b"/test_x.py')
+    assert "'tests/a b/test_x.py'" in str(caught.value)
+
+
 def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
     with pytest.raises(ConfigError, match="narrows a full-suite"):
         _covpy_lane("python -m pytest 'pylib/sub dir' --cov=pylib")

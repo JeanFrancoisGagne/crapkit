@@ -73,8 +73,9 @@ SHELL_IS_CMD = os.name == "nt"
 def shell_words(command: str, cmd: bool | None = None) -> list[str]:
     """The words the shell hands the runner. `-m "not live and not perf"` is one
     argument there and must be one token here — a whitespace split reads four
-    positionals into it. A command the shell would refuse (an unbalanced quote)
-    gets the whitespace read instead: a rough lint beats a crash at config load."""
+    positionals into it. A command the shell would refuse (a quote that never
+    closes) gets the whitespace read instead: a rough lint beats a crash at
+    config load."""
     cmd = SHELL_IS_CMD if cmd is None else cmd
     try:
         return _cmd_words(command) if cmd else shlex.split(command)
@@ -83,20 +84,35 @@ def shell_words(command: str, cmd: bool | None = None) -> list[str]:
 
 
 def _cmd_words(command: str) -> list[str]:
-    """cmd.exe's reading: a double-quoted phrase is one word and loses its
-    quotes; a single quote is an ordinary character, so `'not live'` is two
-    words; a backslash separates path components and escapes nothing."""
-    lexer = shlex.shlex(command, posix=False)
-    lexer.whitespace_split = True
-    lexer.quotes = '"'
-    lexer.commenters = ""
-    return [_strip_double_quotes(word) for word in lexer]
+    """cmd.exe's reading: a double quote opens or closes a quoted run wherever it
+    sits, so `--cov-report=json:"a b\\py.json"` is one word and the quotes
+    themselves are dropped; a single quote is an ordinary character, so
+    `'not live'` is two words; a backslash separates path components and escapes
+    nothing. A quote that never closes raises, and shell_words falls back."""
+    words: list[str] = []
+    word = ""
+    in_quote = False
+    for char in command:
+        if char == '"':
+            in_quote = not in_quote
+        elif _ends_the_word(char, in_quote):
+            words += _kept(word)
+            word = ""
+        else:
+            word += char
+    if in_quote:
+        raise ValueError(f"no closing quotation: {command}")
+    return words + _kept(word)
 
 
-def _strip_double_quotes(word: str) -> str:
-    if len(word) >= 2 and word[0] == word[-1] == '"':
-        return word[1:-1]
-    return word
+def _ends_the_word(char: str, in_quote: bool) -> bool:
+    """Whitespace separates words only outside a quoted run."""
+    return char.isspace() and not in_quote
+
+
+def _kept(word: str) -> list[str]:
+    """The word so far, or nothing when the run of whitespace was empty."""
+    return [word] if word else []
 
 
 def _quote_hint(command: str) -> str:
