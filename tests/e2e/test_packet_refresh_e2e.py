@@ -131,7 +131,7 @@ def test_the_packet_says_the_refresh_writes_a_run(repo: Path):
     commands = brief(repo, "core/alpha.py", "alpha")["commands"]
 
     assert commands["refresh_writes_run"] is True
-    assert commands["refresh"].startswith("python -m crapkit coverage")
+    assert commands["refresh"].startswith("crapkit coverage")
 
 
 # --- one budget, both commands ----------------------------------------------
