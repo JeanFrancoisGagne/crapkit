@@ -334,10 +334,13 @@ def build_parser() -> argparse.ArgumentParser:
     doc.add_argument("--tune", action="store_true",
                      help="print suggested [crapkit] parallelism knobs for this machine from "
                           "cpu count and recorded lane durations; writes nothing")
-    doc.add_argument("--plugin-root", default=None, metavar="PATH",
+    doc.add_argument("--plugin-root", nargs="?", const="", default=None, metavar="PATH",
                      help="check an installed Claude Code plugin against this CLI instead of "
                           "reading a repo: manifest version and hook protocol, one line per "
-                          "disagreement, silent when they agree")
+                          "disagreement, silent when they agree. PATH is the plugin root or "
+                          "any directory above it, ~/.claude included (the newest crapkit "
+                          "install under it wins); with no PATH, the newest crapkit install "
+                          "in Claude Code's plugin cache")
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")

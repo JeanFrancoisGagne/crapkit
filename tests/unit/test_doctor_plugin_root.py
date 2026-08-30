@@ -43,14 +43,14 @@ def _write(path: Path, payload) -> None:
 
 
 def plugin(root: Path, *, version: str = CLI, protocol: str | None = "1",
-           manifest: bool = True) -> Path:
+           manifest: bool = True, name: str = "crapkit") -> Path:
     """A plugin tree shaped like an installed one: a manifest and a hooks file.
 
     `protocol=None` ships no hooks.json at all, which is a plugin that registers
     no advisory hook rather than one that registers a wrong protocol.
     """
     if manifest:
-        _write(root / ".claude-plugin" / "plugin.json", {"name": "crapkit", "version": version})
+        _write(root / ".claude-plugin" / "plugin.json", {"name": name, "version": version})
     if protocol is not None:
         _write(root / "hooks" / "hooks.json",
                {"hooks": {"PostToolUse": [{"matcher": "Edit|Write",
@@ -208,3 +208,106 @@ def test_a_missing_manifest_stops_the_comparison_it_cannot_make():
                                 {"protocols": ("99",)}, {"version": None}])
 def test_each_fault_alone_produces_exactly_one_line(kw):
     assert len(_lines(**kw)) == 1
+
+
+# --- finding the plugin (#28) --------------------------------------------------
+#
+# Claude Code caches an install at cache/<marketplace>/<plugin>/<version>/ and
+# keeps the old version beside the new one after an update. The newest is the
+# one it runs, so that is the one checked, and the operator may point at any
+# directory above it, or at nothing at all.
+
+def test_a_directory_above_the_install_resolves_to_the_newest_version(tmp_path, capsys):
+    cache = tmp_path / "cache" / "crapkit" / "crapkit"
+    plugin(cache / "0.4.2", version="0.4.2")
+    plugin(cache / CLI)
+
+    code, lines, err = check(tmp_path / "cache", capsys)
+
+    assert (code, lines, err) == (0, [], "")
+
+
+def test_the_newest_is_decided_by_version_not_by_name_order(tmp_path, capsys):
+    cache = tmp_path / "cache" / "m" / "crapkit"
+    plugin(cache / "0.10.0", version="0.10.0")
+    plugin(cache / "0.9.0", version="0.9.0")
+
+    code, lines, _ = check(cache, capsys)
+
+    assert code == 1 and len(lines) == 1 and "0.10.0" in lines[0], lines
+
+
+def test_no_path_reads_claude_code_s_plugin_cache(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+
+    code = main(["doctor", "--plugin-root"])
+    out = capsys.readouterr()
+
+    assert (code, out.out, out.err) == (0, "", "")
+
+
+def test_no_path_honours_the_installer_s_record(tmp_path, capsys, monkeypatch):
+    """installed_plugins.json names the install directory, so a record pointing
+    outside the cache layout still resolves."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    root = plugin(tmp_path / "elsewhere" / "crapkit-plugin", version="0.1.0")
+    _write(tmp_path / "plugins" / "installed_plugins.json",
+           {"plugins": {"crapkit@crapkit": [{"installPath": str(root), "version": "0.1.0"}]}})
+
+    code = main(["doctor", "--plugin-root"])
+    lines = capsys.readouterr().out.splitlines()
+
+    assert code == 1 and len(lines) == 1 and "0.1.0" in lines[0], lines
+
+
+def test_no_path_and_no_install_is_one_line_naming_where_it_looked(tmp_path, capsys,
+                                                                   monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+    code = main(["doctor", "--plugin-root"])
+    lines = capsys.readouterr().out.splitlines()
+
+    assert code == 1 and len(lines) == 1, lines
+    assert str(tmp_path / "plugins") in lines[0], lines[0]
+    assert "claude plugin install crapkit@crapkit" in lines[0], lines[0]
+
+
+def test_a_cache_shared_with_other_plugins_yields_crapkit_not_the_highest_version(tmp_path,
+                                                                                    capsys):
+    """A real cache holds every vendor's plugins. Picking the highest version
+    across all of them checked security-guidance 2.0.6 against the crapkit CLI
+    and prescribed reinstalling crapkit."""
+    cache = tmp_path / "cache"
+    plugin(cache / "official" / "security-guidance" / "2.0.6", name="security-guidance",
+           version="2.0.6")
+    plugin(cache / "crapkit" / "crapkit" / CLI)
+
+    code, lines, err = check(cache, capsys)
+
+    assert (code, lines, err) == (0, [], "")
+
+
+@pytest.mark.parametrize("above", ["", "plugins", "plugins/cache", "plugins/cache/crapkit"])
+def test_every_directory_above_the_install_in_claude_code_s_layout_reaches_it(tmp_path, capsys,
+                                                                             above):
+    """`~/.claude` and `~/.claude/plugins` sit five and four levels above the
+    manifest; the search steps into `plugins` and `cache` first, which also
+    keeps the marketplace clone beside the cache out of the answer."""
+    plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+    plugin(tmp_path / "plugins" / "marketplaces" / "crapkit" / "plugin", version="0.1.0")
+
+    code, lines, err = check(tmp_path / above, capsys)
+
+    assert (code, lines, err) == (0, [], "")
+
+
+def test_a_path_with_no_manifest_anywhere_under_it_still_names_the_file(tmp_path, capsys):
+    """The line for a wrong directory survives the search under it."""
+    (tmp_path / "empty").mkdir()
+
+    code, lines, _ = check(tmp_path / "empty", capsys)
+
+    assert code == 1
+    assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'empty'} has no "
+                     ".claude-plugin/plugin.json"], lines
