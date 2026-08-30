@@ -6,12 +6,12 @@ count in the cache and watching it surface in the output — a stopwatch would
 prove nothing about correctness, and a mock proves nothing about the wiring.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 CACHE = Path(".crapkit") / "churn-cache-v2.json"
 
@@ -58,10 +58,7 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180,
-                          encoding="utf-8", errors="replace", env=dict(os.environ))
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def commit(repo: Path, message: str) -> None:

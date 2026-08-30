@@ -6,12 +6,12 @@ staged blob to the working tree's raw bytes called every file on such a checkout
 different, so the first message a Windows user ever got from the gate ended in
 an instruction that does nothing.
 """
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 CONFIG = """[crapkit]
 target = 6
@@ -25,11 +25,7 @@ languages = ["python"]
 NOTE = "differs from the working tree"
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180, env=env)
+run_cli = cli_runner(timeout=180, env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
 
 def git(repo: Path, *args: str) -> str:

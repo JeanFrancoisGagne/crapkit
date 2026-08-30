@@ -18,14 +18,12 @@ decompose before committing, because there the commit really is refused.
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 import crapkit
-
-PY = sys.executable
+from conftest import run_cli
 
 CONFIG = """[crapkit]
 target = 6
@@ -65,13 +63,12 @@ def commented(name: str) -> str:
     return f"{head}\n    # explains the branch below\n{rest}"
 
 
-def _child_env() -> dict:
-    """Both children import the crapkit this test imported, not an installed one."""
-    env = dict(os.environ)
+def _child_overrides() -> dict:
+    """The environment overrides that make both children import the crapkit this test imported, not an installed one."""
     src = str(Path(crapkit.__file__).resolve().parent.parent)
-    env["PYTHONPATH"] = os.pathsep.join(p for p in (src, env.get("PYTHONPATH", "")) if p)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return env
+    inherited = os.environ.get("PYTHONPATH", "")
+    return {"PYTHONPATH": os.pathsep.join(p for p in (src, inherited) if p),
+            "CRAPKIT_OVERRIDE_REASON": None}
 
 
 @pytest.fixture()
@@ -105,16 +102,14 @@ def advisory(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess:
     payload = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Edit",
                           "cwd": str(repo),
                           "tool_input": {"file_path": str(repo / "src/mod.py")}})
-    return subprocess.run([PY, "-m", "crapkit", "claude-hook", "--protocol", "1"],
-                          input=payload, cwd=tmp_path, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=300,
-                          env=_child_env())
+    return run_cli(tmp_path, "claude-hook", "--protocol", "1", stdin=payload,
+                   timeout=300, encoding="utf-8", errors="replace",
+                   env_extra=_child_overrides())
 
 
 def gate(repo: Path) -> subprocess.CompletedProcess:
-    return subprocess.run([PY, "-m", "crapkit", "hook-precommit"], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=_child_env())
+    return run_cli(repo, "hook-precommit", timeout=300, encoding="utf-8",
+                   errors="replace", env_extra=_child_overrides())
 
 
 def named(text: str) -> set[str]:

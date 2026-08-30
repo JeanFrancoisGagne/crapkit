@@ -2,12 +2,12 @@
 flake, not a regression. Lanes opt in with retest_command; without it nothing
 changes. Also: verify warns when the suite shrinks or skips more vs baseline."""
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import run_cli
 
 # One lane script, four suite states driven by state.txt:
 #   green    - flaky + steady both pass (the baseline)
@@ -48,11 +48,6 @@ TOML = (
     'parser = "istanbul"\nscopes = ["src"]\nresults_artifact = "junit.xml"\n'
     'retest_command = "python lane.py --retest {tests}"\n'
 )
-
-
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=120, env=dict(os.environ))
 
 
 @pytest.fixture()

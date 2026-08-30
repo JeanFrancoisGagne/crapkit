@@ -15,12 +15,12 @@ defect a session hit was in what the command accepted, not in what a helper
 returned. The scores are hand-counted beside the sources.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 # route: base 1 + three outer non-wildcard arms + two inner ones = ccn 6.
 # Cognitive: the outer match +1 at nesting 0, the inner match +1 and +1 for the
@@ -129,10 +129,7 @@ full_suite = false
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=dict(os.environ))
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace")
 
 
 def write(repo: Path, rel: str, text: str) -> None:

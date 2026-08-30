@@ -8,12 +8,12 @@ against rows saying `src/x.py`. Every lookup missed, every file read as
 zero-churn, and worklist filed the whole corpus under dormant.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 MAKE_COV = ('import json\n'
             'json.dump({"meta": {"branch_coverage": True}, "files": {}},'
@@ -39,10 +39,7 @@ full_suite = false
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=180,
-                          env=dict(os.environ))
+run_cli = cli_runner(timeout=180)
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -111,9 +108,7 @@ def test_a_subdir_root_inside_a_linked_worktree_matches(nested: Path):
 
 
 def _run_hook(app: Path, payload: dict) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", "claude-hook", "--protocol", "1"],
-                          cwd=app, input=json.dumps(payload), capture_output=True,
-                          text=True, timeout=180, env=dict(os.environ))
+    return run_cli(app, "claude-hook", "--protocol", "1", stdin=json.dumps(payload))
 
 
 def _stage_breach(nested: Path) -> Path:

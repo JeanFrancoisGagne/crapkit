@@ -13,15 +13,15 @@ at the bottom is the other half of the same fix — a Go scope beside a Python o
 must go cc-only without costing the Python scope its lane.
 """
 import json
-import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from crapkit.config import load_config_text
+
+from conftest import cli_runner
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -106,12 +106,8 @@ with open(os.path.join(".crapkit", "cov", "py.json"), "w", encoding="utf-8") as 
 '''
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=env)
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
+                     env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
 
 def run_git(repo: Path, *args: str) -> subprocess.CompletedProcess:

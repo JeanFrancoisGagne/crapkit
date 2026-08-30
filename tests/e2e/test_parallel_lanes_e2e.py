@@ -9,12 +9,13 @@ The identity test is the point of the feature: same tree, same artifacts, same
 export bytes and same JSON, however many lanes ran at once.
 """
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 PY = sys.executable.replace("\\", "/")
 
@@ -83,9 +84,7 @@ def _git(root: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
 
 
-def _run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=300, env=dict(os.environ))
+_run_cli = cli_runner(timeout=300)
 
 
 @pytest.fixture()

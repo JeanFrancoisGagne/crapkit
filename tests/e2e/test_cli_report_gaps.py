@@ -10,10 +10,11 @@ ages are exact instead of wall-clock dependent.
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 # Line numbers are load-bearing: the lane artifact below marks line 4 dead, and
 # the diff-coverage test edits exactly that line.
@@ -114,12 +115,8 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def run_cli(repo: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
-    # the CLI reconfigures piped streams to UTF-8; decode them the same way
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180,
-                          encoding="utf-8", errors="replace",
-                          env={**os.environ, **(env or {})})
+# the CLI reconfigures piped streams to UTF-8; decode them the same way
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def git(repo: Path, *args: str) -> None:
@@ -200,7 +197,7 @@ def test_overrides_lists_a_granted_override_in_both_formats(repo: Path):
     write(repo / "src" / "messy.ts", MESSY_TS)
     git(repo, "add", "src/messy.ts")
 
-    hook = run_cli(repo, "hook-precommit", env={"CRAPKIT_OVERRIDE_REASON": "cutover deadline"})
+    hook = run_cli(repo, "hook-precommit", env_extra={"CRAPKIT_OVERRIDE_REASON": "cutover deadline"})
     assert hook.returncode == 0, hook.stdout + hook.stderr
     assert "override granted with full audit (cutover deadline)" in hook.stdout
     assert "crapkit OVERRIDE (cutover deadline)" in (repo / "alerts.txt").read_text(encoding="utf-8")
@@ -231,7 +228,7 @@ def test_a_store_holding_only_an_override_is_not_a_worklist(repo: Path):
     read as a repo with no debt, so the message has to name both ways out."""
     write(repo / "src" / "messy.ts", MESSY_TS)
     git(repo, "add", "src/messy.ts")
-    hook = run_cli(repo, "hook-precommit", env={"CRAPKIT_OVERRIDE_REASON": "cutover deadline"})
+    hook = run_cli(repo, "hook-precommit", env_extra={"CRAPKIT_OVERRIDE_REASON": "cutover deadline"})
     assert hook.returncode == 0, hook.stdout + hook.stderr
 
     res = run_cli(repo, "worklist")

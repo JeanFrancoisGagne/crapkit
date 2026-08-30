@@ -5,11 +5,11 @@ parse, verify still runs, and every number it compares came from different rules
 The stamp turns that into an exit 3 instead of a green run.
 """
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner, git_commit_all, git_init_repo
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -45,11 +45,7 @@ RATCHET = "crapkit-ratchet.tsv"
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
-def run_cli(repo: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.update(env_extra or {})
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=180, env=env)
+run_cli = cli_runner(timeout=180)
 
 
 @pytest.fixture()
@@ -60,9 +56,8 @@ def repo(tmp_path: Path) -> Path:
     (tmp_path / "crapkit.toml").write_text(TOML, encoding="utf-8")
     (tmp_path / "make_cov.py").write_text(MAKE_COV, encoding="utf-8")
     (tmp_path / ".gitignore").write_text(".crapkit/\ncov.json\n", encoding="utf-8")
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True)
+    git_init_repo(tmp_path)
+    git_commit_all(tmp_path, "init")
     return tmp_path
 
 

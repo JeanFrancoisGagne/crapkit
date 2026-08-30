@@ -8,13 +8,14 @@ generator stands in for a coverage tool so the lanes are fast and exact.
 """
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -59,11 +60,8 @@ VERDICT_KEYS = ("ok", "gate_violations", "ratchet_regressions", "new_failures",
                 "committed_findings", "dirty_findings", "dirty_failures")
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return subprocess.run([PY, "-m", "crapkit", *args], cwd=repo, capture_output=True,
-                          text=True, encoding="utf-8", errors="replace", timeout=300, env=env)
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
+                     env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
 
 def git(repo: Path, *args: str) -> str:

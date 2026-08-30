@@ -7,14 +7,13 @@ only reads what a lane left on disk.
 """
 import copy
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from crapkit.coverage_istanbul import parse_istanbul
+
+from conftest import cli_runner, git_commit_all, git_init_repo
 
 MODULE = '''"""Fixture module: one branchy function, one straight-line function."""
 
@@ -70,12 +69,7 @@ scopes = ["py"]
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "crapkit", *args],
-        cwd=repo, capture_output=True, text=True, timeout=180,
-        encoding="utf-8", errors="replace", env=dict(os.environ),
-    )
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def make_repo(tmp_path: Path, config: str, module: str = MODULE) -> Path:
@@ -83,9 +77,8 @@ def make_repo(tmp_path: Path, config: str, module: str = MODULE) -> Path:
     (repo / "pylib").mkdir(parents=True)
     (repo / "pylib" / "mod.py").write_text(module, encoding="utf-8", newline="\n")
     (repo / "crapkit.toml").write_text(config, encoding="utf-8", newline="\n")
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=repo, check=True, capture_output=True)
+    git_init_repo(repo)
+    git_commit_all(repo, "init")
     return repo
 
 

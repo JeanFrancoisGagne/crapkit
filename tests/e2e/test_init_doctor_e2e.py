@@ -5,17 +5,13 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
+from conftest import run_cli
+
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
-
-
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=120, env=dict(os.environ))
 
 
 def _git_commit_all(repo: Path, message: str) -> None:
@@ -113,16 +109,15 @@ def pytest_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _env_without_pytest_cov(tmp_path: Path) -> dict:
-    """An environment whose python cannot import pytest_cov: a PYTHONPATH shim
-    shadows the package, the same trick fixtures/shims plays on lizard."""
+def _without_pytest_cov(tmp_path: Path) -> dict:
+    """Environment overrides whose python cannot import pytest_cov: a PYTHONPATH
+    shim shadows the package, the same trick fixtures/shims plays on lizard."""
     shim_dir = tmp_path / "no-cov-shim"
     shim_dir.mkdir()
     (shim_dir / "pytest_cov.py").write_text(
         'raise ImportError("shimmed out for the init probe test")\n', encoding="utf-8")
-    env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(shim_dir), env.get("PYTHONPATH", "")) if p)
-    return env
+    inherited = os.environ.get("PYTHONPATH", "")
+    return {"PYTHONPATH": os.pathsep.join(p for p in (str(shim_dir), inherited) if p)}
 
 
 def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tmp_path: Path):
@@ -130,9 +125,7 @@ def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tm
     first `crapkit coverage`: the py lane runs `pytest --cov`, and those flags
     come from pytest-cov — a package of the REPO's interpreter, which a
     dependency on crapkit itself could never guarantee."""
-    res = subprocess.run([sys.executable, "-m", "crapkit", "init"], cwd=pytest_repo,
-                         capture_output=True, text=True, timeout=120,
-                         env=_env_without_pytest_cov(tmp_path))
+    res = run_cli(pytest_repo, "init", env_extra=_without_pytest_cov(tmp_path))
     assert res.returncode == 0, res.stderr
     assert "pytest_cov" in res.stderr and "pip install pytest-cov" in res.stderr
     assert '"crapkit[py]"' in res.stderr, (
@@ -152,23 +145,16 @@ def test_init_does_not_probe_a_lane_it_did_not_write(tmp_path: Path):
                                          encoding="utf-8")
     (repo / "pyproject.toml").write_text("[tool.ruff]\nline-length = 100\n", encoding="utf-8")
     _git_commit_all(repo, "init")
-    res = subprocess.run([sys.executable, "-m", "crapkit", "init"], cwd=repo,
-                         capture_output=True, text=True, timeout=120,
-                         env=_env_without_pytest_cov(tmp_path))
+    res = run_cli(repo, "init", env_extra=_without_pytest_cov(tmp_path))
     assert res.returncode == 0, res.stderr
     assert "pytest_cov" not in res.stderr, "no lane was written for that python"
-
-
-def _run_with(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=120, env=env)
 
 
 _DEAD_EXIT = 9009 if os.name == "nt" else 127
 
 
-def _env_with_a_python_that_will_not_run(tmp_path: Path) -> dict:
-    """A PATH whose `python` resolves and then refuses to run: the Windows
+def _with_a_python_that_will_not_run(tmp_path: Path) -> dict:
+    """Environment overrides whose `python` resolves and then refuses to run: the Windows
     Store alias in %LOCALAPPDATA%\\Microsoft\\WindowsApps that a stock Windows 11
     PATH carries with no Store app behind it. Prepended, not swapped in, so git
     still resolves — the shim is the only answer that comes from the fixture."""
@@ -180,9 +166,7 @@ def _env_with_a_python_that_will_not_run(tmp_path: Path) -> dict:
         shim = shim_dir / "python"
         shim.write_text(f"#!/bin/sh\nexit {_DEAD_EXIT}\n", encoding="utf-8")
         shim.chmod(0o755)
-    env = dict(os.environ)
-    env["PATH"] = os.pathsep.join([str(shim_dir), env["PATH"]])
-    return env
+    return {"PATH": os.pathsep.join([str(shim_dir), os.environ["PATH"]])}
 
 
 def test_init_says_when_the_shell_cannot_run_the_lanes_interpreter(
@@ -190,7 +174,8 @@ def test_init_says_when_the_shell_cannot_run_the_lanes_interpreter(
     """9009 is not an answer about pytest_cov, so that note rightly stopped
     firing on it — and nothing replaced it. The reader got a committed config
     whose only lane cannot start, and init printed not one word about it."""
-    res = _run_with(pytest_repo, _env_with_a_python_that_will_not_run(tmp_path), "init")
+    res = run_cli(pytest_repo, "init",
+                  env_extra=_with_a_python_that_will_not_run(tmp_path))
 
     assert res.returncode == 0, res.stderr
     assert "cannot run it" in res.stderr and str(_DEAD_EXIT) in res.stderr
@@ -204,10 +189,10 @@ def test_doctor_fails_a_lane_whose_first_word_will_not_run(
     """Doctor asked which() whether the lane's runner resolves and never
     whether it starts, so the repo above — one lane, exit 9009, coverage
     exiting 5 — was reported as "1 lane(s) declared" and "no problems found"."""
-    env = _env_with_a_python_that_will_not_run(tmp_path)
-    assert _run_with(pytest_repo, env, "init").returncode == 0
+    dead = _with_a_python_that_will_not_run(tmp_path)
+    assert run_cli(pytest_repo, "init", env_extra=dead).returncode == 0
 
-    res = _run_with(pytest_repo, env, "doctor")
+    res = run_cli(pytest_repo, "doctor", env_extra=dead)
 
     assert res.returncode == 1, res.stdout
     assert "cannot run" in res.stdout and str(_DEAD_EXIT) in res.stdout

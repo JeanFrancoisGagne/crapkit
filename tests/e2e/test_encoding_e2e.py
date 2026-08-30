@@ -4,16 +4,13 @@ Git hooks and CI runners pipe output through whatever codec the host picked
 (cp1252 on Windows, sometimes ascii). Python's stderr is backslashreplace by
 default, but STDOUT under PYTHONIOENCODING=ascii is strict — a report line
 with typographic punctuation would turn a clean run into a traceback."""
-import os
 import subprocess
-import sys
 from pathlib import Path
 
+from conftest import cli_runner
 
-def _run(repo: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    env = {**os.environ, **(env_extra or {})}
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=60, env=env)
+
+_run = cli_runner(timeout=60)
 
 
 def test_stdout_reports_survive_an_ascii_only_console(tmp_path: Path):

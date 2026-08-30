@@ -11,7 +11,6 @@ the contract it could quietly break: an installation with no lizard still exits
 """
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -19,6 +18,8 @@ import pytest
 from crapkit import gitio
 from crapkit.cli import build_parser, cmd_hook_precommit, verifying
 from crapkit.errors import GitError
+
+from conftest import run_cli
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 SRC = str(Path(gitio.__file__).resolve().parent.parent)
@@ -104,11 +105,10 @@ def test_a_failing_git_read_still_reaches_the_caller_as_a_git_error(tmp_path, ca
 def test_a_missing_lizard_still_exits_five_with_the_same_sentence(staged):
     """The gate must never answer without the analyzer that decides it. The shim
     first on PYTHONPATH makes `import lizard` fail the way an absent install does."""
-    env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join([str(FIXTURES / "shims" / "lizard"), SRC])
+    shimmed = os.pathsep.join([str(FIXTURES / "shims" / "lizard"), SRC])
 
-    res = subprocess.run([sys.executable, "-m", "crapkit", "hook-precommit"], cwd=staged,
-                         capture_output=True, text=True, timeout=180, env=env)
+    res = run_cli(staged, "hook-precommit", timeout=180,
+                  env_extra={"PYTHONPATH": shimmed})
 
     assert res.returncode == 5, (res.returncode, res.stdout, res.stderr)
     assert "required analysis tool unavailable" in res.stderr

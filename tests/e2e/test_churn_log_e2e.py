@@ -10,12 +10,12 @@ correctness, and a mock proves nothing about the wiring.
 structure, so they are the two commands measured here.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 CRAPKIT = Path(".crapkit")
 LOG_Z = CRAPKIT / "churn-log-v2.z"
@@ -76,10 +76,7 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def run_cli(repo: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180,
-                          encoding="utf-8", errors="replace", env=env or dict(os.environ))
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def commit(repo: Path, message: str) -> None:
@@ -104,9 +101,7 @@ def traced(repo: Path, tmp_path: Path, tag: str, *args: str):
     """Run the CLI with a git command census attached."""
     trace = tmp_path / f"trace-{tag}"
     trace.mkdir()
-    env = dict(os.environ)
-    env["GIT_TRACE2_EVENT"] = str(trace)
-    res = run_cli(repo, *args, env=env)
+    res = run_cli(repo, *args, env_extra={"GIT_TRACE2_EVENT": str(trace)})
     return res, [argv for argv in _argvs(trace) if _subcommand(argv) == "log"]
 
 

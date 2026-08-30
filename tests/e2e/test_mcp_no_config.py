@@ -10,13 +10,12 @@ missing config is a per-call answer, not a dead server.
 Real subprocesses, newline-delimited JSON-RPC, exactly what a client sends.
 """
 import json
-import os
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import git_commit_all, git_init_repo, run_cli
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -38,9 +37,7 @@ def _serve(cwd: Path, requests: list[str]) -> dict:
     No --repo: the server has to resolve its root from the directory it was
     started in, which is the only thing a global client registration gives it.
     """
-    proc = subprocess.run([sys.executable, "-m", "crapkit", "mcp"],
-                          input="\n".join(requests) + "\n", cwd=cwd,
-                          capture_output=True, text=True, timeout=120, env=dict(os.environ))
+    proc = run_cli(cwd, "mcp", stdin="\n".join(requests) + "\n")
     assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
     return {m["id"]: m for m in map(json.loads, proc.stdout.strip().splitlines())}
 
@@ -49,9 +46,8 @@ def _serve(cwd: Path, requests: list[str]) -> dict:
 def configured_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "mini"
     shutil.copytree(FIXTURES / "mini_repo", repo)
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=repo, check=True, capture_output=True)
+    git_init_repo(repo)
+    git_commit_all(repo, "init")
     return repo
 
 

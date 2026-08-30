@@ -5,13 +5,13 @@ the lane is hermetic and every CRAP value in the assertions is hand-computable:
 crap = ccn^2 * (1 - cov)^3 + ccn, and the plan file decides cov.
 """
 import json
-import os
 import sqlite3
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 MAKE_COV = '''"""Fixture coverage generator: a coverage.py-format artifact from cov_plan.json.
 
@@ -78,10 +78,7 @@ FUNCTIONS = [
 ]
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=180,
-                          env=dict(os.environ))
+run_cli = cli_runner(timeout=180)
 
 
 def _source(name: str, ifs: int) -> str:

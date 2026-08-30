@@ -6,12 +6,12 @@ together. Every value asserted here is arithmetic on that fixture, so a packet
 field that starts guessing fails rather than drifting.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 _LADDER = "".join(f"    if a > {i}:\n        r += {i}\n" for i in range(1, 8))
 
@@ -104,10 +104,7 @@ timeout_seconds = 90
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=180, env=dict(os.environ))
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def _git(repo: Path, *args: str) -> None:

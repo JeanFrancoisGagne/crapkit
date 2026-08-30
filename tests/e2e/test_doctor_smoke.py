@@ -1,15 +1,10 @@
 """Doctor's lane smoke: config rot (renamed script, vanished runner) surfaces at
 doctor time, not 40 minutes into a coverage run. No lane command is executed —
 the check resolves the executable and the repo-relative files the command names."""
-import os
 import subprocess
-import sys
 from pathlib import Path
 
-
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=120, env=dict(os.environ))
+from conftest import run_cli
 
 
 def _repo(tmp_path: Path, lane_command: str) -> Path:
