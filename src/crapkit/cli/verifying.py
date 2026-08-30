@@ -299,12 +299,18 @@ def _print_verify_findings(verdict, overridden) -> None:
 
 def _print_finding_split(verdict) -> None:
     """A verdict measures the working tree, so a concurrent session's edits land
-    in it. One line says how much of this one is not yours."""
+    in it. One line says how much of this one is not yours.
+
+    "uncommitted edits and untracked files", not "uncommitted tracked edits":
+    the dirty set is `status_names`, which unions `ls-files --others`, so a new
+    failure in a test file git has never seen is counted here too.
+    """
     from ..verify import dirty_counts
 
     committed, dirty = dirty_counts(verdict)
     if committed or dirty:
-        print(f"  findings: {committed} committed / {dirty} dirty (uncommitted tracked edits)")
+        print(f"  findings: {committed} committed / {dirty} dirty "
+              "(uncommitted edits and untracked files)")
 
 
 def _verify_exit_code(verdict, diff_breach: bool = False) -> int:
