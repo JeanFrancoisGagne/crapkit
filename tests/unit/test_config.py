@@ -227,6 +227,38 @@ def test_a_run_chained_after_another_command_is_still_checked_for_a_filter():
         _istanbul_lane("vitest run --coverage && vitest run --coverage src/b.ts")
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_quoted_operator_beside_coverage_starts_no_new_command(monkeypatch, shell_is_cmd):
+    """`"&&"` is an argument vitest is handed, not a separator, so the filter
+    behind it is still in the run's own argv."""
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", shell_is_cmd)
+    with pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane('npx vitest run --coverage "&&" src/a.ts')
+
+
+@pytest.mark.parametrize("option, value", [
+    ("--workspace", "vitest.workspace.ts"),
+    ("--diff", "vitest.diff.ts"),
+    ("--snapshotEnvironment", "./env.ts"),
+    ("--coverage.extension", ".ts"),
+    ("--typecheck.tsconfig", "tsconfig.ts"),
+])
+def test_the_vitest_options_that_take_a_path_are_all_licensed(option, value):
+    """Each of these reads the next token, so the path behind it is the option's
+    value. Missing from the closed list, each was refused as a file filter that
+    narrows the coverage include set, and the lane runs fine."""
+    assert _istanbul_lane(f"npx vitest run --coverage {option} {value}").name == "unit"
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_redirection_target_beside_coverage_is_not_a_file_filter(monkeypatch, shell_is_cmd):
+    """vitest never sees `run.ts`: the shell opened it and kept it."""
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", shell_is_cmd)
+    assert _istanbul_lane("npx vitest run --coverage > run.ts").name == "unit"
+    with pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane("npx vitest run --coverage 2>run.log src/a.ts")
+
+
 def test_the_lanes_page_names_every_vitest_option_the_guard_licenses():
     """The guard works from a closed list, so the page has to print the list. It
     read as a rule about values while the frozenset grew from 11 names to 20
@@ -254,6 +286,27 @@ def test_shell_words_under_cmd_reads_a_caret_as_the_escape_cmd_reads():
         ["pytest", "--cov", "-k", "not slow"]
     assert shell_words('pytest -k "a^b"', cmd=True) == ["pytest", "-k", "a^b"]
     assert shell_words('pytest -k "a^^b"', cmd=True) == ["pytest", "-k", "a^^b"]
+
+
+def test_shell_words_keeps_the_empty_argument_a_pair_of_quotes_writes():
+    """cmd.exe hands the program the empty argument `""` wrote (verified argv:
+    `-k "" tests/unit` -> ["-k", "", "tests/unit"]). Dropping it moved every
+    later token one place left, so the flag in front swallowed the wrong word
+    and a narrowing lane loaded clean."""
+    assert shell_words('pytest -k "" tests/unit', cmd=True) == \
+        ["pytest", "-k", "", "tests/unit"]
+    assert shell_words('pytest -k "" tests/unit', cmd=False) == \
+        ["pytest", "-k", "", "tests/unit"]
+    assert shell_words('pytest "" ""', cmd=True) == ["pytest", "", ""]
+
+
+def test_an_empty_quoted_value_does_not_hand_the_next_path_to_the_flag(monkeypatch):
+    """`--testNamePattern ""` takes the empty word, so `src/a.ts` behind it is a
+    positional filter and still narrows the coverage include set."""
+    import pytest as _pytest
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", True)
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane('npx vitest run --coverage --testNamePattern "" src/a.ts')
 
 
 def test_shell_words_under_sh_leaves_a_caret_alone():
@@ -287,6 +340,19 @@ def test_shell_words_reads_a_quote_that_opens_mid_token_under_both_shells():
         ["pytest", "tests/a b/test_x.py"]
     assert shell_words('pytest tests/"a b"/test_x.py', cmd=False) == \
         ["pytest", "tests/a b/test_x.py"]
+
+
+def test_shell_words_breaks_words_only_on_space_tab_and_the_line_endings():
+    """cmd.exe splits the command line on space and tab, and 0.4.4's shlex used
+    ' \\t\\r\\n'. str.isspace() is true for U+00A0 and U+000B as well, so a
+    marker expression pasted out of rendered docs split in two and the refusal
+    named a token the operator never typed. Verified cmd.exe argv:
+    `-k not\\xa0slow` -> ["-k", "not\\u00a0slow"] and `-k a\\x0bb` -> ["-k", "a\\u000bb"]."""
+    for cmd in (True, False):
+        assert shell_words("pytest -k not\u00a0slow", cmd=cmd) == \
+            ["pytest", "-k", "not\u00a0slow"]
+        assert shell_words("pytest -k a\u000bb", cmd=cmd) == ["pytest", "-k", "a\u000bb"]
+        assert shell_words("pytest\t-m\tx\r\ny", cmd=cmd) == ["pytest", "-m", "x", "y"]
 
 
 def test_shell_words_under_sh_reads_single_quotes():

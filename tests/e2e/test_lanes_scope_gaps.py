@@ -413,6 +413,100 @@ def test_an_operator_inside_a_quoted_value_is_part_of_the_word():
     assert _covpy_lane('python -m pytest -k "a && b" --cov=pylib').command
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_quoted_operator_is_an_argument_and_starts_no_new_command(monkeypatch, shell_is_cmd):
+    """`"&&"` reaches the program as the word `&&` (verified cmd.exe argv:
+    ["--cov=pylib", "&&", "pylib/unit"]), so pytest really is handed
+    pylib/unit. Reading the word as a separator put the path in a segment of
+    its own, where nothing runs pytest, and the narrowing lane loaded."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    command = 'python -m pytest --cov=pylib "&&" pylib/unit'
+    assert config.shell_segments(command) == \
+        [["python", "-m", "pytest", "--cov=pylib", "&&", "pylib/unit"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane(command)
+
+
+def test_under_cmd_a_caret_escaped_operator_is_an_argument(monkeypatch):
+    """cmd.exe's `^&` escapes the operator and hands the program `&` (verified
+    argv: ["--cov=pylib", "&", "pylib/unit"]). The caret is gone by the time the
+    words are read, so the bare `&` looked like a separator."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = "python -m pytest --cov=pylib ^& pylib/unit"
+    assert config.shell_segments(command) == \
+        [["python", "-m", "pytest", "--cov=pylib", "&", "pylib/unit"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane(command)
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("tail", ["> /dev/null", "2>&1 | tee run.log", "> run.log",
+                                  "2>run.log", ">> run.log", "1> run.log"])
+def test_a_redirection_is_the_shells_and_never_a_pytest_positional(monkeypatch, tail,
+                                                                   shell_is_cmd):
+    """The shell keeps the redirection and its target: verified cmd.exe argv for
+    `--cov=src 2>&1` is ["--cov=src"], and for `--cov=src 2>nul tests/unit` it
+    is ["--cov=src", "tests/unit"]. Reading `>` as a word refused the lane
+    naming a positional pytest is never handed."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert _covpy_lane(f"python -m pytest --cov=pylib {tail}").command
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_redirection_starts_no_new_command_and_hides_no_path(monkeypatch, shell_is_cmd):
+    """`2>run.log pylib/unit` still hands pytest pylib/unit (verified cmd.exe
+    argv: ["--cov=src", "tests/unit"]), so dropping the redirection must not
+    end the segment the path sits in."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    for tail in ("2>run.log pylib/unit", "> run.log pylib/unit"):
+        with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+            _covpy_lane(f"python -m pytest --cov=pylib {tail}")
+        assert "'pylib/unit'" in str(caught.value)
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_quoted_redirection_is_an_argument_the_program_is_handed(monkeypatch,
+                                                                   shell_is_cmd):
+    """`">"` is text, not plumbing: the program gets the word."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert config.shell_segments('python -m pytest --cov=pylib -k ">"') == \
+        [["python", "-m", "pytest", "--cov=pylib", "-k", ">"]]
+
+
+def test_under_sh_a_semicolon_ends_the_command_it_sits_behind(monkeypatch):
+    """sh runs `pytest --cov=pylib` and then `echo done`; pytest is handed
+    neither word. shlex leaves the ';' glued to the word in front, so the next
+    command's words landed in pytest's argv and the lane was refused naming
+    'echo'. The mirror-image shape (`cd tests; pytest ...`) was accepted, which
+    made the rule read as arbitrary."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane("python -m pytest --cov=pylib; echo done").command
+    assert _covpy_lane("python -m pytest --cov=pylib ; echo done").command
+    assert config.shell_segments("python -m pytest --cov=pylib; echo done") == \
+        [["python", "-m", "pytest", "--cov=pylib"], ["echo", "done"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("cd tests; python -m pytest --cov=pylib pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_cmd_a_semicolon_is_an_ordinary_character(monkeypatch):
+    """cmd.exe has no ';' separator: verified argv for `--cov=src; echo done` is
+    ["--cov=src;", "echo", "done"], so pytest really is handed 'echo' and the
+    lane really does narrow."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert config.shell_segments("python -m pytest --cov=pylib; echo done") == \
+        [["python", "-m", "pytest", "--cov=pylib;", "echo", "done"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("python -m pytest --cov=pylib; echo done")
+    assert "'echo'" in str(caught.value)
+
+
+def test_under_sh_a_quoted_semicolon_is_an_argument(monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert config.shell_segments("python -m pytest -k 'a;' --cov=pylib") == \
+        [["python", "-m", "pytest", "-k", "a;", "--cov=pylib"]]
+
+
 def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(monkeypatch):
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
@@ -446,6 +540,18 @@ def test_under_cmd_a_mid_token_quote_in_a_real_positional_is_named_as_written(mo
     with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
         _covpy_lane('python -m pytest --cov=pylib tests/"a b"/test_x.py')
     assert "'tests/a b/test_x.py'" in str(caught.value)
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("flag", ["-k", "-p"])
+def test_an_empty_quoted_value_leaves_the_path_behind_it_positional(monkeypatch, flag, shell_is_cmd):
+    """Both shells hand pytest the empty argument `""` wrote (verified cmd.exe
+    argv: `-k "" tests/unit` -> ["-k", "", "tests/unit"]). Dropping it let `-k`
+    read `pylib/unit` as its value, and the lane that really narrows loaded."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(f'python -m pytest --cov=pylib {flag} "" pylib/unit')
+    assert "'pylib/unit'" in str(caught.value)
 
 
 def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
