@@ -91,6 +91,7 @@ class LaneSpec(NamedTuple):
     artifact: str
     parser: str
     languages: tuple[str, ...]
+    results_artifact: str = ""
 
 
 PYTEST_MARKERS = ("pyproject.toml", "pytest.ini", "setup.cfg")
@@ -105,6 +106,9 @@ _JS_RUNNER_COMMAND = {"jest": "npx jest --coverage", "vitest": "npx vitest run -
 # lane, and nothing in the tree said which lane owned which.
 _COV_DIR = ".crapkit/cov"
 _PY_ARTIFACT = f"{_COV_DIR}/py.json"
+# The junit file beside it feeds two of verify's checks, the crashed-worker
+# trust check and no-new-failures; a lane without one runs with both off (#26).
+_PY_RESULTS = f"{_COV_DIR}/junit-py.xml"
 _JS_COV_DIR = f"{_COV_DIR}/js"
 _JS_ARTIFACT = f"{_JS_COV_DIR}/coverage-final.json"
 _JS_DEFAULT_ARTIFACT = "coverage/coverage-final.json"
@@ -119,8 +123,8 @@ def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
     if not markers.intersection(PYTEST_MARKERS):
         return None
     return LaneSpec("py", f"{interpreter} -m pytest --cov --cov-branch "
-                          f"--cov-report=json:{_PY_ARTIFACT}",
-                    _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES)
+                          f"--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS}",
+                    _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES, _PY_RESULTS)
 
 
 def _npm_test_script(scripts: dict) -> str | None:
@@ -201,8 +205,9 @@ def _exclude_stanza() -> list[str]:
 
 
 def _lane_stanza(lane: LaneSpec, scope_names: tuple[str, ...]) -> list[str]:
+    results = [f'results_artifact = "{lane.results_artifact}"'] if lane.results_artifact else []
     return ["[[lane]]", f'name = "{lane.name}"', f'command = "{lane.command}"',
-            f'artifact = "{lane.artifact}"', f'parser = "{lane.parser}"',
+            f'artifact = "{lane.artifact}"', *results, f'parser = "{lane.parser}"',
             f"scopes = [{_quoted(scope_names)}]", ""]
 
 
@@ -236,8 +241,9 @@ def _live_lanes(lanes: tuple[LaneSpec, ...],
 _TEMPLATES = {
     "coveragepy": ("# [[lane]]", '# name = "py"',
                    '# command = "python -m pytest --cov --cov-branch '
-                   f'--cov-report=json:{_PY_ARTIFACT}"',
-                   f'# artifact = "{_PY_ARTIFACT}"', '# parser = "coveragepy"'),
+                   f'--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS}"',
+                   f'# artifact = "{_PY_ARTIFACT}"',
+                   f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
     "istanbul": ("# [[lane]]", '# name = "js"',
                  '# command = "npx vitest run --coverage '
                  f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR}"',
