@@ -184,9 +184,16 @@ def _diff_proc(root: Path, rel: str):
     Scoped to the path on purpose: 31.4 ms against 92.4 for the whole tree. Its
     stderr is dropped because every way this fails (no HEAD, no git, a path git
     dislikes) is the same answer, silence.
+
+    diff.relative because `rel` is relative to the crapkit root and git names a
+    diff's files relative to the repo TOP: under a root one directory down the
+    lookup in `_changed` missed every time and read as "nothing touched", so a
+    breaching edit drew silence. This spawn is its own, not gitio's, so it needs
+    its own flag.
     """
     return subprocess.Popen(
-        ["git", "diff", "HEAD", "-U0", "--no-renames", "--", rel], cwd=root,
+        ["git", "-c", "diff.relative=true", "diff", "HEAD", "-U0", "--no-renames", "--", rel],
+        cwd=root,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
         encoding="utf-8", errors="replace")
 

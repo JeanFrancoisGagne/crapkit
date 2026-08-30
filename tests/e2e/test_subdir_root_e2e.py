@@ -110,6 +110,12 @@ def test_a_subdir_root_inside_a_linked_worktree_matches(nested: Path):
 # disk. All of them are the one shape below.
 
 
+def _run_hook(app: Path, payload: dict) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-m", "crapkit", "claude-hook", "--protocol", "1"],
+                          cwd=app, input=json.dumps(payload), capture_output=True,
+                          text=True, timeout=180, env=dict(os.environ))
+
+
 def _stage_breach(nested: Path) -> Path:
     """core/hot.py rewritten to ccn 12 and staged. Returns the crapkit root."""
     app = nested / "app"
@@ -146,6 +152,20 @@ def test_a_subdir_root_reads_the_staged_blob_it_gates(nested: Path):
 
     assert b"def hot(a, b):" in prefetched["core/hot.py"]
     assert fallback == prefetched
+
+
+def test_a_subdir_root_advises_on_an_edited_file(nested: Path):
+    """The claude-hook sibling: it spawns its own diff, so gitio's flag does not
+    reach it. stdout stays empty either way — protocol 1 reserves it."""
+    app = _stage_breach(nested)
+
+    res = _run_hook(app, {"hook_event_name": "PostToolUse", "tool_name": "Edit",
+                          "cwd": str(app),
+                          "tool_input": {"file_path": str(app / "core" / "hot.py")}})
+
+    assert res.returncode == 2, res.stderr
+    assert "core/hot.py:1" in res.stderr
+    assert res.stdout == ""
 
 
 def test_a_subdir_root_gates_on_rescore_and_verify(nested: Path):
