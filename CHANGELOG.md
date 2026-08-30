@@ -103,6 +103,25 @@ coverage from the unit suite alone), and `tests/e2e` shares one CLI runner in
 structural item open: `discover.py` (384 lines, no importer since birth) is
 either wired into the packet or removed in a later release.
 
+### Seven field fixes from the CodingGraph pilot (#26 through #31, #37)
+`verify --baseline ID` naming a run that exists but cannot serve now says which
+run it is, why (a failed verify, a hook run, a partial run, an inventory run)
+and which runs can serve, instead of the empty-store line (#27). `verify`'s
+gate exempts a touched function whose fresh CRAP sits at or under its ratchet
+mark, the rule `rescore --gate` already applied, so an edit inside signed debt
+no longer passes the commit gates and then meets exit 6 (#29); exit 7 stays for
+a regression the diff never touched. A lane that wrote no test counts this run
+gets one line naming the gap instead of a KeyError (#30). The twin-key note is
+printed by the parent after the pool returns, never from a worker whose stderr
+never saw the UTF-8 reconfigure, so on Windows its em dash no longer lands as a
+lone cp1252 byte (#31). `doctor` WARNs on a coveragepy or istanbul lane that
+declares no `results_artifact`, naming the two checks that cannot run for it,
+and `init` writes `--junitxml` plus `results_artifact` on the lanes it detects
+(#26). `doctor --plugin-root` takes the plugin root or any directory above it
+and, with no path, reads Claude Code's plugin directory itself (#28). The packet
+spells its commands as the console script (`crapkit rescore ... --gate`), the
+form the docs promise and the one that resolves from a venv on Windows (#37).
+
 ### Performance, measured at consumer scale and refereed
 A benchmark of every subsystem on a 31,459-file consumer (152k functions, 41,544
 marks, 541 MB of lane artifacts, 72,653 commits) produced 76 improvement
