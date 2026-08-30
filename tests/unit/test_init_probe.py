@@ -7,9 +7,11 @@ whether the first `crapkit coverage` survives, and only a clean "no" may warn:
 a probe that cannot run is doctor's finding (a dead interpreter), not this one's.
 """
 import os
+import shutil
 import sys
 import time
 import types
+import uuid
 
 import pytest
 
@@ -146,7 +148,7 @@ def test_a_probe_that_raises_oserror_says_yes(monkeypatch):
     def boom(*args, **kwargs):
         raise OSError(2, "The system cannot find the file specified")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "Popen", boom)
     assert _pytest_cov_probe(f"{sys.executable} -m pytest --cov") is True
 
 
@@ -179,6 +181,103 @@ def test_only_a_cov_flagged_coveragepy_lane_is_probed(lane, monkeypatch, capsys)
     assert capsys.readouterr().err == ""
 
 
+# --- an interpreter that never ran is a note of its own ----------------------
+#
+# The shell's verdict is handed in rather than acted out: sh truncates an exit
+# status to a byte, so a POSIX shim cannot answer 9009 at all (it comes back
+# 49). The real shells answer for themselves in tests/e2e/test_init_doctor_e2e.
+
+def _shell_says(monkeypatch, tmp_path, cmd_shell: bool, code: int) -> None:
+    """A `python` that resolves on PATH, and a shell that answers `code`."""
+    _interpreter_shim(tmp_path, monkeypatch, 0)
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+    monkeypatch.setattr(admin, "_start_probe", lambda word: code)
+
+
+@pytest.mark.parametrize("cmd_shell, code", [(True, 9009), (False, 127), (False, 126)])
+def test_an_interpreter_the_shell_cannot_start_earns_its_own_note(
+        tmp_path, monkeypatch, capsys, cmd_shell, code):
+    """9009 is not an answer about pytest_cov, so the pytest-cov note rightly
+    stopped firing on it — and nothing took the warning over. init wrote a
+    config whose only lane cannot start and said nothing at all."""
+    _shell_says(monkeypatch, tmp_path, cmd_shell, code)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "cannot run" in err and str(code) in err
+    assert "`python`" in err, "the note has to name the word the lane starts with"
+    assert "pytest_cov" not in err, "nothing ran: pip install pytest-cov fixes none of it"
+
+
+def test_the_note_names_cmd_where_cmd_is_the_shell(tmp_path, monkeypatch, capsys):
+    """The Windows Store alias is the whole case: `python` resolves, cmd runs
+    the stub, and the fix is a real install or the `py` launcher."""
+    _shell_says(monkeypatch, tmp_path, True, 9009)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "cmd.exe cannot run" in err and "`py`" in err
+
+
+def test_an_interpreter_that_ran_and_said_no_still_gets_the_pytest_cov_note(
+        tmp_path, monkeypatch, capsys):
+    """The other half: exit 1 IS an answer, and it is pytest-cov's."""
+    _interpreter_shim(tmp_path, monkeypatch, 1)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "pytest_cov" in err and "pip install pytest-cov" in err
+
+
+def test_an_interpreter_that_works_is_still_silent(capsys):
+    _warn_missing_pytest_cov((_lane(f'"{sys.executable}" -m pytest --cov'),))
+
+    assert capsys.readouterr().err == ""
+
+
+# --- the same probe, read by doctor ------------------------------------------
+
+@pytest.mark.parametrize("cmd_shell, code, refused", [
+    (True, 9009, True), (True, 127, False), (True, 1, False),
+    (False, 127, True), (False, 126, True), (False, 9009, False), (False, 1, False),
+])
+def test_only_the_shells_own_code_means_it_never_ran_the_command(
+        monkeypatch, cmd_shell, code, refused):
+    """cmd.exe exits 9009 for a name it could not start; sh has no such code
+    and answers 127 (not found) or 126 (not executable). Anything else is the
+    command's own exit, and the command ran."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+    assert admin._could_not_run_it(code) is refused
+
+
+def test_a_deadline_says_nothing_about_whether_it_started():
+    assert admin._could_not_run_it(None) is False
+
+
+def test_doctor_fails_a_lane_whose_first_word_will_not_start(tmp_path, monkeypatch):
+    """which() finds the Windows Store alias, so doctor cleared a repo whose
+    only lane exits 9009 while `crapkit coverage` exited 5 on that same word."""
+    _shell_says(monkeypatch, tmp_path, True, 9009)
+
+    problem = admin._lane_start_problem(_lane("python -m pytest --cov"))
+
+    assert problem and "'python'" in problem and "9009" in problem
+
+
+def test_doctor_says_nothing_about_a_lane_that_starts():
+    assert admin._lane_start_problem(_lane(f'"{sys.executable}" -m pytest --cov')) is None
+
+
+def test_doctor_leaves_an_unresolvable_runner_to_the_path_check(monkeypatch):
+    """A first word that is on no PATH is already its own finding, and running
+    nothing would prove nothing: one gap, one line."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", os.name == "nt")
+    assert admin._lane_start_problem(_lane("no-such-runner-7f3a --coverage")) is None
+
+
 # --- timeout= has to bound the wall clock, here and in the mutant runner -----
 #
 # Both calls run under shell=True, so the shell is the child and the program is
@@ -196,17 +295,18 @@ def _sleep_command() -> str:
     return f'"{sys.executable}" -c "import time; time.sleep({_SLEEP})"'
 
 
-def _sleeping_interpreter(tmp_path, monkeypatch) -> None:
+def _sleeping_interpreter(tmp_path, monkeypatch, command: str = "") -> None:
     """A `python` first on PATH that outlives the probe's timeout. It does not
     exec, so the shell stays between the probe and the sleeper: killing the
     shell leaves the sleeper holding whatever the shell handed it."""
+    command = command or _sleep_command()
     shim_dir = tmp_path / "slow"
     shim_dir.mkdir()
     if os.name == "nt":
-        (shim_dir / "python.bat").write_text(f"@echo off\n{_sleep_command()}\n", encoding="utf-8")
+        (shim_dir / "python.bat").write_text(f"@echo off\n{command}\n", encoding="utf-8")
     else:
         shim = shim_dir / "python"
-        shim.write_text(f"#!/bin/sh\n{_sleep_command()}\n", encoding="utf-8")
+        shim.write_text(f"#!/bin/sh\n{command}\n", encoding="utf-8")
         shim.chmod(0o755)
     monkeypatch.setenv("PATH", os.pathsep.join([str(shim_dir), os.environ.get("PATH", "")]))
 
@@ -235,3 +335,95 @@ def test_a_mutant_that_outlives_its_timeout_dies_at_the_timeout(tmp_path):
     assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
     assert time.perf_counter() - start < _CEILING
     assert source.read_text(encoding="utf-8") == "flag = True\n"
+
+
+# --- and the deadline has to kill the tree, not just the shell ---------------
+#
+# The shell is the child; the program it started is a grandchild. Killing the
+# shell returns the wall clock to the caller and leaves the program running
+# with nothing waiting on it: `mutate` scored the mutant killed and left its
+# suite running, one per mutant, all of them at once on the default path.
+
+_ORPHAN_SLEEP = 30      # long enough that a survivor is unmistakable
+_ORPHAN_POLL = 3.0
+
+
+def _process_lister() -> str:
+    return "powershell" if os.name == "nt" else "ps"
+
+
+_COUNT_PYTHON = ("Get-CimInstance Win32_Process | "
+                 "Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*%s*' } "
+                 "| Measure-Object | Select-Object -ExpandProperty Count")
+
+
+def _alive(token: str) -> bool:
+    """Is a process whose command line holds this token still running? The
+    Windows query filters on python.exe, so the PowerShell being asked - whose
+    own command line carries the token - is not counted as the answer."""
+    import subprocess
+
+    if os.name == "nt":
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", _COUNT_PYTHON % token],
+                             capture_output=True, text=True)
+        return out.stdout.strip() not in ("", "0")
+    out = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True)
+    return token in out.stdout
+
+
+def _gone(token: str) -> bool:
+    """Nothing is running that token, giving a dying tree a moment to go."""
+    deadline = time.time() + _ORPHAN_POLL
+    while time.time() < deadline:
+        if not _alive(token):
+            return True
+        time.sleep(0.2)
+    return not _alive(token)
+
+
+def _long_sleeper(tmp_path) -> tuple:
+    """A command that reports it started and then outlives any timeout. Run
+    through the shell, so the interpreter is the shell's child: the orphan.
+
+    The script name is unique per test because the question is asked of the
+    whole machine: a second checkout running this same suite answers a shared
+    command line, and the test would read someone else's sleeper as a leak.
+    """
+    script = tmp_path / f"orphan_{uuid.uuid4().hex}.py"
+    script.write_text("import pathlib, time\n"
+                      "pathlib.Path(__file__).with_suffix('.started').touch()\n"
+                      f"time.sleep({_ORPHAN_SLEEP})\n", encoding="utf-8")
+    return f'"{sys.executable}" "{script}"', script.name, script.with_suffix(".started")
+
+
+_NO_LISTER = shutil.which(_process_lister()) is None
+
+
+@pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
+def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path):
+    """The timeout says the mutant is dead. A mutation command still running
+    after that is a whole test suite the run stopped counting on: sixteen
+    mutants on one worker put sixteen of them on the machine at once."""
+    command, token, started = _long_sleeper(tmp_path)
+    (tmp_path / "m.py").write_text("flag = True\n", encoding="utf-8")
+    cfg = types.SimpleNamespace(mutation_command=command, mutation_timeout_seconds=_TIMEOUT)
+    mutant = Mutant("m.py", 1, "flag = True", "flag = False", "True -> False")
+
+    start = time.perf_counter()
+    assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
+    assert time.perf_counter() - start < _CEILING
+    assert started.is_file(), "the command never started: this proved nothing"
+    assert _gone(token), "the mutation command outlived the timeout that killed it"
+
+
+@pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
+def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkeypatch):
+    """Same leak on init's side: one interpreter per timed-out probe, left
+    running under an init that already printed its summary and returned."""
+    command, token, started = _long_sleeper(tmp_path)
+    _sleeping_interpreter(tmp_path, monkeypatch, command)
+    monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
+
+    assert _pytest_cov_probe("python -m pytest --cov") is True
+    assert started.is_file(), "the interpreter never started: this proved nothing"
+    assert _gone(token), "the probe left its interpreter running"

@@ -95,6 +95,48 @@ def _no_scopes_reason(root: Path) -> str:
 
 _PROBE_TIMEOUT_SECONDS = 15
 _CMD_COULD_NOT_RUN_IT = 9009
+_SH_COULD_NOT_RUN_IT = (126, 127)  # not found, and found but not executable
+
+
+def _could_not_run_it(returncode: int | None) -> bool:
+    """Did the shell refuse to start the command, or did the command run and
+    fail? cmd.exe exits 9009 for a name it could not start, and so does the
+    Windows Store python alias a stock PATH carries with no Store app behind
+    it. sh has no 9009 — it truncates an exit status to a byte — and answers
+    127 for a name it cannot find, 126 for one it cannot execute."""
+    if returncode is None:
+        return False  # the deadline, which says nothing either way
+    if config.SHELL_IS_CMD:
+        return returncode == _CMD_COULD_NOT_RUN_IT
+    return returncode in _SH_COULD_NOT_RUN_IT
+
+
+def _start_probe(word: str) -> int | None:
+    """The shell's exit code for this one word, or None when the question could
+    not be put at all. `--version` and not the bare word: the probe must not do
+    the lane's work by accident, and a lane starting with `pytest` would run
+    the suite. A runner that rejects the flag still started, which is all this
+    asks; only the shell's own could-not-run code answers no."""
+    from ..procs import run_bounded
+
+    try:
+        return run_bounded(f"{_shell_quote(word)} --version", _PROBE_TIMEOUT_SECONDS)
+    except OSError:
+        return None
+
+
+def _dead_first_word(command: str) -> tuple[str, int] | None:
+    """The command's first word and the shell's verdict, when the shell cannot
+    start it. None when it starts, and None when the word does not resolve on
+    PATH at all: that one is already its own finding, and running nothing
+    proves nothing."""
+    import shutil
+
+    words = shell_words(command)
+    if not words or shutil.which(words[0]) is None:
+        return None
+    code = _start_probe(words[0])
+    return (words[0], code) if _could_not_run_it(code) else None
 
 
 def _probe_answered_no(returncode: int) -> bool:
@@ -116,24 +158,22 @@ def _pytest_cov_probe(command: str) -> bool:
     True too when the probe cannot run — only a clean "no" earns the warning,
     and a missing interpreter is doctor's finding, not this one's."""
     import shutil
-    import subprocess
+
+    from ..procs import run_bounded
 
     words = shell_words(command)
     if not words or shutil.which(words[0]) is None:
         return True
     probe = f'{_shell_quote(words[0])} -c "import pytest_cov"'
     try:
-        # DEVNULL, not capture_output: the answer is the exit code, and a pipe
-        # would outlive the timeout. shell=True makes the shell the child and
-        # the interpreter a grandchild; on TimeoutExpired run() kills the shell
-        # and then drains the pipes with no deadline, so the call returns when
-        # the grandchild that inherited them exits. The 15 would bound nothing.
-        result = subprocess.run(probe, shell=True, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                timeout=_PROBE_TIMEOUT_SECONDS)
-    except (OSError, subprocess.TimeoutExpired):
+        # run_bounded: the interpreter is the shell's child, and run()'s timeout
+        # kills the shell alone. The 15 bounded nothing and left one interpreter
+        # running per timeout. None here is that deadline, and it is not an
+        # answer about pytest_cov.
+        code = run_bounded(probe, _PROBE_TIMEOUT_SECONDS)
+    except OSError:
         return True
-    return not _probe_answered_no(result.returncode)
+    return code is None or not _probe_answered_no(code)
 
 
 def _shell_quote(word: str) -> str:
@@ -145,6 +185,50 @@ def _shell_quote(word: str) -> str:
     return f'"{word}"' if " " in word else word
 
 
+def _shell_label() -> str:
+    return "cmd.exe" if config.SHELL_IS_CMD else "the shell"
+
+
+def _dead_interpreter_note(name: str, word: str, code: int) -> str:
+    """Nothing ran, so nothing about pytest-cov is worth saying. Name the word
+    the lane starts with: that is the one thing the reader has to change."""
+    fix = ("install Python from python.org, or point the lane at `py`"
+           if config.SHELL_IS_CMD else "install it, or point the lane at an "
+           "interpreter this machine has")
+    return (f"note: lane {name!r} names `{word}`, and {_shell_label()} cannot run it "
+            f"(exit {code}) — {fix}, then `crapkit coverage`")
+
+
+def _missing_pytest_cov_note(name: str) -> str:
+    return (f"note: lane {name!r} runs `pytest --cov`, and this python cannot "
+            "import pytest_cov — pip install pytest-cov where the suite runs "
+            # Double quotes, not single: cmd.exe passes ' through as an
+            # ordinary character and pip rejects the requirement. Double
+            # quotes are the one form cmd, PowerShell, bash and zsh share,
+            # and the bare form still breaks zsh's globbing.
+            '(pip install "crapkit[py]" when that is crapkit\'s own environment), '
+            "then `crapkit coverage`")
+
+
+def _lane_first_run_note(lane) -> str | None:
+    """What init owes this lane before the first `crapkit coverage`, or None
+    when the lane will run. Two different gaps, and they are not the same
+    sentence: an interpreter that never started answered nothing about
+    pytest_cov, and `pip install pytest-cov` fixes none of it."""
+    dead = _dead_first_word(lane.command)
+    if dead:
+        return _dead_interpreter_note(lane.name, *dead)
+    if not _pytest_cov_probe(lane.command):
+        return _missing_pytest_cov_note(lane.name)
+    return None
+
+
+def _probed_lanes(lanes: tuple) -> list:
+    """Only a coveragepy lane running `pytest --cov` has anything to probe."""
+    return [lane for lane in lanes
+            if lane.parser == "coveragepy" and "--cov" in lane.command]
+
+
 def _warn_missing_pytest_cov(lanes: tuple) -> None:
     """The first-run trap, caught where it starts. The py lane shells out to
     `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
@@ -152,17 +236,10 @@ def _warn_missing_pytest_cov(lanes: tuple) -> None:
     sharing the suite's venv. Probe the python the lane will actually run and
     say the fix now, instead of `coverage` exiting 5 with a lane log the first
     run has to decode."""
-    for lane in lanes:
-        if lane.parser == "coveragepy" and "--cov" in lane.command \
-                and not _pytest_cov_probe(lane.command):
-            print(f"note: lane {lane.name!r} runs `pytest --cov`, and this python cannot "
-                  "import pytest_cov — pip install pytest-cov where the suite runs "
-                  # Double quotes, not single: cmd.exe passes ' through as an
-                  # ordinary character and pip rejects the requirement. Double
-                  # quotes are the one form cmd, PowerShell, bash and zsh share,
-                  # and the bare form still breaks zsh's globbing.
-                  '(pip install "crapkit[py]" when that is crapkit\'s own environment), '
-                  "then `crapkit coverage`", file=sys.stderr)
+    for lane in _probed_lanes(lanes):
+        note = _lane_first_run_note(lane)
+        if note:
+            print(note, file=sys.stderr)
 
 
 def _extend_gitignore(root: Path, lanes: tuple) -> None:
@@ -313,6 +390,21 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
     return problems
 
 
+def _lane_start_problem(lane) -> str | None:
+    """The rot which() cannot see: a first word that resolves and then will not
+    run. %LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe is the case — a stock
+    Windows PATH carries that stub with no Store app behind it, which() finds
+    it, and doctor cleared a repo whose only lane exits 9009 while `coverage`
+    exited 5 on the same command. This one does start the runner, with
+    --version, which is why it is not part of _lane_command_problems."""
+    dead = _dead_first_word(lane.command)
+    if not dead:
+        return None
+    word, code = dead
+    return (f"lane {lane.name!r}: {_shell_label()} cannot run {word!r} (exit {code}) — "
+            "the lane cannot start, so its scopes can only ever score no-lane")
+
+
 def _doctor_lane_summary(cfg) -> Finding:
     """No lanes is a gap in most repos and the finished state in a cc-only one,
     where every scope declares coverage_optional and `coverage` runs anyway."""
@@ -325,7 +417,8 @@ def _doctor_lane_summary(cfg) -> Finding:
 
 def _lane_problems(root: Path, cfg) -> list[str]:
     return [p for lane in cfg.lanes
-            for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane)) if p]
+            for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
+                      _lane_start_problem(lane)) if p]
 
 
 def _doctor_lanes(root: Path, cfg) -> list[Finding]:

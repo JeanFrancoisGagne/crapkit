@@ -159,6 +159,73 @@ def test_init_does_not_probe_a_lane_it_did_not_write(tmp_path: Path):
     assert "pytest_cov" not in res.stderr, "no lane was written for that python"
 
 
+def _run_with(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
+                          capture_output=True, text=True, timeout=120, env=env)
+
+
+_DEAD_EXIT = 9009 if os.name == "nt" else 127
+
+
+def _env_with_a_python_that_will_not_run(tmp_path: Path) -> dict:
+    """A PATH whose `python` resolves and then refuses to run: the Windows
+    Store alias in %LOCALAPPDATA%\\Microsoft\\WindowsApps that a stock Windows 11
+    PATH carries with no Store app behind it. Prepended, not swapped in, so git
+    still resolves — the shim is the only answer that comes from the fixture."""
+    shim_dir = tmp_path / "dead-python"
+    shim_dir.mkdir()
+    if os.name == "nt":
+        (shim_dir / "python.bat").write_text(f"@exit /b {_DEAD_EXIT}\n", encoding="utf-8")
+    else:
+        shim = shim_dir / "python"
+        shim.write_text(f"#!/bin/sh\nexit {_DEAD_EXIT}\n", encoding="utf-8")
+        shim.chmod(0o755)
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(shim_dir), env["PATH"]])
+    return env
+
+
+def test_init_says_when_the_shell_cannot_run_the_lanes_interpreter(
+        pytest_repo: Path, tmp_path: Path):
+    """9009 is not an answer about pytest_cov, so that note rightly stopped
+    firing on it — and nothing replaced it. The reader got a committed config
+    whose only lane cannot start, and init printed not one word about it."""
+    res = _run_with(pytest_repo, _env_with_a_python_that_will_not_run(tmp_path), "init")
+
+    assert res.returncode == 0, res.stderr
+    assert "cannot run it" in res.stderr and str(_DEAD_EXIT) in res.stderr
+    assert "`python`" in res.stderr, "the note has to name the word the lane starts with"
+    assert "pytest_cov" not in res.stderr, "nothing ran: pytest-cov is not the gap"
+    assert (pytest_repo / "crapkit.toml").is_file(), "a note must not stop the scaffold"
+
+
+def test_doctor_fails_a_lane_whose_first_word_will_not_run(
+        pytest_repo: Path, tmp_path: Path):
+    """Doctor asked which() whether the lane's runner resolves and never
+    whether it starts, so the repo above — one lane, exit 9009, coverage
+    exiting 5 — was reported as "1 lane(s) declared" and "no problems found"."""
+    env = _env_with_a_python_that_will_not_run(tmp_path)
+    assert _run_with(pytest_repo, env, "init").returncode == 0
+
+    res = _run_with(pytest_repo, env, "doctor")
+
+    assert res.returncode == 1, res.stdout
+    assert "cannot run" in res.stdout and str(_DEAD_EXIT) in res.stdout
+    assert "'python'" in res.stdout, "name the word that has to change"
+    assert "no problems found" not in res.stdout
+
+
+def test_doctor_passes_a_lane_whose_interpreter_really_runs(pytest_repo: Path):
+    """The other half: an interpreter that starts is not a finding, and the
+    check must not turn every working repo's doctor red."""
+    assert run_cli(pytest_repo, "init").returncode == 0
+
+    res = run_cli(pytest_repo, "doctor")
+
+    assert "cannot run" not in res.stdout, res.stdout
+    assert res.returncode == 0, res.stdout
+
+
 def test_init_stays_quiet_when_pytest_cov_is_importable(pytest_repo: Path):
     res = run_cli(pytest_repo, "init")
     assert res.returncode == 0, res.stderr
