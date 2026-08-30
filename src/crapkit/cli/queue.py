@@ -506,7 +506,8 @@ def _brief_coupling(ranked: list, path: str) -> list[dict]:
 def _brief_twins(loader, row) -> list[dict]:
     from ..dup import find_twins
 
-    return packet.with_contained(find_twins(row, loader.rows(), loader.sources()))
+    return packet.with_contained(find_twins(row, loader.rows(), loader.sources(),
+                                            indexed=loader.twin_index()))
 
 
 class _BriefLoader:
@@ -540,6 +541,20 @@ class _BriefLoader:
     def sources(self) -> dict:
         return self._once("sources",
                           lambda: _load_sources(self.root, {r.path for r in self.rows()}))
+
+    def twin_index(self):
+        """Every function's shingles, built once for the whole batch.
+
+        Built at find_twins' own min_lines. Nothing reaches brief with another
+        one today; a `brief --min-lines` would have to key this memo on it, and
+        until then find_twins rebuilds rather than answering at the wrong
+        threshold. Process-local by construction: shingles are builtin hash()
+        values, so this memo can never become a file.
+        """
+        from ..dup import function_index
+
+        return self._once("twin_index",
+                          lambda: function_index(self.rows(), self.sources()))
 
     def source(self, path: str) -> str | None:
         return self.sources().get(path)

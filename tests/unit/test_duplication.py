@@ -3,7 +3,7 @@ copy-paste that then grew a few lines still surfaces. Tiny functions are noise
 and stay out."""
 import weakref
 
-from crapkit.dup import find_duplicates, find_twins
+from crapkit.dup import find_duplicates, find_twins, function_index
 from crapkit.snapshot import InventoryRow
 
 
@@ -155,3 +155,43 @@ def test_equally_similar_twins_are_ordered_by_path_so_two_runs_agree():
 def test_a_target_whose_file_was_never_loaded_has_no_twins():
     rows = [row("src/gone.py", "ghost", 1, 11), row("src/b.py", "beta", 1, 11)]
     assert find_twins(rows[0], rows, {"src/b.py": B}) == []
+
+
+# --- the index a batch of briefs shares --------------------------------------
+
+SMALL = "def small():\n" + "\n".join(f"    tiny_{i} = pick({i})" for i in range(6)) + "\n"
+
+
+def test_a_prebuilt_index_scores_the_twins_a_per_call_build_scores():
+    """`brief --batch N` shingles the repo once and hands the same index to every
+    packet. The index is the ONLY thing shared, so the answer must not move."""
+    rows = [row("src/a.py", "alpha", 1, 11), row("src/b.py", "beta", 1, 11),
+            row("src/c.py", "gamma", 1, 11)]
+    sources = {"src/a.py": A, "src/b.py": B, "src/c.py": C}
+
+    shared = function_index(rows, sources)
+
+    assert find_twins(rows[0], rows, sources, indexed=shared) == \
+        find_twins(rows[0], rows, sources)
+    assert find_twins(rows[1], rows, sources, indexed=shared) == \
+        find_twins(rows[1], rows, sources), "a second packet reuses the same index"
+
+
+def test_an_index_built_at_another_min_lines_is_rebuilt_not_reused():
+    """The index holds only the rows that cleared ITS threshold, so a smaller
+    min_lines does not read low off it, it reads absent. Nothing passes both
+    today; this is what a future `brief --min-lines` would hit."""
+    rows = [row("src/a.py", "small", 2, 7), row("src/b.py", "small2", 2, 7)]
+    sources = {"src/a.py": SMALL, "src/b.py": SMALL.replace("small", "small2")}
+
+    at_eight = function_index(rows, sources)
+
+    assert at_eight.entries == [], "six body lines clear neither row at 8"
+    assert find_twins(rows[0], rows, sources, min_lines=4, indexed=at_eight) == \
+        find_twins(rows[0], rows, sources, min_lines=4)
+    assert find_twins(rows[0], rows, sources, min_lines=4)[0]["path"] == "src/b.py"
+
+
+def test_the_index_carries_the_threshold_it_was_built_at():
+    rows = [row("src/a.py", "alpha", 1, 11)]
+    assert function_index(rows, {"src/a.py": A}, 4).min_lines == 4
