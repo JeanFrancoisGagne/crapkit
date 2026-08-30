@@ -7,12 +7,12 @@ working tree here; ages, repayment and velocity still read committed history,
 and the gap between the two is stated on its own line.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -48,10 +48,7 @@ NOTE = ("  1 uncommitted mark(s) in crapkit-ratchet.tsv: open reads the working 
         "ages and repayment read committed history")
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=180,
-                          encoding="utf-8", errors="replace", env=dict(os.environ))
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def git(repo: Path, *args: str) -> None:

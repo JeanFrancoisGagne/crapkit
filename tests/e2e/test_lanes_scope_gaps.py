@@ -6,7 +6,6 @@ lane RERUNS, not as a return value; the rest call public functions directly.
 Every fixture is built inline; nothing is read from the repo's own tests.
 """
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +18,8 @@ from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
 from crapkit.lanes import lane_unchanged, run_lane, write_stamps
 from crapkit.scaffold import sniff_scopes
+
+from conftest import cli_runner
 
 # Forward slashes survive TOML basic strings and cmd.exe alike.
 PY = sys.executable.replace("\\", "/")
@@ -97,9 +98,7 @@ def _commit(repo: Path, message: str) -> str:
     return _git(repo, "rev-parse", "HEAD").strip()
 
 
-def _run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=300, env=dict(os.environ))
+_run_cli = cli_runner(timeout=300)
 
 
 def _lane_runs(repo: Path) -> int:

@@ -6,10 +6,11 @@ The stamp turns that into an exit 3 instead of a green run.
 """
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -45,11 +46,7 @@ RATCHET = "crapkit-ratchet.tsv"
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
-def run_cli(repo: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.update(env_extra or {})
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=180, env=env)
+run_cli = cli_runner(timeout=180)
 
 
 @pytest.fixture()

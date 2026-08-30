@@ -16,14 +16,14 @@ So this repo carries enough files to force the pool, and the numbers below are
 hand-counted from the sources above them.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from crapkit.store import SnapshotStore
+
+from conftest import cli_runner
 
 # Four arms that match a value, plus the wildcard: base 1 + 4 = 5. The stock
 # reader reads 2 for this, whatever the arm count.
@@ -96,9 +96,7 @@ TOML = ('[crapkit]\ntarget = 6\n\n'
 RUST_FILES = 18
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=300, env=dict(os.environ))
+run_cli = cli_runner(timeout=300)
 
 
 def write(path: Path, text: str) -> None:

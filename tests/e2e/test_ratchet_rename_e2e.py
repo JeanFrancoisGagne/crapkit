@@ -4,12 +4,12 @@ Renaming a file used to cost its high-water mark — prune saw the old path abse
 from the run and called the debt repaid, so the same function re-entered the
 codebase unmarked. `ratchet move` does it by hand; prune now consults git.
 """
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -42,9 +42,7 @@ TANGLED = (
 RATCHET = "crapkit-ratchet.tsv"
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=180, env=dict(os.environ))
+run_cli = cli_runner(timeout=180)
 
 
 def git(repo: Path, *args: str) -> None:
