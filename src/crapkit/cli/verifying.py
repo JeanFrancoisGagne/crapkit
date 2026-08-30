@@ -48,14 +48,45 @@ def _taint_note(pick) -> str:
             f"pass `--baseline {pick.skipped['id']}` to accept the newer run deliberately.")
 
 
+def _untrusted_reason(run: dict) -> str:
+    """Why a run that exists cannot be measured against, in the store's own terms."""
+    kind = run["kind"]
+    if kind == "verify":
+        return "a failed verify" if run["verdict_ok"] is False else "a verify with no verdict"
+    if kind == "hook":
+        return "a hook run"
+    if kind == "partial":
+        return "a partial run (a subset of the lanes)"
+    return f"a {kind or 'legacy'} run that measured no lanes"
+
+
+def _wrong_baseline(store: SnapshotStore, requested: int, trusted: list[dict]) -> str:
+    """A named run that cannot serve, beside the runs that can.
+
+    The refusal is right; the line has to be about the run that was named. The
+    trusted ids are listed oldest first, so the last one is the newest and the
+    `--baseline=` hint names it: that is the escape an operator reaching for
+    `--baseline` was after, and a fresh `coverage` run is the expensive wrong one.
+    """
+    ids = ", ".join(str(r["id"]) for r in trusted)
+    named = next((r for r in store.list_runs() if r["id"] == requested), None)
+    if named is None:
+        return f"no run {requested} in the store (`crapkit runs` lists them); trusted runs: {ids}"
+    return (f"run {requested} is {_untrusted_reason(named)} and cannot serve as a baseline; "
+            f"trusted runs: {ids}; pass `--baseline={trusted[-1]['id']}` for the newest")
+
+
 def _named_baseline(store: SnapshotStore, root: Path, requested: int) -> dict:
     """`--baseline ID` bypasses the taint rule: naming a run is the deliberate act."""
     from ..store import trusted_runs
 
-    baseline = next((r for r in trusted_runs(store) if r["id"] == requested), None)
-    if baseline is None:
+    trusted = trusted_runs(store)
+    baseline = next((r for r in trusted if r["id"] == requested), None)
+    if baseline is not None:
+        return baseline
+    if not trusted:
         raise CrapkitError(_no_baseline(root))
-    return baseline
+    raise CrapkitError(_wrong_baseline(store, requested, trusted))
 
 
 def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) -> dict:
