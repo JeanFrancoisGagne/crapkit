@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..store import SnapshotStore
+from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json, _write_tsv)
 from .scoring import _scored_run
@@ -496,15 +497,25 @@ def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
 
 
 def _under_scope_path(path: str, scope_path: str) -> bool:
-    """True when path is the declared scope path itself or sits under it."""
+    """True when path is the declared scope path itself or sits under it.
+
+    Kept as a name on this module because `crapkit.cli._under_scope_path` is part
+    of the frozen import surface (tests/unit/test_cli_lazy_families.py). The
+    ownership rule itself is universe's; owning_scope precomputes both arms.
+    """
     return path == scope_path or path.startswith(scope_path.rstrip("/") + "/")
 
 
 def _owning_scope(path: str, scope_paths: dict[str, tuple[str, ...]]) -> str | None:
-    """The scope matching deepest, so a nested scope wins over the parent that also contains it."""
-    matches = [(len(sp), name) for name, paths in scope_paths.items()
-               for sp in paths if _under_scope_path(path, sp)]
-    return max(matches)[1] if matches else None
+    """The scope matching deepest, so a nested scope wins over the parent that also contains it.
+
+    universe owns the rule. Respelling it here answered `a` where the scored
+    corpus answered `b` for the same nested path, and `brief` then took a
+    function's lane and test command from one scope and its ceiling from the
+    other. Extension-blind, because a test file's language need not be one any
+    scope declares.
+    """
+    return owning_scope(path, path_matchers(scope_paths))
 
 
 def _is_test_path(path: str) -> bool:
