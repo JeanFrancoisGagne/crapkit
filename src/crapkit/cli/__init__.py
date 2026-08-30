@@ -74,6 +74,7 @@ _OWNER = {
     "_doctor_oversized": "admin",
     "_doctor_plugin": "admin",
     "_doctor_report": "admin",
+    "_doctor_results_artifacts": "admin",
     "_doctor_scope_files": "admin",
     "_doctor_scopes": "admin",
     "_doctor_tools": "admin",

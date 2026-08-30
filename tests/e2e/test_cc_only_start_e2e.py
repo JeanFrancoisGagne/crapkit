@@ -300,11 +300,15 @@ def mixed_repo(tmp_path: Path) -> Path:
 
 
 def _swap_lane_command(repo: Path) -> None:
+    """The fake producer writes coverage only, so the junit results file init
+    declares for the pytest lane (#26) goes with the command it belonged to;
+    a declared-but-missing results file refuses the lane."""
     path = repo / "crapkit.toml"
     text = path.read_text(encoding="utf-8")
     swapped = re.sub(r'^command = "python3? -m pytest .*"$', 'command = "python make_cov.py"',
                      text, count=1, flags=re.M)
     assert swapped != text, "init stopped writing a pytest lane for a pyproject repo"
+    swapped = re.sub(r'^results_artifact = .*\n', "", swapped, count=1, flags=re.M)
     path.write_text(swapped, encoding="utf-8", newline="\n")
 
 

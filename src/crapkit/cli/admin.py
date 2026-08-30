@@ -293,7 +293,27 @@ def _lane_problems(root: Path, cfg) -> list[str]:
 
 def _doctor_lanes(root: Path, cfg) -> list[Finding]:
     return ([Finding("FAIL", p) for p in _lane_problems(root, cfg)]
-            or [_doctor_lane_summary(cfg)])
+            or [_doctor_lane_summary(cfg)]) + _doctor_results_artifacts(cfg)
+
+
+_RESULTS_HINT = {
+    "coveragepy": ("add --junitxml=.crapkit/cov/junit-{name}.xml to the command and "
+                   'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane'),
+    "istanbul": ("add a junit reporter (vitest: --reporter=default --reporter=junit "
+                 "--outputFile=.crapkit/cov/{name}/junit.xml; jest: jest-junit) and a "
+                 "results_artifact naming its file"),
+}
+
+
+def _doctor_results_artifacts(cfg) -> list[Finding]:
+    """WARN, never FAIL: the lane measures coverage exactly as it did. What it
+    cannot do without a results file is feed the two checks that read one, the
+    crashed-worker trust check and no-new-failures, and until now nothing said
+    they were off (#26)."""
+    return [Finding("WARN", f"lane {lane.name!r} declares no results_artifact: the "
+                            "crashed-worker check and the no-new-failures check (exit 8) "
+                            f"cannot run for it; {_RESULTS_HINT[lane.parser].format(name=lane.name)}")
+            for lane in cfg.lanes if lane.parser in _RESULTS_HINT and not lane.results_artifact]
 
 
 def _doctor_artifact_litter(cfg) -> list[Finding]:

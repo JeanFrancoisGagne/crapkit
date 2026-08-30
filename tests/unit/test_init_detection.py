@@ -21,8 +21,11 @@ def test_a_pyproject_yields_a_live_pytest_lane():
     (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "")
     assert lane.parser == "coveragepy"
     assert lane.command == ("python -m pytest --cov --cov-branch "
-                            "--cov-report=json:.crapkit/cov/py.json")
+                            "--cov-report=json:.crapkit/cov/py.json "
+                            "--junitxml=.crapkit/cov/junit-py.xml")
     assert lane.artifact == ".crapkit/cov/py.json"
+    # The junit file feeds the crashed-worker and no-new-failures checks (#26).
+    assert lane.results_artifact == ".crapkit/cov/junit-py.xml"
 
 
 def test_pytest_ini_and_setup_cfg_count_as_the_same_signal():
@@ -240,6 +243,8 @@ def test_the_routed_config_init_writes_parses_back():
 
     assert {lane.name: lane.artifact for lane in cfg.lanes} == {
         "py": ".crapkit/cov/py.json", "js": ".crapkit/cov/js/coverage-final.json"}
+    assert {lane.name: lane.results_artifact for lane in cfg.lanes} == {
+        "py": ".crapkit/cov/junit-py.xml", "js": ""}, "the py lane's junit survives the round trip"
 
 
 def test_the_commented_templates_point_under_the_crapkit_directory_too():
