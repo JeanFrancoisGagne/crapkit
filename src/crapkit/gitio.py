@@ -21,7 +21,17 @@ _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 # `core/x.py` and every join missed — the commit gate passed a ccn 12 function,
 # lane reuse read a changed scope as unchanged. One config flag on the process
 # covers every diff command here, so a reader added later is right by default.
-_RELATIVE = ("-c", "diff.relative=true")
+#
+# core.quotePath answers the same question about spelling. On by default, it
+# prints a path holding any byte over 0x7f as C-quoted octal text
+# (`"src/b\303\252ta.py"`), which no `ls-files -z` row equals, so a dirty
+# non-ASCII file fell out of every set built by intersecting the two: lane reuse
+# republished a stale score and its scope read as unchanged. Off, status_names,
+# diff_names_since, unstaged_paths, churn_log_lines and the `diff -U0` headers
+# all spell the path the way ls-files does. git still quotes a path holding a
+# double-quote or a control character whatever this says, which is why
+# churn._unquote_git_path stays.
+_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
 
 
 def _git(root: Path, *args: str) -> str:
