@@ -20,10 +20,11 @@ from typing import IO, NamedTuple
 
 from .config import Lane
 from .coverage_istanbul import FnCoverage
-from .covstream import parse_coveragepy_file, parse_istanbul_file
+from .covstream import parse_coveragepy_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
 from .procs import run_bounded
+from .uncovered import fold_dead_lines
 from .universe import owning_scope, path_matchers
 
 
@@ -276,9 +277,16 @@ def _read_and_parse(lane: Lane, root: Path,
     attributed, which is two copies of an artifact that runs to hundreds of MB.
     Streaming holds one chunk and one file's coverage instead, and hashes the
     bytes on the way past, so the recorded digest costs no second read.
+
+    An istanbul walk also yields the lines no statement ran, which diff coverage
+    used to get by reopening the artifact and decoding every member a second
+    time. They are folded into the run's union here and dropped, so no lane's
+    map has to stay alive next to the others'.
     """
     if lane.parser == "istanbul":
-        return parse_istanbul_file(artifact_path, repo_root=str(root))
+        per_file, dead, digest = parse_istanbul_both_file(artifact_path, repo_root=str(root))
+        fold_dead_lines(artifact_path, dead)
+        return per_file, digest
     if lane.parser == "coveragepy":
         return parse_coveragepy_file(artifact_path, path_prefix=lane.path_prefix)
     raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")

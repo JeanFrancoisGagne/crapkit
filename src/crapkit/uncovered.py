@@ -9,7 +9,9 @@ then the lines are [] and a note names the lane to rerun.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from threading import Lock
 from typing import NamedTuple
 
 
@@ -91,16 +93,97 @@ def _parse_missing(lane, root: Path, artifact: Path) -> dict[str, set[int]]:
     raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
 
 
-def missing_by_path(root: Path, cfg) -> dict[str, set[int]]:
-    """Union of the lanes' line-level truth; a file two lanes measured keeps a
-    line dead only when NO lane ran it."""
-    missing: dict[str, set[int]] = {}
+# --- the fold a lane's own walk can fill in --------------------------------
+#
+# An istanbul lane decodes every member of its artifact to score it. The dead
+# lines fall out of that same decode, so the lane hands them here instead of
+# leaving this module to reopen the file and decode it all again.
+
+_FOLD_LOCK = Lock()
+_folded: dict[str, set[int]] = {}
+_folded_from: set[tuple] = set()
+
+
+def artifact_key(artifact: Path) -> tuple | None:
+    """Identity plus enough state to notice a rewrite, or None when the file
+    cannot be stat'd.
+
+    Not the sha256, though the walk has one: the reader that asks does not, so
+    keying on a digest would buy back the second full read this whole path
+    exists to avoid.
+    """
+    try:
+        stat = os.stat(artifact)
+    except OSError:
+        return None
+    return (os.path.abspath(artifact), stat.st_mtime_ns, stat.st_size)
+
+
+def _fold_into(missing: dict[str, set[int]], lines_by_path: dict[str, set[int]]) -> None:
+    """A file two lanes measured keeps a line dead only when NO lane ran it.
+    Per path this is an intersection, so lanes may arrive in any order."""
+    for path, lines in lines_by_path.items():
+        missing[path] = missing[path] & lines if path in missing else set(lines)
+
+
+def fold_dead_lines(artifact: Path, dead: dict[str, set[int]]) -> None:
+    """Take one lane's dead lines into the run's fold so the lane can drop them.
+
+    Handing the map over immediately is the point: keeping all 13 lanes' maps
+    alive until the reader folded them added 138 MB to a verify's peak. Lanes
+    parse on a thread pool, hence the lock.
+    """
+    key = artifact_key(artifact)
+    if key is None:
+        return
+    with _FOLD_LOCK:
+        _fold_into(_folded, dead)
+        _folded_from.add(key)
+
+
+def _take_folded(wanted: set) -> tuple[dict[str, set[int]], set]:
+    """The fold and the artifact keys it covers, or ({}, set()) when it speaks
+    for an artifact `wanted` does not name.
+
+    Emptied either way, and handed over rather than copied, because the caller
+    folds the remaining lanes straight into it. An artifact rewritten since its
+    walk keys differently and so lands outside `wanted`: the whole fold is then
+    dropped and every lane read again, rather than one stale map being served.
+    """
+    global _folded, _folded_from
+
+    with _FOLD_LOCK:
+        folded, sources = _folded, _folded_from
+        _folded, _folded_from = {}, set()
+    if not sources or not sources <= wanted:
+        return {}, set()
+    return folded, sources
+
+
+def _lane_artifacts(root: Path, cfg) -> list[tuple]:
+    """(lane, artifact, key) for every lane whose artifact is on disk."""
+    found = []
     for lane in cfg.lanes:
         artifact = root / lane.artifact
-        if not artifact.is_file():
-            continue
-        for path, lines in _parse_missing(lane, root, artifact).items():
-            missing[path] = missing[path] & lines if path in missing else set(lines)
+        if artifact.is_file():
+            found.append((lane, artifact, artifact_key(artifact)))
+    return found
+
+
+def missing_by_path(root: Path, cfg) -> dict[str, set[int]]:
+    """Union of the lanes' line-level truth; a file two lanes measured keeps a
+    line dead only when NO lane ran it.
+
+    A lane whose artifact was walked for its coverage this run already handed
+    its dead lines over; the rest are read off the file here. Both routes fold
+    the same way and the fold is order-independent, so which lane took which
+    route cannot move the answer.
+    """
+    lanes = _lane_artifacts(root, cfg)
+    missing, covered = _take_folded({key for _, _, key in lanes})
+    for lane, artifact, key in lanes:
+        if key not in covered:
+            _fold_into(missing, _parse_missing(lane, root, artifact))
     return missing
 
 
