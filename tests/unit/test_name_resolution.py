@@ -111,3 +111,20 @@ def test_a_name_no_function_holds_is_still_an_error(store: SnapshotStore):
     with pytest.raises(CrapkitError):
         _pick_function(PATH, ROWS, "nope")
     assert store.find_functions(PATH, "nope") == []
+
+
+# --- the start line, which both commands take --------------------------------
+
+def test_a_start_line_resolves_to_the_same_function_in_both_commands(
+        store: SnapshotStore):
+    """`brief src/lib.rs 30` named `route_chain` and `explain src/lib.rs 30`
+    answered "no function matching '30'". The start line is the one handle every
+    function has, anonymous ones included, so both commands read it."""
+    assert _pick_function(PATH, ROWS, "30").long_name == NAMES[1]
+    assert store.find_functions(PATH, "30") == [NAMES[1]]
+
+
+def test_a_line_no_function_opens_on_resolves_to_nothing(store: SnapshotStore):
+    """Inside a function is not the same as opening it: the caller reports the
+    miss, so the store answers with an empty list rather than a guess."""
+    assert store.find_functions(PATH, "31") == []

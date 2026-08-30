@@ -879,6 +879,10 @@ class SnapshotStore:
         question about one function. Matching in Python also makes `_` and `%`
         the characters they are rather than LIKE's wildcards.
 
+        A bare start line is resolved by position, the form `brief` takes and
+        the one handle every function has: two functions in a file can share a
+        name and an anonymous one has none, but no two open on the same line.
+
         `(anonymous)#N` is resolved by position instead: an anonymous function
         carries no text to match, and the fragment would otherwise hunt for a
         `#` no long_name has.
@@ -887,6 +891,8 @@ class SnapshotStore:
         match: no long_name carries it, and the caller re-attaches it to reach
         that twin's ratchet key.
         """
+        if name_fragment.isdigit():
+            return self._at_start_line(path, int(name_fragment))
         ordinal = handle_ordinal(name_fragment)
         if ordinal is not None:
             return self._nth_anonymous(path, ordinal)
@@ -902,6 +908,23 @@ class SnapshotStore:
         cur = self._conn.execute(
             f"SELECT DISTINCT i.long_name {_BY_PATH} WHERE i.path = ? "
             "ORDER BY i.long_name", (path,))
+        return [n for (n,) in cur]
+
+    def _at_start_line(self, path: str, start: int) -> list[str]:
+        """The function opening on this line, or nothing when none does.
+
+        Read off the newest run that scored the path, like the anonymous
+        ordinal: a line number names a position in the file as it stands now,
+        and an older run held other positions. `brief` answers the same line off
+        the same file, so a session that read a line out of one packet can hand
+        it to either command.
+        """
+        run_id = self._newest_run_for(path)
+        if run_id is None:
+            return []
+        cur = self._conn.execute(
+            f"SELECT i.long_name {_BY_PATH} WHERE i.path = ? AND f.run_id = ? AND f.start = ?",
+            (path, run_id, start))
         return [n for (n,) in cur]
 
     def _nth_anonymous(self, path: str, ordinal: int) -> list[str]:
