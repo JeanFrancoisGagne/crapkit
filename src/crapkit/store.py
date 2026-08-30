@@ -879,6 +879,10 @@ class SnapshotStore:
         question about one function. Matching in Python also makes `_` and `%`
         the characters they are rather than LIKE's wildcards.
 
+        A bare start line is resolved by position, the form `brief` takes and
+        the one handle every function has: two functions in a file can share a
+        name and an anonymous one has none, but no two open on the same line.
+
         `(anonymous)#N` is resolved by position instead: an anonymous function
         carries no text to match, and the fragment would otherwise hunt for a
         `#` no long_name has.
@@ -887,6 +891,8 @@ class SnapshotStore:
         match: no long_name carries it, and the caller re-attaches it to reach
         that twin's ratchet key.
         """
+        if name_fragment.isdigit():
+            return self._at_start_line(path, int(name_fragment))
         ordinal = handle_ordinal(name_fragment)
         if ordinal is not None:
             return self._nth_anonymous(path, ordinal)
@@ -902,6 +908,23 @@ class SnapshotStore:
         cur = self._conn.execute(
             f"SELECT DISTINCT i.long_name {_BY_PATH} WHERE i.path = ? "
             "ORDER BY i.long_name", (path,))
+        return [n for (n,) in cur]
+
+    def _at_start_line(self, path: str, start: int) -> list[str]:
+        """The function opening on this line, or nothing when none does.
+
+        Read off the newest run that scored the path, like the anonymous
+        ordinal: a line number names a position in the file as it stands now,
+        and an older run held other positions. `brief` answers the same line off
+        the same file, so a session that read a line out of one packet can hand
+        it to either command.
+        """
+        run_id = self._newest_run_for(path)
+        if run_id is None:
+            return []
+        cur = self._conn.execute(
+            f"SELECT i.long_name {_BY_PATH} WHERE i.path = ? AND f.run_id = ? AND f.start = ?",
+            (path, run_id, start))
         return [n for (n,) in cur]
 
     def _nth_anonymous(self, path: str, ordinal: int) -> list[str]:
@@ -977,12 +1000,18 @@ class SnapshotStore:
 
 
 def default_baseline(store: SnapshotStore) -> dict | None:
-    """The run a verify compares against: the newest TRUSTED scored run.
+    """The newest TRUSTED scored run: the state every reader describes.
 
     Trusted = a coverage run, or a verify run whose verdict passed. A failed
     verify must never become the next baseline (rerunning verify on a broken
-    tree would launder its own failures), and hook-override anchor runs carry
-    no scored rows at all.
+    tree would launder its own failures), a partial run measures a fraction of
+    the suite and reports a CRAP inflated to match, and hook-override anchor
+    runs carry no scored rows at all.
+
+    Named for verify, but `worklist` and `next-item` read it too, and that is
+    the point: a view that ranks off a run verify refuses hands out an order no
+    other command agrees with. `pick_baseline` adds the taint rule on top, which
+    is verify's alone — a view compares nothing, so it has nothing to launder.
     """
     eligible = trusted_runs(store)
     return eligible[-1] if eligible else None
@@ -1074,6 +1103,22 @@ def trusted_runs(store: SnapshotStore) -> list[dict]:
     return [r for r in store.list_runs() if is_trusted(r)]
 
 
+def is_rowful(r: dict) -> bool:
+    """Does this run carry scored rows? Hook-override runs carry none.
+
+    Rowfulness is not trust and never stands in for it. It answers "is there
+    anything here to read", which `duplication` and the `explain` context ask
+    because they describe whatever the store last measured, and which `worklist`
+    asks only as the fallback for a repo with no trusted run yet.
+    """
+    return r["kind"] != "hook"
+
+
+def rowful_runs(store: SnapshotStore) -> list[dict]:
+    """Every run with rows, oldest first, trusted or not."""
+    return [r for r in store.list_runs() if is_rowful(r)]
+
+
 def _digest_pair_ids(trusted: list[dict]) -> set[int]:
     """Both halves of the pair `crapkit digest` compares.
 
@@ -1093,8 +1138,10 @@ def _passing_verify_ids(runs: list[dict]) -> set[int]:
 
 
 def _newest_non_hook_id(runs: list[dict]) -> set[int]:
-    """worklist and duplication read the newest non-hook run, trusted or not."""
-    ids = [r["id"] for r in runs if r["kind"] != "hook"]
+    """`duplication` and the `explain` context read the newest rowful run,
+    trusted or not, and so does worklist in a repo with no trusted run at all.
+    Prune it and those three describe a state older than the store holds."""
+    ids = [r["id"] for r in runs if is_rowful(r)]
     return {ids[-1]} if ids else set()
 
 

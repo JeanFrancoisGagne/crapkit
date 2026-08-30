@@ -17,27 +17,43 @@ def _is_failed_verify(run: dict) -> bool:
 
 
 def _skipped_failed_verifies(runs: list[dict], chosen_id: int) -> list[dict]:
-    """The failed verifies newer than the run this seed or prune settled on."""
+    """Every failed verify newer than the run this seed or prune settled on.
+
+    Run id is the order, so "newer" is the id comparison. All of them, not the
+    nearest: when the pick walks back past two failures, naming one of them
+    tells half the reason the line carries an older run id.
+    """
     return [r for r in runs if r["id"] > chosen_id and _is_failed_verify(r)]
 
 
-def _latest_full_run(store: SnapshotStore) -> tuple[dict, list[dict]]:
-    """The newest TRUSTED run to work from, and the failed verifies passed over.
+def _no_full_run(pick) -> str:
+    """Why there is nothing to seed or prune against: no trusted run at all, or
+    a failure standing in front of every one there is."""
+    if pick.blocker is None:
+        return ("no trusted full run to work from — run `crapkit coverage` first "
+                "(failed verifies and hook runs never serve as baselines)")
+    return (f"no run to work from: verify run {pick.blocker['id']} FAILED with "
+            f"{pick.blocker['findings']} finding(s), nothing older is left to work from, "
+            "and a fresh `crapkit coverage` would only be refused the same way — "
+            "fix the findings and let a verify pass")
 
-    `verify`'s own rule, shared: a failed verify never serves as a baseline
-    because it can carry the scores of a red tree, and the failure is visible in
-    the same run. Seeding from one signs debt at values verify itself will not
-    accept as a comparison point. Before this, seed took the newest run whose
-    kind was coverage or verify and never read the verdict (#16).
+
+def _latest_full_run(store: SnapshotStore) -> tuple[dict, list[dict]]:
+    """The run seed and prune work from, and the failed verifies passed over.
+
+    `pick_baseline` — verify's own choice, not a weaker rule that agrees with it
+    most of the time. Trust is not enough on its own: a coverage run taken after
+    a failed verify IS trusted, and seeding off it signs marks at values verify
+    refuses as a comparison point, which is how the failure's findings stop
+    being touched. Reading trust alone was that bug; reading neither was #16.
     """
-    from ..store import is_trusted
+    from ..store import pick_baseline
 
     runs = store.list_runs()
-    trusted = [r for r in runs if is_trusted(r)]
-    if not trusted:
-        raise CrapkitError("no trusted full run to work from — run `crapkit coverage` first "
-                           "(failed verifies and hook runs never serve as baselines)")
-    return trusted[-1], _skipped_failed_verifies(runs, trusted[-1]["id"])
+    pick = pick_baseline(runs)
+    if pick.run is None:
+        raise CrapkitError(_no_full_run(pick))
+    return pick.run, _skipped_failed_verifies(runs, pick.run["id"])
 
 
 def _skip_note(skipped: list[dict]) -> str:

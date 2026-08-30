@@ -894,19 +894,28 @@ def _worklist_print(as_json: bool, wl, latest: dict, cfg, stale: bool,
     _print_batches(batches)
 
 
-def _rowful_runs(store) -> list[dict]:
-    """Everything but hook-override runs, which carry no rows at all."""
-    return [r for r in store.list_runs() if r["kind"] != "hook"]
-
-
 def _worklist_run(root: Path, store) -> dict:
-    """The newest SCORED run when one exists, so worklist and next-item describe
-    one state; an inventory-only run ranks complexity alone until the first
-    coverage run."""
-    runs = _rowful_runs(store)
-    scored = [r for r in runs if r["kind"] != "inventory"]
-    if scored or runs:
-        return (scored or runs)[-1]
+    """The newest TRUSTED run, which is the run next-item ranks: one state, two
+    commands.
+
+    `kind != "inventory"` used to stand in for "scored", and it admitted the two
+    runs trust refuses. A partial run measures a fraction of the suite and its
+    CRAP is inflated to match; a failed verify's scores can come off a red tree.
+    Either one ranked the queue while next-item picked its item off an older
+    run, so the two commands answered one question differently.
+
+    The fallback is the newest run with rows, for a repo that has only run
+    `inventory`: next-item refuses that repo and a complexity-only ranking is
+    still worth printing.
+    """
+    from ..store import default_baseline, rowful_runs
+
+    trusted = default_baseline(store)
+    if trusted is not None:
+        return trusted
+    runs = rowful_runs(store)
+    if runs:
+        return runs[-1]
     raise CrapkitError(f"no snapshot in {root} — run `crapkit coverage` first "
                        "(or `crapkit inventory` for complexity-only ranking, "
                        "with no coverage, flags or remedies)")

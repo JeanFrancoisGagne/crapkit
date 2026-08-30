@@ -143,11 +143,12 @@ def _print_duplication(as_json: bool, pairs, latest: dict) -> None:
 
 def cmd_duplication(args: argparse.Namespace) -> int:
     from ..dup import find_duplicates
+    from ..store import rowful_runs
 
     root = Path(args.repo).resolve()
     _load_repo_config(root)  # config errors first, like every command
     store = _open_store(root, first_command="inventory")
-    runs = [r for r in store.list_runs() if r["kind"] != "hook"]
+    runs = rowful_runs(store)
     if not runs:
         raise CrapkitError(f"no snapshot in {root} — run `crapkit inventory` first")
     rows = store.read_rows(runs[-1]["id"])
