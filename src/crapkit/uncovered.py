@@ -6,6 +6,10 @@ ran it. What this module adds is a verdict on whether the artifacts on disk
 still describe the working tree. Line numbers from an artifact built before the
 last edit point at code that has moved, which is worse than no numbers at all:
 then the lines are [] and a note names the lane to rerun.
+
+The intersection is also the seam a lane can fill in from the walk it was
+already doing, so the fold lives here next to the rule it obeys rather than in
+the reader that produces the numbers.
 """
 from __future__ import annotations
 
