@@ -15,7 +15,7 @@ import uuid
 
 import pytest
 
-from crapkit import config, mutate_pool
+from crapkit import config, mutate_pool, procs
 from crapkit.cli import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
 from crapkit.config import Lane
@@ -344,6 +344,35 @@ def test_doctor_leaves_an_unresolvable_runner_to_the_path_check(monkeypatch):
     nothing would prove nothing: one gap, one line."""
     monkeypatch.setattr(config, "SHELL_IS_CMD", os.name == "nt")
     assert admin._lane_start_problem(_lane("no-such-runner-7f3a --coverage")) is None
+
+
+def test_lanes_sharing_a_first_word_are_probed_once(tmp_path, monkeypatch):
+    """The probe asks the same word the same question once per LANE, and the
+    answer cannot differ between two lanes: it takes no cwd and no env. On a
+    config declaring 14 lanes over 2 distinct first words that was 14 shells
+    started to learn 2 things, and doctor spent 5.6 of its 6.9 seconds waiting
+    on them. A repo with N lanes over K distinct first words owes K spawns."""
+    _name_only_on_path(tmp_path, monkeypatch, "python", "pnpm")
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    probed = []
+
+    def counted(command, timeout):
+        probed.append(command)
+        return 9009
+
+    monkeypatch.setattr(procs, "run_bounded", counted)
+    admin._start_probe.cache_clear()
+
+    problems = [admin._lane_start_problem(
+                    Lane(name=name, command=command, artifact="cov.json",
+                         parser="coveragepy", scopes=("py",)))
+                for name, command in (("py", "python -m pytest --cov"),
+                                      ("py2", "python -m pytest --cov=lib"),
+                                      ("js", "pnpm vitest run --coverage"))]
+
+    assert probed == ["python --version", "pnpm --version"]
+    assert [p.split(":")[0] for p in problems] == ["lane 'py'", "lane 'py2'", "lane 'js'"]
+    assert all("9009" in p for p in problems)
 
 
 # --- and doctor reads the command with the lexer that will run it ------------
