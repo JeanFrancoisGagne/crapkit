@@ -1,5 +1,86 @@
 # Changelog
 
+## 0.4.5 — unreleased
+
+An audit of 0.4.4 (six lenses, every finding reproduced twice) plus issues #24
+and #25. No new capability.
+
+### The guard reads cmd.exe the way cmd.exe does
+0.4.4 taught the lane guard cmd.exe's quoting, with two gaps: a quote that opens
+mid-token (`--cov-report=json:"a b\py.json"`) was two tokens here and one
+argument to cmd.exe, so a good lane was refused; a caret escape (`-k ^"not slow^"`)
+stayed in the token and split the value. The cmd.exe reading is now a character
+walk that toggles on every quote and honours `^` outside quoted runs, checked
+against real `cmd.exe` argv on thirty command shapes. A chained command
+(`cd tests && python -m pytest --cov ...`, `... --cov && echo done`) is read one
+argv per `&&`/`||`/`&`/`|` segment and every segment that runs the runner is
+checked, so a second narrowing run after the operator is still refused and a
+refusal never names a word from the next command. An empty quoted argument
+(`-k ""`) stays an empty argument instead of shifting the next path onto the
+flag; a quoted or caret-escaped operator is a word, not a separator; words break
+on space, tab and line endings only, as cmd.exe and sh do, so a pasted
+non-breaking space no longer splits a value; redirections (`> nul`, `2>&1`) are
+the shell's and never a positional; on sh a trailing `;` ends the command. The
+vitest guard licenses 25 value-taking options (`--workspace`, `--diff`,
+`--snapshotEnvironment`, `--coverage.extension`, `--typecheck.tsconfig` joined
+the list) and the docs list is generated from the set.
+
+### The pre-commit gate works below the git top (#24)
+The 0.4.4 churn fix left the gate reading `git diff --cached` from the git top,
+so under a nested root staged paths matched no scope and a function at twice the
+ceiling committed with a warning. Every git spawn now runs with
+`diff.relative=true` and cat-file requests use `:./path`, which also fixes the
+nine siblings that joined top-relative paths against root-relative rows: verify's
+changed files, `rescore --gate`, lane reuse (which could republish a stale
+artifact's score), `mutate` (which found targets and mutated nothing), the
+ratchet's rename follow, and the per-edit advisory's own diff. A staged file
+above the crapkit root is outside the diff by design and no longer named.
+
+### A worktree add killed by a peer is retried once (#25)
+`mutate` adds its worker worktrees in parallel; git's add enumerates the
+existing `.git/worktrees/*` entries and dies reading a `commondir` a peer is
+still building (one in about a thousand adds at four workers on Windows, seen on
+CI). `worktree_add` retries once after 50 ms when the message names
+`worktrees/` and `commondir`, whatever the git dir is called.
+
+### Timeouts that bound the wall clock
+`init`'s pytest-cov probe and `mutate`'s per-mutant timeout both used
+`capture_output` under `shell=True`; on Windows the kill hit cmd.exe and `run()`
+then waited on pipes the grandchild still held, so a 15 s timeout returned after
+29 s and a looping mutant was never cut. Both now run through one bounded
+spawn (`procs.run_bounded`): the command starts in its own process group and a
+deadline kills the whole tree (`taskkill /T` on Windows, `killpg` on POSIX) and
+waits for it, so no orphan suite keeps running after `mutate` gives up on a
+mutant. A lane's own timeout (`lanes.py`) still uses the plain spawn; that is
+the next item.
+
+### init on Windows
+A PATH holding only the `py` launcher got a lane naming `python3`, which the
+first `coverage` could not run: `py` is now in the fallback chain. The Store
+`python.exe` alias (exit 9009, "Python was not found") gets its own note
+naming the interpreter cmd.exe cannot run, and `doctor` now FAILs a lane whose
+first word will not start instead of calling the repo clean. The
+`pip install "crapkit[py]"` line uses double quotes in the note and the docs:
+single quotes do not survive cmd.exe.
+
+### Churn and coupling below the git top
+`coupling`, `brief` and `worklist --batches` decode git's `core.quotePath`
+quoting before joining paths, so a non-ASCII path is no longer a fake row;
+`coupling` drops pairs naming a path git no longer tracks; the churn caches
+carry their format in the file name (`churn-cache-v2.json`, `churn-log-v2.z`),
+so a 0.4.3 sharing the repo keeps its own caches instead of both rebuilding on
+every run; a warm 0.4.4 cache is adopted once and its file removed rather than
+orphaned. `.git` is found by walking up from the root (doctor's commit-graph
+check included), so the HEAD fast path fires below the top; `config_value`
+asks git for the repo's own setting and no longer reads the `diff.relative`
+flag crapkit injects into every spawn.
+
+### Docs
+A section on running crapkit with its root below the repo top; the vitest guard
+page lists every option whose value it licenses, pinned by a test; the
+`crapkit-recover` skill routes the pytest half of "no coverage provider" to the
+pytest docs.
+
 ## 0.4.4 — 2026-08-29
 
 Three field fixes from @nicolaschapados (PR #23) against a real pytest/uv project,

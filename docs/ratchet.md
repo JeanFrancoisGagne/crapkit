@@ -409,7 +409,7 @@ touched it. That is the point: coverage rot regresses functions nobody edited.
 $ crapkit verify
 verify FAILED @ 8c780bb18da vs baseline 8c780bb18da (1 changed files)
   RATCHET  app/m.py  pick( a , b , c ): 10.75 -> 20.0
-  findings: 1 committed / 0 dirty (uncommitted tracked edits)
+  findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 EXIT=7
 ```
 
