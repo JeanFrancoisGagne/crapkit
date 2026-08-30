@@ -440,7 +440,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
     _warn_suite_shrink(baseline, provenance)
-    uncovered = diff_uncovered(ranges, missing_by_path(root, cfg))
+    # diff_uncovered walks the changed ranges, so an empty diff is [] whatever
+    # the artifacts say — and reading every lane's artifact to spell that [] is
+    # the whole cost of the post-commit verify on an unchanged tree.
+    uncovered = diff_uncovered(ranges, missing_by_path(root, cfg)) if ranges else []
     _warn_diff_uncovered(uncovered)
     breach = _diff_cover_breach(cfg, uncovered)
     if breach:
