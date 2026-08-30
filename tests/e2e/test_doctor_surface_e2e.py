@@ -243,7 +243,8 @@ def test_doctor_warns_about_a_directory_no_lane_measures(measured_repo: Path):
     res = run_cli(measured_repo, "doctor")
 
     assert res.returncode == 0, "a measurement gap is a warning, never a failure"
-    warning = [ln for ln in res.stdout.splitlines() if ln.startswith("WARN")]
+    warning = [ln for ln in res.stdout.splitlines()
+               if ln.startswith("WARN") and "no lane measures" in ln]
     assert len(warning) == 1, res.stdout
     assert "src/quiet" in warning[0]
     assert "tests/test_mod.py" in warning[0]
@@ -253,7 +254,8 @@ def test_doctor_warns_about_a_directory_no_lane_measures(measured_repo: Path):
 def test_the_measured_directory_is_not_warned_about(measured_repo: Path):
     assert run_cli(measured_repo, "coverage", "--json").returncode == 0
     payload = json.loads(run_cli(measured_repo, "doctor", "--json").stdout)
-    assert [w.split(":")[0] for w in payload["warnings"]] == ["src/quiet"]
+    gaps = [w for w in payload["warnings"] if "no lane measures" in w]
+    assert [w.split(":")[0] for w in gaps] == ["src/quiet"]
 
 
 # --- doctor: lane artifacts that dirty the consumer's tree -------------------
@@ -308,7 +310,8 @@ def test_doctor_says_nothing_about_a_lane_that_writes_under_the_store(tmp_path: 
 
 
 def test_the_litter_warning_rides_the_machine_report(tmp_path: Path):
-    repo = _lane_repo(tmp_path, "machine", _litter_config("cov.json", ""))
+    repo = _lane_repo(tmp_path, "machine",
+                      _litter_config("cov.json", ".crapkit/cov/js/junit.xml"))
 
     payload = json.loads(run_cli(repo, "doctor", "--json").stdout)
 
