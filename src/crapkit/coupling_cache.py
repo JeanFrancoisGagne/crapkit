@@ -3,8 +3,8 @@
 Three commands rank the same pairs out of the same window: brief's coupling
 section, `worklist --batches`, and `coupling` itself. Each one re-cut 12 months
 of log into per-commit file sets and re-counted every combination on every
-invocation, at an unmoved HEAD. On a 72k-commit consumer that is 2.0 s and
-127 MB per run, all of it spent reproducing the list the last run already had.
+invocation, at an unmoved HEAD. On a 72k-commit consumer that is 0.95 s and
+170 MB per run, all of it spent reproducing the list the last run already had.
 The deflated churn log removed git's walk; it did not remove this one, because
 the pairing reads that log's per-commit structure line by line either way.
 
@@ -13,7 +13,8 @@ plus a digest of the tracked set. The tracked set is there because ranking
 drops any pair naming a file `git ls-files` no longer lists, and ls-files reads
 the INDEX, which moves without HEAD: `git rm --cached src/util.py` leaves the
 sha alone and must still retire every pair naming util.py. The digest costs
-0.02 s over a 30k-file tree, and the readers already hold the list.
+6 ms over that consumer's 31,684 tracked paths, and every reader already holds
+the list, so keying on it buys no spawn.
 
 What is stored is the ranking at the DEFAULT thresholds, ordered, with no cut.
 `--top` truncates that total order, so it reads from here. `--min-support` or
@@ -22,8 +23,8 @@ so those recompute: serving them a filtered subset would silently drop the
 pairs the wider thresholds exist to surface.
 
 A cache is disposable: unreadable, corrupt or unkeyable content reads as cold,
-never as a crash. A cold run pays the write, measured at 0.27 s for the 62k
-pairs of that same consumer, on top of the walk it was already paying.
+never as a crash. A cold run pays the write on top of the walk it was already
+paying: 2 ms for that consumer's 2,368 pairs, 234 kB on disk.
 """
 from __future__ import annotations
 
