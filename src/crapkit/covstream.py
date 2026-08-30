@@ -259,8 +259,8 @@ def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = C
 
     verify asks both questions of every istanbul artifact: the lane wants
     function coverage, diff coverage wants the lines no statement ran. Asking
-    them separately decoded every member twice — 20.83 s across 13 lanes on a
-    31,459-file tree, against 13.07 s merged. Decoding is the whole cost;
+    them separately decoded every member twice — 12.85 s over 13 lanes of a
+    31,459-file tree, against 7.80 s merged. Decoding is the whole cost;
     _dead_lines over an already decoded file is near free.
 
     The digest is this window's, so it hashes the same bytes parse_istanbul_file

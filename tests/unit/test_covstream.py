@@ -339,8 +339,8 @@ def _spy_on_the_missing_reader(monkeypatch) -> list:
 def test_a_lane_already_walked_hands_its_dead_lines_over_instead_of_being_reread(
         tmp_path, monkeypatch):
     """The lane's walk decoded every member already. Reopening the artifact to
-    ask which lines are dead decoded all of them a second time, which was 7.75 s
-    of the 20.83 s a 13-lane verify spent parsing artifacts."""
+    ask which lines are dead decoded all of them a second time, which was 5.04 s
+    of the 12.85 s 13 lanes spent parsing a 31,459-file tree's artifacts."""
     from crapkit import lanes, uncovered
 
     _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))

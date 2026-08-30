@@ -108,7 +108,7 @@ _folded: dict[str, set[int]] = {}
 _folded_from: set[tuple] = set()
 
 
-def artifact_key(artifact: Path) -> tuple | None:
+def _artifact_key(artifact: Path) -> tuple | None:
     """Identity plus enough state to notice a rewrite, or None when the file
     cannot be stat'd.
 
@@ -133,11 +133,12 @@ def _fold_into(missing: dict[str, set[int]], lines_by_path: dict[str, set[int]])
 def fold_dead_lines(artifact: Path, dead: dict[str, set[int]]) -> None:
     """Take one lane's dead lines into the run's fold so the lane can drop them.
 
-    Handing the map over immediately is the point: keeping all 13 lanes' maps
-    alive until the reader folded them added 138 MB to a verify's peak. Lanes
-    parse on a thread pool, hence the lock.
+    Handing the map over immediately is the point. Keeping all 13 lanes' maps
+    alive until the reader folded them peaked at 204.9 MB against 100.3 MB
+    folding as they arrive, on the same 13 artifacts. Lanes parse on a thread
+    pool, hence the lock.
     """
-    key = artifact_key(artifact)
+    key = _artifact_key(artifact)
     if key is None:
         return
     with _FOLD_LOCK:
@@ -170,7 +171,7 @@ def _lane_artifacts(root: Path, cfg) -> list[tuple]:
     for lane in cfg.lanes:
         artifact = root / lane.artifact
         if artifact.is_file():
-            found.append((lane, artifact, artifact_key(artifact)))
+            found.append((lane, artifact, _artifact_key(artifact)))
     return found
 
 

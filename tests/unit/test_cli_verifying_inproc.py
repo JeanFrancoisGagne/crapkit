@@ -448,7 +448,9 @@ def test_a_clean_tree_does_not_walk_the_artifacts_for_diff_coverage(
         baselined, capsys, monkeypatch):
     """diff_uncovered iterates the changed ranges, so an empty diff makes it []
     whatever the artifacts hold. Reading every lane's artifact to build that []
-    cost 8.41 s of a 27.25 s verify on a 31,459-file tree."""
+    is unconditional work that grows with lane count and artifact size; on a
+    31,459-file tree whose istanbul lanes now fold their dead lines in as they
+    are walked it is the last 0.2 s of a 17.6 s verify."""
     from crapkit import uncovered
 
     def refuse(*_args, **_kwargs):
