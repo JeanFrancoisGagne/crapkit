@@ -357,6 +357,20 @@ def test_a_batch_packet_is_what_a_single_brief_prints(repo: Path):
     assert batched["packets"][0] == {k: v for k, v in single.items() if k != "schema"}
 
 
+def test_a_batch_packet_reports_the_twins_its_own_single_brief_reports(repo: Path):
+    """Every packet in a batch is scored against ONE shingle index, built while
+    the first packet was assembled. gamma is the second item in the queue, so
+    its twins come out of an index another function paid for; a single brief
+    builds that index for gamma alone. Both must name alpha at the same score."""
+    batched = json.loads(run_cli(repo, "brief", "--batch", "3", "--json").stdout)
+    packets = {p["path"]: p for p in batched["packets"]}
+
+    twins = packets["extra/gamma.py"]["duplication_twins"]
+
+    assert twins == brief(repo, "extra/gamma.py", "gamma")["duplication_twins"]
+    assert [t["path"] for t in twins] == ["core/alpha.py"], "gamma is alpha's copy"
+
+
 def test_a_batch_stops_at_the_queue_it_has(repo: Path):
     out = json.loads(run_cli(repo, "brief", "--batch", "50", "--json").stdout)
 
