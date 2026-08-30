@@ -1,4 +1,6 @@
 """Config seam: crapkit.toml in, validated Config out. Pure: bytes/str in, dataclass out."""
+from pathlib import Path
+
 import pytest
 
 from crapkit.errors import ConfigError
@@ -223,6 +225,16 @@ def test_a_run_chained_after_another_command_is_still_checked_for_a_filter():
         _istanbul_lane("npm run build && vitest run --coverage src/a.ts")
     with _pytest.raises(ConfigError, match="narrows"):
         _istanbul_lane("vitest run --coverage && vitest run --coverage src/b.ts")
+
+
+def test_the_lanes_page_names_every_vitest_option_the_guard_licenses():
+    """The guard works from a closed list, so the page has to print the list. It
+    read as a rule about values while the frozenset grew from 11 names to 20
+    behind it, and a reader whose flag was missing had nothing to grep for."""
+    from crapkit.config import _VITEST_VALUE_FLAGS
+
+    page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(encoding="utf-8")
+    assert [flag for flag in sorted(_VITEST_VALUE_FLAGS) if f"`{flag}" not in page] == []
 
 
 def test_under_cmd_a_caret_escaped_file_filter_is_still_a_filter(monkeypatch):
