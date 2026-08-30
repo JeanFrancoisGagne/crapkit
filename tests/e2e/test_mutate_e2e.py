@@ -99,6 +99,13 @@ def worktrees(repo: Path) -> list[str]:
     return [line for line in out.splitlines() if line.startswith("worktree ")]
 
 
+def pooled(repo: Path) -> list[str]:
+    """Worker worktrees, which live in the pool and only there. A path anywhere
+    else is a leak: the run's own temp base, or a tree left registered."""
+    pool = str(repo / ".crapkit" / "mutate-pool").replace("\\", "/")
+    return [line for line in worktrees(repo)[1:] if line[len("worktree "):].startswith(pool)]
+
+
 def test_two_workers_report_byte_identically_to_one(clamp_repo: Path):
     serial = run_cli(clamp_repo, "mutate", "--files", "clamp.py", "--json")
     assert serial.returncode == 0, serial.stdout + serial.stderr
@@ -106,7 +113,37 @@ def test_two_workers_report_byte_identically_to_one(clamp_repo: Path):
     parallel = run_cli(clamp_repo, "mutate", "--files", "clamp.py", "--json")
     assert parallel.returncode == 0, parallel.stdout + parallel.stderr
     assert parallel.stdout == serial.stdout, "worker count must not move the verdict"
-    assert len(worktrees(clamp_repo)) == 1, "every worker worktree is removed"
+    assert len(pooled(clamp_repo)) == 2, "the two worker trees are kept, in the pool"
+    assert len(worktrees(clamp_repo)) == 3, "and nothing was left anywhere else"
+
+
+def test_a_second_pooled_run_reports_byte_identically_to_the_first(clamp_repo: Path):
+    """The pool's whole claim: run two reuses run one's trees and reads the same
+    verdict out of them. A tree still holding run one's mutant, or missing the
+    file run one deleted, would show up here as a different survivor list."""
+    set_workers(clamp_repo, 2)
+    cold = run_cli(clamp_repo, "mutate", "--files", "clamp.py", "--json")
+    assert cold.returncode == 0, cold.stdout + cold.stderr
+    trees = pooled(clamp_repo)
+
+    warm = run_cli(clamp_repo, "mutate", "--files", "clamp.py", "--json")
+
+    assert warm.returncode == 0, warm.stdout + warm.stderr
+    assert warm.stdout == cold.stdout
+    assert pooled(clamp_repo) == trees, "the same two trees, not two more"
+
+
+def test_drop_pool_removes_the_kept_worktrees(clamp_repo: Path):
+    set_workers(clamp_repo, 2)
+    assert run_cli(clamp_repo, "mutate", "--files", "clamp.py", "--json").returncode == 0
+    assert len(pooled(clamp_repo)) == 2
+
+    res = run_cli(clamp_repo, "mutate", "--drop-pool")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "removed 2 pooled worktrees" in res.stdout
+    assert len(worktrees(clamp_repo)) == 1, "the admin entries went with the directories"
+    assert not (clamp_repo / ".crapkit" / "mutate-pool").exists()
 
 
 FLOOR = (
@@ -131,15 +168,16 @@ def test_workers_mutate_uncommitted_lines_not_the_committed_file(clamp_repo: Pat
     parallel = run_cli(clamp_repo, "mutate", "--json")
     assert parallel.returncode == 0, parallel.stdout + parallel.stderr
     assert parallel.stdout == serial.stdout
-    assert len(worktrees(clamp_repo)) == 1
+    assert len(pooled(clamp_repo)) == 2, "two mutants, so two trees however many workers"
 
 
 SABOTAGE = "import os\nos.remove('clamp.py')\nos.mkdir('clamp.py')\n"
 
 
-def test_worktrees_are_removed_when_the_command_breaks_the_run(clamp_repo: Path):
+def test_a_broken_run_leaves_the_pool_usable_and_the_live_tree_alone(clamp_repo: Path):
     """The command leaves a directory where its source file was, so restoring
-    the original raises inside the worker. Cleanup still runs."""
+    the original raises inside the worker. The pooled trees stay — the next
+    run's re-prepare is what a dirty tree is for — and the run still fails."""
     before = (clamp_repo / "clamp.py").read_bytes()
     (clamp_repo / "sabotage.py").write_text(SABOTAGE, encoding="utf-8")
     toml = clamp_repo / "crapkit.toml"
@@ -149,5 +187,8 @@ def test_worktrees_are_removed_when_the_command_breaks_the_run(clamp_repo: Path)
     commit(clamp_repo, "crapkit.toml", "sabotage.py")
     res = run_cli(clamp_repo, "mutate", "--files", "clamp.py", "--json")
     assert res.returncode != 0, "a worker that cannot restore its file must not report success"
-    assert len(worktrees(clamp_repo)) == 1, "the finally removes them anyway"
+    assert len(worktrees(clamp_repo)) == 3, "the pool is where the trees are, and all of it"
     assert (clamp_repo / "clamp.py").read_bytes() == before, "the live tree is untouched"
+
+    after = run_cli(clamp_repo, "mutate", "--drop-pool")
+    assert after.returncode == 0 and "removed 2" in after.stdout, after.stdout + after.stderr
