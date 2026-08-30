@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import __version__
+from .. import __version__, config
 from ..config import load_config_text, shell_words
 from ..doctor import Finding
 from ..errors import ConfigError, ToolError
@@ -84,6 +84,19 @@ def _no_scopes_reason(root: Path) -> str:
 
 
 _PROBE_TIMEOUT_SECONDS = 15
+_CMD_COULD_NOT_RUN_IT = 9009
+
+
+def _probe_answered_no(returncode: int) -> bool:
+    """Did an interpreter run and say no, or did nothing run at all? cmd.exe
+    exits 9009 for a command it could not start, and so does the Windows Store
+    python alias that a stock PATH carries when no Store app is installed:
+    which() finds that stub, and it answers nothing about pytest_cov. sh has no
+    such code — it truncates an exit status to a byte — so this reads 9009 as
+    an ordinary failure anywhere the lane's shell is not cmd.exe."""
+    if config.SHELL_IS_CMD and returncode == _CMD_COULD_NOT_RUN_IT:
+        return False
+    return returncode != 0
 
 
 def _pytest_cov_probe(command: str) -> bool:
@@ -105,11 +118,12 @@ def _pytest_cov_probe(command: str) -> bool:
         # the interpreter a grandchild; on TimeoutExpired run() kills the shell
         # and then drains the pipes with no deadline, so the call returns when
         # the grandchild that inherited them exits. The 15 would bound nothing.
-        return subprocess.run(probe, shell=True, stdin=subprocess.DEVNULL,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                              timeout=_PROBE_TIMEOUT_SECONDS).returncode == 0
+        result = subprocess.run(probe, shell=True, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                timeout=_PROBE_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired):
         return True
+    return not _probe_answered_no(result.returncode)
 
 
 def _shell_quote(word: str) -> str:

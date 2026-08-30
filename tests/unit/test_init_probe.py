@@ -13,7 +13,7 @@ import types
 
 import pytest
 
-from crapkit import mutate_pool
+from crapkit import config, mutate_pool
 from crapkit.cli import _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
 from crapkit.mutate import Mutant
@@ -56,6 +56,26 @@ def test_a_bare_name_resolves_through_the_shell_the_lane_runs_under(
     resolution whose answer means anything for that lane."""
     _interpreter_shim(tmp_path, monkeypatch, exit_code)
     assert _pytest_cov_probe("python -m pytest --cov") is answer
+
+
+@pytest.mark.skipif(os.name != "nt", reason="9009 is cmd.exe's own exit code")
+def test_the_windows_store_python_alias_earns_no_pytest_cov_warning(tmp_path, monkeypatch):
+    """%LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe is on a stock Windows 11
+    PATH, so which() finds a `python` even where none is installed. With no Store
+    app behind it, that stub prints "Python was not found" and exits 9009. The
+    lane has no interpreter at all, and `pip install pytest-cov` fixes none of it."""
+    _interpreter_shim(tmp_path, monkeypatch, 9009)
+    assert _pytest_cov_probe("python -m pytest --cov") is True
+
+
+@pytest.mark.parametrize("cmd_shell, answered", [(True, False), (False, True)])
+def test_only_cmd_reads_9009_as_nothing_ran(monkeypatch, cmd_shell: bool, answered: bool):
+    """cmd.exe returns 9009 for a command it could not run. sh has no such code
+    (it truncates an exit status to a byte), so under sh 9009 is a real answer."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+    assert admin._probe_answered_no(9009) is answered
+    assert admin._probe_answered_no(1) is True, "an ordinary failure is still a clean no"
+    assert admin._probe_answered_no(0) is False
 
 
 def test_the_probe_quotes_an_interpreter_path_with_a_space():
