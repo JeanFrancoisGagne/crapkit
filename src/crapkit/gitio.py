@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -351,7 +352,27 @@ def churn_log_lines(root: Path, months: int) -> Iterator[str]:
 
 def worktree_add(root: Path, path: Path) -> None:
     """A detached checkout of HEAD at `path`: a second working tree that shares
-    the object store, so a worker can edit files without touching the real one."""
+    the object store, so a worker can edit files without touching the real one.
+
+    Retried once, because git's add starts by enumerating the existing
+    worktrees/* admin entries and reading each one's commondir (`git worktree
+    list` alone dies the same way, rc 128). An entry a peer add is still
+    building kills the reader whether that commondir is missing or exists at
+    zero bytes; the same absence on a settled entry is ignored. Both errnos come
+    up (`No error` from strerror(0) on the zero-byte read, `No such file or
+    directory` on the missing one), so the guard reads the admin path instead,
+    and reads it as two fragments because that path is named against the git
+    dir, which is `.git` only in a plain clone. Nothing to clean up first: an
+    add that dies in the scan leaves neither the target directory nor an entry.
+    """
+    try:
+        _git(root, "worktree", "add", "--detach", str(path))
+        return
+    except GitError as first:
+        message = str(first)
+        if "worktrees/" not in message or "commondir" not in message:
+            raise
+    time.sleep(0.05)
     _git(root, "worktree", "add", "--detach", str(path))
 
 
