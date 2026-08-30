@@ -10,7 +10,7 @@ same rules with no second parse and no new dependency:
   try / finally / case labels / with are free; nesting rises inside the
   block structures listed above.
 
-Two language-specific rules:
+Three language-specific rules:
   * in C/C++ and Objective-C/C++ a `&&` before the function's opening brace
     declares an rvalue reference rather than deciding anything, and costs
     nothing. See `_declarator_and`.
@@ -18,6 +18,10 @@ Two language-specific rules:
     the arms free. It is read only for the Rust readers because `match` is a
     soft keyword in Python, where the same spelling is an ordinary identifier.
     See `_counting_match`.
+  * in shell a block is delimited by words, not by braces or by indent: `if`
+    and `case` open, `fi`, `done` and `esac` close, and `do`, `then` and `in`
+    only introduce the body of a structure already charged. See
+    `_shell_keywords`.
 
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
@@ -64,16 +68,45 @@ _DECLARATOR_READERS = frozenset({"CLikeReader", "ObjCReader"})
 # catch anything a later lizard derives from RustReader for another one.
 _MATCH_READERS = frozenset({"RustReader", "CorrectedRustReader"})
 
+# The reader whose blocks are delimited by words. Exact name for the same reason
+# the two sets above use exact names: the discriminator is the language.
+_SHELL_READERS = frozenset({"ShellReader"})
+
+# Shell's block openers. `until` and `select` are here and not in `_COUNTING`
+# because no other language crapkit reads spells a loop that way; `case` is
+# shell's switch and is charged like one, +1 and the nesting it sits in, with
+# the arms free. `elif` is absent on purpose: `_ELSE_KEYWORDS` is tested first
+# and gives it the flat +1 an else-if link is worth, and the `if` it continues
+# still owns the one block that `fi` closes.
+_SHELL_COUNTING = frozenset({"if", "for", "while", "until", "select", "case"})
+
+# The words that close what `_SHELL_COUNTING` opened. Without them a shell
+# function's nesting never rose: a 4-deep `if` scored 4 where the same shape
+# scored 10 in Python, TypeScript, PowerShell and Rust.
+_SHELL_CLOSERS = frozenset({"fi", "done", "esac"})
+
+# `do`, `then` and `in` introduce the body of a structure already charged. `do`
+# is in `_COUNTING` for C-family do-while, and reading it here too charged every
+# shell loop twice.
+_SHELL_BODY_WORDS = frozenset({"do", "then", "in"})
+
+# What a shell block puts on the nesting stack. The brace rules read a stack
+# entry as a brace depth and the python rules as an indent; None is neither, so
+# a `}` inside a shell function cannot pop a block that `fi` owns.
+_SHELL_BLOCK = None
+
 
 class _FnState:
     __slots__ = ("total", "stack", "brace_depth", "line_indent", "at_line_start",
                  "pending", "else_pending", "question_pending", "bool_op", "name",
                  "recursed", "body_started", "prev", "label_check", "c_family",
-                 "match_kw")
+                 "match_kw", "is_shell")
 
-    def __init__(self, name: str, c_family: bool = False, match_kw: bool = False):
+    def __init__(self, name: str, c_family: bool = False, match_kw: bool = False,
+                 is_shell: bool = False):
         self.c_family = c_family
         self.match_kw = match_kw
+        self.is_shell = is_shell
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.brace_depth = 0
@@ -105,12 +138,13 @@ class LizardExtension:
         is_python = reader_name.lower().startswith("python")
         c_family = reader_name in _DECLARATOR_READERS
         match_kw = reader_name in _MATCH_READERS
+        is_shell = reader_name in _SHELL_READERS
         for token in tokens:
             fn = reader.context.current_function
             state = states.get(fn)
             if state is None:
                 state = states[fn] = _FnState(getattr(fn, "name", ""), c_family,
-                                              match_kw)
+                                              match_kw, is_shell)
             _step(state, token, is_python)
             fn.cognitive_complexity = state.total
             yield token
@@ -173,8 +207,22 @@ def _resolve_question(state: _FnState, token: str, is_python: bool) -> None:
 
 def _resolve_label(state: _FnState, token: str) -> None:
     state.label_check = False
-    if token not in (";", "}", ")") and token.strip():
+    if _is_label(state, token):
         state.total += 1  # break/continue TO A LABEL
+
+
+def _is_label(state: _FnState, token: str) -> bool:
+    """Whether the token after a break/continue names something to jump to.
+
+    Shell has no labels. It spells the same jump `break 2`, a count of enclosing
+    loops to leave, and a bare `break` is followed by whatever the loop is
+    followed by. Without the digit test every `break` before a `fi` or a `done`
+    read as a label, and a loop-with-break scored one more in shell than the
+    same loop scored in TypeScript.
+    """
+    if state.is_shell:
+        return token.isdigit()
+    return token not in (";", "}", ")") and bool(token.strip())
 
 
 def _nesting(state: _FnState, is_python: bool) -> int:
@@ -246,7 +294,9 @@ def _bool_op(state: _FnState, token: str) -> None:
 
 
 def _keywords(state: _FnState, token: str, is_python: bool) -> None:
-    if token == "if":
+    if state.is_shell:
+        _shell_keywords(state, token, is_python)
+    elif token == "if":
         _if_token(state, is_python)
     elif token in _ELSE_KEYWORDS:
         _else_token(state, token, is_python)
@@ -254,6 +304,40 @@ def _keywords(state: _FnState, token: str, is_python: bool) -> None:
         _structure_token(state, token, is_python)
     else:
         _jumps_and_recursion(state, token, is_python)
+
+
+def _shell_keywords(state: _FnState, token: str, is_python: bool) -> None:
+    """Shell's block structure, which is words rather than braces or indent.
+
+    `if` and `case` open a block and every loop keyword opens one; `fi`, `done`
+    and `esac` close it. Nothing else can, so the brace rules never see a shell
+    block and the stack would otherwise stay empty for a whole function: a
+    4-deep `if` scored 4 against 10 everywhere else.
+
+    `else` and `elif` pay the flat +1 of an else-if link and open nothing. One
+    `fi` closes the whole chain, so the `if` that opened it is what the chain
+    nests inside, and a push here would leak a level past the `fi`.
+
+    `do`, `then` and `in` are free. They introduce the body of a structure this
+    function has already charged, and `do` sits in `_COUNTING` for C-family
+    do-while, which charged every shell loop a second time.
+    """
+    if token in _SHELL_CLOSERS:
+        _shell_close(state)
+    elif token in _ELSE_KEYWORDS:
+        state.total += 1
+    elif token in _SHELL_COUNTING:
+        state.total += 1 + _nesting(state, is_python)
+        state.stack.append(_SHELL_BLOCK)
+    elif token not in _SHELL_BODY_WORDS:
+        _jumps_and_recursion(state, token, is_python)
+
+
+def _shell_close(state: _FnState) -> None:
+    """A closer with nothing open is a `fi` whose `if` sits outside this function
+    (lizard attributes tokens by function, not by block), and pops nothing."""
+    if state.stack:
+        state.stack.pop()
 
 
 def _counting_match(state: _FnState, token: str) -> bool:

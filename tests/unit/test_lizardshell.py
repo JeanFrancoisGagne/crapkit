@@ -10,7 +10,7 @@ import lizard
 import lizard_languages
 import pytest
 
-from crapkit.analyze import analyze_source
+from crapkit.analyze import ANALYSIS_VERSION, analyze_source
 from crapkit.lizardshell import ShellReader, register
 
 # base 1, + if, elif, for, &&, ||, while, until
@@ -415,11 +415,11 @@ def test_a_six_branch_shell_function_gets_a_nonzero_cognitive_score():
     tests/unit/test_cognitive_reader_chain.py); both of this reader's repairs are
     made to the source instead, so the stream stays a generator.
 
-    8, hand-counted under the extension's rules: if 1, && 1, for 1, do 1, inner
-    if 1, else 1, while 1, do 1. Nesting is flat and each `do` costs one on top of
-    its loop keyword, both documented in the reader's module docstring: shell
-    blocks close with fi/done, not with braces."""
-    assert _record().cognitive == 8
+    10, hand-counted under the extension's rules: if 1, && 1, for 1+1, inner if
+    1+2, else 1, while 1+1. `then`, `do`, `fi` and `done` cost nothing; `if`,
+    `for` and `while` open a block and `fi` and `done` close it, so nesting rises
+    inside a shell function the way it rises inside a braced one."""
+    assert _record().cognitive == 10
 
 
 def test_the_modified_column_does_not_cancel_the_case_arms():
@@ -432,6 +432,87 @@ def test_the_modified_column_does_not_cancel_the_case_arms():
 
 def test_bash_files_take_the_same_path_as_sh_files():
     assert analyze_source("probe.bash", SIX_BRANCH)[0].ccn == 6
+
+
+# --- shell's word-delimited blocks, in the cognitive column --------------------
+
+def _cognitive(name, source):
+    (record,) = analyze_source(name, source)
+    return record.cognitive
+
+
+CASE_IN_IF = '''pick() {
+  if [ -n "$1" ]; then
+    case "$1" in
+      a) echo a ;;
+      b) echo b ;;
+      *) echo z ;;
+    esac
+  fi
+}
+'''
+
+
+def test_a_case_is_a_switch_and_its_arms_are_free():
+    """The cognitive column and the ccn column disagree about a `case` on purpose.
+    ccn counts the arms (three `;;` here) and charges the keyword nothing; the
+    whitepaper charges a switch +1 and the nesting it sits in, and gives the arms
+    nothing at all, exactly as it treats a C `case` label. 1 for the `if`, 2 for
+    the case one level inside it, 0 for the three arms."""
+    assert _cognitive("pick.sh", CASE_IN_IF) == 3
+
+
+BRACE_GROUP = '''run() {
+  if [ -n "$1" ]; then
+    { echo a; echo b; } > /dev/null
+    if [ -n "$2" ]; then
+      echo c
+    fi
+  fi
+}
+'''
+
+
+def test_a_brace_group_does_not_close_a_shell_block():
+    """`fi` closes what `if` opened, and the `}` of a command group closes nothing.
+    A shell block goes on the same nesting stack the brace rules use, so it is
+    pushed as a marker no brace depth can equal: with a depth on the stack instead,
+    the group's `}` would pop the outer `if` and the inner one would read 1+0."""
+    assert _cognitive("run.sh", BRACE_GROUP) == 3
+
+
+BREAK_PLAIN = '''scan() {
+  for x in $1; do
+    if [ "$x" = q ]; then
+      break
+    fi
+  done
+}
+'''
+
+BREAK_LEVELED = BREAK_PLAIN.replace("break", "break 2")
+
+
+def test_a_bare_break_is_not_a_labeled_break():
+    """Shell has no labels: a bare `break` leaves the nearest loop and is free,
+    exactly as it is in TypeScript. The rule reads the token after break/continue,
+    and every one of shell's is a block-closer word rather than the `;` or `}` a
+    C-family bare break is followed by, so `break` before `fi` used to read as a
+    label and cost a point no other language paid. 1 for, 2 inner if."""
+    assert _cognitive("scan.sh", BREAK_PLAIN) == 3
+
+
+def test_break_with_a_level_pays_the_labeled_jump():
+    """`break 2` leaves two loops, which is the jump past the nearest enclosing
+    one that a labeled break makes, and costs its +1."""
+    assert _cognitive("scan.sh", BREAK_LEVELED) == 4
+
+
+def test_analysis_version_invalidates_the_cached_shell_cognitive_column():
+    """Every cached .sh and .bash record at version 7 or below carries a cognitive
+    score measured with flat nesting, and the cache keys on content plus the
+    analysis fingerprint. Shell is the only language whose stored values move."""
+    assert ANALYSIS_VERSION > 7
 
 
 # --- real scripts from the consumer repo ---------------------------------------

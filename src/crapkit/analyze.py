@@ -49,7 +49,14 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 7  # 7: a Rust `match` is a cognitive condition (+1 and the
+ANALYSIS_VERSION = 8  # 8: shell blocks nest. `fi`, `done` and `esac` close what
+#                          `if`, a loop keyword or `case` opened, `do`/`then`/`in`
+#                          are free, and a bare `break` is not a labeled one, so
+#                          every cached .sh and .bash record carries a cognitive
+#                          score measured flat. Shell is the only language whose
+#                          stored values move; ccn is untouched everywhere,
+#                          shell included.
+#                       7: a Rust `match` is a cognitive condition (+1 and the
 #                          nesting it sits in), so every cached .rs record
 #                          carries a cognitive score measured without it. Rust
 #                          is the only language whose stored values move; ccn is
