@@ -199,6 +199,33 @@ def test_init_says_when_the_shell_cannot_run_the_lanes_interpreter(
     assert (pytest_repo / "crapkit.toml").is_file(), "a note must not stop the scaffold"
 
 
+def test_doctor_fails_a_lane_whose_first_word_will_not_run(
+        pytest_repo: Path, tmp_path: Path):
+    """Doctor asked which() whether the lane's runner resolves and never
+    whether it starts, so the repo above — one lane, exit 9009, coverage
+    exiting 5 — was reported as "1 lane(s) declared" and "no problems found"."""
+    env = _env_with_a_python_that_will_not_run(tmp_path)
+    assert _run_with(pytest_repo, env, "init").returncode == 0
+
+    res = _run_with(pytest_repo, env, "doctor")
+
+    assert res.returncode == 1, res.stdout
+    assert "cannot run" in res.stdout and str(_DEAD_EXIT) in res.stdout
+    assert "'python'" in res.stdout, "name the word that has to change"
+    assert "no problems found" not in res.stdout
+
+
+def test_doctor_passes_a_lane_whose_interpreter_really_runs(pytest_repo: Path):
+    """The other half: an interpreter that starts is not a finding, and the
+    check must not turn every working repo's doctor red."""
+    assert run_cli(pytest_repo, "init").returncode == 0
+
+    res = run_cli(pytest_repo, "doctor")
+
+    assert "cannot run" not in res.stdout, res.stdout
+    assert res.returncode == 0, res.stdout
+
+
 def test_init_stays_quiet_when_pytest_cov_is_importable(pytest_repo: Path):
     res = run_cli(pytest_repo, "init")
     assert res.returncode == 0, res.stderr

@@ -390,6 +390,21 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
     return problems
 
 
+def _lane_start_problem(lane) -> str | None:
+    """The rot which() cannot see: a first word that resolves and then will not
+    run. %LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe is the case — a stock
+    Windows PATH carries that stub with no Store app behind it, which() finds
+    it, and doctor cleared a repo whose only lane exits 9009 while `coverage`
+    exited 5 on the same command. This one does start the runner, with
+    --version, which is why it is not part of _lane_command_problems."""
+    dead = _dead_first_word(lane.command)
+    if not dead:
+        return None
+    word, code = dead
+    return (f"lane {lane.name!r}: {_shell_label()} cannot run {word!r} (exit {code}) — "
+            "the lane cannot start, so its scopes can only ever score no-lane")
+
+
 def _doctor_lane_summary(cfg) -> Finding:
     """No lanes is a gap in most repos and the finished state in a cc-only one,
     where every scope declares coverage_optional and `coverage` runs anyway."""
@@ -402,7 +417,8 @@ def _doctor_lane_summary(cfg) -> Finding:
 
 def _lane_problems(root: Path, cfg) -> list[str]:
     return [p for lane in cfg.lanes
-            for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane)) if p]
+            for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
+                      _lane_start_problem(lane)) if p]
 
 
 def _doctor_lanes(root: Path, cfg) -> list[Finding]:

@@ -229,6 +229,47 @@ def test_an_interpreter_that_works_is_still_silent(capsys):
     assert capsys.readouterr().err == ""
 
 
+# --- the same probe, read by doctor ------------------------------------------
+
+@pytest.mark.parametrize("cmd_shell, code, refused", [
+    (True, 9009, True), (True, 127, False), (True, 1, False),
+    (False, 127, True), (False, 126, True), (False, 9009, False), (False, 1, False),
+])
+def test_only_the_shells_own_code_means_it_never_ran_the_command(
+        monkeypatch, cmd_shell, code, refused):
+    """cmd.exe exits 9009 for a name it could not start; sh has no such code
+    and answers 127 (not found) or 126 (not executable). Anything else is the
+    command's own exit, and the command ran."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+    assert admin._could_not_run_it(code) is refused
+
+
+def test_a_deadline_says_nothing_about_whether_it_started():
+    assert admin._could_not_run_it(None) is False
+
+
+def test_doctor_fails_a_lane_whose_first_word_will_not_start(tmp_path, monkeypatch):
+    """which() finds the Windows Store alias, so doctor cleared a repo whose
+    only lane exits 9009 while `crapkit coverage` exited 5 on that same word."""
+    _interpreter_shim(tmp_path, monkeypatch, 9009)
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+
+    problem = admin._lane_start_problem(_lane("python -m pytest --cov"))
+
+    assert problem and "'python'" in problem and "9009" in problem
+
+
+def test_doctor_says_nothing_about_a_lane_that_starts():
+    assert admin._lane_start_problem(_lane(f'"{sys.executable}" -m pytest --cov')) is None
+
+
+def test_doctor_leaves_an_unresolvable_runner_to_the_path_check(monkeypatch):
+    """A first word that is on no PATH is already its own finding, and running
+    nothing would prove nothing: one gap, one line."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", os.name == "nt")
+    assert admin._lane_start_problem(_lane("no-such-runner-7f3a --coverage")) is None
+
+
 # --- timeout= has to bound the wall clock, here and in the mutant runner -----
 #
 # Both calls run under shell=True, so the shell is the child and the program is
