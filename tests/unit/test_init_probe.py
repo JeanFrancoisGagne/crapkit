@@ -126,8 +126,75 @@ def test_the_probe_quotes_an_interpreter_path_with_a_space():
 
 def test_a_probe_that_cannot_run_says_yes():
     """A missing interpreter must not warn about pytest-cov: the message would
-    name the wrong gap, and doctor already flags the executable itself."""
-    assert _pytest_cov_probe("no-such-interpreter-7f3a -m pytest --cov") is True
+    name the wrong gap, and doctor already flags the executable itself. The
+    name has to be a python, or the runner gate below answers first and this
+    proves nothing about which()."""
+    assert _pytest_cov_probe("/no/such/7f3a/python -m pytest --cov") is True
+
+
+# --- only a python can be asked to import pytest_cov -------------------------
+#
+# The probe assumed the first word is an interpreter. `coverage run -m pytest
+# --cov=pylib && coverage json` starts with `coverage`, so it shelled
+# `coverage -c "import pytest_cov"`, read coverage's own argument error as a
+# missing package, and printed the pip note where pytest_cov imports fine.
+
+@pytest.mark.parametrize("command, probed", [
+    ("python -m pytest --cov", True),
+    ("python3 -m pytest --cov", True),
+    ("py -3 -m pytest --cov", True),
+    ("/usr/bin/python3.12 -m pytest --cov", True),
+    ('"C:/Program Files/Python311/python.exe" -m pytest --cov', True),
+    ("npm run build && python -m pytest --cov", True),
+    ("coverage run -m pytest --cov=pylib && coverage json", False),
+    ("tox -e py311 -- --cov", False),  # no pytest on the line at all
+    ("npx vitest run --coverage", False),
+])
+def test_only_a_python_running_pytest_is_probe_able(command, probed):
+    assert (admin._probe_interpreter(command) is not None) is probed
+
+
+def _recorded_probe(monkeypatch) -> list[str]:
+    """Every command the probe hands the shell. Empty means it asked nothing."""
+    from crapkit import procs
+
+    seen: list[str] = []
+
+    def record(command: str, timeout: float) -> int:
+        seen.append(command)
+        return 0
+
+    monkeypatch.setattr(procs, "run_bounded", record)
+    return seen
+
+
+def test_a_lane_that_runs_pytest_through_coverage_is_asked_nothing(monkeypatch):
+    """`coverage -c "import pytest_cov"` is an argument error, not an answer
+    about pytest-cov, and running it proves nothing either way."""
+    seen = _recorded_probe(monkeypatch)
+
+    assert _pytest_cov_probe("coverage run -m pytest --cov=pylib && coverage json") is True
+
+    assert seen == [], seen
+
+
+def test_the_probed_segment_is_the_one_that_runs_pytest(tmp_path, monkeypatch):
+    """A build step in front of the suite does not move the interpreter. The
+    first word answered for the whole line, so the segment holding pytest was
+    never read."""
+    shim = tmp_path / "pytest_cov.py"
+    shim.write_text('raise ImportError("shimmed out")\n', encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+
+    assert _pytest_cov_probe(f'echo building && "{sys.executable}" -m pytest --cov') is False
+
+
+def test_a_coverage_run_lane_earns_no_pytest_cov_warning(capsys):
+    """The whole defect, at init's own surface: the pip note fired on a machine
+    whose pytest_cov imports, because coverage rejected the -c flag."""
+    _warn_missing_pytest_cov((_lane("coverage run -m pytest --cov=pylib && coverage json"),))
+
+    assert capsys.readouterr().err == ""
 
 
 def test_a_probe_the_shell_itself_cannot_start_says_yes(monkeypatch):

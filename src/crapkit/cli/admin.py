@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from .. import __version__, config
 from ..config import load_config_text, shell_words
@@ -151,20 +152,54 @@ def _probe_answered_no(returncode: int) -> bool:
     return returncode != 0
 
 
+# The names a python answers to. `-c "import pytest_cov"` is a python's flag
+# and nobody else's: `coverage -c` takes a config file and rejects the code.
+_PYTHON_NAME = re.compile(r"py(thon3?(\.\d+)?)?(\.exe)?$", re.IGNORECASE)
+
+
+def _is_python(word: str) -> bool:
+    """Does this word name a python interpreter? A bare name or a path, with or
+    without a version suffix: `python`, `python3`, `py`, `python3.12`,
+    `C:/Program Files/Python311/python.exe`."""
+    return _PYTHON_NAME.fullmatch(PurePath(word).name) is not None
+
+
+def _pytest_segment(command: str) -> list[str]:
+    """The command on the line that runs pytest, or nothing when none does. A
+    lane chains steps (`coverage run -m pytest --cov=pylib && coverage json`),
+    and only the one holding pytest says anything about pytest-cov."""
+    for segment in config.shell_segments(command):
+        if any(tok.endswith("pytest") for tok in segment):
+            return segment
+    return []
+
+
+def _probe_interpreter(command: str) -> str | None:
+    """The python this lane runs pytest with, or None when no python runs it.
+    `coverage run -m pytest` names no interpreter at all: the probe asked
+    `coverage` to import pytest_cov, read its argument error as a missing
+    package, and printed the pip note on a machine where pytest_cov imports."""
+    segment = _pytest_segment(command)
+    if not segment or not _is_python(segment[0]):
+        return None
+    return segment[0]
+
+
 def _pytest_cov_probe(command: str) -> bool:
     """Can the interpreter this lane names import pytest_cov? The probe runs
     through the same shell as the lane, so a bare `python` resolves to the one
     the lane will get (a .bat shim included), not the one CreateProcess finds.
     True too when the probe cannot run — only a clean "no" earns the warning,
-    and a missing interpreter is doctor's finding, not this one's."""
+    and a missing interpreter is doctor's finding, not this one's. True as well
+    when no python runs the suite: nothing here can be asked."""
     import shutil
 
     from ..procs import run_bounded
 
-    words = shell_words(command)
-    if not words or shutil.which(words[0]) is None:
+    word = _probe_interpreter(command)
+    if word is None or shutil.which(word) is None:
         return True
-    probe = f'{_shell_quote(words[0])} -c "import pytest_cov"'
+    probe = f'{_shell_quote(word)} -c "import pytest_cov"'
     try:
         # run_bounded: the interpreter is the shell's child, and run()'s timeout
         # kills the shell alone. The 15 bounded nothing and left one interpreter
