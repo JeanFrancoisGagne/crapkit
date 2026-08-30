@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shlex
 import tomllib
+from collections.abc import Iterator
 from typing import NamedTuple
 
 from .errors import ConfigError
@@ -76,54 +77,84 @@ def shell_words(command: str, cmd: bool | None = None) -> list[str]:
     positionals into it. A command the shell would refuse (a quote that never
     closes) gets the whitespace read instead: a rough lint beats a crash at
     config load."""
+    return [word for word, _ in _shell_tokens(command, cmd)]
+
+
+def _shell_tokens(command: str, cmd: bool | None = None) -> list[tuple[str, bool]]:
+    """The words, each with a flag: True when quoting or an escape built it. A
+    built word is an argument and never the shell's own syntax, however it is
+    spelled — `"&&"` and cmd.exe's `^&` both reach the program as the text `&&`
+    and `&`. The whitespace fallback knows no quoting, so it builds nothing."""
     cmd = SHELL_IS_CMD if cmd is None else cmd
     try:
-        return _cmd_words(command) if cmd else shlex.split(command)
+        return _cmd_tokens(command) if cmd else _sh_tokens(command)
     except ValueError:
-        return command.split()
+        return [(word, False) for word in command.split()]
 
 
-def _uncaret(command: str) -> str:
+def _sh_tokens(command: str) -> list[tuple[str, bool]]:
+    """sh's reading, from shlex, plus the flag. shlex outside posix mode leaves
+    the quotes and backslashes in the word, so a word whose two spellings differ
+    is one sh built. When the two readings disagree on where the words are
+    (`a\\ b` is one word to posix mode and two outside it), nothing is called
+    built: the operator split then reads exactly what 0.4.4 read."""
+    words = shlex.split(command)
+    raw = shlex.split(command, posix=False)
+    if len(raw) != len(words):
+        raw = words
+    return [(word, word != spelling) for word, spelling in zip(words, raw)]
+
+
+def _uncaret(command: str) -> list[tuple[str, bool]]:
     """cmd.exe's escape. Outside a quoted run `^` is dropped and the character
     behind it is handed on untouched, so `-k ^"not slow^"` reaches the runner as
     `-k "not slow"`. Inside a quoted run cmd.exe leaves the caret alone: `-k
     "a^b"` reaches the runner with its caret, so stripping unconditionally would
-    misread the two spellings cmd.exe passes through."""
-    kept: list[str] = []
+    misread the two spellings cmd.exe passes through. Each character carries a
+    flag: True when a caret handed it on, which makes it text, not syntax."""
+    kept: list[tuple[str, bool]] = []
     chars = iter(command)
     in_quote = False
     for char in chars:
         if char == "^" and not in_quote:
-            kept.append(next(chars, ""))
+            kept += _escaped(chars)
             continue
         if char == '"':
             in_quote = not in_quote
-        kept.append(char)
-    return "".join(kept)
+        kept.append((char, False))
+    return kept
 
 
-def _cmd_words(command: str) -> list[str]:
+def _escaped(chars: Iterator[str]) -> list[tuple[str, bool]]:
+    """The character a caret hands on, marked as text. A caret at the end of the
+    line escapes nothing: cmd.exe asks for another line, and a lane command is
+    one line."""
+    char = next(chars, "")
+    return [(char, True)] if char else []
+
+
+def _cmd_tokens(command: str) -> list[tuple[str, bool]]:
     """cmd.exe's reading: a double quote opens or closes a quoted run wherever it
     sits, so `--cov-report=json:"a b\\py.json"` is one word and the quotes
     themselves are dropped; a single quote is an ordinary character, so
     `'not live'` is two words; a backslash separates path components and escapes
-    nothing. A quote that never closes raises, and shell_words falls back."""
-    words: list[str] = []
-    word = ""
-    quoted = False
+    nothing. A caret-escaped quote still opens the run: cmd.exe hands the quote
+    itself to the program, and the program's own reader honours it. A quote that
+    never closes raises, and shell_words falls back."""
+    words: list[tuple[str, bool]] = []
+    word, built = "", False
     in_quote = False
-    for char in _uncaret(command):
+    for char, escaped in _uncaret(command):
         if char == '"':
-            in_quote = not in_quote
-            quoted = True
+            in_quote, built = not in_quote, True
         elif _ends_the_word(char, in_quote):
-            words += _kept(word, quoted)
-            word, quoted = "", False
+            words += _kept(word, built)
+            word, built = "", False
         else:
-            word += char
+            word, built = word + char, built or escaped
     if in_quote:
         raise ValueError(f"no closing quotation: {command}")
-    return words + _kept(word, quoted)
+    return words + _kept(word, built)
 
 
 def _ends_the_word(char: str, in_quote: bool) -> bool:
@@ -131,12 +162,12 @@ def _ends_the_word(char: str, in_quote: bool) -> bool:
     return char.isspace() and not in_quote
 
 
-def _kept(word: str, quoted: bool) -> list[str]:
+def _kept(word: str, built: bool) -> list[tuple[str, bool]]:
     """The word so far. A run of whitespace ends no word, but a pair of quotes
     writes one: cmd.exe hands the program the empty argument in `-k "" tests`,
     and dropping it moved every later token one place left, so the flag in
     front swallowed a path that is really a positional."""
-    return [word] if word or quoted else []
+    return [(word, built)] if word or built else []
 
 
 # The operators that end one command and start another. sh and cmd.exe share
@@ -145,17 +176,25 @@ def _kept(word: str, quoted: bool) -> list[str]:
 _SHELL_OPERATORS = frozenset({"&&", "||", "&", "|"})
 
 
-def _command_segments(tokens: list[str]) -> list[list[str]]:
+def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
+    """One argv per command on the line, read by the shell that will run it."""
+    cmd = SHELL_IS_CMD if cmd is None else cmd
+    return _command_segments(_shell_tokens(command, cmd), _SHELL_OPERATORS)
+
+
+def _command_segments(tokens: list[tuple[str, bool]],
+                      separators: frozenset[str]) -> list[list[str]]:
     """One list per command on the line. Only the segment a runner sits in is
     that runner's argv: reading `pytest --cov && coverage json` flat called
-    `coverage` a positional pytest is never handed. A quoted operator is part of
-    a word by the time it gets here, so `-k "a && b"` stays one segment."""
+    `coverage` a positional pytest is never handed. A word quoting or an escape
+    built is an argument whatever it spells, so `-k "a && b"`, `"&&"` and
+    cmd.exe's `^&` all stay inside their segment."""
     segments: list[list[str]] = [[]]
-    for tok in tokens:
-        if tok in _SHELL_OPERATORS:
+    for word, built in tokens:
+        if word in separators and not built:
             segments.append([])
         else:
-            segments[-1].append(tok)
+            segments[-1].append(word)
     return segments
 
 
@@ -211,7 +250,7 @@ def _validate_coveragepy_command(name: str, command: str) -> None:
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
     # full_suite = false, an explicit and reviewable decision. Every chained
     # segment is read: a second pytest run narrows just as much as the first.
-    for segment in _command_segments(shell_words(command)):
+    for segment in shell_segments(command):
         _refuse_pytest_narrowing(name, command, segment)
 
 
@@ -262,7 +301,7 @@ def _validate_istanbul_command(name: str, command: str) -> None:
     # the combination is a config error, not a runtime surprise. Each chained
     # segment is its own argv: a script path in a post-run step is that step's,
     # and a vitest run after `npm run build` is still a vitest run.
-    for segment in _command_segments(shell_words(command)):
+    for segment in shell_segments(command):
         _refuse_istanbul_filter(name, segment)
 
 

@@ -227,6 +227,15 @@ def test_a_run_chained_after_another_command_is_still_checked_for_a_filter():
         _istanbul_lane("vitest run --coverage && vitest run --coverage src/b.ts")
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_quoted_operator_beside_coverage_starts_no_new_command(monkeypatch, shell_is_cmd):
+    """`"&&"` is an argument vitest is handed, not a separator, so the filter
+    behind it is still in the run's own argv."""
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", shell_is_cmd)
+    with pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane('npx vitest run --coverage "&&" src/a.ts')
+
+
 def test_the_lanes_page_names_every_vitest_option_the_guard_licenses():
     """The guard works from a closed list, so the page has to print the list. It
     read as a rule about values while the frozenset grew from 11 names to 20

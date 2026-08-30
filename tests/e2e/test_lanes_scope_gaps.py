@@ -413,6 +413,32 @@ def test_an_operator_inside_a_quoted_value_is_part_of_the_word():
     assert _covpy_lane('python -m pytest -k "a && b" --cov=pylib').command
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_quoted_operator_is_an_argument_and_starts_no_new_command(monkeypatch, shell_is_cmd):
+    """`"&&"` reaches the program as the word `&&` (verified cmd.exe argv:
+    ["--cov=pylib", "&&", "pylib/unit"]), so pytest really is handed
+    pylib/unit. Reading the word as a separator put the path in a segment of
+    its own, where nothing runs pytest, and the narrowing lane loaded."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    command = 'python -m pytest --cov=pylib "&&" pylib/unit'
+    assert config.shell_segments(command) == \
+        [["python", "-m", "pytest", "--cov=pylib", "&&", "pylib/unit"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane(command)
+
+
+def test_under_cmd_a_caret_escaped_operator_is_an_argument(monkeypatch):
+    """cmd.exe's `^&` escapes the operator and hands the program `&` (verified
+    argv: ["--cov=pylib", "&", "pylib/unit"]). The caret is gone by the time the
+    words are read, so the bare `&` looked like a separator."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = "python -m pytest --cov=pylib ^& pylib/unit"
+    assert config.shell_segments(command) == \
+        [["python", "-m", "pytest", "--cov=pylib", "&", "pylib/unit"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite"):
+        _covpy_lane(command)
+
+
 def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(monkeypatch):
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
