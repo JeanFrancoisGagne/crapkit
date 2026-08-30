@@ -481,8 +481,12 @@ def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
     for name, prov in provenance.items():
         base = baseline.get("lanes", {}).get(name, {})
         b_total, b_skip = base.get("tests_total"), base.get("tests_skipped")
-        if b_total and prov.get("tests_total", 0) < b_total:
-            print(f"warning: lane {name!r} runs {b_total - prov['tests_total']} "
+        fresh_total = prov.get("tests_total")
+        if b_total and fresh_total is None:
+            print(f"warning: lane {name!r} wrote no junit this run; suite-size "
+                  "comparison skipped", file=sys.stderr)
+        elif b_total and fresh_total < b_total:
+            print(f"warning: lane {name!r} runs {b_total - fresh_total} "
                   f"fewer tests than the baseline", file=sys.stderr)
         if b_skip is not None and prov.get("tests_skipped", 0) > b_skip:
             print(f"warning: lane {name!r} skips {prov['tests_skipped'] - b_skip} "

@@ -37,8 +37,11 @@ elif mode == 'shrunk':
     body = SKIPPED
 else:
     body = FAIL + STEADY
-with open('junit.xml', 'w', encoding='utf-8') as fh:
-    fh.write('<testsuite>' + body + '</testsuite>')
+if mode == 'missing':
+    os.remove('junit.xml')
+else:
+    with open('junit.xml', 'w', encoding='utf-8') as fh:
+        fh.write('<testsuite>' + body + '</testsuite>')
 """
 
 TOML = (
@@ -100,3 +103,14 @@ def test_verify_warns_when_the_suite_shrinks_or_skips_more(flaky_repo: Path):
     assert res.returncode == 0, res.stdout + res.stderr
     assert "fewer tests" in res.stderr
     assert "skips" in res.stderr
+
+
+def test_verify_skips_suite_comparison_when_fresh_junit_is_missing(flaky_repo: Path):
+    (flaky_repo / "state.txt").write_text("missing", encoding="utf-8")
+    config = (flaky_repo / "crapkit.toml").read_text(encoding="utf-8")
+    (flaky_repo / "crapkit.toml").write_text(
+        config.replace('results_artifact = "junit.xml"\n', ""), encoding="utf-8"
+    )
+    res = run_cli(flaky_repo, "verify")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "wrote no junit this run; suite-size comparison skipped" in res.stderr
