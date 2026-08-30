@@ -39,9 +39,9 @@ def test_a_baseline_without_counts_compares_nothing(capsys):
 
 
 def test_a_lane_that_wrote_no_counts_says_so_instead_of_crashing(capsys):
-    """The baseline was measured with junit and this run's lane wrote none: an
-    older commit gated against a newer baseline, or a results_artifact that went
-    missing. 0.4.4 read the absent count as 0 for the comparison, then indexed
+    """The baseline was measured with junit and this run's lane wrote none: the
+    commit under test predates the lane's results_artifact line, so nothing was
+    parsed. 0.4.4 read the absent count as 0 for the comparison, then indexed
     it for the message, and the KeyError landed after the whole lane had run.
     """
     lines = warnings({"lanes": {"py": {"tests_total": 3785, "tests_skipped": 5}}},

@@ -489,9 +489,10 @@ def _suite_size_lines(name: str, base: dict, prov: dict) -> list[str]:
 
     Both counts are optional. A baseline recorded before the lane declared a
     `results_artifact` carries none and compares nothing. A lane that wrote no
-    junit THIS run (an older commit gated against a newer baseline, an artifact
-    that went missing) has nothing to compare either; reading its absent count
-    as zero once turned every such run into a KeyError after the lane had run.
+    junit THIS run (the commit under test predates the lane's `results_artifact`
+    line; a declared file missing after the run is a lane failure and never
+    reaches here) has nothing to compare either; reading its absent count as
+    zero once turned every such run into a KeyError after the lane had run.
     """
     b_total = base.get("tests_total")
     if b_total and prov.get("tests_total") is None:
