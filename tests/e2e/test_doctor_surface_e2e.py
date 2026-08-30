@@ -7,10 +7,8 @@ can read, advisory parallelism knobs, and a warning for directories whose tests
 no lane measures. A hermetic istanbul generator stands in for a coverage tool.
 """
 import json
-import os
 import platform
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +16,8 @@ import pytest
 from crapkit import __version__
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.config import load_config_text
+
+from conftest import cli_runner
 
 GEN = "gen_cov.py"
 
@@ -62,10 +62,7 @@ CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[crapkit.scoped_tests]\nsrc = "python -c pass"\n')
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=dict(os.environ))
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace")
 
 
 def git(repo: Path, *args: str) -> str:

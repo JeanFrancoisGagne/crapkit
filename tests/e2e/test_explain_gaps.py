@@ -7,14 +7,14 @@ only reads what a lane left on disk.
 """
 import copy
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from crapkit.coverage_istanbul import parse_istanbul
+
+from conftest import cli_runner
 
 MODULE = '''"""Fixture module: one branchy function, one straight-line function."""
 
@@ -70,12 +70,7 @@ scopes = ["py"]
 """
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "crapkit", *args],
-        cwd=repo, capture_output=True, text=True, timeout=180,
-        encoding="utf-8", errors="replace", env=dict(os.environ),
-    )
+run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
 
 def make_repo(tmp_path: Path, config: str, module: str = MODULE) -> Path:

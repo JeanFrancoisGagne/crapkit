@@ -14,12 +14,12 @@ which is what catches a mark that actually rose.
 These run against the real subcommand, spawned, because the gate's answer is
 the process exit code a git commit reads.
 """
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import cli_runner
 
 CONFIG = """[crapkit]
 target = 6
@@ -35,12 +35,8 @@ DECOMPOSE = "decompose before committing"
 EXEMPT = "carry a ratchet mark"
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=env)
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
+                     env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
 
 def git(repo: Path, *args: str) -> str:

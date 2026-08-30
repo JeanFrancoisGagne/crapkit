@@ -6,25 +6,15 @@ git repo per test, so the tree is committed (reviewable, stable) while each test
 still gets an isolated repository.
 """
 import json
-import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
+from conftest import run_cli
+
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
-
-
-def run_cli(repo: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    if env_extra:
-        env.update(env_extra)
-    return subprocess.run(
-        [sys.executable, "-m", "crapkit", *args],
-        cwd=repo, capture_output=True, text=True, timeout=120, env=env,
-    )
 
 
 def cache_entries(repo: Path) -> set[str]:
