@@ -199,6 +199,31 @@ def test_under_cmd_a_double_quoted_file_filter_is_still_a_filter(monkeypatch):
             'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n')
 
 
+def _istanbul_lane(command: str):
+    return load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
+        f'[[lane]]\nname = "unit"\ncommand = "{command}"\n'
+        'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["src"]\n').lanes[0]
+
+
+def test_a_script_path_in_a_step_chained_after_the_run_is_not_a_file_filter():
+    """`&&` starts a new process: vitest never sees `scripts/post.mjs`, so
+    calling it a filter that narrows the coverage include set refused a lane
+    that runs correctly, and full_suite = false does not clear this guard."""
+    assert _istanbul_lane("vitest run --coverage && node scripts/post.mjs src/a.ts").name
+    assert _istanbul_lane("vitest run --coverage | tee run.log").name
+
+
+def test_a_run_chained_after_another_command_is_still_checked_for_a_filter():
+    """The runner in the second segment is still the runner: stopping at the
+    first operator would let a real filter through."""
+    import pytest as _pytest
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane("npm run build && vitest run --coverage src/a.ts")
+    with _pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane("vitest run --coverage && vitest run --coverage src/b.ts")
+
+
 def test_shell_words_reads_double_quotes_under_both_shells():
     command = 'pytest -m "not live and not perf" --cov'
     expected = ["pytest", "-m", "not live and not perf", "--cov"]

@@ -115,6 +115,26 @@ def _kept(word: str) -> list[str]:
     return [word] if word else []
 
 
+# The operators that end one command and start another. sh and cmd.exe share
+# all four, and a lane that chains a report or an upload step after the run is
+# an ordinary shape (`coverage run -m pytest && coverage json`).
+_SHELL_OPERATORS = frozenset({"&&", "||", "&", "|"})
+
+
+def _command_segments(tokens: list[str]) -> list[list[str]]:
+    """One list per command on the line. Only the segment a runner sits in is
+    that runner's argv: reading `pytest --cov && coverage json` flat called
+    `coverage` a positional pytest is never handed. A quoted operator is part of
+    a word by the time it gets here, so `-k "a && b"` stays one segment."""
+    segments: list[list[str]] = [[]]
+    for tok in tokens:
+        if tok in _SHELL_OPERATORS:
+            segments.append([])
+        else:
+            segments[-1].append(tok)
+    return segments
+
+
 def _quote_hint(command: str) -> str:
     """The usual reason a Windows lane trips the guard: a value in single
     quotes, which cmd.exe hands the runner one word per space."""
@@ -165,10 +185,14 @@ def _narrowing_arguments(tokens: list[str]) -> list[str]:
 def _validate_coveragepy_command(name: str, command: str) -> None:
     # Subset coverage under a suite with cross-file pollution is run-order-dependent;
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
-    # full_suite = false, an explicit and reviewable decision.
-    tokens = shell_words(command)
-    if "pytest" not in " ".join(tokens):
-        return
+    # full_suite = false, an explicit and reviewable decision. Every chained
+    # segment is read: a second pytest run narrows just as much as the first.
+    for segment in _command_segments(shell_words(command)):
+        _refuse_pytest_narrowing(name, command, segment)
+
+
+def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str]) -> None:
+    """One command's argv. A segment that runs no pytest has nothing to narrow."""
     for tok in _narrowing_arguments(_tokens_after_pytest(tokens)):
         raise ConfigError(
             f"lane {name!r}: positional argument '{tok}' narrows a full-suite coverage run; "
@@ -211,8 +235,15 @@ def _is_file_filter(tok: str, preceding: str) -> bool:
 def _validate_istanbul_command(name: str, command: str) -> None:
     # The measured vitest trap: any file filter passed beside --coverage silently
     # narrows the coverage include set. A lane command is fixed configuration, so
-    # the combination is a config error, not a runtime surprise.
-    tokens = shell_words(command)
+    # the combination is a config error, not a runtime surprise. Each chained
+    # segment is its own argv: a script path in a post-run step is that step's,
+    # and a vitest run after `npm run build` is still a vitest run.
+    for segment in _command_segments(shell_words(command)):
+        _refuse_istanbul_filter(name, segment)
+
+
+def _refuse_istanbul_filter(name: str, tokens: list[str]) -> None:
+    """One command's argv. A segment that asks for no coverage narrows none."""
     if not _asks_for_coverage(tokens):
         return
     for i in range(_first_filter_position(tokens), len(tokens)):
