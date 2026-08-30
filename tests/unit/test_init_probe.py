@@ -181,6 +181,54 @@ def test_only_a_cov_flagged_coveragepy_lane_is_probed(lane, monkeypatch, capsys)
     assert capsys.readouterr().err == ""
 
 
+# --- an interpreter that never ran is a note of its own ----------------------
+
+@pytest.mark.parametrize("cmd_shell, code", [(True, 9009), (False, 127)])
+def test_an_interpreter_the_shell_cannot_start_earns_its_own_note(
+        tmp_path, monkeypatch, capsys, cmd_shell, code):
+    """9009 is not an answer about pytest_cov, so the pytest-cov note rightly
+    stopped firing on it — and nothing took the warning over. init wrote a
+    config whose only lane cannot start and said nothing at all."""
+    _interpreter_shim(tmp_path, monkeypatch, code)
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "cannot run" in err and str(code) in err
+    assert "`python`" in err, "the note has to name the word the lane starts with"
+    assert "pytest_cov" not in err, "nothing ran: pip install pytest-cov fixes none of it"
+
+
+def test_the_note_names_cmd_where_cmd_is_the_shell(tmp_path, monkeypatch, capsys):
+    """The Windows Store alias is the whole case: `python` resolves, cmd runs
+    the stub, and the fix is a real install or the `py` launcher."""
+    _interpreter_shim(tmp_path, monkeypatch, 9009)
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "cmd.exe cannot run" in err and "`py`" in err
+
+
+def test_an_interpreter_that_ran_and_said_no_still_gets_the_pytest_cov_note(
+        tmp_path, monkeypatch, capsys):
+    """The other half: exit 1 IS an answer, and it is pytest-cov's."""
+    _interpreter_shim(tmp_path, monkeypatch, 1)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "pytest_cov" in err and "pip install pytest-cov" in err
+
+
+def test_an_interpreter_that_works_is_still_silent(capsys):
+    _warn_missing_pytest_cov((_lane(f'"{sys.executable}" -m pytest --cov'),))
+
+    assert capsys.readouterr().err == ""
+
+
 # --- timeout= has to bound the wall clock, here and in the mutant runner -----
 #
 # Both calls run under shell=True, so the shell is the child and the program is
