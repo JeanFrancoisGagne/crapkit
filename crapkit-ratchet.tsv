@@ -1,2 +1,3 @@
-# crapkit-analysis=7 lizard=1.24.0
+# crapkit-analysis=8 lizard=1.24.0
 path	long_name	crap
+src/crapkit/cli/admin.py	_segment_problems( name : str , cwd : Path , tokens : list [ str ] )	8.1250
