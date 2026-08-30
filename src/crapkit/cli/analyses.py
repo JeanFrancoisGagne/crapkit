@@ -38,8 +38,8 @@ def _coupling_pairs(root: Path, cfg, args: argparse.Namespace) -> list[dict]:
                                      min_support=args.min_support,
                                      min_confidence=args.min_confidence,
                                      top=args.top, tracked=set(tracked))
-    pairs = load_coupling(root, cfg.churn_window_months, tracked)
-    return pairs if args.top is None else pairs[:args.top]
+    # `[:None]` is the whole list, which is what `top=None` means to the ranker.
+    return load_coupling(root, cfg.churn_window_months, tracked)[:args.top]
 
 
 def cmd_coupling(args: argparse.Namespace) -> int:
