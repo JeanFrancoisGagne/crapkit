@@ -842,6 +842,15 @@ to compare, and the protocol line underneath would bury the fact that explains b
 shipping no `hooks/hooks.json` registers no advisory hook, and the output says that instead.
 It prints no JSON and ignores `--json`.
 
+`PATH` may be the plugin root itself or any directory above it: `~/.claude`, `~/.claude/plugins`,
+the cache root `~/.claude/plugins/cache`, or a marketplace or plugin directory inside it. Claude
+Code keeps an install at `cache/<marketplace>/<plugin>/<version>/` and leaves the old version
+beside the new one after an update, so among the manifests named `crapkit` under `PATH` the
+newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
+all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
+through `installed_plugins.json` and the cache, and names that directory when nothing is
+installed there.
+
 ---
 
 ## `ratchet report --json`

@@ -19,11 +19,14 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 | "crapkit gate: N staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
 | "crapkit doctor: the plugin at PATH is version X, this crapkit is Y", exit 1 | The plugin and the CLI ship as separate artifacts and drifted apart | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
 
-Two more lines come out of `crapkit doctor --plugin-root`, same exit 1.
+Three more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root. `crapkit claude-hook` and `crapkit doctor --plugin-root` are both specified in
+a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
+plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
+with `claude plugin install crapkit@crapkit`, or pass a PATH. `crapkit claude-hook` and
+`crapkit doctor --plugin-root` are both specified in
 [README: subcommands](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands).
 
 Exit 2 from any other crapkit command is argparse: the subcommand or the flag does not exist
