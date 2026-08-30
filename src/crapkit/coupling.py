@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from itertools import combinations
 
+from .churn import _unquote_git_path
+
 MAX_COMMIT_FILES = 30
 
 
@@ -18,6 +20,12 @@ def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
     A %x01 line opens a commit and every non-blank line until the next one is a
     path. Empty sets are yielded rather than skipped: they add no file counts
     and form no pairs, so the caller cannot tell them from a skip.
+
+    Unquoted before the slashes are normalized, the way the churn parser does
+    it: git quotes a non-ASCII path and writes its bytes as octal escapes, so
+    normalizing first cuts `src/b\\303\\252ta.py` into directories. Either way
+    the pair would name a path no repo has, and the file the log meant would
+    never join the churn map, ls-files or a scored row.
     """
     files: set[str] = set()
     past_header = False
@@ -28,7 +36,7 @@ def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
             files, past_header = set(), True
             continue
         if past_header and line:
-            files.add(line.replace("\\", "/"))
+            files.add(_unquote_git_path(line).replace("\\", "/"))
         past_header = True  # a log starting mid-commit opens on a severed header
     yield files
 

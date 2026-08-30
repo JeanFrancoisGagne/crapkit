@@ -1,6 +1,11 @@
 """Change coupling: files that keep landing in the same commits are coupled,
 whatever the import graph says. Same git-log text the churn pass reads."""
+from crapkit.churn import parse_git_log
 from crapkit.coupling import change_coupling, partners
+
+# What `git log --name-only` prints for src/bêta.py at core.quotePath's default:
+# the name in double quotes with the two UTF-8 bytes as literal octal text.
+QUOTED_BETA = '"src/b\\303\\252ta.py"'
 
 A = "\x01alice\x021000"
 B = "\x01bob\x022000"
@@ -60,3 +65,24 @@ def test_a_files_partners_survive_a_global_top_that_would_cut_them():
 def test_partners_of_an_uncoupled_file_is_empty_not_an_error():
     log = _log(["src/a.ts"], ["src/b.ts"])
     assert partners(log.splitlines(), "src/a.ts", min_support=3, min_confidence=0.5) == []
+
+
+def test_a_quoted_non_ascii_path_is_the_same_key_churn_reads():
+    """git quotes any non-ASCII path in --name-only, and the pair has to carry
+    the decoded name: the churn map, ls-files and the scored rows all hold it."""
+    log = _log(*[["src/alpha.py", QUOTED_BETA]] * 4)
+
+    (pair,) = change_coupling(log, min_support=3, min_confidence=0.5)
+
+    assert pair["files"] == ["src/alpha.py", "src/bêta.py"]
+    assert set(pair["files"]) == set(parse_git_log(log)), "coupling keys the churn map's paths"
+
+
+def test_the_octal_escapes_are_decoded_before_slashes_are_normalized():
+    """Normalizing first turns \\303 into a directory separator: the quoted name
+    becomes src/b/303/252ta.py, a path no repo has."""
+    log = _log(*[["src/alpha.py", QUOTED_BETA]] * 4)
+
+    (pair,) = change_coupling(log, min_support=3, min_confidence=0.5)
+
+    assert not [f for f in pair["files"] if "303" in f], pair["files"]
