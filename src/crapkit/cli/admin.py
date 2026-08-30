@@ -678,23 +678,46 @@ def _hook_protocols(root: Path) -> tuple[str, ...] | None:
     return tuple(p for p in named if p is not None)
 
 
-def _manifest_version(root: Path) -> str | None:
+def _manifest_field(root: Path, field: str) -> str | None:
     manifest = _plugin_json(root / ".claude-plugin" / "plugin.json")
-    return manifest.get("version") if isinstance(manifest, dict) else None
+    return manifest.get(field) if isinstance(manifest, dict) else None
 
 
-# Claude Code caches an install at cache/<marketplace>/<plugin>/<version>/, so
-# a manifest sits up to three levels under any directory an operator would name.
+def _manifest_version(root: Path) -> str | None:
+    return _manifest_field(root, "version")
+
+
+# Claude Code keeps an install at <config>/plugins/cache/<marketplace>/<plugin>/
+# <version>/. From any directory an operator would name, stepping into `plugins`
+# and `cache` when they exist puts the manifest at most three levels down. The
+# marketplace clones beside the cache are sources, not the plugin Claude Code
+# runs, and the other vendors' plugins sharing the cache are never the answer.
+_LAYOUT_HOPS = ("plugins", "cache")
 _CACHE_DEPTHS = ("*", "*/*", "*/*/*")
 
 
+def _cache_under(under: Path) -> Path:
+    """`under`, stepped into Claude Code's plugin cache when it sits above one."""
+    for hop in _LAYOUT_HOPS:
+        if (under / hop).is_dir():
+            under = under / hop
+    return under
+
+
+def _crapkit_installs(cache: Path) -> list[Path]:
+    """Every install up to three levels under `cache` whose manifest is named
+    crapkit. The other vendors' plugins sharing the cache are never the answer."""
+    roots = [m.parent.parent for depth in _CACHE_DEPTHS
+             for m in cache.glob(f"{depth}/.claude-plugin/plugin.json")]
+    return [r for r in roots if _manifest_field(r, "name") == "crapkit"]
+
+
 def _manifest_roots(under: Path) -> list[Path]:
-    """Plugin roots at or below `under`: the directory itself when it holds a
-    manifest, else every versioned install up to three levels down."""
+    """crapkit plugin roots at or below `under`: the directory itself when it
+    holds a manifest, else the installs under the cache it sits above (#28)."""
     if (under / ".claude-plugin" / "plugin.json").is_file():
         return [under]
-    return [m.parent.parent for depth in _CACHE_DEPTHS
-            for m in under.glob(f"{depth}/.claude-plugin/plugin.json")]
+    return _crapkit_installs(_cache_under(under))
 
 
 def _version_key(version: str | None) -> tuple[int, ...]:
@@ -730,8 +753,7 @@ def _installed_crapkit_roots(plugins: Path) -> list[Path]:
     installer recorded plus what the cache holds, so a stale record and a
     missing record alone cannot hide the plugin."""
     recorded = _recorded_roots(_plugin_json(plugins / "installed_plugins.json"))
-    cached = [m.parent.parent
-              for m in plugins.glob("cache/*/crapkit/*/.claude-plugin/plugin.json")]
+    cached = _manifest_roots(plugins)
     return [r for r in dict.fromkeys(recorded + cached)
             if (r / ".claude-plugin" / "plugin.json").is_file()]
 
@@ -754,8 +776,8 @@ def _doctor_plugin(plugin_root: str) -> int:
 
     No repo is read. The plugin cache is not a repo, and an operator asking
     whether their plugin is behind their CLI is rarely standing in one. PATH
-    is the plugin root or any directory above it; empty means Claude Code's
-    own plugin directory (#28).
+    is the plugin root or any directory above it, ~/.claude included; empty
+    means Claude Code's own plugin directory (#28).
 
     `PROTOCOL` comes from the hook module itself, so the number doctor promises
     and the number `claude-hook` accepts cannot drift apart.

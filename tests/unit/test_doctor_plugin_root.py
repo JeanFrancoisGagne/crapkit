@@ -43,14 +43,14 @@ def _write(path: Path, payload) -> None:
 
 
 def plugin(root: Path, *, version: str = CLI, protocol: str | None = "1",
-           manifest: bool = True) -> Path:
+           manifest: bool = True, name: str = "crapkit") -> Path:
     """A plugin tree shaped like an installed one: a manifest and a hooks file.
 
     `protocol=None` ships no hooks.json at all, which is a plugin that registers
     no advisory hook rather than one that registers a wrong protocol.
     """
     if manifest:
-        _write(root / ".claude-plugin" / "plugin.json", {"name": "crapkit", "version": version})
+        _write(root / ".claude-plugin" / "plugin.json", {"name": name, "version": version})
     if protocol is not None:
         _write(root / "hooks" / "hooks.json",
                {"hooks": {"PostToolUse": [{"matcher": "Edit|Write",
@@ -271,6 +271,35 @@ def test_no_path_and_no_install_is_one_line_naming_where_it_looked(tmp_path, cap
     assert code == 1 and len(lines) == 1, lines
     assert str(tmp_path / "plugins") in lines[0], lines[0]
     assert "claude plugin install crapkit@crapkit" in lines[0], lines[0]
+
+
+def test_a_cache_shared_with_other_plugins_yields_crapkit_not_the_highest_version(tmp_path,
+                                                                                    capsys):
+    """A real cache holds every vendor's plugins. Picking the highest version
+    across all of them checked security-guidance 2.0.6 against the crapkit CLI
+    and prescribed reinstalling crapkit."""
+    cache = tmp_path / "cache"
+    plugin(cache / "official" / "security-guidance" / "2.0.6", name="security-guidance",
+           version="2.0.6")
+    plugin(cache / "crapkit" / "crapkit" / CLI)
+
+    code, lines, err = check(cache, capsys)
+
+    assert (code, lines, err) == (0, [], "")
+
+
+@pytest.mark.parametrize("above", ["", "plugins", "plugins/cache", "plugins/cache/crapkit"])
+def test_every_directory_above_the_install_in_claude_code_s_layout_reaches_it(tmp_path, capsys,
+                                                                             above):
+    """`~/.claude` and `~/.claude/plugins` sit five and four levels above the
+    manifest; the search steps into `plugins` and `cache` first, which also
+    keeps the marketplace clone beside the cache out of the answer."""
+    plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+    plugin(tmp_path / "plugins" / "marketplaces" / "crapkit" / "plugin", version="0.1.0")
+
+    code, lines, err = check(tmp_path / above, capsys)
+
+    assert (code, lines, err) == (0, [], "")
 
 
 def test_a_path_with_no_manifest_anywhere_under_it_still_names_the_file(tmp_path, capsys):

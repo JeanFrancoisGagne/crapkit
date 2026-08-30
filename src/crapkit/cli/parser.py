@@ -338,8 +338,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="check an installed Claude Code plugin against this CLI instead of "
                           "reading a repo: manifest version and hook protocol, one line per "
                           "disagreement, silent when they agree. PATH is the plugin root or "
-                          "any directory above it (the newest versioned install wins); with "
-                          "no PATH, the newest crapkit install in Claude Code's plugin cache")
+                          "any directory above it, ~/.claude included (the newest crapkit "
+                          "install under it wins); with no PATH, the newest crapkit install "
+                          "in Claude Code's plugin cache")
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")
