@@ -557,3 +557,18 @@ def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkey
     assert _pytest_cov_probe("python -m pytest --cov") is True
     assert started.is_file(), "the interpreter never started: this proved nothing"
     assert _gone(token), "the probe left its interpreter running"
+
+
+def test_a_named_script_that_left_the_repo_is_a_problem(tmp_path):
+    """The rot doctor exists for: the lane still names scripts/run_gone.py and
+    the file is gone. Named, not executed."""
+    problems = _lane_command_problems(tmp_path, _doctor_lane(f"{sys.executable} scripts/run_gone.py --cov"))
+    assert problems == [f"lane 'py': command names 'scripts/run_gone.py', which does not exist"]
+
+
+def test_an_empty_segment_names_no_problem(tmp_path):
+    """A trailing operator leaves an empty segment; there is no runner in it
+    to resolve and nothing it names."""
+    from crapkit.cli import admin
+
+    assert admin._segment_problems("py", tmp_path, []) == []
