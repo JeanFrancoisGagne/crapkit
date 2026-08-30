@@ -250,6 +250,15 @@ def test_the_vitest_options_that_take_a_path_are_all_licensed(option, value):
     assert _istanbul_lane(f"npx vitest run --coverage {option} {value}").name == "unit"
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_redirection_target_beside_coverage_is_not_a_file_filter(monkeypatch, shell_is_cmd):
+    """vitest never sees `run.ts`: the shell opened it and kept it."""
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", shell_is_cmd)
+    assert _istanbul_lane("npx vitest run --coverage > run.ts").name == "unit"
+    with pytest.raises(ConfigError, match="narrows"):
+        _istanbul_lane("npx vitest run --coverage 2>run.log src/a.ts")
+
+
 def test_the_lanes_page_names_every_vitest_option_the_guard_licenses():
     """The guard works from a closed list, so the page has to print the list. It
     read as a rule about values while the frozenset grew from 11 names to 20

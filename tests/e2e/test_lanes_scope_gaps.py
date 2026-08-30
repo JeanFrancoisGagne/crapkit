@@ -439,6 +439,40 @@ def test_under_cmd_a_caret_escaped_operator_is_an_argument(monkeypatch):
         _covpy_lane(command)
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("tail", ["> /dev/null", "2>&1 | tee run.log", "> run.log",
+                                  "2>run.log", ">> run.log", "1> run.log"])
+def test_a_redirection_is_the_shells_and_never_a_pytest_positional(monkeypatch, tail,
+                                                                   shell_is_cmd):
+    """The shell keeps the redirection and its target: verified cmd.exe argv for
+    `--cov=src 2>&1` is ["--cov=src"], and for `--cov=src 2>nul tests/unit` it
+    is ["--cov=src", "tests/unit"]. Reading `>` as a word refused the lane
+    naming a positional pytest is never handed."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert _covpy_lane(f"python -m pytest --cov=pylib {tail}").command
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_redirection_starts_no_new_command_and_hides_no_path(monkeypatch, shell_is_cmd):
+    """`2>run.log pylib/unit` still hands pytest pylib/unit (verified cmd.exe
+    argv: ["--cov=src", "tests/unit"]), so dropping the redirection must not
+    end the segment the path sits in."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    for tail in ("2>run.log pylib/unit", "> run.log pylib/unit"):
+        with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+            _covpy_lane(f"python -m pytest --cov=pylib {tail}")
+        assert "'pylib/unit'" in str(caught.value)
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_quoted_redirection_is_an_argument_the_program_is_handed(monkeypatch,
+                                                                   shell_is_cmd):
+    """`">"` is text, not plumbing: the program gets the word."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert config.shell_segments('python -m pytest --cov=pylib -k ">"') == \
+        [["python", "-m", "pytest", "--cov=pylib", "-k", ">"]]
+
+
 def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(monkeypatch):
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     with pytest.raises(ConfigError, match="narrows a full-suite") as caught:

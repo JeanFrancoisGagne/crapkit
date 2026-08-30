@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import tomllib
 from collections.abc import Iterator
@@ -183,10 +184,45 @@ def _kept(word: str, built: bool) -> list[tuple[str, bool]]:
 _SHELL_OPERATORS = frozenset({"&&", "||", "&", "|"})
 
 
+# A redirection and its target: `>`, `>>`, `2>`, `2>&1`, `>nul`. Both shells
+# keep them, so neither reaches the program's argv (verified cmd.exe argv:
+# `--cov=src 2>&1` -> ["--cov=src"]). Not an operator: a redirection belongs to
+# the command it sits in and starts no new one.
+_REDIRECTION = re.compile(r"\d*[<>]{1,2}")
+
+
 def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
     """One argv per command on the line, read by the shell that will run it."""
     cmd = SHELL_IS_CMD if cmd is None else cmd
-    return _command_segments(_shell_tokens(command, cmd), _SHELL_OPERATORS)
+    tokens = _drop_redirections(_shell_tokens(command, cmd))
+    return _command_segments(tokens, _SHELL_OPERATORS)
+
+
+def _drop_redirections(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    """The words left once the shell has taken its own plumbing. Reading `>` as
+    a word refused a lane naming a positional the program is never handed."""
+    kept: list[tuple[str, bool]] = []
+    skip = False
+    for word, built in tokens:
+        if skip:
+            skip = False
+        elif _redirects(word, built):
+            skip = _takes_the_next_word(word)
+        else:
+            kept.append((word, built))
+    return kept
+
+
+def _redirects(word: str, built: bool) -> bool:
+    """Is this the shell's plumbing? A quoted `">"` is an argument: quoting is
+    how an operator is written when the program is meant to get it."""
+    return not built and _REDIRECTION.match(word) is not None
+
+
+def _takes_the_next_word(word: str) -> bool:
+    """`> run.log` opens the word behind it; `2>run.log` and `2>&1` carry their
+    target, and the word behind them is the program's again."""
+    return _REDIRECTION.fullmatch(word) is not None
 
 
 def _command_segments(tokens: list[tuple[str, bool]],
