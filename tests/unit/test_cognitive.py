@@ -9,6 +9,8 @@ and case labels are free.
 """
 from pathlib import Path
 
+import pytest
+
 from crapkit.analyze import analyze_one
 
 
@@ -136,3 +138,136 @@ def test_ts_block_comment_with_keywords_is_free(tmp_path):
         "  return 0;\n"
         "}\n")
     assert _cognitive(tmp_path, "k.ts", src)["calm"] == 1
+
+
+# --- one nesting shape, every language crapkit measures cognitive for ----------
+#
+# The score of a shape is a property of the shape, not of how the language spells
+# a block. Written per language these four ifs differ in punctuation and in
+# nothing else, so all fourteen must read the same 1 + 2 + 3 + 4 = 10. Shell read
+# 4 until 0.4.5: `fi`, `done` and `esac` popped nothing, so its nesting never
+# rose, and every deeply nested script looked flat.
+
+_BRACED_IF4 = """%s f(%s) {
+  if (a) {
+    if (b) {
+      if (c) {
+        if (d) {
+          return;
+        }
+      }
+    }
+  }
+}
+"""
+
+_TS_PARAMS = "a: boolean, b: boolean, c: boolean, d: boolean"
+
+NESTED_IF4 = {
+    "a.py": (
+        "def f(a, b, c, d):\n"
+        "    if a:\n"
+        "        if b:\n"
+        "            if c:\n"
+        "                if d:\n"
+        "                    return\n"),
+    "a.ts": _BRACED_IF4 % ("function", _TS_PARAMS),
+    "a.tsx": _BRACED_IF4 % ("function", _TS_PARAMS),
+    "a.js": _BRACED_IF4 % ("function", "a, b, c, d"),
+    "a.vue": "<script>\n" + _BRACED_IF4 % ("function", "a, b, c, d") + "</script>\n",
+    "a.cpp": _BRACED_IF4 % ("void", "bool a, bool b, bool c, bool d"),
+    "a.m": _BRACED_IF4 % ("void", "int a, int b, int c, int d"),
+    "a.java": ("class K {\n"
+               + _BRACED_IF4 % ("void", "boolean a, boolean b, boolean c, boolean d")
+               + "}\n"),
+    "a.go": (
+        "func f(a, b, c, d bool) {\n"
+        "\tif a {\n\t\tif b {\n\t\t\tif c {\n\t\t\t\tif d {\n"
+        "\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"),
+    "a.rs": (
+        "fn f(a: bool, b: bool, c: bool, d: bool) {\n"
+        "    if a {\n        if b {\n            if c {\n                if d {\n"
+        "                    return;\n"
+        "                }\n            }\n        }\n    }\n}\n"),
+    "a.swift": (
+        "func f(a: Bool, b: Bool, c: Bool, d: Bool) {\n"
+        "    if a {\n        if b {\n            if c {\n                if d {\n"
+        "                    return\n"
+        "                }\n            }\n        }\n    }\n}\n"),
+    "a.zig": (
+        "fn f(a: bool, b: bool, c: bool, d: bool) void {\n"
+        "    if (a) {\n        if (b) {\n            if (c) {\n                if (d) {\n"
+        "                    return;\n"
+        "                }\n            }\n        }\n    }\n}\n"),
+    "a.ps1": (
+        "function f($a, $b, $c, $d) {\n"
+        "  if ($a) {\n    if ($b) {\n      if ($c) {\n        if ($d) {\n"
+        "          return\n        }\n      }\n    }\n  }\n}\n"),
+    "a.sh": (
+        "f() {\n"
+        '  if [ -n "$1" ]; then\n'
+        '    if [ -n "$2" ]; then\n'
+        '      if [ -n "$3" ]; then\n'
+        '        if [ -n "$4" ]; then\n'
+        "          return\n"
+        "        fi\n      fi\n    fi\n  fi\n}\n"),
+}
+
+
+def _one(tmp_path: Path, name: str, source: str) -> int:
+    """The cognitive score of the one function the file defines.
+
+    Unpacked rather than looked up by name: every reader spells the long_name
+    differently (`f()`, `f ( a , b )`, `K::f( boolean a )`), and a fixture that
+    stopped reporting exactly one function would be a defect this must not hide.
+    """
+    path = tmp_path / name
+    path.write_text(source, encoding="utf-8")
+    _, records = analyze_one((str(path), name))
+    (record,) = records
+    return record.cognitive
+
+
+@pytest.mark.parametrize("name", sorted(NESTED_IF4))
+def test_four_deep_nesting_reads_ten_in_every_language(tmp_path, name):
+    assert _one(tmp_path, name, NESTED_IF4[name]) == 10
+
+
+# Nested loops across the three block models crapkit reads: indent (python),
+# brace (typescript, powershell) and word (shell). 1 + 2 + 3. Shell read 5 until
+# 0.4.5, because `do` was charged as a structure of its own on top of the loop
+# keyword that opened it, and that over-count masked half of the flat nesting.
+NESTED_LOOPS = {
+    "b.py": (
+        "def g(xs, ys):\n"
+        "    for x in xs:\n"
+        "        for y in ys:\n"
+        "            if x == y:\n"
+        "                return x\n"),
+    "b.ts": (
+        "function g(xs: number[], ys: number[]) {\n"
+        "  for (const x of xs) {\n"
+        "    for (const y of ys) {\n"
+        "      if (x === y) {\n"
+        "        return x;\n"
+        "      }\n    }\n  }\n}\n"),
+    "b.ps1": (
+        "function g($xs, $ys) {\n"
+        "  foreach ($x in $xs) {\n"
+        "    foreach ($y in $ys) {\n"
+        "      if ($x -eq $y) {\n"
+        "        return $x\n"
+        "      }\n    }\n  }\n}\n"),
+    "b.sh": (
+        "g() {\n"
+        "  for x in $1; do\n"
+        "    for y in $2; do\n"
+        '      if [ "$x" = "$y" ]; then\n'
+        "        return 0\n"
+        "      fi\n    done\n  done\n}\n"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(NESTED_LOOPS))
+def test_nested_loops_read_six_in_every_block_model(tmp_path, name):
+    assert _one(tmp_path, name, NESTED_LOOPS[name]) == 6
