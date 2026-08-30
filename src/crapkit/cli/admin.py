@@ -10,6 +10,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path, PurePath
 
 from .. import __version__, config
@@ -112,12 +113,22 @@ def _could_not_run_it(returncode: int | None) -> bool:
     return returncode in _SH_COULD_NOT_RUN_IT
 
 
+@lru_cache(maxsize=None)
 def _start_probe(word: str) -> int | None:
     """The shell's exit code for this one word, or None when the question could
     not be put at all. `--version` and not the bare word: the probe must not do
     the lane's work by accident, and a lane starting with `pytest` would run
     the suite. A runner that rejects the flag still started, which is all this
-    asks; only the shell's own could-not-run code answers no."""
+    asks; only the shell's own could-not-run code answers no.
+
+    Memoized on the word, which is the whole question: no cwd, no env, so two
+    lanes starting with `pnpm` cannot get different answers. A repo with N
+    lanes over K distinct first words spawned N shells to learn K things —
+    openclaw declares 14 lanes over 2 words, and doctor spent 5.6 of its 6.9
+    seconds waiting on the 12 duplicates. None is cached on purpose: it is the
+    answer for OSError and for the 15 s deadline alike, and caching it turns a
+    hung runner from 14 timeouts into 1. Whoever gives the probe a cwd or an
+    env has to put it in the key in the same commit."""
     from ..procs import run_bounded
 
     try:
