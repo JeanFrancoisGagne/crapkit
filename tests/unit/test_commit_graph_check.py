@@ -105,6 +105,19 @@ def test_a_linked_worktree_reads_the_shared_object_store(tmp_path):
     assert len(warnings(tree)) == 1
 
 
+def test_a_root_below_the_repo_top_reads_the_top_object_store(tmp_path):
+    """A crapkit root one directory down is the monorepo layout PR #23 added.
+    `root/.git` is then neither a file nor a directory, and a reader that looks
+    only there finds no graph and warns about nothing — the warning that exists
+    to keep per-file history walks fast, never shown to the layout that has the
+    biggest histories."""
+    write_graph(tmp_path, b"OIDF", b"CDAT")
+    nested = tmp_path / "app"
+    nested.mkdir()
+
+    assert len(warnings(nested)) == 1
+
+
 def test_a_file_that_is_not_a_commit_graph_says_nothing(tmp_path):
     (info_dir(tmp_path) / "commit-graph").write_bytes(b"not a graph at all")
     assert warnings(tmp_path) == []
