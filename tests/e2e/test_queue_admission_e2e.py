@@ -6,9 +6,7 @@ The ccn-5 worklist floor used to hide exactly that: `next-item` answered
 `empty: true` while `coverage` reported the repo over target.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -368,9 +366,7 @@ def _rpc(msg_id: int, method: str, params: dict) -> str:
 def mcp_next_item(repo: Path, arguments: dict) -> dict:
     """One tools/call against the real server process, over stdio."""
     request = _rpc(1, "tools/call", {"name": "next_item", "arguments": arguments}) + "\n"
-    proc = subprocess.run([sys.executable, "-m", "crapkit", "mcp", "--repo", str(repo)],
-                          input=request, capture_output=True, text=True, timeout=180,
-                          cwd=repo, env=dict(os.environ))
+    proc = run_cli(repo, "mcp", "--repo", str(repo), stdin=request)
     call = json.loads(proc.stdout.strip())["result"]
     assert call["isError"] is False, call
     return json.loads(call["content"][0]["text"])
