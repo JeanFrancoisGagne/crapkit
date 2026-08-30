@@ -188,6 +188,9 @@ def _note_twin_keys(rel_path: str, records: list[FunctionRecord]) -> None:
     otherwise unexplained. C makes the shape ordinary — both arms of an `#ifdef`
     fork are textually present — and so does Python, whose method long_names
     carry no class.
+
+    Printed by the parent process only. A pool worker's stderr is its own,
+    unreconfigured stream (#31), so workers return records and stay silent.
     """
     names = _colliding_names(records)
     if not names:
@@ -204,9 +207,9 @@ def _listed(names: list[str]) -> str:
 
 
 def _file_records(rel_path: str, functions) -> list[FunctionRecord]:
-    records = [_record(rel_path, fn) for fn in functions]
-    _note_twin_keys(rel_path, records)
-    return records
+    """Pure, and silent: this runs inside pool workers, whose stderr is not the
+    parent's. The twin-key note is the caller's to print."""
+    return [_record(rel_path, fn) for fn in functions]
 
 
 # --- how a source file's bytes become text -------------------------------------
@@ -310,9 +313,11 @@ def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
     try:
         analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
-        return _file_records(rel_path, analysis.function_list)
+        records = _file_records(rel_path, analysis.function_list)
     except Exception as exc:  # loud, with the file named
         raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
+    _note_twin_keys(rel_path, records)
+    return records
 
 
 def content_hash(path: Path) -> str:
@@ -545,10 +550,15 @@ def analyze_jobs(
         with ProcessPoolExecutor(max_workers=_memory_bounded(workers)) as pool:
             for rel_path, records in pool.map(analyze_one, jobs, chunksize=chunksize):
                 fresh[rel_path] = records
-        return fresh
-    for job in jobs:
-        rel_path, records = analyze_one(job)
-        fresh[rel_path] = records
+    else:
+        for job in jobs:
+            rel_path, records = analyze_one(job)
+            fresh[rel_path] = records
+    # The parent says things; a worker only measures. A spawned child's stderr
+    # never saw `_reconfigure_streams`, so a note printed from analyze_one
+    # reached a UTF-8 reader in the legacy codepage on Windows (#31).
+    for rel_path, records in fresh.items():
+        _note_twin_keys(rel_path, records)
     return fresh
 
 
