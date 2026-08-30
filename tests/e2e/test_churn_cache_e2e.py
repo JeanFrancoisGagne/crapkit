@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-CACHE = Path(".crapkit") / "churn-cache.json"
+CACHE = Path(".crapkit") / "churn-cache-v2.json"
 
 APP_PY = """def plain(x):
     a = x + 1
@@ -151,7 +151,7 @@ def test_next_item_and_worklist_share_one_cache(churned_repo: Path):
     assert cache_doc(churned_repo) == written_by_next_item, \
         "worklist must read next-item's cache, not write a rival one"
     assert sorted(p.name for p in (churned_repo / ".crapkit").glob("churn*")) == \
-        ["churn-cache.json"]
+        ["churn-cache-v2.json"]
 
 
 def test_coupling_is_byte_identical_across_runs(churned_repo: Path):

@@ -232,7 +232,8 @@ def _packet_keys(monkeypatch) -> set[str]:
                           diff_uncovered_max=None, ratchet_file="crapkit-ratchet.tsv")
     for name, answer in (("_load_sources", {"core/alpha.py": "x\n"}), ("load_churn", {}),
                          ("load_uncovered", MissingLines({}, "no lane")),
-                         ("head_commit", "abc123def4567"), ("_ratchet_entries", None),
+                         ("head_commit", "abc123def4567"), ("ls_files", []),
+                         ("_ratchet_entries", None),
                          ("_brief_versions", {"crapkit": "0"})):
         monkeypatch.setattr(queue, name, lambda *a, _v=answer, **k: _v)
     for module, name in ((crapkit.churn_log, "log_lines"),

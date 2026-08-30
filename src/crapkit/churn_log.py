@@ -39,7 +39,10 @@ from typing import BinaryIO
 from .errors import GitError
 from .gitio import _git_lines, head_commit, is_ancestor
 
-LOG_NAME = "churn-log.z"
+# Versioned like churn_cache's map, and for the same reason: a version that
+# writes another key shape writes another file, so two installs on one tree
+# both stay warm instead of rewriting each other's key on every run.
+LOG_NAME = "churn-log-v2.z"
 LOG_FORMAT = "--format=%x01%an%x02%at%x02%ct"
 CHUNK = 1 << 20
 # The key's format marker: these logs hold root-relative paths (--relative),

@@ -250,6 +250,16 @@ def test_coupling_says_which_partner_is_a_test_file(repo: Path):
                                 "confidence": 1.0, "is_test": False}]
 
 
+def test_coupling_leaves_out_a_partner_git_stopped_tracking(repo: Path):
+    """beta.py leaves the index under a new name. Its six shared commits stay in
+    the log for a year, and the packet would keep telling a session to open a
+    file that is not there."""
+    _git(repo, "mv", "core/beta.py", "core/beta2.py")
+    _commit(repo, "rename beta")
+
+    assert brief(repo, "core/alpha.py", "alpha")["coupling"] == []
+
+
 def test_a_twin_reports_whether_it_is_contained(repo: Path):
     (twin,) = brief(repo, "core/alpha.py", "alpha")["duplication_twins"]
 

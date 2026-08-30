@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 
 CRAPKIT = Path(".crapkit")
-LOG_Z = CRAPKIT / "churn-log.z"
-LOG_KEY = CRAPKIT / "churn-log.json"
+LOG_Z = CRAPKIT / "churn-log-v2.z"
+LOG_KEY = CRAPKIT / "churn-log-v2.json"
 
 APP_PY = """def plain(x):
     a = x + 1
@@ -191,7 +191,7 @@ def test_brief_and_batches_share_one_log(coupled_repo, tmp_path):
     assert warm.returncode == 0, warm.stdout + warm.stderr
     assert warm_walks == [], "batches must read brief's log, not write a rival one"
     assert sorted(p.name for p in (coupled_repo / CRAPKIT).glob("churn-log*")) == \
-        ["churn-log.json", "churn-log.z"]
+        ["churn-log-v2.json", "churn-log-v2.z"]
 
 
 def test_the_queue_commands_that_need_no_structure_never_build_the_log(coupled_repo):

@@ -1,6 +1,11 @@
 """Change coupling: files that keep landing in the same commits are coupled,
 whatever the import graph says. Same git-log text the churn pass reads."""
+from crapkit.churn import parse_git_log
 from crapkit.coupling import change_coupling, partners
+
+# What `git log --name-only` prints for src/bêta.py at core.quotePath's default:
+# the name in double quotes with the two UTF-8 bytes as literal octal text.
+QUOTED_BETA = '"src/b\\303\\252ta.py"'
 
 A = "\x01alice\x021000"
 B = "\x01bob\x022000"
@@ -60,3 +65,57 @@ def test_a_files_partners_survive_a_global_top_that_would_cut_them():
 def test_partners_of_an_uncoupled_file_is_empty_not_an_error():
     log = _log(["src/a.ts"], ["src/b.ts"])
     assert partners(log.splitlines(), "src/a.ts", min_support=3, min_confidence=0.5) == []
+
+
+def test_a_quoted_non_ascii_path_is_the_same_key_churn_reads():
+    """git quotes any non-ASCII path in --name-only, and the pair has to carry
+    the decoded name: the churn map, ls-files and the scored rows all hold it."""
+    log = _log(*[["src/alpha.py", QUOTED_BETA]] * 4)
+
+    (pair,) = change_coupling(log, min_support=3, min_confidence=0.5)
+
+    assert pair["files"] == ["src/alpha.py", "src/bêta.py"]
+    assert set(pair["files"]) == set(parse_git_log(log)), "coupling keys the churn map's paths"
+
+
+def test_a_pair_naming_a_path_git_no_longer_tracks_is_dropped():
+    """History keeps naming a file after a rename or a delete. The pair reads as
+    live, and the agent that opens it finds nothing there."""
+    log = _log(*[["src/old_name.py", "src/stable.py"]] * 4,
+               *[["src/new_name.py", "src/stable.py"]] * 4)
+
+    pairs = change_coupling(log, min_support=3, min_confidence=0.5,
+                            tracked={"src/new_name.py", "src/stable.py"})
+
+    assert [p["files"] for p in pairs] == [["src/new_name.py", "src/stable.py"]]
+
+
+def test_a_caller_with_no_tracked_set_keeps_every_pair():
+    """None is "I cannot say", not "nothing is tracked"."""
+    log = _log(*[["src/old_name.py", "src/stable.py"]] * 4)
+
+    (pair,) = change_coupling(log, min_support=3, min_confidence=0.5)
+
+    assert pair["files"] == ["src/old_name.py", "src/stable.py"]
+
+
+def test_dead_pairs_do_not_eat_the_slots_the_cut_hands_out():
+    """The filter runs before the top cut. After it, the 9 commits a deleted
+    file racked up would take the one slot and the live pair would be gone."""
+    log = _log(*[["src/gone.py", "src/stable.py"]] * 9,
+               *[["src/live.py", "src/stable.py"]] * 4)
+
+    pairs = change_coupling(log, min_support=3, min_confidence=0.4, top=1,
+                            tracked={"src/live.py", "src/stable.py"})
+
+    assert [p["files"] for p in pairs] == [["src/live.py", "src/stable.py"]]
+
+
+def test_the_octal_escapes_are_decoded_before_slashes_are_normalized():
+    """Normalizing first turns \\303 into a directory separator: the quoted name
+    becomes src/b/303/252ta.py, a path no repo has."""
+    log = _log(*[["src/alpha.py", QUOTED_BETA]] * 4)
+
+    (pair,) = change_coupling(log, min_support=3, min_confidence=0.5)
+
+    assert not [f for f in pair["files"] if "303" in f], pair["files"]

@@ -84,6 +84,7 @@ def counted(monkeypatch) -> dict:
     monkeypatch.setattr(queue, "load_churn", counter("churn", {}))
     monkeypatch.setattr(queue, "load_uncovered", counter("uncovered", MissingLines({}, "no lane")))
     monkeypatch.setattr(queue, "head_commit", counter("head", "abc123def4567"))
+    monkeypatch.setattr(queue, "ls_files", counter("tracked", []))
     monkeypatch.setattr(queue, "_ratchet_entries", counter("ratchet", None))
     monkeypatch.setattr(queue, "_brief_versions", counter("versions", {"crapkit": "0"}))
     monkeypatch.setattr(crapkit.churn_log, "log_lines", counter("log", []))
@@ -109,6 +110,7 @@ def test_two_packets_in_one_file_read_the_repo_once(counted):
     assert counted["sources"] == 1, "one source read for the whole batch"
     assert counted["churn"] == 1 and counted["log"] == 1
     assert counted["coupling"] == 1, "the global ranking is cut per path, not rebuilt"
+    assert counted["tracked"] == 1, "one ls-files for the batch, not one per packet"
     assert counted["uncovered"] == 1 and counted["head"] == 1 and counted["versions"] == 1
     assert store.calls["read_rows"] == 1
     assert store.calls["read_scored_file"] == 1, "one scored-file read per distinct path"

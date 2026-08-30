@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from itertools import combinations
 
+from .churn import _unquote_git_path
+
 MAX_COMMIT_FILES = 30
 
 
@@ -18,6 +20,12 @@ def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
     A %x01 line opens a commit and every non-blank line until the next one is a
     path. Empty sets are yielded rather than skipped: they add no file counts
     and form no pairs, so the caller cannot tell them from a skip.
+
+    Unquoted before the slashes are normalized, the way the churn parser does
+    it: git quotes a non-ASCII path and writes its bytes as octal escapes, so
+    normalizing first cuts `src/b\\303\\252ta.py` into directories. Either way
+    the pair would name a path no repo has, and the file the log meant would
+    never join the churn map, ls-files or a scored row.
     """
     files: set[str] = set()
     past_header = False
@@ -28,9 +36,23 @@ def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
             files, past_header = set(), True
             continue
         if past_header and line:
-            files.add(line.replace("\\", "/"))
+            files.add(_unquote_git_path(line).replace("\\", "/"))
         past_header = True  # a log starting mid-commit opens on a severed header
     yield files
+
+
+def _tracked_pairs(pair_counts: dict, tracked: set[str] | None) -> dict:
+    """The pairs both of whose files git still has, or all of them when the
+    caller cannot say.
+
+    A file keeps its history under its old name: rename it and the log pairs
+    the dead name for another year, at full support and full confidence. That
+    pair outranks the live one and names a file the agent cannot open. Dropped
+    here rather than after the cut, so a dead pair does not spend a slot.
+    """
+    if tracked is None:
+        return pair_counts
+    return {(a, b): n for (a, b), n in pair_counts.items() if a in tracked and b in tracked}
 
 
 def _rank_pairs(file_counts: dict, pair_counts: dict, min_support: int,
@@ -67,15 +89,20 @@ def partners(lines: Iterable[str], path: str, *, min_support: int = 5,
 
 
 def change_coupling(log_text: str, *, min_support: int = 5, min_confidence: float = 0.5,
-                    top: int | None = 50) -> list[dict]:
+                    top: int | None = 50, tracked: set[str] | None = None) -> list[dict]:
     """Whole-text entrypoint: the log already in hand."""
     return change_coupling_lines(log_text.splitlines(), min_support=min_support,
-                                 min_confidence=min_confidence, top=top)
+                                 min_confidence=min_confidence, top=top, tracked=tracked)
 
 
 def change_coupling_lines(lines: Iterable[str], *, min_support: int = 5,
-                          min_confidence: float = 0.5, top: int | None = 50) -> list[dict]:
-    """Streaming entrypoint: the log is consumed once, one commit at a time."""
+                          min_confidence: float = 0.5, top: int | None = 50,
+                          tracked: set[str] | None = None) -> list[dict]:
+    """Streaming entrypoint: the log is consumed once, one commit at a time.
+
+    `tracked` is the repo's live path set — `git ls-files` — when the caller has
+    one to give; None keeps every pair the history holds.
+    """
     commits = _commit_file_sets(lines)
     file_counts: dict[str, int] = {}
     pair_counts: dict[tuple[str, str], int] = {}
@@ -86,4 +113,5 @@ def change_coupling_lines(lines: Iterable[str], *, min_support: int = 5,
             continue
         for pair in combinations(sorted(files), 2):
             pair_counts[pair] = pair_counts.get(pair, 0) + 1
-    return _rank_pairs(file_counts, pair_counts, min_support, min_confidence, top)
+    return _rank_pairs(file_counts, _tracked_pairs(pair_counts, tracked),
+                       min_support, min_confidence, top)

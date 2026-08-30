@@ -3,7 +3,7 @@
 `git log --name-only` over a year of a large repo costs 6.5s, 5.8s of which is
 git diffing every commit's tree, and worklist, next-item and coupling each paid
 it in full on every invocation, at an unmoved HEAD. Every one of them reaches
-git through this module, so `.crapkit/churn-cache.json` has exactly one writer.
+git through this module, so `.crapkit/churn-cache-v2.json` has one writer.
 
 The key is (HEAD sha, window months, UTC date, path format). The sha pins the
 history; the window pins the command; the date is there because `--since=N
@@ -29,7 +29,12 @@ from .churn_log import RELATIVE_PATHS, has_cache, log_lines
 from .errors import GitError
 from .gitio import churn_log_lines, head_commit
 
-CACHE_NAME = "churn-cache.json"
+# The format lives in the file name. Two crapkit versions on one working tree
+# key different fields, each read the other's cache as cold, and each rewrote
+# it — so every run of both rebuilt the map. Different formats, different files:
+# neither invalidates the other and both stay warm. The key's own marker stays,
+# for a format change that keeps the name.
+CACHE_NAME = "churn-cache-v2.json"
 
 
 def _window_lines(root: Path, months: int) -> Iterator[str]:

@@ -114,6 +114,44 @@ def coupled_repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
+def renamed_repo(tmp_path: Path) -> Path:
+    """old_name.py co-changed with stable.py six times, then git mv renamed it.
+    The log keeps naming the old path; the index does not have it any more."""
+    repo = tmp_path / "renamed"
+    write(repo / "crapkit.toml", SRC_TOML)
+    git(repo, "init", "-q", "-b", "main")
+    commit_all(repo, "config")
+    for i in range(6):
+        write(repo / "src" / "old_name.py", f"A = {i}\n")
+        write(repo / "src" / "stable.py", f"S = {i}\n")
+        commit_all(repo, f"pair {i}")
+    git(repo, "mv", "src/old_name.py", "src/new_name.py")
+    commit_all(repo, "rename")
+    for i in range(3):
+        write(repo / "src" / "new_name.py", f"A = {i + 6}\n")
+        write(repo / "src" / "stable.py", f"S = {i + 6}\n")
+        commit_all(repo, f"after {i}")
+    return repo
+
+
+@pytest.fixture()
+def accented_repo(tmp_path: Path) -> Path:
+    """The co-changing pair carries a non-ASCII name. core.quotepath is pinned
+    on — its default — so the log arrives quoted whatever the host's git config
+    says, and the decode is the thing under test rather than the environment."""
+    repo = tmp_path / "accented"
+    write(repo / "crapkit.toml", SRC_TOML)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "core.quotepath", "true")
+    commit_all(repo, "config")
+    for i in range(6):
+        write(repo / "src" / "alpha.py", f"A = {i}\n")
+        write(repo / "src" / "bêta.py", f"B = {i}\n")
+        commit_all(repo, f"pair {i}")
+    return repo
+
+
+@pytest.fixture()
 def clone_repo(tmp_path: Path) -> Path:
     """Two real clones and one closure factory: the report has to find the first
     pair and say nothing about the second."""
@@ -166,6 +204,35 @@ def test_coupling_says_when_nothing_clears_the_thresholds(coupled_repo: Path):
     res = run_cli(coupled_repo, "coupling", "--min-support", "99")
     assert res.returncode == 0, res.stdout + res.stderr
     assert res.stdout.strip() == "no coupled pairs at support>=99 confidence>=0.5 in 12mo"
+
+
+def test_coupling_never_recommends_a_path_git_stopped_tracking(renamed_repo: Path):
+    """The dead pair outranks the live one on support and confidence, so without
+    a tracked-set filter it is the only line printed."""
+    tracked = subprocess.run(["git", "ls-files"], cwd=renamed_repo, check=True,
+                             capture_output=True, text=True).stdout.split()
+    assert "src/old_name.py" not in tracked and "src/new_name.py" in tracked
+
+    res = run_cli(renamed_repo, "coupling", "--min-support", "3", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    pairs = json.loads(res.stdout)["pairs"]
+    assert [p["files"] for p in pairs] == [["src/new_name.py", "src/stable.py"]]
+
+
+def test_coupling_names_a_non_ascii_path_the_way_ls_files_spells_it(accented_repo: Path):
+    """git writes src/bêta.py into --name-only as "src/b\\303\\252ta.py". The
+    pair has to name the decoded path: that is what ls-files, the churn map and
+    every scored row hold, and `brief` looks the partner up by it."""
+    raw = subprocess.run(["git", "log", "--name-only", "--format="], cwd=accented_repo,
+                         check=True, capture_output=True, text=True, encoding="utf-8")
+    assert '"src/b\\303\\252ta.py"' in raw.stdout, "git stopped quoting; the test proves nothing"
+
+    res = run_cli(accented_repo, "coupling", "--min-support", "3", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    (pair,) = json.loads(res.stdout)["pairs"]
+    assert pair["files"] == ["src/alpha.py", "src/bêta.py"]
 
 
 def test_duplication_json_pairs_the_two_clones(clone_repo: Path):
