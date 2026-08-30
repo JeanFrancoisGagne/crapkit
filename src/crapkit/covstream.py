@@ -223,6 +223,14 @@ def _istanbul_map(w: _Window, repo_root: str, per_file) -> dict:
     return out
 
 
+def _require_files(per_file: dict) -> None:
+    """A zero-file artifact scores as full coverage if it is let through, so
+    both istanbul readers refuse one in the same words."""
+    if not per_file:
+        raise ToolError(
+            "istanbul artifact is empty (zero files) — the coverage run measured nothing")
+
+
 def parse_istanbul_file(path: Path | str, *, repo_root: str, chunk: int = CHUNK
                         ) -> tuple[dict[str, list[FnCoverage]], str]:
     """Per-file function coverage plus the sha256 of the artifact's own bytes.
@@ -232,10 +240,37 @@ def parse_istanbul_file(path: Path | str, *, repo_root: str, chunk: int = CHUNK
     with handle:
         per_file = _guarded(lambda: _istanbul_map(w, repo_root, _file_coverage),
                             _BAD_ISTANBUL)
-    if not per_file:
-        raise ToolError(
-            "istanbul artifact is empty (zero files) — the coverage run measured nothing")
+    _require_files(per_file)
     return per_file, w.hasher.hexdigest()
+
+
+def _istanbul_both(w: _Window, repo_root: str) -> tuple[dict, dict]:
+    per_file, dead = {}, {}
+    for abs_path, cov in split_window(w):
+        rel = _rel_path(abs_path, repo_root)
+        per_file[rel] = _file_coverage(cov)
+        dead[rel] = _dead_lines(cov)
+    return per_file, dead
+
+
+def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = CHUNK
+                             ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
+    """Function coverage AND dead lines from ONE walk, plus the same digest.
+
+    verify asks both questions of every istanbul artifact: the lane wants
+    function coverage, diff coverage wants the lines no statement ran. Asking
+    them separately decoded every member twice — 12.85 s over 13 lanes of a
+    31,459-file tree, against 7.80 s merged. Decoding is the whole cost;
+    _dead_lines over an already decoded file is near free.
+
+    The digest is this window's, so it hashes the same bytes parse_istanbul_file
+    hashes and no recorded artifact_sha256 moves.
+    """
+    w, handle = _window(path, chunk)
+    with handle:
+        per_file, dead = _guarded(lambda: _istanbul_both(w, repo_root), _BAD_ISTANBUL)
+    _require_files(per_file)
+    return per_file, dead, w.hasher.hexdigest()
 
 
 def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,

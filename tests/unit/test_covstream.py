@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 from crapkit.coverage_istanbul import parse_istanbul, parse_istanbul_missing
-from crapkit.covstream import parse_istanbul_file, parse_istanbul_missing_file
+from crapkit.covstream import (parse_istanbul_both_file, parse_istanbul_file,
+                               parse_istanbul_missing_file)
 from crapkit.errors import ToolError
 
 COMPOSITE = {
@@ -81,11 +82,58 @@ def test_an_artifact_measuring_nothing_is_still_a_loud_error(tmp_path, chunk):
         parse_istanbul_file(path, repo_root="C:/repo", chunk=chunk)
 
 
+# --- one walk, both questions ----------------------------------------------
+#
+# The merged reader is only allowed to replace the two single-question readers
+# because it answers identically. That equality is what these pin.
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+@pytest.mark.parametrize("indent", [None, 1])
+def test_one_walk_gives_the_coverage_map_the_dead_lines_and_the_same_digest(
+        tmp_path, chunk, indent):
+    path = _write(tmp_path, COMPOSITE, indent=indent)
+
+    per_file, dead, digest = parse_istanbul_both_file(path, repo_root="C:/repo", chunk=chunk)
+    coverage_only, coverage_digest = parse_istanbul_file(path, repo_root="C:/repo", chunk=chunk)
+
+    assert per_file == coverage_only
+    assert list(per_file) == list(coverage_only)
+    assert dead == parse_istanbul_missing_file(path, repo_root="C:/repo", chunk=chunk)
+    assert digest == coverage_digest
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+def test_the_merged_digest_is_the_artifacts_own_bytes(tmp_path, chunk):
+    """The digest is stored as a lane's provenance. It has to come out of the
+    same window the walk read, or every recorded artifact_sha256 moves."""
+    path = _write(tmp_path, COMPOSITE)
+
+    _, _, digest = parse_istanbul_both_file(path, repo_root="C:/repo", chunk=chunk)
+
+    assert digest == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+def test_the_merged_walk_still_refuses_an_artifact_measuring_nothing(tmp_path, chunk):
+    """Let a zero-file artifact through and the lane scores as fully covered."""
+    path = _write(tmp_path, {})
+    with pytest.raises(ToolError, match="empty"):
+        parse_istanbul_both_file(path, repo_root="C:/repo", chunk=chunk)
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+def test_the_merged_walk_reports_a_malformed_artifact_the_same_way(tmp_path, chunk):
+    path = tmp_path / "cov.json"
+    path.write_text("{ not json", encoding="utf-8")
+    with pytest.raises(ToolError, match="istanbul"):
+        parse_istanbul_both_file(path, repo_root="C:/repo", chunk=chunk)
+
+
 # --- the lane reads its artifact through the streaming reader --------------
 
-def _lane(parser: str, artifact: str):
+def _lane(parser: str, artifact: str, name: str = "ui"):
     from crapkit.config import Lane
-    return Lane(name="ui", command="", artifact=artifact, parser=parser, scopes=())
+    return Lane(name=name, command="", artifact=artifact, parser=parser, scopes=())
 
 
 def test_an_istanbul_lane_streams_its_artifact_off_the_file(tmp_path, monkeypatch):
@@ -95,13 +143,13 @@ def test_an_istanbul_lane_streams_its_artifact_off_the_file(tmp_path, monkeypatc
     from crapkit import lanes
 
     seen = []
-    real = lanes.parse_istanbul_file
+    real = lanes.parse_istanbul_both_file
 
     def spy(path, **kwargs):
         seen.append(Path(path).name)
         return real(path, **kwargs)
 
-    monkeypatch.setattr(lanes, "parse_istanbul_file", spy)
+    monkeypatch.setattr(lanes, "parse_istanbul_both_file", spy)
     _write(tmp_path, COMPOSITE)
     lanes.run_lane(tmp_path, _lane("istanbul", "cov.json"), reuse_artifact=True)
     assert seen == ["cov.json"]
@@ -250,6 +298,119 @@ def test_missing_by_path_streams_every_lane_artifact(tmp_path, monkeypatch):
     # a path outside the repo root keeps its own spelling, as it always has
     assert missing["C:/repo/src/plain.ts"] == {3}
     assert missing["scripts/a.py"] == {5, 9}
+
+
+# --- the walk a lane already paid for answers the dead-line question too ----
+
+TARGET = "C:/repo/src/x.ts"
+
+
+def _dead_artifact(tmp_path, rel: str, dead: tuple, alive: tuple = ()) -> Path:
+    """An istanbul artifact for one file: `dead` lines never ran, `alive` did."""
+    lines = [*dead, *alive]
+    stmts = {str(i): {"start": {"line": n}} for i, n in enumerate(lines)}
+    hits = {str(i): int(i >= len(dead)) for i in range(len(lines))}
+    path = tmp_path / rel
+    path.write_bytes(json.dumps({TARGET: {"fnMap": {}, "f": {}, "branchMap": {}, "b": {},
+                                          "statementMap": stmts, "s": hits}}).encode("utf-8"))
+    return path
+
+
+def _istanbul_cfg(*names_and_artifacts):
+    from types import SimpleNamespace
+    return SimpleNamespace(lanes=[_lane("istanbul", artifact, name=name)
+                                  for name, artifact in names_and_artifacts])
+
+
+def _spy_on_the_missing_reader(monkeypatch) -> list:
+    from crapkit import covstream
+
+    seen = []
+    real = covstream.parse_istanbul_missing_file
+
+    def spy(path, **kwargs):
+        seen.append(Path(path).name)
+        return real(path, **kwargs)
+
+    monkeypatch.setattr(covstream, "parse_istanbul_missing_file", spy)
+    return seen
+
+
+def test_a_lane_already_walked_hands_its_dead_lines_over_instead_of_being_reread(
+        tmp_path, monkeypatch):
+    """The lane's walk decoded every member already. Reopening the artifact to
+    ask which lines are dead decoded all of them a second time, which was 5.04 s
+    of the 12.85 s 13 lanes spent parsing a 31,459-file tree's artifacts."""
+    from crapkit import lanes, uncovered
+
+    _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
+    seen = _spy_on_the_missing_reader(monkeypatch)
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+
+    missing = uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json")))
+
+    assert missing == {TARGET: {3, 4}}
+    assert seen == []
+
+
+def test_a_lane_nobody_walked_is_still_read_off_the_file(tmp_path, monkeypatch):
+    """`explain` and `worklist` ask for dead lines without running a lane."""
+    from crapkit import uncovered
+
+    _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
+    seen = _spy_on_the_missing_reader(monkeypatch)
+
+    missing = uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json")))
+
+    assert missing == {TARGET: {3, 4}}
+    assert seen == ["a.json"]
+
+
+def test_a_line_stays_dead_only_when_no_lane_ran_it_whichever_route_it_took(tmp_path):
+    """The fold is an intersection per path, so a lane that handed its map over
+    during its own walk and a lane read here must combine the same way."""
+    from crapkit import lanes, uncovered
+
+    _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
+    _dead_artifact(tmp_path, "b.json", (4, 5), alive=(3,))
+    cfg = _istanbul_cfg(("a", "a.json"), ("b", "b.json"))
+
+    read_only = uncovered.missing_by_path(tmp_path, cfg)
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+    half_folded = uncovered.missing_by_path(tmp_path, cfg)
+
+    assert read_only == {TARGET: {4}}
+    assert half_folded == read_only
+
+
+def test_an_artifact_rewritten_since_the_lane_walked_it_is_read_again(tmp_path):
+    """A lane runs, its artifact is rewritten, and the dead lines asked for
+    afterwards must describe the file on disk — not the walk's memory of it."""
+    from crapkit import lanes, uncovered
+
+    _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+    _dead_artifact(tmp_path, "a.json", (7,), alive=(3, 4, 5, 8))
+
+    assert uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json"))) == {TARGET: {7}}
+
+
+def test_the_walks_fold_answers_once_and_the_next_reader_reads_the_file(
+        tmp_path, monkeypatch):
+    """Handed over rather than copied: the reader folds the remaining lanes into
+    it, so a second reader must not be given the same object back."""
+    from crapkit import lanes, uncovered
+
+    _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+    cfg = _istanbul_cfg(("a", "a.json"))
+    seen = _spy_on_the_missing_reader(monkeypatch)
+
+    first = uncovered.missing_by_path(tmp_path, cfg)
+    second = uncovered.missing_by_path(tmp_path, cfg)
+
+    assert first == second == {TARGET: {3, 4}}
+    assert seen == ["a.json"]
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)

@@ -444,6 +444,48 @@ def test_dead_changed_lines_under_the_ceiling_warn_without_failing(baselined, ca
     assert "over the ceiling" not in err, err
 
 
+def test_a_clean_tree_does_not_walk_the_artifacts_for_diff_coverage(
+        baselined, capsys, monkeypatch):
+    """diff_uncovered iterates the changed ranges, so an empty diff makes it []
+    whatever the artifacts hold. Reading every lane's artifact to build that []
+    is unconditional work that grows with lane count and artifact size; on a
+    31,459-file tree whose istanbul lanes now fold their dead lines in as they
+    are walked it is the last 0.2 s of a 17.6 s verify."""
+    from crapkit import uncovered
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("an empty diff must not walk the lane artifacts")
+
+    monkeypatch.setattr(uncovered, "missing_by_path", refuse)
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    assert (code, err) == (0, "")
+    assert json.loads(out)["diff_uncovered_count"] == 0
+
+
+def test_an_empty_diff_cannot_breach_the_diff_coverage_ceiling(repo, capsys):
+    """The skip has to leave exit 9 exactly as unreachable as it already was.
+    The dead line seeded here is real and breaches the ceiling of 0 the moment
+    it lands in a diff — that is the test two above — so the only thing keeping
+    this run at 0 is the empty diff, both before and after the skip."""
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(
+        text.replace("target = 6", "target = 6\ndiff_uncovered_max = 0"), encoding="utf-8")
+    istanbul(repo, "coverage/unit.json", "src/app.ts",
+             {"dispatch": (1, 13, 2), "plain": (13, 20, 1)}, dead=(17,))
+    istanbul(repo, "coverage/ui.json", "web/ui.ts", {"render": (1, 3, 2)})
+    commit_all(repo, "a ceiling of zero")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert (code, err) == (0, "")
+    assert "(0 changed files)" in out, out
+    assert "have no coverage" not in err and "over the ceiling" not in err, err
+
+
 def test_a_verdict_writes_the_findings_file_it_was_asked_for(baselined, capsys):
     code, _, _ = run(["verify", "--reuse-artifacts", "--sarif", ".crapkit/v.sarif"],
                      _knotty(baselined), capsys)
