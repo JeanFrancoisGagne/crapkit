@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -24,6 +23,7 @@ from .coverage_istanbul import FnCoverage
 from .covstream import parse_coveragepy_file, parse_istanbul_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
+from .procs import run_bounded
 
 
 def _in_container() -> bool:
@@ -53,8 +53,13 @@ def _popen_kwargs(root: Path, lane: Lane) -> dict:
     return {
         "cwd": root / lane.cwd if lane.cwd else root,
         "env": {**os.environ, **dict(lane.env)} if lane.env else None,
-        "timeout": lane.timeout_seconds or None,
     }
+
+
+def _deadline(lane: Lane) -> float | None:
+    """The lane's own timeout, or None for no crapkit-owned deadline at all.
+    0 is the config default and means the suite decides when it is done."""
+    return lane.timeout_seconds or None
 
 
 def _log_header(fh: IO[str], command: str, attempt: int) -> None:
@@ -67,15 +72,16 @@ def _log_header(fh: IO[str], command: str, attempt: int) -> None:
 def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int:
     with open(log_path, "a" if attempt > 1 else "w", encoding="utf-8", errors="replace") as fh:
         _log_header(fh, lane.command, attempt)
-        try:
-            proc = subprocess.run(lane.command, shell=True, stdout=fh, stderr=subprocess.STDOUT,
-                                  **_popen_kwargs(root, lane))
-        except subprocess.TimeoutExpired:
+        # The log is a file, not a pipe, so streaming costs the deadline nothing:
+        # run_bounded kills the shell's whole tree, which is where the suite is.
+        code = run_bounded(lane.command, _deadline(lane), stream=fh,
+                           **_popen_kwargs(root, lane))
+        if code is None:
             fh.write(f"\n[crapkit] timed out after {lane.timeout_seconds}s; killed\n")
             raise ToolError(f"lane {lane.name!r} timed out after {lane.timeout_seconds}s "
-                            f"(attempt {attempt}); log: {log_path}") from None
-        fh.write(f"\n(exit {proc.returncode})\n")
-    return proc.returncode
+                            f"(attempt {attempt}); log: {log_path}")
+        fh.write(f"\n(exit {code})\n")
+    return code
 
 
 def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int) -> int | None:
@@ -333,13 +339,11 @@ def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
     keeps everything failed."""
     command = build_retest_command(lane.retest_command, tests)
     log_path = _lane_log_path(root, lane)
-    try:
-        with open(log_path, "a", encoding="utf-8", errors="replace") as fh:
-            fh.write(f"\n--- flake retest ---\n$ {command}\n")
-            fh.flush()
-            subprocess.run(command, shell=True, stdout=fh, stderr=subprocess.STDOUT,
-                           **_popen_kwargs(root, lane))
-    except subprocess.TimeoutExpired:
+    with open(log_path, "a", encoding="utf-8", errors="replace") as fh:
+        fh.write(f"\n--- flake retest ---\n$ {command}\n")
+        fh.flush()
+        code = run_bounded(command, _deadline(lane), stream=fh, **_popen_kwargs(root, lane))
+    if code is None:
         return set()
     still = _still_failed(root, lane)
     if still is None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+from typing import IO
 
 _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
               if os.name == "nt" else {"start_new_session": True})
@@ -41,15 +42,22 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     proc.wait()
 
 
-def run_bounded(command: str, timeout: float, **popen_kwargs) -> int | None:
+def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None,
+                **popen_kwargs) -> int | None:
     """The exit code, or None when the deadline expired and the tree was killed.
+    A timeout of None is no deadline at all: the caller waits for the command.
 
-    Output goes to DEVNULL, never a pipe: nobody here reads it, and a pipe
-    outlives the timeout — the drain has no deadline of its own, so the call
-    would return when the grandchild holding the handles exits.
+    Output goes to DEVNULL by default, never a pipe: nobody here reads it, and a
+    pipe outlives the timeout - the drain has no deadline of its own, so the
+    call would return when the grandchild holding the handles exits.
+
+    `stream` takes stdout and stderr both, and must be a real file (the lane log
+    is one). A file needs no reader, so the kill lands on the deadline the same
+    way; a pipe would reintroduce the drain and is the one thing not to pass.
     """
+    out = subprocess.DEVNULL if stream is None else stream
     proc = subprocess.Popen(command, shell=True, stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            stdout=out, stderr=subprocess.STDOUT,
                             **_OWN_GROUP, **popen_kwargs)
     try:
         return proc.wait(timeout=timeout)
