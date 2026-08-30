@@ -195,7 +195,30 @@ def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
     """One argv per command on the line, read by the shell that will run it."""
     cmd = SHELL_IS_CMD if cmd is None else cmd
     tokens = _drop_redirections(_shell_tokens(command, cmd))
-    return _command_segments(tokens, _SHELL_OPERATORS)
+    if not cmd:
+        tokens = _split_semicolons(tokens)
+    return _command_segments(tokens, _separators(cmd))
+
+
+def _separators(cmd: bool) -> frozenset[str]:
+    """What ends one command and starts the next. sh adds ';'; to cmd.exe it is
+    an ordinary character the program is handed (verified argv for
+    `--cov=src; echo done`: ["--cov=src;", "echo", "done"])."""
+    return _SHELL_OPERATORS if cmd else _SHELL_OPERATORS | {";"}
+
+
+def _split_semicolons(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    """sh's ';' as its own word. shlex leaves it stuck to the word in front
+    (`--cov=src;`), so the first command read clean while the next command's
+    words landed in its argv, and the lane was refused naming a program pytest
+    never sees. A quoted ';' is an argument and stays where it is."""
+    out: list[tuple[str, bool]] = []
+    for word, built in tokens:
+        if built or not word.endswith(";"):
+            out.append((word, built))
+        else:
+            out += _kept(word[:-1], False) + [(";", False)]
+    return out
 
 
 def _drop_redirections(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:

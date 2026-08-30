@@ -473,6 +473,40 @@ def test_a_quoted_redirection_is_an_argument_the_program_is_handed(monkeypatch,
         [["python", "-m", "pytest", "--cov=pylib", "-k", ">"]]
 
 
+def test_under_sh_a_semicolon_ends_the_command_it_sits_behind(monkeypatch):
+    """sh runs `pytest --cov=pylib` and then `echo done`; pytest is handed
+    neither word. shlex leaves the ';' glued to the word in front, so the next
+    command's words landed in pytest's argv and the lane was refused naming
+    'echo'. The mirror-image shape (`cd tests; pytest ...`) was accepted, which
+    made the rule read as arbitrary."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane("python -m pytest --cov=pylib; echo done").command
+    assert _covpy_lane("python -m pytest --cov=pylib ; echo done").command
+    assert config.shell_segments("python -m pytest --cov=pylib; echo done") == \
+        [["python", "-m", "pytest", "--cov=pylib"], ["echo", "done"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("cd tests; python -m pytest --cov=pylib pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_cmd_a_semicolon_is_an_ordinary_character(monkeypatch):
+    """cmd.exe has no ';' separator: verified argv for `--cov=src; echo done` is
+    ["--cov=src;", "echo", "done"], so pytest really is handed 'echo' and the
+    lane really does narrow."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert config.shell_segments("python -m pytest --cov=pylib; echo done") == \
+        [["python", "-m", "pytest", "--cov=pylib;", "echo", "done"]]
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("python -m pytest --cov=pylib; echo done")
+    assert "'echo'" in str(caught.value)
+
+
+def test_under_sh_a_quoted_semicolon_is_an_argument(monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert config.shell_segments("python -m pytest -k 'a;' --cov=pylib") == \
+        [["python", "-m", "pytest", "-k", "a;", "--cov=pylib"]]
+
+
 def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(monkeypatch):
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
