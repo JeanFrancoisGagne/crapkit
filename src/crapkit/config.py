@@ -157,9 +157,16 @@ def _cmd_tokens(command: str) -> list[tuple[str, bool]]:
     return words + _kept(word, built)
 
 
+# What breaks one word from the next, outside a quoted run: what cmd.exe splits
+# on and what 0.4.4's shlex had. str.isspace() is wider — U+00A0, U+000B, U+000C
+# and the unicode separators are all true — and a non-breaking space pasted out
+# of rendered docs stays inside the word cmd.exe hands the runner.
+_WORD_BREAKS = " \t\r\n"
+
+
 def _ends_the_word(char: str, in_quote: bool) -> bool:
-    """Whitespace separates words only outside a quoted run."""
-    return char.isspace() and not in_quote
+    """A word break separates words only outside a quoted run."""
+    return char in _WORD_BREAKS and not in_quote
 
 
 def _kept(word: str, built: bool) -> list[tuple[str, bool]]:

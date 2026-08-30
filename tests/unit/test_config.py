@@ -319,6 +319,19 @@ def test_shell_words_reads_a_quote_that_opens_mid_token_under_both_shells():
         ["pytest", "tests/a b/test_x.py"]
 
 
+def test_shell_words_breaks_words_only_on_space_tab_and_the_line_endings():
+    """cmd.exe splits the command line on space and tab, and 0.4.4's shlex used
+    ' \\t\\r\\n'. str.isspace() is true for U+00A0 and U+000B as well, so a
+    marker expression pasted out of rendered docs split in two and the refusal
+    named a token the operator never typed. Verified cmd.exe argv:
+    `-k not\\xa0slow` -> ["-k", "not\\u00a0slow"] and `-k a\\x0bb` -> ["-k", "a\\u000bb"]."""
+    for cmd in (True, False):
+        assert shell_words("pytest -k not\u00a0slow", cmd=cmd) == \
+            ["pytest", "-k", "not\u00a0slow"]
+        assert shell_words("pytest -k a\u000bb", cmd=cmd) == ["pytest", "-k", "a\u000bb"]
+        assert shell_words("pytest\t-m\tx\r\ny", cmd=cmd) == ["pytest", "-m", "x", "y"]
+
+
 def test_shell_words_under_sh_reads_single_quotes():
     assert shell_words("pytest -m 'not live'", cmd=False) == ["pytest", "-m", "not live"]
 
