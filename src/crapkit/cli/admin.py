@@ -157,7 +157,11 @@ def _warn_missing_pytest_cov(lanes: tuple) -> None:
                 and not _pytest_cov_probe(lane.command):
             print(f"note: lane {lane.name!r} runs `pytest --cov`, and this python cannot "
                   "import pytest_cov — pip install pytest-cov where the suite runs "
-                  "(pip install 'crapkit[py]' when that is crapkit's own environment), "
+                  # Double quotes, not single: cmd.exe passes ' through as an
+                  # ordinary character and pip rejects the requirement. Double
+                  # quotes are the one form cmd, PowerShell, bash and zsh share,
+                  # and the bare form still breaks zsh's globbing.
+                  '(pip install "crapkit[py]" when that is crapkit\'s own environment), '
                   "then `crapkit coverage`", file=sys.stderr)
 
 

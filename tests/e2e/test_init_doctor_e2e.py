@@ -135,7 +135,9 @@ def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tm
                          env=_env_without_pytest_cov(tmp_path))
     assert res.returncode == 0, res.stderr
     assert "pytest_cov" in res.stderr and "pip install pytest-cov" in res.stderr
-    assert "crapkit[py]" in res.stderr, "the extra is the same-venv shortcut"
+    assert '"crapkit[py]"' in res.stderr, (
+        "the extra is the same-venv shortcut, and double quotes are the one form "
+        "cmd.exe, PowerShell, bash and zsh all read the same way")
     assert (pytest_repo / "crapkit.toml").is_file(), "a warning must not stop the scaffold"
 
 

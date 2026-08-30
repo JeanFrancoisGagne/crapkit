@@ -61,7 +61,7 @@ out to your own test runner, and the runner needs its coverage package installed
 `pytest-cov` for pytest, `@vitest/coverage-v8` (pinned to your vitest major) for vitest.
 Without it the lane produces no artifact and `coverage` exits 5 quoting the runner's own
 error. For pytest, `init` probes the python its lane will run and prints the install
-command when `pytest_cov` is missing; `pip install 'crapkit[py]'` pulls the plugin
+command when `pytest_cov` is missing; `pip install "crapkit[py]"` pulls the plugin
 alongside crapkit when the two share a venv. The two quickstarts below walk a real repo
 end to end.
 
@@ -475,7 +475,7 @@ writes runs `pytest --cov` and those flags come from `pytest-cov`:
 pip install pytest-cov
 ```
 
-(or `pip install 'crapkit[py]'` to pull both at once, when crapkit lives in the same venv
+(or `pip install "crapkit[py]"` to pull both at once, when crapkit lives in the same venv
 as the suite — skip it and `init` prints this same fix when its probe finds the plugin
 missing).
 

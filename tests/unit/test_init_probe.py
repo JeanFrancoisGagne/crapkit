@@ -155,7 +155,9 @@ def test_a_failing_probe_prints_both_install_commands(monkeypatch, capsys):
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
     err = capsys.readouterr().err
     assert "pytest_cov" in err
-    assert "pip install pytest-cov" in err and "crapkit[py]" in err
+    assert "pip install pytest-cov" in err and '"crapkit[py]"' in err, (
+        "cmd.exe passes ' through as an ordinary character, so pip reads "
+        "'crapkit[py]' quotes and all and rejects it as a requirement")
 
 
 def test_a_passing_probe_prints_nothing(monkeypatch, capsys):

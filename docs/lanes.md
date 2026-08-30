@@ -231,7 +231,7 @@ no-new-failures check.
 The `--cov` family of flags comes from the `pytest-cov` package, not pytest itself:
 `pip install pytest-cov` before the lane's first run, or the lane fails with
 `unrecognized arguments: --cov`. It has to live in the environment the SUITE runs in;
-`pip install 'crapkit[py]'` pulls it beside crapkit when the two share a venv, and
+`pip install "crapkit[py]"` pulls it beside crapkit when the two share a venv, and
 `crapkit init` probes the lane's python and prints this fix when the plugin is missing.
 
 ```toml
