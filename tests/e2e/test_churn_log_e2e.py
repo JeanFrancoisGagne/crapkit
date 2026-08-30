@@ -20,6 +20,7 @@ from conftest import cli_runner
 CRAPKIT = Path(".crapkit")
 LOG_Z = CRAPKIT / "churn-log-v2.z"
 LOG_KEY = CRAPKIT / "churn-log-v2.json"
+COUPLING_CACHE = CRAPKIT / "coupling-cache-v1.json"
 
 APP_PY = """def plain(x):
     a = x + 1
@@ -227,16 +228,29 @@ def test_a_new_commit_refreshes_to_the_answer_a_rebuild_gives(coupled_repo, tmp_
         "a refresh must land where the walk it replaced would have"
 
 
+def needs_the_log(repo: Path) -> None:
+    """Drop the ranking brief would otherwise answer from.
+
+    A warm coupling cache is a complete answer, so brief never opens the log to
+    reach it. Nothing here is about that cache: these tests are about what the
+    log does when something does read it, and this is what makes brief one of
+    the things that do.
+    """
+    (repo / COUPLING_CACHE).unlink(missing_ok=True)
+
+
 def test_a_truncated_log_is_ignored_and_rebuilt(coupled_repo, tmp_path):
     cold = run_cli(coupled_repo, *BRIEF)
     torn = coupled_repo / LOG_Z
     torn.write_bytes(torn.read_bytes()[:-8])
+    needs_the_log(coupled_repo)
 
     again, walks = traced(coupled_repo, tmp_path, "torn", *BRIEF)
     assert again.returncode == 0, again.stdout + again.stderr
     assert again.stdout == cold.stdout
     assert window_walks(walks), "a torn log is a miss, never a crash"
 
+    needs_the_log(coupled_repo)
     warm, warm_walks = traced(coupled_repo, tmp_path, "healed", *BRIEF)
     assert warm_walks == [], "and it is replaced, not left torn"
     assert warm.stdout == cold.stdout

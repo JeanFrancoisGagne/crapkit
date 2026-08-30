@@ -14,16 +14,40 @@ from ..gitio import ls_files
 from ._shared import _load_repo_config, _load_sources, _open_store, _print_json
 
 
+def _at_default_thresholds(args: argparse.Namespace) -> bool:
+    from ..coupling import DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_SUPPORT
+
+    return (args.min_support, args.min_confidence) == (DEFAULT_MIN_SUPPORT,
+                                                       DEFAULT_MIN_CONFIDENCE)
+
+
+def _coupling_pairs(root: Path, cfg, args: argparse.Namespace) -> list[dict]:
+    """The ranking this invocation asked for, off the cache when it can be.
+
+    `--top` is a cut of the stored total order, so it reads warm. A support or
+    confidence off the defaults asks a wider question than the file answers, so
+    it pays the walk: serving it a subset of the default ranking would hide
+    exactly the pairs the wider threshold was named to surface.
+    """
+    from ..coupling import change_coupling_lines
+    from ..coupling_cache import load_coupling
+
+    tracked = ls_files(root)
+    if not _at_default_thresholds(args):
+        return change_coupling_lines(log_lines(root, cfg.churn_window_months),
+                                     min_support=args.min_support,
+                                     min_confidence=args.min_confidence,
+                                     top=args.top, tracked=set(tracked))
+    pairs = load_coupling(root, cfg.churn_window_months, tracked)
+    return pairs if args.top is None else pairs[:args.top]
+
+
 def cmd_coupling(args: argparse.Namespace) -> int:
     """Ranked over the tracked set: a pair naming a path git no longer has is a
     recommendation to open a file that is not there."""
-    from ..coupling import change_coupling_lines
-
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
-    pairs = change_coupling_lines(log_lines(root, cfg.churn_window_months),
-                                  min_support=args.min_support, min_confidence=args.min_confidence,
-                                  top=args.top, tracked=set(ls_files(root)))
+    pairs = _coupling_pairs(root, cfg, args)
     if args.json:
         _print_json({"pairs": pairs, "window_months": cfg.churn_window_months})
         return 0

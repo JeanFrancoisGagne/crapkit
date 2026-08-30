@@ -219,8 +219,7 @@ def test_the_handbook_links_out_by_url_not_by_relative_path():
 
 def _packet_keys(monkeypatch) -> set[str]:
     """Every top-level key `brief` can publish, off the real builder."""
-    import crapkit.churn_log
-    import crapkit.coupling
+    import crapkit.coupling_cache
     import crapkit.dup
     import crapkit.gitio
 
@@ -238,8 +237,7 @@ def _packet_keys(monkeypatch) -> set[str]:
                          ("_ratchet_entries", None),
                          ("_brief_versions", {"crapkit": "0"})):
         monkeypatch.setattr(queue, name, lambda *a, _v=answer, **k: _v)
-    for module, name in ((crapkit.churn_log, "log_lines"),
-                         (crapkit.coupling, "change_coupling_lines"),
+    for module, name in ((crapkit.coupling_cache, "load_coupling"),
                          (crapkit.dup, "find_twins"), (crapkit.gitio, "file_log_patches")):
         monkeypatch.setattr(module, name, lambda *a, **k: [])
     store = SimpleNamespace(read_rows=lambda *a, **k: [row],
