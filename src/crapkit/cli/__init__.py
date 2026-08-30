@@ -21,6 +21,7 @@ _OWNER = {
     "_Handles": "queue",
     "_CLAUDE_SUBCOMMANDS": "parser",
     "_SCRIPT_SUFFIXES": "admin",
+    "_ScoredRun": "scoring",
     "_VersionAction": "parser",
     "_advise": "claude_hook",
     "_advisory_lines": "claude_hook",

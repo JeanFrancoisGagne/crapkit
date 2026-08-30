@@ -420,11 +420,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
     baseline, basis = _verify_basis(root, store, args, git)
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
-    commit, scored, provenance, lane_errors, fresh_failures, tool_versions, _, _ = _scored_run(
-        root, cfg, list(cfg.lanes), reuse_artifacts=args.reuse_artifacts,
-        reuse_unchanged=args.reuse_unchanged, git=git)
-    if lane_errors:
-        raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(lane_errors)}")
+    # Six of the eight fields by name; corpus and cache_hits are coverage's report
+    # line and no part of a verdict.
+    run = _scored_run(root, cfg, list(cfg.lanes), reuse_artifacts=args.reuse_artifacts,
+                      reuse_unchanged=args.reuse_unchanged, git=git)
+    commit, scored, provenance = run.commit, run.scored, run.provenance
+    tool_versions, fresh_failures = run.tool_versions, run.test_failures
+    if run.lane_errors:
+        raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
 
     ranges = changed_ranges(diff_since(root, basis))
     ratchet_path = root / cfg.ratchet_file

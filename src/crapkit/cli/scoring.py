@@ -222,8 +222,28 @@ def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | Non
                           _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel))
 
 
+class _ScoredRun(NamedTuple):
+    """One inventory-lanes-score pass, for the two commands that need one.
+
+    Two fields are failures of different kinds and used to sit next to each other
+    in an unnamed tuple: `lane_errors` is the lanes that produced no coverage at
+    all, keyed by lane name, and `test_failures` is the test ids that failed
+    inside the lanes that ran. coverage exits 5 on a lane error and reads no test
+    failure; verify refuses to conclude on a lane error and weighs each test
+    failure against its baseline. `corpus` and `cache_hits` are coverage's report
+    line, which is why verify names neither."""
+    commit: str
+    scored: list
+    provenance: dict
+    lane_errors: dict
+    test_failures: set
+    tool_versions: dict
+    corpus: _Corpus
+    cache_hits: int
+
+
 def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchanged: bool = False,
-                git=None):
+                git=None) -> _ScoredRun:
     """Shared by coverage/verify: inventory + lanes + score. Returns everything both need.
 
     `git` is the caller's GitFacts when it already has one — verify asks for the
@@ -245,7 +265,8 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
                         scope_targets=cfg.scope_targets,
                         cc_only_scopes=cfg.coverage_optional_scopes)
     test_failures = {f for prov in provenance.values() for f in prov.get("failures", ())}
-    return commit, scored, provenance, lane_errors, test_failures, tool_versions, corpus, cache_hits
+    return _ScoredRun(commit, scored, provenance, lane_errors, test_failures, tool_versions,
+                      corpus, cache_hits)
 
 
 def _run_kind(lanes, cfg, failures) -> str:
@@ -356,23 +377,24 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     lanes = _select_lanes(cfg, args.lane)
 
-    commit, scored, provenance, failures, _, tool_versions, corpus, cache_hits = _scored_run(
-        root, cfg, lanes, reuse_artifacts=args.reuse_artifacts, reuse_unchanged=args.reuse_unchanged)
+    run = _scored_run(root, cfg, lanes, reuse_artifacts=args.reuse_artifacts,
+                      reuse_unchanged=args.reuse_unchanged)
 
     db_path = root / ".crapkit" / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
-    _warn_suite_drop(store, provenance)
-    run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
-                             lanes=provenance, kind=_run_kind(lanes, cfg, failures))
+    _warn_suite_drop(store, run.provenance)
+    run_id = store.write_run(commit=run.commit, tool_versions=run.tool_versions, rows=run.scored,
+                             lanes=run.provenance,
+                             kind=_run_kind(lanes, cfg, run.lane_errors))
     if args.export:
-        _export_scored(root, args.export, scored)
-    _emit_coverage_findings(root, args, scored, cfg)
+        _export_scored(root, args.export, run.scored)
+    _emit_coverage_findings(root, args, run.scored, cfg)
 
-    summary = _coverage_summary(run_id, commit, scored, cfg, provenance, failures,
-                                corpus, cache_hits, db_path)
-    _print_coverage(args.json, summary, cfg, failures)
-    return 5 if failures else 0
+    summary = _coverage_summary(run_id, run.commit, run.scored, cfg, run.provenance,
+                                run.lane_errors, run.corpus, run.cache_hits, db_path)
+    _print_coverage(args.json, summary, cfg, run.lane_errors)
+    return 5 if run.lane_errors else 0
 
 
 def _emit_coverage_findings(root: Path, args, scored, cfg) -> None:
