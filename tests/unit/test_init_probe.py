@@ -182,15 +182,25 @@ def test_only_a_cov_flagged_coveragepy_lane_is_probed(lane, monkeypatch, capsys)
 
 
 # --- an interpreter that never ran is a note of its own ----------------------
+#
+# The shell's verdict is handed in rather than acted out: sh truncates an exit
+# status to a byte, so a POSIX shim cannot answer 9009 at all (it comes back
+# 49). The real shells answer for themselves in tests/e2e/test_init_doctor_e2e.
 
-@pytest.mark.parametrize("cmd_shell, code", [(True, 9009), (False, 127)])
+def _shell_says(monkeypatch, tmp_path, cmd_shell: bool, code: int) -> None:
+    """A `python` that resolves on PATH, and a shell that answers `code`."""
+    _interpreter_shim(tmp_path, monkeypatch, 0)
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+    monkeypatch.setattr(admin, "_start_probe", lambda word: code)
+
+
+@pytest.mark.parametrize("cmd_shell, code", [(True, 9009), (False, 127), (False, 126)])
 def test_an_interpreter_the_shell_cannot_start_earns_its_own_note(
         tmp_path, monkeypatch, capsys, cmd_shell, code):
     """9009 is not an answer about pytest_cov, so the pytest-cov note rightly
     stopped firing on it — and nothing took the warning over. init wrote a
     config whose only lane cannot start and said nothing at all."""
-    _interpreter_shim(tmp_path, monkeypatch, code)
-    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
+    _shell_says(monkeypatch, tmp_path, cmd_shell, code)
 
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
 
@@ -203,8 +213,7 @@ def test_an_interpreter_the_shell_cannot_start_earns_its_own_note(
 def test_the_note_names_cmd_where_cmd_is_the_shell(tmp_path, monkeypatch, capsys):
     """The Windows Store alias is the whole case: `python` resolves, cmd runs
     the stub, and the fix is a real install or the `py` launcher."""
-    _interpreter_shim(tmp_path, monkeypatch, 9009)
-    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    _shell_says(monkeypatch, tmp_path, True, 9009)
 
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
 
@@ -251,8 +260,7 @@ def test_a_deadline_says_nothing_about_whether_it_started():
 def test_doctor_fails_a_lane_whose_first_word_will_not_start(tmp_path, monkeypatch):
     """which() finds the Windows Store alias, so doctor cleared a repo whose
     only lane exits 9009 while `crapkit coverage` exited 5 on that same word."""
-    _interpreter_shim(tmp_path, monkeypatch, 9009)
-    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    _shell_says(monkeypatch, tmp_path, True, 9009)
 
     problem = admin._lane_start_problem(_lane("python -m pytest --cov"))
 
@@ -287,17 +295,18 @@ def _sleep_command() -> str:
     return f'"{sys.executable}" -c "import time; time.sleep({_SLEEP})"'
 
 
-def _sleeping_interpreter(tmp_path, monkeypatch) -> None:
+def _sleeping_interpreter(tmp_path, monkeypatch, command: str = "") -> None:
     """A `python` first on PATH that outlives the probe's timeout. It does not
     exec, so the shell stays between the probe and the sleeper: killing the
     shell leaves the sleeper holding whatever the shell handed it."""
+    command = command or _sleep_command()
     shim_dir = tmp_path / "slow"
     shim_dir.mkdir()
     if os.name == "nt":
-        (shim_dir / "python.bat").write_text(f"@echo off\n{_sleep_command()}\n", encoding="utf-8")
+        (shim_dir / "python.bat").write_text(f"@echo off\n{command}\n", encoding="utf-8")
     else:
         shim = shim_dir / "python"
-        shim.write_text(f"#!/bin/sh\n{_sleep_command()}\n", encoding="utf-8")
+        shim.write_text(f"#!/bin/sh\n{command}\n", encoding="utf-8")
         shim.chmod(0o755)
     monkeypatch.setenv("PATH", os.pathsep.join([str(shim_dir), os.environ.get("PATH", "")]))
 
@@ -374,7 +383,12 @@ def _gone(token: str) -> bool:
 
 def _long_sleeper(tmp_path) -> tuple:
     """A command that reports it started and then outlives any timeout. Run
-    through the shell, so the interpreter is the shell's child: the orphan."""
+    through the shell, so the interpreter is the shell's child: the orphan.
+
+    The script name is unique per test because the question is asked of the
+    whole machine: a second checkout running this same suite answers a shared
+    command line, and the test would read someone else's sleeper as a leak.
+    """
     script = tmp_path / f"orphan_{uuid.uuid4().hex}.py"
     script.write_text("import pathlib, time\n"
                       "pathlib.Path(__file__).with_suffix('.started').touch()\n"
@@ -406,8 +420,10 @@ def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path):
 def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkeypatch):
     """Same leak on init's side: one interpreter per timed-out probe, left
     running under an init that already printed its summary and returned."""
-    _sleeping_interpreter(tmp_path, monkeypatch)
+    command, token, started = _long_sleeper(tmp_path)
+    _sleeping_interpreter(tmp_path, monkeypatch, command)
     monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
 
     assert _pytest_cov_probe("python -m pytest --cov") is True
-    assert _gone(f"time.sleep({_SLEEP})"), "the probe left its interpreter running"
+    assert started.is_file(), "the interpreter never started: this proved nothing"
+    assert _gone(token), "the probe left its interpreter running"
