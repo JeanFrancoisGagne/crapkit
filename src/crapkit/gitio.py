@@ -25,13 +25,29 @@ _RELATIVE = ("-c", "diff.relative=true")
 
 
 def _git(root: Path, *args: str) -> str:
+    return _run(root, (*_RELATIVE, *args), args)
+
+
+def _git_unflagged(root: Path, *args: str) -> str:
+    """A spawn carrying none of the -c flags this module injects.
+
+    For the one read whose subject IS git's configuration: command-line config
+    is config, so `-c diff.relative=true` came back out of `config --get
+    diff.relative` as this repo's own setting.
+    """
+    return _run(root, args, args)
+
+
+def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...]) -> str:
+    """`named` is what the error says ran — the injected flags are crapkit's
+    business, not the caller's."""
     try:
-        res = subprocess.run(["git", *_RELATIVE, *args], cwd=root,
+        res = subprocess.run(["git", *argv], cwd=root,
                              capture_output=True, text=True, encoding="utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed in {root}: {res.stderr.strip()}")
+        raise GitError(f"git {' '.join(named)} failed in {root}: {res.stderr.strip()}")
     return res.stdout
 
 
@@ -78,9 +94,13 @@ def config_value(root: Path, key: str) -> str:
 
     `git config --get` exits 1 on an unset key, which is an answer rather than a
     failure — every caller here asks about a setting the repo need not have.
+
+    Unflagged, because this reads configuration and `-c diff.relative=true` is
+    configuration: through _git, a repo that never set diff.relative answered
+    `true` and one that set it to `false` answered `true` as well.
     """
     try:
-        return _git(root, "config", "--get", key).strip()
+        return _git_unflagged(root, "config", "--get", key).strip()
     except GitError:
         return ""
 
