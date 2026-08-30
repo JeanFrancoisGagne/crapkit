@@ -115,11 +115,23 @@ def _decode(pairs) -> list[dict] | None:
     the cold one it replaces.
     """
     try:
-        return [{"files": [str(a), str(b)], "support": int(support),
+        return [{"files": _files(a, b), "support": int(support),
                  "confidence": float(confidence)}
                 for a, b, support, confidence in pairs]
     except (TypeError, ValueError):
         return None
+
+
+def _files(a, b) -> list[str]:
+    """A pair's two paths, refused rather than coerced.
+
+    `str(5)` would name a file no repo has, and it would come back out of a
+    packet as a real recommendation to go open it. Corruption has to read as
+    cold here, the same as a torn file does.
+    """
+    if not (isinstance(a, str) and isinstance(b, str)):
+        raise TypeError("a coupled pair names two paths")
+    return [a, b]
 
 
 def _write_cache(path: Path, key: dict | None, pairs: list[dict]) -> None:

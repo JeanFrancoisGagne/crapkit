@@ -154,6 +154,17 @@ def test_a_cache_of_the_wrong_shape_reads_as_cold(tmp_path, log):
     assert log.reads == 2
 
 
+def test_a_pair_whose_paths_are_not_strings_reads_as_cold(tmp_path, log):
+    """Coerced with str(), a 5 would name a file no repo has and reach a packet
+    as a real recommendation to open it."""
+    coupling_cache.load_coupling(tmp_path, 12, TRACKED)
+    doc = _doc(tmp_path)
+    doc["pairs"] = [[5, 7, 6, 1.0]]
+    _rewrite(tmp_path, doc)
+    assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
+    assert log.reads == 2
+
+
 def test_a_cache_written_before_the_tracked_digest_reads_as_cold(tmp_path, log):
     """The field this version added to the key. A file that predates it says
     nothing about the index, so it cannot be trusted at an unmoved HEAD."""
