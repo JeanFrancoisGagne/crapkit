@@ -70,8 +70,7 @@ class _Store:
 @pytest.fixture()
 def counted(monkeypatch) -> dict:
     """Every repo read a brief makes, replaced by a counter."""
-    import crapkit.churn_log
-    import crapkit.coupling
+    import crapkit.coupling_cache
     import crapkit.dup
     import crapkit.gitio
 
@@ -90,8 +89,7 @@ def counted(monkeypatch) -> dict:
     monkeypatch.setattr(queue, "ls_files", counter("tracked", []))
     monkeypatch.setattr(queue, "_ratchet_entries", counter("ratchet", None))
     monkeypatch.setattr(queue, "_brief_versions", counter("versions", {"crapkit": "0"}))
-    monkeypatch.setattr(crapkit.churn_log, "log_lines", counter("log", []))
-    monkeypatch.setattr(crapkit.coupling, "change_coupling_lines", counter("coupling", []))
+    monkeypatch.setattr(crapkit.coupling_cache, "load_coupling", counter("coupling", []))
     monkeypatch.setattr(crapkit.dup, "find_twins", counter("twins", []))
     monkeypatch.setattr(crapkit.gitio, "file_log_patches", counter("mark_history", []))
     return seen
@@ -111,7 +109,7 @@ def test_two_packets_in_one_file_read_the_repo_once(counted):
     queue._brief_packet(ld, HELPER)
 
     assert counted["sources"] == 1, "one source read for the whole batch"
-    assert counted["churn"] == 1 and counted["log"] == 1
+    assert counted["churn"] == 1
     assert counted["coupling"] == 1, "the global ranking is cut per path, not rebuilt"
     assert counted["tracked"] == 1, "one ls-files for the batch, not one per packet"
     assert counted["uncovered"] == 1 and counted["head"] == 1 and counted["versions"] == 1
@@ -127,7 +125,7 @@ def test_a_second_file_costs_its_own_scored_read_and_nothing_else(counted):
     queue._brief_packet(ld, BETA)
 
     assert store.calls["read_scored_file"] == 2, "two paths, two reads"
-    assert counted["sources"] == 1 and counted["churn"] == 1 and counted["log"] == 1
+    assert counted["sources"] == 1 and counted["churn"] == 1 and counted["coupling"] == 1
 
 
 def test_a_function_with_no_mark_never_asks_git_for_the_marks_history(counted):

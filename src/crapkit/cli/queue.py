@@ -553,11 +553,9 @@ class _BriefLoader:
         return self._once("coupling", self._rank_coupling)
 
     def _rank_coupling(self) -> list:
-        from ..churn_log import log_lines
-        from ..coupling import change_coupling_lines
+        from ..coupling_cache import load_coupling
 
-        return change_coupling_lines(log_lines(self.root, self.cfg.churn_window_months),
-                                     top=None, tracked=set(ls_files(self.root)))
+        return load_coupling(self.root, self.cfg.churn_window_months, ls_files(self.root))
 
     def uncovered(self):
         return self._once("uncovered", lambda: load_uncovered(self.root, self.cfg))
@@ -966,15 +964,18 @@ def _resolve_batches(requested: int) -> int:
 
 
 def _split_worklist(root: Path, cfg, active: list, count: int) -> list:
-    """The active queue cut into collision-free batches, coupling included."""
-    from ..churn_log import log_lines
-    from ..coupling import change_coupling_lines
-    from ..worklist import BATCH_CONTAINMENT, BATCH_PAIR_LIMIT, split_batches
+    """The active queue cut into collision-free batches, coupling included.
 
-    pairs = change_coupling_lines(log_lines(root, cfg.churn_window_months),
-                                  min_confidence=BATCH_CONTAINMENT, top=BATCH_PAIR_LIMIT,
-                                  tracked=set(ls_files(root)))
-    return split_batches(active, pairs, batches=count)
+    BATCH_CONTAINMENT is the ranking's own default confidence, so the batch cut
+    is a truncation of the cached total order rather than a question of its own.
+    test_coupling_cache pins that equality; retune one and this goes back to a
+    walk of its own.
+    """
+    from ..coupling_cache import load_coupling
+    from ..worklist import BATCH_PAIR_LIMIT, split_batches
+
+    pairs = load_coupling(root, cfg.churn_window_months, ls_files(root))
+    return split_batches(active, pairs[:BATCH_PAIR_LIMIT], batches=count)
 
 
 def _batch_json(b) -> dict:
