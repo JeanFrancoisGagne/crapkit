@@ -240,7 +240,7 @@ def test_verify_baseline_refuses_a_missing_id_and_a_partial_run(pair_repo: Path)
     partial = run_cli(pair_repo, "verify", "--baseline", "2")
     assert partial.returncode == 1, partial.stdout + partial.stderr
     assert "run 2 is a partial run" in partial.stderr, partial.stderr
-    assert "--baseline=1" in partial.stderr, partial.stderr
+    assert "--baseline 1" in partial.stderr, partial.stderr
 
     named = run_cli(pair_repo, "verify", "--baseline", "1", "--json")
     assert named.returncode == 0, named.stdout + named.stderr
