@@ -403,7 +403,9 @@ def test_a_lane_that_lost_its_test_count_names_the_gap(baselined, capsys):
     code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
     assert code == 0
-    assert "lane 'unit' reports no test count this run, against 100 in the baseline" in err, err
+    assert ("lane 'unit' wrote no test counts this run (no results_artifact was parsed), "
+            "so the baseline's 100 tests cannot be compared") in err, err
+    assert "fewer tests" not in err, err
 
 
 def test_dead_lines_in_the_diff_warn_and_breach_the_ceiling(baselined, capsys):
