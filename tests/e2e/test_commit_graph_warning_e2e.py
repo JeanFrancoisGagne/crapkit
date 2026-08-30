@@ -3,17 +3,11 @@
 The synthetic graph is never handed to git — doctor reads the chunk table and
 nothing else — so a header and a table are the whole fixture.
 """
-import os
 import struct
 import subprocess
-import sys
 from pathlib import Path
 
-
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=120,
-                          env=dict(os.environ))
+from conftest import run_cli
 
 
 def graph_bytes(*chunks: bytes) -> bytes:

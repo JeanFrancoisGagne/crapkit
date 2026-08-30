@@ -12,15 +12,15 @@ else.
 Every number below is hand-counted from the source above it.
 """
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from crapkit.keys import key_names
 from crapkit.store import SnapshotStore
+
+from conftest import cli_runner
 
 # `take` is straight-line code: `&&` marks an rvalue reference. `classify` is
 # base 1 + three if links = 4, and Sonar-spec 3 (if +1, two else-ifs +1 each).
@@ -139,9 +139,7 @@ TOML = ('[crapkit]\ntarget = 6\n\n'
 CPP_FILES = 17
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, timeout=300, env=dict(os.environ))
+run_cli = cli_runner(timeout=300)
 
 
 def write(path: Path, text: str) -> None:

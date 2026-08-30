@@ -5,7 +5,6 @@ Every repo is built inline in tmp_path and driven as a subprocess, so the
 assertions pin printed text and exit codes rather than any internal wiring.
 """
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +13,8 @@ import pytest
 
 from crapkit.store import SnapshotStore
 from crapkit.watch import snapshot_mtimes
+
+from conftest import cli_runner
 
 SRC_TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -69,13 +70,11 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    env.pop("PYTHONSAFEPATH", None)  # the mutant suite imports from its own cwd
-    env["PYTHONDONTWRITEBYTECODE"] = "1"  # a stale .pyc would mask a mutant
-    return subprocess.run([sys.executable, "-m", "crapkit", *args], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8",
-                          timeout=300, env=env)
+run_cli = cli_runner(timeout=300, encoding="utf-8",
+                     # the mutant suite imports from its own cwd, and a stale
+                     # .pyc would mask a mutant
+                     env_extra={"PYTHONSAFEPATH": None,
+                                "PYTHONDONTWRITEBYTECODE": "1"})
 
 
 def git(repo: Path, *args: str) -> None:

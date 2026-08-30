@@ -2,10 +2,10 @@
 claims, and a scope no lane's scopes list covers. Doctor fails on both. The byte
 ceiling and coverage_optional scopes are the two legitimate ways out."""
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
+
+from conftest import run_cli
 
 _APP_TS = "export function f(a: number) { return a ? 1 : 2; }\n"
 
@@ -32,11 +32,6 @@ artifact = {app: {
 with open("cov.json", "w", encoding="utf-8") as fh:
     json.dump(artifact, fh)
 '''
-
-
-def run_cli(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-m", "crapkit", *args],
-                          cwd=repo, capture_output=True, text=True, timeout=120, env=dict(os.environ))
 
 
 def _config(scopes: str = "", globs: tuple[str, ...] = (), max_bytes: str = "") -> str:
