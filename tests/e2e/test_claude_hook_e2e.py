@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 import crapkit
+from conftest import child_env, run_cli
 
 PY = sys.executable
 GOLDENS = Path(__file__).resolve().parent.parent / "goldens" / "claude_hook"
@@ -187,20 +188,18 @@ def _stdin_text(golden: dict, repo: str) -> str:
     return golden["stdin"].replace("{REPO}", repo)
 
 
-def _child_env() -> dict:
-    """The subprocess imports the crapkit this test imported, not an installed one."""
-    env = dict(os.environ)
+def _child_overrides() -> dict:
+    """The environment overrides that make a child import the crapkit this test imported, not an installed one."""
     src = str(Path(crapkit.__file__).resolve().parent.parent)
-    env["PYTHONPATH"] = os.pathsep.join(p for p in (src, env.get("PYTHONPATH", "")) if p)
-    env.pop("CRAPKIT_OVERRIDE_REASON", None)
-    return env
+    inherited = os.environ.get("PYTHONPATH", "")
+    return {"PYTHONPATH": os.pathsep.join(p for p in (src, inherited) if p),
+            "CRAPKIT_OVERRIDE_REASON": None}
 
 
 def run_hook(golden: dict, repo: Path, cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run([PY, "-m", "crapkit", *golden["argv"]],
-                          input=_stdin_text(golden, str(repo)), cwd=cwd,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=_child_env())
+    return run_cli(cwd, *golden["argv"], stdin=_stdin_text(golden, str(repo)),
+                   timeout=300, encoding="utf-8", errors="replace",
+                   env_extra=_child_overrides())
 
 
 def _built(golden: dict, tmp_path: Path) -> Path:
@@ -252,7 +251,8 @@ def _probe(repo: Path, rel: str, tmp_path: Path) -> dict:
                           "cwd": str(repo), "tool_input": {"file_path": str(repo / rel)}})
     done = subprocess.run([PY, "-c", _PROBE], input=payload, cwd=tmp_path,
                           capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=300, env=_child_env())
+                          errors="replace", timeout=300,
+                          env=child_env(_child_overrides()))
     return json.loads(done.stdout.splitlines()[-1])
 
 

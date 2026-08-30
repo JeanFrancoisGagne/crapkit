@@ -1,13 +1,12 @@
 """MCP stdio handshake against the real server process: initialize, list the
 tools, call one. Newline-delimited JSON-RPC, exactly what an MCP client sends."""
 import json
-import os
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import git_commit_all, git_init_repo, run_cli
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -16,9 +15,8 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 def repo(tmp_path: Path) -> Path:
     r = tmp_path / "mini"
     shutil.copytree(FIXTURES / "mini_repo", r)
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]):
-        subprocess.run(cmd, cwd=r, check=True, capture_output=True)
+    git_init_repo(r)
+    git_commit_all(r, "init")
     return r
 
 
@@ -36,9 +34,7 @@ def test_initialize_list_and_call(repo: Path):
         _rpc(2, "tools/list"),
         _rpc(3, "tools/call", {"name": "doctor", "arguments": {}}),
     ]) + "\n"
-    proc = subprocess.run([sys.executable, "-m", "crapkit", "mcp", "--repo", str(repo)],
-                          input=requests, capture_output=True, text=True, timeout=120,
-                          cwd=repo, env=dict(os.environ))
+    proc = run_cli(repo, "mcp", "--repo", str(repo), stdin=requests)
     responses = {m["id"]: m for m in map(json.loads, proc.stdout.strip().splitlines())}
 
     assert responses[1]["result"]["serverInfo"]["name"] == "crapkit"
