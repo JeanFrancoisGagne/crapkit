@@ -23,6 +23,24 @@ from crapkit.mutate import Mutant
 from crapkit.scaffold import LaneSpec
 
 
+@pytest.fixture(autouse=True)
+def _forget_probed_words():
+    """`admin._start_probe` is memoized on the first word, and this file answers
+    `python --version` differently per test: a shim exiting 0, one exiting 9009,
+    one exiting 1. The cache outlives the test that filled it, so whichever shim
+    ran first answered for every later test that reaches the real probe, and the
+    per-test PATH the fixtures build was never asked. Three tests here failed
+    that way under the default random order while the file passed under
+    `-p no:randomly`.
+
+    Cleared on both sides: before, so no answer another file left decides a test
+    here, and after, so this file's shims never answer for the rest of the
+    suite."""
+    admin._start_probe.cache_clear()
+    yield
+    admin._start_probe.cache_clear()
+
+
 def _lane(command: str, parser: str = "coveragepy") -> LaneSpec:
     return LaneSpec("py", command, ".crapkit/cov/py.json", parser, ("python",))
 
