@@ -19,6 +19,7 @@ from pathlib import Path
 
 import crapkit
 from crapkit import __version__
+from untraced_child import untraced_env
 
 PROBE = ("from crapkit.cli.parser import _version_line\n"
          "line = _version_line()\n"
@@ -42,10 +43,9 @@ def _fake_dist_info(root: Path, version: str) -> str:
 
 
 def _run(path_entries: list[str], *flags: str) -> tuple[str, bool]:
-    # Under pytest-cov the child would start coverage from COV_CORE_* and
-    # import importlib.metadata before the probe asks; the probe measures
-    # crapkit's cost, so the child runs untraced.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("COV_CORE_")}
+    # A traced child starts coverage and imports what coverage imports before
+    # the probe asks; the probe measures crapkit's cost, so it runs untraced.
+    env = untraced_env()
     env["PYTHONPATH"] = os.pathsep.join(path_entries)
     done = subprocess.run([sys.executable, *flags, "-c", PROBE],
                           capture_output=True, text=True, env=env)

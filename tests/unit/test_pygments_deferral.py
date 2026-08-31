@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import crapkit
+from untraced_child import untraced_env
 
 SRC = str(Path(crapkit.__file__).resolve().parent.parent)
 
@@ -54,7 +55,10 @@ DEFER_PRELUDE = ("from crapkit._pygdefer import deferred_pygments\n"
 
 
 def run_python(code: str, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
+    # Untraced: coverage started in the child imports pygments through its own
+    # reporters, and every assertion below is about what a crapkit process
+    # holds in sys.modules. Traced, they measure coverage instead.
+    env = untraced_env()
     env["PYTHONPATH"] = os.pathsep.join([SRC, env.get("PYTHONPATH", "")])
     return subprocess.run([sys.executable, "-c", code, *args], cwd=cwd, env=env,
                           capture_output=True, text=True, timeout=180)

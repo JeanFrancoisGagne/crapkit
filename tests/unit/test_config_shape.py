@@ -17,6 +17,7 @@ from pathlib import Path
 
 import crapkit
 from crapkit.config import Config, Lane, Scope, load_config_text
+from untraced_child import untraced_env
 
 MINIMAL = """
 [crapkit]
@@ -39,11 +40,11 @@ scopes = ["src"]
 def _imports_of(module: str) -> set[str]:
     """Every module a fresh interpreter holds after importing this one.
 
-    pytest-cov marks a child for tracing through COV_CORE_* in its
-    environment, and the coverage it then starts imports dataclasses before
-    the probe runs a line. The question here is what crapkit costs, so the
-    child runs untraced."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("COV_CORE_")}
+    A child marked for tracing starts coverage, and that coverage imports
+    dataclasses before the probe runs a line. The question here is what crapkit
+    costs, so the child runs untraced: `untraced_env` drops both families of
+    marker, because the lane sets both."""
+    env = untraced_env()
     src = str(Path(crapkit.__file__).resolve().parent.parent)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (src, env.get("PYTHONPATH", "")) if p)
     probe = f"import {module}\nimport sys, json\nprint(json.dumps(sorted(sys.modules)))\n"
@@ -52,6 +53,20 @@ def _imports_of(module: str) -> set[str]:
 
 
 def test_reading_the_config_module_costs_no_dataclasses_import():
+    assert "dataclasses" not in _imports_of("crapkit.config")
+
+
+def test_the_probe_child_stays_untraced_under_coverages_subprocess_patch(tmp_path, monkeypatch):
+    """The other door into a child, and the one pytest-cov 7 leaves open.
+
+    pytest-cov 7.0.0 dropped its own subprocess measurement, so `[run] patch =
+    subprocess` is what measures the CLI the e2e suite drives, and it marks
+    children with COVERAGE_PROCESS_* instead of COV_CORE_*. A probe that strips
+    only the old family reads coverage's imports as crapkit's."""
+    rc = tmp_path / ".coveragerc"
+    rc.write_text("[run]\nsource = crapkit\n", encoding="utf-8", newline="\n")
+    monkeypatch.setenv("COVERAGE_PROCESS_START", str(rc))
+
     assert "dataclasses" not in _imports_of("crapkit.config")
 
 
