@@ -64,8 +64,15 @@ goes to zero for you and the next session sees the rows again.
 ## `scoped_tests` belongs between doctor and coverage
 
 The quickstarts run `crapkit init`, then `crapkit doctor`, then `crapkit coverage`. Fill in
-the `[crapkit.scoped_tests]` table between the last two. `init` already wrote it commented
-out, one line per scope, so uncommenting is usually the whole job.
+the `[crapkit.scoped_tests]` table between the last two. `init` already wrote a line per
+scope, live where a detected lane proves the runner and commented everywhere else, so
+uncommenting is usually the whole job.
+
+Every python line it wrote names one launcher, the lockfile's where the repo has one:
+`uv run python -m pytest ...` on a `uv.lock` repo, in the lane command, in the entries
+here, and in the commented `[[lane]]` template. Step 3 measuring one environment while
+step 4 tests another is the bug that rule exists to prevent, so keep the prefix on any
+line you write by hand.
 
 Skip it and nothing breaks loudly, which is the hazard. A repo with lanes and no templates
 scores fine, doctor reports the gap as a warning, and every packet `crapkit brief` builds
@@ -214,6 +221,11 @@ It carries three skills, the read-side MCP server, and one advisory PostToolUse 
 names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
 stays the only enforcement point. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
 compares the two and prints nothing when they agree.
+
+The plugin registers that hook on `Edit|Write`. A session that writes source through a
+shell heredoc gets no advisory until the consumer adds a second entry of their own with
+matcher `Bash`, which costs one `git rev-parse` plus one `git status` per shell call and
+is therefore opt-in. The snippet is in the `crapkit-onboard` skill.
 
 Every other harness takes one of the two surfaces under it. The table is the whole list; no
 adapter beyond it exists yet.
