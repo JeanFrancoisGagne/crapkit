@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.6 — unreleased
+## 0.4.6 — 2026-08-31
 
 Three findings from @nicolaschapados, out of one incident on a real pytest/uv project
 checked out twice through git worktrees. The incident was not a crapkit bug: the shell
