@@ -44,8 +44,8 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 | `scoped_tests` | table | none | Written as its own table, `[crapkit.scoped_tests]`, mapping scope name to a command template. `test-scoped` fills `{files}` with the quoted file list; a template with no `{files}` runs as written, which is how a scope runs its whole suite when its tests live outside its own `paths`. It is also step 4 of the burn-down loop and `brief`'s `commands.scoped_tests`, so **doctor warns** about a scope a lane measures with no template behind it: `null` there leaves a session with nothing to run between the gate and verify. |
 | `notes` | array of string | `[]` | House rules for this repo, in the config rather than in a file an agent has to find. `brief` carries them into the packet as `notes`, repo-wide lines first, then the scope's own. crapkit never parses them. |
 | `mutation_command` | string | `""` | The suite run once per mutant. A nonzero exit means the mutant was killed. `mutate` refuses to run without it. Shell and PowerShell files in the diff are skipped and named on stderr: `<` and `>` are redirections in both, so their mutants would be noise. |
-| `mutation_timeout_seconds` | int >= 1 | `300` | Per-mutant timeout. Expiry counts as killed. At the default cap of 100 mutants this bounds one `mutate` run at over 8 hours, so lower it for a slow suite. |
-| `mutation_workers` | int >= 1 | `1` | Mutants run at once. `1` applies them to the live working tree one at a time. Above 1, crapkit runs each worker in its own detached git worktree and deals mutants round-robin. Those worktrees are **kept**, at `.crapkit/mutate-pool/w0..wN`: building four of them costs 30.6 s on a 31,459-file repo and re-preparing the kept four costs 0.46 s, and every run re-prepares them (`git checkout --force <HEAD sha>`, then `git clean -xdff`) before a mutant is applied. What stays on disk is that many checkouts of your repo; `crapkit mutate --drop-pool` removes them. A second `mutate` running in the same repo finds the pool locked and gets its own throwaway worktrees, removed on the way out as before. |
+| `mutation_timeout_seconds` | int >= 1 | `300` | Per-mutant timeout. Expiry counts as killed, and the kill takes the suite's whole process tree, so a looping mutant does not outlive the run that gave up on it. At the default cap of 100 mutants this bounds one `mutate` run at over 8 hours, so lower it for a slow suite. |
+| `mutation_workers` | int >= 1 | `1` | Mutants run at once. `1` applies them to the live working tree one at a time and keeps no pool. Above 1, crapkit runs each worker in its own detached git worktree and deals mutants round-robin. Those worktrees are **kept**, at `.crapkit/mutate-pool/w0..wN`: building four of them costs 30.6 s on a 31,459-file repo and re-preparing the kept four costs 0.46 s, and every run re-prepares them (`git checkout --force <HEAD sha>`, then `git clean -xdff`) before a mutant is applied, so the last run's mutant goes back and a commit made since lands. What stays on disk is that many checkouts of your repo, and nothing bounds its size; `crapkit mutate --drop-pool` removes them and exits. A second `mutate` running in the same repo finds the pool locked and gets its own throwaway worktrees, removed on the way out as before. Results merge by the mutant's position in the list, so the same tree reports the same JSON at any worker count. |
 | `diff_uncovered_max` | int >= 0 | absent | Ceiling on changed lines that never ran. **Absent means warn only**: `verify` still prints `warning: N changed line(s) have no coverage` on stderr and lists the first 20, but exits 0. Set it and a breach exits 9. |
 | `debt_max_age_months` | int >= 0 | absent | `ratchet report --enforce` flags open marks older than this (counted at 30 days per month). |
 | `repayment_min_per_30d` | int >= 0 | absent | `ratchet report --enforce` flags a burn-down that repaid fewer marks than this in the last 30 days while debt is open. |
@@ -71,7 +71,7 @@ languages. Every tracked source file in a declared language must belong to a sco
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring). |
-| `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file. |
+| `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file, so `paths = ["core/hot.py"]` claims one file and editing it marks that scope's lane changed. The **deepest** declared path wins when two claim the same file; see [Scope matching](#scope-matching). |
 | `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
 | `coverage_optional` | bool | no | `false` | Code no test can reach, or code no parser can measure. See below. |
@@ -164,9 +164,33 @@ ordinary identifier anywhere else.
 
 ### Scope matching
 
-Scopes are tried in declaration order; the first whose path prefix **and** extension both
-match wins. A prefix-only match does not stop the search, so two scopes sharing a prefix but
-declaring different languages do not black-hole each other's files.
+**The deepest declared path wins.** Paths are tried longest first, and the first whose path
+prefix **and** extension both match owns the file. Declaration order breaks a tie between
+two paths of the same length and decides nothing else. A prefix-only match does not stop the
+search, so two scopes sharing a prefix but declaring different languages do not black-hole
+each other's files.
+
+Depth is a property of the path, not the scope, so a scope declaring both `src` and
+`packages/web/src` claims a file under each at its own depth.
+
+Declaring `src` first and `src/hot` second, `src/hot` still gets its file:
+
+```
+$ crapkit doctor
+ok   config keys all recognized
+ok   scope 'src': 1 files
+ok   scope 'hot': 1 files
+ok   every tracked source file belongs to a scope
+```
+
+One predicate answers this for everyone since 0.4.5: the scored corpus, `test-scoped`
+routing, lane reuse and the `brief` packet. They used to answer separately, so `brief` could
+take a function's lane and test command from one scope and its ceiling from another.
+
+**If your repo has nested scopes, its next scan may move files between them.** Whichever
+scope declares the longer path now owns those files, so their per-scope rollups, ceilings
+and lane change. A repo with no nested scopes sees no change at all. Run `crapkit doctor`
+after upgrading and read the per-scope file counts.
 
 ### `coverage_optional = true`
 
@@ -200,17 +224,17 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `name` | string | yes | | The lane's id. Names its log at `.crapkit/lane-<name>.log` and `coverage --lane`. |
-| `command` | string | yes | | Run through the shell, cwd at the repo root unless `cwd` says otherwise. Its exit code is recorded, not enforced: a suite with known failures still writes a valid artifact. |
+| `command` | string | yes | | Run through the shell, cwd at the repo root unless `cwd` says otherwise. Its exit code is recorded, not enforced: a suite with known failures still writes a valid artifact. crapkit reads it with the shell that will run it, sh on POSIX and cmd.exe on Windows, and so does `doctor`. That reading covers quoting, carets, `&&` segments, redirections and `;`: [How a lane command is read](lanes.md#how-a-lane-command-is-read). |
 | `artifact` | string | yes | | Repo-relative path to the coverage file the command writes. Its absence after the command (and its retries) is the failure. Two lanes may not share an artifact path. Point it under `.crapkit/cov/`, which `init` already gitignores; `doctor` warns about a lane writing at the repo root. See [Where artifacts live](lanes.md#where-artifacts-live). |
 | `parser` | `istanbul` \| `coveragepy` | yes | | How to read the artifact. |
 | `scopes` | array of string | yes | | Which scopes this lane's coverage speaks for. A scope in no lane's list can only score `no-lane`. |
 | `cwd` | string | no | repo root | Repo-relative working directory for the command. `doctor` fails when it does not exist. |
 | `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. |
-| `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory. |
-| `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass), and the command is read like the shell that runs it reads it (sh on POSIX, cmd.exe on Windows), so a double-quoted value (`-m "not live and not perf"`) is one token; use double quotes, since cmd.exe does not treat `'` as a quote. Set it false deliberately for a genuinely scoped suite. |
+| `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory, and to hand a junit reporter its output path when the reporter reads no path off the command line (`jest-junit` is one). Every lane gets it, so raising `max_parallel_lanes` without one lets N lanes each claim the whole box. |
+| `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass), and the command is read by the shell that will run it, one argv per `&&`, `\|\|`, `&` or `\|` segment, with every segment that runs pytest checked. On cmd.exe a `;` starts nothing, so `pytest --cov; echo done` hands pytest `echo` and is refused; write the second command after `&&`. Use double quotes for values, since cmd.exe does not treat `'` as a quote. Set it false deliberately for a genuinely scoped suite. |
 | `container_ok` | bool | no | `false` | Lets a `coveragepy` lane run inside a container. Without it such a lane refuses with exit 5 whenever `/.dockerenv` exists or `CRAPKIT_INSIDE_CONTAINER=1`. |
-| `results_artifact` | string | no | `""` | A JUnit XML report, under `.crapkit/cov/` for the same reason as `artifact`. It feeds the no-new-failures check (exit 8) and the suite-shrink warning. Declared but missing is exit 5, so the check can never pass vacuously, and so is a report saying the run never finished — [a crashed xdist worker or a session error](lanes.md#a-junit-that-says-the-run-did-not-finish). |
-| `timeout_seconds` | int >= 0 | no | `0` | crapkit kills the command past this. `0` means no crapkit-owned timeout. |
+| `results_artifact` | string | no | `""` | A JUnit XML report, under `.crapkit/cov/` for the same reason as `artifact`. Two checks read it and neither runs without it: no-new-failures (`verify` exit 8) and the crashed-worker trust check, plus the suite-shrink warning. `doctor` WARNs on a `coveragepy` or `istanbul` lane that declares none, naming both, and `crapkit init` writes it on the lanes it detects. Declared but missing is exit 5, so the check can never pass vacuously, and so is a report saying the run never finished ([a crashed xdist worker or a session error](lanes.md#a-junit-that-says-the-run-did-not-finish)). |
+| `timeout_seconds` | int >= 0 | no | `0` | crapkit kills the command past this. The kill takes the whole process tree, not just the shell, and crapkit waits for it, so no orphan suite keeps running after the lane fails. `0` means no crapkit-owned timeout. |
 | `retries` | int >= 0 | no | `0` | Reruns after a timeout or a missing artifact. Each attempt appends to the lane log under an `--- attempt N ---` header. |
 | `retest_command` | string | no | `""` | Rerun template for newly failed tests, before exit 8 is decided. See [lanes.md](lanes.md#flake-retest). |
 
