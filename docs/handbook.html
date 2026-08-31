@@ -762,11 +762,28 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 <div class="cards">
   <div class="card"><h4><code>mutate</code>: are the tests real?</h4><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed, runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
   <div class="card"><h4><code>duplication</code>: does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
-  <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor.</p></div>
-  <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data.</p></div>
+  <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor. Cached since 0.4.5, so a warm run is a file read.</p></div>
+  <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data, read since 0.4.5 off a per-run rollup instead of every row.</p></div>
   <div class="card"><h4><code>doctor</code>: does the config still fit?</h4><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
   <div class="card"><h4><code>overrides</code>: who granted what?</h4><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
 </div>
+
+<h3>What 0.4.5 caches, and where it lives</h3>
+<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the two churn caches. Its key is HEAD, the churn window and a digest of the tracked set, so it cannot answer for a tree it did not see; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
+<pre><code>$ ls .crapkit/*.json .crapkit/*.z
+.crapkit/cache.json
+.crapkit/churn-cache-v2.json
+.crapkit/churn-log-v2.json
+.crapkit/churn-log-v2.z
+.crapkit/coupling-cache-v1.json
+.crapkit/stat-stamps.json
+
+$ crapkit coupling --top 5      # cold, caches deleted: 0.53 s
+$ crapkit coupling --top 5      # warm: 0.09 s</code></pre>
+<p><code>trend</code> and <code>report</code> read a rollup row written once per run and pruned with that run, instead of rescanning every scored row the store holds. Both now write to the store on a best-effort basis, which is new for two commands that used to be pure readers.</p>
+<p><code>mutate</code> with <code>mutation_workers</code> above 1 keeps its worker worktrees at <code>.crapkit/mutate-pool/</code> and re-prepares them each run rather than adding and removing them. Single-worker runs are untouched. The pool is not size-bounded, so when you want the disk back:</p>
+<pre><code>$ crapkit mutate --drop-pool
+removed 2 pooled worktrees from …\.crapkit\mutate-pool</code></pre>
 
 <!-- ============================ 15 INSTALL ============================ -->
 <h2 id="install"><span class="sn">15</span>Install</h2>
