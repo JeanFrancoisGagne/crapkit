@@ -620,5 +620,4 @@ git commit -m "adopt crapkit"
 crapkit verify              # should be green on the tree you just committed
 ```
 
-Then install the gate ([README](../README.md#installing-the-gate)) and the merge driver
-above.
+Then install the gate ([README](../README.md#the-gate)) and the merge driver above.
