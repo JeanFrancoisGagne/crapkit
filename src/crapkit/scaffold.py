@@ -332,6 +332,24 @@ _SCOPED_TEST_PLACEHOLDER = "<your test command> {files}"
 _DEFAULT_PYTHON = "python"
 
 
+# The shape that marks a detected lane as the pytest lane, read in one place:
+# the launcher and the confirmed-runner check spelled it two ways once, so a
+# command ending at `-m pytest` was the pytest lane to one and not the other,
+# and init wrote a commented template carrying a `uv run python` the same file
+# had just refused to confirm.
+_PYTEST_INVOCATION = " -m pytest "
+
+
+def _pytest_lane_launcher(lanes: tuple[LaneSpec, ...]) -> str | None:
+    """The python the lane that runs pytest runs it with, or None when no
+    detected lane runs pytest at all."""
+    for lane in lanes:
+        head, sep, _ = lane.command.partition(_PYTEST_INVOCATION)
+        if sep:
+            return head
+    return None
+
+
 def python_launcher(lanes: tuple[LaneSpec, ...]) -> str:
     """The python invocation the detected pytest lane already settled on.
 
@@ -340,11 +358,8 @@ def python_launcher(lanes: tuple[LaneSpec, ...]) -> str:
     drift: a `uv run python` lane with a bare `python` step 4 would measure one
     environment and test another.
     """
-    for lane in lanes:
-        head, sep, _ = lane.command.partition(" -m pytest")
-        if sep:
-            return head
-    return _DEFAULT_PYTHON
+    launcher = _pytest_lane_launcher(lanes)
+    return _DEFAULT_PYTHON if launcher is None else launcher
 
 
 def _scoped_test_command(languages: tuple[str, ...], launcher: str) -> str:
@@ -365,7 +380,7 @@ def _confirmed_languages(lanes: tuple[LaneSpec, ...]) -> frozenset[str]:
     `python -m pytest {files}` known-good. The js runners stay unconfirmed on
     purpose — which vitest or jest config a file-scoped run needs is exactly
     what presence detection cannot see."""
-    return frozenset({"python"} if any(" -m pytest " in ln.command for ln in lanes) else ())
+    return frozenset({"python"} if _pytest_lane_launcher(lanes) is not None else ())
 
 
 def _scoped_entry_lines(scopes: dict[str, tuple[str, ...]], live: bool,

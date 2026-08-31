@@ -7,8 +7,9 @@ package.json content only — nothing is executed, nothing is imported.
 import json
 
 from crapkit.config import load_config_text
-from crapkit.scaffold import (detect_lanes, gitignore_entries, gitignore_update, live_lanes,
-                              lockfile_runner, python_launcher, source_candidates, starter_toml)
+from crapkit.scaffold import (LaneSpec, detect_lanes, gitignore_entries, gitignore_update,
+                              live_lanes, lockfile_runner, python_launcher, source_candidates,
+                              starter_toml)
 
 SCOPES = {"pylib": ("python",), "src": ("typescript",)}
 
@@ -416,3 +417,19 @@ def test_a_managed_lane_still_reads_as_the_confirmed_pytest_runner():
     lanes = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="pdm run python")
 
     assert "src" in dict(load_config_text(starter_toml({"src": ("python",)}, lanes)).scoped_tests)
+
+
+def test_the_launcher_and_the_live_entry_read_the_same_lane():
+    """One reading of which lane runs pytest, or none.
+
+    A command ending at `-m pytest` was the pytest lane to `python_launcher`
+    and not to the check that writes the scoped-tests entry live, so init wrote
+    a commented template carrying a `uv run python` it had just refused to
+    confirm.
+    """
+    lanes = (LaneSpec("py", "uv run python -m pytest", ".crapkit/cov/py.json",
+                      "coveragepy", ("python",)),)
+
+    live = "src" in dict(load_config_text(starter_toml({"src": ("python",)}, lanes)).scoped_tests)
+
+    assert live == (python_launcher(lanes) != "python")
