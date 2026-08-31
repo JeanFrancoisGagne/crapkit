@@ -37,8 +37,13 @@ scopes = ["src"]
 
 
 def _imports_of(module: str) -> set[str]:
-    """Every module a fresh interpreter holds after importing this one."""
-    env = dict(os.environ)
+    """Every module a fresh interpreter holds after importing this one.
+
+    pytest-cov marks a child for tracing through COV_CORE_* in its
+    environment, and the coverage it then starts imports dataclasses before
+    the probe runs a line. The question here is what crapkit costs, so the
+    child runs untraced."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COV_CORE_")}
     src = str(Path(crapkit.__file__).resolve().parent.parent)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (src, env.get("PYTHONPATH", "")) if p)
     probe = f"import {module}\nimport sys, json\nprint(json.dumps(sorted(sys.modules)))\n"

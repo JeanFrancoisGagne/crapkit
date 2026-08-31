@@ -1,7 +1,7 @@
 """What every unit test gets, whatever order it runs in.
 
 The unit suite is one process, so a module-level global in src/crapkit is shared
-by all 2,282 tests. `crapkit.uncovered` keeps one on purpose: an istanbul lane
+by every test in the suite. `crapkit.uncovered` keeps one on purpose: an istanbul lane
 decodes its artifact once and hands the dead lines to `_folded` / `_folded_from`
 for the next reader to take, which is 100 MB against 205 MB on a 13-lane run.
 

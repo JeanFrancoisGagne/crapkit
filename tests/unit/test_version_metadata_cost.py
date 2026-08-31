@@ -42,7 +42,10 @@ def _fake_dist_info(root: Path, version: str) -> str:
 
 
 def _run(path_entries: list[str], *flags: str) -> tuple[str, bool]:
-    env = dict(os.environ)
+    # Under pytest-cov the child would start coverage from COV_CORE_* and
+    # import importlib.metadata before the probe asks; the probe measures
+    # crapkit's cost, so the child runs untraced.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COV_CORE_")}
     env["PYTHONPATH"] = os.pathsep.join(path_entries)
     done = subprocess.run([sys.executable, *flags, "-c", PROBE],
                           capture_output=True, text=True, env=env)
