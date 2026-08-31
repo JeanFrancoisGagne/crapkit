@@ -94,7 +94,7 @@ key it takes the side that changed, or the lower value when both did.
 A conflict here means the merge driver is not installed in this clone. Install it, then redo
 the merge:
 
-    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+    git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"
 
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
 When the driver itself refuses (`marks from different metric versions cannot merge`),

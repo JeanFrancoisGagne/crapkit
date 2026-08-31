@@ -272,7 +272,7 @@ crapkit-ratchet.tsv merge=crapkit-ratchet
 file, by design, so this cannot be automated away):
 
 ```
-git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"
 git config merge.crapkit-ratchet.name "crapkit ratchet 3-way merge"
 ```
 
