@@ -201,6 +201,50 @@ did, so breaking an existing gate over tree hygiene would cost more than the lit
 that writes inside a scope's own tree (`web/coverage/` beside the `web/src` it measures) is
 that package's business and is not warned about.
 
+### What the istanbul parser reads
+
+Your runner writes `coverage-final.json` and you never open it. Read this section only if
+you are building one by hand, converting another format into it, or staring at a lane that
+scores nothing.
+
+crapkit scores functions, so `fnMap` is the part that decides everything. Per file in the
+artifact:
+
+| Key | What crapkit does with it |
+|---|---|
+| `fnMap` | The function list. Every entry needs `decl.start.line`. `loc.end.line` closes the span and falls back to the start line. A missing `name` reads as `(anonymous)`. |
+| `f` | Call counts per `fnMap` id. |
+| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`. This is the function's coverage whenever it has one branch. |
+| `statementMap` and `s` | The fallback for a function with no branch in its span, and the only source of the uncovered lines `verify` measures a diff against. |
+
+A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
+it was called, 0.0 when it was not.
+
+The outer object is keyed by path. crapkit strips the crapkit root off an absolute key and
+takes any other key as it stands, so root-relative keys work too. `path_prefix` is
+coverage.py's key and does nothing here.
+
+An artifact that names no functions is not an error. It parses, every scored function falls
+to `untested`, and nothing says so. Same repo, same two TypeScript files, one lane whose
+command writes the artifact by hand:
+
+```
+$ crapkit coverage        # artifact holds path, statementMap and s
+run 1 @ 6f736a5b12a: 2 functions scored — 0 measured / 2 untested / 0 no-lane / 0 cc-only, 2 over target 6, CRAP load 32.0, grade F
+$ crapkit coverage        # same file plus fnMap, f, branchMap and b
+run 2 @ 6f736a5b12a: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 7.39, grade A+
+```
+
+Both exit 0. That is the [wrong `path_prefix`](#running-from-a-subdirectory) failure from the
+other side: the lane ran, the artifact parsed, and the score is wrong. `0 measured` on a lane
+that ran is the number to read.
+
+One shape does fail loudly. An `fnMap` entry with no `decl` exits 5:
+
+```
+crapkit: lane 'js' FAILED: unparseable istanbul artifact: 'decl'
+```
+
 ### What else lives in .crapkit/
 
 Everything crapkit writes goes in one gitignored directory beside `crapkit.toml`. One file
