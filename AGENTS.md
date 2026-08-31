@@ -245,14 +245,14 @@ The lines verify prints, one per finding kind, collected here from separate runs
       GATE  crap     42.0  ccn   6 cov 0%  calc/report.py:22  bucket( counts , low , high , invert , label )  -> add-tests  [dirty]
       RATCHET  calc/report.py  spread( counts , low , high , invert , label , pad ): 8.0 -> 72.0
       NEW FAILURE  tests.test_curve::test_normalized  [dirty]
-      findings: 1 committed / 0 dirty (uncommitted tracked edits)
+      findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
     diff coverage: 3 uncovered changed line(s) over the ceiling 0
 
 That GATE line is the difference between step 3 and step 5: ccn 6 sits at the ceiling,
 so `rescore --gate` passes it, and CRAP 42 at 0% coverage still fails verify.
 
-Findings tagged `[dirty]` come from uncommitted tracked edits, and the summary line
-splits them. In a shared checkout, dirty findings may not be yours.
+Findings tagged `[dirty]` come from uncommitted edits and untracked files, and the
+summary line splits them. In a shared checkout, dirty findings may not be yours.
 
 ## The advisory hook
 

@@ -422,7 +422,7 @@ $ crapkit verify
 warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since — measuring against run 1 @ 88012a148f6 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
 verify FAILED @ d89068de7f3 vs baseline 88012a148f6 (2 changed files)
   GATE  crap     72.0  ccn   8 cov 0%  calc/legacy.py:7  legacy_router( a , b , c , d , e )  -> decompose
-  findings: 1 committed / 0 dirty (uncommitted tracked edits)
+  findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 ```
 
 Run 3 is a `coverage` run somebody took on the tree run 2 refused, and it scores the same
