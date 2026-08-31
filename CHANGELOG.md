@@ -2,10 +2,10 @@
 
 ## 0.4.7 — unreleased
 
-One contributed capability and three fixes. The capability is the per-edit advisory
-hearing writes that arrive through a shell, contributed by @nicolaschapados as PR #45.
-The three fixes are #42, #43 and #44, filed while reviewing the incident report of his
-that became 0.4.6 (PR #41): a lane refusal that named the wrong cause, a cause line
+One contributed capability and three fixes. The capability is the per-edit advisory,
+which now hears writes that arrive through a shell: PR #45, from @nicolaschapados. The
+three fixes are #42, #43 and #44, filed off the review of PR #41, the incident report of
+his that became 0.4.6. They are a lane refusal that named the wrong cause, a cause line
 hoisted out of a superseded retry attempt, and a commented `init` template that handed
 back the environment bug the live lane no longer has. Nothing here is required of a
 consumer on upgrade; [Upgrading from 0.4.6](#upgrading-from-046) at the end of this
