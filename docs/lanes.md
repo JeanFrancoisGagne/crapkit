@@ -13,10 +13,8 @@ parser = "coveragepy"
 scopes = ["calc"]
 ```
 
-Four required parts and one rule each. `results_artifact` is the fifth key and the only
-optional one here: leave it out and `doctor` WARNs, because the two checks that read a
-junit report — the crashed-worker trust check and no-new-failures — cannot run for the
-lane.
+Four required parts and one rule each, plus `results_artifact`, which is optional and on
+every lane on this page.
 
 | Part | Rule |
 |---|---|
@@ -24,6 +22,28 @@ lane.
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. |
 | `parser` | `istanbul` or `coveragepy`. Nothing else exists. |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
+| `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
+
+### Why every lane here declares a results_artifact
+
+Coverage alone cannot tell a finished suite from a suite that lost a worker, and both write
+a coverage artifact. The junit report is the only thing that says which one happened, so a
+lane without one measures fine and verifies blind. `doctor` says so, per lane, with the
+flag to add:
+
+```
+$ crapkit doctor
+ok   config keys all recognized
+ok   scope 'calc': 1 files
+ok   every tracked source file belongs to a scope
+ok   1 lane(s) declared
+WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
+ok   lizard 1.24.0
+doctor: no problems found
+```
+
+A WARN, never a FAIL: the lane still scores. `crapkit init` writes both halves on the lanes
+it detects, so a repo scaffolded since 0.4.5 starts with the checks on.
 
 Output streams to `.crapkit/lane-<name>.log` while the command runs. Tail that file to
 supervise a long suite; crapkit prints nothing until the lane finishes.
@@ -182,6 +202,43 @@ That warning is never a `FAIL`. A lane writing at the root measures exactly what
 did, so breaking an existing gate over tree hygiene would cost more than the litter. A lane
 that writes inside a scope's own tree (`web/coverage/` beside the `web/src` it measures) is
 that package's business and is not warned about.
+
+### What else lives in .crapkit/
+
+Everything crapkit writes goes in one gitignored directory beside `crapkit.toml`. One file
+is durable state and the rest are caches: delete any cache and the next run rebuilds it, a
+little slower. A cache that is unreadable, torn or keyed for another format reads as cold,
+never as a crash, so two crapkit versions can share a working tree.
+
+| Path | What it holds | Key |
+|---|---|---|
+| `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
+| `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
+| `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. | |
+| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took. Drives `--reuse-unchanged` and `doctor --tune`. | |
+| `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
+| `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
+| `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
+| `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. |
+| `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
+| `mutate-pool/` | The `w0..wN` worker worktrees `mutation_workers > 1` keeps. Removed by `crapkit mutate --drop-pool`. | |
+| `report.html` | Where `crapkit report` writes by default. | |
+
+The date is in the churn key because `--since=12 months ago` is measured against the wall
+clock, so yesterday's map describes a window one day wider than today's. The tracked set is
+in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
+lists, and the index moves without HEAD: `git rm --cached src/util.py` leaves the sha alone
+and still has to retire every pair naming that file.
+
+Two thresholds bypass the coupling cache. What is stored is the ranking at
+`--min-support 5` and `--min-confidence 0.5`, so `--top` reads it and either threshold off
+its default recomputes: serving a wider question from a narrower file would drop the pairs
+the wider thresholds exist to surface.
+
+The version marker is in the file name on purpose. 0.4.3 and 0.4.5 sharing one working tree
+each read the other's cache as cold and rewrote it, so every run of both rebuilt the map.
+Different formats, different files, both warm. A warm 0.4.4 cache is adopted once and its
+file removed rather than left behind.
 
 ---
 
@@ -579,15 +636,42 @@ crapkit: lane 'slow' FAILED: lane 'slow' timed out after 2s (attempt 2); log: ..
 `.crapkit/lane-slow.log`:
 
 ```
-$ python -c "import time; time.sleep(30)"
+$ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 
 [crapkit] timed out after 2s; killed
 
 --- attempt 2 ---
-$ python -c "import time; time.sleep(30)"
+$ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 
 [crapkit] timed out after 2s; killed
 ```
+
+### The kill takes the whole process tree
+
+`command` runs under a shell, so the shell is the child and your runner is a grandchild.
+Killing the shell alone leaves the suite running with nothing waiting on it. Since 0.4.5
+the command starts in its own process group and the deadline kills the group: `taskkill /T`
+on Windows, `killpg` on POSIX. crapkit waits for the tree to die before it moves on, so the
+working directory the lane ran in is free.
+
+The lane above spawns a grandchild that appends a line to `ticks.txt` twice a second for
+30 s. Two attempts at a 2 s deadline, and the file stops growing the moment the deadline
+lands:
+
+```
+$ crapkit coverage
+crapkit: lane 'slow' FAILED: lane 'slow' timed out after 2s (attempt 2); log: ...\.crapkit\lane-slow.log
+crapkit: every lane failed: lane 'slow' timed out after 2s (attempt 2); log: ...\.crapkit\lane-slow.log
+EXIT=5
+$ wc -l < ticks.txt
+10
+$ sleep 5; wc -l < ticks.txt
+10
+```
+
+The same bounded spawn backs `mutation_timeout_seconds` and `init`'s pytest-cov probe, so a
+looping mutant is cut instead of outliving the run that gave up on it. The lane log still
+streams while the command runs.
 
 ---
 
