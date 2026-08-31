@@ -25,6 +25,11 @@ collection failure on a block of `ERROR path` lines saying which files broke and
 why, so a plain tail spends its whole budget on filenames while the reason scrolls off
 above it.
 
+A hoisted line too long to show whole keeps its END behind an ellipsis. The path that
+names the other checkout sits at the end of an `E   ImportError: cannot import name ...`
+line, and the cut used to be taken from the right, so on a deep path the one detail worth
+hoisting was the one dropped, with nothing saying so.
+
 ### An artifact that measured a different tree
 Nothing checked that a lane's artifact was about this checkout. Coverage joins on path
 and nothing else, so an artifact whose paths reach none of the scopes its lane claims

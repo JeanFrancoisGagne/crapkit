@@ -84,13 +84,23 @@ def _tail_lines(lines: list[str], budget: int) -> list[str]:
     return ["..." + lines[-1][-budget:]] if lines else []
 
 
+def _cut_cause(line: str) -> str:
+    """One cause line inside the budget, cut from the LEFT and marked.
+
+    What identifies an ImportError is the path at the end of it — the OTHER
+    checkout's, in the report this came from — so a cut taken from the right
+    drops the half worth hoisting. `_tail_lines` marks its own unavoidable cut
+    for the same reason: an unmarked one reads as the whole message."""
+    return line if len(line) <= _CAUSE_WIDTH else "..." + line[-(_CAUSE_WIDTH - 3):]
+
+
 def _cause_lines(lines: list[str], tail: list[str]) -> list[str]:
     """The last lines anywhere in the log that name a failure, when the tail
     carries none. Nothing when the tail already says why — repeating it would
     spend the message on the same words twice."""
     if any(_DIAGNOSTIC.match(line) for line in tail):
         return []
-    named = [line.strip()[:_CAUSE_WIDTH] for line in lines if _DIAGNOSTIC.match(line)]
+    named = [_cut_cause(line.strip()) for line in lines if _DIAGNOSTIC.match(line)]
     return named[-_CAUSE_LINES:]
 
 

@@ -129,6 +129,25 @@ def test_the_reason_survives_a_summary_block_long_enough_to_bury_it(tmp_path):
     assert "short test summary info" not in message, "the budget went to the reason"
 
 
+def test_a_cause_line_too_long_to_show_whole_keeps_its_end(tmp_path):
+    """What identifies an ImportError is the path at the END of the line: in the
+    report this came from, the other checkout's. A cut taken from the left drops
+    exactly that half and says nothing about having cut."""
+    reason = ("E   ImportError: cannot import name 'WidgetRegistry' from partially "
+              "initialized module 'faro.core.widgets' (/Users/dev/src/monorepo-checkouts/"
+              "project-beta/.venv/lib/python3.11/site-packages/faro/core/widgets/impl.py)")
+    assert len(reason) > 200, "the case is a line the cause budget cannot show whole"
+    lines = ["$ python -m pytest --cov", reason,
+             "=========================== short test summary info ===================="]
+    lines += [f"ERROR tests/test_{i:03d}.py" for i in range(60)]
+    lines += ["(exit 2)"]
+
+    message = _refusal(tmp_path, lines)
+
+    assert "widgets/impl.py)" in message, "the checkout the line names is the point of it"
+    assert "..." in message, "and the reader is told the line was cut"
+
+
 def test_a_tail_that_already_says_why_is_not_repeated(tmp_path):
     lines = ["$ python -m pytest --cov", "E   ImportError: no module named 'faro'", "(exit 2)"]
 
