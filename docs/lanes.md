@@ -988,11 +988,13 @@ ERROR tests/test_widgets.py
 
 ## An artifact that measured a different tree
 
-A lane whose artifact names paths that reach **none** of the scopes it claims is refused:
+A lane whose artifact names paths that reach **none** of the scopes it claims gets one of
+two verdicts, and the measured paths decide which. Paths outside this checkout fail the
+lane:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' FAILED: lane 'py' measured 412 file(s), none of them under the paths its scopes declare (src/) — .crapkit/cov/py.json does not describe this checkout, and joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py. Set path_prefix on the lane when the runner reports paths relative to a subdirectory; otherwise the run measured a different tree (a stale artifact, or a suite importing another checkout through the venv the shell had active)
+crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src/), and 3 of them outside this checkout entirely — .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active — run it through the project's manager, `uv run python -m pytest ...`), or set path_prefix when the runner reports paths relative to a subdirectory
 ```
 
 Coverage joins on path and nothing else, so such an artifact contributes exactly nothing
@@ -1001,9 +1003,23 @@ tooling mistake, and it is worse than the exit 5 a missing artifact already earn
 it looks like an answer. The refusal is an ordinary lane failure: the scopes fall back to
 `no-lane`, and the four consequences above apply unchanged.
 
-Zero overlap is the whole test. A partial overlap has honest readings — a lane measuring
-part of a scope, generated files outside it — and any threshold over zero would need
-tuning per repo; zero has one cause and no reading under which the join was going to work.
+Both parsers rebase a file inside the repo to a repo-relative path, so a measured path
+that stayed absolute, drive-lettered (`C:/...`) or climbing (`../...`) names a file
+somewhere else. That is the only shape that fails.
+
+In-tree paths that simply miss the scopes warn instead, and the run scores on:
+
+```
+crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare (src/), so every function in those scopes will score untested; it measured tests/test_core.py — either nothing in them is exercised yet, or the runner reports paths this lane needs path_prefix to rebase
+```
+
+That is the greenfield shape as well: a suite importing none of the scoped source yet,
+which should score `untested`. Refusing it would exit 5 on exactly the repos adopting
+crapkit, so it stays a warning.
+
+Zero overlap is the whole test. A partial overlap has honest readings, a lane measuring
+part of a scope or generated files outside it, and any threshold over zero would need
+tuning per repo; zero has no reading under which the join was going to work.
 
 Two things reach it:
 
@@ -1012,3 +1028,7 @@ Two things reach it:
   never refused here.
 - **The run measured another tree.** A stale artifact copied in, or the wrong environment:
   see [The interpreter a lane binds to](#the-interpreter-a-lane-binds-to).
+
+The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
+that assigns files to scopes, so a scope declaring individual files rather than
+directories is reached exactly and never reads as unmeasured.

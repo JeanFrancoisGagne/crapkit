@@ -404,6 +404,50 @@ def test_the_lanes_page_prints_the_crashed_worker_refusal_the_parser_raises():
     assert f"crapkit: lane 'py' FAILED: {exc.value}" in _doc("docs/lanes.md")
 
 
+def _judged(paths) -> tuple:
+    """(refusal or None, stderr) for a lane whose scopes declare `src` and whose
+    artifact measured these paths."""
+    import io
+    from contextlib import redirect_stderr
+
+    from crapkit.config import Lane
+    from crapkit.errors import ToolError
+    from crapkit.lanes import _judge_artifact_scope
+
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            _judge_artifact_scope(lane, dict.fromkeys(paths, []), {"src": ("src",)})
+    except ToolError as raised:
+        return raised, err.getvalue()
+    return None, err.getvalue()
+
+
+_OTHER_TREE = ("/other/checkout/src/faro/core.py", "/other/checkout/src/faro/util.py",
+               "/other/checkout/src/faro/widgets.py")
+
+
+def test_the_lanes_page_prints_the_wrong_tree_refusal_the_lane_raises():
+    """Both halves of the exit-5 refusal are captured output, not paraphrase.
+    The page shipped a transcript written before the message settled: it said
+    "does not describe this checkout" and "Set path_prefix on the lane", neither
+    of which the lane emits."""
+    refusal, _ = _judged(_OTHER_TREE)
+
+    assert f"crapkit: lane 'py' FAILED: {refusal}" in _doc("docs/lanes.md")
+
+
+def test_the_lanes_page_prints_the_in_tree_warning_too():
+    """The other verdict. A page that shows only the refusal reads as if any
+    zero overlap fails the lane, and the greenfield case is the common one."""
+    refusal, err = _judged(("tests/test_core.py",))
+
+    assert refusal is None, "in-tree paths warn and score on"
+    assert err.strip() in _doc("docs/lanes.md")
+
+
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
     from crapkit.lanes import SUITE_DROP_FRACTION, suite_drops
 
