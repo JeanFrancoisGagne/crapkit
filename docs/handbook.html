@@ -470,6 +470,10 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>Before this release the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate now exempts marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
 <p class="xanno">Existence, not the numeric rule, because the gate judges staged blobs. A blob carries no coverage, so there is no CRAP to compare against a mark. The only question the gate can answer is the one it asks: did the repo already sign for this function?</p>
 
+<h3>What changed in 0.4.5</h3>
+<p>The third reader joined them. <code>crapkit verify</code> now reads a mark the way <code>rescore --gate</code> always did: a touched function whose fresh CRAP sits <em>at or under</em> its mark is exempt, not a gate violation. Before this, an edit inside signed debt passed the advisory, passed the commit gate, and then met exit 6 at merge, which was the last place the three readers could still disagree about one function.</p>
+<p>Exit 7 is untouched. A mark that rises is still a ratchet regression, and it is still reported on functions the diff never named, which is where coverage rot shows up.</p>
+
 <!-- ============================ 07 LADDER ============================ -->
 <h2 id="ladder"><span class="sn">07</span>The rest of the ladder</h2>
 <p class="lede">One rule, checked at five distances from the keyboard: every <em>touched</em> function at or under its scope's ceiling.</p>
