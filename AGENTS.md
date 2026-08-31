@@ -172,7 +172,13 @@ passes here and still fails verify on CRAP.
 
 ## 4. Run the owning scope's tests
 
-    crapkit test-scoped tests/test_curve.py   # commands.scoped_tests, verbatim
+    python -m pytest "calc/grade.py" -q -p no:cacheprovider   # commands.scoped_tests, verbatim
+
+`commands.scoped_tests` is not a `crapkit test-scoped` call. It is the owning scope's own
+`[crapkit.scoped_tests]` template with `{files}` already replaced by this packet's file,
+double-quoted, so what you run is the runner the scope declared. Without a packet in hand,
+`crapkit test-scoped calc/grade.py` fills the same template from the same config, and the
+exit codes below are its.
 
 `commands.scoped_tests` is `null` when this scope declares no template, and then there
 is no step 4 to run: go to step 5. `crapkit doctor` warns about every scope a lane
