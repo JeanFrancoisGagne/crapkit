@@ -77,6 +77,13 @@ manager's `run` binds a command to it:
 | `Pipfile.lock` | `pipenv run python -m pytest --cov …` |
 | none | `python -m pytest --cov …`, unchanged |
 
+`init` now also checks that the manager resolves on THIS machine's PATH, and names it
+when it does not: the lockfile is the repo's property, so a `uv.lock` a teammate
+committed gets the `uv run` lane on a checkout whose owner installed the dependencies
+with pip. Nothing caught that — the start check skips a first word that does not resolve
+at all, and the pytest-cov probe declines to provision an environment — so `init` exited
+0 pointing at a `crapkit coverage` that exited 5 on `'uv' is not recognized`.
+
 First match wins in that order, so a repo mid-migration between two managers gets the
 same config every time. The prefix only prefixes: which python name follows it is still
 the first of `python`, `python3`, `py` that resolves, so a Windows PATH carrying only the

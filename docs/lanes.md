@@ -540,6 +540,16 @@ sync the project environment before running anything, and `init` has no business
 provisioning one to ask a question about it. If the plugin is missing, the lane says so on
 its first run — with the log path.
 
+It does check that the manager itself is installed here, because the lockfile is the
+repo's property and the PATH is the machine's. A `uv.lock` a teammate committed on a
+machine that installed the dependencies with pip gets the `uv run` lane, which is the
+right command for the repo and cannot start on this checkout, so `init` says so rather
+than pointing at a `crapkit coverage` that exits 5:
+
+```
+note: lane 'py' runs through `uv`, which this machine's PATH does not carry — install uv, or point the lane's command in crapkit.toml at an interpreter that resolves here, then `crapkit coverage`
+```
+
 Writing the prefix by hand is the fix for a repo that adopted crapkit earlier, or one that
 pins its environment some other way: `command` is a shell string and takes anything.
 

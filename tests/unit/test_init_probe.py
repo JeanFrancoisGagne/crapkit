@@ -357,6 +357,25 @@ def test_a_managed_lane_prints_no_pytest_cov_warning(tmp_path, monkeypatch, caps
     assert capsys.readouterr().err == ""
 
 
+def test_a_manager_this_machine_does_not_have_is_named_at_init(
+        tmp_path, monkeypatch, capsys):
+    """The other half of the managed lane, and the one init had nothing to say
+    about. A uv.lock a teammate committed, on a machine that installed the deps
+    with pip: init writes `uv run python -m pytest --cov ...` off the lockfile
+    alone and every check it owns waves it through — `_dead_first_word` skips a
+    word that does not resolve at all, and the pytest-cov probe has no python to
+    ask through `uv run`. init exited 0 pointing at `crapkit coverage`, and that
+    run exited 5 on `'uv' is not recognized`."""
+    _name_only_on_path(tmp_path, monkeypatch, "python")
+
+    _warn_missing_pytest_cov((_lane("uv run python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "`uv`" in err, "the note has to name the word the lane starts with"
+    assert "crapkit.toml" in err, "and where to change it"
+    assert "pytest_cov" not in err, "nothing ran: pip install pytest-cov fixes none of it"
+
+
 def _manager_shim(tmp_path, monkeypatch) -> list[str]:
     """A `uv` that resolves on PATH, and every spawn recorded rather than run."""
     _name_only_on_path(tmp_path, monkeypatch, "uv")

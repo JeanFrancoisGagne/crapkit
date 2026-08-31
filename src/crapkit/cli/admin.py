@@ -289,11 +289,42 @@ def _missing_pytest_cov_note(name: str) -> str:
             "then `crapkit coverage`")
 
 
+def _absent_manager(command: str) -> str | None:
+    """The environment manager heading this lane, when this machine's PATH
+    carries no such word. None when it resolves, and None when nothing manages
+    the lane at all.
+
+    A lockfile is a property of the REPO, so `init` writes `uv run python` off
+    its presence alone — right for the repo, and unrunnable on a checkout whose
+    owner installed the dependencies with pip. Nothing else catches it: the
+    start check skips a word that does not resolve, and the pytest-cov probe
+    refuses to provision an environment to ask a question about it.
+    """
+    import shutil
+
+    from ..scaffold import LOCKFILE_RUNNERS
+
+    managers = {runner.split()[0] for _, runner in LOCKFILE_RUNNERS}
+    words = shell_words(command)
+    head = words[0] if words else ""
+    return head if head in managers and shutil.which(head) is None else None
+
+
+def _missing_manager_note(name: str, manager: str) -> str:
+    return (f"note: lane {name!r} runs through `{manager}`, which this machine's PATH does "
+            f"not carry — install {manager}, or point the lane's command in crapkit.toml at "
+            f"an interpreter that resolves here, then `crapkit coverage`")
+
+
 def _lane_first_run_note(lane) -> str | None:
     """What init owes this lane before the first `crapkit coverage`, or None
-    when the lane will run. Two different gaps, and they are not the same
-    sentence: an interpreter that never started answered nothing about
-    pytest_cov, and `pip install pytest-cov` fixes none of it."""
+    when the lane will run. Three different gaps, and they are not the same
+    sentence: a manager that is not installed never gets as far as a python, and
+    an interpreter that never started answered nothing about pytest_cov, so
+    `pip install pytest-cov` fixes neither."""
+    manager = _absent_manager(lane.command)
+    if manager:
+        return _missing_manager_note(lane.name, manager)
     dead = _dead_first_word(lane.command)
     if dead:
         return _dead_interpreter_note(lane.name, *dead)
