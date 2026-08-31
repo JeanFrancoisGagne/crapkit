@@ -79,6 +79,32 @@ def test_the_refusal_quotes_the_paths_the_artifact_does_name(tmp_path):
     assert "path_prefix" in str(raised.value), "the legitimate remapping knob is named"
 
 
+def test_the_message_quotes_the_paths_the_config_actually_declares(tmp_path):
+    """A scope may declare individual FILES. The message rendered the matcher's
+    directory prefix instead, so a scope declaring `src/faro/core.py` was quoted
+    as `src/faro/core.py/` — a path in neither the config nor the tree."""
+    _artifact(tmp_path, OTHER)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": ("src/faro/core.py",)})
+
+    assert "declare (src/faro/core.py)" in str(raised.value)
+
+
+def test_a_scope_declaring_many_paths_does_not_bury_the_advice(tmp_path):
+    """Three of them and a count, the way the measured paths beside them are
+    sampled; forty declared paths would push the two sentences that say what to
+    do off the end of the line."""
+    _artifact(tmp_path, OTHER)
+    declared = tuple(f"src/f{i}.py" for i in range(8))
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": declared})
+
+    quoted = str(raised.value).split("declare (", 1)[1].split(")", 1)[0]
+    assert quoted == "src/f0.py, src/f1.py, src/f2.py and 5 more"
+
+
 def test_one_file_in_reach_is_enough_to_let_the_artifact_through(tmp_path):
     """A lane measuring part of what it claims is ordinary; only zero is not."""
     _artifact(tmp_path, OTHER, "src/faro/core.py")

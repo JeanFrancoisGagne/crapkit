@@ -994,7 +994,7 @@ lane:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src/), and 3 of them outside this checkout entirely — .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active — run it through the project's manager, `uv run python -m pytest ...`), or set path_prefix when the runner reports paths relative to a subdirectory
+crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src), and 3 of them outside this checkout entirely — .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active — run it through the project's manager, `uv run python -m pytest ...`), or set path_prefix when the runner reports paths relative to a subdirectory
 ```
 
 Coverage joins on path and nothing else, so such an artifact contributes exactly nothing
@@ -1010,7 +1010,7 @@ somewhere else. That is the only shape that fails.
 In-tree paths that simply miss the scopes warn instead, and the run scores on:
 
 ```
-crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare (src/), so every function in those scopes will score untested; it measured tests/test_core.py — either nothing in them is exercised yet, or the runner reports paths this lane needs path_prefix to rebase
+crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare (src), so every function in those scopes will score untested; it measured tests/test_core.py — either nothing in them is exercised yet, or the runner reports paths this lane needs path_prefix to rebase
 ```
 
 That is the greenfield shape as well: a suite importing none of the scoped source yet,

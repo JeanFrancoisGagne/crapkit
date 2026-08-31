@@ -395,18 +395,22 @@ def _as_reported(lane: Lane, path: str) -> str:
     return path[len(prefix):] if prefix and path.startswith(prefix) else path
 
 
-def _unreached_prefixes(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
+def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
     path at all: nothing to compare against is not evidence.
 
     `owning_scope` is the reach test, so "could a scope claim this path?" can
     never drift from the rule that assigns files to scopes.
+
+    The DECLARED path, not the matcher's directory prefix: a scope may name an
+    individual file, and the prefix half of that is `src/faro/core.py/`, a path
+    that exists neither in the config the reader is about to open nor on disk.
     """
     matchers = _lane_matchers(lane, scope_paths)
     if not matchers or any(owning_scope(path, matchers) for path in coverage):
         return ()
-    return tuple(dict.fromkeys(m.prefix for m in matchers))
+    return tuple(dict.fromkeys(m.path for m in matchers))
 
 
 def _outside_paths(lane: Lane, coverage: dict) -> list[str]:
@@ -417,12 +421,18 @@ def _outside_paths(lane: Lane, coverage: dict) -> list[str]:
 
 
 def _sample(paths) -> str:
-    return ", ".join(sorted(paths)[:_SAMPLE_PATHS])
+    """A few of them and a count of the rest. A lane scoped to forty declared
+    paths listed all forty, which pushed the sentence saying what to do off the
+    end of a line nobody reads that far into."""
+    ordered = sorted(paths)
+    shown = ", ".join(ordered[:_SAMPLE_PATHS])
+    rest = len(ordered) - _SAMPLE_PATHS
+    return f"{shown} and {rest} more" if rest > 0 else shown
 
 
-def _wrong_tree_message(lane: Lane, coverage: dict, prefixes, outside: list[str]) -> str:
+def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({', '.join(prefixes)}), and {len(outside)} of them "
+            f"paths its scopes declare ({_sample(declared)}), and {len(outside)} of them "
             f"outside this checkout entirely — {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
             f"paths like {_sample(outside)}. Point the lane at this checkout's own "
@@ -431,10 +441,10 @@ def _wrong_tree_message(lane: Lane, coverage: dict, prefixes, outside: list[str]
             f"or set path_prefix when the runner reports paths relative to a subdirectory")
 
 
-def _unmeasured_message(lane: Lane, coverage: dict, prefixes) -> str:
+def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({', '.join(prefixes)}), so every function in those "
+            f"paths its scopes declare ({_sample(declared)}), so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
             f"or the runner reports paths this lane needs path_prefix to rebase")
 
@@ -455,13 +465,13 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None) 
     greenfield shape as well — a suite that imports none of the scoped source
     yet, which SHOULD score untested — so that one warns and scores on.
     """
-    prefixes = _unreached_prefixes(lane, coverage, scope_paths or {})
-    if not prefixes:
+    declared = _unreached_paths(lane, coverage, scope_paths or {})
+    if not declared:
         return
     outside = _outside_paths(lane, coverage)
     if outside:
-        raise ToolError(_wrong_tree_message(lane, coverage, prefixes, outside))
-    print(f"crapkit: {_unmeasured_message(lane, coverage, prefixes)}", file=sys.stderr)
+        raise ToolError(_wrong_tree_message(lane, coverage, declared, outside))
+    print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
 
 
 def _results_provenance(root: Path, lane: Lane) -> dict:
