@@ -31,7 +31,9 @@ time.
 Steps 3 to 5 are strings the packet hands you. `commands.gate`, `commands.scoped_tests`
 and `commands.verify` come back filled in for this file and this scope; run them as
 given rather than retyping them, which is how a lane flag or a scope's own test template
-gets dropped.
+gets dropped. They are spelled as the console script (`crapkit rescore PATH --gate`),
+which is the spelling that resolves from an activated venv on Windows: bare `python`
+there can reach the WindowsApps stub or the base interpreter the venv wraps.
 
 `commands.refresh` is the fourth string and the only one that writes: it is a `coverage`
 run, reusing the artifacts of every lane whose scope files have not moved. That is what
@@ -237,6 +239,14 @@ passes. A `coverage` run on the refused tree would otherwise become the baseline
 retire the finding. verify prints the run it refused and the two ways past it: fix the
 findings, or pass `--baseline ID` to accept the newer run deliberately.
 
+`--baseline ID` naming a run that exists and still cannot serve says which run it is,
+why, and which runs can:
+
+    crapkit: run 1 is an inventory run (no coverage was measured) and cannot serve as a baseline; trusted runs: 2; pass `--baseline 2` for the newest
+
+The other reasons that line gives are a failed verify, a hook run and a partial run (a
+lane subset, or a lane that failed).
+
 The lines verify prints, one per finding kind, collected here from separate runs:
 
     verify OK @ f6e9bde18a7 vs baseline f6e9bde18a7 (1 changed files)
@@ -266,6 +276,64 @@ make and writes three lines to stderr when that edit pushed a function over its 
 Nothing was blocked and nothing was written. Read it as the earliest warning that step 3
 will fail, not as a rejected edit. A function the committed ratchet already marks never
 triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
+
+## When a lane will not start
+
+Exit 5 says a lane produced no artifact. The first question is whether the command could
+run at all, and `crapkit doctor` answers it. doctor reads each lane command with the
+shell that will run it, sh on POSIX and cmd.exe on Windows, and FAILs a lane whose first
+word will not start:
+
+    FAIL lane 'py': cmd.exe cannot run 'python' (exit 9009) — the lane cannot start, so its scopes can only ever score no-lane
+
+9009 is cmd.exe saying it could not start that name. The usual cause is the Store
+`python.exe` alias a stock Windows PATH carries with no Store app behind it: it resolves,
+so anything that only looks at PATH clears it. Point the lane at a python that runs.
+
+Quote lane values with double quotes. cmd.exe does not treat `'` as a quote, so a
+single-quoted value reaches the runner one word per space, and the guard refuses the lane
+with that as the reason:
+
+    crapkit: lane 'py': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+
+A chained command is read one argv per `&&`, `||`, `&` and `|` segment, and every segment
+that runs the runner is checked, so a narrowing flag after the operator is refused too.
+doctor reads a lane the same way: a quoted interpreter path stays one word, and a runner
+after `&&` is probed like the first one.
+
+doctor also WARNs on a coveragepy or istanbul lane that names no `results_artifact`:
+
+    WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
+
+Coverage is measured either way. What the lane cannot do without a results file is feed
+the two checks that read one, so exit 8 can never fire for its scopes and nothing else
+would have said so. `crapkit init` writes both on the lanes it detects.
+
+## When crapkit's root sits below the git top
+
+`--repo` may name a directory below the repository's top. Every git spawn runs with
+`diff.relative=true` and `core.quotePath=false`, so scored rows, churn, the commit gate,
+verify's changed files, lane reuse, `mutate`'s targets and the advisory hook all join on
+root-relative, unquoted paths. They used to join two spellings, which is why a dirty file
+with a non-ASCII name was invisible to lane reuse: git quoted the name and `ls-files` did
+not.
+
+A staged file above the crapkit root is outside the diff by design, and the gate does not
+name it. `.git` is found by walking up from the root, so the HEAD fast path fires down
+here too.
+
+## Which scope owns a file
+
+One predicate answers that, and it answers for scoring, `test-scoped` routing, lane reuse
+and the packet alike: the deepest declared scope `paths` entry wins. Three of those used
+to answer separately, and `brief` could hand you a function's lane and test command from
+one scope and its ceiling from another.
+
+If `crapkit.toml` declares nested scopes (`src` and `src/web`), files may move between
+scopes on the next scan, and the per-scope rollups and ceilings move with them. A config
+with no nested scopes sees no change. A scope path naming a file rather than a directory
+(`paths = ["core/hot.py"]`) owns that file, and editing it marks that scope's lane
+changed.
 
 ## Picking an item
 
@@ -451,6 +519,12 @@ The server is read-only. Every tool shells to a read command, so nothing it expo
 writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`,
 `mutate` and `claims` stay in the CLI.
 
+`brief`, `worklist` and `coupling` do fill the ranked-pairs cache under `.crapkit/` on a
+cold run, and the store fills a per-run rollup the first time `trend` or `report` asks.
+Those are caches: deleting one costs a walk, never a verdict. A session that must write
+nothing at all still has `commands.refresh_writes_run` to tell the one command that
+lands a run from the ones that do not.
+
 ---
 
 # Contributing to crapkit
@@ -458,37 +532,57 @@ writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`
 ## Setup
 
     pip install -e ".[dev]"
-    pip install pytest-xdist
     git config core.hooksPath git-hooks
 
-The second line is not optional for the tests: `tests/fixtures/mini_repo` declares a
-lane that shells out to `pytest ... -n 2`, and without xdist that subprocess dies on an
-unrecognized `-n`, failing the e2e tests that assert the lane exited 0. The dev extra
-ships `pytest` and `pytest-cov` only.
+The dev extra ships `pytest`, `pytest-cov` and `pytest-xdist`. xdist is not a
+convenience: `tests/fixtures/mini_repo` declares a lane that shells out to
+`pytest ... -n 2`, and without it that subprocess dies on an unrecognized `-n`, failing
+the e2e tests that assert the lane exited 0. CI installs this extra and nothing else, so
+a pytest plugin a committed fixture lane needs belongs in it.
 
-The third line arms the complexity gate. Without it your commits pass locally and get
+The second line arms the complexity gate. Without it your commits pass locally and get
 rejected in review.
 
 ## Tests
 
     python -m pytest                      # both suites
-    python -m pytest tests/unit           # 2,236 tests, ~45s
-    python -m pytest tests/e2e -n 8       # 592 tests, ~1m30 (6m serial)
+    python -m pytest tests/unit           # 2,280 tests
+    python -m pytest tests/e2e -n 8       # 595 tests, about 1m30
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
-`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else. The suite runs serially:
-there is no xdist and no randomization in the config, so no `-n 0` is needed to isolate
-a failure. If you have pytest-randomly installed globally, add `-p no:randomly` to pin
-the order.
+`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else: no xdist and no
+randomization, so the `-n 8` above is yours to pass and no `-n 0` is needed to isolate a
+failure. If you have pytest-randomly installed globally, add `-p no:randomly` to pin the
+order.
 
-`tests/unit` covers pure seams. `tests/e2e` drives `python -m crapkit` against real git
-repos in tmp dirs and asserts through the CLI only. Each e2e command injects its own git
-identity, so no global git config is required.
+`tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
+`cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
+`python -m crapkit` against real git repos in tmp dirs and asserts through the CLI only.
+It spawns that child one way, `run_cli` in `tests/e2e/conftest.py`. Bind your file's
+contract once at the top with `cli_runner(...)` rather than writing another
+`subprocess.run`; before that file there were 42 copies of those four lines, 23 of them
+different, with nothing to say which differences were deliberate. Each e2e command
+injects its own git identity, so no global git config is required.
 
 ## Where code goes
 
 `src/crapkit/` is the pure core: analysis, scoring, the store, git, the ratchet, the
 report renderers. One module per concern, and none of them knows about argparse.
+
+Four of them answer a question the whole tree asks, so nothing reimplements the answer:
+
+| Module | What it answers |
+|---|---|
+| `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins |
+| `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
+| `procs.py` | how a spawn with a deadline dies. `run_bounded` kills the whole process tree and reaps it |
+| `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
+
+`store.py` gained a `run_rollup` table: one row per run per scope, filled the first time
+something asks and pruned with its run. `trend` and `report` read it instead of
+rescanning every scored row of every run, which makes both of them writers. The fill is
+best effort, because two crapkit processes on one store can collide on it: losing the
+cache is a cost, losing the command is a bug.
 
 `src/crapkit/cli/` is the command layer, split into ten family modules. `cli/__init__.py`
 holds no logic. It carries `_OWNER`, a name-to-module map, and a `__getattr__` that loads
@@ -508,10 +602,6 @@ every invocation, which put the cost of every subcommand on `crapkit --version`.
 | `claude_hook.py` | `claude-hook` |
 | `_shared.py` | helpers more than one family reads |
 
-Add a name to a family module and add its `_OWNER` entry in the same commit. A name with
-no entry is not re-exported, and the suite reaches dozens of these helpers by name through
-`crapkit.cli`.
-
 `claude_hook.py` carries two rules the other families do not, and both are load-bearing.
 Its module scope imports stdlib only, because every edit on the machine pays for it. And
 it never opens the snapshot store: `SnapshotStore.__init__` runs migrations, so a per-edit
@@ -530,6 +620,35 @@ Four reader modules sit beside the core, all registered in `analyze.py`'s
 Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child
 imports `analyze.py`, so a reader registered anywhere later leaves spawned workers
 measuring with the readers lizard shipped and reporting plausible wrong numbers.
+
+## Standing rules
+
+Six rules the suite cannot fully police. Break one and the failure surfaces somewhere
+else, usually later, usually as a plausible wrong number.
+
+- **Every function you add or edit sits at ccn 6 or below.** The pre-commit gate refuses
+  the rest; the section below says what a refusal means.
+- **A name added to a family module gets its `_OWNER` entry in the same commit.** A name
+  with no entry is not re-exported, and the suite reaches dozens of these helpers by name
+  through `crapkit.cli`.
+- **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
+  ratchet stamps every marks file with the version that produced it, and `verify` refuses
+  to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,
+  because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
+  quietly compared against numbers they never described.
+- **Read a lane command with `config.shell_words` or `config.shell_segments`, never
+  `str.split()`.** A whitespace split breaks a quoted interpreter path at its space and
+  reads `-k "not slow"` as three positionals. The full-suite guard, `doctor` and the
+  pytest-cov probe all go through those two, and they read the command the way the shell
+  that will run it reads it: sh on POSIX, cmd.exe on Windows.
+- **Any spawn with a timeout goes through `procs.run_bounded`.** `shell=True` makes the
+  shell the child and the real program a grandchild, so `subprocess.run`'s own timeout
+  kills the shell and leaves the suite running with nothing waiting on it. `mutate` left
+  one orphan suite per killed mutant that way. `run_bounded` starts the shell in its own
+  process group and kills the group, `taskkill /T` on Windows and `killpg` on POSIX.
+- **Ask `universe.owning_scope` which scope owns a path.** Ownership was decided three
+  ways once, and `brief` handed out a function's lane and test command from one scope and
+  its ceiling from another.
 
 ## Tests first
 
@@ -551,6 +670,14 @@ design feedback, not a threshold to widen.
 A function the committed ratchet already carries a mark for is exempt, and the hook
 reports the count on stderr. Touching signed debt does not refuse the commit; `crapkit
 verify` is what fails a mark that rises.
+
+Two gates, two exemptions, and the difference is on purpose. The pre-commit hook exempts
+a marked function whatever its fresh score, because it reads staged blobs and a staged
+blob has no coverage behind it: the hook cannot tell a mark that held from one that
+rose. `crapkit rescore --gate` and `crapkit verify` exempt only a touched function whose
+fresh CRAP sits at or under its mark. So an edit that pushes signed debt past its mark
+still commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose
+in a function the diff never touched.
 
 `CRAPKIT_OVERRIDE_REASON` is a human granting audited debt (alert, ratchet entry and
 snapshot record, all three or nothing). Leave it alone.
