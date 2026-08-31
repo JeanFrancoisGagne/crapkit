@@ -312,6 +312,17 @@ repos:
       - id: crapkit-gate
 ```
 
+That file arms nothing on its own. The framework writes `.git/hooks/pre-commit` when you
+tell it to, and until then `git commit` runs no gate and says nothing:
+
+```sh
+pip install pre-commit
+pre-commit install
+```
+
+`pre-commit install` is the line every clone needs, the way Route 2 needs its
+`git config core.hooksPath` line.
+
 `rev` is a git ref pre-commit resolves against that remote. Pin a release tag, not a
 branch: `pre-commit autoupdate` only moves between tags, and a moving `main` would change
 your gate under you.
@@ -333,6 +344,21 @@ crapkit verify --baseline-tsv crapkit-baseline.tsv --github
 `--github` emits `::error file=...` annotations that land on the PR diff; `--sarif PATH`
 writes SARIF 2.1.0 for code-scanning upload. Refresh the committed baseline whenever the
 default branch's verify passes.
+
+Two things the job has to do before those lines run. **Install crapkit**, `pip install
+crapkit`, and pin the version the way Route 3 pins `rev`: an unpinned install moves your
+gate on whatever day a release lands. **Fetch the whole history.** `actions/checkout`
+clones one commit by default, `verify` reads the diff against the baseline's commit out of
+git, and a shallow clone does not have that commit:
+
+```
+$ crapkit verify --baseline-tsv crapkit-baseline.tsv
+crapkit: baseline commit a74260f321f is not an ancestor of HEAD (rebase or amend rewrote history) — run `crapkit coverage` for a fresh baseline
+```
+
+That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at full depth.
+Set `fetch-depth: 0` on the checkout step, which is what crapkit's own
+[.github/workflows/ci.yml](.github/workflows/ci.yml) does.
 
 ### What a refusal looks like
 
