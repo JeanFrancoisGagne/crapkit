@@ -1031,13 +1031,18 @@ Zero overlap is the whole test. A partial overlap has honest readings, a lane me
 part of a scope or generated files outside it, and any threshold over zero would need
 tuning per repo; zero has no reading under which the join was going to work.
 
-Two things reach it:
+Two things reach it, one per verdict:
 
-- **The runner reports paths relative to a subdirectory.** [`path_prefix`](#running-from-a-subdirectory)
-  is the knob, and it is applied before this check, so a prefix that fixes the join is
-  never refused here.
-- **The run measured another tree.** A stale artifact copied in, or the wrong environment:
-  see [The interpreter a lane binds to](#the-interpreter-a-lane-binds-to).
+- **The run measured another tree**, which is the refusal. A stale artifact copied in, or
+  the wrong environment: see [The interpreter a lane binds to](#the-interpreter-a-lane-binds-to).
+  An istanbul lane gets the artifact named instead of the environment — its reader rebases
+  every path under this checkout's root, so an escaped path was written somewhere else.
+- **The runner reports paths relative to a subdirectory**, which is the warning.
+  [`path_prefix`](#running-from-a-subdirectory) is the knob, and the reach test runs after
+  it is applied, so a prefix that fixes the join is never mentioned at all. The escape test
+  runs on the path the runner wrote, with the prefix taken back off, or gluing `backend/`
+  onto `/other/checkout/a.py` would make it read as an in-tree path. `path_prefix` is a
+  coveragepy key: the istanbul reader never reads it.
 
 The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
 that assigns files to scopes, so a scope declaring individual files rather than

@@ -448,6 +448,34 @@ def test_the_lanes_page_prints_the_in_tree_warning_too():
     assert err.strip() in _doc("docs/lanes.md")
 
 
+_SUBDIR_SHAPE = "faro/core.py"
+_RECOVER_SECTION = ('## "measured N file(s), none of them under the paths its scopes '
+                    'declare"')
+
+
+def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
+    """The skill filed both shapes under one heading reading "A different exit-5
+    refusal". An agent handed a green run with a stderr note went hunting for a
+    lane failure that never happened; one handed a real exit 5 worked the first
+    row and set `path_prefix`, which cannot rebase an absolute path at all."""
+    refusal, _ = _judged(_OTHER_TREE)
+    warned, err = _judged((_SUBDIR_SHAPE,))
+    assert refusal is not None and warned is None, "the code's two verdicts"
+
+    section = _section(_doc("plugin/skills/crapkit-recover/SKILL.md"), _RECOVER_SECTION)
+    rows = [line for line in section.splitlines() if line.startswith("| ")]
+
+    subdir = [line for line in rows if _SUBDIR_SHAPE in line]
+    assert subdir, "the shape a reader arrives with is still in the table"
+    assert all("exit 5" not in line for line in subdir), "that shape never exits 5"
+    assert all("warning" in line for line in subdir)
+
+    outside = [line for line in rows if "absolute" in line]
+    assert outside and all("exit 5" in line for line in outside)
+
+    assert "will score untested" in err and "will score untested" in section,         "the warning's own words, so a reader can search for what they saw"
+
+
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
     from crapkit.lanes import SUITE_DROP_FRACTION, suite_drops
 

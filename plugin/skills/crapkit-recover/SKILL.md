@@ -119,16 +119,21 @@ no partial run for `verify` to refuse against.
 
 ## "measured N file(s), none of them under the paths its scopes declare"
 
-A different exit-5 refusal, and the one that would otherwise have been an answer. The lane
-wrote a real artifact, and none of the paths in it reach the scopes the lane claims — so
-the join finds nothing and every function in those scopes would score `untested`.
+The lane wrote a real artifact, and none of the paths in it reach the scopes the lane
+claims — so the join finds nothing and every function in those scopes would score
+`untested`. **Read the exit code first**: this message comes in two verdicts, and only one
+of them failed the lane. The measured paths decide which, and the message quotes a few of
+them:
 
-Two causes, and the message quotes a few of the measured paths so you can tell them apart:
-
-| The paths it reports | Cause | Fix |
+| The paths it reports | Verdict | Cause and fix |
 |---|---|---|
-| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`) | the runner reports relative to a subdirectory | set `path_prefix` on the lane |
-| absolute, or under some other checkout | the run measured a different tree | a stale artifact, or the wrong environment: a `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's. Run the suite through the project's own manager (`uv run python -m pytest …`) |
+| absolute, drive-lettered (`C:/…`) or climbing out of the tree (`../…`) | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | the run measured a different tree: a stale artifact, or the wrong environment. A `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's — run the suite through the project's own manager (`uv run python -m pytest …`). On an istanbul lane the reader rebases every path under this checkout's root, so an escaped path means the artifact was written elsewhere: rerun the suite here rather than reusing one copied in or restored from a CI cache |
+| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory — set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key) — or the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
+
+So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N file(s) …
+so every function in those scopes will score untested`. Nothing in the exit-5 row applies
+to it. And `path_prefix` only ever PREPENDS, so it cannot rescue an absolute path in the
+other direction.
 
 Owner: [docs: an artifact that measured a different tree](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#an-artifact-that-measured-a-different-tree).
 
