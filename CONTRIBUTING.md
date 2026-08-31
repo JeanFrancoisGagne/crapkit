@@ -26,8 +26,8 @@ pass locally and get rejected in review.
 
 ```
 python -m pytest                   # both suites, serially
-python -m pytest tests/unit -n 8   # 2,341 tests, 16 s (about a minute serially)
-python -m pytest tests/e2e -n 8    # 599 tests, about 1m30 (2m on Windows)
+python -m pytest tests/unit -n 8   # 2,364 tests, 16 s (about a minute serially)
+python -m pytest tests/e2e -n 8    # 609 tests, about 1m30 (2m on Windows)
 ```
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
