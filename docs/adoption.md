@@ -20,6 +20,13 @@ in the key, so re-cutting scopes leaves every recorded mark exactly where it was
 coarse, and split a scope the day you actually want a different ceiling or a different test
 command for part of it.
 
+When you do split, a nested scope wins over the scope that contains it. Declare `src` and
+then `src/web`, and every file under `src/web` belongs to `src/web`: for scoring, for lane
+reuse, for `test-scoped` routing, and for the ceiling `crapkit brief` hands an agent. Since
+0.4.5 that is one rule with one answer. 0.4.4 answered it three ways, so a repo that already
+nests scopes may see files change scope on its next scan, and the per-scope rollups and
+ceilings move with them. A config whose scopes do not nest sees no change.
+
 ## Exclude, lane, or coverage_optional
 
 Three ways to stop a file reading as untested debt, and they are not interchangeable.
