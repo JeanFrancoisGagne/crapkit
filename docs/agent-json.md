@@ -395,6 +395,12 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `uncovered_lines` | array | **yes** | Same null-vs-empty contract as `next-item`. |
 | `uncovered_lines_note` | string | conditional | Present only when `uncovered_lines` is null. |
 
+Since 0.4.5 `lane`, `target` and `commands.scoped_tests` all describe one scope: the one
+whose declared `paths` entry sits deepest on this file, which is the rule the run scored it
+under too. Three readers used to answer that question separately, so a packet on a file under
+nested scopes (`src` and `src/web`) could carry the deeper scope's lane and test command
+beside the shallower scope's ceiling.
+
 ### `gate_rule`: what the edit is judged by
 
 Three limits an edit can fail and the two facts that qualify them, in one object, so a

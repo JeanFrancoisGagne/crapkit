@@ -314,6 +314,24 @@ calc/grade.py	audit( rows , strict , cap , floor , verbose )	132.0000
 calc/grading.py	audit( rows , strict , cap , floor , verbose )	132.0000
 ```
 
+### A crapkit root below the git top
+
+Marks are keyed on paths relative to the crapkit root, and since 0.4.5 every git spawn asks
+git for that same spelling (`diff.relative=true`). A root below the repository top follows
+renames like any other. Here the top holds `pkg/`, crapkit runs in `pkg`, and the rename is
+`git mv pkg/calc/grade.py pkg/calc/grading.py`:
+
+```
+$ crapkit ratchet prune
+crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) — 2 mark(s) vs run 2 (db28702d61c)
+```
+
+The marks file says `calc/grade.py` before and `calc/grading.py` after, and carries the
+`pkg/` prefix at neither end. Before 0.4.5 git answered these diffs top-relative, so the
+rename `pkg/calc/grade.py` matched no mark and the mark dropped instead of moving. The rest
+of that story is in
+[AGENTS.md](../AGENTS.md#when-crapkits-root-sits-below-the-git-top).
+
 ### Moving marks by hand
 
 When git cannot see the rename (a vendored tree, a rewritten history), state it:
