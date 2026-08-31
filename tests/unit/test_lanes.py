@@ -51,3 +51,153 @@ def test_no_private_project_namespace_ships_in_the_library():
                     if "COVMARK" in p.read_text(encoding="utf-8"))
 
     assert leaked == []
+
+
+# --- what a failing lane tells you about where the rest of the story is -------
+#
+# A reporter running 0.4.4 against a real repo saw only a 500-BYTE tail that
+# began mid-line — "short test summary info ====" — with ten collection
+# tracebacks cut off above it and nothing naming .crapkit/lane-py.log. Finding
+# the log took another agent. Three things fix that: the path, a tail cut on
+# line boundaries, and the reason lines when the end of the log has none.
+
+def _plant_log(tmp_path, lines: list[str]) -> Path:
+    log = tmp_path / ".crapkit" / "lane-py.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("\n".join(lines), encoding="utf-8")
+    return log
+
+
+def _py_lane() -> Lane:
+    return Lane(name="py", command="python -m pytest --cov", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+
+
+def _refusal(tmp_path, lines: list[str]) -> str:
+    from crapkit.lanes import _raise_no_artifact
+
+    log = _plant_log(tmp_path, lines)
+    with pytest.raises(ToolError) as raised:
+        _raise_no_artifact(_py_lane(), log, 2)
+    return str(raised.value)
+
+
+def test_the_refusal_names_the_log_file_that_holds_the_whole_story(tmp_path):
+    message = _refusal(tmp_path, ["$ python -m pytest --cov", "boom", "(exit 2)"])
+
+    assert str(tmp_path / ".crapkit" / "lane-py.log") in message
+
+
+def test_a_lane_that_runs_and_writes_nothing_names_its_log_too(tmp_path):
+    """Through the real runner, not just the message builder."""
+    lane = Lane(name="dead", command=f'"{sys.executable}" -c "import sys; sys.exit(9)"',
+                artifact="cov.json", parser="istanbul", scopes=())
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane)
+
+    assert str(tmp_path / ".crapkit" / "lane-dead.log") in str(raised.value)
+
+
+def test_a_reused_artifact_that_is_gone_names_the_log_too(tmp_path):
+    """`--reuse-artifacts` after somebody cleaned .crapkit/cov/ raised the one
+    refusal that named no log, while the previous run's lane-py.log sat there
+    holding the story. docs/lanes.md says every lane refusal carries the path."""
+    log = tmp_path / ".crapkit" / "lane-py.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("\n".join(["$ python -m pytest --cov",
+                              "E   ImportError: no module named 'faro'"]),
+                   encoding="utf-8")
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, _py_lane(), reuse_artifact=True)
+
+    assert str(log) in str(raised.value)
+    assert "no module named 'faro'" in str(raised.value), "and what the log says"
+
+
+def test_the_tail_begins_at_a_line_boundary(tmp_path):
+    """A byte tail starts mid-line, and the reader cannot tell that fragment
+    from the real first word of the message."""
+    lines = [f"line {i:03d} " + "x" * 60 for i in range(40)]
+    message = _refusal(tmp_path, lines)
+
+    shown = message.split("; last output: ", 1)[1].splitlines()
+    assert shown, "the tail is the point of the message"
+    assert set(shown) <= set(lines), "a shown line is a whole line of the log"
+    assert shown[-1] == lines[-1]
+
+
+def test_the_reason_survives_a_summary_block_long_enough_to_bury_it(tmp_path):
+    """pytest ends on a summary saying WHICH files broke and never why. The
+    reason sits above it, and on a wide enough collection failure the byte
+    budget never reaches it."""
+    lines = ["$ python -m pytest --cov",
+             "tests/test_a.py:3: in <module>",
+             "    from faro.core import Widget",
+             "E   ImportError: cannot import name 'Widget' from '/other/checkout/src'",
+             "=========================== short test summary info ============================"]
+    lines += [f"ERROR tests/test_{i:03d}.py" for i in range(60)]
+    lines += ["============================== 60 errors in 0.6s ===============================",
+              "(exit 2)"]
+
+    message = _refusal(tmp_path, lines)
+
+    reason = "cannot import name 'Widget' from '/other/checkout/src'"
+    assert reason in message
+    assert "short test summary info" not in message, "the budget went to the reason"
+    assert "\n...\n" in message, (
+        "the two excerpts are not adjacent output, and the ellipsis says so")
+    assert message.index(reason) < message.index("ERROR tests/test_0")
+
+
+def test_a_cause_line_too_long_to_show_whole_keeps_its_end(tmp_path):
+    """What identifies an ImportError is the path at the END of the line: in the
+    report this came from, the other checkout's. A cut taken from the left drops
+    exactly that half and says nothing about having cut."""
+    reason = ("E   ImportError: cannot import name 'WidgetRegistry' from partially "
+              "initialized module 'faro.core.widgets' (/Users/dev/src/monorepo-checkouts/"
+              "project-beta/.venv/lib/python3.11/site-packages/faro/core/widgets/impl.py)")
+    assert len(reason) > 200, "the case is a line the cause budget cannot show whole"
+    lines = ["$ python -m pytest --cov", reason,
+             "=========================== short test summary info ===================="]
+    lines += [f"ERROR tests/test_{i:03d}.py" for i in range(60)]
+    lines += ["(exit 2)"]
+
+    message = _refusal(tmp_path, lines)
+
+    assert "widgets/impl.py)" in message, "the checkout the line names is the point of it"
+    assert "..." in message, "and the reader is told the line was cut"
+
+
+def test_a_tail_that_already_says_why_is_not_repeated(tmp_path):
+    lines = ["$ python -m pytest --cov", "E   ImportError: no module named 'faro'", "(exit 2)"]
+
+    message = _refusal(tmp_path, lines)
+
+    assert message.count("no module named 'faro'") == 1
+
+
+def test_the_pytest_cov_hint_still_fires_through_the_new_tail(tmp_path):
+    lines = ["$ python -m pytest --cov",
+             "pytest: error: unrecognized arguments: --cov --cov-branch", "(exit 4)"]
+
+    assert "pip install pytest-cov" in _refusal(tmp_path, lines)
+
+
+def test_one_line_longer_than_the_budget_says_it_was_cut(tmp_path):
+    message = _refusal(tmp_path, ["y" * 4000])
+
+    assert "; last output: ..." in message, "an ellipsis marks the one cut a tail cannot avoid"
+
+
+def test_a_refusal_with_no_log_at_all_still_names_where_it_would_be(tmp_path):
+    """Nothing writes the log before the command runs, and a lane refused ahead
+    of that has no tail to quote. The path is the half that always applies."""
+    from crapkit.lanes import _raise_no_artifact
+
+    missing = tmp_path / ".crapkit" / "lane-py.log"
+    with pytest.raises(ToolError) as raised:
+        _raise_no_artifact(_py_lane(), missing, None)
+
+    assert str(missing) in str(raised.value)
+    assert "last output" not in str(raised.value), "no log, nothing to quote"

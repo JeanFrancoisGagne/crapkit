@@ -508,3 +508,46 @@ def test_ratchet_seed_then_prune_lifecycle(tight_repo: Path):
                  if not ln.startswith("#")]  # the metric stamp survives an emptied ratchet
     assert remaining == ["path\tlong_name\tcrap"]
     assert "pruned" in pruned.stdout
+
+
+# --- the environment the scaffolded lane binds to -----------------------------
+
+@pytest.fixture()
+def locked_repo(tmp_path: Path) -> Path:
+    """A pytest project that pins its environment with uv, which is the shape
+    two worktrees of one branch are usually checked out in."""
+    repo = tmp_path / "locked"
+    (repo / "pylib").mkdir(parents=True)
+    (repo / "pylib" / "mod.py").write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
+    (repo / "pyproject.toml").write_text('[project]\nname = "faro"\n', encoding="utf-8")
+    (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def test_init_binds_the_lane_to_the_environment_the_lockfile_pins(locked_repo: Path):
+    """A bare `python` binds to whatever venv the shell has active. Run in one
+    worktree with another worktree's venv active, that lane measures the other
+    checkout — and when the two APIs agree it does so silently."""
+    res = run_cli(locked_repo, "init")
+    assert res.returncode == 0, res.stderr
+
+    from crapkit.config import load_config_text
+    cfg = load_config_text((locked_repo / "crapkit.toml").read_text(encoding="utf-8"))
+    (lane,) = cfg.lanes
+    assert lane.command.startswith("uv run python -m pytest ")
+    assert dict(cfg.scoped_tests)["pylib"].startswith("uv run python -m pytest ")
+
+
+def test_the_same_project_without_a_lockfile_keeps_the_bare_interpreter(locked_repo: Path):
+    (locked_repo / "uv.lock").unlink()
+    _git_commit_all(locked_repo, "drop the lockfile")
+
+    assert run_cli(locked_repo, "init").returncode == 0
+
+    from crapkit.config import load_config_text
+    cfg = load_config_text((locked_repo / "crapkit.toml").read_text(encoding="utf-8"))
+    # Any of the three names init falls back through, `py` included: which one
+    # resolves is the machine's answer, and only the manager prefix is gone.
+    assert re.match(r"(python3?|py) -m pytest ", cfg.lanes[0].command)

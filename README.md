@@ -577,7 +577,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
 | 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
-| 5 | Tool error: lizard not importable, a lane produced no artifact, a lane timed out past its retries, an override alert command failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
+| 5 | Tool error: lizard not importable, a lane produced no artifact or one that measured a different tree, a lane timed out past its retries, an override alert command failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
@@ -622,9 +622,13 @@ added to .gitignore: .crapkit/, .coverage, __pycache__/
 `init` sniffs tracked source into one scope per top-level source directory, and detects a
 coverage lane from what the repo already has: a pytest marker file (`pyproject.toml`,
 `pytest.ini`, `setup.cfg`) writes a live `[[lane]]`, and so does a `test` script or
-`vitest`/`jest` in `package.json`. Whatever it detects, it also leaves commented templates
-for the runners it did not find. Every lane it writes reports into `.crapkit/cov/`, which
-is why the `.gitignore` list is so short: see
+`vitest`/`jest` in `package.json`. A lockfile beside them names the environment: `uv.lock`,
+`poetry.lock`, `pdm.lock` or `Pipfile.lock` makes the lane `uv run python -m pytest …` (and
+the matching `run` for the rest), because a bare `python` binds to whichever venv the shell
+has active rather than the one the repo pins — see
+[The interpreter a lane binds to](docs/lanes.md#the-interpreter-a-lane-binds-to). Whatever
+it detects, it also leaves commented templates for the runners it did not find. Every lane
+it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](docs/lanes.md#where-artifacts-live).
 
 ```toml
@@ -784,7 +788,7 @@ exit 5:
 
 ```
 $ crapkit coverage
-crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
+crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); full log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
 
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 

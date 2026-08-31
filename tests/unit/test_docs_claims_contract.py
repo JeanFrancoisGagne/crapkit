@@ -404,6 +404,78 @@ def test_the_lanes_page_prints_the_crashed_worker_refusal_the_parser_raises():
     assert f"crapkit: lane 'py' FAILED: {exc.value}" in _doc("docs/lanes.md")
 
 
+def _judged(paths) -> tuple:
+    """(refusal or None, stderr) for a lane whose scopes declare `src` and whose
+    artifact measured these paths."""
+    import io
+    from contextlib import redirect_stderr
+
+    from crapkit.config import Lane
+    from crapkit.errors import ToolError
+    from crapkit.lanes import _judge_artifact_scope
+
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            _judge_artifact_scope(lane, dict.fromkeys(paths, []), {"src": ("src",)})
+    except ToolError as raised:
+        return raised, err.getvalue()
+    return None, err.getvalue()
+
+
+_OTHER_TREE = ("/other/checkout/src/faro/core.py", "/other/checkout/src/faro/util.py",
+               "/other/checkout/src/faro/widgets.py")
+
+
+def test_the_lanes_page_prints_the_wrong_tree_refusal_the_lane_raises():
+    """Both halves of the exit-5 refusal are captured output, not paraphrase.
+    The page shipped a transcript written before the message settled: it said
+    "does not describe this checkout" and "Set path_prefix on the lane", neither
+    of which the lane emits."""
+    refusal, _ = _judged(_OTHER_TREE)
+
+    assert f"crapkit: lane 'py' FAILED: {refusal}" in _doc("docs/lanes.md")
+
+
+def test_the_lanes_page_prints_the_in_tree_warning_too():
+    """The other verdict. A page that shows only the refusal reads as if any
+    zero overlap fails the lane, and the greenfield case is the common one."""
+    refusal, err = _judged(("tests/test_core.py",))
+
+    assert refusal is None, "in-tree paths warn and score on"
+    assert err.strip() in _doc("docs/lanes.md")
+
+
+_SUBDIR_SHAPE = "faro/core.py"
+_RECOVER_SECTION = ('## "measured N file(s), none of them under the paths its scopes '
+                    'declare"')
+
+
+def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
+    """The skill filed both shapes under one heading reading "A different exit-5
+    refusal". An agent handed a green run with a stderr note went hunting for a
+    lane failure that never happened; one handed a real exit 5 worked the first
+    row and set `path_prefix`, which cannot rebase an absolute path at all."""
+    refusal, _ = _judged(_OTHER_TREE)
+    warned, err = _judged((_SUBDIR_SHAPE,))
+    assert refusal is not None and warned is None, "the code's two verdicts"
+
+    section = _section(_doc("plugin/skills/crapkit-recover/SKILL.md"), _RECOVER_SECTION)
+    rows = [line for line in section.splitlines() if line.startswith("| ")]
+
+    subdir = [line for line in rows if _SUBDIR_SHAPE in line]
+    assert subdir, "the shape a reader arrives with is still in the table"
+    assert all("exit 5" not in line for line in subdir), "that shape never exits 5"
+    assert all("warning" in line for line in subdir)
+
+    outside = [line for line in rows if "absolute" in line]
+    assert outside and all("exit 5" in line for line in outside)
+
+    assert "will score untested" in err and "will score untested" in section,         "the warning's own words, so a reader can search for what they saw"
+
+
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
     from crapkit.lanes import SUITE_DROP_FRACTION, suite_drops
 

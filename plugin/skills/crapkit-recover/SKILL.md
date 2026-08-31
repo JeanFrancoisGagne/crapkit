@@ -41,7 +41,7 @@ in this version.
 |---|---|---|---|
 | 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
-| 5 | a lane produced no artifact, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
+| 5 | a lane produced no artifact, produced one measuring a different tree, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
@@ -72,8 +72,9 @@ value in double quotes:
 
 ## "produced no artifact": five causes
 
-The lane log names which one. It sits at `.crapkit/lane-<name>.log`, and the failure line
-quotes its tail.
+The lane log names which one. It sits at `.crapkit/lane-<name>.log`; the failure line quotes
+its tail and names that path in full, so read the log before guessing — the tail is 500
+characters of a file that holds the whole run.
 
 | Cause | Signature in the log | Owner |
 |---|---|---|
@@ -115,6 +116,26 @@ to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at al
 EVERY declared lane fails, `coverage` prints a second line, `crapkit: every lane failed:
 ...`, exits 5 and writes no run at all, so `crapkit runs` has nothing to show and there is
 no partial run for `verify` to refuse against.
+
+## "measured N file(s), none of them under the paths its scopes declare"
+
+The lane wrote a real artifact, and none of the paths in it reach the scopes the lane
+claims — so the join finds nothing and every function in those scopes would score
+`untested`. **Read the exit code first**: this message comes in two verdicts, and only one
+of them failed the lane. The measured paths decide which, and the message quotes a few of
+them:
+
+| The paths it reports | Verdict | Cause and fix |
+|---|---|---|
+| absolute, drive-lettered (`C:/…`) or climbing out of the tree (`../…`) | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | the run measured a different tree: a stale artifact, or the wrong environment. A `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's — run the suite through the project's own manager (`uv run python -m pytest …`). On an istanbul lane the reader rebases every path under this checkout's root, so an escaped path means the artifact was written elsewhere: rerun the suite here rather than reusing one copied in or restored from a CI cache |
+| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory — set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key) — or the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
+
+So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N file(s) …
+so every function in those scopes will score untested`. Nothing in the exit-5 row applies
+to it. And `path_prefix` only ever PREPENDS, so it cannot rescue an absolute path in the
+other direction.
+
+Owner: [docs: an artifact that measured a different tree](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#an-artifact-that-measured-a-different-tree).
 
 ## Exit 7 on a function you never touched
 

@@ -232,7 +232,7 @@ This is the slow step and the only authoritative one.
 | Exit | Verdict | Next action |
 |---|---|---|
 | 0 | pass | baseline advanced, ratchet tightened, finished claims released. Commit |
-| 5 | a lane produced no artifact | tooling, not your code: fix the lane command in crapkit.toml |
+| 5 | a lane produced no artifact, or one that measured a different tree | tooling, not your code: read the lane log the message names, then fix the lane command in crapkit.toml |
 | 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries | decompose it, or cover it |
 | 7 | ratchet: a recorded score got worse | restore that function below its mark |
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
@@ -256,7 +256,7 @@ lane subset, or a lane that failed).
 The lines verify prints, one per finding kind, collected here from separate runs:
 
     verify OK @ f6e9bde18a7 vs baseline f6e9bde18a7 (1 changed files)
-    crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 4)
+    crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 4); full log: /repo/.crapkit/lane-py.log; last output: ...
     verify FAILED @ 3a45b8a9b6c vs baseline 03d9cac1397 (1 changed files)
       GATE  crap     42.0  ccn   6 cov 0%  calc/report.py:22  bucket( counts , low , high , invert , label )  -> add-tests  [dirty]
       RATCHET  calc/report.py  spread( counts , low , high , invert , label , pad ): 8.0 -> 72.0

@@ -101,7 +101,7 @@ def test_the_interpreter_falls_back_to_the_windows_launcher(tmp_path, monkeypatc
     on the machine that wrote it and the first `crapkit coverage` exited 5.
     py.exe installs to C:\\Windows and is on PATH without Add to PATH ticked."""
     _name_only_on_path(tmp_path, monkeypatch, "py")
-    assert admin._interpreter() == "py"
+    assert admin._interpreter(tmp_path) == "py"
 
 
 @pytest.mark.parametrize("present, chosen", [
@@ -113,7 +113,7 @@ def test_the_launcher_is_the_last_resort_not_the_first_choice(
     """`py` is Windows-only, and the config it writes gets committed. It may
     only be reached where no portable name resolves at all."""
     _name_only_on_path(tmp_path, monkeypatch, *present)
-    assert admin._interpreter() == chosen
+    assert admin._interpreter(tmp_path) == chosen
 
 
 @pytest.mark.skipif(os.name != "nt", reason="9009 is cmd.exe's own exit code")
@@ -322,6 +322,80 @@ def test_an_interpreter_that_works_is_still_silent(capsys):
     _warn_missing_pytest_cov((_lane(f'"{sys.executable}" -m pytest --cov'),))
 
     assert capsys.readouterr().err == ""
+
+# --- a lane headed by an environment manager ---------------------------------
+#
+# `uv run python -m pytest` heads on `uv`, and `uv -c "import pytest_cov"` is not
+# a python invocation at all: it exits non-zero and the probe would warn about
+# pytest-cov on every uv repo. Probing the real thing is worse — `uv run` and its
+# siblings CREATE or sync the project environment first, and init has no business
+# provisioning one to ask a question about it. `_probe_interpreter` is what says
+# no here: the pytest segment starts on `uv`, and `uv` is not a python.
+
+def _no_spawns(monkeypatch) -> None:
+    def boom(*a, **k):
+        raise AssertionError("init must not run the manager to ask a question")
+
+    monkeypatch.setattr(procs, "run_bounded", boom)
+
+
+@pytest.mark.parametrize("command", [
+    "uv run python -m pytest --cov",
+    "poetry run python -m pytest --cov",
+    "pdm run python -m pytest --cov",
+    "pipenv run python -m pytest --cov",
+])
+def test_a_manager_headed_lane_is_left_alone(command, monkeypatch):
+    _no_spawns(monkeypatch)
+    assert _pytest_cov_probe(command) is True
+
+
+def test_a_managed_lane_prints_no_pytest_cov_warning(tmp_path, monkeypatch, capsys):
+    _manager_shim(tmp_path, monkeypatch)
+    _warn_missing_pytest_cov((_lane("uv run python -m pytest --cov"),))
+
+    assert capsys.readouterr().err == ""
+
+
+def test_a_manager_this_machine_does_not_have_is_named_at_init(
+        tmp_path, monkeypatch, capsys):
+    """The other half of the managed lane, and the one init had nothing to say
+    about. A uv.lock a teammate committed, on a machine that installed the deps
+    with pip: init writes `uv run python -m pytest --cov ...` off the lockfile
+    alone and every check it owns waves it through — `_dead_first_word` skips a
+    word that does not resolve at all, and the pytest-cov probe has no python to
+    ask through `uv run`. init exited 0 pointing at `crapkit coverage`, and that
+    run exited 5 on `'uv' is not recognized`."""
+    _name_only_on_path(tmp_path, monkeypatch, "python")
+
+    _warn_missing_pytest_cov((_lane("uv run python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "`uv`" in err, "the note has to name the word the lane starts with"
+    assert "crapkit.toml" in err, "and where to change it"
+    assert "pytest_cov" not in err, "nothing ran: pip install pytest-cov fixes none of it"
+
+
+def _manager_shim(tmp_path, monkeypatch) -> list[str]:
+    """A `uv` that resolves on PATH, and every spawn recorded rather than run."""
+    _name_only_on_path(tmp_path, monkeypatch, "uv")
+    seen: list[str] = []
+
+    def record(command, *a, **k):
+        seen.append(command)
+        return 0
+
+    monkeypatch.setattr(procs, "run_bounded", record)
+    return seen
+
+
+def test_doctor_asks_the_manager_for_its_version_not_for_an_import(tmp_path, monkeypatch):
+    """The start check runs the line's own first word. For a managed lane that
+    word is `uv`, and the only question it can answer is whether it starts."""
+    seen = _manager_shim(tmp_path, monkeypatch)
+
+    assert admin._dead_first_word("uv run python -m pytest --cov") is None
+    assert seen == ["uv --version"]
 
 
 # --- the same probe, read by doctor ------------------------------------------
@@ -619,3 +693,49 @@ def test_an_empty_segment_names_no_problem(tmp_path):
     from crapkit.cli import admin
 
     assert admin._segment_problems("py", tmp_path, []) == []
+
+# --- which interpreter init writes into the config ---------------------------
+
+def _repo(tmp_path, *names: str):
+    for name in names:
+        (tmp_path / name).write_text("", encoding="utf-8")
+    return tmp_path
+
+
+def test_a_lockfile_makes_init_write_the_managers_own_python(tmp_path):
+    assert admin._interpreter(_repo(tmp_path, "uv.lock")) == "uv run python"
+    assert admin._interpreter(_repo(tmp_path, "poetry.lock")) == "uv run python", \
+        "first match wins, and uv.lock is still there"
+
+
+def test_without_a_lockfile_the_name_that_resolves_is_the_one_written(tmp_path):
+    assert admin._interpreter(_repo(tmp_path, "Cargo.lock")) in ("python", "python3")
+
+
+def test_the_interpreter_written_is_a_name_and_never_a_path(tmp_path, monkeypatch):
+    """Both halves of the no-lockfile fallback. The assertion beside this one
+    (`in ("python", "python3")`) passes on either, so a refactor to
+    `shutil.which("python") or "python3"` — which returns THIS machine's
+    absolute path, the thing the docstring forbids — would keep the suite
+    green while init committed that path into a shared crapkit.toml."""
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert admin._interpreter(tmp_path) == "python3"
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
+    assert admin._interpreter(tmp_path) == "python"
+
+
+def test_the_manager_prefixes_the_name_the_fallback_chose(tmp_path, monkeypatch):
+    """The prefix and the name are two answers, not one. On a Windows PATH that
+    carries only the launcher, a managed repo gets `uv run py` — writing
+    `uv run python` there would name a word neither the manager nor the shell
+    can start."""
+    _name_only_on_path(tmp_path, monkeypatch, "py")
+
+    assert admin._interpreter(_repo(tmp_path, "uv.lock")) == "uv run py"
+
+
+def test_the_lockfiles_init_reads_are_the_ones_it_looks_for(tmp_path):
+    _repo(tmp_path, "pdm.lock", "package-lock.json")
+
+    assert admin._present_lockfiles(tmp_path) == frozenset({"pdm.lock"})
