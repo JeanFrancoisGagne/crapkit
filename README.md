@@ -627,8 +627,8 @@ coverage lane from what the repo already has: a pytest marker file (`pyproject.t
 the matching `run` for the rest), because a bare `python` binds to whichever venv the shell
 has active rather than the one the repo pins — see
 [The interpreter a lane binds to](docs/lanes.md#the-interpreter-a-lane-binds-to). Whatever
-it detects, it also leaves commented templates for the runners it did not find. Every lane it writes reports into `.crapkit/cov/`, which
-is why the `.gitignore` list is so short: see
+it detects, it also leaves commented templates for the runners it did not find. Every lane
+it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](docs/lanes.md#where-artifacts-live).
 
 ```toml
