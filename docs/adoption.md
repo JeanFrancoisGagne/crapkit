@@ -176,6 +176,11 @@ takes `trend` from 4.58 s to 0.04 s. A session holding a checkout it must not wr
 not be the one running them, though the write is best effort and neither command fails when
 it cannot land.
 
+Nothing skips `verify`, so budget one full run per session that finishes an item. Caching a
+verdict on HEAD plus the dirty file names was measured for 0.4.5 and rejected: that key
+cannot see a second edit to a file that was already dirty, and a gate that misses one edit is
+worse than a slow gate.
+
 Upgrading crapkit mid-campaign costs one commit: 0.4.5 measures at analysis version 8 where
 0.4.4 measured at 7, so every existing mark is refused until somebody runs `crapkit ratchet
 seed` and commits the restamped file. Do it once, on one branch, before the fleet fans out

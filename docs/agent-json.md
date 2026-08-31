@@ -1155,6 +1155,10 @@ A dependency-free stdio MCP server: JSON-RPC 2.0, one message per line, protocol
 `2024-11-05`. Read-only. Every tool shells to the CLI's own surface, so the MCP view cannot
 drift from what the CLI reports, and nothing here writes a baseline, a ratchet, or a mutant.
 
+Answering those calls from one long-lived process instead was measured for 0.4.5 and
+rejected. A kept process serves a `source` the session has already edited, and a packet whose
+`source` is stale is a packet nobody can edit from.
+
 With no `--repo`, the server serves the directory the client started it in, which is what a
 globally registered server sees in each project. In a directory with no `crapkit.toml` the
 server still starts and answers `initialize` and `tools/list`. Each `tools/call` there comes
