@@ -304,7 +304,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | Command | What it does |
 |---|---|
 | `init` | Sniffs tracked source into per-directory scopes, writes a self-validated starter `crapkit.toml` whose lanes report into `.crapkit/cov/`, and appends `.crapkit/` plus each runner's own droppings to `.gitignore`. Writes a live `[[lane]]` when it can detect the test runner, otherwise a commented template. Refuses to clobber an existing config. |
-| `doctor [--show-files] [--json] [--tune] [--plugin-root PATH]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files. It WARNs on a lane writing its artifact at the repo root, a committed hook under `core.hooksPath` that is not executable in the index, a directory whose functions are all `untested` while its tests exist, and a scope a lane measures with no `[crapkit.scoped_tests]` template behind it, which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. `--plugin-root PATH` reads no repo at all: it checks an installed [plugin](plugin/) against this CLI on both version and hook `--protocol`, one line per disagreement and silence when they agree. See [docs/agent-json.md](docs/agent-json.md#doctor---json). |
+| `doctor [--show-files] [--json] [--tune] [--plugin-root [PATH]]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files. It WARNs on a lane writing its artifact at the repo root, a pytest or vitest lane with no `results_artifact` (the crashed-worker and no-new-failures checks are off for it), a committed hook under `core.hooksPath` that is not executable in the index, a directory whose functions are all `untested` while its tests exist, and a scope a lane measures with no `[crapkit.scoped_tests]` template behind it, which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. `--plugin-root PATH` reads no repo at all: it checks an installed [plugin](plugin/) against this CLI on both version and hook `--protocol`, one line per disagreement and silence when they agree; PATH is the plugin root or any directory above it, `~/.claude` included (only manifests named `crapkit` count, and the newest install wins), and with no PATH it looks in Claude Code's plugin cache. A root it found rather than one you typed is named first, as `crapkit doctor: checking PATH`. See [docs/agent-json.md](docs/agent-json.md#doctor---json). |
 | `inventory [--db PATH] [--export PATH] [--json]` | One lizard pass over every in-scope file into a SQLite snapshot run, cached by content hash. `--db` is the only way to point crapkit at a store outside `.crapkit/`, and only this command accepts it. |
 | `coverage [--lane NAME] [--reuse-artifacts] [--reuse-unchanged] [--export PATH] [--sarif PATH] [--github] [--json]` | Runs the lanes, joins branch coverage onto a fresh inventory, writes a scored run. A failed lane is recorded, not fatal: its scopes fall back to `no-lane` and the run is typed `partial`, so it can never serve as a baseline. See [docs/lanes.md](docs/lanes.md). |
 | `verify [--baseline ID \| --base REF \| --baseline-tsv PATH] [--emit-baseline PATH] [--override REASON] [--reuse-artifacts] [--reuse-unchanged] [--no-tighten] [--sarif PATH] [--github] [--json]` | The full verdict against the trusted baseline: gate on touched functions, ratchet, no new test failures, optional diff-coverage ceiling. The three baseline selectors are mutually exclusive; `--baseline ID` also bypasses the taint rule ([The trusted baseline](#the-trusted-baseline)), and `--baseline-tsv` reads a commit-stamped file so a fresh clone verifies with no store. `--no-tighten` passes the verdict without rewriting the ratchet. Findings a dirty tree produced are tagged `dirty` and counted apart. |
@@ -422,7 +422,7 @@ $ crapkit verify
 warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since — measuring against run 1 @ 88012a148f6 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
 verify FAILED @ d89068de7f3 vs baseline 88012a148f6 (2 changed files)
   GATE  crap     72.0  ccn   8 cov 0%  calc/legacy.py:7  legacy_router( a , b , c , d , e )  -> decompose
-  findings: 1 committed / 0 dirty (uncommitted tracked edits)
+  findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 ```
 
 Run 3 is a `coverage` run somebody took on the tree run 2 refused, and it scores the same
@@ -445,7 +445,7 @@ always advances the baseline.
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a ratchet metric-stamp mismatch, a `test-scoped` file under no scope or under a scope with no template. |
 | 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
 | 5 | Tool error: lizard not importable, a lane produced no artifact, a lane timed out past its retries, an override alert command failed. |
-| 6 | Gate violation. A function the diff touched is over its ceiling, or `rescore --gate` found one, or `hook-precommit` did. |
+| 6 | Gate violation. A function the diff touched is over its ceiling and above any ratchet mark it carries, or `rescore --gate` found one, or `hook-precommit` did. |
 | 7 | Ratchet regression. A marked function scores worse than its recorded high-water mark, touched or not. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
 | 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. |
@@ -510,16 +510,18 @@ globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/
 
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json"
+command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml"
 artifact = ".crapkit/cov/py.json"
+results_artifact = ".crapkit/cov/junit-py.xml"
 parser = "coveragepy"
 scopes = ["calc"]
 
 # Declare one [[lane]] per coverage command, then run `crapkit coverage`.
 # [[lane]]
 # name = "js"
-# command = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/js"
+# command = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml"
 # artifact = ".crapkit/cov/js/coverage-final.json"
+# results_artifact = ".crapkit/cov/js/junit.xml"
 # parser = "istanbul"
 # scopes = ["<your-scope>"]
 
@@ -634,9 +636,12 @@ added to .gitignore: .crapkit/
 ```
 
 The lane `init` wrote is
-`npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js`. It reads
-vitest's `json` reporter from `.crapkit/cov/js/coverage-final.json`; the
-`reportsDirectory` flag is what keeps that report out of your root. Anything that produces
+`npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml`.
+It reads vitest's `json` reporter from `.crapkit/cov/js/coverage-final.json`; the
+`reportsDirectory` flag is what keeps that report out of your root. The junit half is the
+lane's `results_artifact`, which the crashed-worker and no-new-failures checks read; both
+reporters are named because `--reporter=junit` alone would replace the console output you
+watch the suite through. Anything that produces
 an istanbul `coverage-final.json` works; see [docs/lanes.md](docs/lanes.md) for the
 [jest](docs/lanes.md#jest) and [pytest](docs/lanes.md#pytest) recipes, a package
 [one directory down](docs/lanes.md#running-from-a-subdirectory), and a
@@ -650,7 +655,7 @@ exit 5:
 
 ```
 $ crapkit coverage
-crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js
+crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
 
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 

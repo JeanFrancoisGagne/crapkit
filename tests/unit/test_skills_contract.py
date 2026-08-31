@@ -114,6 +114,19 @@ GATE_REFUSAL = "exceed the complexity ceiling"
 LANE_REFUSAL = "produced no artifact"
 
 
+MERGE_DRIVER = 'git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"'
+
+
+def test_the_merge_driver_both_pages_configure_is_the_console_script():
+    """The skill sends the reader to docs/ratchet.md for this line, so the two
+    have to spell it the same way, and the spelling is the console script:
+    bare `python` reaches the WindowsApps stub, a venv without crapkit, or the
+    base interpreter a venv wraps (#37)."""
+    for page in (RECOVER_SKILL, "docs/ratchet.md"):
+        assert MERGE_DRIVER in _doc(page), page
+        assert "python -m crapkit ratchet merge" not in _doc(page), page
+
+
 def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints():
     from crapkit.cli import verifying
 

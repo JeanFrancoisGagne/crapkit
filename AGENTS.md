@@ -156,7 +156,8 @@ Three rules decide what it judges:
 - **Metric**: ccn against the file's scope ceiling, coverage ignored. Same question the
   pre-commit hook asks.
 - **Exemption**: a function carrying a ratchet mark it has not exceeded passes. Push it
-  past its mark and it fails here, ahead of verify's exit 7.
+  past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
+  mark that rose in a function the diff never touched.
 
 | Exit | Meaning | Next action |
 |---|---|---|
@@ -224,7 +225,7 @@ This is the slow step and the only authoritative one.
 |---|---|---|
 | 0 | pass | baseline advanced, ratchet tightened, finished claims released. Commit |
 | 5 | a lane produced no artifact | tooling, not your code: fix the lane command in crapkit.toml |
-| 6 | gate: a touched function is over its ceiling on CRAP | decompose it, or cover it |
+| 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries | decompose it, or cover it |
 | 7 | ratchet: a recorded score got worse | restore that function below its mark |
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | cover the changed lines |
@@ -244,14 +245,14 @@ The lines verify prints, one per finding kind, collected here from separate runs
       GATE  crap     42.0  ccn   6 cov 0%  calc/report.py:22  bucket( counts , low , high , invert , label )  -> add-tests  [dirty]
       RATCHET  calc/report.py  spread( counts , low , high , invert , label , pad ): 8.0 -> 72.0
       NEW FAILURE  tests.test_curve::test_normalized  [dirty]
-      findings: 1 committed / 0 dirty (uncommitted tracked edits)
+      findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
     diff coverage: 3 uncovered changed line(s) over the ceiling 0
 
 That GATE line is the difference between step 3 and step 5: ccn 6 sits at the ceiling,
 so `rescore --gate` passes it, and CRAP 42 at 0% coverage still fails verify.
 
-Findings tagged `[dirty]` come from uncommitted tracked edits, and the summary line
-splits them. In a shared checkout, dirty findings may not be yours.
+Findings tagged `[dirty]` come from uncommitted edits and untracked files, and the
+summary line splits them. In a shared checkout, dirty findings may not be yours.
 
 ## The advisory hook
 

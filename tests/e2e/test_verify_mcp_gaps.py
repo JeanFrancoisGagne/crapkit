@@ -64,6 +64,14 @@ sys.exit(subprocess.run([sys.executable, "gen_cov.py", "cov/b.json", "srcb/mod_b
 
 BAD_LANE = "# a runner that never writes its artifact\nraise SystemExit(3)\n"
 
+ALERT = """\
+# The override's human channel: append the alert line to alerts.txt.
+import sys
+
+with open("alerts.txt", "a", encoding="utf-8") as fh:
+    fh.write(sys.stdin.read())
+"""
+
 
 # an inherited grant would rewrite the verdict
 run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
@@ -90,8 +98,11 @@ def lane_command(*parts: str) -> str:
     return "'\"" + PY + "\" " + " ".join(parts) + "'"
 
 
-def header(floor: int = 1) -> str:
-    return f"[crapkit]\ntarget = 6\nworklist_floor = {floor}\n\n"
+def header(floor: int = 1, alert: str = "") -> str:
+    """`alert` arrives already quoted as a TOML literal string: a Windows
+    interpreter path in a basic string would read its separators as escapes."""
+    alert_line = f"alert_command = {alert}\n" if alert else ""
+    return f"[crapkit]\ntarget = 6\nworklist_floor = {floor}\n{alert_line}\n"
 
 
 def scope_block(name: str, path: str) -> str:
@@ -106,6 +117,13 @@ def lane_block(name: str, command: str, artifact: str, scopes: list) -> str:
 def module_src(name: str) -> str:
     """A ccn-1 function, three lines long."""
     return f"def {name}():\n    value = 1\n    return value\n"
+
+
+def messy_src(name: str) -> str:
+    """A ccn-9 function: the pre-commit gate refuses it, so an audited override
+    has something to grant and the hook run gets written."""
+    body = "".join(f"    if n > {i}:\n        t = t + 1\n" for i in range(1, 9))
+    return f"def {name}(n):\n    t = 0\n{body}    return t\n"
 
 
 def branchy_src(name: str) -> str:
@@ -233,15 +251,53 @@ def test_verify_baseline_refuses_a_missing_id_and_a_partial_run(pair_repo: Path)
 
     ghost = run_cli(pair_repo, "verify", "--baseline", "99")
     assert ghost.returncode == 1, ghost.stdout + ghost.stderr
-    assert "no trusted scored baseline" in ghost.stderr
+    assert "no run 99" in ghost.stderr and "trusted runs: 1" in ghost.stderr, ghost.stderr
 
     partial = run_cli(pair_repo, "verify", "--baseline", "2")
     assert partial.returncode == 1, partial.stdout + partial.stderr
-    assert "no trusted scored baseline" in partial.stderr
+    assert "run 2 is a partial run" in partial.stderr, partial.stderr
+    assert "--baseline 1" in partial.stderr, partial.stderr
 
     named = run_cli(pair_repo, "verify", "--baseline", "1", "--json")
     assert named.returncode == 0, named.stdout + named.stderr
     assert json.loads(named.stdout)["baseline_run"] == 1
+
+
+@pytest.fixture()
+def override_repo(tmp_path: Path) -> Path:
+    """One healthy lane plus the alert command an audited override requires."""
+    repo = new_repo(tmp_path, "override")
+    write(repo, "src/mod.py", module_src("alpha"))
+    write(repo, "alert.py", ALERT)
+    write(repo, "crapkit.toml", header(alert=lane_command("alert.py"))
+          + scope_block("src", "src")
+          + lane_block("unit", lane_command(GEN, "cov/unit.json", "src/mod.py"),
+                       "cov/unit.json", ["src"]))
+    commit_all(repo, "init")
+    return repo
+
+
+def test_verify_baseline_refuses_a_hook_run(override_repo: Path):
+    """The audited override writes a run of kind `hook`: no lane, no rows, only
+    the audit trail. Naming it with `--baseline` is the deliberate act the taint
+    rule honours, so the refusal has to say which run it is and which one serves,
+    not send the reader to a full `coverage` run it already has."""
+    assert run_cli(override_repo, "coverage", "--json").returncode == 0
+    write(override_repo, "src/messy.py", messy_src("messy"))
+    git(override_repo, "add", "src/messy.py")
+
+    hook = run_cli(override_repo, "hook-precommit",
+                   env_extra={"CRAPKIT_OVERRIDE_REASON": "cutover deadline"})
+    assert hook.returncode == 0, hook.stdout + hook.stderr
+    assert "override granted with full audit (cutover deadline)" in hook.stdout
+    kinds = {r["id"]: r["kind"]
+             for r in json.loads(run_cli(override_repo, "runs", "--json").stdout)["runs"]}
+    assert kinds == {1: "coverage", 2: "hook"}
+
+    res = run_cli(override_repo, "verify", "--baseline", "2")
+    assert res.returncode == 1, res.stdout + res.stderr
+    assert "run 2 is a hook run" in res.stderr, res.stderr
+    assert "--baseline 1" in res.stderr, res.stderr
 
 
 def test_verify_refuses_a_baseline_commit_amend_left_behind(pair_repo: Path):

@@ -337,8 +337,9 @@ retest_command = "python -m pytest --junitxml=.crapkit/cov/junit-api.xml -q -k \
 
 [[lane]]
 name = "web"
-command = "npm run test -- --coverage --coverage.reportsDirectory=../.crapkit/cov/js"
+command = "npm run test -- --coverage --coverage.reportsDirectory=../.crapkit/cov/js --reporter=default --reporter=junit --outputFile=../.crapkit/cov/js/junit.xml"
 artifact = ".crapkit/cov/js/coverage-final.json"
+results_artifact = ".crapkit/cov/js/junit.xml"
 parser = "istanbul"
 scopes = ["web"]
 cwd = "web"

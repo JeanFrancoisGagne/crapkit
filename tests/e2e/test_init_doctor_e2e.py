@@ -305,6 +305,53 @@ def test_doctor_passes_on_a_healthy_config(bare_repo: Path):
     assert "ok" in res.stdout
 
 
+@pytest.fixture()
+def vitest_repo(tmp_path: Path) -> Path:
+    """A JS repo naming exactly one runner, which is what lets init route both
+    of that runner's output files under .crapkit/."""
+    repo = _bare_git_repo(tmp_path, "vitest")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.ts").write_text("export function f(a: number) { return a ? 1 : 2; }\n",
+                                         encoding="utf-8")
+    (repo / "package.json").write_text(
+        json.dumps({"scripts": {"test": "vitest run"}, "devDependencies": {"vitest": "^2.0.0"}}),
+        encoding="utf-8")
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def test_init_on_a_vitest_repo_writes_a_lane_doctor_does_not_warn_about(vitest_repo: Path):
+    """init wrote a JS lane with no results_artifact, so the first thing doctor
+    said about a config init had just written was that its lane cannot run the
+    crashed-worker check or no-new-failures. vitest ships the junit reporter, so
+    the flags cost the reader nothing. The scoped_tests WARN is the one that
+    stays: only the repo knows that command."""
+    assert run_cli(vitest_repo, "init").returncode == 0
+
+    res = run_cli(vitest_repo, "doctor")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "results_artifact" not in res.stdout, res.stdout
+    assert [line for line in res.stdout.splitlines() if line.startswith("WARN")] == [
+        line for line in res.stdout.splitlines() if "scoped_tests" in line]
+
+
+def test_the_vitest_lane_init_writes_still_parses_under_the_lane_guard(vitest_repo: Path):
+    """The istanbul command validator refuses a file filter beside --coverage,
+    and `--outputFile=.crapkit/cov/js/junit.xml` must not read as one. Loading
+    the config is what runs that guard."""
+    from crapkit.config import load_config_text
+
+    assert run_cli(vitest_repo, "init").returncode == 0
+
+    cfg = load_config_text((vitest_repo / "crapkit.toml").read_text(encoding="utf-8"))
+
+    (lane,) = cfg.lanes
+    assert lane.results_artifact == ".crapkit/cov/js/junit.xml"
+    assert lane.command.endswith("--reporter=default --reporter=junit "
+                                 "--outputFile=.crapkit/cov/js/junit.xml"), lane.command
+
+
 def test_doctor_flags_unknown_keys_with_their_names(bare_repo: Path):
     assert run_cli(bare_repo, "init").returncode == 0
     with open(bare_repo / "crapkit.toml", "a", encoding="utf-8") as f:

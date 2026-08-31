@@ -6,13 +6,17 @@ that command writes, and maps the result onto the scopes it claims.
 ```toml
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json"
+command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml"
 artifact = ".crapkit/cov/py.json"
+results_artifact = ".crapkit/cov/junit-py.xml"
 parser = "coveragepy"
 scopes = ["calc"]
 ```
 
-Four required parts and one rule each:
+Four required parts and one rule each. `results_artifact` is the fifth key and the only
+optional one here: leave it out and `doctor` WARNs, because the two checks that read a
+junit report — the crashed-worker trust check and no-new-failures — cannot run for the
+lane.
 
 | Part | Rule |
 |---|---|
@@ -177,11 +181,17 @@ $ npx vitest run --coverage          # reportOnFailure: true
 ```toml
 [[lane]]
 name = "js"
-command = "npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js"
+command = "npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml"
 artifact = ".crapkit/cov/js/coverage-final.json"
+results_artifact = ".crapkit/cov/js/junit.xml"
 parser = "istanbul"
 scopes = ["web"]
 ```
+
+vitest ships the junit reporter, so those three flags need no package. Name `default`
+alongside it: `--reporter=junit` on its own replaces the console output you watch the run
+through. That is the lane `crapkit init` writes for a repo whose `devDependencies` name
+vitest.
 
 Never put a file filter in a `--coverage` command. vitest silently narrows the coverage
 include set to the filtered files, so everything else reads as uncovered. crapkit refuses
@@ -215,23 +225,29 @@ include `json`, which writes `coverage-final.json` into `--coverageDirectory`.
 ```toml
 [[lane]]
 name = "js"
-command = "npx jest --coverage --coverageDirectory=.crapkit/cov/js"
+command = "npx jest --coverage --coverageDirectory=.crapkit/cov/js --reporters=default --reporters=jest-junit"
 artifact = ".crapkit/cov/js/coverage-final.json"
+results_artifact = ".crapkit/cov/js/junit.xml"
 parser = "istanbul"
+env = { JEST_JUNIT_OUTPUT_DIR = ".crapkit/cov/js", JEST_JUNIT_OUTPUT_NAME = "junit.xml" }
 scopes = ["web"]
 ```
 
-That is exactly the lane `crapkit init` writes for a repo with `jest` in `devDependencies`
-and no `test` script. Pin the reporter with `--coverageReporters=json` if your jest config
-overrides the default list. Both forms score identically:
+That is exactly the lane `crapkit init` writes for a repo with `jest` and `jest-junit` in
+`devDependencies` and no `test` script. Pin the reporter with `--coverageReporters=json` if
+your jest config overrides the default list. Both forms score identically:
 
 ```
 $ crapkit coverage
 run 1 @ 70ac5e065df: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 8.12, grade F
 ```
 
-Add `--reporters=default --reporters=jest-junit` and a `results_artifact` for the
-no-new-failures check.
+The junit half is a separate package: `npm i -D jest-junit` first, or jest exits on a
+reporter it cannot resolve. It reads no path off the command line either — package.json,
+the jest config or those two variables are the whole list — so without the `env` block it
+drops `junit.xml` at the repo root. Without `jest-junit` at all, drop the reporter flags,
+the `results_artifact` and the `env`, and take the `doctor` WARN: the lane still measures
+coverage, with the crashed-worker check and no-new-failures off.
 
 ---
 
@@ -340,8 +356,9 @@ command writes it relative to `cwd`:
 ```toml
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:../.crapkit/cov/py.json"
+command = "python -m pytest --cov --cov-branch --cov-report=json:../.crapkit/cov/py.json --junitxml=../.crapkit/cov/junit-py.xml"
 artifact = ".crapkit/cov/py.json"
+results_artifact = ".crapkit/cov/junit-py.xml"
 cwd = "api"
 path_prefix = "api/"
 parser = "coveragepy"

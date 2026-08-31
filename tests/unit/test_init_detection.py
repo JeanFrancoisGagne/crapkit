@@ -21,8 +21,11 @@ def test_a_pyproject_yields_a_live_pytest_lane():
     (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "")
     assert lane.parser == "coveragepy"
     assert lane.command == ("python -m pytest --cov --cov-branch "
-                            "--cov-report=json:.crapkit/cov/py.json")
+                            "--cov-report=json:.crapkit/cov/py.json "
+                            "--junitxml=.crapkit/cov/junit-py.xml")
     assert lane.artifact == ".crapkit/cov/py.json"
+    # The junit file feeds the crashed-worker and no-new-failures checks (#26).
+    assert lane.results_artifact == ".crapkit/cov/junit-py.xml"
 
 
 def test_pytest_ini_and_setup_cfg_count_as_the_same_signal():
@@ -178,18 +181,42 @@ def test_the_pytest_lane_reports_under_the_crapkit_directory():
 
 
 def test_vitest_is_routed_with_the_flag_vitest_spells_it_with():
+    """Both of vitest's reports, because vitest ships the junit reporter: a lane
+    with no results_artifact runs with the crashed-worker and no-new-failures
+    checks off, and doctor WARNed about the config init had just written."""
     (lane,) = detect_lanes(frozenset(), _package(devDependencies={"vitest": "^2.0.0"}))
 
     assert lane.command == ("npx vitest run --coverage "
-                            "--coverage.reportsDirectory=.crapkit/cov/js")
+                            "--coverage.reportsDirectory=.crapkit/cov/js "
+                            "--reporter=default --reporter=junit "
+                            "--outputFile=.crapkit/cov/js/junit.xml")
     assert lane.artifact == ".crapkit/cov/js/coverage-final.json"
+    assert lane.results_artifact == ".crapkit/cov/js/junit.xml"
 
 
 def test_jest_is_routed_with_the_flag_jest_spells_it_with():
+    """jest's junit reporter is a package of its own. Absent, the coverage flag
+    is all init may write: `--reporters=jest-junit` jest cannot resolve fails
+    the run outright, which is worse than the WARN it would silence."""
     (lane,) = detect_lanes(frozenset(), _package(devDependencies={"jest": "^29.0.0"}))
 
     assert lane.command == "npx jest --coverage --coverageDirectory=.crapkit/cov/js"
     assert lane.artifact == ".crapkit/cov/js/coverage-final.json"
+    assert lane.results_artifact == ""
+    assert lane.env == ()
+
+
+def test_jest_junit_installed_earns_the_reporter_and_the_env_that_places_it():
+    """jest-junit reads no path off the command line, so the two variables are
+    what keep its report out of the repo root."""
+    (lane,) = detect_lanes(frozenset(), _package(devDependencies={"jest": "^29.0.0",
+                                                                 "jest-junit": "^16.0.0"}))
+
+    assert lane.command == ("npx jest --coverage --coverageDirectory=.crapkit/cov/js "
+                            "--reporters=default --reporters=jest-junit")
+    assert lane.results_artifact == ".crapkit/cov/js/junit.xml"
+    assert lane.env == (("JEST_JUNIT_OUTPUT_DIR", ".crapkit/cov/js"),
+                        ("JEST_JUNIT_OUTPUT_NAME", "junit.xml"))
 
 
 def test_a_test_script_is_routed_when_devdependencies_name_one_runner():
@@ -197,7 +224,9 @@ def test_a_test_script_is_routed_when_devdependencies_name_one_runner():
                                                  devDependencies={"vitest": "^2.0.0"}))
 
     assert lane.command == ("npm run test -- --coverage "
-                            "--coverage.reportsDirectory=.crapkit/cov/js")
+                            "--coverage.reportsDirectory=.crapkit/cov/js "
+                            "--reporter=default --reporter=junit "
+                            "--outputFile=.crapkit/cov/js/junit.xml")
     assert lane.artifact == ".crapkit/cov/js/coverage-final.json"
 
 
@@ -240,6 +269,9 @@ def test_the_routed_config_init_writes_parses_back():
 
     assert {lane.name: lane.artifact for lane in cfg.lanes} == {
         "py": ".crapkit/cov/py.json", "js": ".crapkit/cov/js/coverage-final.json"}
+    assert {lane.name: lane.results_artifact for lane in cfg.lanes} == {
+        "py": ".crapkit/cov/junit-py.xml",
+        "js": ".crapkit/cov/js/junit.xml"}, "both junit paths survive the round trip"
 
 
 def test_the_commented_templates_point_under_the_crapkit_directory_too():

@@ -218,10 +218,11 @@ def test_every_pool_worker_applied_the_rvalue_rule(family_repo: Path):
     assert take == {TAKE[2]}, "an rvalue-reference parameter is not a condition"
 
 
-def test_a_pool_worker_reports_the_platform_fork(family_repo: Path):
-    """The line is printed where the analysis happens, which for a repo this
-    size is a spawned child. A line written only on the parent's path would pass
-    every unit test and never fire on a real run."""
+def test_a_pooled_run_reports_the_platform_fork(family_repo: Path):
+    """A repo this size is analysed by spawned workers, and the note is printed
+    by the parent once their records are back (#31). This is the guard that the
+    real pooled path still carries it to stderr; the unit test only proves that
+    a worker's own path stays silent."""
     err = inventory(family_repo)["stderr"]
 
     assert PLAT_OPEN in err

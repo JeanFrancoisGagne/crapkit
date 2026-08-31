@@ -49,14 +49,51 @@ def _taint_note(pick) -> str:
             f"pass `--baseline {pick.skipped['id']}` to accept the newer run deliberately.")
 
 
+# The kinds `trusted_runs` refuses, worded for the operator who named one. A
+# table rather than a chain of ifs keeps the helper under the ccn 6 gate with
+# room to spare, so one untested branch cannot lift its CRAP past the target.
+_UNTRUSTED_KINDS = {"hook": "a hook run",
+                    "partial": "a partial run (a lane subset, or a lane that failed)",
+                    "inventory": "an inventory run (no coverage was measured)"}
+
+
+def _untrusted_reason(run: dict) -> str:
+    """Why a run that exists cannot be measured against, in the store's own terms."""
+    kind = run["kind"]
+    if kind == "verify":
+        return "a failed verify" if run["verdict_ok"] is False else "a verify with no verdict"
+    if kind in _UNTRUSTED_KINDS:
+        return _UNTRUSTED_KINDS[kind]
+    return f"a {kind or 'legacy'} run that measured no lanes"
+
+
+def _wrong_baseline(store: SnapshotStore, requested: int, trusted: list[dict]) -> str:
+    """A named run that cannot serve, beside the runs that can.
+
+    The refusal is right; the line has to be about the run that was named. The
+    trusted ids are listed oldest first, so the last one is the newest and the
+    `--baseline` hint names it: that is the escape an operator reaching for
+    `--baseline` was after, and a fresh `coverage` run is the expensive wrong one.
+    """
+    ids = ", ".join(str(r["id"]) for r in trusted)
+    named = next((r for r in store.list_runs() if r["id"] == requested), None)
+    if named is None:
+        return f"no run {requested} in the store (`crapkit runs` lists them); trusted runs: {ids}"
+    return (f"run {requested} is {_untrusted_reason(named)} and cannot serve as a baseline; "
+            f"trusted runs: {ids}; pass `--baseline {trusted[-1]['id']}` for the newest")
+
+
 def _named_baseline(store: SnapshotStore, root: Path, requested: int) -> dict:
     """`--baseline ID` bypasses the taint rule: naming a run is the deliberate act."""
     from ..store import trusted_runs
 
-    baseline = next((r for r in trusted_runs(store) if r["id"] == requested), None)
-    if baseline is None:
+    trusted = trusted_runs(store)
+    baseline = next((r for r in trusted if r["id"] == requested), None)
+    if baseline is not None:
+        return baseline
+    if not trusted:
         raise CrapkitError(_no_baseline(root))
-    return baseline
+    raise CrapkitError(_wrong_baseline(store, requested, trusted))
 
 
 def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) -> dict:
@@ -489,25 +526,43 @@ def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
     return verdict._replace(ok=ok, new_failures=sorted(survivors))
 
 
-def _shrink_line(name: str, b_total: int, total: int | None) -> str:
-    """How this lane's test count moved against the baseline. A lane that lost
-    its results_artifact reports no count at all, which is not a subtraction."""
-    if total is None:
-        return (f"warning: lane {name!r} reports no test count this run, "
-                f"against {b_total} in the baseline")
-    return f"warning: lane {name!r} runs {b_total - total} fewer tests than the baseline"
-
-
 def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
     """Suite decay passes a pass/fail check silently; say it out loud."""
     for name, prov in provenance.items():
         base = baseline.get("lanes", {}).get(name, {})
-        b_total, b_skip = base.get("tests_total"), base.get("tests_skipped")
-        if b_total and prov.get("tests_total", 0) < b_total:
-            print(_shrink_line(name, b_total, prov.get("tests_total")), file=sys.stderr)
-        if b_skip is not None and prov.get("tests_skipped", 0) > b_skip:
-            print(f"warning: lane {name!r} skips {prov['tests_skipped'] - b_skip} "
-                  f"more tests than the baseline", file=sys.stderr)
+        for line in _suite_size_lines(name, base, prov):
+            print(f"warning: {line}", file=sys.stderr)
+
+
+def _suite_size_lines(name: str, base: dict, prov: dict) -> list[str]:
+    """How the suite's size moved since the baseline, or why that cannot be said.
+
+    Both counts are optional. A baseline recorded before the lane declared a
+    `results_artifact` carries none and compares nothing. A lane that wrote no
+    junit THIS run (the lane declares no `results_artifact` at the commit under
+    test; a declared file missing after the run is a lane failure and never
+    reaches here) has nothing to compare either; reading its absent count as
+    zero once turned every such run into a KeyError after the lane had run.
+    """
+    b_total = base.get("tests_total")
+    if b_total and prov.get("tests_total") is None:
+        return [f"lane {name!r} wrote no test counts this run (no results_artifact was "
+                f"parsed), so the baseline's {b_total} tests cannot be compared"]
+    lines = (_fewer_tests_line(name, b_total, prov.get("tests_total")),
+             _more_skips_line(name, base.get("tests_skipped"), prov.get("tests_skipped")))
+    return [line for line in lines if line]
+
+
+def _fewer_tests_line(name: str, base_n: int | None, fresh_n: int | None) -> str | None:
+    if base_n and fresh_n is not None and fresh_n < base_n:
+        return f"lane {name!r} runs {base_n - fresh_n} fewer tests than the baseline"
+    return None
+
+
+def _more_skips_line(name: str, base_n: int | None, fresh_n: int | None) -> str | None:
+    if base_n is not None and fresh_n is not None and fresh_n > base_n:
+        return f"lane {name!r} skips {fresh_n - base_n} more tests than the baseline"
+    return None
 
 
 def _under_scope_path(path: str, scope_path: str) -> bool:

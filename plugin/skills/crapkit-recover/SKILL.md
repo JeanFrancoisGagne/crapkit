@@ -19,11 +19,14 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 | "crapkit gate: N staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
 | "crapkit doctor: the plugin at PATH is version X, this crapkit is Y", exit 1 | The plugin and the CLI ship as separate artifacts and drifted apart | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
 
-Two more lines come out of `crapkit doctor --plugin-root`, same exit 1.
+Three more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root. `crapkit claude-hook` and `crapkit doctor --plugin-root` are both specified in
+a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
+plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
+with `claude plugin install crapkit@crapkit`, or pass a PATH. `crapkit claude-hook` and
+`crapkit doctor --plugin-root` are both specified in
 [README: subcommands](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands).
 
 Exit 2 from any other crapkit command is argparse: the subcommand or the flag does not exist
@@ -36,7 +39,7 @@ in this version.
 | 3 | config: `crapkit.toml` unparseable, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
 | 5 | a lane produced no artifact, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
-| 6 | gate: a function the diff touched is over its ceiling and carries no ratchet mark | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
+| 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit verify --json` |
@@ -91,7 +94,7 @@ key it takes the side that changed, or the lower value when both did.
 A conflict here means the merge driver is not installed in this clone. Install it, then redo
 the merge:
 
-    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+    git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"
 
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
 When the driver itself refuses (`marks from different metric versions cannot merge`),

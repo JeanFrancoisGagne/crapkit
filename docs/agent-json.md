@@ -809,7 +809,7 @@ $ crapkit doctor --json
 | Key | Meaning |
 |---|---|
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
-| `warnings` | The WARN findings: unmeasured directories, and lanes writing their artifacts at the repo root instead of under `.crapkit/`. Exit stays 0. |
+| `warnings` | The WARN findings: unmeasured directories, lanes writing their artifacts at the repo root instead of under `.crapkit/`, and lanes with no `results_artifact`, which cannot run the crashed-worker check or no-new-failures. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
 | `analysis_version` | The analysis semantics version. It plus `lizard` are the ratchet's metric stamp. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
@@ -837,10 +837,24 @@ crapkit doctor: the plugin at crapkit is version 0.3.0, this crapkit is 0.4.0. R
 crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
 ```
 
+A root doctor found rather than one you typed gets a `crapkit doctor: checking PATH` line
+first, naming the install the verdict is about: the search reaches three levels under the
+directory you named, so a source checkout can win over an install and the two look the same
+from the outside. A `PATH` that is itself a plugin root prints no such line.
+
 A plugin with no manifest gets one line saying so and no protocol check: there is no version
 to compare, and the protocol line underneath would bury the fact that explains both. A plugin
 shipping no `hooks/hooks.json` registers no advisory hook, and the output says that instead.
 It prints no JSON and ignores `--json`.
+
+`PATH` may be the plugin root itself or any directory above it: `~/.claude`, `~/.claude/plugins`,
+the cache root `~/.claude/plugins/cache`, or a marketplace or plugin directory inside it. Claude
+Code keeps an install at `cache/<marketplace>/<plugin>/<version>/` and leaves the old version
+beside the new one after an update, so among the manifests named `crapkit` under `PATH` the
+newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
+all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
+through `installed_plugins.json` and the cache, and names that directory when nothing is
+installed there.
 
 ---
 

@@ -112,10 +112,25 @@ def test_an_inventory_run_is_no_baseline_and_the_refusal_says_why(repo, capsys):
 
 
 def test_naming_a_run_that_is_not_trusted_is_refused(baselined, capsys):
+    """The refusal is about the run that was named, not about an empty store.
+
+    Run 1 is trusted here, so "no trusted scored baseline, run `crapkit
+    coverage` first" would be false in its first clause and expensive in its
+    remedy (#27): the answer is `--baseline 1`, and the line says so.
+    """
     code, _, err = run(["verify", "--reuse-artifacts", "--baseline", "99"], baselined, capsys)
 
     assert code == 1
-    assert "no trusted scored baseline" in err, err
+    assert "no run 99 in the store" in err, err
+    assert "trusted runs: 1" in err, err
+
+    assert main(["inventory", "--repo", str(baselined)]) == 0
+    capsys.readouterr()
+    code, _, err = run(["verify", "--reuse-artifacts", "--baseline", "2"], baselined, capsys)
+
+    assert code == 1
+    assert "run 2 is an inventory run" in err, err
+    assert "--baseline 1" in err, err
 
 
 def test_naming_the_baseline_run_by_id_accepts_it(baselined, capsys):
@@ -403,7 +418,9 @@ def test_a_lane_that_lost_its_test_count_names_the_gap(baselined, capsys):
     code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
     assert code == 0
-    assert "lane 'unit' reports no test count this run, against 100 in the baseline" in err, err
+    assert ("lane 'unit' wrote no test counts this run (no results_artifact was parsed), "
+            "so the baseline's 100 tests cannot be compared") in err, err
+    assert "fewer tests" not in err, err
 
 
 def test_dead_lines_in_the_diff_warn_and_breach_the_ceiling(baselined, capsys):

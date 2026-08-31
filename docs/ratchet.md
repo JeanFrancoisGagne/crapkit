@@ -92,10 +92,12 @@ The three gates read the file differently:
 |---|---|---|
 | `hook-precommit` | a staged blob: ccn, no coverage | skips the function on the mark's **existence** |
 | `rescore --gate` | a scored row: ccn and CRAP | skips the function **at or under** the recorded value |
-| `verify` | a full run | **exit 7** when the fresh score is above the mark |
+| `verify` | a full run | skips a touched function **at or under** the mark, as `rescore --gate` does; above the mark it is **exit 6** when the diff touched the function and **exit 7** when it did not |
 
-Nothing about `verify` changed. It still compares the numbers, and it is still where a real
-regression is caught.
+The ratchet check in `verify` is unchanged: it still compares the numbers, and it is still
+where a real regression is caught. Its gate reads a mark the way `rescore --gate` does
+(#29): an edit inside a marked function that leaves it at or under its mark is the debt
+the repo signed for, not a new violation; push it past the mark and both checks fire.
 
 The looseness is deliberate. Before it, a comment added inside a marked function refused the
 commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
@@ -270,7 +272,7 @@ crapkit-ratchet.tsv merge=crapkit-ratchet
 file, by design, so this cannot be automated away):
 
 ```
-git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"
 git config merge.crapkit-ratchet.name "crapkit ratchet 3-way merge"
 ```
 
@@ -420,8 +422,8 @@ Comparison happens at the precision the mark is stored at (four decimals). `cov`
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
 tree against its own mark.
 
-The commit gates read the same file and ask it a looser question. See
-[The commit gate skips marked functions](#the-commit-gate-skips-marked-functions).
+The gates read the same file and ask it a looser question, `verify`'s own gate included
+since #29. See [The commit gate skips marked functions](#the-commit-gate-skips-marked-functions).
 
 ### Damping a measurement that bounces
 
