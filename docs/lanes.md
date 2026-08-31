@@ -24,12 +24,10 @@ every lane on this page.
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
 | `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
 
-### Why every lane here declares a results_artifact
-
-Coverage alone cannot tell a finished suite from a suite that lost a worker, and both write
-a coverage artifact. The junit report is the only thing that says which one happened, so a
-lane without one measures fine and verifies blind. `doctor` says so, per lane, with the
-flag to add:
+**Every lane on this page declares one**, because coverage alone cannot tell a finished
+suite from a suite that lost a worker: both write a coverage artifact. The junit report is
+the only thing that says which one happened, so a lane without one measures fine and
+verifies blind. `doctor` says so, per lane, with the flag to add:
 
 ```
 $ crapkit doctor
@@ -63,7 +61,7 @@ runner and which words are files the repo owes.
 | What you write | How it reads |
 |---|---|
 | `-m "not live and not perf"` | One argument. Double quotes are the portable spelling: both shells drop them and hand the runner one token. |
-| `-m 'not live and not perf'` | Four arguments on Windows. cmd.exe has no single-quote rule, so pytest gets `'not`, `live`, `and`, `not`, `perf'` and the lane is refused with a hint. |
+| `-m 'not live and not perf'` | Five arguments on Windows. cmd.exe has no single-quote rule, so pytest gets `'not`, `live`, `and`, `not`, `perf'` and the lane is refused with a hint. |
 | `-k ^"not slow^"` | One argument. Outside a quoted run cmd.exe drops the caret and hands on the character behind it, so the runner gets `-k "not slow"`. Inside a quoted run the caret stays: `-k "a^b"` reaches the runner with its caret. |
 | `--cov-report=json:"cov/py 1.json"` | One argument. A quote opens a quoted run wherever it sits, mid-token included. |
 | `-k "" tests` | Three arguments. An empty pair of quotes writes an empty argument, so `tests` stays the positional it is. Dropping it would slide `tests` onto `-k` and the narrowing lane would load clean. |
@@ -206,9 +204,31 @@ that package's business and is not warned about.
 ### What else lives in .crapkit/
 
 Everything crapkit writes goes in one gitignored directory beside `crapkit.toml`. One file
-is durable state and the rest are caches: delete any cache and the next run rebuilds it, a
-little slower. A cache that is unreadable, torn or keyed for another format reads as cold,
-never as a crash, so two crapkit versions can share a working tree.
+is durable state, a few are output you asked for, and the rest are caches. Delete a cache
+and the next run rebuilds it, a little slower. A cache that is unreadable, torn or keyed for
+another format reads as cold, never as a crash, so two crapkit versions can share a working
+tree.
+
+After one `coverage`, one `worklist` and one `coupling` on a one-file repo:
+
+```
+$ ls .crapkit .crapkit/cov
+.crapkit:
+artifacts.json
+cache.json
+churn-cache-v2.json
+churn-log-v2.json
+churn-log-v2.z
+coupling-cache-v1.json
+cov
+crap.sqlite
+lane-py.log
+stat-stamps.json
+
+.crapkit/cov:
+junit-py.xml
+py.json
+```
 
 | Path | What it holds | Key |
 |---|---|---|
