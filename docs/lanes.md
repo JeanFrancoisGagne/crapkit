@@ -579,7 +579,7 @@ coverage 7.9 and earlier answer the key with a warning and ignore it, so pin
 **Prefer `--cov=<module>` over `--cov=<path>`.** The source has to resolve from the
 **child's** cwd, and a suite that runs its CLI in a tmp directory is not in the repo any
 more. A path-based source measures nothing there while still reporting a confident 0%.
-crapkit's own lane uses the module form for exactly that reason.
+crapkit's own lane uses the module form because of it.
 
 ### The full-suite rule
 
@@ -1039,7 +1039,8 @@ root:
 | absolute paths that resolve under the root | the lane FAILS, exit 5, this tree spelled absolutely | the runner's own switch: `relative_files` on coveragepy, the reporter's `cwd`/`root` on istanbul |
 | in-tree relative paths that miss every scope | a warning on stderr, exit 0, and the run scores on | `path_prefix` when the runner reports from a subdirectory, and nothing at all on a greenfield repo |
 
-Each row gets its own section below. Paths outside the root fail the lane:
+The rest of this section takes the rows in that order. Paths outside the root fail the
+lane:
 
 ```
 $ crapkit coverage
