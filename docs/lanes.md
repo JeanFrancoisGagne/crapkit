@@ -553,11 +553,35 @@ week. If you see that, check the version before you check your config. The churn
 moved to new file names, so a map laid down with top-relative paths is ignored rather than
 reused, and a 0.4.3 sharing the repo keeps its own.
 
-One piece was still git-top-relative in 0.4.4: the pre-commit gate reads staged paths from
-`git diff --cached`, which answers from the git top whatever the root is. Those paths matched
-no scope under a nested root, so the gate gated nothing and printed
-`staged file(s) belong to no scope and were not gated` naming files that start with the
-package directory. 0.4.5 fixes it. Scoring, worklist and churn are unaffected.
+### The gate gates below the top since 0.4.5
+
+0.4.4 fixed churn and left the pre-commit gate reading `git diff --cached`, which answers
+from the git top whatever the root is. Those paths matched no scope under a nested root, so
+the gate gated nothing and printed `staged file(s) belong to no scope and were not gated`
+naming files that start with the package directory. A function at twice the ceiling
+committed with a warning.
+
+Since 0.4.5 every git spawn runs with `diff.relative=true` and `core.quotePath=false`, and
+cat-file asks for `:./path`. Every reader that joined top-relative paths against
+root-relative rows now agrees: the commit gate, `verify`'s changed files, `rescore --gate`,
+lane reuse (which could republish a stale artifact's score), `mutate`'s targets, the
+ratchet's rename follow, and the per-edit advisory's own diff. `core.quotePath=false` is
+the other half: git quotes a non-ASCII path in its diff output and `ls-files` does not, so a
+dirty file with an accent in its name was invisible to lane reuse.
+
+Staged from the git top, gated from `packages/api`, one directory down:
+
+```
+$ git add -A                                   # run at the git top
+$ crapkit hook-precommit                       # run in packages/api
+crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+  ccn   8  calc/grade.py:17  rank( a , b , c , d , e )
+decompose before committing (coverage cannot save a function above the target).
+```
+
+Exit 6, and the path in the row is root-relative like every other crapkit row. A staged file
+that sits **above** the crapkit root is outside the diff by design, and is no longer named
+in that warning.
 
 ---
 
