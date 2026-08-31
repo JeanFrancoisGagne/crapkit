@@ -46,6 +46,23 @@ def _write(tmp_path, obj, **dumps):
     return path
 
 
+def test_this_file_starts_every_test_on_an_empty_fold():
+    """The isolation test_the_walks_fold_answers_once... depends on, asserted at
+    the top of the file where it can only fail for one reason.
+
+    `crapkit.uncovered._folded` is process-global and only a reader empties it,
+    so the 48 tests in this suite that run a lane and never read it hand one on.
+    `_take_folded` drops the WHOLE fold when it carries an artifact the caller
+    did not name, and the handover below then reads its file twice instead of
+    once. The autouse fixture in tests/unit/conftest.py empties the fold per
+    test. Without it this fails in file order, because test_cli_scoring_inproc.py
+    sorts ahead of this file and leaks on 15 of its tests, and it fails on some
+    random seeds and not others, which is how the defect stayed hidden."""
+    from crapkit import uncovered
+
+    assert (uncovered._folded, uncovered._folded_from) == ({}, set())
+
+
 @pytest.mark.parametrize("chunk", CHUNKS)
 @pytest.mark.parametrize("indent", [None, 1])
 def test_streamed_istanbul_equals_the_whole_document_parse(tmp_path, chunk, indent):
