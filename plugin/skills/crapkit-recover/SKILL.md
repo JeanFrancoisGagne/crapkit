@@ -76,6 +76,13 @@ The lane log names which one. It sits at `.crapkit/lane-<name>.log`; the failure
 its tail and names that path in full, so read the log before guessing — the tail is 500
 characters of a file that holds the whole run.
 
+On a lane with `retries` set, every attempt appends to that one file and the cause the
+message quotes is read from the LAST attempt alone: the text after the final
+`--- attempt N ---` banner line. A retry that died of something else than attempt 1 is
+what you are being shown, and the earlier attempts are in the log above that banner, which
+is why the path is worth opening. Attempt 1 writes no banner, so a log holding none is a
+single attempt and its whole output is in scope.
+
 | Cause | Signature in the log | Owner |
 |---|---|---|
 | No coverage provider installed, vitest | `MISSING DEPENDENCY '@vitest/coverage-v8'` | [docs: getting an artifact out of vitest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#getting-an-artifact-out-of-vitest) |
@@ -135,6 +142,10 @@ So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N 
 so every function in those scopes will score untested`. Nothing in the exit-5 row applies
 to it. And `path_prefix` only ever PREPENDS, so it cannot rescue an absolute path in the
 other direction.
+
+An artifact holding both shapes at once takes the first row. A path from somewhere else
+can only have come from somewhere else, and the count in that message names the outside
+paths alone, so a refusal reporting fewer paths than the artifact holds is not a miscount.
 
 Owner: [docs: an artifact that measured a different tree](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#an-artifact-that-measured-a-different-tree).
 
