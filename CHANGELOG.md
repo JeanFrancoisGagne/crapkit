@@ -19,6 +19,26 @@ root-relative paths the commit gate will. The freshness window is what keeps a l
 shipped plugin still registers `Edit|Write` only — a `Bash` matcher is the consumer's
 to add, and this is what makes one useful without a per-consumer wrapper.
 
+### A lane reporting this tree in absolute paths is no longer "another tree"
+`_escapes_repo` called a measured path outside the checkout whenever it was absolute,
+drive-lettered or climbing out, and never compared it against the repo root. A runner
+that reports this checkout's own files by absolute path, which is coverage.py whenever
+`relative_files` is off, was refused with the another-tree message and advice about
+venvs and `path_prefix` — none of it the cause, and `path_prefix` only ever prepends.
+
+The root now reaches the check and the refusal splits in two. Paths outside the root keep
+the old message verbatim. Absolute paths that resolve under it get their own exit 5,
+naming the cause (the runner spelled paths absolutely, crapkit joins on root-relative
+ones) and the runner's own switch: `relative_files = true` under `[tool.coverage.run]`
+for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one. Both sides
+of the comparison resolve the same way, symlinks followed and the case folded where the
+filesystem folds it.
+
+Nothing is rebased: the join contract stays root-relative and only the diagnosis moved. A
+`../` climb keeps the another-tree refusal, having no recorded working directory to
+resolve against, and so does a mixed artifact, where one path from somewhere else decides
+for all of them.
+
 ## 0.4.6 — 2026-08-31
 
 Three findings from @nicolaschapados, out of one incident on a real pytest/uv project
