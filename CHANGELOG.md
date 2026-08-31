@@ -2,13 +2,80 @@
 
 ## 0.4.7 — unreleased
 
+One contributed capability and three fixes. The capability is the per-edit advisory
+hearing writes that arrive through a shell, contributed by @nicolaschapados as PR #45.
+The three fixes are #42, #43 and #44, filed while reviewing the incident report of his
+that became 0.4.6 (PR #41): a lane refusal that named the wrong cause, a cause line
+hoisted out of a superseded retry attempt, and a commented `init` template that handed
+back the environment bug the live lane no longer has. Nothing here is required of a
+consumer on upgrade; [Upgrading from 0.4.6](#upgrading-from-046) at the end of this
+section has the one thing you may want to choose.
+
+### The per-edit advisory now hears Bash writes
+`crapkit claude-hook` judged the one file named in `tool_input.file_path`, which only
+Edit, Write and MultiEdit events carry. A `Bash` PostToolUse event carries
+`tool_input.command` instead, so an agent writing source through a shell heredoc or
+`python - <<'PY'`, which is how some harness modes make every write, got no complexity
+advice at all. Found running crapkit 0.4.4 over a real milestone, in the same nested-root
+repo that surfaced the 0.4.5 `diff.relative` fixes.
+
+A Bash event now falls back to the working tree: the `*.py` files git reports as dirty or
+untracked, whose mtime sits inside a 12-second freshness window, capped at 25 files. Each
+one takes the same per-file ladder an Edit takes, so scope, sequencing, changed ranges,
+ratchet marks and the untracked rule all mean what they already meant, a nested crapkit
+root judges the same root-relative paths the commit gate will, and exit 2 still means one
+thing. The freshness window is what keeps a later `ls` from re-advising a file that was
+already dirty. A clean tree, a stale file and a cwd outside any git repo are all silence.
+
+Python only, and on purpose: every other language stays the commit gate's business,
+because only Python is cheap enough to analyze on every shell call. The shipped plugin
+still registers `Edit|Write` alone, so the fallback fires only for a consumer who adds a
+`Bash` matcher; the upgrade note below has the snippet and the cost.
+
+The `--protocol` check also moved to the top of the ladder. The outcomes are the same, but
+a payload from a future protocol is now answered before the root walk rather than after
+it.
+
+### A lane reporting this tree in absolute paths is no longer "another tree"
+`_escapes_repo` called a measured path outside the checkout whenever it was absolute,
+drive-lettered or climbing out, and never compared it against the repo root. A runner that
+reports this checkout's own files by absolute path, which is coverage.py whenever
+`relative_files` is off, was refused with the another-tree message and advice about venvs
+and `path_prefix`: none of it the cause, and `path_prefix` only ever prepends.
+
+The root now reaches the check and the refusal splits in two. Paths outside the root keep
+the old message verbatim. Absolute paths that resolve under it get their own exit 5,
+naming the cause (the runner spelled paths absolutely, crapkit joins on root-relative
+ones) and the runner's own switch: `relative_files = true` under `[tool.coverage.run]`, or
+`[run] relative_files = true` in `.coveragerc`, for a coveragepy lane, the reporter's
+`cwd`/`root` option for an istanbul one. Both sides of the comparison resolve the same
+way, symlinks followed and the case folded where the filesystem folds it.
+
+Nothing is rebased: the join contract stays root-relative and only the diagnosis moved. A
+`../` climb keeps the another-tree refusal, having no recorded working directory to
+resolve against, and so does a mixed artifact, where one path from somewhere else decides
+for all of them and the count names the outside paths alone. In-tree relative paths that
+simply miss every scope still warn and score on, which is the greenfield shape 0.4.6
+described. Three readings of zero overlap, three verdicts.
+
+### A retried lane quotes the attempt that failed it
+The cause hoisted in front of a lane refusal is now read from the final attempt only.
+Every attempt appends to one `.crapkit/lane-<name>.log`, and the scan that looks for a
+reason ran over the whole file, so a lane that timed out on an `ImportError` and then
+failed attempt 2 for a different reason reported the ImportError, standing above attempt
+2's own output with nothing marking the boundary between them. The final attempt starts
+after the last `--- attempt N ---` banner line; the banner has to be the whole line, so
+output that quotes those words mid-text is still output. Attempt 1 writes no banner, so a
+log without one is a single attempt and reads exactly as before. The tail itself still
+reads the end of the whole log, and the message names no attempt number: the log path it
+already quotes is where that lives.
+
 ### The commented lane template names the python the lockfile pins
 0.4.6 taught `init` to write `uv run python -m pytest …` off a lockfile, but only where it
 detected a live pytest lane. A repo with a lockfile and no pytest marker file
 (`pyproject.toml`, `pytest.ini`, `setup.cfg`) gets the coveragepy lane as a commented
 template instead, and that template still read a bare `python`. Uncommenting it handed the
-reader back the environment bug the prefix exists to prevent: a lane bound to whichever
-venv the shell has active rather than the one the repo pins.
+reader back the environment bug the prefix exists to prevent.
 
 The template now carries a `{python}` placeholder, filled the same way the
 `[crapkit.scoped_tests]` entries already fill theirs, so all three python lines `init`
@@ -17,52 +84,39 @@ template. `python_launcher` takes the launcher as its fallback for a repo with n
 read it back off. The js templates are unchanged; they carry no placeholder. A repo with
 no lockfile writes `python` (or `python3`, or `py`) exactly as before.
 
-### The per-edit advisory now hears Bash writes
-`crapkit claude-hook` judged the one file named in `tool_input.file_path`, which only
-Edit, Write and MultiEdit events carry. A `Bash` PostToolUse event carries
-`tool_input.command` instead, so an agent writing source through a shell heredoc or
-`python - <<'PY'` — how some harness modes make every write — got no complexity advice
-at all. Found running crapkit 0.4.4 over a real milestone, in the same nested-root repo
-that surfaced the 0.4.5 `diff.relative` fixes.
+`_warn_missing_pytest_cov` now documents the rule it applies rather than the one it used
+to. A manager-headed lane names no python in the position the probe reads, so it is never
+probed and can never earn the pytest-cov note; it still earns the two notes ahead of the
+probe, for a manager that does not resolve on PATH and for a first word the shell cannot
+start.
 
-A Bash event now falls back to the working tree: the changed `*.py` files whose mtime
-sits inside a short freshness window (12 s, capped at 25 files) each take the same
-per-file ladder an Edit takes, so scope, sequencing, ratchet marks and the untracked
-rule all mean what they already meant, and a nested crapkit root judges the same
-root-relative paths the commit gate will. The freshness window is what keeps a later
-`ls` from re-advising a file that was already dirty; a clean tree stays silent. The
-shipped plugin still registers `Edit|Write` only — a `Bash` matcher is the consumer's
-to add, and this is what makes one useful without a per-consumer wrapper.
+### Upgrading from 0.4.6
+- **Nothing is required.** No config key, no ratchet reseed, no stamp change. Every
+  0.4.6 config and every committed ratchet reads the same here.
+- **One thing you may want to add: a `Bash` matcher for the advisory.** The shipped
+  plugin registers `Edit|Write`, so out of the box the new fallback never fires. To get
+  it, add a second PostToolUse entry to your own settings, same command, matcher `Bash`:
 
-### A lane reporting this tree in absolute paths is no longer "another tree"
-`_escapes_repo` called a measured path outside the checkout whenever it was absolute,
-drive-lettered or climbing out, and never compared it against the repo root. A runner
-that reports this checkout's own files by absolute path, which is coverage.py whenever
-`relative_files` is off, was refused with the another-tree message and advice about
-venvs and `path_prefix` — none of it the cause, and `path_prefix` only ever prepends.
+  ```json
+  {
+    "hooks": {
+      "PostToolUse": [
+        {
+          "matcher": "Bash",
+          "hooks": [
+            { "type": "command", "command": "crapkit claude-hook --protocol 1" }
+          ]
+        }
+      ]
+    }
+  }
+  ```
 
-The root now reaches the check and the refusal splits in two. Paths outside the root keep
-the old message verbatim. Absolute paths that resolve under it get their own exit 5,
-naming the cause (the runner spelled paths absolutely, crapkit joins on root-relative
-ones) and the runner's own switch: `relative_files = true` under `[tool.coverage.run]`
-for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one. Both sides
-of the comparison resolve the same way, symlinks followed and the case folded where the
-filesystem folds it.
-
-Nothing is rebased: the join contract stays root-relative and only the diagnosis moved. A
-`../` climb keeps the another-tree refusal, having no recorded working directory to
-resolve against, and so does a mixed artifact, where one path from somewhere else decides
-for all of them.
-
-### A retried lane quotes the attempt that failed it
-The cause hoisted in front of a lane refusal is now read from the FINAL attempt only.
-Every attempt appends to one `.crapkit/lane-<name>.log`, and the scan that looks for a
-reason ran over the whole file, so a lane that timed out on an `ImportError` and then
-failed attempt 2 for a different reason reported the ImportError, standing above attempt
-2's own output with nothing marking the boundary between them. The final attempt starts
-after the last `--- attempt N ---` banner line; the banner has to be the whole line, so
-output that quotes those words mid-text is still output. Attempt 1 writes no banner, so a
-log without one is a single attempt and reads exactly as before.
+  The cost is one `git rev-parse --show-toplevel` and one `git status --porcelain -z
+  -uall` per shell call inside a git repo, whether or not crapkit measures it: about
+  30 ms together on crapkit's own checkout, and it grows with the size of the tree git
+  has to walk. The fallback judges `*.py` files only, so a repo whose source is TypeScript
+  or Go pays those two spawns and gets nothing back.
 
 ## 0.4.6 — 2026-08-31
 
