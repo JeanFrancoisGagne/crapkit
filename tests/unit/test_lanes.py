@@ -201,3 +201,68 @@ def test_a_refusal_with_no_log_at_all_still_names_where_it_would_be(tmp_path):
 
     assert str(missing) in str(raised.value)
     assert "last output" not in str(raised.value), "no log, nothing to quote"
+
+
+# --- a retried lane's log holds every attempt, and the cause is the last one's -
+#
+# `retries` appends attempt 2 to attempt 1's log under an `--- attempt N ---`
+# banner. A cause scan over the whole file hoists whatever attempt died first,
+# in front of the tail the LAST attempt wrote, with nothing saying the two came
+# from different runs.
+
+def _retried_log(first: list[str], second: list[str]) -> list[str]:
+    """Two attempts in one log, the second closing on a summary block wide
+    enough that the byte tail never reaches back to its own cause."""
+    return (["$ python -m pytest --cov", *first, "(exit 2)", "",
+             "--- attempt 2 ---", "$ python -m pytest --cov", *second,
+             "=========================== short test summary info ===================="]
+            + [f"ERROR tests/test_{i:03d}.py" for i in range(60)]
+            + ["(exit 2)"])
+
+
+def test_the_hoisted_cause_comes_from_the_last_attempt(tmp_path):
+    lines = _retried_log(["E   ImportError: no module named 'faro'"],
+                         ["E   AttributeError: module 'faro' has no attribute 'Widget'"])
+
+    message = _refusal(tmp_path, lines)
+
+    assert "no attribute 'Widget'" in message, "attempt 2 is the run that failed the lane"
+    assert "no module named 'faro'" not in message, (
+        "attempt 1 was superseded, and the message marks no attempt boundary")
+
+
+def test_a_cause_only_the_superseded_attempt_had_is_not_hoisted(tmp_path):
+    """Attempt 2 wrote no line naming a reason. The message says that much,
+    rather than borrowing the reason attempt 1 gave for dying."""
+    lines = _retried_log(["E   ImportError: no module named 'faro'"],
+                         ["collected 0 items"])
+
+    message = _refusal(tmp_path, lines)
+
+    assert "no module named 'faro'" not in message
+
+
+def test_a_log_with_no_banner_is_one_attempt_and_still_hoists(tmp_path):
+    """Attempt 1 writes no banner, so a bannerless log is a single attempt and
+    the scan covers all of it, exactly as it did before retries were involved."""
+    lines = ["$ python -m pytest --cov",
+             "E   ImportError: no module named 'faro'",
+             "=========================== short test summary info ===================="]
+    lines += [f"ERROR tests/test_{i:03d}.py" for i in range(60)]
+    lines += ["(exit 2)"]
+
+    assert "no module named 'faro'" in _refusal(tmp_path, lines)
+
+
+def test_a_line_that_merely_quotes_the_banner_does_not_start_an_attempt(tmp_path):
+    """The banner is a whole line. A test asserting on it quotes those same
+    words mid-line, and a substring scan would read the cause above such a line
+    as superseded and hoist nothing."""
+    lines = ["$ python -m pytest --cov",
+             "tests/test_lane_log.py:12: in test_the_retry_is_visible",
+             "E   AssertionError: assert '--- attempt 2 ---' in log",
+             "=========================== short test summary info ===================="]
+    lines += [f"ERROR tests/test_{i:03d}.py" for i in range(60)]
+    lines += ["(exit 2)"]
+
+    assert "assert '--- attempt 2 ---' in log" in _refusal(tmp_path, lines)

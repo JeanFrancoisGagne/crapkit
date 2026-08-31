@@ -57,6 +57,11 @@ _CAUSE_WIDTH = 200
 # scrolls off above it.
 _DIAGNOSTIC = re.compile(r"\s*(E\s|Traceback \(most recent call last\)|\w*(Error|Exception): )")
 
+# The banner `_log_header` writes before every attempt after the first. A whole
+# line, so a log line that quotes those words mid-text is output and not a
+# boundary.
+_ATTEMPT_BANNER = re.compile(r"--- attempt \d+ ---")
+
 
 def _log_lines(log_path: Path) -> list[str]:
     if not log_path.is_file():
@@ -94,8 +99,18 @@ def _cut_cause(line: str) -> str:
     return line if len(line) <= _CAUSE_WIDTH else "..." + line[-(_CAUSE_WIDTH - 3):]
 
 
+def _last_attempt(lines: list[str]) -> list[str]:
+    """The final attempt's lines. A retried lane appends every attempt to one
+    log, so a scan of the whole file can hoist the reason a superseded attempt
+    died for and stand it in front of the last attempt's own output, with
+    nothing marking the boundary. Attempt 1 writes no banner, so a log holding
+    none is one attempt and comes back whole."""
+    banners = [i for i, line in enumerate(lines) if _ATTEMPT_BANNER.fullmatch(line)]
+    return lines[banners[-1] + 1:] if banners else lines
+
+
 def _cause_lines(lines: list[str], tail: list[str]) -> list[str]:
-    """The last lines anywhere in the log that name a failure, when the tail
+    """The last lines of the final attempt that name a failure, when the tail
     carries none. Nothing when the tail already says why — repeating it would
     spend the message on the same words twice."""
     if any(_DIAGNOSTIC.match(line) for line in tail):
@@ -110,7 +125,7 @@ def _log_tail(log_path: Path) -> str:
     ellipsis between them marks the output they skipped over."""
     lines = _log_lines(log_path)
     tail = _tail_lines(lines, _TAIL_BUDGET)
-    cause = _cause_lines(lines, tail)
+    cause = _cause_lines(_last_attempt(lines), tail)
     return "\n".join([*cause, "...", *tail] if cause else tail)
 
 
