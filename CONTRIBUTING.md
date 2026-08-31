@@ -15,8 +15,9 @@ Quote `".[dev]"`: zsh globs the bare form and the install fails before pip sees 
 
 `pytest-xdist` is not optional. `tests/fixtures/mini_repo` declares a lane that shells out
 to `pytest ... -n 2`, and without xdist that subprocess dies on an unrecognized `-n`,
-failing the e2e tests that assert the lane exited 0. The dev extra ships `pytest` and
-`pytest-cov` only.
+failing the e2e tests that assert the lane exited 0. The dev extra ships it, so the
+`pip install pytest-xdist` line is a no-op after the extra and the fix for every other
+install route.
 
 `core.hooksPath` arms the complexity gate on your own commits. Without it your commits
 pass locally and get rejected in review.
@@ -24,37 +25,70 @@ pass locally and get rejected in review.
 ## Tests
 
 ```
-python -m pytest                # both suites
-python -m pytest tests/unit     # 1,719 tests, ~30s
-python -m pytest tests/e2e      # 481 tests, ~6m
+python -m pytest                   # both suites, serially
+python -m pytest tests/unit -n 8   # 2,280 tests, 17 s (1m50 serially)
+python -m pytest tests/e2e -n 8    # 595 tests, about 1m30 (2m on Windows)
 ```
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
-`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else. This suite runs serially, so
-no `-n 0` is needed to isolate a failure. The `pytest-xdist` above is for a different
-process: the fixture lane's own inner `pytest`, not this one. With pytest-randomly
-installed globally, add `-p no:randomly` to pin the order.
+`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else, so a bare run is serial and
+`-n 8` is yours to add. Add it while you work and drop it (`-n 0`) to isolate a failure:
+xdist reorders, which hides which test left the state behind. With pytest-randomly
+installed globally, add `-p no:randomly` to pin the order too.
 
-`tests/unit` covers pure seams. `tests/e2e` drives `python -m crapkit` against real git
-repos in tmp dirs and asserts through the CLI only. Each e2e command injects its own git
-identity, so no global git config is required.
+Both halves parallelize because every test owns its own tmp dir. The e2e half spawns
+`python -m crapkit` against a real git repo per test, which is wall clock nobody's CPU is
+using.
+
+`tests/unit` covers pure seams, including `cli/verifying.py` and `cli/scoring.py`, which it
+drives in process rather than through a subprocess. `tests/e2e` drives `python -m crapkit`
+against real git repos in tmp dirs and asserts through the CLI only.
+
+### The e2e CLI runner
+
+`tests/e2e/conftest.py` holds the one way e2e spawns the CLI. Before it, 42 copies of the
+same four-line `subprocess.run` lived in the test files, 23 of them different, and nothing
+said which differences were deliberate. A file binds its own contract once at the top:
+
+```python
+run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
+                     env_extra={"CRAPKIT_OVERRIDE_REASON": None})
+```
+
+The defaults are the plainest child: 120 s, platform decoding, the inherited environment.
+A test that needs otherwise says so in that call. Two things are not negotiable. The child
+inherits `PYTHONPATH`, which is what makes the suite test the working tree instead of an
+installed crapkit, and each command injects its own git identity, so no global git config
+is required.
 
 ## The rules the repo holds itself to
 
 - **The complexity gate is real.** Every function you add or touch must sit at ccn 6 or
-  lower. Comprehension `for`/`if` clauses, ternaries, and `and`/`or` all count. The
-  pre-commit hook runs `python -m crapkit hook-precommit` over your staged blobs and exits
-  6 on a breach. Decompose; never widen the gate. A refusal is design feedback.
+  lower, the `target = 6` in this repo's own `crapkit.toml`. Comprehension `for`/`if`
+  clauses, ternaries, and `and`/`or` all count. `git-hooks/pre-commit` runs
+  `python -m crapkit hook-precommit` over your staged blobs, which exits 6 on a breach and
+  turns into a git exit 1. Decompose; never widen the gate. A refusal is design feedback.
 - **Tests first.** A behavior change starts with the failing test that proves it: unit
   tests in `tests/unit/` for the pure core, e2e tests in `tests/e2e/` that drive
   `python -m crapkit` against a throwaway git repo in `tmp_path`.
 - **Determinism is the product.** Identical inputs produce byte-identical outputs:
   sorted-keys JSON, no wall-clock values in scored data, no network at analysis time.
-- **The docs are pinned to the code.** `tests/unit/test_cli_docs_contract.py` diffs
-  README's `## Subcommands` table against the argparse parser in both directions, and
-  `test_docs_claims_contract.py` compares quoted transcripts against the strings the code
-  emits. Rename a subcommand or reword a message and you update the page in the same
-  commit.
+- **The docs are pinned to the code.** Rename a subcommand or reword a message and you
+  update the page in the same commit. Eight tests hold that line, all in `tests/unit`:
+
+| Test | What it pins |
+|---|---|
+| `test_cli_docs_contract.py` | README's `## Subcommands` table against the argparse parser, both directions, plus the flags the packet rows promise |
+| `test_docs_claims_contract.py` | quoted transcripts against the strings the code emits, the lane examples against the config loader, the setup steps AGENTS.md calls mandatory against CONTRIBUTING |
+| `test_fresh_user_docs_contract.py` | what a first-time reader copies: the doctor transcript, the `next-item` payload shape, the pinned `rev`, the vitest provider install |
+| `test_handle_docs_contract.py` | the `handle` form, the promoted packet fields and the refresh contract across the three agent pages |
+| `test_skills_contract.py` | the plugin's skills against the parser and against the modules that print the refusals they quote |
+| `test_ci_install_contract.py` | the `dev` extra against the pytest plugins the fixture lanes spell |
+| `test_precommit_contract.py` | `.pre-commit-hooks.yaml` at the repo root against the console script it names |
+| `test_schema_contract.py` | `crapkit.schema.json` against doctor's known-key sets, one vocabulary in two views |
+
+  A contract that pins a sentence you have to change is not a wall: change the test in the
+  same commit and say in the message why the old sentence stopped being true.
 - **crapkit scores itself.** `crapkit.toml` and `crapkit-ratchet.tsv` at the repo root are
   live, and `crapkit verify` must stay green on your branch.
 
@@ -65,6 +99,26 @@ python -m crapkit coverage
 python -m crapkit worklist
 python -m crapkit verify
 ```
+
+## How a change gets reviewed
+
+Two gates, and the first one is yours.
+
+**Before you push.** `git-hooks/pre-commit` refuses the commit on a staged function over
+ccn 6. Then `python -m crapkit verify` on the branch: it reruns the lane, gates the
+functions your diff touched, and checks that no ratchet mark rose and no test that passed
+in the baseline fails now. The hook runs again in CI. The verify does not, so this is the
+only place its verdict stops anything.
+
+**In CI** (`.github/workflows/ci.yml`), three jobs:
+
+| Job | Runs | Blocks the PR |
+|---|---|---|
+| `test` | `pip install -e ".[dev]"`, `python -m pytest -q`, then `python -m crapkit hook-precommit` on six matrix legs (Python 3.11, 3.12, 3.13 on ubuntu and windows) | yes, the gate's exit code stands |
+| `plugin` | `claude plugin validate plugin --strict`, which schema-checks `hooks.json` and the skill frontmatter no Python test can reach | yes |
+| `dogfood` | `coverage`, `verify --json`, `worklist --top 5` on crapkit itself | no: the `verify` line ends in `\|\| true`, so a rising mark or a dark diff line is reported for a human to read, not enforced |
+
+That last row is why the verify above matters. Nothing downstream fails the PR for you.
 
 ## Adding a language
 
