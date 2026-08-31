@@ -156,7 +156,8 @@ Three rules decide what it judges:
 - **Metric**: ccn against the file's scope ceiling, coverage ignored. Same question the
   pre-commit hook asks.
 - **Exemption**: a function carrying a ratchet mark it has not exceeded passes. Push it
-  past its mark and it fails here, ahead of verify's exit 7.
+  past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
+  mark that rose in a function the diff never touched.
 
 | Exit | Meaning | Next action |
 |---|---|---|
