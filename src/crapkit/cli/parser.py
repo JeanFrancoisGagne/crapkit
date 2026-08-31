@@ -242,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     rsc.add_argument("--gate", action="store_true",
                      help="exit 6 when a function this tree changed since HEAD is over its "
                           "scope ceiling: the pre-commit hook's ccn-only policy on the hook's "
-                          "own selection, minus functions a ratchet mark already covers")
+                          "own selection, minus functions at or under their ratchet mark")
     rsc.set_defaults(func=_Handler("scoring", "cmd_rescore"))
 
     dig = sub.add_parser("digest", help="delta between the last two scored runs; silent when unchanged")
