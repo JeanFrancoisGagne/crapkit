@@ -115,14 +115,39 @@ you hit by running `verify` before seeding, so seed first
 ## Planning a campaign
 
 Once the repo is seeded and green, somebody has to decide how many sessions run at once and
-what that costs. Four facts a plan needs, all measured on the 31,459-file repo the 0.4.5
-performance work was refereed against.
+what that costs. Five facts a plan needs. The timings come from the 31,459-file repo the
+0.4.5 performance work was refereed against.
 
-**One `brief --batch N` per wave, never N `brief` calls.** The batch call reads the store,
-the churn log and the ratchet file once, and since 0.4.5 it shingles the repo once for the
-whole batch instead of once per packet. A batch of 5 went from 11.8 s to 5.2 s, output
-byte-identical. Pair it with `crapkit worklist --batches N`, which cuts the queue into
-file-disjoint batches so the resulting diffs merge.
+**Two fan-outs, and the two N count different things.** `crapkit brief --batch N` emits one
+packet per queue item, top N, and the orchestrator hands one packet to one session: its N is
+a packet count. `crapkit worklist --batches N` cuts the active list into at most N groups
+that share no file, and each group is one agent's territory: its N is an agent count.
+Disjoint file sets are what make the resulting diffs merge, so the batches are the shape to
+reach for once a session does more than one function.
+
+The packets do not deal themselves one per batch, because the two commands rank
+differently: `worklist` ranks by risk, which is ccn times recency-weighted churn, and the
+queue behind `brief --batch` ranks by CRAP. On a six-file fixture repo:
+
+```
+$ crapkit worklist --batches 3
+batch 1: 6 items in 3 files: calc/charlie.py, calc/delta.py, calc/foxtrot.py
+batch 2: 2 items in 1 files: calc/alpha.py
+batch 3: 4 items in 2 files: calc/bravo.py, calc/echo.py
+```
+
+`crapkit brief --batch 3` on that same run returned packets for `calc/alpha.py`,
+`calc/echo.py` and `calc/bravo.py`: batch 2 once, batch 3 twice, batch 1 never. So an agent
+holding a batch briefs its own rows. Every `batches[].entries[]` row carries `path` and
+`function`, which are the two arguments `brief` takes, so the session runs one
+`crapkit brief PATH "FUNCTION"` per item it picks up.
+
+**One `brief --batch N` per wave, never N `brief` calls**, when it is the orchestrator
+dealing packets. The batch call reads the store, the churn log and the ratchet file once,
+and since 0.4.5 it shingles the repo once for the whole batch instead of once per packet. A
+batch of 5 went from 11.8 s to 5.2 s, output byte-identical. That saving is the
+orchestrator's; a session briefing the handful of items in its own batch pays a cold start
+either way.
 
 **The coupling cache is per checkout, and the first run in each pays for it.** Ranked
 co-change pairs live in `.crapkit/coupling-cache-v1.json`, which `init` already gitignores

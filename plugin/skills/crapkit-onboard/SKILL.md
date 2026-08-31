@@ -27,7 +27,19 @@ picks a root for you it names the one it chose:
 
 Nothing after that line, and exit 0, means the manifest version and the hook protocol both
 agree with this CLI. Otherwise it prints one line per disagreement, at exit 1. Finding no
-install at all is its own line, and that line names the command that installs one.
+install at all is its own line, and which line you get depends on how you asked. Both exit 1.
+
+With no path, the search names the command that fixes it:
+
+    crapkit doctor: no installed crapkit plugin under DIR (install with `claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)
+
+With a PATH you typed that holds no `.claude-plugin/plugin.json` at or under it, the line
+names the path and nothing else:
+
+    crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json
+
+No install command in that one, because the path is what to correct. An empty directory and
+a path that does not exist both get it.
 
 Install it after the repo scores, not before. Earlier, `crapkit-onboard` points at a config
 that does not exist yet and `crapkit` points at a store with no run in it.

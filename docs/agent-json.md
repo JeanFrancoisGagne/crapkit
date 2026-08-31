@@ -684,6 +684,11 @@ or `stale` off a batched call still gets them.
 At most N batches, sharing no file, with co-changing files kept in the same batch. One batch
 per agent session: two sessions working different batches cannot collide in the same file.
 
+The session that holds a batch briefs its own rows. Every entry carries `path` and
+`function`, the two arguments `brief` takes. [`--batch N`](#--batch-n) is not the per-batch
+form of that call: its N counts packets off the `crap`-ranked queue, and this split ranks by
+`risk`, so its packets can pile into one of these batches and miss the rest.
+
 ---
 
 ## `verify`
