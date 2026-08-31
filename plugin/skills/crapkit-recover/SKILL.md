@@ -41,7 +41,7 @@ in this version.
 |---|---|---|---|
 | 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
-| 5 | a lane produced no artifact, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
+| 5 | a lane produced no artifact, produced one measuring a different tree, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
@@ -72,8 +72,9 @@ value in double quotes:
 
 ## "produced no artifact": five causes
 
-The lane log names which one. It sits at `.crapkit/lane-<name>.log`, and the failure line
-quotes its tail.
+The lane log names which one. It sits at `.crapkit/lane-<name>.log`; the failure line quotes
+its tail and names that path in full, so read the log before guessing — the tail is 500
+characters of a file that holds the whole run.
 
 | Cause | Signature in the log | Owner |
 |---|---|---|
@@ -115,6 +116,21 @@ to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at al
 EVERY declared lane fails, `coverage` prints a second line, `crapkit: every lane failed:
 ...`, exits 5 and writes no run at all, so `crapkit runs` has nothing to show and there is
 no partial run for `verify` to refuse against.
+
+## "measured N file(s), none of them under the paths its scopes declare"
+
+A different exit-5 refusal, and the one that would otherwise have been an answer. The lane
+wrote a real artifact, and none of the paths in it reach the scopes the lane claims — so
+the join finds nothing and every function in those scopes would score `untested`.
+
+Two causes, and the message quotes a few of the measured paths so you can tell them apart:
+
+| The paths it reports | Cause | Fix |
+|---|---|---|
+| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`) | the runner reports relative to a subdirectory | set `path_prefix` on the lane |
+| absolute, or under some other checkout | the run measured a different tree | a stale artifact, or the wrong environment: a `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's. Run the suite through the project's own manager (`uv run python -m pytest …`) |
+
+Owner: [docs: an artifact that measured a different tree](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#an-artifact-that-measured-a-different-tree).
 
 ## Exit 7 on a function you never touched
 

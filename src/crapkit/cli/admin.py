@@ -23,7 +23,13 @@ from ..universe import assign_files, scan_files
 from ._shared import _file_sizer, _load_repo_config, _print_json
 
 
-def _interpreter() -> str:
+def _present_lockfiles(root: Path) -> frozenset[str]:
+    from ..scaffold import LOCKFILE_RUNNERS
+
+    return frozenset(name for name, _ in LOCKFILE_RUNNERS if (root / name).is_file())
+
+
+def _python_name() -> str:
     """The interpreter name a committed config can call. sys.executable is this
     machine's absolute path and would not survive the repo reaching anyone else.
 
@@ -39,6 +45,25 @@ def _interpreter() -> str:
         if shutil.which(name):
             return name
     return "python3"
+
+
+def _interpreter(root: Path) -> str:
+    """The python invocation a committed config can call.
+
+    A lockfile at the root wins: `uv run python` and its siblings resolve to the
+    environment the repo pins, while a bare `python` resolves to whichever venv
+    the shell happens to have active — which in two worktrees of one branch is
+    how a lane measures the OTHER checkout and scores this one untested.
+
+    The manager only PREFIXES the name; which name it prefixes is still
+    `_python_name`'s answer, so a Windows PATH carrying no `python` gets
+    `uv run py` rather than a word the shell cannot start.
+    """
+    from ..scaffold import lockfile_runner
+
+    runner = lockfile_runner(_present_lockfiles(root))
+    name = _python_name()
+    return f"{runner} {name}" if runner else name
 
 
 def _present_markers(root: Path) -> frozenset[str]:
@@ -189,7 +214,14 @@ def _probe_interpreter(command: str) -> str | None:
     """The python this lane runs pytest with, or None when no python runs it.
     `coverage run -m pytest` names no interpreter at all: the probe asked
     `coverage` to import pytest_cov, read its argument error as a missing
-    package, and printed the pip note on a machine where pytest_cov imports."""
+    package, and printed the pip note on a machine where pytest_cov imports.
+
+    An environment manager heads its segment for the same reason: `uv run` and
+    its siblings CREATE or sync the project environment before running anything,
+    so init has no business provisioning one to ask a question about it, and the
+    head word is not a python — `uv -c "import pytest_cov"` is not the probe it
+    looks like, and would have warned about the wrong gap on every uv repo.
+    """
     segment = _pytest_segment(command)
     if not segment or not _is_python(segment[0]):
         return None
@@ -202,7 +234,8 @@ def _pytest_cov_probe(command: str) -> bool:
     the lane will get (a .bat shim included), not the one CreateProcess finds.
     True too when the probe cannot run — only a clean "no" earns the warning,
     and a missing interpreter is doctor's finding, not this one's. True as well
-    when no python runs the suite: nothing here can be asked."""
+    when no python runs the suite, `uv run python -m pytest` included: nothing
+    here can be asked."""
     import shutil
 
     from ..procs import run_bounded
@@ -316,7 +349,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # A config whose lanes are all commented out scores every function no-lane,
     # so a fresh repo cannot rank anything until somebody hand-writes a lane.
     lanes = detect_lanes(_present_markers(root), _package_json(root),
-                         interpreter=_interpreter())
+                         interpreter=_interpreter(root))
     text = starter_toml(scopes, lanes)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")

@@ -317,7 +317,7 @@ vitest ships **no coverage provider**. Without one, `crapkit init` writes a lane
 reports no problems, and `coverage` exits 5:
 
 ```
-crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js
+crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); full log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 ```
 
@@ -503,6 +503,45 @@ crapkit: every lane failed: ...
 ```
 
 Exit 5.
+
+### The interpreter a lane binds to
+
+`python -m pytest` is not one command. `python` resolves through the shell's `PATH`, so
+the lane runs under whichever virtualenv the shell happened to have active — which is
+almost always right, and silently wrong in the one case that matters.
+
+Two git worktrees of one repo. Checkout B's venv is active, and it holds an editable
+install pointing at B's `src`. Run `crapkit coverage` in checkout A and the lane's pytest
+imports **B's** sources. When the two checkouts' APIs have diverged, collection dies and
+you get exit 5. When they have not — the ordinary case for two worktrees of one branch —
+the suite passes, coverage.py measures B's files, the join against A's scoped files finds
+nothing, and crapkit prints a confident `N untested … grade F` that is entirely an
+artifact of the wrong venv.
+
+A lockfile is the repo saying which environment is the right one, and the manager's `run`
+is the only spelling that binds a command to it. `crapkit init` reads that off the tree
+along with everything else:
+
+| Lockfile at the root | Lane command |
+|---|---|
+| `uv.lock` | `uv run python -m pytest …` |
+| `poetry.lock` | `poetry run python -m pytest …` |
+| `pdm.lock` | `pdm run python -m pytest …` |
+| `Pipfile.lock` | `pipenv run python -m pytest …` |
+| none | `python -m pytest …` (or `python3`, whichever resolves) |
+
+The first match in that order wins, so a repo mid-migration between two managers gets the
+same config every time. The `[crapkit.scoped_tests]` entry `init` writes takes the same
+prefix: step 3 measuring one environment while step 4 tests another is the same bug one
+command later.
+
+`init` does not probe a managed lane for `pytest-cov`. `uv run` and its siblings create or
+sync the project environment before running anything, and `init` has no business
+provisioning one to ask a question about it. If the plugin is missing, the lane says so on
+its first run — with the log path.
+
+Writing the prefix by hand is the fix for a repo that adopted crapkit earlier, or one that
+pins its environment some other way: `command` is a shell string and takes anything.
 
 Prefer `--cov=<module>` over `--cov=<path>` when your suite spawns subprocesses. pytest-cov
 hands children a `COV_CORE_SOURCE` that must resolve from the **child's** cwd, so a
@@ -910,7 +949,7 @@ A lane failure is recorded, not fatal. The run still happens:
 
 ```
 $ crapkit coverage
-crapkit: lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1)
+crapkit: lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); full log: /repo/.crapkit/lane-scripts.log
 run 3 @ 393b8dad2a1: 2 functions scored — 1 measured / 0 untested / 1 no-lane / 0 cc-only, 2 over target 6, CRAP load 56.83, grade F
 ```
 
@@ -928,3 +967,48 @@ Exit 5. Four consequences:
 
 `coverage --json` carries the reasons under `lane_failures`, keyed by lane name, alongside
 the successful lanes' provenance under `lanes`.
+
+### The failure message names its own log
+
+Every lane refusal carries `full log: <path>` before the tail it quotes. The tail is 500
+characters cut on line boundaries; the log is the whole run. When the end of the log is a
+summary block — pytest closes on `ERROR path` lines that say which files broke and never
+why — the message pulls the last few lines that DO name a cause up in front of it, with an
+ellipsis marking the output skipped between them:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 2); full log: /repo/.crapkit/lane-py.log; last output: E   ImportError: cannot import name 'Widget' from 'faro.core' (/other/checkout/src/faro/core.py)
+...
+ERROR tests/test_widgets.py
+============================== 10 errors in 0.62s ==============================
+(exit 2)
+```
+
+---
+
+## An artifact that measured a different tree
+
+A lane whose artifact names paths that reach **none** of the scopes it claims is refused:
+
+```
+$ crapkit coverage
+crapkit: lane 'py' FAILED: lane 'py' measured 412 file(s), none of them under the paths its scopes declare (src/) — .crapkit/cov/py.json does not describe this checkout, and joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py. Set path_prefix on the lane when the runner reports paths relative to a subdirectory; otherwise the run measured a different tree (a stale artifact, or a suite importing another checkout through the venv the shell had active)
+```
+
+Coverage joins on path and nothing else, so such an artifact contributes exactly nothing
+and every function in those scopes reads `untested`. That is a grade assembled out of a
+tooling mistake, and it is worse than the exit 5 a missing artifact already earns, because
+it looks like an answer. The refusal is an ordinary lane failure: the scopes fall back to
+`no-lane`, and the four consequences above apply unchanged.
+
+Zero overlap is the whole test. A partial overlap has honest readings — a lane measuring
+part of a scope, generated files outside it — and any threshold over zero would need
+tuning per repo; zero has one cause and no reading under which the join was going to work.
+
+Two things reach it:
+
+- **The runner reports paths relative to a subdirectory.** [`path_prefix`](#running-from-a-subdirectory)
+  is the knob, and it is applied before this check, so a prefix that fixes the join is
+  never refused here.
+- **The run measured another tree.** A stale artifact copied in, or the wrong environment:
+  see [The interpreter a lane binds to](#the-interpreter-a-lane-binds-to).

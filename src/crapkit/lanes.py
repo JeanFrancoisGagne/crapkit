@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -25,7 +26,7 @@ from .errors import GitError, ToolError
 from .gitio import GitFacts
 from .procs import run_bounded
 from .uncovered import fold_dead_lines
-from .universe import owning_scope, path_matchers
+from .universe import ScopeMatch, owning_scope, path_matchers
 
 
 def _in_container() -> bool:
@@ -45,10 +46,62 @@ def _lane_log_path(root: Path, lane: Lane) -> Path:
     return log_path
 
 
-def _log_tail(log_path: Path) -> str:
+_TAIL_BUDGET = 500
+_CAUSE_LINES = 3
+_CAUSE_WIDTH = 200
+
+# Lines that name a cause rather than restate a count: pytest's `E   ` gutter, a
+# traceback header, a bare exception line. A run that died in collection ends
+# with a summary block of `ERROR path` lines saying WHICH files broke and never
+# why, so a plain tail spends its whole budget on filenames while the reason
+# scrolls off above it.
+_DIAGNOSTIC = re.compile(r"\s*(E\s|Traceback \(most recent call last\)|\w*(Error|Exception): )")
+
+
+def _log_lines(log_path: Path) -> list[str]:
     if not log_path.is_file():
-        return ""
-    return log_path.read_text(encoding="utf-8", errors="replace").strip()[-500:]
+        return []
+    return log_path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+
+
+def _tail_lines(lines: list[str], budget: int) -> list[str]:
+    """The last WHOLE lines that fit the budget. A tail cut on a byte count
+    starts mid-line, and the reader cannot tell that fragment from the real
+    start of the message: the report that prompted this opened on
+    "short test summary info ====" and read as the first thing the run said.
+    One line over budget on its own keeps its end behind an ellipsis, which at
+    least says so."""
+    kept: list[str] = []
+    left = budget
+    for line in reversed(lines):
+        left -= len(line) + 1
+        if left < 0:
+            break
+        kept.append(line)
+    if kept:
+        kept.reverse()
+        return kept
+    return ["..." + lines[-1][-budget:]] if lines else []
+
+
+def _cause_lines(lines: list[str], tail: list[str]) -> list[str]:
+    """The last lines anywhere in the log that name a failure, when the tail
+    carries none. Nothing when the tail already says why — repeating it would
+    spend the message on the same words twice."""
+    if any(_DIAGNOSTIC.match(line) for line in tail):
+        return []
+    named = [line.strip()[:_CAUSE_WIDTH] for line in lines if _DIAGNOSTIC.match(line)]
+    return named[-_CAUSE_LINES:]
+
+
+def _log_tail(log_path: Path) -> str:
+    """What the log says about its own failure: the reason lines first when the
+    end of the log does not carry one, then the last whole lines of output. The
+    ellipsis between them marks the output they skipped over."""
+    lines = _log_lines(log_path)
+    tail = _tail_lines(lines, _TAIL_BUDGET)
+    cause = _cause_lines(lines, tail)
+    return "\n".join([*cause, "...", *tail] if cause else tail)
 
 
 def _popen_kwargs(root: Path, lane: Lane) -> dict:
@@ -105,11 +158,15 @@ def _missing_plugin_hint(tail: str) -> str:
 
 
 def _raise_no_artifact(lane: Lane, log_path: Path, exit_code: int | None) -> None:
+    """The log PATH before the log's words. A tail is 500 characters of a file
+    that holds the whole story, and a reader who is not told where that file is
+    has to go looking for it — one reporter had to ask another agent to find
+    .crapkit/lane-py.log while ten collection tracebacks sat inside it."""
     detail = f" (command exit {exit_code})" if exit_code is not None else ""
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
-    raise ToolError(f"lane {lane.name!r} produced no artifact at {lane.artifact}{detail}{hint}"
-                    f"{_missing_plugin_hint(tail)}")
+    raise ToolError(f"lane {lane.name!r} produced no artifact at {lane.artifact}{detail}"
+                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail)}")
 
 
 def _run_attempts(root: Path, lane: Lane) -> int | None:
@@ -216,6 +273,18 @@ def lane_order(root: Path, lanes: list[Lane]) -> list[Lane]:
     return sorted(lanes, key=lambda lane: -_stamp_seconds(stamps, lane))
 
 
+def _lane_matchers(lane: Lane, scope_paths: dict) -> tuple[ScopeMatch, ...]:
+    """Ownership over the scopes THIS lane names, read by universe's one predicate.
+
+    Both questions a lane asks about paths go through here: which of its scopes'
+    files moved since the artifact was stamped, and whether the artifact reached
+    any of them at all. A second hand-rolled prefix test would answer the exact
+    arm — a scope that declares a FILE rather than a directory — differently
+    from the rule that assigns files, and the two would drift.
+    """
+    return path_matchers({name: scope_paths.get(name, ()) for name in lane.scopes})
+
+
 def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: str) -> list[str]:
     """Committed or working-tree changes under this lane's scope paths since a commit.
 
@@ -225,7 +294,7 @@ def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: s
     shape crapkit's own tests/e2e/test_parallel_lanes_e2e.py writes — and
     editing that file read as no change at all.
     """
-    matchers = path_matchers({name: scope_paths.get(name, ()) for name in lane.scopes})
+    matchers = _lane_matchers(lane, scope_paths)
     if not matchers:
         return []
     changed = set(git.diff_names_since(since_commit)) | set(git.status_names())
@@ -290,6 +359,80 @@ def _read_and_parse(lane: Lane, root: Path,
     if lane.parser == "coveragepy":
         return parse_coveragepy_file(artifact_path, path_prefix=lane.path_prefix)
     raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
+
+
+_SAMPLE_PATHS = 3
+
+# A path the runner could not write relative to this checkout: absolute, drive
+# lettered, or climbing out of the tree. Both parsers rebase a file INSIDE the
+# repo to a repo-relative path, so one that is not is a file somewhere else.
+_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
+
+
+def _escapes_repo(path: str) -> bool:
+    return path.startswith(("/", "../")) or _DRIVE.match(path) is not None
+
+
+def _unreached_prefixes(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
+    """The paths this lane's scopes declare when NOTHING the artifact measured
+    reaches any of them, else (). Empty too when the lane's scopes declare no
+    path at all: nothing to compare against is not evidence.
+
+    `owning_scope` is the reach test, so "could a scope claim this path?" can
+    never drift from the rule that assigns files to scopes.
+    """
+    matchers = _lane_matchers(lane, scope_paths)
+    if not matchers or any(owning_scope(path, matchers) for path in coverage):
+        return ()
+    return tuple(dict.fromkeys(m.prefix for m in matchers))
+
+
+def _sample(paths) -> str:
+    return ", ".join(sorted(paths)[:_SAMPLE_PATHS])
+
+
+def _wrong_tree_message(lane: Lane, coverage: dict, prefixes, outside: list[str]) -> str:
+    return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
+            f"paths its scopes declare ({', '.join(prefixes)}), and {len(outside)} of them "
+            f"outside this checkout entirely — {lane.artifact} describes a different tree, "
+            f"so joining it would score every function in those scopes untested; it reports "
+            f"paths like {_sample(outside)}. Point the lane at this checkout's own "
+            f"environment (a bare `python -m pytest` binds to whichever venv the shell has "
+            f"active — run it through the project's manager, `uv run python -m pytest ...`), "
+            f"or set path_prefix when the runner reports paths relative to a subdirectory")
+
+
+def _unmeasured_message(lane: Lane, coverage: dict, prefixes) -> str:
+    reports = f"; it measured {_sample(coverage)}" if coverage else ""
+    return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
+            f"paths its scopes declare ({', '.join(prefixes)}), so every function in those "
+            f"scopes will score untested{reports} — either nothing in them is exercised yet, "
+            f"or the runner reports paths this lane needs path_prefix to rebase")
+
+
+def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None) -> None:
+    """Say something when a lane's artifact reaches none of the scopes it claims.
+
+    Coverage joins on path and nothing else, so such an artifact contributes
+    exactly nothing and every function in those scopes reads `untested` — a
+    confident "N untested, grade F" assembled out of a tooling mistake, which
+    is worse than the exit 5 a missing artifact earns because it looks like an
+    answer. Two worktrees of one branch reach it quietly: a venv whose editable
+    install points at the other checkout makes coverage.py measure that tree.
+
+    Two verdicts, because zero overlap has two readings and the paths tell them
+    apart. Measured files OUTSIDE this checkout can only be another tree, and
+    that fails the lane. In-tree paths that simply miss the scopes are the
+    greenfield shape as well — a suite that imports none of the scoped source
+    yet, which SHOULD score untested — so that one warns and scores on.
+    """
+    prefixes = _unreached_prefixes(lane, coverage, scope_paths or {})
+    if not prefixes:
+        return
+    outside = sorted(path for path in coverage if _escapes_repo(path))
+    if outside:
+        raise ToolError(_wrong_tree_message(lane, coverage, prefixes, outside))
+    print(f"crapkit: {_unmeasured_message(lane, coverage, prefixes)}", file=sys.stderr)
 
 
 def _results_provenance(root: Path, lane: Lane) -> dict:
@@ -411,6 +554,7 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
     _refuse_container_python(lane)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane))
+    _judge_artifact_scope(lane, coverage, scope_paths)
     provenance = {
         "artifact_sha256": digest,
         "exit_code": exit_code,
