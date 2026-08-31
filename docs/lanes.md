@@ -405,6 +405,14 @@ The `--cov` family of flags comes from the `pytest-cov` package, not pytest itse
 `unrecognized arguments: --cov`. It has to live in the environment the SUITE runs in;
 `pip install "crapkit[py]"` pulls it beside crapkit when the two share a venv, and
 `crapkit init` probes the lane's python and prints this fix when the plugin is missing.
+Write that install command in double quotes: single quotes do not survive cmd.exe.
+
+The probe asks the interpreter that runs pytest, found in the segment that holds the
+`pytest` token. `coverage run -m pytest --cov=pylib && coverage json` names no interpreter
+in front of pytest, so nothing is asked and no note is printed. If cmd.exe cannot start that
+interpreter at all, the note names the word to change instead of talking about pytest-cov,
+and on a Windows PATH holding only the `py` launcher `init` writes `py` rather than a
+`python3` the first `coverage` could not run.
 
 ```toml
 [[lane]]
@@ -810,6 +818,20 @@ run 2 @ df858be0149: 1 functions scored — 1 measured / 0 untested / 0 no-lane 
 
 A warning, never a failure: deleting a test file is a legitimate way to get there. `verify`
 reports **any** shrink against its own baseline, which is the strict half of the same check.
+
+Both counts are optional and neither absence is an error. A baseline recorded before the
+lane declared a `results_artifact` carries no count and compares nothing. A lane that wrote
+no junit this run gets one line naming the gap. Here the baseline had a junit and the lane
+that ran under `verify` had lost it:
+
+```
+$ crapkit verify
+warning: lane 'py' wrote no test counts this run (no results_artifact was parsed), so the baseline's 1 tests cannot be compared
+verify OK @ 437a254ba09 vs baseline 437a254ba09 (2 changed files)
+```
+
+Reading that absent count as zero is what used to turn such a run into a KeyError, after
+the lane had already run.
 
 ---
 
