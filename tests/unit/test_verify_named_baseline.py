@@ -71,10 +71,15 @@ def test_an_inventory_run_is_named_as_such():
 def test_a_run_of_any_other_kind_measured_no_lanes_and_says_so():
     """A store migrated from before runs carried a kind holds `legacy` rows, and
     a row with no kind at all reads the same way. Every reason the helper can
-    give is exercised here, so its CRAP is its ccn and nothing more."""
+    give is exercised here, so its CRAP is its ccn and nothing more.
+
+    The last row is a verify whose `verdict_ok` is NULL, the only verify the
+    caller ever hands this helper: a passing verify is trusted and never
+    reaches it, so asserting the reason on `ok=True` pinned a state the code
+    cannot produce."""
     assert _untrusted_reason(run(2, "legacy")) == "a legacy run that measured no lanes"
     assert _untrusted_reason(run(2, None)) == "a legacy run that measured no lanes"
-    assert _untrusted_reason(run(2, "verify", ok=True)) == "a verify with no verdict"
+    assert _untrusted_reason(run(2, "verify", ok=None)) == "a verify with no verdict"
 
 
 def test_the_trusted_runs_are_listed_newest_last_and_the_newest_is_the_hint():
