@@ -1030,8 +1030,16 @@ bannerless log one attempt.
 ## An artifact that measured a different tree
 
 A lane whose artifact names paths that reach **none** of the scopes it claims gets one of
-three verdicts, and the measured paths decide which, against this checkout's own root.
-Paths outside that root fail the lane:
+three verdicts. The measured paths decide which, resolved against this checkout's own
+root:
+
+| What the artifact reports | Verdict | The knob |
+|---|---|---|
+| paths outside the root, or climbing out of it (`../...`) | the lane FAILS, exit 5, "describes a different tree" | the environment the lane binds to on a coveragepy lane, the artifact itself on an istanbul one |
+| absolute paths that resolve under the root | the lane FAILS, exit 5, this tree spelled absolutely | the runner's own switch: `relative_files` on coveragepy, the reporter's `cwd`/`root` on istanbul |
+| in-tree relative paths that miss every scope | a warning on stderr, exit 0, and the run scores on | `path_prefix` when the runner reports from a subdirectory, and nothing at all on a greenfield repo |
+
+Each row gets its own section below. Paths outside the root fail the lane:
 
 ```
 $ crapkit coverage
@@ -1049,6 +1057,12 @@ that stayed absolute, drive-lettered (`C:/...`) or climbing (`../...`) was not w
 relative to this checkout. Whether it names a file somewhere else is a second question,
 and crapkit answers it by resolving the path against the root.
 
+A stale artifact copied in, or the wrong environment, is what puts another tree's paths
+there: [The interpreter a lane binds to](#the-interpreter-a-lane-binds-to) is the section
+that fixes it. An istanbul lane gets the artifact named instead of the environment,
+because its reader rebases every path under this checkout's root, so a path that stayed
+outside it was written somewhere else.
+
 ### The same tree, spelled absolutely
 
 An absolute path that resolves **under** this root is this checkout, measured by a runner
@@ -1062,10 +1076,9 @@ $ crapkit coverage
 crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout — .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane
 ```
 
-For a coveragepy lane that switch is coverage.py's `relative_files`, quoted above. For an
-istanbul lane it is the reporter's `cwd`/`root` option: the istanbul reader strips this
-checkout's root off every path literally, so a path that arrives absolute was written
-against a root spelled some other way.
+For an istanbul lane the switch is the reporter's `cwd`/`root` option instead: that reader
+strips this checkout's root off every path literally, so a path arriving absolute was
+written against a root spelled some other way.
 
 crapkit does not rebase these itself. The join contract stays root-relative, and a runner
 spelling every path absolutely is one setting to fix once, not a shape to re-derive on
@@ -1098,23 +1111,13 @@ Zero overlap is the whole test. A partial overlap has honest readings, a lane me
 part of a scope or generated files outside it, and any threshold over zero would need
 tuning per repo; zero has no reading under which the join was going to work.
 
-Three things reach it, one per verdict:
-
-- **The run measured another tree**, which is the first refusal. A stale artifact copied
-  in, or the wrong environment: see [The interpreter a lane binds to](#the-interpreter-a-lane-binds-to).
-  An istanbul lane gets the artifact named instead of the environment — its reader rebases
-  every path under this checkout's root, so a path that stayed outside it was written
-  somewhere else.
-- **The runner reports this tree in absolute paths**, which is the second refusal. Its own
-  setting is the fix, `relative_files` on coveragepy and the reporter's `cwd`/`root` on
-  istanbul; the environment advice above does not apply and `path_prefix` cannot help,
-  because it prepends.
-- **The runner reports paths relative to a subdirectory**, which is the warning.
-  [`path_prefix`](#running-from-a-subdirectory) is the knob, and the reach test runs after
-  it is applied, so a prefix that fixes the join is never mentioned at all. The escape test
-  runs on the path the runner wrote, with the prefix taken back off, or gluing `backend/`
-  onto `/other/checkout/a.py` would make it read as an in-tree path. `path_prefix` is a
-  coveragepy key: the istanbul reader never reads it.
+The two tests run on different spellings of the path, which is what keeps
+[`path_prefix`](#running-from-a-subdirectory) out of the other two verdicts. The reach test
+runs after the prefix is applied, so a prefix that already fixes the join is never
+mentioned at all. The escape test runs on the path the runner wrote, with the prefix taken
+back off: gluing `backend/` onto `/other/checkout/a.py` would otherwise make another tree's
+path read as an in-tree one. `path_prefix` is a coveragepy key, and the istanbul reader
+never reads it.
 
 The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
 that assigns files to scopes, so a scope declaring individual files rather than
