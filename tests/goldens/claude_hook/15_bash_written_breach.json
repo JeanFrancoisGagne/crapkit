@@ -1,0 +1,27 @@
+{
+  "case": "bash_written_breach",
+  "why": "A shell heredoc rewrites a tracked file and the event carries tool_input.command, never file_path. Judging only file_path left every Bash-written breach unadvised, so the fallback judges the fresh *.py files the working tree changed.",
+  "fixture": "measured_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python - <<'PY'\nopen('calc/grade.py', 'w').write(SOURCE)\nPY",
+      "description": "Rewrite grade.py through the shell"
+    },
+    "tool_response": {"stdout": "", "stderr": "", "interrupted": false}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/grade.py:1  sprawl( n )",
+      "the commit gate enforces this; decompose there or mark the debt"
+    ]
+  }
+}

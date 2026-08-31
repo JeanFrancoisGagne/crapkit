@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### The per-edit advisory now hears Bash writes
+`crapkit claude-hook` judged the one file named in `tool_input.file_path`, which only
+Edit, Write and MultiEdit events carry. A `Bash` PostToolUse event carries
+`tool_input.command` instead, so an agent writing source through a shell heredoc or
+`python - <<'PY'` — how some harness modes make every write — got no complexity advice
+at all. Found running crapkit 0.4.4 over a real milestone, in the same nested-root repo
+that surfaced the 0.4.5 `diff.relative` fixes.
+
+A Bash event now falls back to the working tree: the changed `*.py` files whose mtime
+sits inside a short freshness window (12 s, capped at 25 files) each take the same
+per-file ladder an Edit takes, so scope, sequencing, ratchet marks and the untracked
+rule all mean what they already meant, and a nested crapkit root judges the same
+root-relative paths the commit gate will. The freshness window is what keeps a later
+`ls` from re-advising a file that was already dirty; a clean tree stays silent. The
+shipped plugin still registers `Edit|Write` only — a `Bash` matcher is the consumer's
+to add, and this is what makes one useful without a per-consumer wrapper.
+
 ## 0.4.6 — 2026-08-31
 
 Three findings from @nicolaschapados, out of one incident on a real pytest/uv project

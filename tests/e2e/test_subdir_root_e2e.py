@@ -163,6 +163,25 @@ def test_a_subdir_root_advises_on_an_edited_file(nested: Path):
     assert res.stdout == ""
 
 
+@pytest.mark.parametrize("where", [".", "app"])
+def test_a_subdir_root_advises_on_a_bash_written_file(nested: Path, where: str):
+    """The Bash fallback under the nested layout: a heredoc rewrote the file, so
+    the event names no file_path. The fallback walks the dirty tree from the git
+    top, whatever directory the command ran from, and still judges each file by
+    the crapkit root it sits under."""
+    app = nested / "app"
+    (app / "core" / "hot.py").write_text(_source(11), encoding="utf-8")
+
+    res = _run_hook(app, {"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                          "cwd": str(nested / where),
+                          "tool_input": {"command": "python - <<'PY'\nPY"}})
+
+    assert res.returncode == 2, res.stderr
+    assert "core/hot.py:1" in res.stderr
+    assert "app/core/hot.py" not in res.stderr
+    assert res.stdout == ""
+
+
 def test_a_subdir_root_gates_on_rescore_and_verify(nested: Path):
     """Both scoring gates filter on `diff_since(root, ...)`, so under a nested
     root no scored row was ever a candidate and both exited 0 on a crap 156 row."""

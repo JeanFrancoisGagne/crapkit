@@ -147,6 +147,22 @@ def fx_marked_breach(repo: Path) -> None:
     write(repo, "crapkit-ratchet.tsv", MARK)
 
 
+def fx_measured_clean(repo: Path) -> None:
+    """Everything committed: the tree a Bash command that wrote nothing leaves."""
+    init(repo)
+    write(repo, "crapkit.toml", TOML)
+    write(repo, "calc/grade.py", CLEAN)
+    commit(repo)
+
+
+def fx_stale_breach(repo: Path) -> None:
+    """The breach is dirty but OLD: written well before the command this event
+    reports, which is what the mtime freshness window has to screen out."""
+    measured(repo)
+    stale = time.time() - 3600
+    os.utime(repo / "calc" / "grade.py", (stale, stale))
+
+
 FIXTURES = {
     "measured_breach": fx_measured_breach,
     "broken_syntax": fx_broken_syntax,
@@ -157,6 +173,8 @@ FIXTURES = {
     "comment_only": fx_comment_only,
     "untracked_breach": fx_untracked_breach,
     "marked_breach": fx_marked_breach,
+    "measured_clean": fx_measured_clean,
+    "stale_breach": fx_stale_breach,
 }
 
 

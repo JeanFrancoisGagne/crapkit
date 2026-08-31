@@ -6,6 +6,12 @@ measures, over its ceiling, carrying no ratchet mark. Everything else is exit 0
 and silence: the malformed payload, the unmeasured repo, the half-typed source
 and the internal exception included.
 
+An Edit, Write or MultiEdit event names its file in `tool_input.file_path` and
+is judged as that one file. A Bash event carries `tool_input.command` instead —
+a heredoc or `python - <<'PY'` writes source no file_path ever names — so it
+falls back to the working tree: the changed *.py files fresh enough for this
+command to have plausibly written, each through the same per-file ladder.
+
 That silence is the design, not laziness. On PostToolUse a nonzero exit that is
 not 2 is invisible and a 2 is text the model has to read, so a hook that fires
 where crapkit measures nothing is either useless or unbearable; 47.5% of the
@@ -34,6 +40,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 PROTOCOL = "1"
@@ -44,6 +52,15 @@ _SEQUENCING_MARKERS = ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PIC
 # Deeper than any real checkout, bounded so a pathological path cannot turn the
 # root walk into a filesystem scan.
 _MAX_LEVELS = 64
+
+# The Bash fallback's freshness window: a dirty *.py whose mtime is older than
+# this was not written by the command this event reports, so advising it again
+# would repeat the advisory on every later Bash call in the session.
+_FRESH_WINDOW_SECONDS = 12
+
+# And its bound: PostToolUse waits this process out, so a huge dirty tree is a
+# stall, not a license to judge everything in it.
+_MAX_COMMAND_FILES = 25
 
 
 def cmd_claude_hook(args) -> int:
@@ -62,12 +79,19 @@ def cmd_claude_hook(args) -> int:
 def _advise(args, stream) -> int:
     """The ladder. Each rung that fails to advance exits 0 and says nothing."""
     payload = _payload(stream)
-    edited = _edited_file(payload)
-    if not edited:
+    if args.protocol != PROTOCOL:
         return 0
-    path = _edited_path(payload, edited)
+    edited = _edited_file(payload)
+    if edited:
+        return _judge_path(_edited_path(payload, edited))
+    return _advise_command(payload)
+
+
+def _judge_path(path: Path) -> int:
+    """Root discovery and judgement for one absolute file path: the tail every
+    event shape shares once it holds a file to answer for."""
     root = _repo_root(path.parent)
-    if root is None or _sequencing(root) or args.protocol != PROTOCOL:
+    if root is None or _sequencing(root):
         return 0
     return _judge(root, path.relative_to(root).as_posix())
 
@@ -108,6 +132,105 @@ def _edited_path(payload: dict, edited: str) -> Path:
     if path.is_absolute():
         return path
     return Path(payload.get("cwd") or ".") / path
+
+
+def _command_event(payload: dict) -> bool:
+    """Whether this is a PostToolUse for a tool that wrote through the shell.
+
+    Bash carries `tool_input.command` and never `file_path`, so protocol 1 has
+    no single file to judge and reads the working tree instead. Shape-based like
+    `_edited_file`: NotebookEdit and friends carry no `command` and fall out
+    here rather than needing a rule.
+    """
+    if payload.get("hook_event_name") != "PostToolUse":
+        return False
+    tool_input = payload.get("tool_input")
+    return isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str)
+
+
+def _advise_command(payload: dict) -> int:
+    """The Bash fallback: judge the fresh *.py files the working tree changed.
+
+    A shell heredoc or `python - <<'PY'` writes source no Edit event ever names,
+    so judging only `file_path` left every Bash-written breach unadvised. Each
+    file takes the same per-file ladder an Edit takes, so a file under no
+    crapkit root, mid-sequencing, unscoped or marked stays silent, and exit 2
+    means what it always means.
+    """
+    if not _command_event(payload):
+        return 0
+    top = _repo_top(Path(payload.get("cwd") or "."))
+    if top is None:
+        return 0
+    verdicts = [_judge_path(path) for path in _fresh_python(top)]
+    return 2 if 2 in verdicts else 0
+
+
+def _repo_top(cwd: Path) -> Path | None:
+    """The git working-tree top above the command's own cwd, or None outside any
+    repo. The event's `cwd` is where the command ran, and `status --porcelain`
+    names every file relative to this top whatever directory asks."""
+    if not cwd.is_dir():
+        return None
+    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd,
+                         capture_output=True, text=True, encoding="utf-8",
+                         errors="replace")
+    top = res.stdout.strip()
+    return Path(top) if res.returncode == 0 and top else None
+
+
+def _fresh_python(top: Path) -> list[Path]:
+    """Absolute paths of the changed *.py files this command plausibly wrote:
+    dirty or untracked per git, on disk, and with an mtime inside the window."""
+    cutoff = time.time() - _FRESH_WINDOW_SECONDS
+    fresh: list[Path] = []
+    for status, rel in _status_records(_porcelain(top)):
+        if _judgeable(status, rel) and _fresh(top / rel, cutoff):
+            fresh.append(top / rel)
+        if len(fresh) == _MAX_COMMAND_FILES:
+            break
+    return fresh
+
+
+def _porcelain(top: Path) -> str:
+    """`git status --porcelain -z` over the whole tree, or "" when git cannot
+    answer. -uall, because a heredoc that creates a new DIRECTORY of source
+    would otherwise arrive as one collapsed `?? newdir/` row naming no file."""
+    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top,
+                         capture_output=True, text=True, encoding="utf-8",
+                         errors="replace")
+    return res.stdout if res.returncode == 0 else ""
+
+
+def _status_records(text: str) -> Iterator[tuple[str, str]]:
+    """(XY status, new-side path) per `--porcelain -z` record.
+
+    -z is NUL-separated and never quoted, so a non-ASCII path arrives as
+    itself. A rename or copy record carries the original name in a second
+    field, consumed here so it cannot be read as the next record's status.
+    """
+    fields = text.split("\0")
+    i = 0
+    while i < len(fields) and fields[i]:
+        status = fields[i][:2]
+        yield status, fields[i][3:]
+        i += 2 if status[:1] in ("R", "C") else 1
+
+
+def _judgeable(status: str, rel: str) -> bool:
+    """A *.py with content on disk. A deletion in either column has nothing
+    left to judge, and every other language stays the commit gate's business:
+    only Python is cheap enough to analyze per shell call."""
+    return rel.endswith(".py") and "D" not in status
+
+
+def _fresh(path: Path, cutoff: float) -> bool:
+    """mtime inside the window — the approximation of "this command wrote it".
+    A path status names but disk lacks is not fresh, whatever the record said."""
+    try:
+        return path.stat().st_mtime >= cutoff
+    except OSError:
+        return False
 
 
 def _repo_root(start: Path) -> Path | None:
