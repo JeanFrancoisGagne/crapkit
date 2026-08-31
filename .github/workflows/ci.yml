@@ -37,7 +37,7 @@ jobs:
       - run: python -m pytest tests/unit
       # tests/e2e drives the CLI against a throwaway git repo per test, which is
       # subprocess time that parallelises: 8m08 serial against about 2 minutes
-      # at `-n 8` on one machine, same 593 tests, same result. pytest-xdist
+      # at `-n 8` on one machine, same 595 tests, same result. pytest-xdist
       # comes from the dev extra above.
       - run: python -m pytest -n 8 tests/e2e
       # The gate reads staged blobs and a fresh checkout stages nothing, so what
