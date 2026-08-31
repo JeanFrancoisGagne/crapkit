@@ -360,6 +360,30 @@ That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at f
 Set `fetch-depth: 0` on the checkout step, which is what crapkit's own
 [.github/workflows/ci.yml](.github/workflows/ci.yml) does.
 
+The whole PR job, on GitHub Actions:
+
+```yaml
+on: pull_request
+jobs:
+  crapkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # verify needs the baseline's commit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install crapkit
+      - run: pip install -e ".[dev]"   # your own test dependencies
+      - run: crapkit verify --baseline-tsv crapkit-baseline.tsv --github
+```
+
+The second install is the one people leave out. `verify` reruns your lanes, so the job
+needs whatever your test command needs: the coverage plugin, `npm ci`, a database, all of
+it. Without them the lane writes no artifact and `verify` exits 5 quoting the runner's own
+error, which is a broken job and not a verdict.
+
 ### What a refusal looks like
 
 ```
