@@ -244,6 +244,11 @@ py.json
 | `mutate-pool/` | The `w0..wN` worker worktrees `mutation_workers > 1` keeps. Removed by `crapkit mutate --drop-pool`. | |
 | `report.html` | Where `crapkit report` writes by default. | |
 
+Since 0.4.5 the rollup is filled once per run and pruned with its run, which is why `trend`
+answers in 0.04 s warm on a corpus where it used to rescan 4.3 M rows. It means `trend` and
+`report` write to `crap.sqlite` on a cold rollup, best effort: they read as before on a
+checkout they cannot write to, just without the speedup.
+
 The date is in the churn key because `--since=12 months ago` is measured against the wall
 clock, so yesterday's map describes a window one day wider than today's. The tracked set is
 in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
