@@ -430,15 +430,38 @@ def _sample(paths) -> str:
     return f"{shown} and {rest} more" if rest > 0 else shown
 
 
+# What to do about it, which is not the same sentence for both readers. The
+# coveragepy reader takes path_prefix and takes no repo root, so its refusal is
+# about the environment the lane binds to and the prefix is a real knob. The
+# istanbul reader takes the root, rebases every path under it and never reads
+# path_prefix at all, so a path that stayed absolute came from another tree and
+# no key on the lane can rebase it.
+_COVERAGEPY_FIX = ("Point the lane at this checkout's own environment (a bare "
+                   "`python -m pytest` binds to whichever venv the shell has active — run "
+                   "it through the project's manager, `uv run python -m pytest ...`), or "
+                   "set path_prefix when the runner reports paths relative to a subdirectory")
+_ISTANBUL_FIX = ("The reader rebases every path under this checkout's root, so these were "
+                 "written against another one: rerun the suite here rather than reusing an "
+                 "artifact copied in or restored from a CI cache")
+
+_COVERAGEPY_MISS = "or the runner reports paths this lane needs path_prefix to rebase"
+_ISTANBUL_MISS = "or the suite measured a part of the tree these scopes do not name"
+
+
+def _wrong_tree_fix(lane: Lane) -> str:
+    return _COVERAGEPY_FIX if lane.parser == "coveragepy" else _ISTANBUL_FIX
+
+
+def _unmeasured_reading(lane: Lane) -> str:
+    return _COVERAGEPY_MISS if lane.parser == "coveragepy" else _ISTANBUL_MISS
+
+
 def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
             f"paths its scopes declare ({_sample(declared)}), and {len(outside)} of them "
             f"outside this checkout entirely — {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
-            f"paths like {_sample(outside)}. Point the lane at this checkout's own "
-            f"environment (a bare `python -m pytest` binds to whichever venv the shell has "
-            f"active — run it through the project's manager, `uv run python -m pytest ...`), "
-            f"or set path_prefix when the runner reports paths relative to a subdirectory")
+            f"paths like {_sample(outside)}. {_wrong_tree_fix(lane)}")
 
 
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
@@ -446,7 +469,7 @@ def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
             f"paths its scopes declare ({_sample(declared)}), so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
-            f"or the runner reports paths this lane needs path_prefix to rebase")
+            f"{_unmeasured_reading(lane)}")
 
 
 def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None) -> None:

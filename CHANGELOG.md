@@ -47,9 +47,11 @@ Zero overlap has two readings, and the measured paths tell them apart:
 | absolute, drive-lettered or climbing out of the tree | both parsers rebase an in-tree file to a repo-relative path, so a path that stayed absolute names a file somewhere else | the lane FAILS, exit 5; its scopes fall back to `no-lane`, not `untested` |
 | in-tree, just not under the scope (`tests/test_core.py`), or nothing at all | the greenfield shape: a suite importing none of the scoped source yet | a WARNing on stderr, and the run scores on |
 
-The refusal quotes a few of the paths the artifact does name, points at `path_prefix` as
-the legitimate remapping knob, and says to run the suite through the project's own
-manager. The reach half runs after `path_prefix` is applied, so a prefix that fixes the
+The refusal quotes a few of the paths the artifact does name and says what to do about
+them, which is not the same sentence for both readers: a coveragepy lane is pointed at
+the environment it binds to and at `path_prefix`, an istanbul lane at the artifact
+itself, because the istanbul reader rebases every path under this checkout's root and
+never reads `path_prefix` at all. The reach half runs after `path_prefix` is applied, so a prefix that fixes the
 join is never refused, and it asks `universe.owning_scope`, the same predicate that
 assigns files to scopes, so a scope declaring individual files rather than directories is
 reached exactly. The escape half asks the path the runner WROTE, with the prefix taken

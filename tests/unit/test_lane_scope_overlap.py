@@ -20,7 +20,7 @@ import pytest
 
 from crapkit.config import Lane
 from crapkit.errors import ToolError
-from crapkit.lanes import run_lane
+from crapkit.lanes import _judge_artifact_scope, run_lane
 
 OTHER = "/Users/dev/checkout-b/src/faro/core.py"
 
@@ -182,6 +182,43 @@ def test_a_reached_scope_says_nothing_at_all(tmp_path, capsys):
     _run(tmp_path, _lane(), {"src": ("src",)})
 
     assert capsys.readouterr().err == ""
+
+
+def _js_lane() -> Lane:
+    return Lane(name="js", command="npx vitest run --coverage", artifact="cov.json",
+                parser="istanbul", scopes=("web",))
+
+
+def test_a_js_lane_is_not_told_to_run_pytest_through_a_python_manager():
+    """The advice was written for the incident's coveragepy lane and printed on
+    every lane. `uv run python -m pytest` is not something a vitest lane can do,
+    and path_prefix is read by the coveragepy reader alone — the istanbul reader
+    rebases against the checkout root and never sees the key."""
+    with pytest.raises(ToolError) as raised:
+        _judge_artifact_scope(_js_lane(), {"/Users/dev/checkout-b/web/src/app.ts": []},
+                              {"web": ("web/src",)})
+
+    message = str(raised.value)
+    assert "describes a different tree" in message
+    assert "pytest" not in message, "the fix has to be one this lane can carry out"
+    assert "path_prefix" not in message, "a knob the istanbul reader never reads"
+
+
+def test_the_js_warning_names_no_knob_the_js_reader_ignores(capsys):
+    """Same defect on the warn branch: it closes by naming path_prefix."""
+    _judge_artifact_scope(_js_lane(), {"web/tests/app.test.ts": []}, {"web": ("web/src",)})
+
+    err = capsys.readouterr().err
+    assert "will score untested" in err
+    assert "path_prefix" not in err
+
+
+def test_a_python_lane_keeps_the_advice_the_incident_earned():
+    with pytest.raises(ToolError) as raised:
+        _judge_artifact_scope(_lane(), {OTHER: []}, {"src": ("src",)})
+
+    assert "uv run python -m pytest" in str(raised.value)
+    assert "path_prefix" in str(raised.value)
 
 
 def test_a_lane_whose_scopes_declare_no_path_is_not_judged(tmp_path, capsys):
