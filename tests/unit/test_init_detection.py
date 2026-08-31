@@ -433,3 +433,25 @@ def test_the_launcher_and_the_live_entry_read_the_same_lane():
     live = "src" in dict(load_config_text(starter_toml({"src": ("python",)}, lanes)).scoped_tests)
 
     assert live == (python_launcher(lanes) != "python")
+
+
+def test_the_commented_lane_template_carries_the_managers_python_too():
+    """A repo that pins uv and ships no pytest marker gets the coveragepy lane
+    as a commented template. Uncommenting it must hand the reader the command
+    init would have written live, not a bare `python` bound to whichever venv
+    the shell has active."""
+    text = starter_toml({"pylib": ("python",)}, interpreter="uv run python")
+
+    assert ('# command = "uv run python -m pytest --cov --cov-branch '
+            '--cov-report=json:.crapkit/cov/py.json '
+            '--junitxml=.crapkit/cov/junit-py.xml"') in text
+    assert '# pylib = "uv run python -m pytest {files} -q -p no:cacheprovider"' in text, \
+        "one launcher for every python line the file holds"
+    assert '# command = "npx vitest run --coverage' in text, "the js template is untouched"
+
+
+def test_with_no_lockfile_the_commented_template_keeps_the_bare_name():
+    text = starter_toml({"pylib": ("python",)})
+
+    assert '# command = "python -m pytest --cov --cov-branch' in text
+    assert '# pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text

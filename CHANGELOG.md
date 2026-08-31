@@ -2,6 +2,21 @@
 
 ## 0.4.7 — unreleased
 
+### The commented lane template names the python the lockfile pins
+0.4.6 taught `init` to write `uv run python -m pytest …` off a lockfile, but only where it
+detected a live pytest lane. A repo with a lockfile and no pytest marker file
+(`pyproject.toml`, `pytest.ini`, `setup.cfg`) gets the coveragepy lane as a commented
+template instead, and that template still read a bare `python`. Uncommenting it handed the
+reader back the environment bug the prefix exists to prevent: a lane bound to whichever
+venv the shell has active rather than the one the repo pins.
+
+The template now carries a `{python}` placeholder, filled the same way the
+`[crapkit.scoped_tests]` entries already fill theirs, so all three python lines `init`
+writes name one launcher: the live lane, the scoped-tests entry, and the commented
+template. `python_launcher` takes the launcher as its fallback for a repo with no lane to
+read it back off. The js templates are unchanged; they carry no placeholder. A repo with
+no lockfile writes `python` (or `python3`, or `py`) exactly as before.
+
 ### The per-edit advisory now hears Bash writes
 `crapkit claude-hook` judged the one file named in `tool_input.file_path`, which only
 Edit, Write and MultiEdit events carry. A `Bash` PostToolUse event carries

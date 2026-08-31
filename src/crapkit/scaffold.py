@@ -303,9 +303,13 @@ def _live_lanes(lanes: tuple[LaneSpec, ...],
     return lines, covered
 
 
+# The python in the coveragepy template is a placeholder for the same reason
+# the scoped-tests entries carry one: what a reader uncomments has to be the
+# command init would have written live. A repo whose lockfile pins `uv run`
+# read a bare `python` here and got the environment bug one uncomment later.
 _TEMPLATES = {
     "coveragepy": ("# [[lane]]", '# name = "py"',
-                   '# command = "python -m pytest --cov --cov-branch '
+                   '# command = "{python} -m pytest --cov --cov-branch '
                    f'--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS}"',
                    f'# artifact = "{_PY_ARTIFACT}"',
                    f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
@@ -350,16 +354,21 @@ def _pytest_lane_launcher(lanes: tuple[LaneSpec, ...]) -> str | None:
     return None
 
 
-def python_launcher(lanes: tuple[LaneSpec, ...]) -> str:
-    """The python invocation the detected pytest lane already settled on.
+def python_launcher(lanes: tuple[LaneSpec, ...], fallback: str = _DEFAULT_PYTHON) -> str:
+    """The python invocation the detected pytest lane already settled on, and
+    `fallback` when no detected lane runs pytest.
 
     Read back off the lane rather than passed in beside it, so the scoped-tests
     entry runs the suite the way the coverage lane runs it and the two cannot
     drift: a `uv run python` lane with a bare `python` step 4 would measure one
     environment and test another.
+
+    A repo with no pytest marker file has no lane to read, and every python
+    line init writes for it is commented. `fallback` is what init would have
+    run had there been one, so those lines uncomment into the same environment.
     """
     launcher = _pytest_lane_launcher(lanes)
-    return _DEFAULT_PYTHON if launcher is None else launcher
+    return fallback if launcher is None else launcher
 
 
 def _scoped_test_command(languages: tuple[str, ...], launcher: str) -> str:
@@ -423,7 +432,14 @@ def _commented_block(rest: dict[str, tuple[str, ...]], has_live: bool,
     return header + _scoped_entry_lines(rest, False, launcher)
 
 
-def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]]) -> list[str]:
+def _template_stanza(parser: str, launcher: str) -> list[str]:
+    """One commented lane template, with the python it names filled in. The js
+    templates carry no placeholder, so they come back as written."""
+    return [line.replace("{python}", launcher) for line in _TEMPLATES[parser]]
+
+
+def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
+                    launcher: str = _DEFAULT_PYTHON) -> list[str]:
     """Commented lane templates for the parsers no live lane covers.
 
     None at all when every scope is cc-only. Neither parser reads any language
@@ -437,21 +453,25 @@ def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]]) -> li
     lines: list[str] = []
     for parser in sorted(_TEMPLATES):
         if parser not in covered:
-            lines += [*_TEMPLATES[parser], '# scopes = ["<your-scope>"]', ""]
+            lines += [*_template_stanza(parser, launcher), '# scopes = ["<your-scope>"]', ""]
     if not lines:
         return []
     return ["# Declare one [[lane]] per coverage command, then run `crapkit coverage`.", *lines]
 
 
-def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = ()) -> str:
+def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = (),
+                 *, interpreter: str = _DEFAULT_PYTHON) -> str:
+    """The starter crapkit.toml. `interpreter` is the python a committed config
+    on this repo can call, the lockfile's manager prefix included; every python
+    line the file holds names it, commented templates as much as live lanes."""
     lines = ["[crapkit]", "target = 6", ""]
     for name, languages in scopes.items():
         lines += _scope_stanza(name, languages)
     lines += _exclude_stanza()
     live, covered = _live_lanes(lanes, scopes)
-    return "\n".join(lines + live + _template_lines(covered, scopes)
-                     + _scoped_tests_stub(scopes, _confirmed_languages(lanes),
-                                          python_launcher(lanes)))
+    launcher = python_launcher(lanes, interpreter)
+    return "\n".join(lines + live + _template_lines(covered, scopes, launcher)
+                     + _scoped_tests_stub(scopes, _confirmed_languages(lanes), launcher))
 
 
 _STORE_IGNORE = ".crapkit/"

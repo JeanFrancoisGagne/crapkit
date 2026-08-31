@@ -386,9 +386,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         raise ConfigError(_no_scopes_reason(root))
     # A config whose lanes are all commented out scores every function no-lane,
     # so a fresh repo cannot rank anything until somebody hand-writes a lane.
-    lanes = detect_lanes(_present_markers(root), _package_json(root),
-                         interpreter=_interpreter(root))
-    text = starter_toml(scopes, lanes)
+    # The interpreter goes to both: a repo with no pytest marker file gets no
+    # lane to read it back off, and its commented template is what the reader
+    # uncomments.
+    interpreter = _interpreter(root)
+    lanes = detect_lanes(_present_markers(root), _package_json(root), interpreter=interpreter)
+    text = starter_toml(scopes, lanes, interpreter=interpreter)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes)
