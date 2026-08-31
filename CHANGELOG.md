@@ -184,7 +184,7 @@ was already there.
 `tests/unit` now drives `verify` and `coverage` in process (`cli/verifying.py` 34% ->
 100%, `cli/scoring.py` 43% -> 99% statement coverage from the unit suite alone), and
 `tests/e2e` shares one CLI runner in `conftest.py` and runs in about 1m30 with `-n 8`.
-The unit suite is 2,280 tests.
+The unit suite is 2,282 tests.
 
 The review left one structural item open: `discover.py`, 384 lines with no importer
 since birth, is either wired into the packet or removed in a later release.
