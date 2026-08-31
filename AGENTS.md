@@ -184,9 +184,12 @@ exit codes below are its.
 is no step 4 to run: go to step 5. `crapkit doctor` warns about every scope a lane
 measures with no template behind it, which is the gap to close.
 
-This needs one template per scope in crapkit.toml. `crapkit init` leaves the block
-commented out at the end of the file, one line per scope it found, so uncommenting is
-usually the whole job:
+This needs one template per scope in crapkit.toml. `crapkit init` writes the block at the
+end of the file, one line per scope it found: live for a scope whose runner a detected
+lane already proves, commented for the rest, so uncommenting is usually the whole job.
+Every python line it writes names one launcher, the commented lane template included, so
+on a repo whose lockfile pins uv what you uncomment reads `uv run python -m pytest ...`
+and binds to the environment the repo pins:
 
     [crapkit.scoped_tests]
     calc = "python -m pytest {files} -q -p no:cacheprovider"
@@ -232,7 +235,7 @@ This is the slow step and the only authoritative one.
 | Exit | Verdict | Next action |
 |---|---|---|
 | 0 | pass | baseline advanced, ratchet tightened, finished claims released. Commit |
-| 5 | a lane produced no artifact, or one that measured a different tree | tooling, not your code: read the lane log the message names, then fix the lane command in crapkit.toml |
+| 5 | a lane produced no artifact, one that measured a different tree, or one that measured this tree and reported it in absolute paths | tooling, not your code. For the first two, read the lane log the message names and fix the lane command in crapkit.toml. The third names the runner's own switch instead, `relative_files = true` under `[tool.coverage.run]` for coverage.py or the reporter's `cwd`/`root` option for istanbul, because the lane command is fine and only the spelling of the paths is not |
 | 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries | decompose it, or cover it |
 | 7 | ratchet: a recorded score got worse | restore that function below its mark |
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
@@ -283,6 +286,18 @@ Nothing was blocked and nothing was written. Read it as the earliest warning tha
 will fail, not as a rejected edit. A function the committed ratchet already marks never
 triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
 
+An edit event names its file. A `Bash` event names none, so the hook reads the working
+tree instead: the dirty or untracked `*.py` files whose mtime falls inside a 12-second
+window, 25 at most, each judged exactly the way an edited file is. Write source through a
+heredoc and you still get the advice. Three things make it silent: a clean tree, a file
+that was already dirty before this command ran, and a shell whose cwd is outside any git
+repo. It judges `*.py` and nothing else; every other language stays the commit gate's
+business.
+
+That fallback fires only where a `Bash` matcher is registered, which the shipped plugin
+does not do; [README.md](README.md#the-claude-code-plugin) has the snippet and the cost.
+Silence from a Bash call is never evidence that a file is clean.
+
 ## When a lane will not start
 
 Exit 5 says a lane produced no artifact. The first question is whether the command could
@@ -322,6 +337,15 @@ doctor also WARNs on a coveragepy or istanbul lane that names no `results_artifa
 Coverage is measured either way. What the lane cannot do without a results file is feed
 the two checks that read one, so exit 8 can never fire for its scopes and nothing else
 would have said so. `crapkit init` writes both on the lanes it detects.
+
+When the lane did start and failed anyway, the refusal names `full log: <path>` and quotes
+the end of that log, with the reason hoisted in front when the end does not carry one.
+Those hoisted lines come from the last attempt only. A lane with `retries` set appends
+every attempt to the same `.crapkit/lane-<name>.log`, and the final one starts after the
+last whole `--- attempt N ---` line, so the reason a superseded attempt died for is never
+stood in front of the attempt that actually failed. The message names no attempt number.
+Open the log the path names and read down from its last banner; a log with no banner is
+one attempt.
 
 ## When crapkit's root sits below the git top
 
