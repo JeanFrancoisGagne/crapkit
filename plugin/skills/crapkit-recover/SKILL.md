@@ -90,8 +90,30 @@ each lane with the shell that will run it and FAILs one whose first word will no
 then refuses to run, so nothing that only reads PATH sees it. Point the lane at a python
 that runs: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start).
 
-This is tooling, not your code. The run still happened: the failed lane's scopes fall back to
-`no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all.
+Doctor reads the lane command and nothing behind it. It checks that the first word of each
+`&&` segment resolves on PATH, and it starts the command's own first word once. So a lane
+written as `npm run test -- --coverage ...` is checked as far as `npm`, and the runner the
+package script names is invisible to it. A package that lists `vitest` in `devDependencies`
+with no `node_modules` on disk therefore passes doctor and then fails the lane:
+
+    $ crapkit doctor
+    ...
+    doctor: no problems found
+    $ crapkit coverage
+    crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: ...
+    'vitest' is not recognized as an internal or external command,
+    operable program or batch file.
+
+That signature is none of the five. It is `not recognized` on Windows and `not found` from
+sh on POSIX, and it means the suite's own dependencies are not installed. Install them,
+then rerun `crapkit coverage`.
+
+This is tooling, not your code. What it costs depends on whether any lane survived. A lane
+that fails beside a lane that worked still writes a run: the failed lane's scopes fall back
+to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all. When
+EVERY declared lane fails, `coverage` prints a second line, `crapkit: every lane failed:
+...`, exits 5 and writes no run at all, so `crapkit runs` has nothing to show and there is
+no partial run for `verify` to refuse against.
 
 ## Exit 7 on a function you never touched
 
