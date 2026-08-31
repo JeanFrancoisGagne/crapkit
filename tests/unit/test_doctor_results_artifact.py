@@ -10,8 +10,32 @@ measures coverage exactly as it did.
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from crapkit import procs
+from crapkit.cli import admin
 from crapkit.cli.admin import _doctor_lanes
 from crapkit.config import Lane
+
+
+@pytest.fixture(autouse=True)
+def probe_that_started(monkeypatch):
+    """Every finding here is about the results file, none of it about whether
+    this machine can start `python`. `_doctor_lanes` asks anyway, through
+    `_lane_start_problem` -> `admin._start_probe`, which is an lru_cache keyed
+    on the first word and nothing else, so any test in the process that shims a
+    `python` onto PATH answers that word for every test after it. That is how
+    three tests here failed in the combined lane run and passed alone: they read
+    a FAIL naming a dead interpreter where the ok summary belongs.
+
+    The answer is pinned to 0, the shell started it. Yields the real cached
+    function so a test can fill it and prove it is not consulted, and clears it
+    on both sides so this file neither reads nor leaves an answer."""
+    real = admin._start_probe
+    real.cache_clear()
+    monkeypatch.setattr(admin, "_start_probe", lambda word: 0)
+    yield real
+    real.cache_clear()
 
 
 def lane(name: str, parser: str, results_artifact: str = "") -> Lane:
@@ -49,6 +73,23 @@ def test_a_vitest_lane_gets_a_reporter_hint_instead():
 
 def test_a_lane_that_declares_one_is_left_alone():
     assert findings(lane("py", "coveragepy", ".crapkit/cov/junit-py.xml")) == \
+        [("ok", "1 lane(s) declared")]
+
+
+def test_a_probe_answer_another_test_cached_never_reaches_these_findings(
+        probe_that_started, monkeypatch):
+    """The isolation the three assertions above depend on, asserted once.
+
+    tests/unit/test_init_probe.py puts a `python` on PATH that exits 9009 and
+    asks the probe about it. Before both files cleared the cache, that answer
+    outlived its test and `findings()` reported a lane whose interpreter cannot
+    start, for a lane running the same python this suite runs under.
+
+    Fills the real cache the same way and reads the ok summary through it."""
+    monkeypatch.setattr(procs, "run_bounded", lambda command, timeout: 9009)
+    assert probe_that_started("python") == 9009, "the poison has to land"
+
+    assert findings(lane("py", "coveragepy", "junit-py.xml")) == \
         [("ok", "1 lane(s) declared")]
 
 
