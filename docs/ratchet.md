@@ -19,7 +19,7 @@ Commit it.
 ## What a mark is
 
 ```
-# crapkit-analysis=3 lizard=1.24.0
+# crapkit-analysis=8 lizard=1.24.0
 path	long_name	crap
 calc/grade.py	classify( score , attempts , late , bonus )	66.0714
 calc/report.py	render( rows , wide , totals , header )	56.0000
@@ -99,6 +99,42 @@ where a real regression is caught. Its gate reads a mark the way `rescore --gate
 (#29): an edit inside a marked function that leaves it at or under its mark is the debt
 the repo signed for, not a new violation; push it past the mark and both checks fire.
 
+Both halves, on a repo whose `classify` carries the mark 51.5698. A comment added inside
+it moves nothing, so step 3 and step 5 both pass:
+
+```
+$ crapkit rescore calc/grade.py --gate
+rescore vs run 2 @ 4a06338604a (coverage STALE, complexity fresh)
+   ccn   cov     crap  remedy     function
+    13   39%     51.6  decompose  calc/grade.py:1  classify( score , attempts , late , bonus )
+     5   62%      6.3  add-tests  calc/grade.py:25  summarize( rows , wide , totals , header )
+EXIT=0
+
+$ crapkit verify
+verify OK @ 4a06338604a vs baseline 4a06338604a (1 changed files)
+EXIT=0
+```
+
+Two more branches in the same function push it past 51.5698, and both refuse:
+
+```
+$ crapkit rescore calc/grade.py --gate
+crapkit gate: 1 rescored function(s) over their scope ceiling:
+  GATE  crap     83.0  ccn  17 cov 39%  calc/grade.py:1  classify( score , attempts , late , bonus )  -> decompose
+EXIT=6
+
+$ crapkit verify
+verify FAILED @ 4a06338604a vs baseline 4a06338604a (1 changed files)
+  GATE  crap     76.6  ccn  17 cov 41%  calc/grade.py:1  classify( score , attempts , late , bonus )  -> decompose  [dirty]
+  RATCHET  calc/grade.py  classify( score , attempts , late , bonus ): 51.5698 -> 76.6293  [dirty]
+  findings: 0 committed / 2 dirty (uncommitted edits and untracked files)
+EXIT=6
+```
+
+Both findings are on one function and the verdict is **6**, because 6 beats 7. Exit 7 is
+what is left for a function the diff never touched, which is the case further down under
+[How `verify` uses the ratchet](#how-verify-uses-the-ratchet).
+
 The looseness is deliberate. Before it, a comment added inside a marked function refused the
 commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
 `rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` exempts on
@@ -139,25 +175,55 @@ crapkit: no trusted full run to work from — run `crapkit coverage` first (fail
 EXIT=1
 ```
 
-### Seed and prune skip a failed verify
+### Seed and prune pick the run verify picks
 
-Trusted means here what it means for `verify`: a `coverage` run, or a `verify` run whose
-verdict passed. A failed verify can carry the scores of a red tree — the failure is visible
-in the same run — so seeding from one would sign debt at values `verify` itself refuses as a
-comparison point. Both actions walk back to the newest trusted run and name what they
-stepped over:
+Since 0.4.5 both actions run `verify`'s own baseline rule, not a weaker one that agrees with
+it most of the time. Two clauses, in order.
+
+**Trusted** means what it means for `verify`: a `coverage` run, or a `verify` run whose
+verdict passed. A failed verify can carry the scores of a red tree, and a `partial` run
+measured a fraction of the suite, so seeding from either would sign debt at values `verify`
+refuses as a comparison point.
+
+**A trusted run a failed verify stands in front of is refused too.** That failure recorded
+findings against a tree; signing marks off anything newer moves the comparison point past
+them, and no verify looks at them again. Only a passing verify clears it.
+
+That second clause is the one that changed. A `coverage` run taken after a failed verify is
+trusted, and seed used to take it. Here run 1 is a `coverage`, run 2 a verify that failed,
+run 3 the fresh `coverage` somebody ran to move on. Both actions walk back to run 1:
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 1 (bb83d64fc19), skipped failed verify run 2
+crapkit-ratchet.tsv: added 0, tightened 0 — 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
+
+$ crapkit ratchet prune
+crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) — 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
 ```
 
-The clause prints only when something was skipped, so the ordinary line is unchanged.
+The clause names the failed verifies only, so the ordinary line is unchanged when nothing was
+skipped. `crapkit verify` on that store lands on run 1 too, and says so on stderr:
 
-`verify`'s pick is stricter by one rule: it also refuses a trusted run that a failed verify
-stands **in front of**, because moving the comparison point past those findings retires them
-([the trusted baseline](../README.md#the-trusted-baseline)). Seeding retires nothing, so it
-stops at the verdict.
+```
+$ crapkit verify
+warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since — measuring against run 1 @ 964eaf2ad80 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
+verify OK @ 964eaf2ad80 vs baseline 964eaf2ad80 (0 changed files)
+```
+
+Three commands, one run ([the trusted baseline](../README.md#the-trusted-baseline)).
+
+When the failure stands in front of every trusted run there is, both refuse rather than
+signing anything:
+
+```
+$ crapkit ratchet seed
+crapkit: no run to work from: verify run 1 FAILED with 1 finding(s), nothing older is left to work from, and a fresh `crapkit coverage` would only be refused the same way — fix the findings and let a verify pass
+EXIT=1
+```
+
+The line says why a fresh `coverage` is not the escape: the new run would be refused by the
+same rule. Fix the findings, or accept a newer run by name with `crapkit verify --baseline
+ID` and let that verify pass.
 
 ---
 
@@ -177,7 +243,7 @@ Three cases:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=2 lizard=1.17.10] but this run measures [crapkit-analysis=3 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`
 EXIT=3
 ```
 
@@ -195,6 +261,29 @@ stay legacy.
 This is why `crapkit` pins its lizard dependency by lower bound and why upgrading lizard is
 a deliberate act. A new lizard changes the stamp, and every consumer's next run refuses its
 own marks until somebody re-seeds.
+
+### Upgrading to 0.4.5: analysis version 8
+
+0.4.4 measured at analysis version 7 and 0.4.5 measures at 8, so the transcript above is
+the one every consumer meets on the first run after the upgrade. Re-seed and it goes away:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 0, tightened 0 — 2 mark(s) vs run 9 (4a06338604a)
+
+$ head -1 crapkit-ratchet.tsv
+# crapkit-analysis=8 lizard=1.24.0
+```
+
+What version 8 changed is one rule: shell cognitive complexity now nests, because `fi`,
+`done` and `esac` close a level. A 4-deep `if` in a `.sh` file reads 10, the way it does in
+every other language crapkit scans, instead of 4. So **cognitive numbers move in shell
+files and nowhere else, and ccn does not move at all.** CRAP is built from ccn and coverage,
+so the marks themselves land where they landed before; the re-seed is the stamp catching up,
+not a repricing of the debt.
+
+A repo with no shell in it still has to re-seed. The stamp records the rules the numbers
+were measured under, not which of them a given file exercised.
 
 ---
 
@@ -292,7 +381,7 @@ Merge made by the 'ort' strategy.
 ```
 
 ```
-# crapkit-analysis=3 lizard=1.24.0
+# crapkit-analysis=8 lizard=1.24.0
 path	long_name	crap
 app/a.py	foo( x )	31.5000
 app/b.py	bar( y )	22.0000
@@ -311,12 +400,16 @@ The driver refuses to merge across metric versions, and git falls back to a norm
 conflict for you to resolve after re-seeding one side:
 
 ```
-$ git merge feature
-crapkit: ratchet merge refused: ours is [unstamped] and theirs is [crapkit-analysis=3 lizard=1.24.0] — marks from different metric versions cannot merge; re-baseline one side with `crapkit ratchet seed`
+$ git merge legacy
+crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] — marks from different metric versions cannot merge; re-baseline one side with `crapkit ratchet seed`
 Auto-merging crapkit-ratchet.tsv
 CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
 ```
+
+An upgrade puts every branch in that position for one commit: a branch cut before 0.4.5
+carries analysis 7 and the branch that upgraded carries 8. Re-seed the older side, commit
+the marks file, and the merge goes through.
 
 `ratchet merge` runs with no `crapkit.toml` in sight, because git invokes it from a temp
 directory. It is the one ratchet subcommand that needs no config.
@@ -444,11 +537,19 @@ measurement race does, so a stable improvement still tightens in full. A first r
 commit has nothing to compare against and tightens as it always did. `verify --no-tighten`
 is the blunt version: the verdict stands and the marks file is not rewritten at all.
 
-**Trusted** is the same word `ratchet seed` uses, and the same rule: a failed verify and a
+**Trusted** is the same word `ratchet seed` uses, and the same test: a failed verify and a
 `partial` run are invisible here too. Both carry numbers no other reader accepts — a failed
 verify's can come off a red tree, and a `partial` run measured a fraction of the suite, so
 its coverage is low and its CRAP is high to match. Damping against either would hold a mark
-at a value nothing vouches for. The comparison is per ratchet key, so a file's second
+at a value nothing vouches for.
+
+Seeding narrows it once more, and damping does not: `seed` and `prune` also refuse a trusted
+run a failed verify stands in front of ([above](#seed-and-prune-pick-the-run-verify-picks)),
+because they are choosing what to sign. Damping signs nothing. It asks whether one number
+moved between two measurements of one commit, and the older measurement only has to be one
+`verify` would have accepted.
+
+The comparison is per ratchet key, so a file's second
 `__post_init__` is compared against `__post_init__#2`'s earlier score and not against its
 twin's ([Twins: one name, several functions](#twins-one-name-several-functions)).
 
@@ -519,5 +620,4 @@ git commit -m "adopt crapkit"
 crapkit verify              # should be green on the tree you just committed
 ```
 
-Then install the gate ([README](../README.md#installing-the-gate)) and the merge driver
-above.
+Then install the gate ([README](../README.md#the-gate)) and the merge driver above.
