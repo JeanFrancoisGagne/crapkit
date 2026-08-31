@@ -904,6 +904,15 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <h3>6 · The whole codebase</h3>
 <p>That is a campaign, and it has its own section: <a href="#campaign">§17</a>.</p>
 
+<h3>All six, below the git top</h3>
+<p>Nothing above assumes <code>crapkit.toml</code> sits at the git root. A package one or more directories down is the ordinary monorepo shape, and it needs no mode and no flag beyond <code>--repo</code>. 0.4.4 fixed the scoring half of it; the commit gate was still reading <code>git diff --cached</code> from the git top, so under a nested root the staged paths matched no scope, and a function at twice the ceiling committed with a warning. 0.4.5 fixed that, and the nine siblings that joined the same two path shapes. The gate now judges what you staged, named the way the rest of the run names it:</p>
+<pre><code>$ cd packages/api
+$ python -m crapkit hook-precommit          # what the git hook runs
+crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+  ccn  10  app/route.py:1  route( kind , hot , live , admin )
+decompose before committing (coverage cannot save a function above the target).</code></pre>
+<p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it.</p>
+
 <h3>Everyday lookups</h3>
 <div class="tw"><table>
   <tr><th>You are…</th><th>Reach for</th><th>Because</th></tr>
@@ -952,6 +961,8 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
   <li><strong>Value is front-loaded, so stopping early is rational.</strong> The risk map is worst-first by <code>ccn × churn</code> and the hand-out queue by CRAP, and the top of it is where incidents live. "Fix the worst slice and gate the rest forever" is the same campaign ended earlier, and the ratchet holds whatever line you reach.</li>
   <li><strong>The summit items are redesigns.</strong> A whole command handler at extreme ccn is not a split, it is an architecture session. The packet's <code>est_splits</code> saying dozens is the tell.</li>
   <li><strong>Proof it composes:</strong> crapkit's own repo ran this exact campaign against its own gate. Every standing mark repaid, the ratchet file now header-only, grade A+.</li>
+  <li><strong>0.4.5 made the repeated commands cheap</strong>, which is most of what a campaign spends its day on. Measured on a 31,459-file consumer, 152k functions, 41,544 marks and 72,653 commits: warm <code>coupling</code> 1.05 s to 0.11 s, <code>worklist --batches</code> down 62%, a batch of five briefs 11.8 s to 5.2 s, <code>doctor</code> 7.5 s to 1.4 s across 14 lanes over 2 runners, <code>trend</code> 4.58 s to 0.04 s warm, <code>report</code> down 76%, <code>verify</code> 25.5 s to 18.9 s, and <code>mutate</code>'s worker setup 30.6 s to 0.46 s. Plan the loop knowing the read commands are near-free and <code>verify</code> is the one that costs a suite run.</li>
+  <li><strong>Four ideas were measured and thrown away</strong>, so nobody spends a week rebuilding them: skipping <code>verify</code> on an unchanged tree (the cache key cannot see a second edit to an already-dirty file), serving MCP tool calls from a kept process (a stale <code>source</code> breaks the packet contract), parallel git date slices for the churn walk, and a faster JSON decoder.</li>
 </ul>
 
 <!-- ============================ 18 PRINCIPLES ============================ -->
