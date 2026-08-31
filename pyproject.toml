@@ -63,14 +63,19 @@ Source = "https://github.com/JeanFrancoisGagne/crapkit"
 # about 8 minutes serial against about 1m30 parallel on the same tree. Nothing
 # here needs pytest-timeout: no test takes a `--timeout` and none carries the
 # marker.
-dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3"]
+dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3", "coverage>=7.10.6"]
+# coverage>=7.10.6 in both extras is the floor `[tool.coverage.run] patch` needs,
+# and it is not decoration: coverage 7.9 answers an unrecognized `[run] patch=`
+# with a CoverageWarning that pytest-cov 6.2.0 and later file under
+# `once::CoverageWarning`, so an older coverage takes the key, says so once in a
+# warnings block nobody reads, and measures no subprocess at all.
 # The py lane's runtime half, for installs that share the suite's venv: the
 # lane init writes runs `pytest --cov`, and those flags come from pytest-cov.
 # An install elsewhere (pipx, uv tool) still needs pytest-cov beside the SUITE;
 # init probes the python that runs pytest, not its own, and names
 # `pip install "crapkit[py]"` when those are the same environment. Double
 # quotes: single ones do not survive cmd.exe.
-py = ["pytest-cov>=5"]
+py = ["pytest-cov>=5", "coverage>=7.10.6"]
 
 [project.scripts]
 crapkit = "crapkit.cli:main"
@@ -85,3 +90,15 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --tb=short -p no:cacheprovider"
+
+# Every CLI entry point crapkit ships is exercised through `subprocess.run` by
+# tests/e2e and by nothing else, so without a subprocess measurement `cmd_init`
+# and its siblings read 0% and the gate fires on any `cmd_*` a diff touches.
+# pytest-cov 7.0.0 dropped the mechanism that used to do this (its own
+# `pytest-cov.pth` reading COV_CORE_*) and pointed at coverage's own patch
+# system, added in coverage 7.10. Measured on tests/e2e/test_init_doctor_e2e.py:
+# src/crapkit/cli/admin.py scores 0/498 statements under pytest-cov 7.1.0 with
+# this key absent, and 317/498 with it present, on 7.1.0 and 6.3.0 alike.
+# `parallel = true` follows automatically; .coverage* is already gitignored.
+[tool.coverage.run]
+patch = ["subprocess"]

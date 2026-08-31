@@ -19,10 +19,12 @@ notes = [
   "A new subcommand needs a row in the _OWNER table in cli/__init__.py as well as a parser entry. Command functions are re-exported lazily by name, so a missing row means the name never resolves.",
 ]
 
-# --cov=crapkit (module name, not path): pytest-cov's subprocess hook hands
-# children a COV_CORE_SOURCE that must resolve from the CHILD's cwd, and the
-# e2e tests run the CLI in tmp repos - a path-based source measured nothing
-# there and cli.py read a false 0%.
+# --cov=crapkit (module name, not path): the e2e tests run the CLI in tmp repos,
+# so whatever carries the source into the child has to resolve from the CHILD's
+# cwd. A path-based source measured nothing there and cli.py read a false 0%.
+# What carries it is pyproject.toml's [tool.coverage.run] patch = ["subprocess"]
+# (coverage >= 7.10.6), not pytest-cov: 7.0.0 dropped its own COV_CORE_SOURCE
+# hook, and without the patch key every cmd_* in cli/ reads 0% on pytest-cov 7.
 [[lane]]
 name = "py"
 command = "python -m pytest --cov=crapkit --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit.xml"

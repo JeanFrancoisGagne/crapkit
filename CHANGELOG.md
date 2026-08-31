@@ -101,6 +101,28 @@ project environment before running anything, and `init` has no business provisio
 to ask a question about it. Doctor still asks whether the lane can start, which for a
 managed lane is `uv --version`.
 
+### The py lane measures the CLI again on pytest-cov 7
+
+pytest-cov 7.0.0 dropped subprocess measurement. crapkit's `dev` extra asked for
+`pytest-cov>=5`, so a fresh `pip install -e ".[dev]"` resolves 7.x, and every CLI entry
+point the e2e suite drives through `subprocess.run` went to 0% with nothing said. On
+`tests/e2e/test_init_doctor_e2e.py`, `src/crapkit/cli/admin.py` scored 0/498 statements
+under pytest-cov 7.1.0 against 315/498 under 6.3.0.
+
+pyproject.toml now sets coverage's own replacement, `[tool.coverage.run] patch =
+["subprocess"]`, and floors `coverage>=7.10.6` in the `dev` and `py` extras.
+Coverage 7.9 and earlier warn about the unknown key and ignore it, which is the same
+silence one warning louder. The same file scores 317/498 under pytest-cov 7.1.0 and 6.3.0 alike.
+
+If your own repo runs a pytest lane over a suite that spawns subprocesses, you want both
+lines too; [docs/lanes.md](docs/lanes.md) has the section.
+
+### Fixed
+
+- The three unit tests that probe crapkit's import cost in a child now strip
+  `COVERAGE_PROCESS_*` as well as `COV_CORE_*`. `test_pygments_deferral` stripped neither,
+  and two of its tests failed under any `pytest --cov` on pytest-cov 6.3.0.
+
 ## 0.4.5 — 2026-08-30
 
 A fix release with no new capability: an audit of 0.4.4 through six lenses, with every
