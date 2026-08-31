@@ -769,7 +769,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 </div>
 
 <h3>What 0.4.5 caches, and where it lives</h3>
-<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the churn caches. Its key is HEAD, the churn window and a digest of the tracked set, so it cannot answer for a tree it did not see; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
+<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the churn caches. Its key is HEAD, the churn window, the UTC date, the path format and a digest of the tracked set, so it cannot answer for a tree it did not see; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
 <pre><code>$ ls -1 .crapkit/*.json .crapkit/*.z
 .crapkit/cache.json
 .crapkit/churn-cache-v2.json

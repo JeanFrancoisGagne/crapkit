@@ -1068,7 +1068,8 @@ truncates that order, so it reads the cache. `--min-support` or `--min-confidenc
 defaults ask a wider question than the file answers and recompute, because serving them a
 filtered subset would drop the pairs those thresholds exist to surface.
 
-The key is HEAD, the window, and a digest of the tracked set. The tracked set is in the key
+The key is HEAD, the window, the UTC date, the path format and a digest of the tracked set,
+the churn map's key plus that digest. The tracked set is in the key
 because ranking drops any pair naming a file `git ls-files` no longer lists, and the index
 moves without HEAD: `git rm --cached src/util.py` leaves the sha alone and must still retire
 every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash.
