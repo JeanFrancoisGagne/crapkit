@@ -519,8 +519,9 @@ scopes = ["calc"]
 # Declare one [[lane]] per coverage command, then run `crapkit coverage`.
 # [[lane]]
 # name = "js"
-# command = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/js"
+# command = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml"
 # artifact = ".crapkit/cov/js/coverage-final.json"
+# results_artifact = ".crapkit/cov/js/junit.xml"
 # parser = "istanbul"
 # scopes = ["<your-scope>"]
 
@@ -635,9 +636,12 @@ added to .gitignore: .crapkit/
 ```
 
 The lane `init` wrote is
-`npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js`. It reads
-vitest's `json` reporter from `.crapkit/cov/js/coverage-final.json`; the
-`reportsDirectory` flag is what keeps that report out of your root. Anything that produces
+`npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml`.
+It reads vitest's `json` reporter from `.crapkit/cov/js/coverage-final.json`; the
+`reportsDirectory` flag is what keeps that report out of your root. The junit half is the
+lane's `results_artifact`, which the crashed-worker and no-new-failures checks read; both
+reporters are named because `--reporter=junit` alone would replace the console output you
+watch the suite through. Anything that produces
 an istanbul `coverage-final.json` works; see [docs/lanes.md](docs/lanes.md) for the
 [jest](docs/lanes.md#jest) and [pytest](docs/lanes.md#pytest) recipes, a package
 [one directory down](docs/lanes.md#running-from-a-subdirectory), and a
@@ -651,7 +655,7 @@ exit 5:
 
 ```
 $ crapkit coverage
-crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js
+crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
 
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 

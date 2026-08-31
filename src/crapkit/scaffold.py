@@ -92,6 +92,7 @@ class LaneSpec(NamedTuple):
     parser: str
     languages: tuple[str, ...]
     results_artifact: str = ""
+    env: tuple[tuple[str, str], ...] = ()
 
 
 PYTEST_MARKERS = ("pyproject.toml", "pytest.ini", "setup.cfg")
@@ -111,12 +112,27 @@ _PY_ARTIFACT = f"{_COV_DIR}/py.json"
 _PY_RESULTS = f"{_COV_DIR}/junit-py.xml"
 _JS_COV_DIR = f"{_COV_DIR}/js"
 _JS_ARTIFACT = f"{_JS_COV_DIR}/coverage-final.json"
+_JS_RESULTS = f"{_JS_COV_DIR}/junit.xml"
 _JS_DEFAULT_ARTIFACT = "coverage/coverage-final.json"
 
 # Each runner spells "write the coverage report here" its own way and rejects
 # the other's spelling outright.
 _JS_REPORTS_DIR_FLAG = {"jest": "--coverageDirectory=",
                         "vitest": "--coverage.reportsDirectory="}
+
+# The junit half. vitest ships its junit reporter, so the flags cost the repo
+# nothing; jest needs the separate `jest-junit` package, and naming a reporter
+# jest cannot resolve turns a working lane into an error — so its flags are
+# written only when package.json already carries it.
+_JS_JUNIT_FLAGS = {"jest": "--reporters=default --reporters=jest-junit",
+                   "vitest": f"--reporter=default --reporter=junit --outputFile={_JS_RESULTS}"}
+_JS_JUNIT_PACKAGE = {"jest": "jest-junit"}
+# jest-junit takes no path on the command line: package.json, the jest config or
+# these two variables are the whole list, and the first two are the repo's files
+# to own. Without them it drops junit.xml at the repo root, which is the litter
+# `artifact` was routed away from in the first place.
+_JS_JUNIT_ENV = {"jest": (("JEST_JUNIT_OUTPUT_DIR", _JS_COV_DIR),
+                          ("JEST_JUNIT_OUTPUT_NAME", "junit.xml"))}
 
 
 def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
@@ -151,9 +167,9 @@ def _load_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _js_routing(dev_dependencies: dict) -> str:
-    """The flag that moves this runner's coverage directory under .crapkit/, or
-    "" when package.json names neither runner or both.
+def _js_runner(dev_dependencies: dict) -> str | None:
+    """The runner whose flags this lane may carry, or None when package.json
+    names neither runner or both.
 
     `npm test` can run anything, so devDependencies is the only thing that names
     the runner — and naming it wrong is worse than the litter: jest exits on
@@ -162,21 +178,40 @@ def _js_routing(dev_dependencies: dict) -> str:
     already defaults to and doctor says so.
     """
     named = [runner for runner in sorted(_JS_REPORTS_DIR_FLAG) if runner in dev_dependencies]
-    return f" {_JS_REPORTS_DIR_FLAG[named[0]]}{_JS_COV_DIR}" if len(named) == 1 else ""
+    return named[0] if len(named) == 1 else None
+
+
+def _js_junit(runner: str, dev_dependencies: dict) -> tuple[str, str, tuple]:
+    """Flags, results_artifact and env for this runner's junit report, or three
+    empty values when the reporter it needs is not installed."""
+    package = _JS_JUNIT_PACKAGE.get(runner)
+    if package is not None and package not in dev_dependencies:
+        return "", "", ()
+    return f" {_JS_JUNIT_FLAGS[runner]}", _JS_RESULTS, _JS_JUNIT_ENV.get(runner, ())
 
 
 def _js_lane(package_json: str) -> LaneSpec | None:
     """A test script, or vitest/jest in devDependencies: either says the repo
-    already knows how to produce istanbul coverage."""
+    already knows how to produce istanbul coverage.
+
+    A named runner gets both of its output files routed under .crapkit/: the
+    coverage report, and the junit report the crashed-worker and no-new-failures
+    checks read. Init writing the lane without the second one left doctor
+    WARNing about the config init had just written.
+    """
     package = _load_json(package_json)
+    dev = package.get("devDependencies", {})
     script = _npm_test_script(package.get("scripts", {}))
-    command = (f"npm run {script} -- --coverage" if script
-               else _js_runner_command(package.get("devDependencies", {})))
+    command = (f"npm run {script} -- --coverage" if script else _js_runner_command(dev))
+    runner = _js_runner(dev)
     if command is None:
         return None
-    routing = _js_routing(package.get("devDependencies", {}))
-    artifact = _JS_ARTIFACT if routing else _JS_DEFAULT_ARTIFACT
-    return LaneSpec("js", command + routing, artifact, "istanbul", _JS_LANGUAGES)
+    if runner is None:
+        return LaneSpec("js", command, _JS_DEFAULT_ARTIFACT, "istanbul", _JS_LANGUAGES)
+    junit, results, env = _js_junit(runner, dev)
+    routing = f" {_JS_REPORTS_DIR_FLAG[runner]}{_JS_COV_DIR}"
+    return LaneSpec("js", command + routing + junit, _JS_ARTIFACT, "istanbul",
+                    _JS_LANGUAGES, results, env)
 
 
 def detect_lanes(markers: frozenset[str], package_json: str, *,
@@ -204,11 +239,18 @@ def _exclude_stanza() -> list[str]:
     return ["[exclude]", f"globs = [{_quoted(DEFAULT_EXCLUDES)}]", ""]
 
 
+def _lane_env(env: tuple[tuple[str, str], ...]) -> list[str]:
+    """The inline table a runner that takes its output path from the environment
+    needs, and nothing at all for one that takes a flag."""
+    pairs = ", ".join(f'{key} = "{value}"' for key, value in env)
+    return [f"env = {{ {pairs} }}"] if pairs else []
+
+
 def _lane_stanza(lane: LaneSpec, scope_names: tuple[str, ...]) -> list[str]:
     results = [f'results_artifact = "{lane.results_artifact}"'] if lane.results_artifact else []
     return ["[[lane]]", f'name = "{lane.name}"', f'command = "{lane.command}"',
             f'artifact = "{lane.artifact}"', *results, f'parser = "{lane.parser}"',
-            f"scopes = [{_quoted(scope_names)}]", ""]
+            *_lane_env(lane.env), f"scopes = [{_quoted(scope_names)}]", ""]
 
 
 def _scopes_for(lane: LaneSpec, scopes: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
@@ -246,8 +288,10 @@ _TEMPLATES = {
                    f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
     "istanbul": ("# [[lane]]", '# name = "js"',
                  '# command = "npx vitest run --coverage '
-                 f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR}"',
-                 f'# artifact = "{_JS_ARTIFACT}"', '# parser = "istanbul"'),
+                 f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR} '
+                 f'{_JS_JUNIT_FLAGS["vitest"]}"',
+                 f'# artifact = "{_JS_ARTIFACT}"',
+                 f'# results_artifact = "{_JS_RESULTS}"', '# parser = "istanbul"'),
 }
 
 
