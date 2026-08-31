@@ -809,7 +809,7 @@ $ crapkit doctor --json
 | Key | Meaning |
 |---|---|
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
-| `warnings` | The WARN findings: unmeasured directories, and lanes writing their artifacts at the repo root instead of under `.crapkit/`. Exit stays 0. |
+| `warnings` | The WARN findings: unmeasured directories, lanes writing their artifacts at the repo root instead of under `.crapkit/`, and lanes with no `results_artifact`, which cannot run the crashed-worker check or no-new-failures. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
 | `analysis_version` | The analysis semantics version. It plus `lizard` are the ratchet's metric stamp. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |

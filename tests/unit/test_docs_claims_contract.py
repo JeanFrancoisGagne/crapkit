@@ -55,6 +55,46 @@ def _table_row(text: str, first_cell: str) -> str:
     return rows[0]
 
 
+_TOML_BLOCK = re.compile(r"^```toml\n(.*?)^```", re.M | re.S)
+_SCOPES_LINE = re.compile(r"^scopes = \[(.*)\]$", re.M)
+_LANE_PAGES = ("README.md", "docs/lanes.md", "docs/configuration.md")
+
+
+def _with_scopes(body: str) -> str:
+    """A lane-only block, given the scopes it names. Half the examples on the
+    lanes page show a `[[lane]]` alone, and the loader refuses a config with no
+    scope — the language is irrelevant to what these assertions read."""
+    if "[[scope]]" in body:
+        return body
+    named = {name.strip(' "') for line in _SCOPES_LINE.findall(body)
+             for name in line.split(",")}
+    return "".join(f'[[scope]]\nname = "{name}"\npaths = ["{name}"]\n'
+                   f'languages = ["python"]\n\n' for name in sorted(named)) + body
+
+
+def _lane_examples():
+    """(page, config) for every fenced toml block in the docs that declares a lane."""
+    from crapkit.config import load_config_text
+
+    return [(page, load_config_text(_with_scopes(body))) for page in _LANE_PAGES
+            for body in _TOML_BLOCK.findall(_doc(page)) if "[[lane]]" in body]
+
+
+def test_every_lane_example_in_the_docs_comes_back_from_doctor_clean():
+    """A reader copies one of these blocks into their own repo. Four istanbul
+    examples and the lanes page's own opening lane declared no results_artifact,
+    so the copy came back with a WARN the page never mentioned."""
+    from crapkit.cli.admin import _doctor_results_artifacts
+    from crapkit.doctor import artifact_litter, scope_top_dirs
+
+    examples = _lane_examples()
+
+    assert len(examples) >= 6, "the blocks stopped being found, so nothing is checked"
+    for page, cfg in examples:
+        assert [f.text for f in _doctor_results_artifacts(cfg)] == [], page
+        assert artifact_litter(cfg.lanes, scope_top_dirs(cfg.scopes)) == (), page
+
+
 def _py_lanes():
     return detect_lanes(frozenset({"pyproject.toml"}), "")
 

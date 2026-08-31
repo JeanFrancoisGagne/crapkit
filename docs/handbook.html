@@ -566,11 +566,12 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <h2 id="lanes"><span class="sn">10</span>Lanes: how coverage arrives</h2>
 <p class="lede">crapkit runs no test framework of its own. A lane is your command, its artifact, and a parser.</p>
 <pre><code>[[lane]]
-name     = "unit"
-command  = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/unit"
-artifact = ".crapkit/cov/unit/coverage-final.json"
-parser   = "istanbul"          # or "coveragepy"
-scopes   = ["src"]</code></pre>
+name             = "unit"
+command          = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/unit --reporter=default --reporter=junit --outputFile=.crapkit/cov/unit/junit.xml"
+artifact         = ".crapkit/cov/unit/coverage-final.json"
+results_artifact = ".crapkit/cov/unit/junit.xml"
+parser           = "istanbul"          # or "coveragepy"
+scopes           = ["src"]</code></pre>
 <ul>
   <li><strong>Provenance:</strong> every artifact is stamped with the commit and duration that produced it. Stale artifacts are named, never silently reused. <code>--reuse-unchanged</code> reruns only lanes whose scope files moved.</li>
   <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code> and <code>retries</code>. A configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first.</li>
