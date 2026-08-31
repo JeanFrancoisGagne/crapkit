@@ -573,7 +573,7 @@ crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] bu
 <p><code>runs list</code> marks the row verify compares against today, and warns when a moved HEAD makes the snapshot stale. For a repo with no store at all, such as a CI clone, <code>verify --emit-baseline</code> on the main branch writes a commit-stamped TSV that <code>verify --baseline-tsv</code> reads in the pull request.</p>
 
 <h3>One rule, every reader</h3>
-<p>Since 0.4.5 the pick above has one implementation and six callers: <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code>, <code>ratchet prune</code> and <code>verify</code> all land on the same run. Two of them used to answer differently, which showed up as <code>worklist</code> ranking one snapshot while <code>next-item</code> handed out work from another, and as <code>ratchet seed</code> signing marks off a run <code>verify</code> had just refused.</p>
+<p>Two families read that timeline, and since 0.4.5 each has one answer. The views, <code>worklist</code>, <code>next-item</code>, <code>rescore</code> and <code>brief</code>, take the newest trusted run and stop there: a view compares nothing, so it has nothing to launder. The judges, <code>verify</code>, <code>ratchet seed</code> and <code>ratchet prune</code>, add the taint rule on top of that pick. Before, <code>worklist</code> could rank one snapshot while <code>next-item</code> handed out work from another, and <code>ratchet seed</code> could sign marks off a run <code>verify</code> had just refused, which is exactly how a failed verify's findings stop counting.</p>
 
 <h3>Naming a run that cannot serve</h3>
 <p><code>--baseline ID</code> is the deliberate escape, and it can name a run that exists and still cannot be measured against. That used to print the empty-store line, which sent people off to run <code>coverage</code> for a store they already had. It now names the run, the reason, and the runs that can:</p>
@@ -603,7 +603,7 @@ scopes           = ["src"]</code></pre>
 
 <h3>How the guard reads your command</h3>
 <p>A lane command runs under a shell, so both lane lints read it with the shell that will run it: <code>sh</code> on POSIX, <code>cmd.exe</code> on Windows. That is a character walk over the quotes, and on Windows over <code>^</code> escapes as well, not a whitespace split. So a quote that opens mid-token is one argument, <code>--cov-report=json:".crapkit/cov/unit dir/coverage.json"</code> included, and <code>-k ^"not slow^"</code> keeps its value in one piece.</p>
-<p>Write values in <strong>double</strong> quotes. They are the one form both shells read the same way. To cmd.exe a single quote is an ordinary character, so it hands pytest five words where you meant one value, and the lane writes no artifact. The guard refuses that lane at config load and says which shell it read with:</p>
+<p>Write values in <strong>double</strong> quotes. They are the one form both shells read the same way. To cmd.exe a single quote is an ordinary character, so <code>-m 'not slow'</code> arrives as two words: <code>-m</code> takes the first, and the second lands as a positional filter that narrows the run to nothing. The lane then writes no artifact. The guard refuses it at config load and names the shell it read with:</p>
 <pre><code>command = "python -m pytest -m 'not slow' --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
 
 $ crapkit doctor
@@ -769,8 +769,8 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 </div>
 
 <h3>What 0.4.5 caches, and where it lives</h3>
-<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the two churn caches. Its key is HEAD, the churn window and a digest of the tracked set, so it cannot answer for a tree it did not see; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
-<pre><code>$ ls .crapkit/*.json .crapkit/*.z
+<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the churn caches. Its key is HEAD, the churn window and a digest of the tracked set, so it cannot answer for a tree it did not see; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
+<pre><code>$ ls -1 .crapkit/*.json .crapkit/*.z
 .crapkit/cache.json
 .crapkit/churn-cache-v2.json
 .crapkit/churn-log-v2.json
@@ -906,7 +906,8 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 
 <h3>All six, below the git top</h3>
 <p>Nothing above assumes <code>crapkit.toml</code> sits at the git root. A package one or more directories down is the ordinary monorepo shape, and it needs no mode and no flag beyond <code>--repo</code>. 0.4.4 fixed the scoring half of it; the commit gate was still reading <code>git diff --cached</code> from the git top, so under a nested root the staged paths matched no scope, and a function at twice the ceiling committed with a warning. 0.4.5 fixed that, and the nine siblings that joined the same two path shapes. The gate now judges what you staged, named the way the rest of the run names it:</p>
-<pre><code>$ cd packages/api
+<pre><code>$ git add packages/api/app/route.py
+$ cd packages/api
 $ python -m crapkit hook-precommit          # what the git hook runs
 crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
   ccn  10  app/route.py:1  route( kind , hot , live , admin )
