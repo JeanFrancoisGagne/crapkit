@@ -1127,7 +1127,7 @@ falls inside a **12-second** freshness window, at most **25** of them, each judg
 the same per-file ladder. That is what catches source written through a shell heredoc or
 `python - <<'PY'`, which some harness modes use for every write.
 
-Three numbers, three reasons. The window keeps a later `ls` from re-advising a file that was
+Each bound has its own reason. The window keeps a later `ls` from re-advising a file that was
 already dirty before this command ran. The cap is there because PostToolUse waits this
 process out, so a large dirty tree would be a stall rather than a reason to judge all of it.
 And only Python is judged, because every other language stays the commit gate's business,
