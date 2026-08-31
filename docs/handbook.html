@@ -945,9 +945,9 @@ decompose before committing (coverage cannot save a function above the target).<
   <path class="arrow" d="M450 82 V 100"/>
   <rect class="boxi" x="20" y="104" width="860" height="62" rx="10"/>
   <text x="40" y="128" class="lbl" font-weight="700">phase 1 · size the mountain, cut the map</text>
-  <text x="40" y="148" class="sm mono">worklist --batches N → brief --batch N --json</text>
-  <text x="860" y="138" text-anchor="end" class="sm">file-disjoint batches, co-changing files together: a fleet plan where</text>
-  <text x="860" y="152" text-anchor="end" class="sm">no two agents share a source file · one process deals every packet</text>
+  <text x="40" y="148" class="sm mono">worklist --batches N · brief --batch M --json</text>
+  <text x="860" y="138" text-anchor="end" class="sm">N file-disjoint batches, one per agent, co-changing files kept together ·</text>
+  <text x="860" y="152" text-anchor="end" class="sm">M packets off the top of the CRAP queue, dealt by one process</text>
   <path class="arrow" d="M450 170 V 188"/>
   <rect class="box" x="20" y="192" width="860" height="72" rx="10"/>
   <text x="40" y="216" class="lbl" font-weight="700">phase 2 · the loop, solo or as a fleet</text>
@@ -958,7 +958,7 @@ decompose before committing (coverage cannot save a function above the target).<
   <text x="40" y="312" class="lbl" font-weight="700">phase 3 · steady state</text>
   <text x="860" y="312" text-anchor="end" class="sm">the termination rule ends the campaign · <tspan class="mono">digest</tspan> is the watchtower · the gate holds the line</text>
 </svg>
-<figcaption>Phase 0's ordering is the part teams get backwards. Seed and gate before fixing anything, so the cleanup outruns an inflow you already shut off.</figcaption>
+<figcaption>Phase 0's ordering is the part teams get backwards. Seed and gate before fixing anything, so the cleanup outruns an inflow you already shut off. In phase 1, N and M are unrelated numbers: N is agents, M is packets off the top of the CRAP queue. Two packets can fall in one batch and leave another batch with none, so give each agent a batch and let it pull its own items from there.</figcaption>
 </figure>
 
 <ul>
