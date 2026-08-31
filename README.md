@@ -188,6 +188,33 @@ ceiling. It adds no files to your repo, and it needs the crapkit CLI on PATH.
 A repo with no `crapkit.toml` costs a silent sub-50 ms no-op per edit. Other agent
 runtimes have no marketplace: copy `plugin/skills/*` into their skills directory instead.
 
+The hook registers on `Edit|Write`, which is every write that names a file. An agent that
+writes its source through a shell heredoc names none, so a `Bash` event is judged off the
+working tree instead. That half is yours to register, because it costs two
+git spawns per shell call. Add a second PostToolUse entry to your own settings, same
+command, matcher `Bash`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "crapkit claude-hook --protocol 1" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The cost is one `git rev-parse --show-toplevel` and one `git status --porcelain -z -uall`
+per shell call in any git repo, whether or not crapkit measures it: about 30 ms together
+on crapkit's own checkout, and more on a bigger tree. What comes back is the dirty or
+untracked `*.py` files written in the last 12 seconds, 25 at most, each judged the way an
+edit is. Python only, so a TypeScript or Go repo pays the two spawns and hears nothing.
+
 ## Languages
 
 14 languages, two coverage parsers. Coverage joins where a parser exists; everything else
@@ -449,7 +476,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. With `mutation_workers > 1` the worker worktrees are kept at `.crapkit/mutate-pool/` and re-prepared per run (30.6 s to build four on a 31,459-file repo, 0.46 s to re-prepare them); `--drop-pool` removes them and exits. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
 | `hook-precommit` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. |
-| `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only. The edit has landed, nothing is blocked, and `hook-precommit` stays the enforcement point. Exit 2 with three lines on stderr is the only thing it ever says: no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. Takes no `--repo`, because the root is the first `crapkit.toml` above the edited file and the upward walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it is judged off the working tree instead: the changed `*.py` files whose mtime falls inside a short freshness window (capped at 25), each through the same per-file ladder — which is what makes a `Bash` hook matcher useful for agents that write source through heredocs. It opens no snapshot and writes nothing. |
+| `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. Exit 2 with three lines on stderr is the only thing it ever says: no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing nine read-only tools. Every tool shells to the CLI's own `--json` surface, so the MCP view cannot drift from what the CLI reports. Answering from a kept in-process store was benchmarked and rejected: a packet's `source` would go stale behind the edit it describes. See [docs/agent-json.md](docs/agent-json.md#mcp-server). |
 
@@ -577,7 +604,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
 | 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
-| 5 | Tool error: lizard not importable, a lane produced no artifact or one that measured a different tree, a lane timed out past its retries, an override alert command failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
+| 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
@@ -632,7 +659,8 @@ coverage lane from what the repo already has: a pytest marker file (`pyproject.t
 the matching `run` for the rest), because a bare `python` binds to whichever venv the shell
 has active rather than the one the repo pins — see
 [The interpreter a lane binds to](docs/lanes.md#the-interpreter-a-lane-binds-to). Whatever
-it detects, it also leaves commented templates for the runners it did not find. Every lane
+it detects, it also leaves commented templates for the runners it did not find, and those
+carry the same launcher, so uncommenting one cannot hand the bare `python` back. Every lane
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](docs/lanes.md#where-artifacts-live).
 
