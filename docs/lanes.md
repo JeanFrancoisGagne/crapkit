@@ -13,10 +13,8 @@ parser = "coveragepy"
 scopes = ["calc"]
 ```
 
-Four required parts and one rule each. `results_artifact` is the fifth key and the only
-optional one here: leave it out and `doctor` WARNs, because the two checks that read a
-junit report — the crashed-worker trust check and no-new-failures — cannot run for the
-lane.
+Four required parts and one rule each, plus `results_artifact`, which is optional and on
+every lane on this page.
 
 | Part | Rule |
 |---|---|
@@ -24,12 +22,122 @@ lane.
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. |
 | `parser` | `istanbul` or `coveragepy`. Nothing else exists. |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
+| `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
+
+**Every lane on this page declares one**, because coverage alone cannot tell a finished
+suite from a suite that lost a worker: both write a coverage artifact. The junit report is
+the only thing that says which one happened, so a lane without one measures fine and
+verifies blind. `doctor` says so, per lane, with the flag to add:
+
+```
+$ crapkit doctor
+ok   config keys all recognized
+ok   scope 'calc': 1 files
+ok   every tracked source file belongs to a scope
+ok   1 lane(s) declared
+WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
+ok   lizard 1.24.0
+doctor: no problems found
+```
+
+A WARN, never a FAIL: the lane still scores. `crapkit init` writes both halves on the lanes
+it detects, so a repo scaffolded since 0.4.5 starts with the checks on.
 
 Output streams to `.crapkit/lane-<name>.log` while the command runs. Tail that file to
 supervise a long suite; crapkit prints nothing until the lane finishes.
 
 Every key, including the optional ones, is tabled in
 [configuration.md](configuration.md#lane).
+
+---
+
+## How a lane command is read
+
+The command runs through a shell, so crapkit reads it with the shell that will run it: sh
+on POSIX, cmd.exe on Windows. One reading feeds two readers. The lane guard uses it to
+decide whether a token narrows the run, and `doctor` uses it to decide which word is the
+runner and which words are files the repo owes.
+
+| What you write | How it reads |
+|---|---|
+| `-m "not live and not perf"` | One argument. Double quotes are the portable spelling: both shells drop them and hand the runner one token. |
+| `-m 'not live and not perf'` | Five arguments on Windows. cmd.exe has no single-quote rule, so pytest gets `'not`, `live`, `and`, `not`, `perf'` and the lane is refused with a hint. |
+| `-k ^"not slow^"` | One argument. Outside a quoted run cmd.exe drops the caret and hands on the character behind it, so the runner gets `-k "not slow"`. Inside a quoted run the caret stays: `-k "a^b"` reaches the runner with its caret. |
+| `--cov-report=json:"cov/py 1.json"` | One argument. A quote opens a quoted run wherever it sits, mid-token included. |
+| `-k "" tests` | Three arguments. An empty pair of quotes writes an empty argument, so `tests` stays the positional it is. Dropping it would slide `tests` onto `-k` and the narrowing lane would load clean. |
+| `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, and every segment that runs the runner is checked on its own. |
+| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them. A quoted `">"` is an argument and stays. |
+| `pytest --cov; echo done` | On sh the `;` ends the command. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
+| a non-breaking space in a value | Not a word break. Words break on space, tab and line endings, the way both shells break them, so a value pasted out of rendered docs stays one token. |
+
+A command the shell itself would refuse (a quote that never closes) falls back to a
+whitespace split. A rough lint beats a crash at config load.
+
+### The refusals, as they print
+
+Single quotes on Windows, the most common way to trip the guard:
+
+```
+# command = "python -m pytest -m 'not live and not perf' --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'live' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+EXIT=3
+```
+
+The same command in double quotes loads, and so does the caret spelling
+(`-k ^"not slow^"`), the mid-token quote
+(`--cov-report=json:".crapkit/cov/py report.json"`) and the redirected form
+(`... --cov-report=json:.crapkit/cov/py.json > lane.log 2>&1`). All four come back
+`doctor: no problems found`, exit 0.
+
+A second run after `&&` narrows as much as the first, so the segment it sits in is checked
+too:
+
+```
+# command = "python -m pytest --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json && python -m pytest calc/hot.py"
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'calc/hot.py' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+EXIT=3
+```
+
+The refusal names a word from the segment it read, never from the next command.
+
+On Windows a `;` starts nothing, so what follows it is pytest's:
+
+```
+# command = "python -m pytest --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json; echo done"
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'echo' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+EXIT=3
+```
+
+Write that lane as two `&&` segments and both shells agree about it.
+
+### What doctor does with the same reading
+
+`doctor` checks the runner of every segment, not just the first word of the line. A quoted
+interpreter path (`"C:/Program Files/Python/python.exe" -m pytest ...`) is one word, not
+two; a dead runner after `&&` is still a dead runner; and a path inside a quoted
+`-k "tests/gone.py or x"` is a marker expression, not a file the repo owes.
+
+It also starts each distinct first word once, with `--version`, and FAILs the lane when the
+shell cannot run it. A stock Windows PATH carries a `python.exe` stub with no Store app
+behind it: it resolves, it exits 9009, and before 0.4.5 `doctor` called that repo clean
+while `coverage` exited 5 on the same command. Reproduced here with a `python3` on PATH
+that exits 9009:
+
+```
+$ crapkit doctor
+ok   config keys all recognized
+ok   scope 'calc': 1 files
+ok   every tracked source file belongs to a scope
+FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) — the lane cannot start, so its scopes can only ever score no-lane
+ok   lizard 1.24.0
+doctor: 1 problem(s)
+```
+
+The probe is memoized on the word, so a repo declaring 14 lanes over 2 runners starts two
+processes, not fourteen.
 
 ---
 
@@ -92,6 +200,114 @@ That warning is never a `FAIL`. A lane writing at the root measures exactly what
 did, so breaking an existing gate over tree hygiene would cost more than the litter. A lane
 that writes inside a scope's own tree (`web/coverage/` beside the `web/src` it measures) is
 that package's business and is not warned about.
+
+### What the istanbul parser reads
+
+Your runner writes `coverage-final.json` and you never open it. Read this section only if
+you are building one by hand, converting another format into it, or staring at a lane that
+scores nothing.
+
+crapkit scores functions, so `fnMap` is the part that decides everything. Per file in the
+artifact:
+
+| Key | What crapkit does with it |
+|---|---|
+| `fnMap` | The function list. Every entry needs `decl.start.line`. `loc.end.line` closes the span and falls back to the start line. A missing `name` reads as `(anonymous)`. |
+| `f` | Call counts per `fnMap` id. |
+| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`. This is the function's coverage whenever it has one branch. |
+| `statementMap` and `s` | The fallback for a function with no branch in its span, and the only source of the uncovered lines `verify` measures a diff against. |
+
+A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
+it was called, 0.0 when it was not.
+
+The outer object is keyed by path. crapkit strips the crapkit root off an absolute key and
+takes any other key as it stands, so root-relative keys work too. `path_prefix` is
+coverage.py's key and does nothing here.
+
+An artifact that names no functions is not an error. It parses, every scored function falls
+to `untested`, and nothing says so. Same repo, same two TypeScript files, one lane whose
+command writes the artifact by hand:
+
+```
+$ crapkit coverage        # artifact holds path, statementMap and s
+run 1 @ 6f736a5b12a: 2 functions scored — 0 measured / 2 untested / 0 no-lane / 0 cc-only, 2 over target 6, CRAP load 32.0, grade F
+$ crapkit coverage        # same file plus fnMap, f, branchMap and b
+run 2 @ 6f736a5b12a: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 7.39, grade A+
+```
+
+Both exit 0. That is the [wrong `path_prefix`](#running-from-a-subdirectory) failure from the
+other side: the lane ran, the artifact parsed, and the score is wrong. `0 measured` on a lane
+that ran is the number to read.
+
+One shape does fail loudly. An `fnMap` entry with no `decl` exits 5:
+
+```
+crapkit: lane 'js' FAILED: unparseable istanbul artifact: 'decl'
+```
+
+### What else lives in .crapkit/
+
+Everything crapkit writes goes in one gitignored directory beside `crapkit.toml`. One file
+is durable state, a few are output you asked for, and the rest are caches. Delete a cache
+and the next run rebuilds it, a little slower. A cache that is unreadable, torn or keyed for
+another format reads as cold, never as a crash, so two crapkit versions can share a working
+tree.
+
+After one `coverage`, one `worklist` and one `coupling` on a one-file repo:
+
+```
+$ ls .crapkit .crapkit/cov
+.crapkit:
+artifacts.json
+cache.json
+churn-cache-v2.json
+churn-log-v2.json
+churn-log-v2.z
+coupling-cache-v1.json
+cov
+crap.sqlite
+lane-py.log
+stat-stamps.json
+
+.crapkit/cov:
+junit-py.xml
+py.json
+```
+
+| Path | What it holds | Key |
+|---|---|---|
+| `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
+| `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
+| `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. | |
+| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took. Drives `--reuse-unchanged` and `doctor --tune`. | |
+| `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
+| `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
+| `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
+| `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. |
+| `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
+| `mutate-pool/` | The `w0..wN` worker worktrees `mutation_workers > 1` keeps. Removed by `crapkit mutate --drop-pool`. | |
+| `report.html` | Where `crapkit report` writes by default. | |
+
+Since 0.4.5 the rollup is filled once per run and pruned with its run, which is why `trend`
+answers in 0.04 s warm on a corpus where it used to rescan 4.3 M rows. It means `trend` and
+`report` write to `crap.sqlite` on a cold rollup, best effort: they read as before on a
+checkout they cannot write to, just without the speedup.
+
+The date is in the churn key because `--since=12 months ago` is measured against the wall
+clock, so yesterday's map describes a window one day wider than today's. The tracked set is
+in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
+lists, and the index moves without HEAD: `git rm --cached src/util.py` leaves the sha alone
+and still has to retire every pair naming that file.
+
+Two thresholds bypass the coupling cache. What is stored is the ranking at
+`--min-support 5` and `--min-confidence 0.5`, so `--top` reads it and either threshold off
+its default recomputes: serving a wider question from a narrower file would drop the pairs
+the wider thresholds exist to surface.
+
+The version marker is in the file name on purpose. 0.4.3 and 0.4.5 sharing one working tree
+each read the other's cache as cold and rewrote it, so every run of both rebuilt the map.
+Different formats, different files, both warm. A warm 0.4.4 cache is adopted once and its
+file removed rather than left behind.
 
 ---
 
@@ -203,7 +419,7 @@ crapkit: lane 'js': file filter 'src/grade.ts' combined with --coverage silently
 
 Exit 3.
 
-A path after one of the vitest options the guard knows is that option's value, not a
+A path after one of the 25 vitest options the guard knows is that option's value, not a
 filter: `--config vitest.ci.ts`, `--exclude src/legacy.cjs` and
 `--reporter ./tools/my-reporter.ts` all pass, and so do `-c`, `-t`, `--coverage.exclude`,
 `--coverage.extension`, `--coverage.include`, `--coverage.provider`,
@@ -258,6 +474,14 @@ The `--cov` family of flags comes from the `pytest-cov` package, not pytest itse
 `unrecognized arguments: --cov`. It has to live in the environment the SUITE runs in;
 `pip install "crapkit[py]"` pulls it beside crapkit when the two share a venv, and
 `crapkit init` probes the lane's python and prints this fix when the plugin is missing.
+Write that install command in double quotes: single quotes do not survive cmd.exe.
+
+The probe asks the interpreter that runs pytest, found in the segment that holds the
+`pytest` token. `coverage run -m pytest --cov=pylib && coverage json` names no interpreter
+in front of pytest, so nothing is asked and no note is printed. If cmd.exe cannot start that
+interpreter at all, the note names the word to change instead of talking about pytest-cov,
+and on a Windows PATH holding only the `py` launcher `init` writes `py` rather than a
+`python3` the first `coverage` could not run.
 
 ```toml
 [[lane]]
@@ -299,11 +523,9 @@ scoped and isolated, opt out explicitly with `full_suite = false` on the lane.
 
 A flag's value is not a positional. `-n 8`, `-o timeout=300`, `-p no:randomly` and
 `--deselect tests/test_x.py::test_slow` all pass: the guard knows the pytest options that
-read the next token, and treats a `key=value` token as a value everywhere. The guard reads
-the command the way the shell running it will (sh on POSIX, cmd.exe on Windows), so a
-quoted value is one token: `-m "not live and not perf"` is one marker expression, not four
-positionals. Use double quotes: cmd.exe does not treat `'` as a quote, so a single-quoted
-value reaches pytest one word per space there, and the guard says so on Windows. In
+read the next token, and treats a `key=value` token as a value everywhere. Quoting is the
+shell's, and [How a lane command is read](#how-a-lane-command-is-read) has the whole rule:
+`-m "not live and not perf"` is one marker expression, not four positionals. In
 `crapkit.toml`, a single-quoted TOML string keeps the double quotes unescaped:
 `command = 'python -m pytest -m "not live and not perf" --cov=pylib ...'`. After a flag it
 does not know, a bare word is that flag's value too — only a path or a node id
@@ -408,11 +630,35 @@ week. If you see that, check the version before you check your config. The churn
 moved to new file names, so a map laid down with top-relative paths is ignored rather than
 reused, and a 0.4.3 sharing the repo keeps its own.
 
-One piece was still git-top-relative in 0.4.4: the pre-commit gate reads staged paths from
-`git diff --cached`, which answers from the git top whatever the root is. Those paths matched
-no scope under a nested root, so the gate gated nothing and printed
-`staged file(s) belong to no scope and were not gated` naming files that start with the
-package directory. 0.4.5 fixes it. Scoring, worklist and churn are unaffected.
+### The gate gates below the top since 0.4.5
+
+0.4.4 fixed churn and left the pre-commit gate reading `git diff --cached`, which answers
+from the git top whatever the root is. Those paths matched no scope under a nested root, so
+the gate gated nothing and printed `staged file(s) belong to no scope and were not gated`
+naming files that start with the package directory. A function at twice the ceiling
+committed with a warning.
+
+Since 0.4.5 every git spawn runs with `diff.relative=true` and `core.quotePath=false`, and
+cat-file asks for `:./path`. Every reader that joined top-relative paths against
+root-relative rows now agrees: the commit gate, `verify`'s changed files, `rescore --gate`,
+lane reuse (which could republish a stale artifact's score), `mutate`'s targets, the
+ratchet's rename follow, and the per-edit advisory's own diff. `core.quotePath=false` is
+the other half: git quotes a non-ASCII path in its diff output and `ls-files` does not, so a
+dirty file with an accent in its name was invisible to lane reuse.
+
+Staged from the git top, gated from `packages/api`, one directory down:
+
+```
+$ git add -A                                   # run at the git top
+$ crapkit hook-precommit                       # run in packages/api
+crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+  ccn   8  calc/grade.py:17  rank( a , b , c , d , e )
+decompose before committing (coverage cannot save a function above the target).
+```
+
+Exit 6, and the path in the row is root-relative like every other crapkit row. A staged file
+that sits **above** the crapkit root is outside the diff by design, and is no longer named
+in that warning.
 
 ---
 
@@ -491,15 +737,42 @@ crapkit: lane 'slow' FAILED: lane 'slow' timed out after 2s (attempt 2); log: ..
 `.crapkit/lane-slow.log`:
 
 ```
-$ python -c "import time; time.sleep(30)"
+$ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 
 [crapkit] timed out after 2s; killed
 
 --- attempt 2 ---
-$ python -c "import time; time.sleep(30)"
+$ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 
 [crapkit] timed out after 2s; killed
 ```
+
+### The kill takes the whole process tree
+
+`command` runs under a shell, so the shell is the child and your runner is a grandchild.
+Killing the shell alone leaves the suite running with nothing waiting on it. Since 0.4.5
+the command starts in its own process group and the deadline kills the group: `taskkill /T`
+on Windows, `killpg` on POSIX. crapkit waits for the tree to die before it moves on, so the
+working directory the lane ran in is free.
+
+The lane above spawns a grandchild that appends a line to `ticks.txt` twice a second for
+30 s. Two attempts at a 2 s deadline, and the file stops growing the moment the deadline
+lands:
+
+```
+$ crapkit coverage
+crapkit: lane 'slow' FAILED: lane 'slow' timed out after 2s (attempt 2); log: ...\.crapkit\lane-slow.log
+crapkit: every lane failed: lane 'slow' timed out after 2s (attempt 2); log: ...\.crapkit\lane-slow.log
+EXIT=5
+$ wc -l < ticks.txt
+10
+$ sleep 5; wc -l < ticks.txt
+10
+```
+
+The same bounded spawn backs `mutation_timeout_seconds` and `init`'s pytest-cov probe, so a
+looping mutant is cut instead of outliving the run that gave up on it. The lane log still
+streams while the command runs.
 
 ---
 
@@ -614,6 +887,20 @@ run 2 @ df858be0149: 1 functions scored — 1 measured / 0 untested / 0 no-lane 
 
 A warning, never a failure: deleting a test file is a legitimate way to get there. `verify`
 reports **any** shrink against its own baseline, which is the strict half of the same check.
+
+Both counts are optional and neither absence is an error. A baseline recorded before the
+lane declared a `results_artifact` carries no count and compares nothing. A lane that wrote
+no junit this run gets one line naming the gap. Here the baseline had a junit and the lane
+that ran under `verify` had lost it:
+
+```
+$ crapkit verify
+warning: lane 'py' wrote no test counts this run (no results_artifact was parsed), so the baseline's 1 tests cannot be compared
+verify OK @ 437a254ba09 vs baseline 437a254ba09 (2 changed files)
+```
+
+Reading that absent count as zero is what used to turn such a run into a KeyError, after
+the lane had already run.
 
 ---
 

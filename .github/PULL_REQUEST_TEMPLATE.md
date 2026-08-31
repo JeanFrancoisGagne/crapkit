@@ -10,10 +10,14 @@
 
 ## Checks
 
-- [ ] crapkit's own gate passed on my commits (`core.hooksPath` is set to `git-hooks`, so every commit ran `python -m crapkit hook-precommit` and came back clean)
+<!-- The rules these come from live in CONTRIBUTING.md. -->
+
+- [ ] Every function I added or touched sits at ccn 6 or lower, and the gate ran on my commits (`git config core.hooksPath git-hooks`, so each commit ran `python -m crapkit hook-precommit` and came back clean)
 - [ ] `python -m crapkit verify` is green on this branch
-- [ ] `python -m pytest -q` is green, unit and e2e
-- [ ] Docs updated, or nothing a user can see changed
+- [ ] `python -m pytest tests/unit` is green
+- [ ] `python -m pytest -n 8 tests/e2e` is green (`-n 8` needs pytest-xdist, which the dev extra ships; it turns about 8 minutes of e2e into about 1m30)
+- [ ] Docs updated in the same commit if I renamed a subcommand or reworded a message a page quotes, so the docs contract tests stay green
+- [ ] `CHANGELOG.md` has a line for this change under the unreleased heading, or nothing a user can see changed
 
 ## Worth a second look
 

@@ -57,6 +57,14 @@ def flags(name: str) -> set[str]:
     return {opt for action in _subcommands()[name]._actions for opt in action.option_strings}
 
 
+def flag_help(name: str, flag: str) -> str:
+    """One subcommand's help text for one flag, as `--help` prints it."""
+    for action in _subcommands()[name]._actions:
+        if flag in action.option_strings:
+            return action.help or ""
+    raise AssertionError(f"{name} declares no {flag}")
+
+
 def test_the_readme_documents_every_subcommand_the_parser_defines():
     assert defined() - documented() == set(), "add a Subcommands row for each"
 
@@ -87,6 +95,21 @@ def test_doctor_takes_the_plugin_root_flag_the_readme_documents():
     one `doctor` mode an operator reaches for without a repo in hand. A row
     naming a flag argparse never got is a documented exit 2."""
     assert "--plugin-root" in flags("doctor")
+
+
+def test_the_gate_help_names_the_exemption_the_gate_applies():
+    """Two commands exempt on a mark and they do not exempt the same functions.
+    `rescore --gate` drops a breach only when its CRAP sits at or under the
+    mark: `_unmarked_breaches` in cli/scoring.py keeps every row where
+    `round(v.crap, 4) > mark`. The pre-commit hook exempts on the mark
+    existing, because a staged blob carries no coverage to score. Help that
+    says a mark "already covers" the function spells the hook's rule on the
+    command that does not use it, so a marked function past its mark reads as
+    exempt and the exit 6 arrives as a surprise. README's `rescore` row states
+    the CRAP rule; this pins the parser to it."""
+    text = flag_help("rescore", "--gate")
+    assert "at or under their ratchet mark" in text
+    assert "already covers" not in text
 
 
 # --- one parser build, one README read ---------------------------------------

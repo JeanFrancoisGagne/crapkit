@@ -17,7 +17,7 @@ body:
       label: What you ran, and what you expected
       description: The exact command line first. Then one line on what should have come back.
       placeholder: |
-        python -m crapkit coverage
+        crapkit coverage
         Expected a scored run. Got exit 7 and no artifact.
     validations:
       required: true
@@ -38,8 +38,9 @@ body:
 
         [[lane]]
         name = "py"
-        command = "python -m pytest --cov=mypkg --cov-branch --cov-report=json:.crapkit/cov/py.json"
+        command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml"
         artifact = ".crapkit/cov/py.json"
+        results_artifact = ".crapkit/cov/junit-py.xml"
         parser = "coveragepy"
         scopes = ["src"]
     validations:
@@ -60,7 +61,28 @@ body:
     id: doctor
     attributes:
       label: crapkit doctor
-      description: Optional. It answers most of the follow-up questions in one paste.
+      description: >
+        The whole report. It answers most of the follow-up questions in one
+        paste, and since 0.4.5 it answers two more on its own: it FAILs a lane
+        whose first word cannot start, and it WARNs on a coveragepy or istanbul
+        lane with no `results_artifact`, naming the checks that cannot run
+        without one.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: plugin
+    attributes:
+      label: crapkit doctor --plugin-root
+      description: >
+        Only for a bug in the Claude Code plugin: the advisory hook, the MCP
+        server, or an installed plugin that disagrees with the CLI. With no
+        path it reads Claude Code's plugin directory and prints the root it
+        picked (`crapkit doctor: checking <path>`), then one line per
+        disagreement. It prints nothing else when the two agree, and that
+        silence is worth pasting too. Give it a path to check a plugin
+        somewhere else: the plugin root or any directory above it.
       render: shell
     validations:
       required: false
@@ -68,7 +90,13 @@ body:
   - type: input
     id: env
     attributes:
-      label: OS and Python
-      placeholder: Windows 11, Python 3.12.4
+      label: OS, Python, and how crapkit is installed
+      description: >
+        The install matters as much as the version. crapkit reads a lane
+        command with the shell that will run it, cmd.exe on Windows and sh
+        everywhere else, so the same command can pass on one and be refused on
+        the other. And a pipx or uv-tool install puts crapkit beside a python
+        that is not the one running your suite.
+      placeholder: Windows 11, Python 3.12.4, pip install -e in the project venv
     validations:
       required: true

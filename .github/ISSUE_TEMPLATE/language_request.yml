@@ -8,10 +8,15 @@ body:
         crapkit reads 14 languages today: typescript, tsx, javascript, python,
         swift, go, rust, shell, powershell, cpp, objectivec, vue, java, zig.
 
-        Complexity comes from lizard. Coverage comes from two parsers and no
-        others: `istanbul` and `coveragepy`. A language with neither still
-        scores. Mark the scope `coverage_optional` and it ranks on complexity
-        alone, which is what swift, go, rust, shell and powershell do here.
+        Complexity comes from lizard, except where lizard is wrong or silent:
+        crapkit ships its own readers for Rust match arms, shell and
+        PowerShell. So "lizard does not read it" is a bigger job, not a
+        refusal.
+
+        Coverage comes from two parsers and no others: `istanbul` and
+        `coveragepy`. A language with neither still scores. Mark the scope
+        `coverage_optional` and it ranks on complexity alone, which is what
+        swift, go, rust, shell and powershell do here.
 
   - type: input
     id: language

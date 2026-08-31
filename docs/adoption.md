@@ -20,6 +20,13 @@ in the key, so re-cutting scopes leaves every recorded mark exactly where it was
 coarse, and split a scope the day you actually want a different ceiling or a different test
 command for part of it.
 
+When you do split, a nested scope wins over the scope that contains it. Declare `src` and
+then `src/web`, and every file under `src/web` belongs to `src/web`: for scoring, for lane
+reuse, for `test-scoped` routing, and for the ceiling `crapkit brief` hands an agent. Since
+0.4.5 that is one rule with one answer. 0.4.4 answered it three ways, so a repo that already
+nests scopes may see files change scope on its next scan, and the per-scope rollups and
+ceilings move with them. A config whose scopes do not nest sees no change.
+
 ## Exclude, lane, or coverage_optional
 
 Three ways to stop a file reading as untested debt, and they are not interchangeable.
@@ -103,6 +110,81 @@ Once it has happened, two escapes, both legitimate:
 
 `crapkit runs list` prints `verdict=-` on runs that rendered no verdict. See
 [The trusted baseline](../README.md#the-trusted-baseline).
+
+Since 0.4.5 the same failure also blocks `crapkit ratchet seed` and `crapkit ratchet prune`,
+which used to take the newest trusted run and would happily sign marks off a `coverage` run
+made after the failure. They now walk back with `verify` and say what they stepped over
+(`skipped failed verify run 2`). If the failure stands in front of every trusted run there
+is, both refuse and say a fresh `coverage` would be refused the same way. That is the case
+you hit by running `verify` before seeding, so seed first
+([ratchet.md](ratchet.md#seed-and-prune-pick-the-run-verify-picks)).
+
+## Planning a campaign
+
+Once the repo is seeded and green, somebody has to decide how many sessions run at once and
+what that costs. The facts a plan needs, in the order it meets them. The timings come from
+the 31,459-file repo the 0.4.5 performance work was refereed against.
+
+**Two fan-outs, and the two N count different things.** `crapkit brief --batch N` emits one
+packet per queue item, top N, and the orchestrator hands one packet to one session: its N is
+a packet count. `crapkit worklist --batches N` cuts the active list into at most N groups
+that share no file, and each group is one agent's territory: its N is an agent count.
+Disjoint file sets are what make the resulting diffs merge, so the batches are the shape to
+reach for once a session does more than one function.
+
+The packets do not deal themselves one per batch, because the two commands rank
+differently: `worklist` ranks by risk, which is ccn times recency-weighted churn, and the
+queue behind `brief --batch` ranks by CRAP. On a six-file fixture repo:
+
+```
+$ crapkit worklist --batches 3
+batch 1: 6 items in 3 files: calc/charlie.py, calc/delta.py, calc/foxtrot.py
+batch 2: 2 items in 1 files: calc/alpha.py
+batch 3: 4 items in 2 files: calc/bravo.py, calc/echo.py
+```
+
+`crapkit brief --batch 3` on that same run returned packets for `calc/alpha.py`,
+`calc/echo.py` and `calc/bravo.py`: batch 2 once, batch 3 twice, batch 1 never. So an agent
+holding a batch briefs its own rows. Every `batches[].entries[]` row carries `path` and
+`function`, which are the two arguments `brief` takes, so the session runs one
+`crapkit brief PATH "FUNCTION"` per item it picks up.
+
+**One `brief --batch N` per wave, never N `brief` calls**, when it is the orchestrator
+dealing packets. The batch call reads the store, the churn log and the ratchet file once,
+and since 0.4.5 it shingles the repo once for the whole batch instead of once per packet. A
+batch of 5 went from 11.8 s to 5.2 s, output byte-identical. That saving is the
+orchestrator's; a session briefing the handful of items in its own batch pays a cold start
+either way.
+
+**The coupling cache is per checkout, and the first run in each pays for it.** Ranked
+co-change pairs live in `.crapkit/coupling-cache-v1.json`, which `init` already gitignores
+along with the rest of `.crapkit/`. Warm, `coupling` costs 0.11 s instead of 1.05 s and
+`worklist --batches` 62% less. A fleet of ten worktrees is ten cold runs, once each. Passing
+`--min-support` or `--min-confidence` off their defaults bypasses the cache every time, so
+keep the fleet on the defaults unless somebody is investigating.
+
+**`mutate` with `mutation_workers > 1` leaves worktrees on disk.** The workers now keep their
+worktrees under `.crapkit/mutate-pool/w0..wN` and re-prepare them per run, which took a run's
+setup from 30.6 s to 0.46 s. What is left behind is one full checkout of the repo per worker,
+and **the pool is not size-bounded**: budget for it on a big tree, and reclaim it with
+`crapkit mutate --drop-pool`. Single-worker runs mutate the working tree as they always did
+and leave nothing. A second `mutate` in the same repo finds the pool locked and falls back to
+a throwaway base, so it is slower rather than wrong.
+
+**`trend` and `report` write.** Both fill a per-run rollup table on first read, which is what
+takes `trend` from 4.58 s to 0.04 s. A session holding a checkout it must not write to should
+not be the one running them, though the write is best effort and neither command fails when
+it cannot land.
+
+Nothing skips `verify`, so budget one full run per session that finishes an item. Caching a
+verdict on HEAD plus the dirty file names was measured for 0.4.5 and rejected: that key
+cannot see a second edit to a file that was already dirty, and a gate that misses one edit is
+worse than a slow gate.
+
+Upgrading crapkit mid-campaign costs one commit: 0.4.5 measures at analysis version 8 where
+0.4.4 measured at 7, so every existing mark is refused until somebody runs `crapkit ratchet
+seed` and commits the restamped file. Do it once, on one branch, before the fleet fans out
+([ratchet.md](ratchet.md#upgrading-to-045-analysis-version-8)).
 
 ## Put repo traps in `notes`
 

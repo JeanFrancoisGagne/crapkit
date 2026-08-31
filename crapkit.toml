@@ -1,7 +1,7 @@
 [crapkit]
 target = 6
 notes = [
-  "tests/unit is the 6-second suite and the one `crapkit test-scoped` runs; tests/e2e drives the CLI against real git repos in tmp dirs and takes about 5 minutes. Both run before a change is done.",
+  "tests/unit is the in-process suite and the one `crapkit test-scoped` runs: 2,283 tests, about a minute serially and about 16 s at `-n 8`. tests/e2e drives the CLI against real git repos in tmp dirs: 595 tests, about 1m30 at `-n 8` and about 8 minutes serially. Both run before a change is done.",
   "Every function crapkit ships stays at ccn <= 6. The ceiling is not a number to argue with: decompose the function, never raise it.",
 ]
 

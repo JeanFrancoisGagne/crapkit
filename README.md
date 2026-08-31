@@ -62,8 +62,28 @@ out to your own test runner, and the runner needs its coverage package installed
 Without it the lane produces no artifact and `coverage` exits 5 quoting the runner's own
 error. For pytest, `init` probes the python its lane will run and prints the install
 command when `pytest_cov` is missing; `pip install "crapkit[py]"` pulls the plugin
-alongside crapkit when the two share a venv. The two quickstarts below walk a real repo
-end to end.
+alongside crapkit when the two share a venv. On a Windows PATH holding only the `py`
+launcher it writes `py`, not a `python3` the lane could never run, and when cmd.exe cannot
+start the interpreter at all (exit 9009, the Store alias) it names that instead of guessing
+at pytest-cov. The two quickstarts below walk a real repo end to end.
+
+**On Windows a lane command is read by cmd.exe**, the shell that will run it, not by sh.
+Double quotes are the portable quoting. A single-quoted value is refused at config load
+with exit 3, because cmd.exe would hand pytest five words and the lane would write no
+artifact:
+
+```
+# the lane in crapkit.toml
+command = "python -m pytest -m 'not live and not perf' --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
+
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'live' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+```
+
+Write it `-m "not live and not perf"`. Carets, `&&` and `|` segments, redirections and
+empty quoted arguments all read the way the shell reads them, so a chained lane
+(`cd tests && python -m pytest --cov ...`) is checked one segment at a time. `doctor` reads
+a lane the same way, and FAILs one whose runner will not start.
 
 ## Install
 
@@ -91,24 +111,67 @@ crapkit 0.4.4
 
 `python -m crapkit` works identically to the console script and is what to use from a
 source checkout. Every subcommand accepts `--repo PATH` (default: the current directory),
-so you never have to `cd` into the repo you are scoring. The flag goes after the
-subcommand; [Subcommands](#subcommands) shows both orders.
+so you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
+where the flag goes.
 
-### Upgrading on Windows
+## Upgrading from 0.4.4
+
+**Run `crapkit ratchet seed` first.** Shell cognitive complexity now nests, which is
+analysis version 8, and marks measured under version 7 are not comparable. Until you
+re-seed, `verify` refuses at exit 3:
+
+```
+$ crapkit verify
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`
+```
+
+Only shell and PowerShell cognitive numbers move. `ccn` does not, so a re-seed re-stamps
+the file and leaves the marks where they were.
+
+Five more things change under you. Three of them need nothing from you:
+
+- **New cache files.** `.crapkit/coupling-cache-v1.json` joins `churn-cache-v2.json` and
+  `churn-log-v2.z`. A warm 0.4.4 churn cache is adopted once and its file removed, and
+  `.crapkit/` is already gitignored, so nothing new reaches your index.
+- **`trend` and `report` write.** Both read a per-run rollup table, filled once per run and
+  pruned with its run, instead of rescanning every scored row. A read-only `.crapkit/`
+  costs the speedup, never the command.
+- **Nested scopes may move files.** One predicate decides scope ownership now, and the
+  deepest declared path wins, so a repo whose `[[scope]]` paths nest inside each other can
+  see files change scope, rollup and ceiling on the next scan. Scopes that do not nest see
+  no change.
+
+The other two put something in front of you:
+
+- **`mutate` keeps a worktree pool.** With `mutation_workers > 1` the worker worktrees now
+  live under `.crapkit/mutate-pool/` between runs and are re-prepared each run, which is
+  the setup cost gone (30.6 s to build four on a 31,459-file repo, 0.46 s to re-prepare
+  them). The pool is not size-bounded and nothing sweeps it: `crapkit mutate --drop-pool`
+  removes it and exits. Single-worker runs are untouched.
+- **`doctor` WARNs on a lane with no `results_artifact`.** Every `coveragepy` or `istanbul`
+  lane written before 0.4.5 gets one, with the two lines that fix it. Coverage is
+  unaffected. What the lane cannot feed without a results file is the crashed-worker check
+  and the no-new-failures check (exit 8).
+
+### The exe lock on Windows
 
 `uv tool upgrade crapkit`, and `pip install -U` into a tool venv, fail with `os error 32`
 ("The process cannot access the file because it is being used by another process") while a
 crapkit MCP server is live: an agent session spawns `crapkit.exe mcp`, which holds the
 launcher, and Windows will not overwrite a running executable. The venv upgrades before
-that copy fails, so `crapkit --version` already reports the new version and the launcher is
-the only stale piece. Quit the agent session and rerun the upgrade, or rename the locked
-exe aside (Windows allows renaming a running one) and copy the new one in; the `.old` file
-goes at the next reboot.
+that copy fails, so `crapkit --version` already reports the new version and only the
+launcher is stale. Quit the agent session and rerun the upgrade, or rename the locked exe
+aside (Windows allows renaming a running one) and copy the new one in. Two lines in
+cmd.exe, where both `%` variables expand:
 
+```bat
+move %USERPROFILE%\.local\bin\crapkit.exe %USERPROFILE%\.local\bin\crapkit.exe.old
+copy %APPDATA%\uv\tools\crapkit\Scripts\crapkit.exe %USERPROFILE%\.local\bin\crapkit.exe
 ```
-mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
-cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe
-```
+
+Git Bash has no `move` and passes `%APPDATA%` through as literal text, so that block
+fails there on its first line. Its form is `mv` and `cp` over `"$USERPROFILE"` and
+`"$APPDATA"`, which Git Bash sets to the same two directories.
 
 ## The Claude Code plugin
 
@@ -176,10 +239,21 @@ different powers:
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
 
 Both hooks exempt a function the committed ratchet already carries a mark for, so touching
-signed debt never refuses a commit. `verify` is what fails a mark that rises. The
-pre-commit hook reports each exemption count on stderr (`staged function(s) carry a
-ratchet mark and were not gated`), and says the same about a staged file no `[[scope]]`
-claims, so a new top-level directory cannot go ungated in silence.
+signed debt never refuses a commit. `verify` is what fails a mark that rises. Since 0.4.5
+its gate exempts a touched function whose fresh CRAP sits **at or under** its mark, the
+rule `rescore --gate` already applied; push it past the mark and the gate fires again. The
+pre-commit hook still exempts on the mark's existence alone, on purpose: a staged blob has
+no coverage, so there is no fresh CRAP to compare against. It reports each exemption count
+on stderr (`staged function(s) carry a ratchet mark and were not gated`), and says the same
+about a staged file no `[[scope]]` claims, so a new top-level directory cannot go ungated
+in silence.
+
+**The crapkit root does not have to be the git top.** Since 0.4.5 every git spawn runs with
+`diff.relative=true` and `core.quotePath=false`, so a `crapkit.toml` in `packages/api`
+gates that package's own staged files and names them `app/m.py`, not
+`packages/api/app/m.py`, and a dirty non-ASCII path is a real row rather than an invisible
+one. Before that a nested root matched staged paths against no scope, and a function at
+twice the ceiling committed with a warning.
 
 Git runs hooks outside your shell's activated venv. Bare `python` must resolve to an
 interpreter that has crapkit installed, or spell it out
@@ -238,6 +312,17 @@ repos:
       - id: crapkit-gate
 ```
 
+That file arms nothing on its own. The framework writes `.git/hooks/pre-commit` when you
+tell it to, and until then `git commit` runs no gate and says nothing:
+
+```sh
+pip install pre-commit
+pre-commit install
+```
+
+`pre-commit install` is the line every clone needs, the way Route 2 needs its
+`git config core.hooksPath` line.
+
 `rev` is a git ref pre-commit resolves against that remote. Pin a release tag, not a
 branch: `pre-commit autoupdate` only moves between tags, and a moving `main` would change
 your gate under you.
@@ -259,6 +344,45 @@ crapkit verify --baseline-tsv crapkit-baseline.tsv --github
 `--github` emits `::error file=...` annotations that land on the PR diff; `--sarif PATH`
 writes SARIF 2.1.0 for code-scanning upload. Refresh the committed baseline whenever the
 default branch's verify passes.
+
+Two things the job has to do before those lines run. **Install crapkit**, `pip install
+crapkit`, and pin the version the way Route 3 pins `rev`: an unpinned install moves your
+gate on whatever day a release lands. **Fetch the whole history.** `actions/checkout`
+clones one commit by default, `verify` reads the diff against the baseline's commit out of
+git, and a shallow clone does not have that commit:
+
+```
+$ crapkit verify --baseline-tsv crapkit-baseline.tsv
+crapkit: baseline commit a74260f321f is not an ancestor of HEAD (rebase or amend rewrote history) — run `crapkit coverage` for a fresh baseline
+```
+
+That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at full depth.
+Set `fetch-depth: 0` on the checkout step, which is what crapkit's own
+[.github/workflows/ci.yml](.github/workflows/ci.yml) does.
+
+The whole PR job, on GitHub Actions:
+
+```yaml
+on: pull_request
+jobs:
+  crapkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # verify needs the baseline's commit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install crapkit
+      - run: pip install -e ".[dev]"   # your own test dependencies
+      - run: crapkit verify --baseline-tsv crapkit-baseline.tsv --github
+```
+
+The second install is the one people leave out. `verify` reruns your lanes, so the job
+needs whatever your test command needs: the coverage plugin, `npm ci`, a database, all of
+it. Without them the lane writes no artifact and `verify` exits 5 quoting the runner's own
+error, which is a broken job and not a verdict.
 
 ### What a refusal looks like
 
@@ -304,30 +428,30 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | Command | What it does |
 |---|---|
 | `init` | Sniffs tracked source into per-directory scopes, writes a self-validated starter `crapkit.toml` whose lanes report into `.crapkit/cov/`, and appends `.crapkit/` plus each runner's own droppings to `.gitignore`. Writes a live `[[lane]]` when it can detect the test runner, otherwise a commented template. Refuses to clobber an existing config. |
-| `doctor [--show-files] [--json] [--tune] [--plugin-root [PATH]]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files. It WARNs on a lane writing its artifact at the repo root, a pytest or vitest lane with no `results_artifact` (the crashed-worker and no-new-failures checks are off for it), a committed hook under `core.hooksPath` that is not executable in the index, a directory whose functions are all `untested` while its tests exist, and a scope a lane measures with no `[crapkit.scoped_tests]` template behind it, which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. `--plugin-root PATH` reads no repo at all: it checks an installed [plugin](plugin/) against this CLI on both version and hook `--protocol`, one line per disagreement and silence when they agree; PATH is the plugin root or any directory above it, `~/.claude` included (only manifests named `crapkit` count, and the newest install wins), and with no PATH it looks in Claude Code's plugin cache. A root it found rather than one you typed is named first, as `crapkit doctor: checking PATH`. See [docs/agent-json.md](docs/agent-json.md#doctor---json). |
+| `doctor [--show-files] [--json] [--tune] [--plugin-root [PATH]]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files. It reads each lane command with the shell that will run it, so a quoted interpreter path is one word and a runner after `&&` is checked too, and it FAILs a lane whose runner does not resolve on PATH or that the shell cannot start, naming the word to change; each distinct runner is probed once, not once per lane. It WARNs on a lane writing its artifact at the repo root, a `coveragepy` or `istanbul` lane with no `results_artifact` (the crashed-worker and no-new-failures checks are off for it, whichever runner the lane spells), a committed hook under `core.hooksPath` that is not executable in the index, a directory whose functions are all `untested` while its tests exist, and a scope a lane measures with no `[crapkit.scoped_tests]` template behind it, which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. `--plugin-root PATH` reads no repo at all: it checks an installed [plugin](plugin/) against this CLI on both version and hook `--protocol`, one line per disagreement and silence when they agree; PATH is the plugin root or any directory above it, `~/.claude` included (only manifests named `crapkit` count, and the newest install wins), and with no PATH it looks in Claude Code's plugin cache. A root it found rather than one you typed is named first, as `crapkit doctor: checking PATH`. See [docs/agent-json.md](docs/agent-json.md#doctor---json). |
 | `inventory [--db PATH] [--export PATH] [--json]` | One lizard pass over every in-scope file into a SQLite snapshot run, cached by content hash. `--db` is the only way to point crapkit at a store outside `.crapkit/`, and only this command accepts it. |
 | `coverage [--lane NAME] [--reuse-artifacts] [--reuse-unchanged] [--export PATH] [--sarif PATH] [--github] [--json]` | Runs the lanes, joins branch coverage onto a fresh inventory, writes a scored run. A failed lane is recorded, not fatal: its scopes fall back to `no-lane` and the run is typed `partial`, so it can never serve as a baseline. See [docs/lanes.md](docs/lanes.md). |
-| `verify [--baseline ID \| --base REF \| --baseline-tsv PATH] [--emit-baseline PATH] [--override REASON] [--reuse-artifacts] [--reuse-unchanged] [--no-tighten] [--sarif PATH] [--github] [--json]` | The full verdict against the trusted baseline: gate on touched functions, ratchet, no new test failures, optional diff-coverage ceiling. The three baseline selectors are mutually exclusive; `--baseline ID` also bypasses the taint rule ([The trusted baseline](#the-trusted-baseline)), and `--baseline-tsv` reads a commit-stamped file so a fresh clone verifies with no store. `--no-tighten` passes the verdict without rewriting the ratchet. Findings a dirty tree produced are tagged `dirty` and counted apart. |
-| `worklist [--top N] [--scope NAME] [--batches N] [--json]` | The risk map: every admitted function ranked by `ccn * churn weight`, floored by `worklist_floor`, with hot simple code and anything over its ceiling admitted past that floor. It ranks finished rows and `no-lane` rows too, marked `ok` and `no-lane`, so it never empties; `next-item` carries the stop condition. `--scope NAME` (repeatable) is exact, not a substring. `--batches N` **adds** a `batches[]` view cutting the active list into at most N file-disjoint batches with co-changing files kept together; the normal keys stay. |
+| `verify [--baseline ID \| --base REF \| --baseline-tsv PATH] [--emit-baseline PATH] [--override REASON] [--reuse-artifacts] [--reuse-unchanged] [--no-tighten] [--sarif PATH] [--github] [--json]` | The full verdict against the trusted baseline: gate on touched functions, ratchet, no new test failures, optional diff-coverage ceiling. The three baseline selectors are mutually exclusive; `--baseline ID` also bypasses the taint rule ([The trusted baseline](#the-trusted-baseline)), and `--baseline-tsv` reads a commit-stamped file so a fresh clone verifies with no store. `--no-tighten` passes the verdict without rewriting the ratchet. Findings a dirty tree produced are tagged `dirty` and counted apart. It reads each istanbul artifact once for coverage, dead lines and its digest, and skips the artifact walk on an empty diff; skipping the whole run on an unchanged tree was measured and rejected, because a key made of HEAD plus the dirty names cannot see a second edit to a file that was already dirty. |
+| `worklist [--top N] [--scope NAME] [--batches N] [--json]` | The risk map: every admitted function ranked by `ccn * churn weight`, floored by `worklist_floor`, with hot simple code and anything over its ceiling admitted past that floor. It ranks finished rows and `no-lane` rows too, marked `ok` and `no-lane`, so it never empties; `next-item` carries the stop condition. `--scope NAME` (repeatable) is exact, not a substring. `--batches N` **adds** a `batches[]` view cutting the active list into at most N file-disjoint batches with co-changing files kept together, off the same cached pairs `coupling` reads; the normal keys stay. |
 | `next-item [--top N] [--exclude FRAG] [--scope NAME] [--claim]` | The actionable queue as JSON, with churn, budget estimates and uncovered lines. Same run and same admission floor as `worklist`, a different view of it: `no-lane` rows are skipped and counted in `skipped_no_lane`, and what is left is ranked by `crap` descending rather than by risk, so the item it hands out is often not the worklist's first row. `--exclude FRAG` (repeatable) skips items whose path or function name contains FRAG; `--scope NAME` (repeatable) is exact, not a substring. `--claim` holds what it hands out so a second session skips it. `stale` is true when the ranked run's commit is not HEAD, the same field `worklist` carries. Every item carries a `handle`: the bare identifier, or `(anonymous)#N` for a function with no name, which is the name form that survives the edit the item asks for. |
 | `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. |
-| `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, `(anonymous)#N` for a function printed `(anonymous)` counting the file's anonymous functions from the top, or `NAME#2` for the second of several functions a file gives one name to. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store. |
-| `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
-| `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions a ratchet mark already covers, and exits 6. |
+| `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, `(anonymous)#N` for a function printed `(anonymous)` counting the file's anonymous functions from the top, or `NAME#2` for the second of several functions a file gives one name to. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store and one duplication pass over the snapshot for the whole batch (batch of 5: 11.8 s to 5.2 s, output byte-identical to five separate calls). |
+| `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. It also takes the function's start line, the form `brief` takes, which is how you open one printed `(anonymous)`. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
+| `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions whose CRAP sits at or under their ratchet mark, and exits 6. A marked function past its mark is gated; the pre-commit hook exempts on the mark's existence instead, because a staged blob has no coverage to score. |
 | `ratchet seed \| prune \| merge \| move \| report [--enforce] [--json]` | The mark lifecycle: seed new debt, prune gone code (a mark whose file git renamed follows it), merge as a git driver, move re-paths marks, report reads burn-down from the file's own git history. See [docs/ratchet.md](docs/ratchet.md). |
 | `runs [list \| prune [--keep N]] [--json]` | Run history, and retention. `list` marks the run `verify` compares against today `baseline`, and prints `verdict=-` for a run that produces no verdict rather than one that failed. See [The trusted baseline](#the-trusted-baseline). `--keep` (default 5) is a floor on the newest trusted runs, not a cap: the digest pair, every passing verify baseline, every run an override names, and the newest non-hook run are kept too. `prune` VACUUMs afterwards. |
 | `overrides [--json]` | The override audit trail: who granted what, when, and why. |
-| `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. |
+| `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. It reads a per-run rollup table rather than rescanning every scored row, and fills that table for any run missing one, so it writes to the store (best effort: a read-only `.crapkit/` costs the speed, not the command). |
 | `digest [--alert]` | The delta between the two newest runs with identical lane sets. Silent when nothing changed. `--alert` pipes the body to `alert_command` on stdin. Plain lines, never JSON. |
-| `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Per-function CRAP and coverage are absent because no repo-wide payload carries them; each row prints the `crapkit explain` call that does. |
+| `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Per-function CRAP and coverage are absent because no repo-wide payload carries them; each row prints the `crapkit explain` call that does. It reads the same per-run rollups `trend` does, and writes them on the same terms. |
 | `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. `--top` truncates the list. A function and a function nested inside it never pair: their spans nest, they score 1.0 by construction, and nobody can deduplicate a factory from its own closure. |
-| `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. |
+| `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. The ranked pairs are cached in `.crapkit/coupling-cache-v1.json`, keyed on HEAD, the churn window, today's UTC date, the path format and a digest of the tracked set, and shared with `brief` and `worklist --batches` (warm: 1.05 s to 0.11 s on a 72k-commit repo). The date is part of that key, so the first run after midnight UTC rebuilds the pairs on an unchanged HEAD. `--top` reads the cache, because it truncates that same order; `--min-support` or `--min-confidence` off their defaults ask a wider question than the file answers, so they bypass it and recompute. |
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. With `mutation_workers > 1` the worker worktrees are kept at `.crapkit/mutate-pool/` and re-prepared per run (30.6 s to build four on a 31,459-file repo, 0.46 s to re-prepare them); `--drop-pool` removes them and exits. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
 | `hook-precommit` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. |
 | `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only. The edit has landed, nothing is blocked, and `hook-precommit` stays the enforcement point. Exit 2 with three lines on stderr is the only thing it ever says: no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. Takes no `--repo`, because the root is the first `crapkit.toml` above the edited file and the upward walk stops at a `.git` entry, so a worktree never borrows its parent's config. It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
-| `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing nine read-only tools. See [docs/agent-json.md](docs/agent-json.md#mcp-server). |
+| `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing nine read-only tools. Every tool shells to the CLI's own `--json` surface, so the MCP view cannot drift from what the CLI reports. Answering from a kept in-process store was benchmarked and rejected: a packet's `source` would go stale behind the edit it describes. See [docs/agent-json.md](docs/agent-json.md#mcp-server). |
 
 ## Reading the output
 
@@ -398,9 +522,10 @@ baseline**. `crapkit runs list` marks which one that is today.
 never qualifies, and neither does a `partial` run (a lane failed, so some scope fell back
 to `no-lane`) nor a `hook` override record, which carries no scored rows at all. In `runs
 list`, `verdict=-` marks a run that produces no verdict rather than one that failed: only
-`verify` renders a verdict. Three readers ask this one question and get this one answer:
-the baseline pick here, `ratchet seed` and `prune`, and the tighten damping that compares a
-mark against the same commit's previous run.
+`verify` renders a verdict. Four readers ask this one question and get this one answer: the
+baseline pick here, `ratchet seed`, `prune`, and the tighten damping that compares a mark
+against the same commit's previous run. A mark can no longer be signed off a run `verify`
+refused.
 
 **What advances it.** Any qualifying run. `coverage` writes one wherever HEAD is, so a
 dashboard cron advances the baseline exactly as CI does. A passing `verify` advances it
@@ -435,6 +560,14 @@ bypasses the rule, and the run history records which run the verdict used. Nothi
 touches a repo that has never run `verify`: with no failure to protect, `coverage` alone
 always advances the baseline.
 
+**When the id you pass cannot serve.** A `--baseline ID` naming a real run that is not a
+candidate says which run it is, why, and which ones can:
+
+```
+$ crapkit verify --baseline 3
+crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve as a baseline; trusted runs: 1, 2; pass `--baseline 2` for the newest
+```
+
 ## Exit codes
 
 | Code | Meaning |
@@ -442,11 +575,11 @@ always advances the baseline.
 | 0 | OK. For `verify` and `hook-precommit`: the gate passed. |
 | 1 | **Overloaded.** Three unrelated things, listed below the table. |
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
-| 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a ratchet metric-stamp mismatch, a `test-scoped` file under no scope or under a scope with no template. |
+| 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
 | 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
-| 5 | Tool error: lizard not importable, a lane produced no artifact, a lane timed out past its retries, an override alert command failed. |
-| 6 | Gate violation. A function the diff touched is over its ceiling and above any ratchet mark it carries, or `rescore --gate` found one, or `hook-precommit` did. |
-| 7 | Ratchet regression. A marked function scores worse than its recorded high-water mark, touched or not. |
+| 5 | Tool error: lizard not importable, a lane produced no artifact, a lane timed out past its retries, an override alert command failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
+| 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
+| 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
 | 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. |
 
@@ -475,9 +608,7 @@ writes runs `pytest --cov` and those flags come from `pytest-cov`:
 pip install pytest-cov
 ```
 
-(or `pip install "crapkit[py]"` to pull both at once, when crapkit lives in the same venv
-as the suite — skip it and `init` prints this same fix when its probe finds the plugin
-missing).
+(`pip install "crapkit[py]"` pulls both at once when crapkit shares the suite's venv.)
 
 ### 1. Scaffold the config
 
@@ -566,11 +697,9 @@ Columns: `risk`, `ccn` with the standard-only ccn in parentheses,
 `<commits>c/<authors>a` in the churn window with `w<weight>`, `path:line`, the function's
 long name, then a marker on rows the burn-down queue will not hand out (`ok`, `no-lane`).
 
-**`worklist` is the risk map, not a to-do list.** It ranks every function it admits,
-finished ones included, so it does not empty when the burn-down finishes. `next-item` is
-the other view: same run, same admission floor, but it drops the `no-lane` rows and ranks
-by `crap` descending instead of by risk. Its `empty: true` is the stop condition; the
-worklist has none.
+**`worklist` is the risk map, not a to-do list.** It ranks finished rows too, so it does
+not empty when the burn-down does. `next-item` is the other view of that run: it drops the
+`no-lane` rows, ranks by `crap`, and its `empty: true` is the stop condition.
 
 ### 4. Take the top item
 
