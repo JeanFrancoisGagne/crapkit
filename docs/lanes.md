@@ -504,10 +504,30 @@ crapkit: every lane failed: ...
 
 Exit 5.
 
-Prefer `--cov=<module>` over `--cov=<path>` when your suite spawns subprocesses. pytest-cov
-hands children a `COV_CORE_SOURCE` that must resolve from the **child's** cwd, so a
-path-based source measures nothing there while still reporting a confident 0%. crapkit's own
-lane uses the module form for exactly that reason.
+### A suite that spawns subprocesses
+
+Two things have to be true, and neither one fails loudly.
+
+**Ask coverage to patch subprocess.** pytest-cov measured subprocesses itself until 7.0.0,
+which dropped the feature and pointed at coverage's own patch system (coverage 7.10 and
+later):
+
+```toml
+[tool.coverage.run]
+patch = ["subprocess"]
+```
+
+Without it, on pytest-cov 7 and later, a suite that drives its CLI through
+`subprocess.run` measures the parent only: every entry point reads 0% and every function
+behind one is scored as untested. Nothing warns. crapkit's own e2e suite is exactly that
+shape, and the key is in crapkit's pyproject.toml for exactly that reason. Note that
+coverage 7.9 and earlier answer the key with a warning and ignore it, so pin
+`coverage>=7.10.6` beside `pytest-cov` wherever the lane's environment is declared.
+
+**Prefer `--cov=<module>` over `--cov=<path>`.** The source has to resolve from the
+**child's** cwd, and a suite that runs its CLI in a tmp directory is not in the repo any
+more. A path-based source measures nothing there while still reporting a confident 0%.
+crapkit's own lane uses the module form for exactly that reason.
 
 ### The full-suite rule
 
