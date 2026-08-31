@@ -2,157 +2,227 @@
 
 ## 0.4.5 — unreleased
 
-An audit of 0.4.4 (six lenses, every finding reproduced twice) plus issues #24
-and #25. No new capability.
+A fix release with no new capability: an audit of 0.4.4 through six lenses, with every
+finding reproduced twice; a benchmark of every subsystem at consumer scale; and the
+field reports from the CodingGraph pilot. The audit filed issues #24 and #25; the pilot
+filed #26 through #31 and #37 and sent the pull requests that closed them, #32 through
+#40 (PR #23, from @nicolaschapados, was 0.4.4, not this release). After upgrading, run
+`crapkit ratchet seed` once, then read [Upgrading from 0.4.4](#upgrading-from-044) at
+the end of this section for the five other things that change.
 
-### The guard reads cmd.exe the way cmd.exe does
+### Windows and lane commands
 0.4.4 taught the lane guard cmd.exe's quoting, with two gaps: a quote that opens
-mid-token (`--cov-report=json:"a b\py.json"`) was two tokens here and one
-argument to cmd.exe, so a good lane was refused; a caret escape (`-k ^"not slow^"`)
-stayed in the token and split the value. The cmd.exe reading is now a character
-walk that toggles on every quote and honours `^` outside quoted runs, checked
-against real `cmd.exe` argv on thirty command shapes. A chained command
-(`cd tests && python -m pytest --cov ...`, `... --cov && echo done`) is read one
-argv per `&&`/`||`/`&`/`|` segment and every segment that runs the runner is
-checked, so a second narrowing run after the operator is still refused and a
-refusal never names a word from the next command. An empty quoted argument
-(`-k ""`) stays an empty argument instead of shifting the next path onto the
-flag; a quoted or caret-escaped operator is a word, not a separator; words break
-on space, tab and line endings only, as cmd.exe and sh do, so a pasted
-non-breaking space no longer splits a value; redirections (`> nul`, `2>&1`) are
-the shell's and never a positional; on sh a trailing `;` ends the command. The
-vitest guard licenses 25 value-taking options (`--workspace`, `--diff`,
-`--snapshotEnvironment`, `--coverage.extension`, `--typecheck.tsconfig` joined
-the list) and the docs list is generated from the set.
+mid-token (`--cov-report=json:"a b\py.json"`) was two tokens here and one argument to
+cmd.exe, so a good lane was refused; a caret escape (`-k ^"not slow^"`) stayed in the
+token and split the value. The cmd.exe reading is now a character walk that toggles on
+every quote and honours `^` outside quoted runs, checked against real `cmd.exe` argv on
+thirty command shapes. A chained command (`cd tests && python -m pytest --cov ...`,
+`... --cov && echo done`) is read one argv per `&&`, `||`, `&` or `|` segment and every
+segment that runs the runner is checked, so a second narrowing run after the operator is
+still refused and a refusal never names a word from the next command. An empty quoted
+argument (`-k ""`) stays an empty argument instead of shifting the next path onto the
+flag; a quoted or caret-escaped operator is a word, not a separator; words break on
+space, tab and line endings only, as cmd.exe and sh do, so a pasted non-breaking space
+no longer splits a value; redirections (`> nul`, `2>&1`) are the shell's and never a
+positional; on sh a trailing `;` ends the command. The vitest guard licenses 25
+value-taking options (`--workspace`, `--diff`, `--snapshotEnvironment`,
+`--coverage.extension` and `--typecheck.tsconfig` joined the list) and the docs list is
+generated from the set.
 
-### The pre-commit gate works below the git top (#24)
-The 0.4.4 churn fix left the gate reading `git diff --cached` from the git top,
-so under a nested root staged paths matched no scope and a function at twice the
-ceiling committed with a warning. Every git spawn now runs with
-`diff.relative=true` and cat-file requests use `:./path`, which also fixes the
-nine siblings that joined top-relative paths against root-relative rows: verify's
-changed files, `rescore --gate`, lane reuse (which could republish a stale
-artifact's score), `mutate` (which found targets and mutated nothing), the
-ratchet's rename follow, and the per-edit advisory's own diff. A staged file
-above the crapkit root is outside the diff by design and no longer named.
+`init`'s pytest-cov probe and `mutate`'s per-mutant timeout both used `capture_output`
+under `shell=True`. On Windows the kill hit cmd.exe and `run()` then waited on pipes the
+grandchild still held, so a 15 s timeout returned after 29 s and a looping mutant was
+never cut. Both now run through one bounded spawn (`procs.run_bounded`): the command
+starts in its own process group, and a deadline kills the whole tree (`taskkill /T` on
+Windows, `killpg` on POSIX) and waits for it. No orphan suite keeps running after
+`mutate` gives up on a mutant or a lane's `timeout_seconds` expires, and the lane log
+still streams as before.
 
-### A worktree add killed by a peer is retried once (#25)
-`mutate` adds its worker worktrees in parallel; git's add enumerates the
-existing `.git/worktrees/*` entries and dies reading a `commondir` a peer is
-still building (one in about a thousand adds at four workers on Windows, seen on
-CI). `worktree_add` retries once after 50 ms when the message names
-`worktrees/` and `commondir`, whatever the git dir is called.
+A PATH holding only the `py` launcher got a lane naming `python3`, which the first
+`coverage` could not run; `py` is now in the fallback chain. The Store `python.exe`
+alias (exit 9009, "Python was not found") gets its own note naming the interpreter
+cmd.exe cannot run, kept separate from the note for a python that runs pytest with no
+pytest-cov installed. The `pip install "crapkit[py]"` line uses double quotes in the
+note and in the docs: single quotes do not survive cmd.exe.
 
-### Timeouts that bound the wall clock
-`init`'s pytest-cov probe and `mutate`'s per-mutant timeout both used
-`capture_output` under `shell=True`; on Windows the kill hit cmd.exe and `run()`
-then waited on pipes the grandchild still held, so a 15 s timeout returned after
-29 s and a looping mutant was never cut. Both now run through one bounded
-spawn (`procs.run_bounded`): the command starts in its own process group and a
-deadline kills the whole tree (`taskkill /T` on Windows, `killpg` on POSIX) and
-waits for it, so no orphan suite keeps running after `mutate` gives up on a
-mutant or a lane's `timeout_seconds` expires; the lane log still streams as
-before.
+`mutate` adds its worker worktrees in parallel, and git's add enumerates the existing
+`.git/worktrees/*` entries and dies reading a `commondir` a peer is still building: one
+add in about a thousand at four workers on Windows, seen on CI (#25). `worktree_add`
+retries once after 50 ms when the message names `worktrees/` and `commondir`, whatever
+the git dir is called.
 
-### init on Windows
-A PATH holding only the `py` launcher got a lane naming `python3`, which the
-first `coverage` could not run: `py` is now in the fallback chain. The Store
-`python.exe` alias (exit 9009, "Python was not found") gets its own note
-naming the interpreter cmd.exe cannot run, and `doctor` now FAILs a lane whose
-first word will not start instead of calling the repo clean. The
-`pip install "crapkit[py]"` line uses double quotes in the note and the docs:
-single quotes do not survive cmd.exe.
+### Roots, paths and scopes
+The 0.4.4 churn fix left the pre-commit gate reading `git diff --cached` from the git
+top, so under a crapkit root below that top staged paths matched no scope and a function
+at twice the ceiling committed with a warning (#24). Every git spawn now runs with
+`diff.relative=true` and cat-file requests use `:./path`, which also fixes the nine
+siblings that joined top-relative paths against root-relative rows: verify's changed
+files, `rescore --gate`, lane reuse (which could republish a stale artifact's score),
+`mutate` (which found targets and mutated nothing), the ratchet's rename follow, and the
+per-edit advisory's own diff. A staged file above the crapkit root is outside the diff
+by design and no longer named.
 
-### Churn and coupling below the git top
-`coupling`, `brief` and `worklist --batches` decode git's `core.quotePath`
-quoting before joining paths, so a non-ASCII path is no longer a fake row;
-`coupling` drops pairs naming a path git no longer tracks; the churn caches
-carry their format in the file name (`churn-cache-v2.json`, `churn-log-v2.z`),
-so a 0.4.3 sharing the repo keeps its own caches instead of both rebuilding on
-every run; a warm 0.4.4 cache is adopted once and its file removed rather than
-orphaned. `.git` is found by walking up from the root (doctor's commit-graph
-check included), so the HEAD fast path fires below the top; `config_value`
-asks git for the repo's own setting and no longer reads the `diff.relative`
-flag crapkit injects into every spawn.
+Every git spawn also runs with `core.quotePath=false`, so a dirty non-ASCII file is no
+longer invisible to lane reuse (git quoted it, `ls-files` did not). `coupling`, `brief`
+and `worklist --batches` decode git's quoting before joining paths, so a non-ASCII path
+is no longer a fake row, and `coupling` drops pairs naming a path git no longer tracks.
+`.git` is found by walking up from the root, doctor's commit-graph check included, so
+the HEAD fast path fires below the top; `config_value` asks git for the repo's own
+setting and no longer reads back the `diff.relative` flag crapkit injects into every
+spawn.
 
-### Ten defects an architecture review reproduced
-A review of the 0.4.5 tree proposed 37 deepening refactors; two skeptics per
-candidate refuted 36 of them (every seam they asked for already existed) and
-reproduced these defects on the way, each now fixed behind its existing seam:
-a dirty non-ASCII file was invisible to lane reuse (git quoted it, `ls-files`
-did not; every git spawn now runs with `core.quotePath=false`); `worklist`
-and `next-item` could describe different runs, and `ratchet seed`/`prune`
-could sign marks off a run `verify` had refused (both now pick the run their
-peer picks); `explain PATH LINE` resolves a start line as `brief` does; scope
-ownership was decided three ways (first-declared in scoring, longest-prefix in
-test-scoped, prefix-only for lane reuse) and the packet mixed two of them; one
-predicate in `universe` now answers everyone with deepest-declared-path
-winning, so a repo with NESTED scopes may see files move between scopes on
-its next scan; a file-valued scope path (`paths = ["core/hot.py"]`) marks its
-lane changed; `doctor` reads a lane command with the shell that runs it (a
-quoted interpreter, a runner after `&&`, a path inside a quoted `-k`); the
-pytest-cov probe asks the python that runs pytest, so `coverage run -m pytest`
-is left alone; shell cognitive complexity nests (`fi`/`done`/`esac` close a
-level; a 4-deep `if` reads 10 like every other language, not 4), which is
-analysis version 8; `_scored_run` returns named fields; `inventory` no longer
-dies when a tracked file is missing from the working tree; `verify` no longer
-dies when a lane lost its test count. `tests/unit` now drives `verify` and
-`coverage` in process (verifying 34% -> 100%, scoring 43% -> 99% statement
-coverage from the unit suite alone), and `tests/e2e` shares one CLI runner in
-`conftest.py` and runs in about 1m30 with `-n 8`. The review left one
-structural item open: `discover.py` (384 lines, no importer since birth) is
-either wired into the packet or removed in a later release.
+The churn caches carry their format in the file name (`churn-cache-v2.json`,
+`churn-log-v2.z`), so a 0.4.3 sharing the repo keeps its own caches instead of both
+rebuilding on every run. A warm 0.4.4 cache is adopted once and its file removed rather
+than orphaned.
 
-### Seven field fixes from the CodingGraph pilot (#26 through #31, #37)
-`verify --baseline ID` naming a run that exists but cannot serve now says which
-run it is, why (a failed verify, a hook run, a partial run, an inventory run)
-and which runs can serve, instead of the empty-store line (#27). `verify`'s
-gate exempts a touched function whose fresh CRAP sits at or under its ratchet
-mark, the rule `rescore --gate` already applied, so an edit inside signed debt
-no longer passes the commit gates and then meets exit 6 (#29); exit 7 stays for
-a regression the diff never touched. A lane that wrote no test counts this run
-gets one line naming the gap instead of a KeyError (#30). The twin-key note is
-printed by the parent after the pool returns, never from a worker whose stderr
-never saw the UTF-8 reconfigure, so on Windows its em dash no longer lands as a
-lone cp1252 byte (#31). `doctor` WARNs on a coveragepy or istanbul lane that
-declares no `results_artifact`, naming the two checks that cannot run for it,
-and `init` writes `--junitxml` plus `results_artifact` on the lanes it detects
-(#26). `doctor --plugin-root` takes the plugin root or any directory above it
-and, with no path, reads Claude Code's plugin directory itself (#28). The packet
-spells its commands as the console script (`crapkit rescore ... --gate`), the
-form the docs promise and the one that resolves from a venv on Windows (#37).
+Scope ownership was decided three ways (first-declared in scoring, longest-prefix in
+test-scoped, prefix-only for lane reuse) and the packet mixed two of them. One predicate
+in `universe` now answers everyone, with the deepest declared scope path winning, so
+scoring, test-scoped routing, lane reuse and the packet agree; a repo with NESTED scopes
+may see files move between scopes on its next scan. A file-valued scope path
+(`paths = ["core/hot.py"]`) marks its lane changed.
 
-### Performance, measured at consumer scale and refereed
-A benchmark of every subsystem on a 31,459-file consumer (152k functions, 41,544
-marks, 541 MB of lane artifacts, 72,653 commits) produced 76 improvement
-candidates; skeptics re-implemented and re-measured each one, killed most, and
-these six survived and shipped, each with its A/B on that corpus:
-`coupling`, `worklist --batches` and `brief` stop re-pairing the churn log on
-every warm run (a ranked-pairs cache beside the churn caches, keyed on HEAD plus
-a digest of the tracked set; off-default thresholds bypass it): warm `coupling`
-1.05 s -> 0.11 s, batches -62%, single `brief` -25%. `brief --batch N` shingles
-the snapshot once instead of once per packet: batch 5 in 11.8 s -> 5.2 s, output
-byte-identical (an on-disk shingle cache was refuted outright: shingles are
-built on Python's per-process randomized hash). `doctor` probes each distinct
-lane runner once, not once per lane: 7.5 s -> 1.4 s on 14 lanes over 2 runners.
-`trend` and `report` read per-run rollups (new `run_rollup` table, filled once
-per run, pruned with its run) instead of rescanning 4.3 M rows: `trend`
-4.58 s -> 0.04 s warm, `report` -76%. `verify` reads each istanbul artifact once
-for coverage, dead lines and its digest together, and skips the artifact walk on
-an empty diff: 25.5 s -> 18.9 s (peak +55 MB, all digests byte-identical).
-`mutate` keeps its worker worktrees under `.crapkit/mutate-pool` and re-prepares
-them per run (30.6 s -> 0.46 s of setup on the big tree; `--drop-pool` reclaims
-the disk; single-worker runs are untouched). Also refereed and REJECTED, so
-nobody rebuilds them: skipping verify when HEAD and dirty names are unchanged
-(the key cannot see a second edit to an already-dirty file), serving MCP tool
-calls from a kept process (stale `source` breaks the packet contract), parallel
-git date slices for the churn walk, and a faster JSON decoder.
+### Runs, gates and verify
+`worklist` and `next-item` could describe different runs, and `ratchet seed` and `prune`
+could sign marks off a run `verify` had refused. All four now pick the run their peer
+picks, the newest trusted run, and a failed verify sitting above every trusted run is
+refused with a line naming it.
+
+`verify --baseline ID` naming a run that exists but cannot serve now says which run it
+is, why (a failed verify, a hook run, a partial run, an inventory run) and which runs
+can serve, instead of the empty-store line (#27, PR #36).
+
+`verify`'s gate exempts a touched function whose fresh CRAP sits at or under its ratchet
+mark, the rule `rescore --gate` already applied, so an edit inside signed debt no longer
+passes the commit gates and then meets exit 6 (#29, PR #35); exit 7 stays for a
+regression the diff never touched. The pre-commit hook still exempts on the mark's
+existence alone, on purpose: a staged blob has no coverage to score.
+
+A lane that wrote no test counts this run gets one line naming the gap instead of a
+KeyError (#30, PR #32), and `inventory` no longer dies when a tracked file is missing
+from the working tree.
+
+`explain PATH LINE` resolves a start line the way `brief` does, and `_scored_run`
+returns named fields.
+
+The twin-key note is printed by the parent after the pool returns, never from a worker
+whose stderr never saw the UTF-8 reconfigure, so on Windows its em dash no longer lands
+as a lone cp1252 byte (#31, PR #33).
+
+### Analysis
+Shell cognitive complexity nests: `fi`, `done` and `esac` close a level, so a 4-deep
+`if` reads 10 like every other language, not 4. That is analysis version 8. Cognitive
+complexity is reported and never gated, ccn does not move, and no other language moves,
+but the ratchet still refuses to weigh fresh scores against marks another metric
+produced, so see [Upgrading from 0.4.4](#upgrading-from-044).
+
+### Performance
+A benchmark of every subsystem on a 31,459-file consumer (152k functions, 41,544 marks,
+541 MB of lane artifacts, 72,653 commits) produced 76 improvement candidates. Skeptics
+re-implemented and re-measured each one and killed most; these six survived and shipped,
+each with its A/B on that corpus.
+
+`coupling`, `worklist --batches` and `brief` stop re-pairing the churn log on every warm
+run. A ranked-pairs cache sits at `.crapkit/coupling-cache-v1.json` beside the churn
+caches, keyed on HEAD plus the window plus a digest of the tracked set; `--min-support`
+or `--min-confidence` off the defaults bypasses it, and `--top` reads it. Warm
+`coupling` 1.05 s -> 0.11 s, batches -62%, a single `brief` -25%.
+
+`brief --batch N` shingles the snapshot once per batch instead of once per packet: batch
+5 in 11.8 s -> 5.2 s, output byte-identical. An on-disk shingle cache was refuted
+outright, because shingles are built on Python's per-process randomized hash.
+
+`doctor` probes each distinct lane runner once, not once per lane: 7.5 s -> 1.4 s on 14
+lanes over 2 runners.
+
+`trend` and `report` read per-run rollups instead of rescanning 4.3 M rows. The new
+`run_rollup` table is filled once per run and pruned with its run: `trend`
+4.58 s -> 0.04 s warm, `report` -76%. Both commands write now, best effort; see
+[Upgrading from 0.4.4](#upgrading-from-044).
+
+`verify` reads each istanbul artifact once for coverage, dead lines and its digest
+together, and skips the artifact walk on an empty diff: 25.5 s -> 18.9 s, peak memory
++55 MB, all digests byte-identical.
+
+`mutate` keeps its worker worktrees under `.crapkit/mutate-pool/` and re-prepares them
+per run: 30.6 s -> 0.46 s of setup on the big tree. `crapkit mutate --drop-pool`
+reclaims the disk, and single-worker runs are untouched.
+
+Four candidates were refereed and rejected, named here so nobody rebuilds them: skipping
+verify when HEAD and the dirty names are unchanged (the key cannot see a second edit to
+an already-dirty file), serving MCP tool calls from a kept process (a stale `source`
+breaks the packet contract), parallel git date slices for the churn walk, and a faster
+JSON decoder.
+
+### Doctor, init and the plugin
+`doctor` WARNs on a coveragepy or istanbul lane that declares no `results_artifact`,
+names the two checks that cannot run for it (the crashed-worker check and the
+no-new-failures check, exit 8) and prints the line that fixes it; `init` writes
+`--junitxml` plus `results_artifact` on the pytest and JS lanes it detects (#26,
+PR #38).
+
+`doctor` reads a lane command with the shell that runs it, so a quoted interpreter path
+is one word, a runner after `&&` is checked, and a path inside a quoted `-k` is a value.
+A lane whose first word will not start is now a FAIL instead of a clean report. The
+pytest-cov probe asks the python that runs pytest, so `coverage run -m pytest` is left
+alone.
+
+`doctor --plugin-root` takes the plugin root or any directory above it, `~/.claude`
+included, where the newest crapkit install under it wins; with no path it reads Claude
+Code's plugin cache itself. It names the root it chose (#28, PR #39).
+
+The packet spells its commands as the console script (`crapkit rescore ... --gate`), the
+form the docs promise and the one that resolves from a venv on Windows (#37, PR #40).
+
+### Tests and repo
+An architecture review of the 0.4.5 tree proposed 37 deepening refactors. Two skeptics
+per candidate refuted 36 of them, because every seam they asked for already existed, and
+reproduced ten defects on the way; each of those is fixed above, behind the seam that
+was already there.
+
+`tests/unit` now drives `verify` and `coverage` in process (`cli/verifying.py` 34% ->
+100%, `cli/scoring.py` 43% -> 99% statement coverage from the unit suite alone), and
+`tests/e2e` shares one CLI runner in `conftest.py` and runs in about 1m30 with `-n 8`.
+The unit suite is 2,280 tests.
+
+The review left one structural item open: `discover.py`, 384 lines with no importer
+since birth, is either wired into the packet or removed in a later release.
 
 ### Docs
-A section on running crapkit with its root below the repo top; the vitest guard
-page lists every option whose value it licenses, pinned by a test; the
-`crapkit-recover` skill routes the pytest half of "no coverage provider" to the
-pytest docs.
+A section on running crapkit with its root below the repo top; the vitest guard page
+lists every option whose value it licenses, pinned by a test; the `crapkit-recover`
+skill routes the pytest half of "no coverage provider" to the pytest docs.
+
+### Upgrading from 0.4.4
+- **Run `crapkit ratchet seed` once.** Shell cognitive complexity now nests, which is
+  analysis version 8, and `verify` exits 3 on marks stamped under version 7:
+  `ratchet marks were recorded under [crapkit-analysis=7 ...] but this run measures
+  [crapkit-analysis=8 ...]`. Seeding re-baselines the marks against the latest run and
+  restamps the file. Cognitive complexity is reported, never gated, and ccn does not
+  move, so no CRAP score changes: the reseed is there to make the stamp match.
+- **New cache files appear under `.crapkit/`:** `coupling-cache-v1.json`, plus
+  `churn-cache-v2.json` and `churn-log-v2.z` in place of the 0.4.4 churn cache, which is
+  read once and then deleted. All of it is derived data, and `init` already puts
+  `.crapkit/` in `.gitignore`.
+- **`trend` and `report` write now.** The first run of either sums every existing run
+  into `run_rollup`, and changing `target` or a scope's target keys a new ceiling and
+  makes it sum them again. The write is best effort: when another crapkit process holds
+  the store's write lock, the command still prints its answer and pays the scan next
+  time.
+- **A repo with NESTED scopes may see files move between scopes** on its next scan,
+  because the deepest declared scope path now wins for scoring, test-scoped routing,
+  lane reuse and the packet alike. Per-scope rollups and ceilings shift for those files.
+  A repo whose scopes do not nest sees no change.
+- **`mutate` with `mutation_workers > 1` keeps a worktree pool.** Its workers now live
+  under `.crapkit/mutate-pool/` between runs and are re-prepared each run. The pool is
+  not size-bounded; `crapkit mutate --drop-pool` removes it and exits. Single-worker runs
+  are untouched.
+- **`doctor` WARNs on a 0.4.4 lane with no `results_artifact`** and prints the fix. For
+  a pytest lane named `py` that reads: add `--junitxml=.crapkit/cov/junit-py.xml` to the
+  command and `results_artifact = ".crapkit/cov/junit-py.xml"` to the lane. Coverage is
+  unaffected; what the lane cannot feed is the crashed-worker check and the
+  no-new-failures check (exit 8).
 
 ## 0.4.4 — 2026-08-29
 
