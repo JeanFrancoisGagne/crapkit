@@ -1138,9 +1138,17 @@ drift from what the CLI reports, and nothing here writes a baseline, a ratchet, 
 
 With no `--repo`, the server serves the directory the client started it in, which is what a
 globally registered server sees in each project. In a directory with no `crapkit.toml` the
-server still starts and answers `initialize` and `tools/list`; each `tools/call` returns a
-normal result naming the missing config and `crapkit init`, so a global registration never
-turns into a dead server in unmeasured repos.
+server still starts and answers `initialize` and `tools/list`. Each `tools/call` there comes
+back as a tool result, not a JSON-RPC error, and that result carries `isError: true` with
+text naming the missing config and `crapkit init`:
+
+```json
+{"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "no crapkit.toml in .../noconfig — nothing measured here. Run `crapkit init` in the repo you want scored, or pass this tool a `repo` argument (or start the server with --repo) pointing at one."}], "isError": true}}
+```
+
+Both halves are deliberate. The result keeps the client's session alive, so a global
+registration never turns into a dead server in unmeasured repos. `isError` stays true so
+nothing reads an unmeasured directory as a repo with nothing to report.
 
 Client wiring:
 
@@ -1173,5 +1181,6 @@ can serve several checkouts.
 Results arrive as MCP text content. For the seven JSON tools the text is the payload; parse
 it. For `explain` and `doctor` it is the human output, which has no schema. `isError` is
 true whenever the underlying CLI call exited non-zero, and then the text is whatever the CLI
-wrote to stderr.
+wrote to stderr. It is true in one case where no CLI call runs at all: the missing-config
+result above.
 

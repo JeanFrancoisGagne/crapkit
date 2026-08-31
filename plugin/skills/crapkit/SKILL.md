@@ -28,7 +28,7 @@ session works in does not hold those pages.
 | Handing the state to a human who will not run a command | `crapkit report`, which writes `.crapkit/report.html` and prints the path |
 | Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
 | A lane command crapkit refuses on Windows | Write the value in double quotes. cmd.exe does not treat `'` as a quote, so a single-quoted value reaches the runner one word per space and the guard reads a positional |
-| `crapkit doctor` WARNs that a lane declares no `results_artifact` | Coverage is measured either way. Exit 8, the no-new-failures check, cannot fire for that lane's scopes until the lane names a junit file |
+| `crapkit doctor` WARNs that a lane declares no `results_artifact` | Coverage is measured either way. Two checks go dark for that lane's scopes until it names a junit file: the crashed-worker trust check, and exit 8, the no-new-failures check |
 | `trend` or `report` writing in a checkout you meant to keep read-only | Both fill a per-run rollup in the store, once per run, best effort. It is a cache: no run, baseline, ratchet or mutant moves. `commands.refresh_writes_run` still marks the one command that lands a run |
 | `mutate` left worktrees behind | `crapkit mutate --drop-pool` removes `.crapkit/mutate-pool/`, which `mutation_workers > 1` keeps between runs so the next one does not re-prepare them |
 
