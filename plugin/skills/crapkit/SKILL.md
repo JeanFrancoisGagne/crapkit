@@ -17,6 +17,7 @@ session works in does not hold those pages.
 | Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `brief` tool where the server is registered |
 | Which house rules bind here | `notes.repo` and `notes.scope` in the packet |
 | An advisory fired on the edit you just made | Decompose that function now, not at the commit wall. The edit landed and nothing was blocked, but the gate refuses the same function later |
+| An advisory fired after a Bash command, not an edit | The same verdict, read off the working tree. See [After a shell write](#after-a-shell-write) |
 | Before committing | `crapkit rescore FILE --gate` |
 | The gate says a staged function carries a ratchet mark | Nothing. The repo signed for that function, so the commit gate skips it. `crapkit verify` still fails a mark that rises |
 | Where does new code go | `crapkit worklist --top N`, `crapkit coupling`, `crapkit duplication` |
@@ -34,6 +35,23 @@ session works in does not hold those pages.
 
 Field semantics live in [docs: the brief payload](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#brief);
 the five-step loop lives in [AGENTS: the packet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#1-the-packet).
+
+## After a shell write
+
+A `Bash` PostToolUse event carries the command and never a file path, so source written
+through a heredoc or a `python - <<PY` block names no file for the hook to judge. It falls
+back to the working tree: the `*.py` files git reports dirty or untracked whose mtime
+lands inside a 12-second window, at most 25 of them, each through the same per-file ladder
+an Edit takes. Scope, sequencing, ratchet marks and the untracked rule mean what they
+already meant, and exit 2 means what it always meant, one advisory line about a function
+the write pushed over its ceiling, with nothing blocked.
+
+Only Python. Every other language stays the commit gate's business.
+
+This fires only where the consumer registered a `Bash` matcher of their own; the shipped
+plugin registers `Edit|Write`. A clean tree, a file older than the window, or a shell call
+outside any repo all stay silent, so what an advisory names here is source written seconds
+ago, never the tree's standing debt.
 
 ## Two fields decide whether a number is worth reading
 
