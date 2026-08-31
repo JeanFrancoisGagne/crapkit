@@ -138,7 +138,7 @@ only place its verdict stops anything.
 | Job | Runs | Blocks the PR |
 |---|---|---|
 | `test` | `pip install -e ".[dev]"`, `crapkit --version`, `python -m pytest tests/unit`, `python -m pytest -n 8 tests/e2e`, then `python -m crapkit hook-precommit`, on six matrix legs (Python 3.11, 3.12, 3.13 on ubuntu and windows) | yes, the gate's exit code stands |
-| `plugin` | `claude plugin validate plugin --strict`, which schema-checks `hooks.json` and the skill frontmatter no Python test can reach | yes |
+| `plugin` | two calls over two files: `claude plugin validate plugin --strict`, which schema-checks `plugin/.claude-plugin/plugin.json`, its `hooks.json` and the skill frontmatter no Python test can reach, then `claude plugin validate .`, which reads the repo-root `.claude-plugin/marketplace.json` a `claude plugin marketplace add` fetches and nothing else checks | yes |
 | `dogfood` | `coverage`, `verify --json`, `worklist --top 5` on crapkit itself | no: the `verify` line ends in `\|\| true`, so a rising mark or a dark diff line is reported for a human to read, not enforced |
 
 That last row is why the verify above matters. Nothing downstream fails the PR for you.
