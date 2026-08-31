@@ -604,9 +604,17 @@ def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | Non
 
 
 def _artifact_path(root: Path, lane: Lane) -> Path:
+    """The artifact, or the same refusal a run that wrote none raises.
+
+    Reuse is what reaches here — the run path refuses inside _run_attempts — and
+    it was the one lane refusal that named no log, on the reading that a reused
+    artifact had no run behind it. The previous run's log is usually sitting
+    there with the story, and a reader told to look for `full log:` on every
+    refusal has nowhere to go when one omits it.
+    """
     path = root / lane.artifact
     if not path.is_file():
-        raise ToolError(f"lane {lane.name!r} produced no artifact at {lane.artifact}")
+        _raise_no_artifact(lane, _lane_log_path(root, lane), None)
     return path
 
 

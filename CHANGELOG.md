@@ -9,7 +9,9 @@ pytest at B's sources. What crapkit owns is that it made the cause hard to find,
 one step away from reporting a confident wrong answer instead.
 
 ### Reading a failed lane
-Every no-artifact refusal now carries `full log: <path>` before the tail it quotes.
+Every no-artifact refusal now carries `full log: <path>` before the tail it quotes, the
+`--reuse-artifacts` one included: it raised its own bare sentence, and the log from the
+run that built the artifact was usually still on disk.
 `_raise_no_artifact` had the path and never printed it, so a reporter saw 500 bytes of
 tail and nothing naming `.crapkit/lane-py.log`; finding the log took a second agent while
 ten collection tracebacks sat inside it.

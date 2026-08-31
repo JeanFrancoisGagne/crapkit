@@ -98,6 +98,23 @@ def test_a_lane_that_runs_and_writes_nothing_names_its_log_too(tmp_path):
     assert str(tmp_path / ".crapkit" / "lane-dead.log") in str(raised.value)
 
 
+def test_a_reused_artifact_that_is_gone_names_the_log_too(tmp_path):
+    """`--reuse-artifacts` after somebody cleaned .crapkit/cov/ raised the one
+    refusal that named no log, while the previous run's lane-py.log sat there
+    holding the story. docs/lanes.md says every lane refusal carries the path."""
+    log = tmp_path / ".crapkit" / "lane-py.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("\n".join(["$ python -m pytest --cov",
+                              "E   ImportError: no module named 'faro'"]),
+                   encoding="utf-8")
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, _py_lane(), reuse_artifact=True)
+
+    assert str(log) in str(raised.value)
+    assert "no module named 'faro'" in str(raised.value), "and what the log says"
+
+
 def test_the_tail_begins_at_a_line_boundary(tmp_path):
     """A byte tail starts mid-line, and the reader cannot tell that fragment
     from the real first word of the message."""
