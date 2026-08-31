@@ -162,6 +162,14 @@ def _start_probe(word: str) -> int | None:
         return None
 
 
+def _first_word(command: str) -> str:
+    """The word the shell will try to start, read the way that shell reads the
+    line: a quoted interpreter path stays one word, where a whitespace split
+    would break it at its space. "" when the line holds no word at all."""
+    words = shell_words(command)
+    return words[0] if words else ""
+
+
 def _dead_first_word(command: str) -> tuple[str, int] | None:
     """The command's first word and the shell's verdict, when the shell cannot
     start it. None when it starts, and None when the word does not resolve on
@@ -169,11 +177,11 @@ def _dead_first_word(command: str) -> tuple[str, int] | None:
     proves nothing."""
     import shutil
 
-    words = shell_words(command)
-    if not words or shutil.which(words[0]) is None:
+    word = _first_word(command)
+    if not word or shutil.which(word) is None:
         return None
-    code = _start_probe(words[0])
-    return (words[0], code) if _could_not_run_it(code) else None
+    code = _start_probe(word)
+    return (word, code) if _could_not_run_it(code) else None
 
 
 def _probe_answered_no(returncode: int) -> bool:
@@ -305,8 +313,7 @@ def _absent_manager(command: str) -> str | None:
     from ..scaffold import LOCKFILE_RUNNERS
 
     managers = {runner.split()[0] for _, runner in LOCKFILE_RUNNERS}
-    words = shell_words(command)
-    head = words[0] if words else ""
+    head = _first_word(command)
     return head if head in managers and shutil.which(head) is None else None
 
 

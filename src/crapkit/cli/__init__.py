@@ -107,6 +107,7 @@ _OWNER = {
     "_extend_gitignore": "admin",
     "_fewer_tests_line": "verifying",
     "_file_sizer": "_shared",
+    "_first_word": "admin",
     "_flag_counts": "scoring",
     "_flake_retry": "verifying",
     "_gate_candidates": "scoring",
