@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.7 — unreleased
 
 ### The per-edit advisory now hears Bash writes
 `crapkit claude-hook` judged the one file named in `tool_input.file_path`, which only
