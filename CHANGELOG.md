@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.5 — unreleased
+## 0.4.5 — 2026-08-30
 
 A fix release with no new capability: an audit of 0.4.4 through six lenses, with every
 finding reproduced twice; a benchmark of every subsystem at consumer scale; and the
