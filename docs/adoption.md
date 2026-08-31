@@ -122,8 +122,8 @@ you hit by running `verify` before seeding, so seed first
 ## Planning a campaign
 
 Once the repo is seeded and green, somebody has to decide how many sessions run at once and
-what that costs. Five facts a plan needs. The timings come from the 31,459-file repo the
-0.4.5 performance work was refereed against.
+what that costs. The facts a plan needs, in the order it meets them. The timings come from
+the 31,459-file repo the 0.4.5 performance work was refereed against.
 
 **Two fan-outs, and the two N count different things.** `crapkit brief --batch N` emits one
 packet per queue item, top N, and the orchestrator hands one packet to one session: its N is
