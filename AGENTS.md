@@ -628,6 +628,10 @@ Registration belongs at that module scope and nowhere else. A `ProcessPoolExecut
 imports `analyze.py`, so a reader registered anywhere later leaves spawned workers
 measuring with the readers lizard shipped and reporting plausible wrong numbers.
 
+One module is neither: `discover.py` has no importer and has not had one since it was
+added. It is either wired into the packet or removed in a later release. Do not build on
+it before that lands.
+
 ## Standing rules
 
 Six rules the suite cannot fully police. Break one and the failure surfaces somewhere
