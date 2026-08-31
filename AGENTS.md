@@ -402,6 +402,13 @@ queue, because its `cov = 0` is a tooling gap rather than a testing one, and
 count non-zero means work is left somewhere the queue cannot reach. `crapkit worklist` does
 rank those rows, marked `no-lane`, so the gap stays visible somewhere.
 
+The two read the same run, the newest trusted one, so where they disagree it is about
+ranking and never about which snapshot each is describing. `ratchet seed` and `prune` pick
+their run by the same rule `verify` uses, so neither signs marks off a run verify refused.
+They print which run they took and which they passed over:
+
+    crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 3 (86fb0cc6bce), skipped failed verify run 4
+
 The `worklist_floor` is not part of the judgement: a function under the floor whose CRAP
 is over its ceiling is queued like any other, so an empty queue is never the floor hiding
 debt.
