@@ -361,7 +361,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
   "stale": false,
   "target": 6,
   "uncovered_lines": [9, 11, 13, 15],
-  "versions": {"crapkit": "0.1.0", "lizard": "1.24.0"}
+  "versions": {"crapkit": "<version>", "lizard": "1.24.0"}
 }
 ```
 
@@ -732,7 +732,7 @@ $ crapkit verify --json
   "ratchet_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
   "run_id": 9,
   "schema": 1,
-  "tool_versions": {"crapkit": "0.1.0", "lizard": "1.24.0"}
+  "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"}
 }
 ```
 
@@ -895,7 +895,7 @@ $ crapkit doctor --json
   "problems": [],
   "schema": 1,
   "store": {"path": ".crapkit/crap.sqlite", "present": true, "size_bytes": 40960},
-  "versions": {"crapkit": "0.1.0", "lizard": "1.24.0", "python": "3.11.2"},
+  "versions": {"crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"},
   "warnings": []
 }
 ```
@@ -944,7 +944,7 @@ One line per disagreement, silence when they agree, exit 1 when it printed anyth
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: the plugin at crapkit is version 0.3.0, this crapkit is 0.4.0. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
+crapkit doctor: the plugin at crapkit is version 0.3.0, this crapkit is <version>. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
 crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
 ```
 
