@@ -104,6 +104,51 @@ Once it has happened, two escapes, both legitimate:
 `crapkit runs list` prints `verdict=-` on runs that rendered no verdict. See
 [The trusted baseline](../README.md#the-trusted-baseline).
 
+Since 0.4.5 the same failure also blocks `crapkit ratchet seed` and `crapkit ratchet prune`,
+which used to take the newest trusted run and would happily sign marks off a `coverage` run
+made after the failure. They now walk back with `verify` and say what they stepped over
+(`skipped failed verify run 2`). If the failure stands in front of every trusted run there
+is, both refuse and say a fresh `coverage` would be refused the same way. That is the case
+you hit by running `verify` before seeding, so seed first
+([ratchet.md](ratchet.md#seed-and-prune-pick-the-run-verify-picks)).
+
+## Planning a campaign
+
+Once the repo is seeded and green, somebody has to decide how many sessions run at once and
+what that costs. Four facts a plan needs, all measured on the 31,459-file repo the 0.4.5
+performance work was refereed against.
+
+**One `brief --batch N` per wave, never N `brief` calls.** The batch call reads the store,
+the churn log and the ratchet file once, and since 0.4.5 it shingles the repo once for the
+whole batch instead of once per packet. A batch of 5 went from 11.8 s to 5.2 s, output
+byte-identical. Pair it with `crapkit worklist --batches N`, which cuts the queue into
+file-disjoint batches so the resulting diffs merge.
+
+**The coupling cache is per checkout, and the first run in each pays for it.** Ranked
+co-change pairs live in `.crapkit/coupling-cache-v1.json`, which `init` already gitignores
+along with the rest of `.crapkit/`. Warm, `coupling` costs 0.11 s instead of 1.05 s and
+`worklist --batches` 62% less. A fleet of ten worktrees is ten cold runs, once each. Passing
+`--min-support` or `--min-confidence` off their defaults bypasses the cache every time, so
+keep the fleet on the defaults unless somebody is investigating.
+
+**`mutate` with `mutation_workers > 1` leaves worktrees on disk.** The workers now keep their
+worktrees under `.crapkit/mutate-pool/w0..wN` and re-prepare them per run, which took a run's
+setup from 30.6 s to 0.46 s. What is left behind is one full checkout of the repo per worker,
+and **the pool is not size-bounded**: budget for it on a big tree, and reclaim it with
+`crapkit mutate --drop-pool`. Single-worker runs mutate the working tree as they always did
+and leave nothing. A second `mutate` in the same repo finds the pool locked and falls back to
+a throwaway base, so it is slower rather than wrong.
+
+**`trend` and `report` write.** Both fill a per-run rollup table on first read, which is what
+takes `trend` from 4.58 s to 0.04 s. A session holding a checkout it must not write to should
+not be the one running them, though the write is best effort and neither command fails when
+it cannot land.
+
+Upgrading crapkit mid-campaign costs one commit: 0.4.5 measures at analysis version 8 where
+0.4.4 measured at 7, so every existing mark is refused until somebody runs `crapkit ratchet
+seed` and commits the restamped file. Do it once, on one branch, before the fleet fans out
+([ratchet.md](ratchet.md#upgrading-to-045-analysis-version-8)).
+
 ## Put repo traps in `notes`
 
 Every repo teaches its agents something that no config key expresses: a module that must
