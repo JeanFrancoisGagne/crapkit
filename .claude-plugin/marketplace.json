@@ -1,6 +1,6 @@
 {
   "name": "crapkit",
-  "description": "Deterministic CRAP-score tooling: complexity x coverage per function, a ranked worklist, and a commit gate that only ever tightens.",
+  "description": "Deterministic CRAP-score tooling for 14 languages: complexity x coverage per function, a ranked worklist, and a commit gate that only ever tightens.",
   "owner": {
     "name": "JF Gagne",
     "url": "https://github.com/JeanFrancoisGagne"
@@ -9,7 +9,7 @@
     {
       "name": "crapkit",
       "source": "./plugin",
-      "description": "crapkit's agent surface: three skills, the read-side MCP server, and one advisory PostToolUse hook that names functions an edit pushed over their ceiling. Needs the crapkit CLI on PATH (pip install crapkit, 0.4.0 or newer)."
+      "description": "crapkit's agent surface: three skills, the read-side MCP server, and one advisory PostToolUse hook that names functions an edit pushed over their ceiling. Needs the `crapkit` console script on PATH (pip install crapkit, 0.4.0 or newer); `crapkit doctor --plugin-root` says whether an installed copy and the CLI agree."
     }
   ]
 }

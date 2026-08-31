@@ -1,3 +1,8 @@
+# crapkit's own directory: the sqlite store, lane artifacts and logs, the churn
+# and coupling caches, and one git worktree per mutation worker under
+# mutate-pool/. `crapkit mutate --drop-pool` reclaims the worktrees. The caches
+# rebuild themselves; deleting crap.sqlite drops the run history trend and
+# report read.
 .crapkit/
 __pycache__/
 *.pyc
