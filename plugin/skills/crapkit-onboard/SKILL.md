@@ -48,6 +48,29 @@ Fallback for a runtime with no plugin marketplace: copy `plugin/skills/*` from a
 `~/.claude/skills`, or that runtime's equivalent. A copy gets the skills alone, never the
 hook or the MCP server, and carries no version to compare against the CLI.
 
+### Optional: advise Bash writes too
+
+The plugin registers the hook on `Edit|Write`. A `Bash` event carries the command and no
+file path, so a session that writes source through a heredoc or `python - <<PY` gets no
+advisory at all. Adding a second entry to your own settings hooks closes that, same
+command, matcher `Bash`:
+
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "crapkit claude-hook --protocol 1" }]
+      }
+    ]
+
+The hook then reads the working tree: the `*.py` files git reports dirty or untracked
+whose mtime lands inside a 12-second window, at most 25 of them, each judged the way an
+edited file is judged.
+
+The cost is why it is the consumer's choice and not the plugin's. Every shell call inside
+a repo pays one `git rev-parse` plus one `git status`, whether or not it wrote anything,
+and a repo with no `crapkit.toml` pays both before finding nothing to judge. A shell call
+outside any repo stops at the `rev-parse`.
+
 ## The repo
 
 Install the CLI first ([README: install](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#install)).
@@ -63,6 +86,14 @@ A detected lane comes out with its test-results file already wired, `--junitxml`
 command and `results_artifact` on the lane, because without one the crashed-worker check
 and the no-new-failures check (exit 8) cannot run. `doctor` WARNs about a lane that has
 none.
+
+A lockfile at the root decides which python those lines call: `uv.lock` writes
+`uv run python -m pytest ...`, and `poetry.lock`, `pdm.lock` and `Pipfile.lock` write
+their own `run` prefix, first match in that order. Every python line the file holds names
+that launcher, the commented `[[lane]]` template included, which a repo with no pytest
+marker file (`pyproject.toml`, `pytest.ini`, `setup.cfg`) gets in place of a live lane.
+Uncommenting it is therefore safe now: it used to hand back a bare `python`, which binds
+to whichever venv the shell has active rather than the one the repo pins.
 
 Read init's notes before the first `crapkit coverage`. Two of them are about the
 interpreter, and they are different problems. One says the shell cannot run the word the
