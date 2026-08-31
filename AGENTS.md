@@ -552,8 +552,8 @@ rejected in review.
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else: no xdist and no
 randomization, so the `-n 8` above is yours to pass and no `-n 0` is needed to isolate a
-failure. If you have pytest-randomly installed globally, add `-p no:randomly` to pin the
-order.
+failure. Pass it: the e2e suite serially runs about nine minutes. If you have
+pytest-randomly installed globally, add `-p no:randomly` to pin the order.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
