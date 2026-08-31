@@ -189,8 +189,8 @@ A repo with no `crapkit.toml` costs a silent sub-50 ms no-op per edit. Other age
 runtimes have no marketplace: copy `plugin/skills/*` into their skills directory instead.
 
 The hook registers on `Edit|Write`, which is every write that names a file. An agent that
-writes its source through a shell heredoc names none, so since 0.4.7 a `Bash` event is
-judged off the working tree instead. That half is yours to register, because it costs two
+writes its source through a shell heredoc names none, so a `Bash` event is judged off the
+working tree instead. That half is yours to register, because it costs two
 git spawns per shell call. Add a second PostToolUse entry to your own settings, same
 command, matcher `Bash`:
 
@@ -604,7 +604,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
 | 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
-| 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured THIS tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
+| 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
