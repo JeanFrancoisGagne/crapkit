@@ -456,9 +456,16 @@ def _unmeasured_reading(lane: Lane) -> str:
     return _COVERAGEPY_MISS if lane.parser == "coveragepy" else _ISTANBUL_MISS
 
 
-def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
+def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
+    """The finding both verdicts open on, written once: what the artifact
+    measured, and that none of it is in scope. The two messages part company
+    after it, and a sentence kept in two places is a sentence that drifts."""
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({_sample(declared)}), and {len(outside)} of them "
+            f"paths its scopes declare ({_sample(declared)})")
+
+
+def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
+    return (f"{_zero_overlap(lane, coverage, declared)}, and {len(outside)} of them "
             f"outside this checkout entirely — {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
             f"paths like {_sample(outside)}. {_wrong_tree_fix(lane)}")
@@ -466,8 +473,7 @@ def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]
 
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
-    return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({_sample(declared)}), so every function in those "
+    return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
             f"{_unmeasured_reading(lane)}")
 
