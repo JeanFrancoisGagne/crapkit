@@ -73,12 +73,15 @@ with exit 3, because cmd.exe would hand pytest five words and the lane would wri
 artifact:
 
 ```
+# the lane in crapkit.toml
+command = "python -m pytest -m 'not live and not perf' --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
+
 $ crapkit doctor
-crapkit: lane 'py': positional argument 'live'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+crapkit: lane 'py': positional argument 'live' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
 ```
 
-Write it `-m "not live"`. Carets, `&&` and `|` segments, redirections and empty quoted
-arguments all read the way the shell reads them, so a chained lane
+Write it `-m "not live and not perf"`. Carets, `&&` and `|` segments, redirections and
+empty quoted arguments all read the way the shell reads them, so a chained lane
 (`cd tests && python -m pytest --cov ...`) is checked one segment at a time. `doctor` reads
 a lane the same way, and FAILs one whose runner will not start.
 
@@ -146,12 +149,17 @@ crapkit MCP server is live: an agent session spawns `crapkit.exe mcp`, which hol
 launcher, and Windows will not overwrite a running executable. The venv upgrades before
 that copy fails, so `crapkit --version` already reports the new version and only the
 launcher is stale. Quit the agent session and rerun the upgrade, or rename the locked exe
-aside (Windows allows renaming a running one) and copy the new one in:
+aside (Windows allows renaming a running one) and copy the new one in. Two lines in
+cmd.exe, where both `%` variables expand:
 
+```bat
+move %USERPROFILE%\.local\bin\crapkit.exe %USERPROFILE%\.local\bin\crapkit.exe.old
+copy %APPDATA%\uv\tools\crapkit\Scripts\crapkit.exe %USERPROFILE%\.local\bin\crapkit.exe
 ```
-mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
-cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe
-```
+
+Git Bash has no `move` and passes `%APPDATA%` through as literal text, so that block
+fails there on its first line. Its form is `mv` and `cp` over `"$USERPROFILE"` and
+`"$APPDATA"`, which Git Bash sets to the same two directories.
 
 ## The Claude Code plugin
 
