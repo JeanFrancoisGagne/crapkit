@@ -49,10 +49,13 @@ Zero overlap has two readings, and the measured paths tell them apart:
 
 The refusal quotes a few of the paths the artifact does name, points at `path_prefix` as
 the legitimate remapping knob, and says to run the suite through the project's own
-manager. The check runs after `path_prefix` is applied, so a prefix that fixes the join
-is never refused; and it asks `universe.owning_scope`, the same predicate that assigns
-files to scopes, so a scope declaring individual files rather than directories is reached
-exactly.
+manager. The reach half runs after `path_prefix` is applied, so a prefix that fixes the
+join is never refused, and it asks `universe.owning_scope`, the same predicate that
+assigns files to scopes, so a scope declaring individual files rather than directories is
+reached exactly. The escape half asks the path the runner WROTE, with the prefix taken
+back off: the prefix is glued onto every key including the absolute ones, and judged on
+the key instead, `backend/` + `/other/checkout/a.py` reads as relative, so no lane that
+declares a prefix could ever be refused.
 
 Zero overlap is the whole test. A partial overlap has honest readings, a lane measuring
 part of a scope or generated files outside it, and any threshold over zero would need

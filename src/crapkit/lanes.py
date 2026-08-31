@@ -21,7 +21,7 @@ from typing import IO, NamedTuple
 
 from .config import Lane
 from .coverage_istanbul import FnCoverage
-from .covstream import parse_coveragepy_file, parse_istanbul_both_file
+from .covstream import lane_prefix, parse_coveragepy_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
 from .procs import run_bounded
@@ -383,6 +383,18 @@ def _escapes_repo(path: str) -> bool:
     return path.startswith(("/", "../")) or _DRIVE.match(path) is not None
 
 
+def _as_reported(lane: Lane, path: str) -> str:
+    """One coverage key with this lane's own `path_prefix` taken back off, which
+    is the path the runner actually wrote.
+
+    The coveragepy reader prepends the prefix to EVERY key, an absolute one
+    included, so `backend/` + `/other/checkout/a.py` starts with neither `/` nor
+    a drive letter. Asked of that key, `_escapes_repo` answers no on every lane
+    that declares the knob — the monorepo shape the check was written for."""
+    prefix = lane_prefix(lane.path_prefix)
+    return path[len(prefix):] if prefix and path.startswith(prefix) else path
+
+
 def _unreached_prefixes(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
@@ -395,6 +407,13 @@ def _unreached_prefixes(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[
     if not matchers or any(owning_scope(path, matchers) for path in coverage):
         return ()
     return tuple(dict.fromkeys(m.prefix for m in matchers))
+
+
+def _outside_paths(lane: Lane, coverage: dict) -> list[str]:
+    """The measured files that are not in this checkout, spelled the way the
+    artifact spells them."""
+    reported = (_as_reported(lane, path) for path in coverage)
+    return sorted(path for path in reported if _escapes_repo(path))
 
 
 def _sample(paths) -> str:
@@ -439,7 +458,7 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None) 
     prefixes = _unreached_prefixes(lane, coverage, scope_paths or {})
     if not prefixes:
         return
-    outside = sorted(path for path in coverage if _escapes_repo(path))
+    outside = _outside_paths(lane, coverage)
     if outside:
         raise ToolError(_wrong_tree_message(lane, coverage, prefixes, outside))
     print(f"crapkit: {_unmeasured_message(lane, coverage, prefixes)}", file=sys.stderr)

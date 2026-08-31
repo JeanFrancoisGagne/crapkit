@@ -281,7 +281,14 @@ def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
         return _guarded(lambda: _istanbul_map(w, repo_root, _dead_lines), _BAD_ISTANBUL)
 
 
-def _prefix(path_prefix: str) -> str:
+def lane_prefix(path_prefix: str) -> str:
+    """The lane's `path_prefix` as it is actually glued onto a measured path.
+
+    Public because the lane layer has to take it back OFF: it judges whether a
+    measured path escaped the checkout, and that question is about the path the
+    runner wrote, not about the key crapkit built out of it. Spelling the join
+    twice let `backend/` turn `/other/checkout/a.py` into something that reads
+    relative, and the refusal went silent on every lane that sets the knob."""
     return (path_prefix.rstrip("/") + "/") if path_prefix else ""
 
 
@@ -334,7 +341,7 @@ def parse_coveragepy_file(path: Path | str, *, path_prefix: str, chunk: int = CH
     """Per-file function coverage plus the sha256 of the report's own bytes."""
     w, handle = _window(path, chunk)
     with handle:
-        per_file = _guarded(lambda: _coveragepy_functions(w, _prefix(path_prefix)),
+        per_file = _guarded(lambda: _coveragepy_functions(w, lane_prefix(path_prefix)),
                             _BAD_REPORT)
     return per_file, w.hasher.hexdigest()
 
@@ -352,4 +359,4 @@ def parse_coveragepy_missing_file(path: Path | str, *, path_prefix: str,
     """Per measured file, the lines coverage.py reports as never run."""
     w, handle = _window(path, chunk)
     with handle:
-        return _guarded(lambda: _coveragepy_missing(w, _prefix(path_prefix)), _BAD_REPORT)
+        return _guarded(lambda: _coveragepy_missing(w, lane_prefix(path_prefix)), _BAD_REPORT)

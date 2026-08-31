@@ -108,6 +108,24 @@ def test_the_prefix_the_lane_declares_is_applied_before_the_question(tmp_path):
     assert list(coverage) == ["src/faro/core.py"]
 
 
+@pytest.mark.parametrize("elsewhere", [OTHER, "../sibling/src/core.py",
+                                       "C:/checkout-b/src/core.py"])
+def test_a_path_prefix_cannot_hide_an_artifact_from_another_tree(tmp_path, elsewhere):
+    """The prefix is glued onto every key the parser yields, absolute ones
+    included, so `backend/` + `/Users/dev/checkout-b/...` reads as an ordinary
+    relative path. Judged on the prefixed key, a lane that declares path_prefix
+    could never be refused, and the wrong-tree grade this check exists to stop
+    came back on exactly the monorepo lanes that need the knob."""
+    _artifact(tmp_path, elsewhere)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(path_prefix="backend"), {"src": ("backend/src",)})
+
+    assert "different tree" in str(raised.value)
+    assert elsewhere in str(raised.value), "the path quoted is the one the runner wrote"
+    assert "backend/" + elsewhere not in str(raised.value)
+
+
 def test_in_tree_paths_that_miss_the_scope_warn_rather_than_fail(tmp_path, capsys):
     """The greenfield shape: a suite that imports none of the scoped source yet.
     `untested` is the right answer there, and refusing it would exit 5 on exactly
