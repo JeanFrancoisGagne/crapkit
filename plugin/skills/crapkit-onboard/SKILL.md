@@ -17,8 +17,17 @@ claude plugin install crapkit@crapkit
 ```
 
 One install carries all three skills, the read-side MCP server, and the advisory PostToolUse
-hook, at a version that tracks the CLI's. `crapkit doctor --plugin-root PATH` reports drift
-between the two later.
+hook, at a version that tracks the CLI's. `crapkit doctor --plugin-root` reports drift
+between the two later. With no path it reads Claude Code's own plugin directory; with a
+path it takes the plugin root or any directory above it, `~/.claude` included. When it
+picks a root for you it names the one it chose:
+
+    $ crapkit doctor --plugin-root
+    crapkit doctor: checking C:\Users\jfgag\.claude\plugins\cache\crapkit\crapkit\0.4.4
+
+Nothing after that line, and exit 0, means the manifest version and the hook protocol both
+agree with this CLI. Otherwise it prints one line per disagreement, at exit 1. Finding no
+install at all is its own line, and that line names the command that installs one.
 
 Install it after the repo scores, not before. Earlier, `crapkit-onboard` points at a config
 that does not exist yet and `crapkit` points at a store with no run in it.
@@ -32,6 +41,29 @@ hook or the MCP server, and carries no version to compare against the CLI.
 Install the CLI first ([README: install](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#install)).
 Then, in the repo being adopted: `crapkit init` writes the starter config, `crapkit doctor`
 says whether it still describes the repo, `crapkit coverage` produces the first scored run.
+
+    $ crapkit init
+    wrote crapkit.toml with 1 scope(s): calc
+    detected 1 lane(s) from this repo's own files: py — next: run `crapkit coverage`
+    added to .gitignore: .crapkit/, .coverage, __pycache__/
+
+A detected lane comes out with its test-results file already wired, `--junitxml` on the
+command and `results_artifact` on the lane, because without one the crashed-worker check
+and the no-new-failures check (exit 8) cannot run. `doctor` WARNs about a lane that has
+none.
+
+Read init's notes before the first `crapkit coverage`. Two of them are about the
+interpreter, and they are different problems. One says the shell cannot run the word the
+lane starts with, naming the exit code; on Windows that is usually the Store `python.exe`
+alias, and the fix is a real Python or a lane pointed at `py`. The other says the python
+that runs pytest cannot import `pytest_cov`, and the fix is `pip install pytest-cov` in
+the environment the SUITE runs in, or `pip install "crapkit[py]"` when that environment is
+crapkit's own. Keep those double quotes: cmd.exe passes `'` through as an ordinary
+character and pip then rejects the requirement.
+
+On a Windows PATH that carries only the `py` launcher, init writes `py` into the lane. It
+is last in the fallback chain because it exists nowhere else, so a committed `py -m pytest`
+fails every Unix collaborator's doctor.
 
 Read [docs: adoption](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md)
 before the first `crapkit init`. It carries the judgment the quickstarts leave out: how
