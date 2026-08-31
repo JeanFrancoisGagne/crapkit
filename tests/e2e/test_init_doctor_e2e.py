@@ -551,3 +551,42 @@ def test_the_same_project_without_a_lockfile_keeps_the_bare_interpreter(locked_r
     # Any of the three names init falls back through, `py` included: which one
     # resolves is the machine's answer, and only the manager prefix is gone.
     assert re.match(r"(python3?|py) -m pytest ", cfg.lanes[0].command)
+
+
+@pytest.fixture()
+def unmarked_locked_repo(tmp_path: Path) -> Path:
+    """uv pins the environment, and no pytest marker file names the runner, so
+    init writes the coveragepy lane as a commented template rather than live."""
+    repo = tmp_path / "unmarked"
+    (repo / "pylib").mkdir(parents=True)
+    (repo / "pylib" / "mod.py").write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
+    (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def test_the_commented_lane_template_names_the_python_the_lockfile_pins(
+        unmarked_locked_repo: Path):
+    """The template is the command a reader uncomments. Written with a bare
+    `python` on a uv repo it hands them the environment bug init exists to
+    avoid, one uncomment later."""
+    assert run_cli(unmarked_locked_repo, "init").returncode == 0
+
+    text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert '# command = "uv run python -m pytest --cov' in text
+    assert '# pylib = "uv run python -m pytest {files}' in text, \
+        "the commented scoped-tests entry reads the same launcher"
+
+
+def test_without_a_lockfile_the_commented_template_keeps_the_bare_interpreter(
+        unmarked_locked_repo: Path):
+    (unmarked_locked_repo / "uv.lock").unlink()
+    _git_commit_all(unmarked_locked_repo, "drop the lockfile")
+
+    assert run_cli(unmarked_locked_repo, "init").returncode == 0
+
+    text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert re.search(r'# command = "(python3?|py) -m pytest --cov', text), text

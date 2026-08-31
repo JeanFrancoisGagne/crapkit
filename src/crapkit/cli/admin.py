@@ -350,9 +350,16 @@ def _warn_missing_pytest_cov(lanes: tuple) -> None:
     """The first-run trap, caught where it starts. The py lane shells out to
     `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
     REPO's interpreter, so a crapkit dependency could only ever cover installs
-    sharing the suite's venv. Probe the python the lane will actually run and
-    say the fix now, instead of `coverage` exiting 5 with a lane log the first
-    run has to decode."""
+    sharing the suite's venv. Say the fix now, instead of `coverage` exiting 5
+    with a lane log the first run has to decode.
+
+    Only a lane whose pytest segment starts with a python is probed at all. A
+    lane an environment manager heads is not: `uv run` and its siblings create
+    or sync the project environment before running anything, so probing one
+    would provision an environment to ask a question about it. Such a lane
+    still earns the two notes ahead of the probe, a manager PATH does not carry
+    and a first word the shell cannot start.
+    """
     for lane in _probed_lanes(lanes):
         note = _lane_first_run_note(lane)
         if note:
@@ -386,9 +393,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         raise ConfigError(_no_scopes_reason(root))
     # A config whose lanes are all commented out scores every function no-lane,
     # so a fresh repo cannot rank anything until somebody hand-writes a lane.
-    lanes = detect_lanes(_present_markers(root), _package_json(root),
-                         interpreter=_interpreter(root))
-    text = starter_toml(scopes, lanes)
+    # The interpreter goes to both: a repo with no pytest marker file gets no
+    # lane to read it back off, and its commented template is what the reader
+    # uncomments.
+    interpreter = _interpreter(root)
+    lanes = detect_lanes(_present_markers(root), _package_json(root), interpreter=interpreter)
+    text = starter_toml(scopes, lanes, interpreter=interpreter)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes)
