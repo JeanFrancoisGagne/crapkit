@@ -573,7 +573,8 @@ rejected in review.
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else: no xdist and no
 randomization, so the `-n 8` above is yours to pass and no `-n 0` is needed to isolate a
-failure. Pass it: the e2e suite serially runs about nine minutes. If you have
+failure. Pass it: the e2e suite runs about 1m30 at `-n 8` against about 8 minutes
+serially, the pair CI, the PR template and pyproject.toml quote. If you have
 pytest-randomly installed globally, add `-p no:randomly` to pin the order.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
