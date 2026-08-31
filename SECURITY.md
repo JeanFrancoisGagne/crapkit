@@ -27,7 +27,8 @@ next patch release and the advisory credits you unless you would rather it did n
 
 ## What crapkit spawns
 
-Five things start a process, and all five come out of `crapkit.toml`. The shell
+Five things start a process, and every one of them runs a command from your
+lane configuration, the one `init` detects and writes and you then edit. The shell
 is the one that will run the command: `cmd.exe` on Windows, `sh` everywhere
 else. When a `timeout_seconds` or a probe deadline expires, crapkit kills the
 whole process tree, not just the shell it started (`taskkill /T` on Windows,
@@ -55,13 +56,13 @@ throwaway worktrees under the system temp directory.
 
 Everything crapkit writes for itself lives under `.crapkit/` in the repo it
 scores, which is why `init` adds that directory to `.gitignore`. The exceptions
-are the three files you are meant to read and commit: `crapkit.toml`,
-the ratchet TSV, and that `.gitignore` line.
+are what you are meant to read and commit: `crapkit.toml`, the ratchet TSV, and
+the `.gitignore` line itself.
 
 | Under `.crapkit/` | What it is |
 | --- | --- |
 | `crap.sqlite` | the store: every scored run, its rows, its per-run rollups, and the override audit trail |
-| `cov/` and `lane-*.log` | whatever your lanes write, plus the streamed log of each lane run |
+| `cov/` and `lane-*.log` | where the lanes `init` writes put their artifacts, plus the streamed log of each lane run. A lane you write can point its artifact anywhere |
 | `churn-cache-v2.json`, `churn-log-v2.z` | the git churn walk, cached per format version |
 | `coupling-cache-v1.json` | ranked coupling pairs, keyed on HEAD and the tracked set |
 | `mutate-pool/` | one git worktree per mutation worker, each a full checkout of HEAD |
