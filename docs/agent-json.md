@@ -1073,6 +1073,10 @@ because ranking drops any pair naming a file `git ls-files` no longer lists, and
 moves without HEAD: `git rm --cached src/util.py` leaves the sha alone and must still retire
 every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash.
 
+The paths are decoded. git spells a non-ASCII name in a log with C-style escapes, and since
+0.4.5 all three readers undo that before joining, so a pair names the file `git ls-files`
+names rather than a spelling that joins to nothing.
+
 ---
 
 ## `claude-hook`
@@ -1111,6 +1115,10 @@ code.
 It judges the functions the edit touched, not the whole file. Judging the file would fire on
 every edit in a repo with seeded debt and say nothing new. An untracked file is the one
 exception: `git diff` can see none of it, so every function in it counts.
+
+That diff runs root-relative since 0.4.5, the way every other git spawn crapkit makes does,
+so a `crapkit.toml` below the git top gets advisories on the paths the commit gate will
+judge.
 
 ### The silence ladder
 
