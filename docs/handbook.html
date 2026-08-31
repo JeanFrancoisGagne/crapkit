@@ -535,6 +535,12 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 
 <p>A mark does three jobs at once. It pardons the commit gate (<a href="#twogates">§06</a>), it silences the per-edit advisory, and it sets the high-water line <code>verify</code> refuses to let rise. Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
 
+<h3>0.4.5 is one of those bumps</h3>
+<p>Shell cognitive complexity now nests: <code>fi</code>, <code>done</code> and <code>esac</code> close the level <code>if</code>, a loop keyword or <code>case</code> opened, so a 4-deep shell <code>if</code> reads 10 like every other language instead of 4. That is analysis version 8, so the first command you run after the upgrade refuses the marks the old version signed:</p>
+<pre><code>$ crapkit verify
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`</code></pre>
+<p>Do what it says. Re-seeding brings the same marks back: only shell's cognitive column moved, ccn is untouched in every language, and no mark, gate or CRAP score reads the cognitive column at all (<a href="#score">§02</a>).</p>
+
 <p><strong>Tightening is damped, because a tighten claims the code improved and one commit measured twice cannot have.</strong> Some suites measure the same bytes two ways: a coverage attribution that races a subprocess reported one function at CRAP 20.0 on one run of a commit and 72.0 on the next. Tighten on the lucky half of that and the unlucky half fails the mark, so the gate becomes a coin flip on an unchanged tree and the marks file churns 20 to 72 and back in commits. So <code>verify</code> compares each marked function against the same commit's previous <em>trusted</em> run — the same word <code>ratchet seed</code> uses, so a failed verify and a partial run are invisible to both — and holds any mark whose score moved by more than <code>tighten_max_jump</code> (default 2x), naming the function and both values on stderr. Real work moves a score by less than a measurement race does, so a stable improvement still tightens in full; <code>verify --no-tighten</code> holds the whole file when you want the verdict without the rewrite.</p>
 
 <!-- ============================ 09 BASELINE ============================ -->
@@ -565,6 +571,15 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 </figure>
 
 <p><code>runs list</code> marks the row verify compares against today, and warns when a moved HEAD makes the snapshot stale. For a repo with no store at all, such as a CI clone, <code>verify --emit-baseline</code> on the main branch writes a commit-stamped TSV that <code>verify --baseline-tsv</code> reads in the pull request.</p>
+
+<h3>One rule, every reader</h3>
+<p>Since 0.4.5 the pick above has one implementation and six callers: <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code>, <code>ratchet prune</code> and <code>verify</code> all land on the same run. Two of them used to answer differently, which showed up as <code>worklist</code> ranking one snapshot while <code>next-item</code> handed out work from another, and as <code>ratchet seed</code> signing marks off a run <code>verify</code> had just refused.</p>
+
+<h3>Naming a run that cannot serve</h3>
+<p><code>--baseline ID</code> is the deliberate escape, and it can name a run that exists and still cannot be measured against. That used to print the empty-store line, which sent people off to run <code>coverage</code> for a store they already had. It now names the run, the reason, and the runs that can:</p>
+<pre><code>$ crapkit verify --baseline 2
+crapkit: run 2 is an inventory run (no coverage was measured) and cannot serve as a baseline; trusted runs: 1; pass `--baseline 1` for the newest</code></pre>
+<p>Four reasons reach that line: a failed verify, a hook run, a partial run (a lane subset, or a lane that failed), and an inventory run, which measured complexity and no coverage.</p>
 
 <!-- ============================ 10 LANES ============================ -->
 <h2 id="lanes"><span class="sn">10</span>Lanes: how coverage arrives</h2>
