@@ -128,7 +128,7 @@ crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] bu
 Only shell and PowerShell cognitive numbers move. `ccn` does not, so a re-seed re-stamps
 the file and leaves the marks where they were.
 
-Three more things change under you, none of them needing an action:
+Five more things change under you. Three of them need nothing from you:
 
 - **New cache files.** `.crapkit/coupling-cache-v1.json` joins `churn-cache-v2.json` and
   `churn-log-v2.z`. A warm 0.4.4 churn cache is adopted once and its file removed, and
@@ -140,6 +140,18 @@ Three more things change under you, none of them needing an action:
   deepest declared path wins, so a repo whose `[[scope]]` paths nest inside each other can
   see files change scope, rollup and ceiling on the next scan. Scopes that do not nest see
   no change.
+
+The other two put something in front of you:
+
+- **`mutate` keeps a worktree pool.** With `mutation_workers > 1` the worker worktrees now
+  live under `.crapkit/mutate-pool/` between runs and are re-prepared each run, which is
+  the setup cost gone (30.6 s to build four on a 31,459-file repo, 0.46 s to re-prepare
+  them). The pool is not size-bounded and nothing sweeps it: `crapkit mutate --drop-pool`
+  removes it and exits. Single-worker runs are untouched.
+- **`doctor` WARNs on a lane with no `results_artifact`.** Every `coveragepy` or `istanbul`
+  lane written before 0.4.5 gets one, with the two lines that fix it. Coverage is
+  unaffected. What the lane cannot feed without a results file is the crashed-worker check
+  and the no-new-failures check (exit 8).
 
 ### The exe lock on Windows
 
