@@ -19,6 +19,16 @@ root-relative paths the commit gate will. The freshness window is what keeps a l
 shipped plugin still registers `Edit|Write` only — a `Bash` matcher is the consumer's
 to add, and this is what makes one useful without a per-consumer wrapper.
 
+### A retried lane quotes the attempt that failed it
+The cause hoisted in front of a lane refusal is now read from the FINAL attempt only.
+Every attempt appends to one `.crapkit/lane-<name>.log`, and the scan that looks for a
+reason ran over the whole file, so a lane that timed out on an `ImportError` and then
+failed attempt 2 for a different reason reported the ImportError, standing above attempt
+2's own output with nothing marking the boundary between them. The final attempt starts
+after the last `--- attempt N ---` banner line; the banner has to be the whole line, so
+output that quotes those words mid-text is still output. Attempt 1 writes no banner, so a
+log without one is a single attempt and reads exactly as before.
+
 ## 0.4.6 — 2026-08-31
 
 Three findings from @nicolaschapados, out of one incident on a real pytest/uv project

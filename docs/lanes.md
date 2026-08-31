@@ -1014,6 +1014,14 @@ ERROR tests/test_widgets.py
 (exit 2)
 ```
 
+A retried lane appends every attempt to that one log, and the hoisted cause is read from
+the last attempt alone: the text after the final `--- attempt N ---` banner line. A lane
+that died of an `ImportError` and then failed its retry for a different reason used to
+report the ImportError over the retry's own output, with nothing marking which attempt
+each half came from. The banner counts only as a whole line, so log output quoting those
+words mid-line starts no attempt, and attempt 1 writes no banner at all, which makes a
+bannerless log one attempt.
+
 ---
 
 ## An artifact that measured a different tree
