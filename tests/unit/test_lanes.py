@@ -142,8 +142,12 @@ def test_the_reason_survives_a_summary_block_long_enough_to_bury_it(tmp_path):
 
     message = _refusal(tmp_path, lines)
 
-    assert "cannot import name 'Widget' from '/other/checkout/src'" in message
+    reason = "cannot import name 'Widget' from '/other/checkout/src'"
+    assert reason in message
     assert "short test summary info" not in message, "the budget went to the reason"
+    assert "\n...\n" in message, (
+        "the two excerpts are not adjacent output, and the ellipsis says so")
+    assert message.index(reason) < message.index("ERROR tests/test_0")
 
 
 def test_a_cause_line_too_long_to_show_whole_keeps_its_end(tmp_path):

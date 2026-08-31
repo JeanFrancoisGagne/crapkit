@@ -712,6 +712,19 @@ def test_without_a_lockfile_the_name_that_resolves_is_the_one_written(tmp_path):
     assert admin._interpreter(_repo(tmp_path, "Cargo.lock")) in ("python", "python3")
 
 
+def test_the_interpreter_written_is_a_name_and_never_a_path(tmp_path, monkeypatch):
+    """Both halves of the no-lockfile fallback. The assertion beside this one
+    (`in ("python", "python3")`) passes on either, so a refactor to
+    `shutil.which("python") or "python3"` — which returns THIS machine's
+    absolute path, the thing the docstring forbids — would keep the suite
+    green while init committed that path into a shared crapkit.toml."""
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert admin._interpreter(tmp_path) == "python3"
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
+    assert admin._interpreter(tmp_path) == "python"
+
+
 def test_the_manager_prefixes_the_name_the_fallback_chose(tmp_path, monkeypatch):
     """The prefix and the name are two answers, not one. On a Windows PATH that
     carries only the launcher, a managed repo gets `uv run py` — writing

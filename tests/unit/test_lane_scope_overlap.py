@@ -68,6 +68,21 @@ def test_every_spelling_of_a_path_outside_the_tree_is_refused(tmp_path, elsewher
         _run(tmp_path, _lane(), {"src": ("src",)})
 
 
+def test_one_escaping_path_beside_in_tree_ones_still_refuses(tmp_path):
+    """The incident's own shape. A venv measuring the other checkout still
+    records THIS checkout's conftest and test files, so the artifact is mixed;
+    every other test here feeds an artifact that is all one or all the other.
+    If the in-tree half decided, the wrong-tree grade comes back on exactly the
+    artifact the check was written for."""
+    _artifact(tmp_path, "tests/conftest.py", "tests/test_core.py", OTHER)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+    assert "measured 3 file(s)" in str(raised.value)
+    assert "1 of them outside this checkout entirely" in str(raised.value)
+
+
 def test_the_refusal_quotes_the_paths_the_artifact_does_name(tmp_path):
     """Without them the reader cannot tell a wrong tree from a wrong prefix."""
     _artifact(tmp_path, OTHER)
