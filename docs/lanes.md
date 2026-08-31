@@ -1070,7 +1070,10 @@ to resolve it against. And a mixed artifact, some paths under the root and some 
 it, is another tree: a path from somewhere else can only have come from somewhere else,
 and the count in that message names the outside ones alone.
 
-In-tree relative paths that simply miss the scopes warn instead, and the run scores on:
+### In-tree paths that miss every scope
+
+Relative paths that reach none of the declared scopes warn instead, and the run
+scores on:
 
 ```
 crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare (src), so every function in those scopes will score untested; it measured tests/test_core.py — either nothing in them is exercised yet, or the runner reports paths this lane needs path_prefix to rebase
