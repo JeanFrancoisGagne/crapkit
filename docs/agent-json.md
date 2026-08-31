@@ -864,7 +864,7 @@ $ crapkit coverage --json
 | `grade` | The letter for over-target density. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
 | `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. |
-| `lane_failures` | Lane name to failure text, for lanes that did not produce an artifact. Non-empty means the run is typed `partial` and cannot be a baseline. |
+| `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed. |
 
 `inventory --json` is the same run summary minus everything coverage adds: `run_id`,
 `commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `db`.
@@ -1122,13 +1122,40 @@ so a `crapkit.toml` below the git top gets advisories on the paths the commit ga
 judge.
 
 A `Bash` event names no `file_path` — its `tool_input` carries the `command` — so it takes a
-working-tree fallback instead: the changed `*.py` files whose mtime falls inside a short
-freshness window (a few seconds, capped at 25 files) are each judged through the same
-per-file ladder. That is what catches source written through a shell heredoc or
-`python - <<'PY'`, which some harness modes use for every write; the freshness window is
-what keeps a later `ls` from re-advising a file that was already dirty. Registering the
-hook under a `Bash` matcher is the consumer's choice; the shipped plugin registers
-`Edit|Write` only.
+working-tree fallback instead: the `*.py` files git reports dirty or untracked, whose mtime
+falls inside a **12-second** freshness window, at most **25** of them, each judged through
+the same per-file ladder. That is what catches source written through a shell heredoc or
+`python - <<'PY'`, which some harness modes use for every write.
+
+Three numbers, three reasons. The window keeps a later `ls` from re-advising a file that was
+already dirty before this command ran. The cap is there because PostToolUse waits this
+process out, so a large dirty tree would be a stall rather than a reason to judge all of it.
+And only Python is judged, because every other language stays the commit gate's business,
+which is what keeps the fallback cheap enough to pay per shell call. The status read is
+`git status --porcelain -z -uall`, so a heredoc that creates a whole new directory of source
+arrives as its files rather than as one collapsed `?? newdir/` row.
+
+The shipped plugin registers `Edit|Write` only. A `Bash` matcher is the consumer's choice: a
+second entry in your own settings hooks, same command, matcher `Bash`.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "crapkit claude-hook --protocol 1", "timeout": 20}
+        ]
+      }
+    ]
+  }
+}
+```
+
+It costs one `git rev-parse` and one `git status` per shell call in any git repo, measured or
+not, which is why it is not the default. Add it when the harness writes source through the
+shell; skip it when every write arrives as an `Edit`.
 
 ### The silence ladder
 
@@ -1136,11 +1163,16 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 
 | Rung | Silent when |
 |---|---|
-| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
-| repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config |
-| git state | mid-rebase, mid-merge or mid-cherry-pick |
 | protocol | `--protocol` is anything but `1` |
+| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
+| repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
+| git state | mid-rebase, mid-merge or mid-cherry-pick |
 | verdict | no scope claims the file, the source parses to no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+
+Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
+git call, so a payload for a protocol this CLI does not answer costs nothing but the read of
+stdin. No outcome moved with it. The payload is read before any rung, which is why stdin
+that is not one JSON object sits on the event row.
 
 Silence is the design. PostToolUse renders every nonzero exit but 2 invisible, and 47.5% of
 the edits this was measured against land in repos with no `crapkit.toml`. A hook that fired
