@@ -92,10 +92,10 @@ that runs: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisG
 
 doctor reads the lane command and nothing behind it. It checks that the first word of every
 segment (`&&`, `||`, `&`, `|`) resolves on PATH, and it starts the line's own first word
-once, which is the only word it starts. So a lane
-written as `npm run test -- --coverage ...` is checked as far as `npm`, and the runner the
-package script names is invisible to it. A package that lists `vitest` in `devDependencies`
-with no `node_modules` on disk therefore passes doctor and then fails the lane:
+once, which is the only word it starts. So a lane written as
+`npm run test -- --coverage ...` is checked as far as `npm`, and the runner the package
+script names is invisible to it. A package that lists `vitest` in `devDependencies` with no
+`node_modules` on disk therefore passes doctor and then fails the lane:
 
     $ crapkit doctor
     ...
