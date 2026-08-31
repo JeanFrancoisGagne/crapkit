@@ -373,14 +373,49 @@ def _read_and_parse(lane: Lane, root: Path,
 
 _SAMPLE_PATHS = 3
 
-# A path the runner could not write relative to this checkout: absolute, drive
+# A path the runner did not write relative to this checkout: absolute, drive
 # lettered, or climbing out of the tree. Both parsers rebase a file INSIDE the
-# repo to a repo-relative path, so one that is not is a file somewhere else.
+# repo to a repo-relative path, so one that is not either came from elsewhere or
+# was spelled absolutely by a runner told to spell it that way. Which of the two
+# is decided against the root, below; the shape alone does not say.
 _DRIVE = re.compile(r"[A-Za-z]:[\\/]")
 
 
+def _is_absolute(path: str) -> bool:
+    """Absolute in either spelling: a POSIX root, or a drive letter."""
+    return path.startswith("/") or _DRIVE.match(path) is not None
+
+
 def _escapes_repo(path: str) -> bool:
-    return path.startswith(("/", "../")) or _DRIVE.match(path) is not None
+    return _is_absolute(path) or path.startswith("../")
+
+
+def _resolved(path: str) -> str:
+    """One spelling, so both sides of the root comparison can be compared at
+    all: symlinks followed, separators normalized, and the case folded where the
+    filesystem folds it (`normcase` is identity on POSIX, which does not).
+
+    A path whose tail does not exist still normalizes; only a name the platform
+    cannot express at all raises, and that is answered as written."""
+    try:
+        resolved = str(Path(path).resolve())
+    except (OSError, ValueError):
+        return os.path.normcase(path)
+    return os.path.normcase(resolved)
+
+
+def _under(root: str, path: str) -> bool:
+    """Both already `_resolved`. The root itself counts as under itself."""
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _lands_in_checkout(root: str, path: str) -> bool:
+    """An absolute path naming a file this checkout holds after all.
+
+    `../` is excluded on purpose: it is relative to the runner's working
+    directory, which the artifact never records, so there is nothing to resolve
+    it against and no honest way to place it."""
+    return _is_absolute(path) and _under(root, _resolved(path))
 
 
 def _as_reported(lane: Lane, path: str) -> str:
@@ -413,11 +448,24 @@ def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str
     return tuple(dict.fromkeys(m.path for m in matchers))
 
 
-def _outside_paths(lane: Lane, coverage: dict) -> list[str]:
-    """The measured files that are not in this checkout, spelled the way the
-    artifact spells them."""
+def _escaped_paths(lane: Lane, coverage: dict) -> list[str]:
+    """The measured files the runner did not write relative to this checkout,
+    spelled the way the artifact spells them."""
     reported = (_as_reported(lane, path) for path in coverage)
     return sorted(path for path in reported if _escapes_repo(path))
+
+
+def _split_escaped(root: Path, escaped: list[str]) -> tuple[list[str], list[str]]:
+    """(paths from another tree, absolute paths that land under this root).
+
+    The root resolves once, and every path resolves the same way, or a symlinked
+    or short-name checkout compares unequal to its own files."""
+    resolved_root = _resolved(str(root))
+    elsewhere: list[str] = []
+    inside: list[str] = []
+    for path in escaped:
+        (inside if _lands_in_checkout(resolved_root, path) else elsewhere).append(path)
+    return elsewhere, inside
 
 
 def _sample(paths) -> str:
@@ -447,9 +495,23 @@ _ISTANBUL_FIX = ("The reader rebases every path under this checkout's root, so t
 _COVERAGEPY_MISS = "or the runner reports paths this lane needs path_prefix to rebase"
 _ISTANBUL_MISS = "or the suite measured a part of the tree these scopes do not name"
 
+# And the third case: this tree, spelled absolutely. Neither fix above applies —
+# the environment is right and path_prefix only ever PREPENDS — so the knob is
+# the runner's own, and each reader has a different one.
+_COVERAGEPY_ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
+                            "under `[tool.coverage.run]` in pyproject.toml, or "
+                            "`[run] relative_files = true` in .coveragerc, then rerun the lane")
+_ISTANBUL_ABSOLUTE_FIX = ("The reader strips this checkout's root off every measured path "
+                          "literally, so the reporter spelled that root some other way: point "
+                          "it at this checkout with its own cwd/root option, then rerun the lane")
+
 
 def _wrong_tree_fix(lane: Lane) -> str:
     return _COVERAGEPY_FIX if lane.parser == "coveragepy" else _ISTANBUL_FIX
+
+
+def _absolute_fix(lane: Lane) -> str:
+    return _COVERAGEPY_ABSOLUTE_FIX if lane.parser == "coveragepy" else _ISTANBUL_ABSOLUTE_FIX
 
 
 def _unmeasured_reading(lane: Lane) -> str:
@@ -471,6 +533,14 @@ def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]
             f"paths like {_sample(outside)}. {_wrong_tree_fix(lane)}")
 
 
+def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -> str:
+    return (f"{_zero_overlap(lane, coverage, declared)}, and {len(inside)} of them written "
+            f"as absolute paths that DO sit under this checkout — {lane.artifact} measured "
+            f"this tree and spelled it absolutely, and the join is on root-relative paths, "
+            f"so it still matches nothing and every function in those scopes would score "
+            f"untested; it reports paths like {_sample(inside)}. {_absolute_fix(lane)}")
+
+
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
@@ -478,7 +548,8 @@ def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
             f"{_unmeasured_reading(lane)}")
 
 
-def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None) -> None:
+def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
+                          root: Path) -> None:
     """Say something when a lane's artifact reaches none of the scopes it claims.
 
     Coverage joins on path and nothing else, so such an artifact contributes
@@ -488,18 +559,29 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None) 
     answer. Two worktrees of one branch reach it quietly: a venv whose editable
     install points at the other checkout makes coverage.py measure that tree.
 
-    Two verdicts, because zero overlap has two readings and the paths tell them
-    apart. Measured files OUTSIDE this checkout can only be another tree, and
-    that fails the lane. In-tree paths that simply miss the scopes are the
-    greenfield shape as well — a suite that imports none of the scoped source
-    yet, which SHOULD score untested — so that one warns and scores on.
+    Three verdicts, because zero overlap has three readings and the paths tell
+    them apart, against the root. Measured files OUTSIDE the root can only be
+    another tree, and that fails the lane. Absolute paths that resolve UNDER it
+    are this tree with the runner spelling every path absolutely: the join is
+    root-relative, so it matches nothing either, and that fails the lane too —
+    with the runner's own knob named, because the venv advice above is not the
+    cause and path_prefix only prepends. In-tree relative paths that simply miss
+    the scopes are the greenfield shape as well — a suite that imports none of
+    the scoped source yet, which SHOULD score untested — so that one warns and
+    scores on.
+
+    A mixed artifact is another tree. A path from somewhere else can only have
+    come from somewhere else, and the absolute in-tree ones are what the same
+    wrong run reports about the files it did reach.
     """
     declared = _unreached_paths(lane, coverage, scope_paths or {})
     if not declared:
         return
-    outside = _outside_paths(lane, coverage)
-    if outside:
-        raise ToolError(_wrong_tree_message(lane, coverage, declared, outside))
+    elsewhere, inside = _split_escaped(root, _escaped_paths(lane, coverage))
+    if elsewhere:
+        raise ToolError(_wrong_tree_message(lane, coverage, declared, elsewhere))
+    if inside:
+        raise ToolError(_absolute_message(lane, coverage, declared, inside))
     print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
 
 
@@ -630,7 +712,7 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
     _refuse_container_python(lane)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane))
-    _judge_artifact_scope(lane, coverage, scope_paths)
+    _judge_artifact_scope(lane, coverage, scope_paths, root)
     provenance = {
         "artifact_sha256": digest,
         "exit_code": exit_code,

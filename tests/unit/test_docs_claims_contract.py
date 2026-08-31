@@ -404,9 +404,12 @@ def test_the_lanes_page_prints_the_crashed_worker_refusal_the_parser_raises():
     assert f"crapkit: lane 'py' FAILED: {exc.value}" in _doc("docs/lanes.md")
 
 
-def _judged(paths) -> tuple:
+_ROOT = Path("/repo")
+
+
+def _judged(paths, root: Path = _ROOT) -> tuple:
     """(refusal or None, stderr) for a lane whose scopes declare `src` and whose
-    artifact measured these paths."""
+    artifact measured these paths, judged against `root`."""
     import io
     from contextlib import redirect_stderr
 
@@ -419,7 +422,7 @@ def _judged(paths) -> tuple:
     err = io.StringIO()
     try:
         with redirect_stderr(err):
-            _judge_artifact_scope(lane, dict.fromkeys(paths, []), {"src": ("src",)})
+            _judge_artifact_scope(lane, dict.fromkeys(paths, []), {"src": ("src",)}, root)
     except ToolError as raised:
         return raised, err.getvalue()
     return None, err.getvalue()
@@ -435,6 +438,18 @@ def test_the_lanes_page_prints_the_wrong_tree_refusal_the_lane_raises():
     "does not describe this checkout" and "Set path_prefix on the lane", neither
     of which the lane emits."""
     refusal, _ = _judged(_OTHER_TREE)
+
+    assert f"crapkit: lane 'py' FAILED: {refusal}" in _doc("docs/lanes.md")
+
+
+_ABSOLUTE_IN_TREE = ("/repo/src/faro/core.py", "/repo/src/faro/util.py")
+
+
+def test_the_lanes_page_prints_the_absolute_in_tree_refusal_the_lane_raises():
+    """The verdict the page did not have. Absolute paths under this very root
+    used to be quoted under "describes a different tree", with advice about
+    venvs and path_prefix that has nothing to do with the cause."""
+    refusal, _ = _judged(_ABSOLUTE_IN_TREE)
 
     assert f"crapkit: lane 'py' FAILED: {refusal}" in _doc("docs/lanes.md")
 

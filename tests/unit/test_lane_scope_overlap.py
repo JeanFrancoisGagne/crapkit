@@ -204,14 +204,14 @@ def _js_lane() -> Lane:
                 parser="istanbul", scopes=("web",))
 
 
-def test_a_js_lane_is_not_told_to_run_pytest_through_a_python_manager():
+def test_a_js_lane_is_not_told_to_run_pytest_through_a_python_manager(tmp_path):
     """The advice was written for the incident's coveragepy lane and printed on
     every lane. `uv run python -m pytest` is not something a vitest lane can do,
     and path_prefix is read by the coveragepy reader alone — the istanbul reader
     rebases against the checkout root and never sees the key."""
     with pytest.raises(ToolError) as raised:
         _judge_artifact_scope(_js_lane(), {"/Users/dev/checkout-b/web/src/app.ts": []},
-                              {"web": ("web/src",)})
+                              {"web": ("web/src",)}, tmp_path)
 
     message = str(raised.value)
     assert "describes a different tree" in message
@@ -219,18 +219,19 @@ def test_a_js_lane_is_not_told_to_run_pytest_through_a_python_manager():
     assert "path_prefix" not in message, "a knob the istanbul reader never reads"
 
 
-def test_the_js_warning_names_no_knob_the_js_reader_ignores(capsys):
+def test_the_js_warning_names_no_knob_the_js_reader_ignores(tmp_path, capsys):
     """Same defect on the warn branch: it closes by naming path_prefix."""
-    _judge_artifact_scope(_js_lane(), {"web/tests/app.test.ts": []}, {"web": ("web/src",)})
+    _judge_artifact_scope(_js_lane(), {"web/tests/app.test.ts": []}, {"web": ("web/src",)},
+                          tmp_path)
 
     err = capsys.readouterr().err
     assert "will score untested" in err
     assert "path_prefix" not in err
 
 
-def test_a_python_lane_keeps_the_advice_the_incident_earned():
+def test_a_python_lane_keeps_the_advice_the_incident_earned(tmp_path):
     with pytest.raises(ToolError) as raised:
-        _judge_artifact_scope(_lane(), {OTHER: []}, {"src": ("src",)})
+        _judge_artifact_scope(_lane(), {OTHER: []}, {"src": ("src",)}, tmp_path)
 
     assert "uv run python -m pytest" in str(raised.value)
     assert "path_prefix" in str(raised.value)
@@ -252,3 +253,100 @@ def test_a_caller_that_passes_no_scope_paths_is_not_judged(tmp_path):
     coverage, _, _ = run_lane(tmp_path, _lane(), reuse_artifact=True)
 
     assert list(coverage) == [OTHER]
+
+
+# --- absolute paths that land INSIDE this checkout --------------------------
+# The third reading. An absolute path is not evidence of another tree on its
+# own: a runner told to report absolute paths reports this checkout's own files
+# absolutely, and crapkit joins on root-relative ones, so the join still finds
+# nothing. Same exit 5, because the artifact is still unusable, but the cause is
+# the runner's path spelling and the fix is the runner's own knob.
+
+
+def _inside(tmp_path, rel: str) -> str:
+    """An absolute path under the root, spelled the way the host spells one:
+    drive-lettered on Windows, slash-rooted on POSIX."""
+    return (tmp_path / rel).as_posix()
+
+
+def test_an_absolute_path_under_the_root_is_not_called_another_tree(tmp_path):
+    _artifact(tmp_path, _inside(tmp_path, "src/faro/core.py"))
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+    message = str(raised.value)
+    assert "different tree" not in message
+    assert "under this checkout" in message
+    assert _inside(tmp_path, "src/faro/core.py") in message
+
+
+def test_the_refusal_names_the_runner_knob_that_writes_relative_paths(tmp_path):
+    """coverage.py's own switch, which is the actual cause and the actual fix."""
+    _artifact(tmp_path, _inside(tmp_path, "src/faro/core.py"))
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+    message = str(raised.value)
+    assert "relative_files = true" in message
+    assert "[tool.coverage.run]" in message and ".coveragerc" in message
+    assert "uv run" not in message, "the venv is not the cause here"
+    assert "path_prefix" not in message, "a prefix only ever prepends"
+
+
+def test_a_native_separator_spelling_lands_in_the_same_verdict(tmp_path):
+    r"""The Windows shape: the reader folds `\` to `/` before anything asks."""
+    _artifact(tmp_path, str(tmp_path / "src" / "faro" / "core.py"))
+
+    with pytest.raises(ToolError, match="relative_files"):
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+
+def test_a_climb_out_of_the_tree_keeps_the_another_tree_refusal(tmp_path):
+    """`../` is relative to a working directory crapkit never saw, so it cannot
+    be resolved against the root. It stays the artifact-from-elsewhere case."""
+    _artifact(tmp_path, "../sibling/src/core.py")
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+    assert "different tree" in str(raised.value)
+    assert "relative_files" not in str(raised.value)
+
+
+def test_a_drive_letter_pointing_at_another_checkout_is_still_another_tree(tmp_path):
+    _artifact(tmp_path, "C:/checkout-b/src/core.py")
+
+    with pytest.raises(ToolError, match="different tree"):
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+
+def test_a_mixed_artifact_is_another_tree_and_the_outside_paths_win(tmp_path):
+    """One path from somewhere else can only have come from somewhere else. The
+    absolute in-tree ones are consistent with that same wrong run, so the
+    stronger evidence decides and the count names the outside ones alone."""
+    _artifact(tmp_path, _inside(tmp_path, "src/faro/core.py"), OTHER)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(), {"src": ("src",)})
+
+    message = str(raised.value)
+    assert "measured 2 file(s)" in message
+    assert "1 of them outside this checkout entirely" in message
+    assert OTHER in message
+    assert "relative_files" not in message
+
+
+def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path):
+    """The istanbul reader strips the root off every path literally, so an
+    absolute in-tree path means the reporter spelled the root some other way."""
+    measured = {_inside(tmp_path, "web/src/app.ts"): []}
+
+    with pytest.raises(ToolError) as raised:
+        _judge_artifact_scope(_js_lane(), measured, {"web": ("web/src",)}, tmp_path)
+
+    message = str(raised.value)
+    assert "under this checkout" in message
+    assert "relative_files" not in message, "a coverage.py key a JS reporter never reads"
+    assert "cwd" in message and "root" in message
