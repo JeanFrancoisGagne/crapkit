@@ -33,6 +33,96 @@ Every key, including the optional ones, is tabled in
 
 ---
 
+## How a lane command is read
+
+The command runs through a shell, so crapkit reads it with the shell that will run it: sh
+on POSIX, cmd.exe on Windows. One reading feeds two readers. The lane guard uses it to
+decide whether a token narrows the run, and `doctor` uses it to decide which word is the
+runner and which words are files the repo owes.
+
+| What you write | How it reads |
+|---|---|
+| `-m "not live and not perf"` | One argument. Double quotes are the portable spelling: both shells drop them and hand the runner one token. |
+| `-m 'not live and not perf'` | Four arguments on Windows. cmd.exe has no single-quote rule, so pytest gets `'not`, `live`, `and`, `not`, `perf'` and the lane is refused with a hint. |
+| `-k ^"not slow^"` | One argument. Outside a quoted run cmd.exe drops the caret and hands on the character behind it, so the runner gets `-k "not slow"`. Inside a quoted run the caret stays: `-k "a^b"` reaches the runner with its caret. |
+| `--cov-report=json:"cov/py 1.json"` | One argument. A quote opens a quoted run wherever it sits, mid-token included. |
+| `-k "" tests` | Three arguments. An empty pair of quotes writes an empty argument, so `tests` stays the positional it is. Dropping it would slide `tests` onto `-k` and the narrowing lane would load clean. |
+| `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, and every segment that runs the runner is checked on its own. |
+| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them. A quoted `">"` is an argument and stays. |
+| `pytest --cov; echo done` | On sh the `;` ends the command. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
+| a non-breaking space in a value | Not a word break. Words break on space, tab and line endings, the way both shells break them, so a value pasted out of rendered docs stays one token. |
+
+A command the shell itself would refuse (a quote that never closes) falls back to a
+whitespace split. A rough lint beats a crash at config load.
+
+### The refusals, as they print
+
+Single quotes on Windows, the most common way to trip the guard:
+
+```
+# command = "python -m pytest -m 'not live and not perf' --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'live' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+EXIT=3
+```
+
+The same command in double quotes loads, and so does the caret spelling
+(`-k ^"not slow^"`), the mid-token quote
+(`--cov-report=json:".crapkit/cov/py report.json"`) and the redirected form
+(`... --cov-report=json:.crapkit/cov/py.json > lane.log 2>&1`). All four come back
+`doctor: no problems found`, exit 0.
+
+A second run after `&&` narrows as much as the first, so the segment it sits in is checked
+too:
+
+```
+# command = "python -m pytest --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json && python -m pytest calc/hot.py"
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'calc/hot.py' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+EXIT=3
+```
+
+The refusal names a word from the segment it read, never from the next command.
+
+On Windows a `;` starts nothing, so what follows it is pytest's:
+
+```
+# command = "python -m pytest --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json; echo done"
+$ crapkit doctor
+crapkit: lane 'py': positional argument 'echo' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+EXIT=3
+```
+
+Write that lane as two `&&` segments and both shells agree about it.
+
+### What doctor does with the same reading
+
+`doctor` checks the runner of every segment, not just the first word of the line. A quoted
+interpreter path (`"C:/Program Files/Python/python.exe" -m pytest ...`) is one word, not
+two; a dead runner after `&&` is still a dead runner; and a path inside a quoted
+`-k "tests/gone.py or x"` is a marker expression, not a file the repo owes.
+
+It also starts each distinct first word once, with `--version`, and FAILs the lane when the
+shell cannot run it. A stock Windows PATH carries a `python.exe` stub with no Store app
+behind it: it resolves, it exits 9009, and before 0.4.5 `doctor` called that repo clean
+while `coverage` exited 5 on the same command. Reproduced here with a `python3` on PATH
+that exits 9009:
+
+```
+$ crapkit doctor
+ok   config keys all recognized
+ok   scope 'calc': 1 files
+ok   every tracked source file belongs to a scope
+FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) — the lane cannot start, so its scopes can only ever score no-lane
+ok   lizard 1.24.0
+doctor: 1 problem(s)
+```
+
+The probe is memoized on the word, so a repo declaring 14 lanes over 2 runners starts two
+processes, not fourteen.
+
+---
+
 ## Which languages a lane can measure
 
 Short answer: whichever ones your runner reports in one of two formats.
@@ -203,7 +293,7 @@ crapkit: lane 'js': file filter 'src/grade.ts' combined with --coverage silently
 
 Exit 3.
 
-A path after one of the vitest options the guard knows is that option's value, not a
+A path after one of the 25 vitest options the guard knows is that option's value, not a
 filter: `--config vitest.ci.ts`, `--exclude src/legacy.cjs` and
 `--reporter ./tools/my-reporter.ts` all pass, and so do `-c`, `-t`, `--coverage.exclude`,
 `--coverage.extension`, `--coverage.include`, `--coverage.provider`,
@@ -299,11 +389,9 @@ scoped and isolated, opt out explicitly with `full_suite = false` on the lane.
 
 A flag's value is not a positional. `-n 8`, `-o timeout=300`, `-p no:randomly` and
 `--deselect tests/test_x.py::test_slow` all pass: the guard knows the pytest options that
-read the next token, and treats a `key=value` token as a value everywhere. The guard reads
-the command the way the shell running it will (sh on POSIX, cmd.exe on Windows), so a
-quoted value is one token: `-m "not live and not perf"` is one marker expression, not four
-positionals. Use double quotes: cmd.exe does not treat `'` as a quote, so a single-quoted
-value reaches pytest one word per space there, and the guard says so on Windows. In
+read the next token, and treats a `key=value` token as a value everywhere. Quoting is the
+shell's, and [How a lane command is read](#how-a-lane-command-is-read) has the whole rule:
+`-m "not live and not perf"` is one marker expression, not four positionals. In
 `crapkit.toml`, a single-quoted TOML string keeps the double quotes unescaped:
 `command = 'python -m pytest -m "not live and not perf" --cov=pylib ...'`. After a flag it
 does not know, a bare word is that flag's value too — only a path or a node id
