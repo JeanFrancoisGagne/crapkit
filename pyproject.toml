@@ -59,9 +59,10 @@ Source = "https://github.com/JeanFrancoisGagne/crapkit"
 # mini_repo declares a lane that shells out to `pytest pylib -n 2 ...`, and
 # pytest rejects `-n` outright without it: left out of this list it took down
 # 31 e2e tests on every one of the six CI test jobs (run 33225190806), ubuntu
-# and windows alike. CI then runs tests/e2e itself with `-n 8`: 593 tests,
-# 8m08 serial against about 2 minutes parallel on the same tree. Nothing here
-# needs pytest-timeout: no test takes a `--timeout` and none carries the marker.
+# and windows alike. CI then runs tests/e2e itself with `-n 8`: 595 tests,
+# about 8 minutes serial against about 1m30 parallel on the same tree. Nothing
+# here needs pytest-timeout: no test takes a `--timeout` and none carries the
+# marker.
 dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3"]
 # The py lane's runtime half, for installs that share the suite's venv: the
 # lane init writes runs `pytest --cov`, and those flags come from pytest-cov.

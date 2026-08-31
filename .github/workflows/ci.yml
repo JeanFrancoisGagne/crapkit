@@ -36,9 +36,10 @@ jobs:
       # fell.
       - run: python -m pytest tests/unit
       # tests/e2e drives the CLI against a throwaway git repo per test, which is
-      # subprocess time that parallelises: 8m08 serial against about 2 minutes
-      # at `-n 8` on one machine, same 595 tests, same result. pytest-xdist
-      # comes from the dev extra above.
+      # subprocess time that parallelises: about 8 minutes serial against about
+      # 1m30 at `-n 8`, same 595 tests, same result. Those are developer-machine
+      # numbers, not this runner's; the PR template and pyproject.toml quote the
+      # same pair. pytest-xdist comes from the dev extra above.
       - run: python -m pytest -n 8 tests/e2e
       # The gate reads staged blobs and a fresh checkout stages nothing, so what
       # this proves is that the hook runs clean against the repo's own
