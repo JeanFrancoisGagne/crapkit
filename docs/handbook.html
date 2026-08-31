@@ -383,7 +383,7 @@
 </figure>
 
 <ul>
-  <li><strong>Scopes</strong> carve the repo into named territories (<code>src</code>, <code>ui</code>, <code>py</code>), each with its languages, an optional per-scope target, and free-text <code>notes</code>: the written-down operational traps that ride into every packet.</li>
+  <li><strong>Scopes</strong> carve the repo into named territories (<code>src</code>, <code>ui</code>, <code>py</code>), each with its languages, an optional per-scope target, and free-text <code>notes</code>: the written-down operational traps that ride into every packet. A file belongs to exactly one scope, and since 0.4.5 one predicate decides which, for scoring, test-scoped routing, lane reuse and the packet alike: <strong>the deepest declared path wins</strong>. Three parts of the code used to answer that differently, so if your scope paths nest (<code>src</code> and <code>src/api</code>), some files change owner on the next scan and take their per-scope rollup and ceiling with them. Scope paths that do not nest see no change at all.</li>
   <li><strong>The inventory</strong> is one lizard tokenization per file, content-hash cached, producing both ccn variants and cognitive complexity for every function.</li>
   <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code>. Visible, never fatal, never a baseline.</li>
   <li><strong>The store</strong> keeps scored runs compactly: function identity is written once and referenced per run, alongside claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
@@ -470,6 +470,10 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>Before this release the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate now exempts marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
 <p class="xanno">Existence, not the numeric rule, because the gate judges staged blobs. A blob carries no coverage, so there is no CRAP to compare against a mark. The only question the gate can answer is the one it asks: did the repo already sign for this function?</p>
 
+<h3>What changed in 0.4.5</h3>
+<p>The third reader joined them. <code>crapkit verify</code> now reads a mark the way <code>rescore --gate</code> always did: a touched function whose fresh CRAP sits <em>at or under</em> its mark is exempt, not a gate violation. Before this, an edit inside signed debt passed the advisory, passed the commit gate, and then met exit 6 at merge, which was the last place the three readers could still disagree about one function.</p>
+<p>Exit 7 is untouched. A mark that rises is still a ratchet regression, and it is still reported on functions the diff never named, which is where coverage rot shows up.</p>
+
 <!-- ============================ 07 LADDER ============================ -->
 <h2 id="ladder"><span class="sn">07</span>The rest of the ladder</h2>
 <p class="lede">One rule, checked at five distances from the keyboard: every <em>touched</em> function at or under its scope's ceiling.</p>
@@ -531,6 +535,12 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 
 <p>A mark does three jobs at once. It pardons the commit gate (<a href="#twogates">§06</a>), it silences the per-edit advisory, and it sets the high-water line <code>verify</code> refuses to let rise. Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
 
+<h3>0.4.5 is one of those bumps</h3>
+<p>Shell cognitive complexity now nests: <code>fi</code>, <code>done</code> and <code>esac</code> close the level <code>if</code>, a loop keyword or <code>case</code> opened, so a 4-deep shell <code>if</code> reads 10 like every other language instead of 4. That is analysis version 8, so the first command you run after the upgrade refuses the marks the old version signed:</p>
+<pre><code>$ crapkit verify
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`</code></pre>
+<p>Do what it says. Re-seeding brings the same marks back: only shell's cognitive column moved, ccn is untouched in every language, and no mark, gate or CRAP score reads the cognitive column at all (<a href="#score">§02</a>).</p>
+
 <p><strong>Tightening is damped, because a tighten claims the code improved and one commit measured twice cannot have.</strong> Some suites measure the same bytes two ways: a coverage attribution that races a subprocess reported one function at CRAP 20.0 on one run of a commit and 72.0 on the next. Tighten on the lucky half of that and the unlucky half fails the mark, so the gate becomes a coin flip on an unchanged tree and the marks file churns 20 to 72 and back in commits. So <code>verify</code> compares each marked function against the same commit's previous <em>trusted</em> run — the same word <code>ratchet seed</code> uses, so a failed verify and a partial run are invisible to both — and holds any mark whose score moved by more than <code>tighten_max_jump</code> (default 2x), naming the function and both values on stderr. Real work moves a score by less than a measurement race does, so a stable improvement still tightens in full; <code>verify --no-tighten</code> holds the whole file when you want the verdict without the rewrite.</p>
 
 <!-- ============================ 09 BASELINE ============================ -->
@@ -562,6 +572,15 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 
 <p><code>runs list</code> marks the row verify compares against today, and warns when a moved HEAD makes the snapshot stale. For a repo with no store at all, such as a CI clone, <code>verify --emit-baseline</code> on the main branch writes a commit-stamped TSV that <code>verify --baseline-tsv</code> reads in the pull request.</p>
 
+<h3>One rule, every reader</h3>
+<p>Two families read that timeline, and since 0.4.5 each has one answer. The views, <code>worklist</code>, <code>next-item</code>, <code>rescore</code> and <code>brief</code>, take the newest trusted run and stop there: a view compares nothing, so it has nothing to launder. The judges, <code>verify</code>, <code>ratchet seed</code> and <code>ratchet prune</code>, add the taint rule on top of that pick. Before, <code>worklist</code> could rank one snapshot while <code>next-item</code> handed out work from another, and <code>ratchet seed</code> could sign marks off a run <code>verify</code> had just refused, which is exactly how a failed verify's findings stop counting.</p>
+
+<h3>Naming a run that cannot serve</h3>
+<p><code>--baseline ID</code> is the deliberate escape, and it can name a run that exists and still cannot be measured against. That used to print the empty-store line, which sent people off to run <code>coverage</code> for a store they already had. It now names the run, the reason, and the runs that can:</p>
+<pre><code>$ crapkit verify --baseline 2
+crapkit: run 2 is an inventory run (no coverage was measured) and cannot serve as a baseline; trusted runs: 1; pass `--baseline 1` for the newest</code></pre>
+<p>Four reasons reach that line: a failed verify, a hook run, a partial run (a lane subset, or a lane that failed), and an inventory run, which measured complexity and no coverage.</p>
+
 <!-- ============================ 10 LANES ============================ -->
 <h2 id="lanes"><span class="sn">10</span>Lanes: how coverage arrives</h2>
 <p class="lede">crapkit runs no test framework of its own. A lane is your command, its artifact, and a parser.</p>
@@ -573,13 +592,31 @@ results_artifact = ".crapkit/cov/unit/junit.xml"
 parser           = "istanbul"          # or "coveragepy"
 scopes           = ["src"]</code></pre>
 <ul>
-  <li><strong>Provenance:</strong> every artifact is stamped with the commit and duration that produced it. Stale artifacts are named, never silently reused. <code>--reuse-unchanged</code> reruns only lanes whose scope files moved.</li>
-  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code> and <code>retries</code>. A configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first.</li>
+  <li><strong>Provenance:</strong> every artifact is stamped with the commit and duration that produced it. Stale artifacts are named, never silently reused. <code>--reuse-unchanged</code> reruns only lanes whose scope files moved, and since 0.4.5 a scope path that names a file rather than a directory (<code>paths = ["core/hot.py"]</code>) marks its lane changed when that file moves.</li>
+  <li><strong>The results file:</strong> <code>results_artifact</code> names the junit XML the same command writes. Two of verify's checks read it and nothing else does: the crashed-worker trust check, and no-new-failures (exit 8). A lane without one measures coverage exactly as it did, with both of those checks off, which until 0.4.5 nothing said out loud. <code>doctor</code> now WARNs, and <code>init</code> writes the reporter flag and the key together on the lanes it detects.</li>
+  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code> and <code>retries</code>. A configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first. Since 0.4.5 the timeout kills the whole process tree (<code>taskkill /T</code> on Windows, <code>killpg</code> on POSIX) and waits for it, so a suite the watchdog gave up on is not still running an hour later; the lane log streams while it goes.</li>
   <li><strong>Honest failure:</strong> a lane that produces no artifact marks its scopes <code>no-lane</code> and the run <code>partial</code>. The queue counts what it cannot see instead of pretending. The five classic causes are triaged in <a href="lanes.md">docs/lanes.md</a>.</li>
   <li><strong>The test template:</strong> a <code>[crapkit.scoped_tests]</code> entry per scope says how to run that scope's tests in isolation. It is what <code>crapkit test-scoped</code> executes, what the packet's <code>commands.scoped_tests</code> carries, and what <code>doctor</code> warns about when a laned scope has none.</li>
   <li><strong>Housekeeping:</strong> everything writes under <code>.crapkit/</code>. <code>doctor</code> warns about lanes littering the repo root, dead commands, unclaimed files, and scopes with no test template.</li>
-  <li><strong>Where the root sits:</strong> <code>crapkit.toml</code> does not have to be at the git top. A package one directory down is a supported shape, with no monorepo mode to turn on: <code>crapkit coverage --repo packages/api</code> scores that package, and since 0.4.4 the scored paths and the churn behind them are both relative to that root. The nested shape is written up in <a href="lanes.md">docs/lanes.md</a>.</li>
+  <li><strong>Where the root sits:</strong> <code>crapkit.toml</code> does not have to be at the git top. A package one directory down is a supported shape, with no monorepo mode to turn on: <code>crapkit coverage --repo packages/api</code> scores that package. 0.4.4 made the scored paths and the churn behind them relative to that root; 0.4.5 finished the job, so the commit gate, verify's changed files, lane reuse, <code>mutate</code>'s targets, the ratchet's rename follow and the per-edit advisory all join on root-relative paths too. Every git call now also runs with <code>core.quotePath=false</code>, which is what made a dirty file with a non-ASCII name invisible to lane reuse: git quoted the name, <code>ls-files</code> did not, and the two never matched. The nested shape is written up in <a href="lanes.md">docs/lanes.md</a>.</li>
 </ul>
+
+<h3>How the guard reads your command</h3>
+<p>A lane command runs under a shell, so both lane lints read it with the shell that will run it: <code>sh</code> on POSIX, <code>cmd.exe</code> on Windows. That is a character walk over the quotes, and on Windows over <code>^</code> escapes as well, not a whitespace split. So a quote that opens mid-token is one argument, <code>--cov-report=json:".crapkit/cov/unit dir/coverage.json"</code> included, and <code>-k ^"not slow^"</code> keeps its value in one piece.</p>
+<p>Write values in <strong>double</strong> quotes. They are the one form both shells read the same way. To cmd.exe a single quote is an ordinary character, so <code>-m 'not slow'</code> arrives as two words: <code>-m</code> takes the first, and the second lands as a positional filter that narrows the run to nothing. The lane then writes no artifact. The guard refuses it at config load and names the shell it read with:</p>
+<pre><code>command = "python -m pytest -m 'not slow' --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
+
+$ crapkit doctor
+crapkit: lane 'slow': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)</code></pre>
+<p>A chained command is read one argv per <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code> or <code>|</code>, and every segment that runs the runner is checked. A second, narrower run after the operator is still a narrowed coverage run:</p>
+<pre><code>command = "python -m pytest --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json --junitxml=.crapkit/cov/slow/junit.xml &amp;&amp; python -m pytest tests/smoke --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
+
+$ crapkit doctor
+crapkit: lane 'slow': positional argument 'tests/smoke' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately</code></pre>
+<p>Redirections (<code>&gt; nul</code>, <code>2&gt;&amp;1</code>) belong to the shell and are never positionals, an empty quoted argument stays empty instead of shifting the next path onto the flag, and words break on space, tab and line endings only, so a non-breaking space pasted out of a wiki no longer splits a value. <code>doctor</code> reads a lane the same way, which is how it knows a quoted interpreter path is one word and that the runner after <code>&amp;&amp;</code> is a runner. It also probes each distinct runner once instead of once per lane, and FAILs a lane whose first word will not start rather than calling the repo clean.</p>
+<p>The results-file WARN reads like this, hint included:</p>
+<pre><code>$ crapkit doctor
+WARN lane 'unit' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-unit.xml to the command and results_artifact = ".crapkit/cov/junit-unit.xml" to the lane</code></pre>
 
 <!-- ============================ 11 QUEUE ============================ -->
 <h2 id="queue"><span class="sn">11</span>The queue: two views of one run</h2>
@@ -588,7 +625,7 @@ scopes           = ["src"]</code></pre>
 <figure class="panel">
 <svg viewBox="0 0 900 260" role="img" aria-label="worklist versus next-item">
   <rect class="boxi" x="330" y="10" width="240" height="46" rx="8"/>
-  <text x="450" y="30" text-anchor="middle" class="lbl">the newest scored run</text>
+  <text x="450" y="30" text-anchor="middle" class="lbl">the newest trusted run</text>
   <text x="450" y="46" text-anchor="middle" class="sm">every function, every score</text>
   <path class="arrow" d="M400 62 C 360 85 300 90 260 100"/>
   <path class="arrow" d="M500 62 C 540 85 600 90 640 100"/>
@@ -609,6 +646,8 @@ scopes           = ["src"]</code></pre>
 </svg>
 <figcaption>The same run through two lenses. The worklist has no stop condition on purpose; <code>next-item</code> carries the only one.</figcaption>
 </figure>
+
+<p>One run, and since 0.4.5 that is enforced rather than assumed: both views ask the same question the baseline rule answers (<a href="#baseline">§09</a>) and get the newest trusted run. They could pick differently before, so a worklist could rank one snapshot while <code>next-item</code> dealt work from another, and the two disagreed about what was left.</p>
 
 <h3>Reading a worklist row</h3>
 <pre><code>risk      5.4  ccn   6 (  6 std)    5c/1a w   0.90  src/crapkit/cli/reports.py:62  cmd_digest( args )
@@ -672,8 +711,9 @@ scopes           = ["src"]</code></pre>
 </figure>
 
 <ul>
-  <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
-  <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>.</li>
+  <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file, and since 0.4.5 one shingling pass over the snapshot for the whole batch instead of one per packet: a batch of 5 on a 31k-file repo went from 11.8 s to 5.2 s, byte-identical output. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
+  <li><strong>The commands are console-script calls.</strong> <code>commands.gate</code> arrives as <code>crapkit rescore PATH --gate</code>. It used to be spelled <code>python -m crapkit</code>, which asks whichever python is first on PATH to be the one crapkit lives in; the console script is the form the docs promise and the one that resolves from a venv on Windows. Run the strings as given either way.</li>
+  <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>. Since 0.4.5 <code>explain</code> resolves a start line the same way, so <code>crapkit explain app/grade.py 1</code> answers where it used to want a name.</li>
   <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
 </ul>
 
@@ -722,11 +762,28 @@ scopes           = ["src"]</code></pre>
 <div class="cards">
   <div class="card"><h4><code>mutate</code>: are the tests real?</h4><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed, runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
   <div class="card"><h4><code>duplication</code>: does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
-  <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor.</p></div>
-  <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data.</p></div>
+  <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor. Cached since 0.4.5, so a warm run is a file read.</p></div>
+  <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data, read since 0.4.5 off a per-run rollup instead of every row.</p></div>
   <div class="card"><h4><code>doctor</code>: does the config still fit?</h4><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
   <div class="card"><h4><code>overrides</code>: who granted what?</h4><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
 </div>
+
+<h3>What 0.4.5 caches, and where it lives</h3>
+<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the churn caches. Its key is HEAD, the churn window and a digest of the tracked set, so it cannot answer for a tree it did not see; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
+<pre><code>$ ls -1 .crapkit/*.json .crapkit/*.z
+.crapkit/cache.json
+.crapkit/churn-cache-v2.json
+.crapkit/churn-log-v2.json
+.crapkit/churn-log-v2.z
+.crapkit/coupling-cache-v1.json
+.crapkit/stat-stamps.json
+
+$ crapkit coupling --top 5      # cold, caches deleted: 0.53 s
+$ crapkit coupling --top 5      # warm: 0.09 s</code></pre>
+<p><code>trend</code> and <code>report</code> read a rollup row written once per run and pruned with that run, instead of rescanning every scored row the store holds. Both now write to the store on a best-effort basis, which is new for two commands that used to be pure readers.</p>
+<p><code>mutate</code> with <code>mutation_workers</code> above 1 keeps its worker worktrees at <code>.crapkit/mutate-pool/</code> and re-prepares them each run rather than adding and removing them. Single-worker runs are untouched. The pool is not size-bounded, so when you want the disk back:</p>
+<pre><code>$ crapkit mutate --drop-pool
+removed 2 pooled worktrees from …\.crapkit\mutate-pool</code></pre>
 
 <!-- ============================ 15 INSTALL ============================ -->
 <h2 id="install"><span class="sn">15</span>Install</h2>
@@ -740,6 +797,11 @@ crapkit doctor      # config against reality: unknown keys, unclaimed files, dea
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
 <p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). Plain <code>pip install crapkit</code> works once the PyPI release lands. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
 
+<h3>The one dependency crapkit cannot install for you</h3>
+<p>The python lane <code>init</code> writes runs <code>pytest --cov</code>, and those flags come from pytest-cov, a package of <em>your suite's</em> interpreter. A pipx or uv-tool install of crapkit shares no venv with that suite, so no dependency of crapkit's could ever guarantee it. <code>init</code> probes the python its lane will run and prints the fix when the import fails: install pytest-cov where the suite runs, or, when crapkit lives in that same environment, <code>pip install "crapkit[py]"</code>.</p>
+<p>The double quotes are not decoration. cmd.exe passes <code>'</code> through as an ordinary character, so the single-quoted form reaches pip as a requirement it rejects; double quotes are the one spelling cmd, PowerShell, bash and zsh all read the same way, and the bare form still breaks zsh's globbing.</p>
+<p>Two Windows cases get their own notes since 0.4.5. On a PATH carrying only the <code>py</code> launcher, the lane is written <code>py -m pytest</code>: the chain is <code>python</code>, then <code>python3</code>, then <code>py</code>, and <code>py</code> is last because it exists on no other operating system. And when cmd.exe cannot start the interpreter at all, which is what the Windows Store <code>python.exe</code> alias does with no Store app behind it (exit 9009, "Python was not found"), <code>init</code> says that instead of talking about pytest-cov, and <code>doctor</code> FAILs the lane rather than calling the repo clean. Nothing ran, so nothing about pytest-cov was learned.</p>
+
 <h3>Upgrading on Windows</h3>
 <p><code>uv tool upgrade crapkit</code>, and <code>pip install -U</code> into a tool venv, fail with <code>os error 32</code> ("The process cannot access the file because it is being used by another process") while a crapkit MCP server is live: an agent session spawns <code>crapkit.exe mcp</code>, which holds the launcher, and Windows will not overwrite a running executable. The venv upgrades before that copy fails, so <code>crapkit --version</code> already reports the new version and the launcher is the only stale piece. Quit the agent session and rerun the upgrade, or rename the locked exe aside (Windows allows renaming a running one) and copy the new one in; the <code>.old</code> file goes at the next reboot.</p>
 <pre><code>mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
@@ -749,7 +811,8 @@ cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe</code
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
 claude plugin install crapkit@crapkit</code></pre>
 <p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a <strong>machine-wide</strong> install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
-<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> says in one line whether an installed plugin and this CLI still agree.</p>
+<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> says in one line whether an installed plugin and this CLI still agree, and prints nothing when they do.</p>
+<p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it reads Claude Code's own plugin cache. Either way it opens with <code>crapkit doctor: checking</code> and the directory it chose, so a wrong guess is visible rather than silent.</p>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
@@ -841,6 +904,16 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <h3>6 · The whole codebase</h3>
 <p>That is a campaign, and it has its own section: <a href="#campaign">§17</a>.</p>
 
+<h3>All six, below the git top</h3>
+<p>Nothing above assumes <code>crapkit.toml</code> sits at the git root. A package one or more directories down is the ordinary monorepo shape, and it needs no mode and no flag beyond <code>--repo</code>. 0.4.4 fixed the scoring half of it; the commit gate was still reading <code>git diff --cached</code> from the git top, so under a nested root the staged paths matched no scope, and a function at twice the ceiling committed with a warning. 0.4.5 fixed that, and the nine siblings that joined the same two path shapes. The gate now judges what you staged, named the way the rest of the run names it:</p>
+<pre><code>$ git add packages/api/app/route.py
+$ cd packages/api
+$ python -m crapkit hook-precommit          # what the git hook runs
+crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+  ccn  10  app/route.py:1  route( kind , hot , live , admin )
+decompose before committing (coverage cannot save a function above the target).</code></pre>
+<p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it.</p>
+
 <h3>Everyday lookups</h3>
 <div class="tw"><table>
   <tr><th>You are…</th><th>Reach for</th><th>Because</th></tr>
@@ -889,6 +962,8 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
   <li><strong>Value is front-loaded, so stopping early is rational.</strong> The risk map is worst-first by <code>ccn × churn</code> and the hand-out queue by CRAP, and the top of it is where incidents live. "Fix the worst slice and gate the rest forever" is the same campaign ended earlier, and the ratchet holds whatever line you reach.</li>
   <li><strong>The summit items are redesigns.</strong> A whole command handler at extreme ccn is not a split, it is an architecture session. The packet's <code>est_splits</code> saying dozens is the tell.</li>
   <li><strong>Proof it composes:</strong> crapkit's own repo ran this exact campaign against its own gate. Every standing mark repaid, the ratchet file now header-only, grade A+.</li>
+  <li><strong>0.4.5 made the repeated commands cheap</strong>, which is most of what a campaign spends its day on. Measured on a 31,459-file consumer, 152k functions, 41,544 marks and 72,653 commits: warm <code>coupling</code> 1.05 s to 0.11 s, <code>worklist --batches</code> down 62%, a batch of five briefs 11.8 s to 5.2 s, <code>doctor</code> 7.5 s to 1.4 s across 14 lanes over 2 runners, <code>trend</code> 4.58 s to 0.04 s warm, <code>report</code> down 76%, <code>verify</code> 25.5 s to 18.9 s, and <code>mutate</code>'s worker setup 30.6 s to 0.46 s. Plan the loop knowing the read commands are near-free and <code>verify</code> is the one that costs a suite run.</li>
+  <li><strong>Four ideas were measured and thrown away</strong>, so nobody spends a week rebuilding them: skipping <code>verify</code> on an unchanged tree (the cache key cannot see a second edit to an already-dirty file), serving MCP tool calls from a kept process (a stale <code>source</code> breaks the packet contract), parallel git date slices for the churn walk, and a faster JSON decoder.</li>
 </ul>
 
 <!-- ============================ 18 PRINCIPLES ============================ -->
