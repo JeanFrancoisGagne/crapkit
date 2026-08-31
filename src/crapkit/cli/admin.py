@@ -991,6 +991,11 @@ def _doctor_plugin(plugin_root: str) -> int:
         print(f"crapkit doctor: no installed crapkit plugin under {looked_in} (install with "
               "`claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)")
         return 1
+    # A root the search found, not one the operator typed: the glob reaches three
+    # levels under the named directory, so a source checkout can win over an
+    # install. Naming it is how the reader knows which tree the verdict is about.
+    if str(root) != looked_in:
+        print(f"crapkit doctor: checking {root}")
     lines = plugin_handshake(where=str(root), version=_manifest_version(root),
                              cli_version=__version__, protocols=_hook_protocols(root),
                              supported=PROTOCOL)

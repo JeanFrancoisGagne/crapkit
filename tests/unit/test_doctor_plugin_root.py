@@ -224,7 +224,20 @@ def test_a_directory_above_the_install_resolves_to_the_newest_version(tmp_path, 
 
     code, lines, err = check(tmp_path / "cache", capsys)
 
-    assert (code, lines, err) == (0, [], "")
+    assert (code, err) == (0, "")
+    assert lines == [f"crapkit doctor: checking {cache / CLI}"], lines
+
+
+def test_a_root_the_operator_typed_is_judged_without_a_line_about_itself(tmp_path, capsys):
+    """The search under a named directory reaches three levels, so a source
+    checkout can win over an install and the reader would never know which tree
+    the verdict came from. Naming the chosen root costs one line — but only when
+    it was found rather than typed, or agreement stops being silence."""
+    exact = plugin(tmp_path / "p")
+
+    code, lines, err = check(exact, capsys)
+
+    assert (code, lines, err) == (0, [], ""), "a typed root names itself"
 
 
 def test_the_newest_is_decided_by_version_not_by_name_order(tmp_path, capsys):
@@ -234,17 +247,20 @@ def test_the_newest_is_decided_by_version_not_by_name_order(tmp_path, capsys):
 
     code, lines, _ = check(cache, capsys)
 
-    assert code == 1 and len(lines) == 1 and "0.10.0" in lines[0], lines
+    assert code == 1 and len(lines) == 2, lines
+    assert lines[0] == f"crapkit doctor: checking {cache / '0.10.0'}", lines[0]
+    assert "0.10.0" in lines[1], lines[1]
 
 
 def test_no_path_reads_claude_code_s_plugin_cache(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
-    plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+    root = plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
 
     code = main(["doctor", "--plugin-root"])
     out = capsys.readouterr()
 
-    assert (code, out.out, out.err) == (0, "", "")
+    assert (code, out.err) == (0, "")
+    assert out.out.splitlines() == [f"crapkit doctor: checking {root}"], out.out
 
 
 def test_no_path_honours_the_installer_s_record(tmp_path, capsys, monkeypatch):
@@ -258,7 +274,9 @@ def test_no_path_honours_the_installer_s_record(tmp_path, capsys, monkeypatch):
     code = main(["doctor", "--plugin-root"])
     lines = capsys.readouterr().out.splitlines()
 
-    assert code == 1 and len(lines) == 1 and "0.1.0" in lines[0], lines
+    assert code == 1 and len(lines) == 2, lines
+    assert lines[0] == f"crapkit doctor: checking {root}", lines[0]
+    assert "0.1.0" in lines[1], lines[1]
 
 
 def test_no_path_and_no_install_is_one_line_naming_where_it_looked(tmp_path, capsys,
@@ -281,11 +299,12 @@ def test_a_cache_shared_with_other_plugins_yields_crapkit_not_the_highest_versio
     cache = tmp_path / "cache"
     plugin(cache / "official" / "security-guidance" / "2.0.6", name="security-guidance",
            version="2.0.6")
-    plugin(cache / "crapkit" / "crapkit" / CLI)
+    root = plugin(cache / "crapkit" / "crapkit" / CLI)
 
     code, lines, err = check(cache, capsys)
 
-    assert (code, lines, err) == (0, [], "")
+    assert (code, err) == (0, "")
+    assert lines == [f"crapkit doctor: checking {root}"], lines
 
 
 @pytest.mark.parametrize("above", ["", "plugins", "plugins/cache", "plugins/cache/crapkit"])
@@ -294,12 +313,13 @@ def test_every_directory_above_the_install_in_claude_code_s_layout_reaches_it(tm
     """`~/.claude` and `~/.claude/plugins` sit five and four levels above the
     manifest; the search steps into `plugins` and `cache` first, which also
     keeps the marketplace clone beside the cache out of the answer."""
-    plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+    root = plugin(tmp_path / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
     plugin(tmp_path / "plugins" / "marketplaces" / "crapkit" / "plugin", version="0.1.0")
 
     code, lines, err = check(tmp_path / above, capsys)
 
-    assert (code, lines, err) == (0, [], "")
+    assert (code, err) == (0, "")
+    assert lines == [f"crapkit doctor: checking {root}"], lines
 
 
 def test_a_path_with_no_manifest_anywhere_under_it_still_names_the_file(tmp_path, capsys):

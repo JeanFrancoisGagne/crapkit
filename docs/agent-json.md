@@ -837,6 +837,11 @@ crapkit doctor: the plugin at crapkit is version 0.3.0, this crapkit is 0.4.0. R
 crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
 ```
 
+A root doctor found rather than one you typed gets a `crapkit doctor: checking PATH` line
+first, naming the install the verdict is about: the search reaches three levels under the
+directory you named, so a source checkout can win over an install and the two look the same
+from the outside. A `PATH` that is itself a plugin root prints no such line.
+
 A plugin with no manifest gets one line saying so and no protocol check: there is no version
 to compare, and the protocol line underneath would bury the fact that explains both. A plugin
 shipping no `hooks/hooks.json` registers no advisory hook, and the output says that instead.
