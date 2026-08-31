@@ -625,7 +625,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 <figure class="panel">
 <svg viewBox="0 0 900 260" role="img" aria-label="worklist versus next-item">
   <rect class="boxi" x="330" y="10" width="240" height="46" rx="8"/>
-  <text x="450" y="30" text-anchor="middle" class="lbl">the newest scored run</text>
+  <text x="450" y="30" text-anchor="middle" class="lbl">the newest trusted run</text>
   <text x="450" y="46" text-anchor="middle" class="sm">every function, every score</text>
   <path class="arrow" d="M400 62 C 360 85 300 90 260 100"/>
   <path class="arrow" d="M500 62 C 540 85 600 90 640 100"/>
@@ -646,6 +646,8 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 </svg>
 <figcaption>The same run through two lenses. The worklist has no stop condition on purpose; <code>next-item</code> carries the only one.</figcaption>
 </figure>
+
+<p>One run, and since 0.4.5 that is enforced rather than assumed: both views ask the same question the baseline rule answers (<a href="#baseline">§09</a>) and get the newest trusted run. They could pick differently before, so a worklist could rank one snapshot while <code>next-item</code> dealt work from another, and the two disagreed about what was left.</p>
 
 <h3>Reading a worklist row</h3>
 <pre><code>risk      5.4  ccn   6 (  6 std)    5c/1a w   0.90  src/crapkit/cli/reports.py:62  cmd_digest( args )
@@ -709,8 +711,9 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 </figure>
 
 <ul>
-  <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
-  <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>.</li>
+  <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file, and since 0.4.5 one shingling pass over the snapshot for the whole batch instead of one per packet: a batch of 5 on a 31k-file repo went from 11.8 s to 5.2 s, byte-identical output. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
+  <li><strong>The commands are console-script calls.</strong> <code>commands.gate</code> arrives as <code>crapkit rescore PATH --gate</code>. It used to be spelled <code>python -m crapkit</code>, which asks whichever python is first on PATH to be the one crapkit lives in; the console script is the form the docs promise and the one that resolves from a venv on Windows. Run the strings as given either way.</li>
+  <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>. Since 0.4.5 <code>explain</code> resolves a start line the same way, so <code>crapkit explain app/grade.py 1</code> answers where it used to want a name.</li>
   <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
 </ul>
 
