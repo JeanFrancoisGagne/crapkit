@@ -23,18 +23,36 @@ jobs:
       # to pytest with plugin flags, so anything they spell has to arrive here.
       # Quoted because zsh globs the bare `.[dev]` and pip never sees the extra.
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -q
+      # An editable install puts the console script on PATH, and `crapkit` is
+      # the form everything outward-facing spells: the packet hands agents
+      # `crapkit rescore ... --gate`, .pre-commit-hooks.yaml runs
+      # `crapkit hook-precommit`, and the plugin's hook handlers and .mcp.json
+      # spawn the bare exe. A packaging change that stops installing it breaks
+      # all four with no test failure, so this line is the test.
+      - name: the console script resolves
+        run: crapkit --version
+      # Two commands, not one `pytest`: the suites want different settings.
+      # tests/unit is in-process and serial, so a failure reproduces where it
+      # fell.
+      - run: python -m pytest tests/unit
+      # tests/e2e drives the CLI against a throwaway git repo per test, which is
+      # subprocess time that parallelises: 8m08 serial against about 2 minutes
+      # at `-n 8` on one machine, same 593 tests, same result. pytest-xdist
+      # comes from the dev extra above.
+      - run: python -m pytest -n 8 tests/e2e
       # The gate reads staged blobs and a fresh checkout stages nothing, so what
       # this proves is that the hook runs clean against the repo's own
       # crapkit.toml on a bare install. `|| true` hid even a crash; the tree
-      # passes the gate with all 298 files staged, so the exit code can stand.
+      # passes the gate with every file staged, so the exit code can stand.
       - name: gate the diff crapkit-style
         run: python -m crapkit hook-precommit
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
-  # test can schema-check: a malformed handler fails here with exit 1. It does not
-  # read the repo-root marketplace.json, so `validate .` joins this step only once
-  # that file exists (it lands after the CLI is on PyPI, on purpose).
+  # test can schema-check: a malformed handler fails here with exit 1. The two
+  # calls read two different files. `validate plugin` reads
+  # plugin/.claude-plugin/plugin.json; `validate .` reads the repo-root
+  # .claude-plugin/marketplace.json, which is what a `claude plugin marketplace
+  # add JeanFrancoisGagne/crapkit` fetches, and nothing else checks it.
   plugin:
     runs-on: ubuntu-latest
     steps:
@@ -45,6 +63,8 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code
       - name: the plugin manifest, hooks and skills validate
         run: claude plugin validate plugin --strict
+      - name: the marketplace manifest validates
+        run: claude plugin validate .
 
   dogfood:
     runs-on: ubuntu-latest
