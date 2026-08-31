@@ -298,8 +298,16 @@ with that as the reason:
 
 A chained command is read one argv per `&&`, `||`, `&` and `|` segment, and every segment
 that runs the runner is checked, so a narrowing flag after the operator is refused too.
-doctor reads a lane the same way: a quoted interpreter path stays one word, and a runner
-after `&&` is probed like the first one.
+doctor reads a lane the same way: a quoted interpreter path stays one word, and the runner
+of every segment is checked for resolving on PATH. Starting a runner is the narrower
+check: doctor starts the line's own first word, once per distinct word. A runner after
+`&&` that resolves and then refuses to run clears doctor and fails the lane.
+
+doctor also stops at the lane command. A lane written as `npm run test -- --coverage ...`
+is checked as far as `npm`, never the runner the package script names, so a package
+listing `vitest` in `devDependencies` with no `node_modules` on disk passes doctor and
+then fails the lane with `'vitest' is not recognized` in the log tail. That is a missing
+install, not a misconfigured lane.
 
 doctor also WARNs on a coveragepy or istanbul lane that names no `results_artifact`:
 

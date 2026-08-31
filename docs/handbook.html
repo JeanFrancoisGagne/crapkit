@@ -793,9 +793,10 @@ removed 2 pooled worktrees from …\.crapkit\mutate-pool</code></pre>
 <pre><code>pip install crapkit                 # the PyPI release; git+https://github.com/JeanFrancoisGagne/crapkit.git for main
 cd your-repo
 crapkit init        # sniffs tracked source into scopes, writes live lanes it can prove
-crapkit doctor      # config against reality: unknown keys, unclaimed files, dead lane commands
+crapkit doctor      # config against reality: unknown keys, unclaimed files, lane runners that will not start
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
 <p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). Plain <code>pip install crapkit</code> works once the PyPI release lands. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+<p>Read the <code>doctor</code> line narrowly. It resolves the first word of every command segment on PATH (the pieces <code>&amp;&amp;</code>, <code>||</code> and <code>|</code> cut the line into) and starts the command's own first word. That is the whole of what it knows about a lane. A lane spelled <code>npm run test</code> is checked as far as <code>npm</code>, never the script behind it. So <code>doctor</code> can print <code>doctor: no problems found</code> and the next line of the block, <code>crapkit coverage</code>, can still exit 5 on that same lane. The reading rules in full are in <a href="lanes.md">docs/lanes.md</a>.</p>
 
 <h3>The one dependency crapkit cannot install for you</h3>
 <p>The python lane <code>init</code> writes runs <code>pytest --cov</code>, and those flags come from pytest-cov, a package of <em>your suite's</em> interpreter. A pipx or uv-tool install of crapkit shares no venv with that suite, so no dependency of crapkit's could ever guarantee it. <code>init</code> probes the python its lane will run and prints the fix when the import fails: install pytest-cov where the suite runs, or, when crapkit lives in that same environment, <code>pip install "crapkit[py]"</code>.</p>
@@ -811,8 +812,12 @@ cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe</code
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
 claude plugin install crapkit@crapkit</code></pre>
 <p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a <strong>machine-wide</strong> install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
-<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> says in one line whether an installed plugin and this CLI still agree, and prints nothing when they do.</p>
-<p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it reads Claude Code's own plugin cache. Either way it opens with <code>crapkit doctor: checking</code> and the directory it chose, so a wrong guess is visible rather than silent.</p>
+<p>Running the CLI from a clone puts the plugin on the other route. <code>claude plugin marketplace add</code> takes a path as well as a GitHub slug, and the clone root already carries the <code>.claude-plugin/marketplace.json</code> that names <code>./plugin</code> as its source, so the same pair of commands installs the plugin sitting beside the CLI you installed:</p>
+<pre><code>claude plugin marketplace add /path/to/your/crapkit-clone
+claude plugin install crapkit@crapkit</code></pre>
+<p>Take that route whenever the CLI came from <code>pip install .</code> or from the git tip. A CLI from the tip and a plugin from the marketplace are the pair that drift, and the next paragraph is how you find out.</p>
+<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> compares an installed plugin against this CLI on two things, its version and the hook protocol it asks for, and prints one line per disagreement at exit 1. Agreement prints nothing at all, at exit 0.</p>
+<p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it reads Claude Code's own plugin cache. A root it picked for you is named first, as <code>crapkit doctor: checking PATH</code>, so a wrong guess is visible rather than silent. A root you typed exactly is checked in silence.</p>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
