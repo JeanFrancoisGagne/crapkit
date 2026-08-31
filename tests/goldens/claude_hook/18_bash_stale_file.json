@@ -1,0 +1,20 @@
+{
+  "case": "bash_stale_file",
+  "why": "A file dirty since before this command must not be re-advised by every later Bash call: an `ls` right after an edit would repeat the advisory forever. Freshness by mtime is the approximation of \"this command wrote it\".",
+  "fixture": "stale_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "ls calc",
+      "description": "List the calc directory"
+    },
+    "tool_response": {"stdout": "grade.py\n", "stderr": "", "interrupted": false}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

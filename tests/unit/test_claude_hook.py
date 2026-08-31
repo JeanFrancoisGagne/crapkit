@@ -7,14 +7,18 @@ these a broken rung and a working one look identical from outside.
 """
 import argparse
 import io
+import os
+import time
 from pathlib import Path
 
 import pytest
 
 from crapkit.cli import build_parser, main
-from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _edited_file,
-                                     _edited_path, _marks_for, _repo_root, _sequencing,
-                                     cmd_claude_hook)
+from crapkit.cli import claude_hook
+from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _command_event,
+                                     _edited_file, _edited_path, _fresh, _fresh_python,
+                                     _judgeable, _marks_for, _repo_root, _sequencing,
+                                     _status_records, cmd_claude_hook)
 from crapkit.merge import FunctionRecord
 
 EVENT = {"hook_event_name": "PostToolUse", "tool_name": "Edit",
@@ -53,6 +57,116 @@ def test_a_relative_file_path_is_read_against_the_events_own_cwd():
 
 def test_an_absolute_file_path_is_taken_as_given():
     assert _edited_path({"cwd": "/elsewhere"}, "/repo/calc/grade.py") == Path("/repo/calc/grade.py")
+
+
+# --- rung 1b: the Bash fallback ----------------------------------------------
+#
+# A Bash PostToolUse carries `tool_input.command` and never `file_path`, so the
+# single-file ladder has nothing to climb. The fallback judges the *.py files
+# the working tree changed, scoped by mtime to the ones this command plausibly
+# wrote, and capped so the hook's own timeout holds.
+
+BASH_EVENT = {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": "/repo",
+              "tool_input": {"command": "python - <<'PY'\nPY"}}
+
+
+def test_a_bash_post_tool_use_is_a_command_event():
+    assert _command_event(BASH_EVENT) is True
+
+
+@pytest.mark.parametrize("payload", [
+    {},
+    {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}},
+    {"hook_event_name": "Stop", "tool_input": {"command": "ls"}},
+    {"hook_event_name": "PostToolUse", "tool_input": {"file_path": "/repo/a.py"}},
+    {"hook_event_name": "PostToolUse", "tool_input": {"command": 17}},
+    {"hook_event_name": "PostToolUse", "tool_input": None},
+    {"hook_event_name": "PostToolUse"},
+])
+def test_an_event_carrying_no_command_string_takes_no_fallback(payload: dict):
+    """NotebookEdit and friends stay out of the fallback the same shape-based way
+    they stay out of the single-file path: no `command`, nothing to answer for."""
+    assert _command_event(payload) is False
+
+
+def test_status_records_read_one_status_and_one_path_per_record():
+    text = " M calc/grade.py\0?? calc/new.py\0"
+
+    assert list(_status_records(text)) == [(" M", "calc/grade.py"),
+                                           ("??", "calc/new.py")]
+
+
+def test_a_rename_records_second_field_is_consumed_not_reread():
+    """`--porcelain -z` gives a rename two fields: the new name, then the old.
+    Reading one per record would take the old name as the next record's status
+    and shift every entry after it."""
+    text = "R  calc/new.py\0calc/old.py\0 M calc/grade.py\0"
+
+    assert list(_status_records(text)) == [("R ", "calc/new.py"),
+                                           (" M", "calc/grade.py")]
+
+
+@pytest.mark.parametrize("status,rel,verdict", [
+    (" M", "calc/grade.py", True),
+    ("??", "calc/new.py", True),
+    ("R ", "calc/moved.py", True),
+    (" M", "notes.md", False),
+    (" D", "calc/gone.py", False),
+    ("D ", "calc/gone.py", False),
+])
+def test_only_a_python_file_still_on_disk_is_judgeable(status, rel, verdict):
+    assert _judgeable(status, rel) is verdict
+
+
+def test_a_just_written_file_is_fresh(tmp_path):
+    path = tmp_path / "hot.py"
+    path.write_text("def f():\n    pass\n", encoding="utf-8")
+
+    assert _fresh(path, time.time() - 12) is True
+
+
+def test_a_file_dirty_since_before_the_command_is_not_fresh(tmp_path):
+    """The `ls` after an edit: the file is still dirty, but this command did not
+    write it, so re-advising it would repeat the advisory on every Bash call."""
+    path = tmp_path / "hot.py"
+    path.write_text("def f():\n    pass\n", encoding="utf-8")
+    stale = time.time() - 3600
+    os.utime(path, (stale, stale))
+
+    assert _fresh(path, time.time() - 12) is False
+
+
+def test_a_path_status_names_but_disk_lacks_is_not_fresh(tmp_path):
+    assert _fresh(tmp_path / "gone.py", time.time() - 12) is False
+
+
+def test_a_command_run_outside_any_git_repo_is_silent(tmp_path):
+    """No top to walk from means nothing to judge — the unmeasured-machine case
+    the module's silence contract is built around."""
+    payload = dict(BASH_EVENT, cwd=str(tmp_path))
+
+    assert claude_hook._advise_command(payload) == 0
+
+
+def test_a_cwd_that_is_not_a_directory_names_no_top(tmp_path):
+    """The event's cwd can be gone by the time the async hook runs (a command
+    that removed its own directory). Silence, not a spawn error."""
+    assert claude_hook._repo_top(tmp_path / "gone") is None
+
+
+def test_a_non_command_event_takes_no_fallback_judgement():
+    assert claude_hook._advise_command({"hook_event_name": "PostToolUse",
+                                        "tool_input": {}}) == 0
+
+
+def test_the_fallback_caps_the_files_it_judges(monkeypatch, tmp_path):
+    """PostToolUse waits this process out, so a huge dirty tree is a stall, not
+    a license to judge everything."""
+    text = "".join(f"?? f{i}.py\0" for i in range(40))
+    monkeypatch.setattr(claude_hook, "_porcelain", lambda top: text)
+    monkeypatch.setattr(claude_hook, "_fresh", lambda path, cutoff: True)
+
+    assert len(_fresh_python(tmp_path)) == 25
 
 
 # --- rungs 2 and 3: the root -------------------------------------------------

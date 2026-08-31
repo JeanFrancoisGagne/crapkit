@@ -1121,13 +1121,22 @@ That diff runs root-relative since 0.4.5, the way every other git spawn crapkit 
 so a `crapkit.toml` below the git top gets advisories on the paths the commit gate will
 judge.
 
+A `Bash` event names no `file_path` — its `tool_input` carries the `command` — so it takes a
+working-tree fallback instead: the changed `*.py` files whose mtime falls inside a short
+freshness window (a few seconds, capped at 25 files) are each judged through the same
+per-file ladder. That is what catches source written through a shell heredoc or
+`python - <<'PY'`, which some harness modes use for every write; the freshness window is
+what keeps a later `ls` from re-advising a file that was already dirty. Registering the
+hook under a `Bash` matcher is the consumer's choice; the shipped plugin registers
+`Edit|Write` only.
+
 ### The silence ladder
 
 Five rungs, each exiting 0 with both streams empty. Any uncaught exception does the same.
 
 | Rung | Silent when |
 |---|---|
-| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` |
+| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
 | protocol | `--protocol` is anything but `1` |

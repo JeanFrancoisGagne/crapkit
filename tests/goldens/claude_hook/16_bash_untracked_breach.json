@@ -1,0 +1,27 @@
+{
+  "case": "bash_untracked_breach",
+  "why": "The commonest shell write is a heredoc creating a NEW file. git status names it ??, the fallback judges it, and the untracked rule from the Write path holds: no diff can see it, so every function in it counts.",
+  "fixture": "untracked_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "cat > calc/new.py <<'PY'\ndef sprawl(n):\nPY",
+      "description": "Create new.py through the shell"
+    },
+    "tool_response": {"stdout": "", "stderr": "", "interrupted": false}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 function(s) over ceiling 6 in calc/new.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/new.py:1  sprawl( n )",
+      "the commit gate enforces this; decompose there or mark the debt"
+    ]
+  }
+}

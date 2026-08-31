@@ -1,0 +1,20 @@
+{
+  "case": "bash_clean_tree",
+  "why": "A command that wrote nothing (an ls, a git status) leaves no dirty *.py, and the fallback has nothing to judge. Silence, not a scan of committed debt.",
+  "fixture": "measured_clean",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "ls calc",
+      "description": "List the calc directory"
+    },
+    "tool_response": {"stdout": "grade.py\n", "stderr": "", "interrupted": false}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}
