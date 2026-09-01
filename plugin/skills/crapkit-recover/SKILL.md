@@ -120,9 +120,10 @@ then rerun `crapkit coverage`.
 This is tooling, not your code. What it costs depends on whether any lane survived. A lane
 that fails beside a lane that worked still writes a run: the failed lane's scopes fall back
 to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all. When
-EVERY declared lane fails, `coverage` prints a second line, `crapkit: every lane failed:
-...`, exits 5 and writes no run at all, so `crapkit runs` has nothing to show and there is
-no partial run for `verify` to refuse against.
+EVERY declared lane fails, `coverage` prints a closing count, `crapkit: every lane failed
+(N of N); the errors are above`, exits 5 and writes no run at all, so `crapkit runs` has
+nothing to show and there is no partial run for `verify` to refuse against. Read the lane
+lines above that count; it repeats none of them.
 
 ## "measured N file(s), none of them under the paths its scopes declare"
 

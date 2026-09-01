@@ -297,3 +297,28 @@ def test_the_page_names_the_lockfile_that_makes_its_example_a_uv_run_repo():
 
     assert "uv.lock" in page, "the page shows `uv run` and never says where it comes from"
     assert "no lockfile" in page, "the page never tells the reader when the prefix drops"
+
+
+# --- what a worked transcript may show ---------------------------------------
+
+_HOME_DIR = re.compile(r"(?:[A-Za-z]:\\Users\\|/home/|/Users/)[\w.-]+")
+_RELEASE = re.compile(r"\b\d+\.\d+\.\d+\b")
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_no_page_prints_a_home_directory_that_names_whoever_ran_it(page: str):
+    """A transcript pasted off one machine hands the reader a path that exists
+    on nobody else's, spelled with the name of whoever ran the command."""
+    found = _HOME_DIR.findall(_doc(page))
+
+    assert found == [], f"{page} prints a home directory: {found}"
+
+
+def test_the_plugin_root_transcript_pins_no_release():
+    """The line says where `doctor --plugin-root` looked, not which release is
+    installed. A number there is wrong one release later, and a reader takes it
+    for the version they are supposed to have."""
+    (line,) = [ln for ln in _doc(ONBOARD_SKILL).splitlines()
+               if "crapkit doctor: checking" in ln]
+
+    assert _RELEASE.search(line) is None, line

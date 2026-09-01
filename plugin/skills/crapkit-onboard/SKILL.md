@@ -23,7 +23,7 @@ path it takes the plugin root or any directory above it, `~/.claude` included. W
 picks a root for you it names the one it chose:
 
     $ crapkit doctor --plugin-root
-    crapkit doctor: checking C:\Users\jfgag\.claude\plugins\cache\crapkit\crapkit\0.4.4
+    crapkit doctor: checking <home>\.claude\plugins\cache\crapkit\crapkit\<version>
 
 Nothing after that line, and exit 0, means the manifest version and the hook protocol both
 agree with this CLI. Otherwise it prints one line per disagreement, at exit 1. Finding no

@@ -32,7 +32,7 @@ verifies blind. `doctor` says so, per lane, with the flag to add:
 ```
 $ crapkit doctor
 ok   config keys all recognized
-ok   scope 'calc': 1 files
+ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
@@ -129,7 +129,7 @@ that exits 9009:
 ```
 $ crapkit doctor
 ok   config keys all recognized
-ok   scope 'calc': 1 files
+ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) — the lane cannot start, so its scopes can only ever score no-lane
 ok   lizard 1.24.0
@@ -499,7 +499,7 @@ and the lane is refused rather than quietly downgraded to statement coverage:
 ```
 $ crapkit coverage
 crapkit: lane 'py' FAILED: coverage.py report lacks branch data — run the lane with branch coverage on
-crapkit: every lane failed: ...
+crapkit: every lane failed (1 of 1); the errors are above
 ```
 
 Exit 5.
@@ -835,7 +835,7 @@ lands:
 ```
 $ crapkit coverage
 crapkit: lane 'slow' FAILED: lane 'slow' timed out after 2s (attempt 2); log: ...\.crapkit\lane-slow.log
-crapkit: every lane failed: lane 'slow' timed out after 2s (attempt 2); log: ...\.crapkit\lane-slow.log
+crapkit: every lane failed (1 of 1); the errors are above
 EXIT=5
 $ wc -l < ticks.txt
 10
@@ -997,7 +997,9 @@ Exit 5. Four consequences:
    forever. `coverage --lane NAME` produces a partial run for the same reason.
 3. **`verify` refuses to conclude at all**: `verify cannot conclude with failed lanes:
    scripts`, exit 5. A verdict with a blind lane is not a verdict.
-4. **Every lane failing raises** `every lane failed: ...`, exit 5, with no run written.
+4. **Every lane failing raises** `every lane failed (N of N); the errors are above`, exit 5,
+   with no run written. That last line is a count and a pointer: each lane already printed
+   its own refusal on the lines above it.
 
 `coverage --json` carries the reasons under `lane_failures`, keyed by lane name, alongside
 the successful lanes' provenance under `lanes`.
