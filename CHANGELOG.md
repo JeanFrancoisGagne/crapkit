@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.4.9 — unreleased
+
+### The action's verdict covers the pull request's own delta
+`action.yml` ran `crapkit coverage` and then `crapkit verify` at one commit, so verify's
+baseline was the run it had just written and the gate judged no changed function. The
+verdict line reported the tree's health and called it a pull request review.
+
+On a `pull_request` event the action now scores the fork point first. It adds a detached
+worktree at `git merge-base` of `github.event.pull_request.base.sha` and HEAD under
+`RUNNER_TEMP`, runs the consumer's lanes there, and copies that store over the checkout's,
+so the checkout's own `crapkit coverage` lands a second run beside it. The verdict step
+then runs `crapkit verify --json --reuse-artifacts --base <fork>`, which measures the diff
+from there and takes the fork point's run as its baseline. The gate judges the functions
+the pull request changed and nothing else, so a repository that was already over its
+ceiling before the branch started no longer fails every pull request that touches it.
+
+The fork point rather than `base.sha`: `base.sha` is the base branch's tip when the event
+fired, and a base branch that moved after the branch forked carries commits HEAD never
+saw. A run there is at neither end of the diff verify would measure, and verify refuses
+for want of a run at or behind the real fork. The changed-file list the comment's table
+is filtered to moved to `base.sha...HEAD` for the same reason, so both counts in the
+comment now describe the branch's own commits.
+
+The price is two lane runs on a pull request, and the new `delta` input buys it back:
+`delta: "false"` skips the base run and keeps 0.4.8's behaviour. A `push` event keeps it
+too, having no base commit to score and no pull request to comment on.
+
+Nothing here can fail the job. A shallow clone that does not hold the fork point, a fork
+point older than the repo's `crapkit.toml`, and a lane that will not run against that
+tree all leave `crapkit base scoring exited N` in the log and no base run behind it, and
+the verdict step falls back to the single-commit call. The last of those three is the one
+to know about: a lane that measures an installed copy of the package rather than the tree
+it runs in would score the checkout while standing on the base commit. crapkit's own
+`--cov=crapkit` lane is such a lane, which is why the dogfood job in `.github/workflows/ci.yml`
+sets `delta: "false"`; `crapkit coverage` refuses that artifact (exit 5) rather than
+joining it, so the failure is loud and the fallback is automatic.
+
 ## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request

@@ -512,16 +512,18 @@ The rows are the ranked worklist for the files the pull request changed, worst f
 and `remedy` is the run's own verdict for that function: `decompose`, `add-tests` or `ok`.
 A pull request that touches no ranked function gets the heading and no table.
 
-The two file counts describe two different diffs, and both are wanted. `39 changed files`
-is the pull request's own list, `git diff --name-only` against the base commit, and it is
-what the table is filtered to. `7 changed files` on the verdict line is what `verify`
-measured against its baseline run, which is the section below.
+The two file counts describe the same diff, counted twice. `39 changed files` is
+`git diff --name-only base.sha...HEAD`, the branch's own commits, and it is what the
+table is filtered to. The count on the verdict line is what `verify` measured from the
+same fork point. With `delta: "false"` the second one is 0, because there is nothing
+behind the checkout to measure from.
 
 ### The inputs
 
 | Input | Default | What it does |
 |---|---|---|
 | `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. Anything else exits 0 and the comment is the whole output |
+| `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone |
 | `top` | `"5"` | worklist rows rendered in the table |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into |
 
@@ -531,17 +533,44 @@ day two.
 
 ### What the verdict line covers
 
-The action runs `crapkit coverage --json` and then `crapkit verify --json
---reuse-artifacts`, so the baseline is the run written a step earlier, at this same
-commit. On a clean checkout that diff is empty: the verdict line reports the tree's own
-health and the exit code verify returned, not the pull request's delta. The gate that
-judges the delta is the portable baseline in [Route 4](#route-4-ci): commit
-`crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv
-crapkit-baseline.tsv` in a step of your own beside this one.
+On a pull request, the commits the pull request adds. The action scores the fork point
+first, then the checkout, then runs `crapkit verify --base <fork>`, which measures the
+diff from there and takes the fork point's run as its baseline. So the gate judges the
+functions in the diff a reviewer is reading, and a repository that was already over its
+ceiling before the branch started does not fail every pull request that touches it.
 
-`--reuse-artifacts` is what keeps the job to one test run. `coverage` ran the lanes
-moments earlier on this same tree, and verify parses those artifacts rather than running
-your whole suite a second time for the same numbers.
+The fork point is `git merge-base` of `base.sha` and HEAD, not `base.sha` itself.
+`base.sha` is the base branch's tip when the event fired, so a base branch that moved
+after the branch forked carries commits HEAD never saw, and a run there would be neither
+the baseline verify wants nor a diff anyone is reviewing.
+
+The base run happens in a detached worktree under `RUNNER_TEMP`, and its store is copied
+over the checkout's so both runs sit in one place. The cost is **two lane runs on a pull
+request**: your suite runs once at the fork point and once on the checkout. Set `delta:
+"false"` to skip the base run, and the verdict falls back to the checkout against its own
+run, which reports the tree's own health and judges no changed function.
+
+Three things leave the base run unmade, and none of them fails the job: a shallow clone
+that does not hold the fork point, a fork point older than your `crapkit.toml`, and a
+lane that will not run against that tree. The step logs `crapkit base scoring exited N`
+and the verdict falls back the same way `delta: "false"` does. A `push` event never makes
+one, because there is no base commit and no pull request to comment on.
+
+One requirement the base run adds: the lane has to measure the tree it runs in. A lane
+that reaches an installed copy of your package instead of the checkout will measure the
+pull request's code while standing on the base commit, and the two runs then describe the
+same tree. `crapkit verify` refuses a run whose artifact names files outside the tree
+(exit 5), which catches the loud version of this; a lane pinned to a path outside the
+worktree is the quiet one. Point the lane at the tree, or set `delta: "false"`.
+
+`--reuse-artifacts` is what keeps each of those runs to one pass of your suite. `coverage`
+ran the lanes moments earlier on that tree, and verify parses those artifacts rather than
+running the whole suite a second time for the same numbers.
+
+The other gate that judges a delta is the portable baseline in [Route 4](#route-4-ci):
+commit `crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv
+crapkit-baseline.tsv` in a step of your own. It needs no second lane run, and it needs
+someone to keep that file current.
 
 The comment is posted with `gh api` and the job's own `GITHUB_TOKEN`, which needs
 `pull-requests: write`. Two things it cannot do: a pull request from a fork gets a

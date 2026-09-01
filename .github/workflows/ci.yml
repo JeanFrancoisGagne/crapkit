@@ -94,9 +94,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      # delta stays false, and crapkit is the repo that has to say why. The
+      # delta run scores the base commit in a worktree of its own, and the `py`
+      # lane there spells `--cov=crapkit`, which the action's editable install
+      # of this checkout resolves to this checkout. So the base run would
+      # measure HEAD's source while standing on the base commit. `crapkit
+      # coverage` refuses that artifact (exit 5) and the verdict falls back, so
+      # what turning it on would buy is one wasted suite run per pull request.
       - name: crapkit scores itself through its own action
         uses: ./
         with:
           gate: "false"
+          delta: "false"
           top: "5"
           python-version: "3.12"
