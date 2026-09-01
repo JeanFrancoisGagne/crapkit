@@ -503,6 +503,18 @@ def test_a_config_naming_no_testpaths_or_not_parsing_reads_as_none():
     assert pytest_testpaths({"pytest.ini": "]]] not ini", "pyproject.toml": "[[["}) == ()
 
 
+def test_the_section_that_names_no_testpaths_still_ends_the_search():
+    """pytest reads one inifile and never consults a lower-ranked one. A
+    `pytest.ini` carrying `[pytest]` is that file even when it names no
+    testpaths, so a bare `pytest` collects from the rootdir and pyproject's
+    list is dead text. Reading it anyway would write sibling lane stubs for
+    paths the repo's real run never collects."""
+    assert pytest_testpaths({"pytest.ini": "[pytest]\naddopts = -q\n",
+                             "pyproject.toml": PYPROJECT_TESTPATHS}) == ()
+    assert pytest_testpaths({"pyproject.toml": "[tool.pytest.ini_options]\naddopts = '-q'\n",
+                             "setup.cfg": SETUP_CFG}) == ()
+
+
 def test_a_single_testpath_leaves_the_detected_lane_alone():
     """One testpath collects in one process by definition, so there is nothing
     to split and no reason to put a second pattern in front of the reader."""

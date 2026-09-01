@@ -192,11 +192,17 @@ def _write_report(root: Path, out: str, page: str) -> Path:
     there: the page carries no relative asset and reads nothing from where it
     lands, so the destination changes nothing but who can open it. LF endings,
     because the page is an artifact people diff and publish.
+
+    A rooted path with no drive (`/tmp/r.html` on Windows) counts as absolute
+    too. `is_absolute()` says False there, so it used to be refused with the
+    advice the reader had just followed; it names the current drive's root, not
+    a place under the repo.
     """
     base = root.resolve()
     named = Path(out)
-    path = named if named.is_absolute() else (base / out).resolve()
-    if not named.is_absolute() and base not in path.parents:
+    rooted = named.is_absolute() or bool(named.root)
+    path = named if rooted else (base / out).resolve()
+    if not rooted and base not in path.parents:
         raise ConfigError(f"report --out is repo-relative and {out!r} climbs out of "
                           f"{base}; pass an absolute path to write outside it")
     path.parent.mkdir(parents=True, exist_ok=True)

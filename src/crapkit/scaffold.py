@@ -167,23 +167,28 @@ def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
 
 
 # Where pytest keeps `testpaths`, and the order it reads those files in: the
-# first file carrying a config section wins, so a repo holding all three is read
-# the way pytest reads it. This is the same presence-and-config signal that picks
-# the lane itself — the file is parsed, never executed and never imported.
+# first file carrying a pytest section ends the search, whether or not that
+# section names testpaths, because pytest picks one inifile and never consults a
+# lower-ranked one. A repo holding all three is read the way pytest reads it.
+# This is the same presence-and-config signal that picks the lane itself — the
+# file is parsed, never executed and never imported.
 _TESTPATHS_SECTION = {"pytest.ini": "pytest", "setup.cfg": "tool:pytest"}
 _TESTPATHS_ORDER = ("pytest.ini", "pyproject.toml", "setup.cfg")
 
 
-def _ini_testpaths(text: str, section: str) -> tuple[str, ...]:
-    """`testpaths` out of an ini file. A file that will not parse names nothing:
-    init is describing the repo, not judging its pytest config."""
+def _ini_testpaths(text: str, section: str) -> tuple[str, ...] | None:
+    """`testpaths` out of an ini file, or None when the file carries no pytest
+    section for the search to stop at. A file that will not parse carries
+    nothing: init is describing the repo, not judging its pytest config."""
     import configparser
 
     parser = configparser.ConfigParser()
     try:
         parser.read_string(text)
     except configparser.Error:
-        return ()
+        return None
+    if not parser.has_section(section):
+        return None
     return tuple(parser.get(section, "testpaths", fallback="").split())
 
 
@@ -196,18 +201,23 @@ def _toml_value(data, *keys: str):
     return data
 
 
-def _toml_testpaths(text: str) -> tuple[str, ...]:
+def _toml_testpaths(text: str) -> tuple[str, ...] | None:
+    """None unless `[tool.pytest.ini_options]` is there, which is the table
+    pytest itself looks for before it reads a pyproject as its inifile."""
     import tomllib
 
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
-        return ()
-    found = _toml_value(data, "tool", "pytest", "ini_options", "testpaths")
+        return None
+    section = _toml_value(data, "tool", "pytest", "ini_options")
+    if not isinstance(section, dict):
+        return None
+    found = section.get("testpaths")
     return tuple(str(path) for path in found) if isinstance(found, list) else ()
 
 
-def _testpaths_of(name: str, text: str) -> tuple[str, ...]:
+def _testpaths_of(name: str, text: str) -> tuple[str, ...] | None:
     if name == "pyproject.toml":
         return _toml_testpaths(text)
     return _ini_testpaths(text, _TESTPATHS_SECTION[name])
@@ -222,10 +232,15 @@ def pytest_testpaths(marker_texts: dict[str, str]) -> tuple[str, ...]:
     full-suite command left to write. init cannot know whether that happens
     without running the suite, so it reads the count and writes the fallback
     commented out.
+
+    The first file carrying a pytest section answers, empty section included:
+    that is the file pytest reads, and a `[pytest]` naming no testpaths means a
+    bare `pytest` collects from the rootdir. Falling through to the next file
+    would name paths the repo's own run never collects.
     """
     for name in _TESTPATHS_ORDER:
         found = _testpaths_of(name, marker_texts.get(name, ""))
-        if found:
+        if found is not None:
             return found
     return ()
 

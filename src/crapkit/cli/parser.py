@@ -442,8 +442,8 @@ def _path_first_arg(argv: list[str] | None) -> str | None:
 
     Answered before `parse_args`, like the claude-* guard above it. `crapkit
     ./mini` reads as "score this repo", and argparse answers it with the
-    invalid-choice dump of all 24 subcommands without ever printing the word
-    repo, which is where the path goes: a flag on a subcommand.
+    invalid-choice dump of every subcommand name without ever printing the
+    word repo, which is where the path goes: a flag on a subcommand.
     """
     args = sys.argv[1:] if argv is None else argv
     if args and _looks_like_a_path(args[0]):

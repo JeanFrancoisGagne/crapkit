@@ -4,7 +4,7 @@
 
 ### A repo path handed to crapkit says where the repo goes
 `crapkit ~/some-repo` and `crapkit ./mini` read as "score this repo", and argparse
-answered both with the invalid-choice dump of all 24 subcommand names, none of which
+answered both with the invalid-choice dump of every subcommand name, none of which
 was the route the reader wanted: the repo is a flag, `--repo`, on a subcommand. The
 word repo never appeared in the output. A first argument shaped like a path (a
 separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventory
