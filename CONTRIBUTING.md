@@ -26,7 +26,7 @@ pass locally and get rejected in review.
 
 ```
 python -m pytest                   # both suites, serially
-python -m pytest tests/unit -n 8   # 2,440 tests, 16 s (about a minute serially)
+python -m pytest tests/unit -n 8   # 2,441 tests, 16 s (about a minute serially)
 python -m pytest tests/e2e -n 8    # 614 tests, about 1m30 (2m on Windows)
 ```
 
