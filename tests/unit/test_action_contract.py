@@ -307,7 +307,7 @@ def test_the_readme_states_the_permission_the_comment_needs():
 
 def test_the_post_step_opens_by_keeping_its_own_status():
     """`shell: bash` runs with -e, so the first command that fails takes the step
-    and the job with it. Every other step opens `code=0` and records what it got;
+    and the job with it. The scoring steps open `code=0` and record what they got;
     this one posts the action's whole output and has the most to lose."""
     body = _step_named("post the comment")["run"]
 
@@ -321,13 +321,16 @@ def test_every_gh_api_call_records_its_status_rather_than_failing_the_step():
     for body in _run_bodies():
         for line in _logical_lines(body):
             if "gh api" in line:
-                assert line.endswith("|| code=$?"), f"a gh api call can fail the step: {line}"
+                assert re.search(r"\|\| [a-z_]+=\$\?$", line), f"a gh api call can fail the step: {line}"
 
 
-def test_only_the_exit_code_step_can_fail_the_action():
+def test_only_the_exit_code_step_exits_on_a_status_it_chose():
     """The gate's own comment says `gate: true` is the only thing that fails this
     action. Any other step that exits non-zero, or exits on whatever status it
-    last got, makes that sentence false."""
+    last got, makes that sentence false. A regression guard, not the test that
+    drove the post step's change: that step's only exit was already `exit 0`.
+    A bare command failing under -e is the other way out, and the two tests
+    above hold the `gh api` calls; the steps that run crapkit keep `code=0`."""
     exiting = [body for body in _run_bodies()
                if any(match.group(1) != "0" for match in _EXIT.finditer(body))]
 
