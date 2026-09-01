@@ -42,10 +42,11 @@ it.
 pip install crapkit
 cd your-repo
 crapkit init        # crapkit.toml and .gitignore lines, plus a live coverage lane when it
-                    # recognizes the runner: pyproject.toml, pytest.ini or setup.cfg for
-                    # pytest, a test script or vitest/jest in package.json for the JS side
-                    # python or JS source and no runner it knows: the lane comes commented
-                    # out, init says to declare one, docs/lanes.md is how to fill it in
+                    # recognizes the runner and a scope speaks its language: pyproject.toml,
+                    # pytest.ini or setup.cfg for pytest; a test script or vitest/jest in
+                    # package.json for the JS side
+                    # without one: the lane comes commented out, init says to declare one,
+                    # and docs/lanes.md is how to fill it in
 crapkit coverage    # runs the lane, joins coverage, stores a scored run
 crapkit worklist    # the ranked risk map
 crapkit ratchet seed && git add crapkit.toml crapkit-ratchet.tsv .gitignore
