@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.10 — unreleased
+## 0.4.10 — 2026-09-01
 
 ### The action is named "crapkit complexity gate"
 The GitHub Marketplace refuses an action whose name matches an existing user or
