@@ -1,0 +1,15 @@
+
+def final_grade(score, curve=0, late=False, cap=None):
+    """The band letter after every adjustment the syllabus allows."""
+    if score is None:
+        return "?"
+    total = score + curve
+    if late:
+        total -= 5
+    if cap is not None and total > cap:
+        total = cap
+    if total > 100:
+        total = 100
+    if total < 0:
+        total = 0
+    return grade(total)
