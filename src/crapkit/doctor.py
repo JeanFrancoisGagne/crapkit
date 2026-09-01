@@ -317,18 +317,25 @@ def unmeasured_directories(rows, tracked: list[str], *,
 # hook the CLI would answer and nobody asked. Neither side notices on its own,
 # so `doctor --plugin-root` asks. Pure: the caller reads the two files.
 
-def _version_gap(where: str, version: str, cli_version: str) -> str | None:
-    """One line naming both numbers and both repairs.
+def _version_gap(where: str, version: str, cli_version: str, cli_where: str) -> str | None:
+    """One line naming both numbers, the executable the second one came from,
+    and both repairs.
 
     Which side is behind is not decided here. Version ordering across a
     pre-release, a local build and a published wheel is a guess, and a guess
     that names the wrong repair costs more than naming two.
+
+    `cli_where` is the console script the plugin will spawn, which on a machine
+    with a venv crapkit and a pipx crapkit is not the module answering this
+    question. The path rides this line rather than a line of its own: agreement
+    is silence here, and a line printed on success is a line people stop
+    reading.
     """
     if version == cli_version:
         return None
-    return (f"crapkit doctor: the plugin at {where} is version {version}, this crapkit is "
-            f"{cli_version}. Reinstall whichever is behind: `claude plugin install "
-            f"crapkit@crapkit`, or `pip install -U crapkit`.")
+    return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit "
+            f"its hooks spawn ({cli_where}) is {cli_version}. Reinstall whichever is "
+            f"behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.")
 
 
 def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
@@ -348,7 +355,7 @@ def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str)
             f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit.")
 
 
-def plugin_handshake(*, where: str, version: str | None, cli_version: str,
+def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str) -> list[str]:
     """Every disagreement between an installed plugin and this CLI, one per line.
 
@@ -360,5 +367,5 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str,
     """
     if version is None:
         return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
-    return [line for line in (_version_gap(where, version, cli_version),
+    return [line for line in (_version_gap(where, version, cli_version, cli_where),
                               _protocol_gap(where, protocols, supported)) if line]

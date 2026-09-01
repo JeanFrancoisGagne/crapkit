@@ -624,7 +624,32 @@ def _missing_named_script(cwd: Path, tok: str) -> bool:
     return not (cwd / tok).is_file()
 
 
-def _missing_runner(cwd: Path, tok: str) -> bool:
+def _lane_path(lane, windows: bool | None = None) -> str | None:
+    """The PATH the lane's runner will be looked for on, or None when the lane
+    names none and the process PATH is the whole answer.
+
+    lanes.py starts the lane with `{**os.environ, **lane.env}`, so a lane that
+    ships its own toolchain through `[lane.env] PATH` runs a runner crapkit's
+    own process cannot see. doctor asked which() with its own environment and
+    FAILed that lane at exit 1 — a red CI check for a lane that works. The
+    lane's cwd was already threaded through this check; its env was not.
+
+    The key is matched the way that merge matches it, which is not the way
+    cmd.exe reads one. The merge is a plain dict update: on POSIX a lane
+    declaring `Path` adds a second variable and leaves `PATH` alone, so the lane
+    really runs on the process PATH and reading the mis-cased key here would
+    bring back the same false FAIL for a runner that resolves. Only on Windows,
+    where the env block is one case-insensitive namespace, does `Path` carry the
+    value the child will read.
+    """
+    windows = os.name == "nt" if windows is None else windows
+    for key, value in lane.env:
+        if key == "PATH" or (windows and key.upper() == "PATH"):
+            return value
+    return None
+
+
+def _missing_runner(cwd: Path, tok: str, path: str | None = None) -> bool:
     r"""A runner the lane could not start, asked the way the shell will ask.
 
     A first word carrying a separator is a path, and the shell reads it from the
@@ -634,22 +659,24 @@ def _missing_runner(cwd: Path, tok: str) -> bool:
     repo and failed it from everywhere else — including `mcp_server._run_cli`,
     which spawns `crapkit doctor --repo <repo>` with no cwd of its own.
 
-    A bare name stays PATH's question, which is the one which() answers.
+    A bare name stays PATH's question — the lane's PATH when it declares one,
+    which is what `path` carries.
     """
     import shutil
 
     if os.sep in tok or "/" in tok:
         return not (cwd / tok).is_file()
-    return shutil.which(tok) is None
+    return shutil.which(tok, path=path) is None
 
 
-def _segment_problems(name: str, cwd: Path, tokens: list[str]) -> list[str]:
+def _segment_problems(name: str, cwd: Path, tokens: list[str],
+                      path: str | None = None) -> list[str]:
     """One command's argv: its runner, then the files it names. Nothing is
     executed."""
     if not tokens:
         return []
     runner = ([f"lane {name!r}: executable {tokens[0]!r} does not resolve on PATH"]
-              if _missing_runner(cwd, tokens[0]) else [])
+              if _missing_runner(cwd, tokens[0], path) else [])
     return runner + [f"lane {name!r}: command names {tok!r}, which does not exist"
                      for tok in tokens[1:] if _missing_named_script(cwd, tok)]
 
@@ -665,7 +692,7 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
     it read a quoted `-k "tests/gone.py or x"` as a test file the repo owes."""
     cwd = root / lane.cwd if lane.cwd else root
     return [problem for segment in config.shell_segments(lane.command)
-            for problem in _segment_problems(lane.name, cwd, segment)]
+            for problem in _segment_problems(lane.name, cwd, segment, _lane_path(lane))]
 
 
 def _lane_start_problem(lane) -> str | None:
@@ -1192,6 +1219,75 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
     return _newest_root(_installed_crapkit_roots(plugins)), str(plugins)
 
 
+def _probed_cli_version(executable: str) -> str:
+    """What `<executable> --version` answers, reduced to the number the manifest
+    carries, or this module's own `__version__` when the probe cannot run OR
+    does not exit 0.
+
+    Only a clean exit is a version. A `crapkit` that starts and then errors — a
+    stale shim, a broken entry point printing a traceback, an argparse usage
+    dump — still has a last word, and taking it made the gap line name a version
+    nothing on the machine reports.
+
+    Spawned directly rather than through `run_bounded`: this probe needs the
+    OUTPUT, and with no shell in between the real program is the child, so
+    subprocess's own timeout lands on it. `crapkit --version` prints
+    `crapkit 0.4.11`, and the manifest carries the number alone.
+    """
+    import subprocess
+
+    try:
+        done = subprocess.run([executable, "--version"], capture_output=True, text=True,
+                              timeout=_PROBE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return __version__
+    answer = (done.stdout or done.stderr).split() if done.returncode == 0 else []
+    return answer[-1] if answer else __version__
+
+
+@lru_cache(maxsize=None)
+def _spawned_cli() -> tuple[str, str] | None:
+    """The console script the plugin actually starts and the version it answers,
+    or None when PATH carries no `crapkit` at all.
+
+    `plugin/hooks/hooks.json` names a bare `crapkit` on all 48 PostToolUse
+    entries and `plugin/.mcp.json` names it for the MCP server, so the CLI the
+    plugin will call is PATH's answer, never the module this handshake runs in.
+    Compared against `__version__` the check described its own process twice
+    over: inside a project `.venv` with no `crapkit` on PATH it printed nothing
+    and exited 0 while every edit fired a command that cannot start, and beside
+    an older pipx copy it called the two versions equal while the hook spawned
+    the older one.
+
+    Memoized because the answer is one machine fact and `doctor --plugin-root`
+    would otherwise spawn it once per call.
+    """
+    import shutil
+
+    executable = shutil.which("crapkit")
+    return (executable, _probed_cli_version(executable)) if executable else None
+
+
+def _no_crapkit_on_path() -> str:
+    """The FAIL for a machine where nothing the plugin declares can start. It
+    names both files that spawn the bare name, because the reader is about to
+    look for a plugin problem and the problem is an install location."""
+    return ("crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and "
+            ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
+            "that cannot start and the MCP server never comes up. Install it where the "
+            "PATH the hook inherits can see it (`pipx install crapkit`), or point the "
+            "plugin at the environment holding it.")
+
+
+def _name_found_root(root: Path, looked_in: str) -> None:
+    """A root the search found, not one the operator typed: the glob reaches
+    three levels under the named directory, so a source checkout can win over an
+    install. Naming it is how the reader knows which tree the verdict is about.
+    """
+    if str(root) != looked_in:
+        print(f"crapkit doctor: checking {root}")
+
+
 def _doctor_plugin(plugin_root: str) -> int:
     """`--plugin-root [PATH]`: the installed plugin against this CLI.
 
@@ -1201,7 +1297,9 @@ def _doctor_plugin(plugin_root: str) -> int:
     means Claude Code's own plugin directory (#28).
 
     `PROTOCOL` comes from the hook module itself, so the number doctor promises
-    and the number `claude-hook` accepts cannot drift apart.
+    and the number `claude-hook` accepts cannot drift apart. The version comes
+    from the `crapkit` on PATH, because that bare name is what the plugin's
+    hooks and its MCP server spawn — see `_spawned_cli`.
     """
     from ..doctor import plugin_handshake
     from .claude_hook import PROTOCOL
@@ -1211,14 +1309,15 @@ def _doctor_plugin(plugin_root: str) -> int:
         print(f"crapkit doctor: no installed crapkit plugin under {looked_in} (install with "
               "`claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)")
         return 1
-    # A root the search found, not one the operator typed: the glob reaches three
-    # levels under the named directory, so a source checkout can win over an
-    # install. Naming it is how the reader knows which tree the verdict is about.
-    if str(root) != looked_in:
-        print(f"crapkit doctor: checking {root}")
+    _name_found_root(root, looked_in)
+    spawned = _spawned_cli()
+    if spawned is None:
+        print(_no_crapkit_on_path())
+        return 1
+    executable, cli_version = spawned
     lines = plugin_handshake(where=str(root), version=_manifest_version(root),
-                             cli_version=__version__, protocols=_hook_protocols(root),
-                             supported=PROTOCOL)
+                             cli_version=cli_version, cli_where=executable,
+                             protocols=_hook_protocols(root), supported=PROTOCOL)
     for line in lines:
         print(line)
     return 1 if lines else 0

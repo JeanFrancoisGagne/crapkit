@@ -938,15 +938,29 @@ respects neither `--json` nor `--show-files`.
 The plugin and the CLI ship as two artifacts with one version number between them, and
 neither notices when they drift. This is the check, and it reads no repo at all.
 
-It compares the plugin's `.claude-plugin/plugin.json` version against the running crapkit,
-and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook` answers.
-One line per disagreement, silence when they agree, exit 1 when it printed anything:
+It compares the plugin's `.claude-plugin/plugin.json` version against **the `crapkit` on
+PATH**, and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook`
+answers. One line per disagreement, silence when they agree, exit 1 when it printed anything:
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: the plugin at crapkit is version 0.3.0, this crapkit is <version>. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
+crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
 crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
 ```
+
+PATH's `crapkit`, not the module answering the question: `hooks/hooks.json` and `.mcp.json`
+both spawn that bare name, so on a machine with a venv crapkit and an older pipx one the
+check ran in the first and the hook started the second. The version comes off that
+executable's own `--version`, and the line names which executable answered. When PATH
+carries no `crapkit` at all, there is nothing to compare and nothing that can start:
+
+```
+$ crapkit doctor --plugin-root crapkit
+crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
+```
+
+Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
+script goes into that venv's `Scripts` and nothing else on the machine sees it.
 
 A root doctor found rather than one you typed gets a `crapkit doctor: checking <that root>`
 line first, naming the install the verdict is about: the search reaches three levels under

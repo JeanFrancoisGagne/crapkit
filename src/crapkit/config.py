@@ -471,6 +471,43 @@ def load_config_text(text: str) -> Config:
         raise ConfigError(f"crapkit.toml is missing a required key: {exc}") from exc
 
 
+def _unrooted(raw: str) -> str:
+    r"""One declared scope path spelled the way `git ls-files` spells a path.
+
+    universe.py hoists the declared string straight into a prefix, so `./src`
+    looked for `./src/...` while git emits `src/a.py`. Backslashes were already
+    collapsed one layer down, which made the tool look like it normalized paths
+    when it normalized one spelling of them.
+    """
+    path = raw.replace("\\", "/").rstrip("/")
+    while path.startswith("./"):
+        path = path[2:]
+    return path.lstrip("/")
+
+
+def _scope_path(name, raw: str) -> str:
+    """A declared path a tracked file could actually match.
+
+    `./src` claimed nothing: the scope scored zero files, every file under it
+    came back unclaimed, and neither doctor FAIL named the dot — so the reader
+    was sent to declare a second scope for a path the first one already owned.
+    A path that climbs above the root or names a drive can never match a
+    tracked path at all, so it is refused here rather than reported later as an
+    empty scope. `..` is refused as a SEGMENT, not as a prefix: `src/../etc` is
+    the spelling a reader reaches for when they mean a sibling directory, and
+    matching a leading `../` alone let it through into the same silent empty
+    scope. A bare `.` is left exactly as it is: whether a scope can declare the
+    repo root is the matcher's question, not this one's, and `doctor` already
+    reports such a scope as `0 files`.
+    """
+    path = _unrooted(raw)
+    if path == "" or ".." in path.split("/") or ":" in path:
+        raise ConfigError(f"scope {name!r}: path {raw!r} can never match a tracked file — "
+                          "scope paths are repo-relative, with no drive and no `..` "
+                          "(docs/configuration.md)")
+    return path
+
+
 def _parse_scope(row: dict) -> Scope:
     languages = tuple(row.get("languages", ()))
     unknown = set(languages) - SUPPORTED_LANGUAGES
@@ -479,7 +516,9 @@ def _parse_scope(row: dict) -> Scope:
     scope_target = row.get("target")
     if scope_target is not None and (not isinstance(scope_target, int) or scope_target < 1):
         raise ConfigError(f"scope {row.get('name')!r}: target must be a positive int, got {scope_target!r}")
-    return Scope(name=row["name"], paths=tuple(row["paths"]), languages=languages,
+    return Scope(name=row["name"],
+                 paths=tuple(_scope_path(row.get("name"), p) for p in row["paths"]),
+                 languages=languages,
                  target=scope_target,
                  coverage_optional=bool(row.get("coverage_optional", False)))
 

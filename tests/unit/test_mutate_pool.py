@@ -171,3 +171,96 @@ def test_a_run_that_loses_the_lock_removes_its_own_trees(tmp_path, monkeypatch):
 
     assert [p for p in tried if p.exists()] == []
     assert not tried[0].parent.exists(), "the temp directory went with them"
+
+
+# --- the baseline: a command that cannot run is not a suite that kills --------
+#
+# run_one reads any nonzero exit as a killed mutant, so a mutation_command whose
+# first word is not the interpreter holding pytest killed every mutant without
+# ever importing the code under test, and `mutate` printed a 100% score for a
+# suite that never ran. docs ship `python -m pytest -q -x`, a bare name, so the
+# machine decides.
+
+class _Cfg:
+    """The three keys run_mutants reads. mutation_command is a plain string, so
+    nothing upstream of here has pinned an interpreter to it."""
+
+    def __init__(self, command: str, workers: int = 1):
+        self.mutation_command = command
+        self.mutation_timeout_seconds = 60
+        self.mutation_workers = workers
+
+
+def _mutant(tmp_path):
+    from crapkit.mutate import Mutant
+
+    (tmp_path / "a.py").write_text("def f(x):\n    return x > 1\n", encoding="utf-8")
+    return Mutant(path="a.py", line=2, op="cmp", original="x > 1", mutated="x >= 1")
+
+
+def test_a_command_that_cannot_run_is_refused_before_any_mutant_is_scored(tmp_path):
+    """The whole finding: exit(nonzero) with nothing mutated means the runner is
+    broken, and scoring anything from it prints a perfect score for a suite that
+    never started."""
+    from crapkit.errors import ToolError
+    from crapkit.mutate_pool import run_mutants
+
+    scored = []
+    cfg = _Cfg("no-such-runner-anywhere -m pytest")
+
+    with pytest.raises(ToolError) as caught:
+        run_mutants(tmp_path, cfg, [_mutant(tmp_path)],
+                    lambda i, m, killed: scored.append(i))
+
+    assert scored == [], "no mutant may be scored off a runner that does not run"
+    assert "no-such-runner-anywhere" in str(caught.value), caught.value
+    assert "100%" in str(caught.value), "the reader has to know what the score would be"
+
+
+def test_a_command_that_passes_on_the_unmutated_tree_scores_normally(tmp_path):
+    """The other half: the baseline must not turn a working suite into an error.
+    `exit 0` is a command every shell this runs under can start."""
+    from crapkit.mutate_pool import run_mutants
+
+    verdicts = run_mutants(tmp_path, _Cfg("exit 0"), [_mutant(tmp_path)],
+                           lambda i, m, killed: None)
+
+    assert verdicts == [False], "exit 0 per mutant is a survivor, not a kill"
+
+
+def test_a_baseline_that_times_out_says_so_rather_than_naming_an_exit_code(tmp_path):
+    """run_bounded answers None for the deadline, and `exits None` would send the
+    reader looking for an exit code nothing produced."""
+    from crapkit.errors import ToolError
+    from crapkit.mutate_pool import require_live_suite
+
+    monkey = _Cfg("exit 0")
+    original = mutate_pool.run_bounded
+    try:
+        mutate_pool.run_bounded = lambda *a, **kw: None
+        with pytest.raises(ToolError) as caught:
+            require_live_suite(tmp_path, monkey)
+    finally:
+        mutate_pool.run_bounded = original
+
+    assert "timed out" in str(caught.value), caught.value
+
+
+def test_a_run_with_no_mutants_starts_no_suite_at_all(tmp_path):
+    """A diff with no mutable lines used to cost nothing: `mutate` returned at
+    exit 0 without starting anything. There is no first mutant here for a
+    baseline to protect, so running one buys a whole test suite and a new exit 5
+    on an invocation that was free."""
+    from crapkit.mutate_pool import run_mutants
+
+    started = []
+    original = mutate_pool.run_bounded
+    try:
+        mutate_pool.run_bounded = lambda command, *a, **kw: started.append(command) or 1
+        verdicts = run_mutants(tmp_path, _Cfg("no-such-runner-anywhere -m pytest"), [],
+                               lambda *a: None)
+    finally:
+        mutate_pool.run_bounded = original
+
+    assert verdicts == []
+    assert started == [], f"nothing to score, so nothing may run: {started}"

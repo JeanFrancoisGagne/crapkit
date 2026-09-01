@@ -259,3 +259,33 @@ def test_the_precommit_gate_decodes_a_staged_blob_the_same_way(tmp_path: Path):
 
 def test_decode_source_is_the_one_rule_both_paths_use():
     assert decode_source(CP1252).startswith("function " + CP1252_NAME)
+
+
+# --- the glob docs/configuration.md hands a Pester user -----------------------
+
+def _documented_pester_globs() -> tuple[str, ...]:
+    """The exact `[exclude] globs` the Pester advice block publishes.
+
+    Read out of the page rather than retyped: the point of this test is that the
+    line a reader copies works, so a copy of it here would prove nothing.
+    """
+    import tomllib
+
+    text = (Path(crapkit.__file__).resolve().parents[2]
+            / "docs" / "configuration.md").read_text(encoding="utf-8")
+    block = next(b for b in text.split("```toml")[1:] if ".Tests.ps1" in b)
+    return tuple(tomllib.loads(block.split("```")[0])["exclude"]["globs"])
+
+
+def test_the_documented_pester_glob_reaches_a_root_level_test_file():
+    """`**/*.Tests.ps1` alone needs a directory in front of the file name, so a
+    repo-root `Deploy.Tests.ps1` stayed in the corpus and came back from doctor
+    as a tracked file no scope claims — pointing at the page that gave the glob.
+    PowerShell repos keep scripts at the root more than most."""
+    from crapkit.universe import exclude_matcher, excluded
+
+    match = exclude_matcher(_documented_pester_globs())
+
+    assert excluded("Deploy.Tests.ps1", match), _documented_pester_globs()
+    assert excluded("scripts/Deploy.Tests.ps1", match)
+    assert not excluded("scripts/Deploy.ps1", match), "production code must stay in"

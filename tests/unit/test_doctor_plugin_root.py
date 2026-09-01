@@ -17,16 +17,37 @@ question "is my plugin behind my CLI" has no repo in it.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 import crapkit
-from crapkit.cli import main
+from crapkit.cli import admin, main
 from crapkit.doctor import plugin_handshake
 
 CLI = crapkit.__version__
 REPO_PLUGIN = Path(__file__).resolve().parent.parent.parent / "plugin"
+ON_PATH = "/usr/local/bin/crapkit"
+# The memoized original, held before the autouse stub replaces the name. Its
+# `__wrapped__` is the uncached function, which is what the two probe tests below
+# drive: they set a PATH of their own and a cached answer would ignore it.
+RESOLVE = admin._spawned_cli
+
+
+@pytest.fixture(autouse=True)
+def _agreeing_path_crapkit(monkeypatch):
+    """The `crapkit` the plugin will spawn, stubbed to agree with this module.
+
+    `_spawned_cli` reads the real PATH and starts what it finds, so without this
+    every case here would depend on which crapkit the developer's PATH happens
+    to carry. The cache is cleared on both sides so no answer crosses a test
+    boundary.
+    """
+    RESOLVE.cache_clear()
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: (ON_PATH, CLI))
+    yield
+    RESOLVE.cache_clear()
 
 
 def _handler(protocol: str) -> dict:
@@ -176,7 +197,7 @@ def test_a_broken_repo_config_does_not_reach_the_handshake(tmp_path, capsys, mon
 
 def _lines(**kw) -> list[str]:
     args = {"where": "/plugins/crapkit", "version": "0.4.0", "cli_version": "0.4.0",
-            "protocols": ("1",), "supported": "1"}
+            "cli_where": ON_PATH, "protocols": ("1",), "supported": "1"}
     return plugin_handshake(**{**args, **kw})
 
 
@@ -331,3 +352,110 @@ def test_a_path_with_no_manifest_anywhere_under_it_still_names_the_file(tmp_path
     assert code == 1
     assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'empty'} has no "
                      ".claude-plugin/plugin.json"], lines
+
+
+# --- the CLI the hook will spawn, not the one this check runs in ---------------
+#
+# plugin/hooks/hooks.json names a bare `crapkit` on every PostToolUse entry and
+# plugin/.mcp.json names it for the MCP server, so what the plugin starts is
+# PATH's answer. Compared against this module's __version__ the handshake
+# described its own process: run from a venv holding 0.4.11 beside a pipx copy
+# at 0.1.0, it called the two versions equal while the hook spawned the older
+# one, and run where PATH carries no crapkit at all it printed nothing.
+
+def _crapkit_shim(directory: Path, version: str) -> None:
+    """A `crapkit` on PATH that answers `--version` and nothing else, spelled
+    the way this platform's shell can start one."""
+    directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        (directory / "crapkit.bat").write_text(f"@echo crapkit {version}\n", encoding="utf-8")
+        return
+    shim = directory / "crapkit"
+    shim.write_text(f'#!/bin/sh\necho "crapkit {version}"\n', encoding="utf-8")
+    shim.chmod(0o755)
+
+
+def test_the_version_compared_is_the_one_the_path_crapkit_answers(tmp_path, capsys,
+                                                                  monkeypatch):
+    """A venv crapkit beside an older pipx copy: the plugin matches the module
+    running this check and still disagrees with the CLI the hook spawns."""
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: ("/opt/pipx/bin/crapkit", "0.1.0"))
+
+    code, lines, _ = check(plugin(tmp_path / "p", version=CLI), capsys)
+
+    assert code == 1 and len(lines) == 1, lines
+    assert "0.1.0" in lines[0] and CLI in lines[0], lines[0]
+    assert "/opt/pipx/bin/crapkit" in lines[0], "the line names which executable answered"
+
+
+def test_no_crapkit_on_path_is_a_fail_naming_what_cannot_start(tmp_path, capsys,
+                                                               monkeypatch):
+    """pip into a project .venv is the usual install, and it puts the console
+    script only in that venv's Scripts. Every edit then fires a command that
+    cannot start and the MCP server never comes up, and this was the one command
+    written to check the plugin against the CLI it will call."""
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: None)
+
+    code, lines, _ = check(plugin(tmp_path / "p"), capsys)
+
+    assert code == 1 and len(lines) == 1, lines
+    assert "hooks/hooks.json" in lines[0] and ".mcp.json" in lines[0], lines[0]
+    assert "PATH" in lines[0], lines[0]
+
+
+def test_the_probe_reads_the_version_off_the_executable_it_found(tmp_path, monkeypatch):
+    """The resolution itself, against a real shim: which() picks it up and the
+    number comes back off its own `--version`, not out of this process."""
+    _crapkit_shim(tmp_path / "bin", "9.9.9")
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+
+    executable, version = RESOLVE.__wrapped__()
+
+    assert Path(executable).parent == tmp_path / "bin", executable
+    assert version == "9.9.9", version
+
+
+def test_an_empty_path_resolves_no_crapkit_at_all(tmp_path, monkeypatch):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+    assert RESOLVE.__wrapped__() is None
+
+
+def test_an_executable_that_answers_nothing_falls_back_to_this_module(tmp_path):
+    """The probe is best effort. A console script that cannot run says nothing
+    about versions, and a handshake that reported '' would be worse than one
+    that reports the number it does hold."""
+    assert admin._probed_cli_version(str(tmp_path / "no-such-executable")) == CLI
+
+
+def _failing_shim(directory: Path, says: str) -> str:
+    """A `crapkit` on PATH that starts, prints, and exits nonzero — a stale shim,
+    a broken entry point, an argparse usage dump."""
+    directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        shim = directory / "crapkit.bat"
+        shim.write_text(f"@echo {says}\n@exit /b 2\n", encoding="utf-8")
+        return str(shim)
+    shim = directory / "crapkit"
+    shim.write_text(f'#!/bin/sh\necho "{says}"\nexit 2\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return str(shim)
+
+
+def test_an_executable_that_errors_is_not_read_for_a_version(tmp_path):
+    """The last word of a traceback or a usage line is not a version number, and
+    the gap line printed it as one: the reader was told the CLI reports a version
+    nothing on the machine reports."""
+    shim = _failing_shim(tmp_path / "bin", "usage: crapkit [-h] COMMAND")
+
+    assert admin._probed_cli_version(shim) == CLI
+
+
+def test_a_zero_exit_is_still_read_for_its_version(tmp_path):
+    """The guard must not swallow the answer it exists to protect."""
+    _crapkit_shim(tmp_path / "ok", "9.9.9")
+    name = "crapkit.bat" if os.name == "nt" else "crapkit"
+
+    assert admin._probed_cli_version(str(tmp_path / "ok" / name)) == "9.9.9"

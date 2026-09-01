@@ -273,6 +273,82 @@ Every caller
 that REWRITES the file keeps the strict refusal, the merge driver included, because a
 skipped line there would delete a mark the repo signed for, and that refusal now arrives
 as `unreadable ratchet file <name>` rather than a stack trace.
+### One unimportable test file no longer takes the whole pytest lane down
+A repo with a renamed module, a missing optional extra or a stale editable install got
+`coverage exit=5` and `every lane failed (1 of 1)` from a suite whose other test files
+collected fine. pytest raises `Interrupted` at the end of collection when any module
+fails to import, so pytest-cov's session finish never runs and the lane writes no
+coverage JSON at all; the junit lands anyway, which makes the run read as half finished
+rather than as a flag. `doctor` said "no problems found". The lane `init` writes now
+carries `--continue-on-collection-errors`, and so does the commented template beside it,
+which is pytest's half of the `--coverage.reportOnFailure` the vitest lane already got.
+Nothing is hidden: the uncollected file's tests stay in the junit as errors. The vitest
+and jest lanes are untouched.
+
+### The Pester exclude example matches a test file at the repo root
+docs/configuration.md told PowerShell users that `globs = ["**/*.Tests.ps1"]` excludes
+their Pester suite. Globs match the whole path, so that pattern needs a directory in
+front of the file name and never claims a repo-root `Deploy.Tests.ps1` — and PowerShell
+repos keep scripts at the root more than most. The file stayed in the corpus, `doctor`
+FAILed it as a tracked file no scope claims, and the FAIL pointed the reader back at the
+page that gave the glob. The example now ships both forms with the reason, the way the
+`**/dist/**` advice on the same page already does.
+
+### The override receipt is spelled for the shell you are in
+`hook-precommit` granted an override and printed `unset CRAPKIT_OVERRIDE_REASON`.
+`unset` is a POSIX builtin: on Windows PowerShell answered
+`CommandNotFoundException`, the variable stayed set, and the next commit was granted a
+full override for a brand new violating function with nobody typing a reason. The
+receipt now names `$env:CRAPKIT_OVERRIDE_REASON = $null` and `set
+CRAPKIT_OVERRIDE_REASON=` on Windows and keeps `unset` everywhere else, and it adds the
+line it was missing: a variable a CI job or a launcher exported is cleared where it was
+set, not by any command in this shell.
+
+### A scope path spelled `./src` claims the files under `src`
+`paths = ["./src"]` claimed nothing. The declared string is hoisted straight into a
+match prefix, so the matcher looked for `./src/...` while `git ls-files` emits
+`src/a.py`: the scope scored zero files, every file under it became unclaimed, and
+`doctor` printed two FAILs that named neither the dot — it blamed the empty scope, then
+blamed the file for having no scope, which sends the reader to declare a second scope
+for a path the first one already owned. Outside `doctor` it was quieter still:
+`crapkit inventory` reported `0 functions in 0 files` and exited 0. Backslashes were
+already collapsed one layer down, which made the tool look like it normalized paths.
+Scope paths are now normalized where they are parsed: a leading `./`, a leading or
+trailing `/`, and `\` as a separator. A path holding `..` or a drive letter is a config
+error naming the scope, because no tracked file can ever match it.
+
+### `mutate` refuses to score a suite that never ran
+`crapkit mutate` read any nonzero exit from `mutation_command` as a killed mutant, so a
+command that cannot run here killed all of them and printed a 100% mutation score for a
+suite that never imported the code under test. The documented command is
+`python -m pytest -q -x`, a bare name, so any machine whose PATH `python` is not the
+interpreter holding pytest — a hook, a cron, cmd.exe, the Windows Store stub that exits
+9009 — got a perfect score. The command now runs once against the unmutated tree before
+the first mutant, in the worker's own checkout when the run is parallel. A baseline that
+does not exit 0 ends the command (exit 5) naming the runner word, its exit code and the
+score it would otherwise have printed, instead of scoring anything.
+
+### `doctor --plugin-root` checks the crapkit the hook will actually spawn
+The one command written to check a plugin against, in `plugin.json`'s own words, the CLI it
+will call, compared the manifest against the `__version__` of the module it was running in.
+`plugin/hooks/hooks.json` names a bare `crapkit` on every PostToolUse entry and
+`plugin/.mcp.json` names it for the MCP server, so the CLI the plugin starts is PATH's
+answer. Two ways that lied. Run from a venv holding this version beside an older pipx
+`crapkit`, it called the two sides equal while the hook spawned the older one. Run from a
+project `.venv` with no `crapkit` on PATH at all — a plain `pip install` into the project,
+the usual case — it printed nothing and exited 0 while every edit fired a command that
+cannot start and the MCP server never came up. The check now resolves `crapkit` on PATH,
+compares the manifest against that executable's own `--version`, and names the executable in
+the line. No `crapkit` on PATH is a FAIL naming both files that spawn it.
+
+### `doctor` reads a lane's runner on the PATH the lane runs with
+`lanes.py` starts a lane with `{**os.environ, **lane.env}`, so a lane that ships its own
+toolchain through `[lane.env] PATH` runs a runner crapkit's own process cannot see. The
+check asked `which()` with the process environment, so such a lane came back
+`FAIL lane 'be': executable 'suite.bat' does not resolve on PATH` and `doctor` exited 1 on a
+lane that works. The lane's `cwd` was already threaded through this check; its env was not.
+A bare first word is now looked for on the lane's own PATH when it declares one, and on the
+process PATH when it does not.
 
 ## 0.4.11 — 2026-09-01
 

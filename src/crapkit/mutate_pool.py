@@ -38,7 +38,8 @@ from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 
-from .errors import GitError
+from .config import shell_words
+from .errors import GitError, ToolError
 from .gitio import head_commit, worktree_add, worktree_remove, worktree_reset
 from .mutate import apply_mutant
 from .procs import run_bounded
@@ -53,6 +54,45 @@ except ImportError:  # pragma: no cover - POSIX
     msvcrt = None
 
 
+def _suite_env() -> dict:
+    """Python validates .pyc files by source SIZE and whole-second mtime, so a
+    written cache would answer for the next mutant of the same size."""
+    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def require_live_suite(tree: Path, cfg) -> None:
+    """Refuse to score anything until the command has passed once with nothing
+    mutated.
+
+    `run_one` collapses every failure mode into one boolean, so a command that
+    cannot run here reads as a suite that killed every mutant. docs ship
+    `mutation_command = "python -m pytest -q -x"`, a bare name, and on a machine
+    whose PATH `python` is not the one holding pytest — a hook, a cron, cmd.exe,
+    the Windows Store stub that exits 9009 — every mutant exits nonzero without
+    ever importing the code under test and `mutate` prints a 100% score for a
+    suite that never ran. A baseline that fails is a different sentence from a
+    mutation score, so it is said instead of one.
+    """
+    code = run_bounded(cfg.mutation_command, cfg.mutation_timeout_seconds,
+                       cwd=tree, env=_suite_env())
+    if code == 0:
+        return
+    raise ToolError(f"mutation_command {_runner_word(cfg.mutation_command)!r} "
+                    f"{_baseline_verdict(code)} on the UNMUTATED tree, so every mutant "
+                    "would read as killed and the score would be 100% — run "
+                    f"`{cfg.mutation_command}` in {tree} and fix it before scoring")
+
+
+def _runner_word(command: str) -> str:
+    """The word the shell will try to start, read the way that shell reads it."""
+    words = shell_words(command)
+    return words[0] if words else command
+
+
+def _baseline_verdict(code: int | None) -> str:
+    return "timed out" if code is None else f"exits {code}"
+
+
 def run_one(tree: Path, cfg, mutant) -> bool:
     """True = killed. The original file ALWAYS comes back, whatever happens."""
     p = tree / mutant.path
@@ -61,7 +101,7 @@ def run_one(tree: Path, cfg, mutant) -> bool:
     # same-size mutants applied within one second would reuse the first one's
     # stale bytecode and read as false survivors. Kill the cache, write none.
     shutil.rmtree(p.parent / "__pycache__", ignore_errors=True)
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    env = _suite_env()
     try:
         p.write_text(apply_mutant(original.decode("utf-8", "replace"), mutant),
                      encoding="utf-8", newline="")
@@ -281,16 +321,30 @@ def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[
     with _worktrees(root, workers) as trees:
         for tree in trees:
             _seed(root, tree, targets)
+        # In the worker's own checkout, which is where the mutants will run: a
+        # baseline taken at the root would clear a command the worktree cannot
+        # start.
+        require_live_suite(trees[0], cfg)
         done = _fan_out(cfg, trees, shards, report)
     return _merge(done)
 
 
 def run_mutants(root: Path, cfg, mutants: list, report) -> list[bool]:
     """One killed flag per mutant, in mutant order. Workers past the mutant
-    count would only pay for empty worktrees."""
+    count would only pay for empty worktrees.
+
+    No mutants is no score to protect. The baseline is there to stop a broken
+    runner from printing 100%, and an empty run prints no percentage at all: a
+    diff with nothing mutable returned at exit 0 without starting anything, and
+    running a whole test suite for it would be a new bill and a new exit 5 on an
+    invocation that was free.
+    """
+    if not mutants:
+        return []
     workers = min(cfg.mutation_workers, len(mutants))
     if workers > 1:
         return _run_parallel(root, cfg, mutants, workers, report)
+    require_live_suite(root, cfg)
     return _merge(_run_shard(root, cfg, list(enumerate(mutants)), report))
 
 
