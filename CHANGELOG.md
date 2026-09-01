@@ -12,6 +12,15 @@ separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventor
 and shape is the only trigger: a directory named `inventory` in the cwd cannot hijack
 the subcommand, and a plain typo like `inventry` still gets argparse's usage dump.
 
+### `report --out` writes to an absolute path
+`crapkit report --out /somewhere/else/r.html` was refused with "report --out stays
+inside <repo>", and on Windows no repo-relative spelling reaches another drive at all,
+so the page could only be moved by copying it afterwards. The guard's own docstring
+justified itself by pointing at `--export` and `--sarif`, which enforce nothing. An
+absolute `--out` now writes where you pointed it and prints that path. A relative
+`--out` that climbs out of the tree is still refused, and the refusal now says that
+an absolute path is the way to write outside the repo.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

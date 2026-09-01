@@ -259,8 +259,9 @@ def build_parser() -> argparse.ArgumentParser:
                                         "the per-scope grades, the trend, and a staleness banner")
     rep.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
     rep.add_argument("--out", default=".crapkit/report.html", metavar="PATH",
-                     help="where to write the page, relative to the repo "
-                          "(default: .crapkit/report.html); the path is printed on stdout")
+                     help="where to write the page: repo-relative, or an absolute path "
+                          "you name (default: .crapkit/report.html); the path is "
+                          "printed on stdout")
     rep.set_defaults(func=_Handler("reports", "cmd_report"))
 
     tsc = sub.add_parser("test-scoped", help="run the configured isolated test command for the files' scope")

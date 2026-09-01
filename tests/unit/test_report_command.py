@@ -159,3 +159,21 @@ def test_the_joined_note_load_uncovered_reports_is_built_from_the_same_states(tm
 
     assert note == "; ".join(n for _, n in lane_states(tmp_path, cfg, _CleanGit()) if n)
     assert "lane 'a'" in note and "lane 'b'" in note
+
+
+# --- an --out the reader named in full ---------------------------------------
+
+def test_an_absolute_out_writes_where_the_reader_pointed(tmp_path):
+    """`--export` and `--sarif` have always written an absolute path. `--out`
+    refused one, so a page destined for a sibling directory could only be
+    reached by copying it afterwards."""
+    from crapkit.cli.reports import _write_report
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = tmp_path / "sibling" / "r.html"
+
+    written = _write_report(repo, str(target), "<html>out</html>")
+
+    assert written == target
+    assert target.read_text(encoding="utf-8") == "<html>out</html>"

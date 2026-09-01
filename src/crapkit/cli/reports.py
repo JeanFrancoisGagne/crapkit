@@ -186,14 +186,19 @@ def _report_payload(root: Path, cfg, store: SnapshotStore) -> dict:
 def _write_report(root: Path, out: str, page: str) -> Path:
     """Write the page and say where it went.
 
-    `--out` is repo-relative, like `--export` and `--sarif`: a path that climbs
-    out of the tree writes somewhere nobody asked for. LF endings, because the
-    page is an artifact people diff and publish.
+    A relative `--out` is repo-relative, and one that climbs out of the tree
+    (`../report.html`) writes somewhere nobody asked for, so it is refused. An
+    absolute path is the reader naming a destination on purpose and is written
+    there: the page carries no relative asset and reads nothing from where it
+    lands, so the destination changes nothing but who can open it. LF endings,
+    because the page is an artifact people diff and publish.
     """
     base = root.resolve()
-    path = (base / out).resolve()
-    if base not in path.parents:
-        raise ConfigError(f"report --out stays inside {base}, got {out!r}")
+    named = Path(out)
+    path = named if named.is_absolute() else (base / out).resolve()
+    if not named.is_absolute() and base not in path.parents:
+        raise ConfigError(f"report --out is repo-relative and {out!r} climbs out of "
+                          f"{base}; pass an absolute path to write outside it")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(page, encoding="utf-8", newline="\n")
     print(path)
