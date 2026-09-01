@@ -931,3 +931,77 @@ def test_the_pytest_cov_note_names_the_python_it_asked(tmp_path, monkeypatch, ca
     assert str(tmp_path) in err, "and where that word resolves on this machine"
     assert "python -m pip install pytest-cov" in err, "an install bound to that interpreter"
     assert '"crapkit[py]"' in err
+
+
+# --- and a runner the LANE's own environment supplies -------------------------
+#
+# lanes.py starts the lane with {**os.environ, **lane.env}, so a lane that ships
+# its own toolchain through [lane.env] PATH runs a runner crapkit's own process
+# cannot see. which() was asked with the process environment, so doctor FAILed
+# that lane at exit 1 — a red CI check and a README-documented FAIL for a lane
+# that works. The lane's cwd was already threaded through this check; its env
+# was not.
+
+def _runner_on(directory: Path) -> str:
+    """An executable named the way this platform names one, and the word a lane
+    would call it by."""
+    directory.mkdir(parents=True, exist_ok=True)
+    name = "suite.bat" if os.name == "nt" else "suite"
+    runner = directory / name
+    runner.write_text("", encoding="utf-8")
+    runner.chmod(0o755)
+    return name
+
+
+def test_a_runner_the_lanes_own_env_supplies_is_not_a_missing_runner(tmp_path, monkeypatch):
+    toolchain = tmp_path / "toolchain"
+    word = _runner_on(toolchain)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    lane = Lane(name="be", command=f"{word} --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("PATH", str(toolchain)),))
+
+    assert _lane_command_problems(tmp_path, lane) == []
+
+
+def test_a_lane_env_path_replaces_the_process_path_it_is_merged_over(tmp_path, monkeypatch):
+    """The other half. `{**os.environ, **lane.env}` means the lane's PATH wins
+    outright, so a runner only the PROCESS PATH carries is still a FAIL: reading
+    the lane's environment must not turn into reading both."""
+    toolchain = tmp_path / "toolchain"
+    word = _runner_on(toolchain)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(toolchain))
+    lane = Lane(name="be", command=f"{word} --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("PATH", str(empty)),))
+
+    assert _lane_command_problems(tmp_path, lane) == [
+        f"lane 'be': executable {word!r} does not resolve on PATH"]
+
+
+def test_a_lane_that_declares_no_path_still_asks_the_process_one(tmp_path, monkeypatch):
+    """A lane with an env table that says nothing about PATH must keep the
+    answer it always had, or every lane setting one unrelated variable breaks."""
+    toolchain = tmp_path / "toolchain"
+    word = _runner_on(toolchain)
+    monkeypatch.setenv("PATH", str(toolchain))
+    lane = Lane(name="be", command=f"{word} --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("CI", "1"),))
+
+    assert _lane_command_problems(tmp_path, lane) == []
+
+
+def test_the_lanes_path_is_read_whatever_the_key_is_cased_as(tmp_path, monkeypatch):
+    """cmd.exe reads `Path` and `PATH` as one name, and config keeps env keys as
+    written, so the lookup cannot key on the exact spelling."""
+    toolchain = tmp_path / "toolchain"
+    word = _runner_on(toolchain)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    lane = Lane(name="be", command=f"{word} --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("Path", str(toolchain)),))
+
+    assert _lane_command_problems(tmp_path, lane) == []

@@ -194,6 +194,28 @@ the first mutant, in the worker's own checkout when the run is parallel. A basel
 does not exit 0 ends the command (exit 5) naming the runner word, its exit code and the
 score it would otherwise have printed, instead of scoring anything.
 
+### `doctor --plugin-root` checks the crapkit the hook will actually spawn
+The one command written to check a plugin against, in `plugin.json`'s own words, the CLI it
+will call, compared the manifest against the `__version__` of the module it was running in.
+`plugin/hooks/hooks.json` names a bare `crapkit` on every PostToolUse entry and
+`plugin/.mcp.json` names it for the MCP server, so the CLI the plugin starts is PATH's
+answer. Two ways that lied. Run from a venv holding this version beside an older pipx
+`crapkit`, it called the two sides equal while the hook spawned the older one. Run from a
+project `.venv` with no `crapkit` on PATH at all — a plain `pip install` into the project,
+the usual case — it printed nothing and exited 0 while every edit fired a command that
+cannot start and the MCP server never came up. The check now resolves `crapkit` on PATH,
+compares the manifest against that executable's own `--version`, and names the executable in
+the line. No `crapkit` on PATH is a FAIL naming both files that spawn it.
+
+### `doctor` reads a lane's runner on the PATH the lane runs with
+`lanes.py` starts a lane with `{**os.environ, **lane.env}`, so a lane that ships its own
+toolchain through `[lane.env] PATH` runs a runner crapkit's own process cannot see. The
+check asked `which()` with the process environment, so such a lane came back
+`FAIL lane 'be': executable 'suite.bat' does not resolve on PATH` and `doctor` exited 1 on a
+lane that works. The lane's `cwd` was already threaded through this check; its env was not.
+A bare first word is now looked for on the lane's own PATH when it declares one, and on the
+process PATH when it does not.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute
