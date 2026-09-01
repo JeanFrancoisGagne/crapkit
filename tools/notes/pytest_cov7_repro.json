@@ -1,0 +1,51 @@
+{
+  "conditions": {
+    "pytest-cov-6.3.0-patch-off": {
+      "executed": 324,
+      "patch_subprocess": false,
+      "pytest_cov": "6.3.0",
+      "pytest_exit": 0,
+      "total": 521
+    },
+    "pytest-cov-6.3.0-patch-on": {
+      "executed": 324,
+      "patch_subprocess": true,
+      "pytest_cov": "6.3.0",
+      "pytest_exit": 0,
+      "total": 521
+    },
+    "pytest-cov-7.1.0-patch-off": {
+      "executed": 0,
+      "patch_subprocess": false,
+      "pytest_cov": "7.1.0",
+      "pytest_exit": 0,
+      "total": 521
+    },
+    "pytest-cov-7.1.0-patch-on": {
+      "executed": 324,
+      "patch_subprocess": true,
+      "pytest_cov": "7.1.0",
+      "pytest_exit": 0,
+      "total": 521
+    }
+  },
+  "environments": {
+    "6.3.0": {
+      "coverage": "7.16.0",
+      "pytest": "9.1.1",
+      "pytest-cov": "6.3.0",
+      "pytest-xdist": "3.8.0",
+      "python": "3.11.2"
+    },
+    "7.1.0": {
+      "coverage": "7.16.0",
+      "pytest": "9.1.1",
+      "pytest-cov": "7.1.0",
+      "pytest-xdist": "3.8.0",
+      "python": "3.11.2"
+    }
+  },
+  "suite": "tests/e2e/test_init_doctor_e2e.py",
+  "target": "src/crapkit/cli/admin.py",
+  "toggle": "COVERAGE_RCFILE pointing at a generated .coveragerc"
+}
