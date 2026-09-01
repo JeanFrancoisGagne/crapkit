@@ -10,6 +10,7 @@ import hashlib
 import sys
 from pathlib import Path
 
+from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
@@ -670,6 +671,31 @@ def _note_stale_staged(root: Path, flagged_paths: set) -> None:
               "what commits; re-stage with `git add` if you already fixed it.")
 
 
+def _clearing_spellings() -> str:
+    """How to clear CRAPKIT_OVERRIDE_REASON in the shell the operator is in.
+
+    `unset` is a POSIX builtin, and the receipt prescribed it everywhere. On
+    Windows the command errors, the variable stays set, and the next commit is
+    granted a full override for a brand new violating function without anyone
+    typing a reason. Windows gets both spellings because `SHELL_IS_CMD` knows
+    the platform and not which of the two shells the operator typed into.
+    """
+    if config.SHELL_IS_CMD:
+        return ("`$env:CRAPKIT_OVERRIDE_REASON = $null` in PowerShell, "
+                "`set CRAPKIT_OVERRIDE_REASON=` in cmd.exe")
+    return "`unset CRAPKIT_OVERRIDE_REASON`"
+
+
+def _print_clear_the_reason() -> None:
+    """The second half is not decoration: a variable a CI job or a launcher
+    exported is still set for the next commit however this shell clears it, and
+    that is the case where the grant repeats invisibly."""
+    print(f"crapkit: clear CRAPKIT_OVERRIDE_REASON now ({_clearing_spellings()}) — "
+          "while set it grants again on every commit.")
+    print("crapkit: a CI job or a launcher that exported it is not cleared by any command "
+          "here — clear it where it was set.")
+
+
 def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing."""
@@ -690,7 +716,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
                     raise_marks=False)
     stage_path(root, cfg.ratchet_file)  # the debt must be IN the commit, not dangling
     print(f"crapkit: override granted with full audit ({reason}).")
-    print("crapkit: unset CRAPKIT_OVERRIDE_REASON now — while set it grants again on every commit.")
+    _print_clear_the_reason()
 
 
 def _warn_unscoped_staged(unscoped: list) -> None:

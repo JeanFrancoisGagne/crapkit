@@ -122,8 +122,13 @@ naming scripts that way. One line does it:
 
 ```toml
 [exclude]
-globs = ["**/*.Tests.ps1"]
+globs = ["*.Tests.ps1", "**/*.Tests.ps1"]
 ```
+
+Both forms, because [globs are whole-path](#exclude): `**/*.Tests.ps1` needs at least one
+directory in front of the file name, so a repo-root `Deploy.Tests.ps1` stays in the corpus
+and comes back from `doctor` as a tracked file no scope claims. PowerShell repos keep
+scripts at the root more often than most, which is why the bare form leads.
 
 **`cpp` is the whole C family, C included.** There is no separate `c` label. lizard resolves
 all six suffixes to one reader, so two labels could never measure differently, and `.h` is

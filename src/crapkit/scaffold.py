@@ -164,6 +164,15 @@ _JS_JUNIT_FLAGS = {"jest": "--reporters=default --reporters=jest-junit",
 # shared: jest reports on a red run already and exits on a flag it does not
 # know, which is the failure `_js_runner` exists to prevent.
 _JS_EXTRA_FLAGS = {"vitest": " --coverage.reportOnFailure"}
+
+# pytest's half of the same rule. pytest raises Interrupted at the END of
+# collection when any module fails to import, so pytest-cov's session finish
+# never runs and the lane writes no coverage JSON at all: one renamed module or
+# one missing optional extra takes the whole lane down and every scope falls to
+# no-lane, while the junit still lands and makes the run look half finished.
+# With the flag the modules that did collect run and report, and the
+# uncollected file's tests stay in the junit as errors, so nothing is hidden.
+_PY_COLLECT_FLAG = "--continue-on-collection-errors"
 _JS_JUNIT_PACKAGE = {"jest": "jest-junit"}
 # jest-junit takes no path on the command line: package.json, the jest config or
 # these two variables are the whole list, and the first two are the repo's files
@@ -177,7 +186,8 @@ def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
     if not markers.intersection(PYTEST_MARKERS):
         return None
     return LaneSpec("py", f"{interpreter} -m pytest --cov --cov-branch "
-                          f"--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS}",
+                          f"--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS} "
+                          f"{_PY_COLLECT_FLAG}",
                     _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES, _PY_RESULTS)
 
 
@@ -555,7 +565,8 @@ def _live_lanes(lanes: tuple[LaneSpec, ...],
 _TEMPLATES = {
     "coveragepy": ("# [[lane]]", '# name = "py"',
                    '# command = "{python} -m pytest --cov --cov-branch '
-                   f'--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS}"',
+                   f'--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS} '
+                   f'{_PY_COLLECT_FLAG}"',
                    f'# artifact = "{_PY_ARTIFACT}"',
                    f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
     "istanbul": ("# [[lane]]", '# name = "js"',

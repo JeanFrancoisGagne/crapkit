@@ -613,8 +613,13 @@ $ CRAPKIT_OVERRIDE_REASON="hotfix 412, decompose in the follow-up" git commit -m
 crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
   ccn   7  app/m.py:9  route( a , b , c , d )
 crapkit: override granted with full audit (hotfix 412, decompose in the follow-up).
-crapkit: unset CRAPKIT_OVERRIDE_REASON now — while set it grants again on every commit.
+crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) — while set it grants again on every commit.
+crapkit: a CI job or a launcher that exported it is not cleared by any command here — clear it where it was set.
 ```
+
+That first line is spelled for the shell you are in: `unset` is a POSIX builtin, so on
+Windows the receipt names `$env:CRAPKIT_OVERRIDE_REASON = $null` for PowerShell and
+`set CRAPKIT_OVERRIDE_REASON=` for cmd.exe instead.
 
 The hook path never raises an existing mark. It has no coverage data, so it synthesizes a
 worst-case score, and letting that overwrite a real measurement would blind the ratchet to a

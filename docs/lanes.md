@@ -6,7 +6,7 @@ that command writes, and maps the result onto the scopes it claims.
 ```toml
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml"
+command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py.json"
 results_artifact = ".crapkit/cov/junit-py.xml"
 parser = "coveragepy"
@@ -504,7 +504,7 @@ and on a Windows PATH holding only the `py` launcher `init` writes `py` rather t
 ```toml
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit.xml"
+command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py.json"
 results_artifact = ".crapkit/cov/junit.xml"
 parser = "coveragepy"
@@ -521,6 +521,32 @@ crapkit: every lane failed (1 of 1); the errors are above
 ```
 
 Exit 5.
+
+### `--continue-on-collection-errors`
+
+This is pytest's `reportOnFailure`, and it is the flag people leave out. pytest raises
+`Interrupted` at the **end of collection** when any test module fails to import, so
+pytest-cov's session finish never runs and **no coverage report is written at all** — even
+though every other test file collected fine and would have run. One renamed module, one
+missing optional extra or one stale editable install takes the whole lane down and drops
+every scope it measures to no-lane. Same repo, same command, only that flag toggled:
+
+```
+$ python -m pytest --cov --cov-report=json:.crapkit/cov/py.json   # one bad import
+Interrupted: 1 error during collection
+$ ls .crapkit/cov/
+junit-py.xml
+
+$ python -m pytest --cov --cov-report=json:.crapkit/cov/py.json --continue-on-collection-errors
+$ ls .crapkit/cov/
+junit-py.xml  py.json
+```
+
+The junit lands either way, which is what makes the failure read as half a run rather than
+as a flag. `crapkit init` writes the flag on the pytest lane it scaffolds and on the
+commented template beside it, so a repo that starts from `init` scores the files that did
+collect. Nothing is hidden: the uncollected file's tests are still errors in the junit, and
+`verify`'s no-new-failures check reads them there.
 
 ### The interpreter a lane binds to
 

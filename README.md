@@ -849,7 +849,7 @@ globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/
 
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml"
+command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py.json"
 results_artifact = ".crapkit/cov/junit-py.xml"
 parser = "coveragepy"

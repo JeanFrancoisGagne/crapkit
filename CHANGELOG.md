@@ -139,6 +139,37 @@ absolute `--out` now writes where you pointed it and prints that path. A relativ
 `--out` that climbs out of the tree is still refused, and the refusal now says that
 an absolute path is the way to write outside the repo.
 
+### One unimportable test file no longer takes the whole pytest lane down
+A repo with a renamed module, a missing optional extra or a stale editable install got
+`coverage exit=5` and `every lane failed (1 of 1)` from a suite whose other test files
+collected fine. pytest raises `Interrupted` at the end of collection when any module
+fails to import, so pytest-cov's session finish never runs and the lane writes no
+coverage JSON at all; the junit lands anyway, which makes the run read as half finished
+rather than as a flag. `doctor` said "no problems found". The lane `init` writes now
+carries `--continue-on-collection-errors`, and so does the commented template beside it,
+which is pytest's half of the `--coverage.reportOnFailure` the vitest lane already got.
+Nothing is hidden: the uncollected file's tests stay in the junit as errors. The vitest
+and jest lanes are untouched.
+
+### The Pester exclude example matches a test file at the repo root
+docs/configuration.md told PowerShell users that `globs = ["**/*.Tests.ps1"]` excludes
+their Pester suite. Globs match the whole path, so that pattern needs a directory in
+front of the file name and never claims a repo-root `Deploy.Tests.ps1` — and PowerShell
+repos keep scripts at the root more than most. The file stayed in the corpus, `doctor`
+FAILed it as a tracked file no scope claims, and the FAIL pointed the reader back at the
+page that gave the glob. The example now ships both forms with the reason, the way the
+`**/dist/**` advice on the same page already does.
+
+### The override receipt is spelled for the shell you are in
+`hook-precommit` granted an override and printed `unset CRAPKIT_OVERRIDE_REASON`.
+`unset` is a POSIX builtin: on Windows PowerShell answered
+`CommandNotFoundException`, the variable stayed set, and the next commit was granted a
+full override for a brand new violating function with nobody typing a reason. The
+receipt now names `$env:CRAPKIT_OVERRIDE_REASON = $null` and `set
+CRAPKIT_OVERRIDE_REASON=` on Windows and keeps `unset` everywhere else, and it adds the
+line it was missing: a variable a CI job or a launcher exported is cleared where it was
+set, not by any command in this shell.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

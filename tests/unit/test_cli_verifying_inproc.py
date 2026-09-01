@@ -17,7 +17,9 @@ from cli_inproc_repo import (add_knotty, commit_all, git, istanbul,  # noqa: F40
 
 import pytest
 
+from crapkit import config
 from crapkit.cli import _verify_exit_code, main
+from crapkit.cli import verifying
 from crapkit.ratchet import RatchetEntry, dump_ratchet
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict
@@ -718,8 +720,45 @@ def test_the_env_override_grants_the_commit_through_a_full_audit(repo, capsys, m
 
     assert code == 0
     assert "override granted with full audit (hotfix, ticket 41)" in out, out
-    assert "unset CRAPKIT_OVERRIDE_REASON now" in out
+    assert "clear CRAPKIT_OVERRIDE_REASON now" in out
     assert "crapkit OVERRIDE (hotfix, ticket 41)" in (repo / "alerts.log").read_text(encoding="utf-8")
     assert "knotty" in (repo / MARKS).read_text(encoding="utf-8")
     assert MARKS in git(repo, "diff", "--cached", "--name-only")
     assert [r["kind"] for r in store_of(repo).list_runs()] == ["hook"]
+
+
+# --- the receipt is spelled for the shell that ran the hook --------------------
+#
+# `unset` is a POSIX builtin. Printed on Windows it errors, the variable stays
+# set, and the next commit is granted a full override for a brand new violating
+# function with nobody typing a reason.
+
+def test_the_posix_receipt_names_unset(capsys, monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+
+    verifying._print_clear_the_reason()
+
+    out = capsys.readouterr().out
+    assert "`unset CRAPKIT_OVERRIDE_REASON`" in out, out
+    assert "$env:" not in out
+
+
+def test_the_windows_receipt_names_both_windows_shells(capsys, monkeypatch):
+    """SHELL_IS_CMD knows the platform, not which of the two shells the operator
+    typed into, so the receipt hands over both spellings."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+
+    verifying._print_clear_the_reason()
+
+    out = capsys.readouterr().out
+    assert "$env:CRAPKIT_OVERRIDE_REASON = $null" in out, out
+    assert "set CRAPKIT_OVERRIDE_REASON=" in out, out
+    assert "unset CRAPKIT_OVERRIDE_REASON" not in out, "the builtin neither shell has"
+
+
+def test_the_receipt_says_an_exported_variable_is_cleared_where_it_was_set(capsys):
+    """No shell command here clears a variable a CI job or a launcher exported,
+    and that is the case where the grant repeats invisibly."""
+    verifying._print_clear_the_reason()
+
+    assert "clear it where it was set" in capsys.readouterr().out

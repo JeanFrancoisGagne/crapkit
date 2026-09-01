@@ -23,7 +23,8 @@ def test_a_pyproject_yields_a_live_pytest_lane():
     assert lane.parser == "coveragepy"
     assert lane.command == ("python -m pytest --cov --cov-branch "
                             "--cov-report=json:.crapkit/cov/py.json "
-                            "--junitxml=.crapkit/cov/junit-py.xml")
+                            "--junitxml=.crapkit/cov/junit-py.xml "
+                            "--continue-on-collection-errors")
     assert lane.artifact == ".crapkit/cov/py.json"
     # The junit file feeds the crashed-worker and no-new-failures checks (#26).
     assert lane.results_artifact == ".crapkit/cov/junit-py.xml"
@@ -373,7 +374,8 @@ def test_a_uv_lock_pins_the_lane_to_the_projects_own_environment():
 
     assert lane.command == ("uv run python -m pytest --cov --cov-branch "
                             "--cov-report=json:.crapkit/cov/py.json "
-                            "--junitxml=.crapkit/cov/junit-py.xml")
+                            "--junitxml=.crapkit/cov/junit-py.xml "
+                            "--continue-on-collection-errors")
     assert lane.results_artifact == ".crapkit/cov/junit-py.xml"
 
 
@@ -446,7 +448,8 @@ def test_the_commented_lane_template_carries_the_managers_python_too():
 
     assert ('# command = "uv run python -m pytest --cov --cov-branch '
             '--cov-report=json:.crapkit/cov/py.json '
-            '--junitxml=.crapkit/cov/junit-py.xml"') in text
+            '--junitxml=.crapkit/cov/junit-py.xml '
+            '--continue-on-collection-errors"') in text
     assert '# pylib = "uv run python -m pytest {files} -q -p no:cacheprovider"' in text, \
         "one launcher for every python line the file holds"
     assert '# command = "npx vitest run --coverage' in text, "the js template is untouched"
@@ -707,3 +710,24 @@ def test_a_repo_with_no_pytest_lane_gets_no_sibling_lanes():
     text = starter_toml({"src": ("typescript",)}, lanes, testpaths=("a", "b"))
 
     assert "full_suite" not in text
+
+
+# --- one unimportable test file must not take the whole lane down -------------
+
+def test_the_pytest_lane_keeps_going_past_a_collection_error():
+    """pytest raises Interrupted at the END of collection when a module fails to
+    import, so pytest-cov's session finish never runs and the lane writes no
+    coverage JSON at all — one renamed module and every scope falls to no-lane,
+    while the junit lands and makes the run read as half finished. This is
+    pytest's `reportOnFailure`, and the vitest lane already carries its own."""
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "")
+
+    assert "--continue-on-collection-errors" in lane.command, lane.command
+
+
+def test_the_commented_pytest_template_carries_the_same_flag():
+    """What a reader uncomments has to be the command init would have written
+    live, or the flag arrives one uncomment too late."""
+    text = starter_toml({"pylib": ("python",)}, (), interpreter="python")
+
+    assert "--continue-on-collection-errors" in text, text
