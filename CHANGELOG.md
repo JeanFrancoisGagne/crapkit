@@ -2,6 +2,18 @@
 
 ## 0.4.9 — unreleased
 
+### The Bash matcher snippet is parsed on all three pages that print it
+README.md, `docs/agent-json.md` and the 0.4.7 section of CHANGELOG.md each carry the
+JSON a consumer pastes into their own settings to register the `Bash` half of the
+advisory. Nothing loaded any of the three, so a trailing comma, a renamed key or a
+timeout that drifted from the shipped one would have shipped green and failed on the
+reader's machine.
+
+`tests/unit/test_hook_snippet_contract.py` pulls every fenced json block naming a
+matcher off those pages, parses it, and holds it to one `PostToolUse` entry with matcher
+`Bash` running one `command` hook, whose command line and timeout are read out of
+`plugin/hooks/hooks.json` rather than typed again here.
+
 ### Issue-form placeholders stopped naming a release
 `.github/ISSUE_TEMPLATE/bug_report.yml` offered `crapkit 0.4.0` as the example version
 line, and `field_report.yml` offered `crapkit 0.4.7`. A placeholder is what a reporter
