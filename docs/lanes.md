@@ -494,6 +494,12 @@ A machine has more than one python, and the note used to say only "this python".
 one it names is not the one the suite should run in, installing the package is the wrong
 move: repoint the lane instead.
 
+A lane that reaches `crapkit coverage` with the plugin still missing gets the same fact from
+the refusal, which names the word the lane starts with and says the install has to land in
+that environment rather than in the shell's active venv. Before 0.4.12 it read `pip install
+pytest-cov` and named no environment at all, so a reader whose lane ran its own venv
+installed the package where it changed nothing.
+
 The probe asks the interpreter that runs pytest, found in the segment that holds the
 `pytest` token. `coverage run -m pytest --cov=pylib && coverage json` names no interpreter
 in front of pytest, so nothing is asked and no note is printed. If cmd.exe cannot start that
@@ -819,7 +825,10 @@ crapkit: lane 'py' FAILED: lane 'py' runs the python suite, which is host-only (
 Two triggers, either one is enough: the file `/.dockerenv` exists, or
 `CRAPKIT_INSIDE_CONTAINER=1` is set in the environment. The guard exists because a python
 suite under coverage is memory-hungry and a container memory cap turns that into an OOM kill
-that looks like a flaky lane. If your container is sized for it, say so per lane:
+that looks like a flaky lane. It fires on the path that launches the suite and nowhere else,
+so `--reuse-artifacts` reads a host-built report inside a container without hitting it: that
+run parses a file already on disk and starts nothing. If your container is sized for it, say
+so per lane:
 
 ```toml
 container_ok = true
@@ -1122,6 +1131,29 @@ Exit 5. Four consequences:
 
 `coverage --json` carries the reasons under `lane_failures`, keyed by lane name, alongside
 the successful lanes' provenance under `lanes`.
+
+### The artifact has to be the one this run wrote
+
+A lane passes when its command finishes AND every file the lane declares has a newer
+modification time than it had before the attempt. Existence used to be the whole test, so a
+lane failed loud exactly once — on the first run, against an empty `.crapkit/` — and scored
+the previous run's file on every run after that. A vitest lane without `reportOnFailure`
+and a pytest run that dies in collection both land there, and what came out was a confident
+grade off a measurement nothing took, stamped with the current commit so `--reuse-unchanged`
+went on trusting it.
+
+A leftover file says so in its own words, because "produced no artifact at
+.crapkit/cov/py.json" about a path that holds a report reads as crapkit failing to see it:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json on disk predates it and is the previous run's (command exit 2); full log: /repo/.crapkit/lane-py.log; last output: ...
+```
+
+The check is the modification time, not the bytes: a runner that rewrites a byte-identical
+report still bumps it, so an unchanged rerun stays green. `results_artifact` is held to the
+same rule, so a killed suite's junit cannot feed the test-count and no-new-failures checks
+last run's numbers. `--reuse-artifacts` is untouched — there the operator is saying read
+what is on disk, and the staleness warning is what that path already prints.
 
 ### The failure message names its own log
 

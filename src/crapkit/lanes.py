@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import IO, NamedTuple
 
-from .config import Lane
+from .config import Lane, shell_words
 from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
@@ -202,12 +202,33 @@ def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int) -> int |
         return None
 
 
-def _missing_plugin_hint(tail: str) -> str:
+def _lane_runner(lane: Lane) -> str:
+    """The word this lane's command starts with, read by the shell that runs it.
+
+    `shell_words`, never a whitespace split: a quoted interpreter path breaks at
+    its space and half of `C:\\Program Files\\py\\python.exe` is not a program.
+    """
+    words = shell_words(lane.command)
+    return words[0] if words else lane.command
+
+
+def _missing_plugin_hint(tail: str, lane: Lane) -> str:
     """The one failure signature a new user cannot decode: pytest rejecting
-    --cov points at crapkit's config when the real gap is the pytest-cov package."""
-    if "unrecognized arguments" in tail and "--cov" in tail:
-        return " — the --cov flags come from the pytest-cov package: pip install pytest-cov"
-    return ""
+    --cov points at crapkit's config when the real gap is the pytest-cov package.
+
+    Which environment it is missing from is the other half of the hint, and it
+    used to name none. A repo whose lane runs its own venv got `pip install
+    pytest-cov`, which lands in whatever venv the reader's shell has active; the
+    reporter ran it verbatim, it installed fine, and the next `crapkit coverage`
+    failed identically. Same sentence `init` prints for the same gap, so a
+    reader who has seen one recognises the other.
+    """
+    if "unrecognized arguments" not in tail or "--cov" not in tail:
+        return ""
+    word = _lane_runner(lane)
+    return (f" — the --cov flags come from the pytest-cov package, which has to be "
+            f"installed in the environment `{word}` runs in (`{word} -m pip install "
+            f"pytest-cov`), not in the shell's active venv")
 
 
 def _shard_hint(root: Path, lane: Lane) -> str:
@@ -248,7 +269,23 @@ def _shard_hint(root: Path, lane: Lane) -> str:
             "re-run with --reuse-artifacts, scores what that suite did measure")
 
 
-def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None) -> None:
+def _no_artifact_head(lane: Lane, stale: list[str]) -> str:
+    """What the lane failed to do, in the words the disk supports.
+
+    An empty `.crapkit/` and a leftover file are the same failure — this run
+    wrote nothing — and they read completely differently to whoever has to fix
+    it. Told "produced no artifact at .crapkit/cov/py.json" about a path that
+    holds a report, a reader concludes crapkit cannot see the file, so the
+    leftover case says which run the file belongs to instead.
+    """
+    if not stale:
+        return f"produced no artifact at {lane.artifact}"
+    return (f"wrote no artifact this run — the {', '.join(stale)} on disk predates it "
+            f"and is the previous run's")
+
+
+def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None,
+                       stale: list[str] | None = None) -> None:
     """The log PATH before the log's words. A tail is 500 characters of a file
     that holds the whole story, and a reader who is not told where that file is
     has to go looking for it — one reporter had to ask another agent to find
@@ -256,19 +293,58 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     detail = f" (command exit {exit_code})" if exit_code is not None else ""
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
-    raise ToolError(f"lane {lane.name!r} produced no artifact at {lane.artifact}{detail}"
-                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail)}"
+    raise ToolError(f"lane {lane.name!r} {_no_artifact_head(lane, stale or [])}{detail}"
+                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
                     f"{_shard_hint(root, lane)}")
+
+
+def _declared_files(lane: Lane) -> tuple[str, ...]:
+    """Every path the lane says its command writes."""
+    return (lane.artifact, lane.results_artifact) if lane.results_artifact else (lane.artifact,)
+
+
+def _mtime_ns(path: Path) -> int | None:
+    """The file's modification time, or None when it is not there."""
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def _declared_mtimes(root: Path, lane: Lane) -> dict[str, int | None]:
+    return {name: _mtime_ns(root / name) for name in _declared_files(lane)}
+
+
+def _unwritten(root: Path, before: dict[str, int | None]) -> list[str]:
+    """The declared files that were already on disk and that this attempt did
+    not rewrite.
+
+    Existence was the whole check until 0.4.12, so a lane failed loud exactly
+    once — on the first run, against an empty `.crapkit/` — and scored the
+    PREVIOUS run's file on every run after that. A vitest lane without
+    reportOnFailure and a pytest run that dies in collection both land here, and
+    what comes out is a confident grade off a measurement nothing took.
+
+    A file that is not there at all is left out: that is the refusal crapkit
+    already had, and a missing results_artifact has its own sentence one layer
+    up. mtime, not content, because a runner that rewrites a byte-identical
+    report still bumps it, so an unchanged rerun stays green.
+    """
+    return [name for name, stamp in before.items()
+            if stamp is not None and _mtime_ns(root / name) == stamp]
 
 
 def _run_attempts(root: Path, lane: Lane) -> int | None:
     log_path = _lane_log_path(root, lane)
     exit_code: int | None = None
+    stale: list[str] = []
     for attempt in range(1, lane.retries + 2):
+        before = _declared_mtimes(root, lane)
         exit_code = _attempt_once(root, lane, log_path, attempt)
-        if exit_code is not None and (root / lane.artifact).is_file():
+        stale = _unwritten(root, before)
+        if exit_code is not None and not stale and (root / lane.artifact).is_file():
             return exit_code
-    _raise_no_artifact(root, lane, log_path, exit_code)
+    _raise_no_artifact(root, lane, log_path, exit_code, stale)
     return None  # unreachable; keeps the signature honest
 
 
@@ -801,10 +877,19 @@ class LaneOutcome(NamedTuple):
 
 def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | None,
                   reuse_artifact: bool) -> tuple[int | None, float]:
-    """Reuse warns and costs nothing; a real run returns its exit code and wall seconds."""
+    """Reuse warns and costs nothing; a real run returns its exit code and wall seconds.
+
+    The container guard belongs on this side of the branch. It names an OOM a
+    python suite hits under a container memory cap, and `--reuse-artifacts`
+    launches no suite: it parses a file already on disk, which costs no memory
+    the guard is about. Sitting a line above this call, it refused the crapkit
+    image reading host-built artifacts, and its message said something untrue
+    about what the lane was going to do.
+    """
     if reuse_artifact:
         _warn_stale_artifact(git, lane, scope_paths)
         return None, 0.0
+    _refuse_container_python(lane)
     started = time.monotonic()
     return _run_attempts(root, lane), time.monotonic() - started
 
@@ -827,7 +912,6 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
 def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
              scope_paths: dict | None = None, git: GitFacts | None = None) -> LaneOutcome:
     facts = _facts(root, git)
-    _refuse_container_python(lane)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane))
     _judge_artifact_scope(lane, coverage, scope_paths, root)

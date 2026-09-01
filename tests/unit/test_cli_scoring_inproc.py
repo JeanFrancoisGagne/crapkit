@@ -184,10 +184,23 @@ def test_reuse_unchanged_skips_the_lane_whose_scopes_have_not_moved(repo, capsys
     assert err.count("artifact still matches its scopes; reusing without rerun") == 2, err
 
 
+def _ui_lane_writes_its_artifact(repo) -> None:
+    """The template's `python -c pass` writes nothing, and a lane that leaves
+    the previous run's artifact where it found it is refused. A rerun this test
+    calls a rerun has to write the file it declares."""
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    head_text, marker, tail = text.partition('name = "ui"\n')
+    writes = 'command = "python -c \\"import os; os.utime(\'coverage/ui.json\')\\""'
+    (repo / "crapkit.toml").write_text(
+        head_text + marker + tail.replace('command = "python -c pass"', writes, 1),
+        encoding="utf-8")
+
+
 def test_reuse_unchanged_reruns_the_lane_whose_scope_moved(repo, capsys):
     """The one test that runs a lane command. `ui` has no stamp, so it reruns
     and records one; `unit` is reused and records nothing."""
     seed_artifacts(repo)
+    _ui_lane_writes_its_artifact(repo)
     write_stamps(repo, {"coverage/unit.json": {"commit": head(repo), "lane": "unit",
                                                "seconds": 1.0}})
 

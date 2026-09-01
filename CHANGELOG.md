@@ -139,6 +139,42 @@ absolute `--out` now writes where you pointed it and prints that path. A relativ
 `--out` that climbs out of the tree is still refused, and the refusal now says that
 an absolute path is the way to write outside the repo.
 
+### A lane that writes nothing no longer scores the previous run's artifact
+crapkit asked only whether the artifact file existed, never whether the run that just
+finished wrote it. So a lane failed loud exactly once, on the first run against an empty
+`.crapkit/`, and went quietly wrong on every run after: the suite dies in collection, last
+run's coverage JSON is still sitting there, and crapkit scores it as fresh, stamps it with
+the current commit and hands `--reuse-unchanged` a reason to keep trusting it. A vitest
+lane without `reportOnFailure` and a pytest lane hitting a collection error both land here.
+A lane now records the modification time of every file it declares before each attempt and
+requires it to move, so the refusal fires on the second run the way it did on the first. A
+leftover file gets its own wording — `wrote no artifact this run — the .crapkit/cov/py.json
+on disk predates it and is the previous run's` — because the old sentence, about a path
+that holds a report, reads as crapkit failing to see the file. `results_artifact` is held to
+the same rule, so a killed suite's junit cannot feed the test-count and no-new-failures
+checks last run's numbers. The check is the mtime and not the bytes, so a runner that
+rewrites an identical report stays green, and `--reuse-artifacts` is untouched.
+
+### The container guard fires where a suite launches, not where one is read
+Inside a container, a `coveragepy` lane was refused even under `--reuse-artifacts`, where
+crapkit runs no suite at all: the guard sat one line above the branch that decides whether
+to launch anything. The message it printed — the python suite is host-only, container runs
+OOM — described something the lane was not about to do, and the OOM it names cannot happen
+while parsing a file that is already on disk. crapkit ships a Dockerfile and its own action
+runs `crapkit verify --json --reuse-artifacts`, so reading host-built artifacts in a
+container is a shape users reach for. The guard now sits on the launch path, and
+`container_ok` still governs a lane that really runs.
+
+### The pytest-cov refusal names the environment the package has to land in
+When a lane failed because pytest rejected `--cov`, the hint read `pip install pytest-cov`
+and named no environment at all. The package has to land in the interpreter the LANE runs,
+and a repo whose lane points at its own venv gets a line that resolves to whatever venv the
+shell has active: one reporter ran it verbatim, pip reported success, and the next
+`crapkit coverage` failed identically. The hint now names the word the lane command starts
+with and binds the install to it, the same sentence `crapkit init` prints for the same gap.
+The word is read with the shell that runs the command, so a quoted interpreter path stays
+one word instead of breaking at its space.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute
