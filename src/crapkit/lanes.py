@@ -600,15 +600,45 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
 
 
-def _results_provenance(root: Path, lane: Lane) -> dict:
+def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict]:
+    """The lane junit's failing ids and counts, or a ToolError saying why the
+    report cannot be read. The message names the report and not the lane, so
+    both callers below can spend it in a sentence of their own."""
     from .junitparse import suite_summary
 
     results_path = root / lane.results_artifact
     if not results_path.is_file():
-        # Under --reuse-artifacts too: a declared-but-missing results file
-        # would make the no-NEW-failures check pass vacuously.
-        raise ToolError(f"lane {lane.name!r}: results_artifact {lane.results_artifact} is missing")
-    failed, counts = suite_summary(results_path.read_text(encoding="utf-8"))
+        raise ToolError(f"results_artifact {lane.results_artifact} is missing")
+    return suite_summary(results_path.read_text(encoding="utf-8"))
+
+
+def _warn_unreadable_results(lane: Lane, reason: ToolError) -> None:
+    """The path first: the reader's next move is opening that file."""
+    print(f"crapkit: lane {lane.name!r} reused {lane.results_artifact} and cannot check "
+          f"it: {reason}; the crashed-worker and no-new-failures checks cannot run for "
+          "this lane", file=sys.stderr)
+
+
+def _results_provenance(root: Path, lane: Lane, *, reuse_artifact: bool = False) -> dict:
+    """Counts and failures from the lane's junit; {} when reuse read a report
+    that is not there or says the run never finished.
+
+    A run refuses both: a missing results file would make the no-NEW-failures
+    check pass vacuously, and a report with no testcases is a suite that stopped
+    before it measured anything. `--reuse-artifacts` is the operator saying run
+    nothing and read what is on disk, and the coverage JSON beside that junit
+    can be a salvage of a killed run, hand-combined from its shards. Refusing it
+    there sent one reporter to the only other exit, deleting results_artifact
+    from the config, which gives up both checks on every future run. Warning
+    instead lands the lane on the no-counts path verify already documents.
+    """
+    try:
+        failed, counts = _results_summary(root, lane)
+    except ToolError as reason:
+        if not reuse_artifact:
+            raise
+        _warn_unreadable_results(lane, reason)
+        return {}
     return {"failures": sorted(failed),
             "tests_total": counts["tests"], "tests_skipped": counts["skipped"]}
 
@@ -735,6 +765,6 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
         "scopes": list(lane.scopes),
     }
     if lane.results_artifact:
-        provenance.update(_results_provenance(root, lane))
+        provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
     stamp = {} if reuse_artifact else _stamp_entry(facts, lane, seconds)
     return LaneOutcome(coverage, provenance, stamp)

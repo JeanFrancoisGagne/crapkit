@@ -946,6 +946,25 @@ no baseline reader will take. `verify` refuses to conclude at all.
 
 A clean junit changes nothing, and an ordinary errored test is still just a failed test.
 
+### Under `--reuse-artifacts` it is a warning
+
+The refusal is about a run crapkit watched. `--reuse-artifacts` is you saying run nothing
+and read what is on disk, and what is on disk can be a salvage: a coverage JSON combined
+by hand out of a killed run's `.coverage.*` shards, with that run's empty or missing junit
+still sitting beside it. So there the same two refusals are one line on stderr, and the
+lane scores off the coverage JSON:
+
+```
+$ crapkit coverage --reuse-artifacts
+crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: junit report contains zero testcases — the suite crashed before collecting, not a pass; the crashed-worker and no-new-failures checks cannot run for this lane
+run 11 @ 525a3276065: 5 functions scored — 5 measured / 0 untested / 0 no-lane / 0 cc-only, ...
+```
+
+The lane records no test counts, which is the same no-counts path a lane with no
+`results_artifact` takes, and `verify` says so against its baseline. The alternative was
+deleting `results_artifact` from the config, which gives up both checks on every future
+run to get past one.
+
 ### The test count is the second check
 
 A runner killed from outside — an OOM, a signal — writes no crash into its report at all, and
