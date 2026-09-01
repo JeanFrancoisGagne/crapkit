@@ -92,9 +92,13 @@ as written, so the scope runs its own suite whichever of its files you name:
 
 ```toml
 [crapkit.scoped_tests]
-calc = "python -m pytest tests/test_grade.py -q -p no:cacheprovider"
-util = "python -m pytest tests/test_stats.py -q -p no:cacheprovider"
+calc = "uv run python -m pytest tests/test_grade.py -q -p no:cacheprovider"
+util = "uv run python -m pytest tests/test_stats.py -q -p no:cacheprovider"
 ```
+
+`uv run` there is the launcher, not decoration: this repo carries a `uv.lock`, so that
+is the prefix `init` wrote on its lane command and on every line of this table. A repo
+with no lockfile names no launcher, and the same two lines start at `python`.
 
 Keep `{files}` only for a scope whose tests live under its own `paths`, where narrowing to
 the files you named is what you want.

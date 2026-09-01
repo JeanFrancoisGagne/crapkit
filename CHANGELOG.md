@@ -16,6 +16,20 @@ reader registers a second matcher of their own, `*.py` only.
 the SVG and holds it to the shipped matcher, so the picture cannot fall behind the code
 again without a red test.
 
+### The adoption page's whole-suite example keeps the launcher prefix the page requires
+`docs/adoption.md` states that every python line `crapkit init` writes names one launcher,
+the lockfile's where the repo has one, because step 3 measuring one environment while step
+4 tests another is the bug that rule prevents. Twenty lines further down, the
+`[crapkit.scoped_tests]` block that is the recommended way out of the two-templated-scopes
+trap started at a bare `python`, so the block a reader copies produced exactly that
+mismatch on a `uv.lock` repo and nothing failed loudly.
+
+The example now reads `uv run python -m pytest ...`, with a line saying the prefix is the
+example repo's own lockfile talking and that a repo with no lockfile names no launcher.
+`tests/unit/test_skills_contract.py` pulls every `[crapkit.scoped_tests]` entry out of the
+page's fenced toml and holds each one to the launcher names `scaffold.LOCKFILE_RUNNERS`
+carries.
+
 ## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request
