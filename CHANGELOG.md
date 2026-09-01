@@ -12,6 +12,23 @@ separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventor
 and shape is the only trigger: a directory named `inventory` in the cwd cannot hijack
 the subcommand, and a plain typo like `inventry` still gets argparse's usage dump.
 
+### The full-suite refusal names the fix for a suite that cannot collect itself
+A repo whose `pytest.ini` names four testpaths, and whose whole-suite run dies during
+collection because a shared `conftest.py` is registered twice under
+`--import-mode=importlib`, has no full-suite pytest command to write. The lane `init`
+wrote failed, the one command that collected (`pytest conform`) was refused for
+narrowing a full-suite run, and the only exit the refusal named was `full_suite =
+false` on that one lane: it clears the refusal, exits 0 everywhere, and silently leaves
+the other three testpaths unmeasured.
+
+The refusal now names the second exit, one lane per testpath with `full_suite = false`
+and its own artifact, and `docs/lanes.md` shows the block. `crapkit init` writes it for
+you: when the repo's pytest config names more than one testpath (`pytest.ini`,
+`setup.cfg` or `[tool.pytest.ini_options]`, read in pytest's own order), the starter
+config carries the detected lane plus one commented sibling lane per testpath, each
+with its own artifact and junit report. Detection still reads files only; nothing is
+run and nothing is imported.
+
 ### `report --out` writes to an absolute path
 `crapkit report --out /somewhere/else/r.html` was refused with "report --out stays
 inside <repo>", and on Windows no repo-relative spelling reaches another drive at all,

@@ -147,6 +147,7 @@ _OWNER = {
     "_manifest_roots": "admin",
     "_manifest_version": "admin",
     "_mark_text": "queue",
+    "_marker_texts": "admin",
     "_matching_rows": "queue",
     "_maybe_claim": "queue",
     "_marks_for": "claude_hook",

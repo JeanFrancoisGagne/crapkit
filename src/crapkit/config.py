@@ -321,12 +321,21 @@ def _validate_coveragepy_command(name: str, command: str) -> None:
 
 
 def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str]) -> None:
-    """One command's argv. A segment that runs no pytest has nothing to narrow."""
+    """One command's argv. A segment that runs no pytest has nothing to narrow.
+
+    Two exits, not one. A scoped suite opts out with `full_suite = false`. A
+    suite that cannot collect all its testpaths in one process has no full-suite
+    command to write at all, and taking the opt-out on a single narrowed lane
+    leaves its other testpaths unmeasured with nothing saying so, which is why
+    the message names the multi-lane pattern rather than only the flag.
+    """
     for tok in _narrowing_arguments(_tokens_after_pytest(tokens)):
         raise ConfigError(
             f"lane {name!r}: positional argument '{tok}' narrows a full-suite coverage run; "
             f"drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
-            f"or set full_suite = false deliberately{_quote_hint(command)}")
+            f"or set full_suite = false deliberately{_quote_hint(command)}; a suite whose "
+            f"testpaths cannot be collected in one process needs one lane per testpath, "
+            f"each with full_suite = false and its own artifact")
 
 
 def _asks_for_coverage(tokens: list[str]) -> bool:

@@ -315,7 +315,7 @@ Quote lane values with double quotes. cmd.exe does not treat `'` as a quote, so 
 single-quoted value reaches the runner one word per space, and the guard refuses the lane
 with that as the reason:
 
-    crapkit: lane 'py': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+    crapkit: lane 'py': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes); a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
 
 A chained command is read one argv per `&&`, `||`, `&` and `|` segment, and every segment
 that runs the runner is checked, so a narrowing flag after the operator is refused too.

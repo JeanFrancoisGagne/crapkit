@@ -8,8 +8,8 @@ import json
 
 from crapkit.config import load_config_text
 from crapkit.scaffold import (LaneSpec, detect_lanes, gitignore_entries, gitignore_update,
-                              live_lanes, lockfile_runner, python_launcher, source_candidates,
-                              starter_toml)
+                              live_lanes, lockfile_runner, pytest_testpaths, python_launcher,
+                              source_candidates, starter_toml)
 
 SCOPES = {"pylib": ("python",), "src": ("typescript",)}
 
@@ -455,3 +455,97 @@ def test_with_no_lockfile_the_commented_template_keeps_the_bare_name():
 
     assert '# command = "python -m pytest --cov --cov-branch' in text
     assert '# pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text
+
+
+# --- a suite whose testpaths cannot be collected in one process ---------------
+#
+# The full-suite guard refuses a positional in a pytest lane command, and the
+# honest way past it on such a suite is one lane per testpath. init cannot know
+# whether the whole suite collects — that would mean running it — so it writes
+# the pattern commented out whenever the repo's pytest config names more than
+# one testpath, and the reader who hits the collection error uncomments it.
+
+PYTEST_INI = "[pytest]\ntestpaths = conform impl tests\n"
+SETUP_CFG = "[tool:pytest]\ntestpaths =\n    conform\n    impl\n"
+PYPROJECT_TESTPATHS = '[tool.pytest.ini_options]\ntestpaths = ["conform", "impl"]\n'
+IMPL_SCOPE = {"impl": ("python",)}
+
+
+def _uncommented_lane(text: str, name: str) -> str:
+    """The stub a reader uncomments, uncommented the way they would do it."""
+    lines = text.splitlines()
+    start = lines.index(f'# name = "{name}"') - 1
+    block = []
+    for line in lines[start:]:
+        if not line.startswith("# "):
+            break
+        block.append(line[2:])
+    return "\n".join(block) + "\n"
+
+
+def test_testpaths_are_read_from_each_file_pytest_reads_them_from():
+    assert pytest_testpaths({"pytest.ini": PYTEST_INI}) == ("conform", "impl", "tests")
+    assert pytest_testpaths({"setup.cfg": SETUP_CFG}) == ("conform", "impl")
+    assert pytest_testpaths({"pyproject.toml": PYPROJECT_TESTPATHS}) == ("conform", "impl")
+
+
+def test_pytest_ini_outranks_the_other_two_the_way_pytest_ranks_them():
+    every = {"pytest.ini": PYTEST_INI, "pyproject.toml": PYPROJECT_TESTPATHS,
+             "setup.cfg": SETUP_CFG}
+
+    assert pytest_testpaths(every) == ("conform", "impl", "tests")
+
+
+def test_a_config_naming_no_testpaths_or_not_parsing_reads_as_none():
+    assert pytest_testpaths({}) == ()
+    assert pytest_testpaths({"setup.cfg": "[metadata]\nname = app\n"}) == ()
+    assert pytest_testpaths({"pyproject.toml": "[project]\nname = 'app'\n"}) == ()
+    assert pytest_testpaths({"pytest.ini": "]]] not ini", "pyproject.toml": "[[["}) == ()
+
+
+def test_a_single_testpath_leaves_the_detected_lane_alone():
+    """One testpath collects in one process by definition, so there is nothing
+    to split and no reason to put a second pattern in front of the reader."""
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), ""),
+                        testpaths=("tests",))
+
+    assert "full_suite" not in text
+
+
+def test_several_testpaths_add_one_commented_lane_each_at_full_suite_false():
+    lanes = detect_lanes(frozenset({"pytest.ini"}), "")
+
+    text = starter_toml(IMPL_SCOPE, lanes, testpaths=("conform", "impl"))
+
+    assert '# name = "py-conform"' in text
+    assert '# name = "py-impl"' in text
+    assert '# artifact = ".crapkit/cov/py-conform.json"' in text
+    assert text.count("# full_suite = false") == 2
+    assert load_config_text(text).lanes[0].name == "py", "the detected lane still runs"
+
+
+def test_an_uncommented_sibling_lane_parses_and_clears_the_full_suite_guard():
+    """What a reader uncomments has to load. A pytest lane carrying a positional
+    is exactly what the full-suite guard refuses, so a stub without its own
+    `full_suite = false` would be a config crapkit cannot read back."""
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), ""),
+                        testpaths=("conform", "impl"))
+
+    lane = load_config_text('[[scope]]\nname = "impl"\npaths = ["impl"]\n'
+                            'languages = ["python"]\n'
+                            + _uncommented_lane(text, "py-conform")).lanes[0]
+
+    assert lane.full_suite is False
+    assert lane.command.startswith("python -m pytest conform --cov")
+    assert lane.results_artifact == ".crapkit/cov/junit-py-conform.xml"
+    assert lane.scopes == ("impl",)
+
+
+def test_a_repo_with_no_pytest_lane_gets_no_sibling_lanes():
+    """testpaths without a detected pytest lane names no lane to split: the js
+    lane measures none of those paths."""
+    lanes = detect_lanes(frozenset(), _package(scripts={"test": "vitest run"}))
+
+    text = starter_toml({"src": ("typescript",)}, lanes, testpaths=("a", "b"))
+
+    assert "full_suite" not in text

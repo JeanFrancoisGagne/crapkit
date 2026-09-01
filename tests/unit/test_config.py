@@ -388,3 +388,22 @@ def test_mutation_workers_defaults_to_one_and_parses():
 def test_mutation_workers_below_one_or_not_an_int_is_rejected(value: str):
     with pytest.raises(ConfigError, match="mutation_workers"):
         load_config_text(MINIMAL.replace("target = 6", f"target = 6\nmutation_workers = {value}"))
+
+
+# --- the second way out of the full-suite refusal ----------------------------
+
+def test_the_full_suite_refusal_names_the_one_lane_per_testpath_pattern():
+    """A suite whose testpaths cannot be collected in one process has no
+    full-suite command to write. Offering only `full_suite = false` reads as an
+    admission that the suite is narrow, and the reader who takes it runs one
+    testpath and leaves the rest unmeasured with nothing warning about it."""
+    narrowed = PYLANE.replace('command = "python -m pytest"',
+                              'command = "python -m pytest tests/unit"')
+
+    with pytest.raises(ConfigError) as refusal:
+        load_config_text(narrowed)
+
+    message = str(refusal.value)
+    assert "one lane per testpath" in message
+    assert "full_suite = false" in message
+    assert "its own artifact" in message

@@ -590,3 +590,27 @@ def test_without_a_lockfile_the_commented_template_keeps_the_bare_interpreter(
     text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
 
     assert re.search(r'# command = "(python3?|py) -m pytest --cov', text), text
+
+
+# --- a repo whose pytest.ini names more than one testpath ---------------------
+
+def test_init_writes_the_per_testpath_lanes_a_suite_that_cannot_collect_needs(tmp_path: Path):
+    """The reported repo: four testpaths, and collecting them in one process
+    dies on a conftest registered twice. The full-suite lane init writes cannot
+    run there, and the only opt-out the refusal used to name measures one
+    testpath and drops the rest. init now writes the multi-lane fallback beside
+    the lane, commented out, and what it wrote loads when uncommented."""
+    repo = tmp_path / "multi"
+    (repo / "pylib").mkdir(parents=True)
+    (repo / "pylib" / "mod.py").write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
+    (repo / "pytest.ini").write_text("[pytest]\ntestpaths = conform pylib\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    _git_commit_all(repo, "init")
+
+    assert run_cli(repo, "init").returncode == 0
+
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    assert '# name = "py-conform"' in text
+    assert '# name = "py-pylib"' in text
+    assert text.count("# full_suite = false") == 2
+    assert run_cli(repo, "doctor").returncode == 0, "the config init wrote still checks out"
