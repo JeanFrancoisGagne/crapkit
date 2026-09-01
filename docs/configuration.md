@@ -267,8 +267,9 @@ globs = ["**/dist/**", "dist/**"]
 
 `init` ships both forms for the four generated trees and for the test-file spellings, so a
 tracked `vendor/` or `dist/` at the repo root no longer becomes a scope of its own, which is
-what it did before, and then failed `doctor` as a scope no lane measures. `crapkit init`
-writes this default set:
+what it did before, and then either failed `doctor` as a scope no lane measures or joined
+the js lane in a repo that had one, scoring vendored code as the team's own debt.
+`crapkit init` writes this default set:
 
 ```toml
 [exclude]

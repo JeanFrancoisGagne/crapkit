@@ -236,13 +236,18 @@ def _js_junit(runner: str, dev_dependencies: dict, cov_dir: str) -> tuple[str, s
     return f" {_JS_JUNIT_FLAGS[runner].format(cov=cov_dir)}", _JS_RESULTS, env
 
 
+def _npm_test_command(scripts: dict) -> str | None:
+    """The `npm run` line for this package's test script, or None when it
+    declares none and the runner has to be called directly."""
+    script = _npm_test_script(scripts)
+    return f"npm run {script} -- --coverage" if script else None
+
+
 def _js_command(package: dict) -> str | None:
     """What npm would run tests with, or the runner's own command when the
     package declares no test script at all."""
-    script = _npm_test_script(package.get("scripts", {}))
-    if script:
-        return f"npm run {script} -- --coverage"
-    return _js_runner_command(package.get("devDependencies", {}))
+    return (_npm_test_command(package.get("scripts", {}))
+            or _js_runner_command(package.get("devDependencies", {})))
 
 
 def _js_routed_lane(package: dict, command: str, runner: str, cwd: str) -> LaneSpec:
@@ -278,10 +283,12 @@ def _js_root_lane(package: dict) -> LaneSpec | None:
     return _js_routed_lane(package, command, runner, "")
 
 
-def _runner_workspaces(packages: dict[str, str]) -> list[str]:
-    """The workspace directories whose own devDependencies name one runner."""
-    return sorted(directory for directory, text in packages.items()
-                  if directory and _js_runner(_load_json(text).get("devDependencies", {})))
+def _runner_workspaces(packages: dict[str, str]) -> list[tuple[str, str]]:
+    """The workspace directories whose own devDependencies name one runner,
+    each paired with the runner it named, so no caller asks twice."""
+    named = ((directory, _js_runner(_load_json(text).get("devDependencies", {})))
+             for directory, text in packages.items() if directory)
+    return sorted((directory, runner) for directory, runner in named if runner)
 
 
 def _js_workspace_lane(packages: dict[str, str]) -> LaneSpec | None:
@@ -300,10 +307,10 @@ def _js_workspace_lane(packages: dict[str, str]) -> LaneSpec | None:
     named = _runner_workspaces(packages)
     if len(named) != 1:
         return None
-    directory = named[0]
+    directory, runner = named[0]
     package = _load_json(packages[directory])
-    return _js_routed_lane(package, _js_command(package),
-                           _js_runner(package.get("devDependencies", {})), directory)
+    command = _npm_test_command(package.get("scripts", {})) or _JS_RUNNER_COMMAND[runner]
+    return _js_routed_lane(package, command, runner, directory)
 
 
 def _packages(package_json: str | dict[str, str]) -> dict[str, str]:

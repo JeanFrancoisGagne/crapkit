@@ -8,12 +8,13 @@ the workspaces, and vitest lives in `web/` with the only `package.json` that lis
 `init` read the root and nothing else, so it wrote `npm run test -- --coverage` with no
 coverage directory, no junit report and no `cwd`. `doctor` then WARNed twice about the
 config `init` had just written, and the lane could not produce the artifact it was asked
-for. `init` now reads every tracked `package.json`. When the root names no runner and
-exactly one workspace does, the lane runs there: `cwd` is that directory, and every path
-in the command climbs back to the repo root (`--coverage.reportsDirectory=../.crapkit/cov/js`),
-while `artifact` stays root-relative because crapkit resolves it from the root. Two
-workspaces naming a runner is a question file presence cannot answer, so that case keeps
-the root lane it always got, and a root that names a runner itself is untouched.
+for. `init` now reads every tracked `package.json` outside `node_modules`. When the root
+names no runner and exactly one workspace does, the lane runs there: `cwd` is that
+directory, and every path in the command climbs back to the repo root
+(`--coverage.reportsDirectory=../.crapkit/cov/js`), while `artifact` stays root-relative
+because crapkit resolves it from the root. Two workspaces naming a runner is a question
+file presence cannot answer, so that case keeps the root lane it always got, and a root
+that names a runner itself is untouched.
 
 ### The vitest lane still writes coverage when a test fails
 vitest writes no coverage report at all on a failed run, so a repo with one red test got
