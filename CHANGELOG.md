@@ -170,6 +170,30 @@ CRAPKIT_OVERRIDE_REASON=` on Windows and keeps `unset` everywhere else, and it a
 line it was missing: a variable a CI job or a launcher exported is cleared where it was
 set, not by any command in this shell.
 
+### A scope path spelled `./src` claims the files under `src`
+`paths = ["./src"]` claimed nothing. The declared string is hoisted straight into a
+match prefix, so the matcher looked for `./src/...` while `git ls-files` emits
+`src/a.py`: the scope scored zero files, every file under it became unclaimed, and
+`doctor` printed two FAILs that named neither the dot — it blamed the empty scope, then
+blamed the file for having no scope, which sends the reader to declare a second scope
+for a path the first one already owned. Outside `doctor` it was quieter still:
+`crapkit inventory` reported `0 functions in 0 files` and exited 0. Backslashes were
+already collapsed one layer down, which made the tool look like it normalized paths.
+Scope paths are now normalized where they are parsed: a leading `./`, a leading or
+trailing `/`, and `\` as a separator. A path holding `..` or a drive letter is a config
+error naming the scope, because no tracked file can ever match it.
+
+### `mutate` refuses to score a suite that never ran
+`crapkit mutate` read any nonzero exit from `mutation_command` as a killed mutant, so a
+command that cannot run here killed all of them and printed a 100% mutation score for a
+suite that never imported the code under test. The documented command is
+`python -m pytest -q -x`, a bare name, so any machine whose PATH `python` is not the
+interpreter holding pytest — a hook, a cron, cmd.exe, the Windows Store stub that exits
+9009 — got a perfect score. The command now runs once against the unmutated tree before
+the first mutant, in the worker's own checkout when the run is parallel. A baseline that
+does not exit 0 ends the command (exit 5) naming the runner word, its exit code and the
+score it would otherwise have printed, instead of scoring anything.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

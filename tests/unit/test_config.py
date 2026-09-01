@@ -407,3 +407,44 @@ def test_the_full_suite_refusal_names_the_one_lane_per_testpath_pattern():
     assert "one lane per testpath" in message
     assert "full_suite = false" in message
     assert "its own artifact" in message
+
+
+# --- a declared scope path, spelled the way git spells one --------------------
+#
+# universe.py hoists the declared string straight into a prefix, so `./src`
+# looked for `./src/...` while `git ls-files` emits `src/a.py`. The scope scored
+# zero files, every file under it came back unclaimed, and neither doctor FAIL
+# named the dot: the reader was sent to declare a second scope for a path the
+# first one already owned. Normalizing here fixes every reader at once.
+
+def _one_scope(path: str):
+    r"""The path written as a TOML LITERAL string, which is the spelling a
+    Windows user reaches for: paths = ['packages\web'] needs no escaping."""
+    return load_config_text(f"[[scope]]\nname = \"s\"\npaths = ['{path}']\n"
+                            'languages = ["python"]\n').scopes[0]
+
+
+@pytest.mark.parametrize("written", ["./src", "src/", "/src", "src\\", "./src/", "src"])
+def test_every_spelling_of_one_directory_lands_on_the_path_git_emits(written: str):
+    assert _one_scope(written).paths == ("src",)
+
+
+def test_a_nested_path_keeps_its_separators():
+    assert _one_scope("./packages/web/src/").paths == ("packages/web/src",)
+
+
+def test_backslashes_reach_the_matcher_as_slashes():
+    r"""A Windows-spelled `packages\web` was collapsed one layer down, which made
+    the tool look like it normalized paths when it normalized one spelling."""
+    assert _one_scope(r"packages\web").paths == ("packages/web",)
+
+
+@pytest.mark.parametrize("written", ["../shared", "..", "C:/repo/src", "./"])
+def test_a_path_no_tracked_file_could_match_is_refused_by_name(written: str):
+    """An empty scope is what these produced, reported later and somewhere else.
+    They can never match a git-tracked path, so they are a config error."""
+    with pytest.raises(ConfigError) as caught:
+        _one_scope(written)
+
+    assert "'s'" in str(caught.value), caught.value
+    assert repr(written) in str(caught.value), caught.value

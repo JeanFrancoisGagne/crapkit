@@ -71,7 +71,7 @@ languages. Every tracked source file in a declared language must belong to a sco
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring). |
-| `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file, so `paths = ["core/hot.py"]` claims one file and editing it marks that scope's lane changed. The **deepest** declared path wins when two claim the same file; see [Scope matching](#scope-matching). |
+| `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file, so `paths = ["core/hot.py"]` claims one file and editing it marks that scope's lane changed. The **deepest** declared path wins when two claim the same file; see [Scope matching](#scope-matching). Written the way git writes one: a leading `./`, a leading or trailing `/` and a `\` separator are all normalized away, so `./src`, `src\` and `src` are one path. A path holding `..` or a drive letter is refused, because no tracked file can match it. |
 | `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
 | `coverage_optional` | bool | no | `false` | Code no test can reach, or code no parser can measure. See below. |
