@@ -424,46 +424,47 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>The <strong>advisory</strong> runs after every edit and annotates. The <strong>commit gate</strong> runs at <code>git commit</code> and blocks. They read the same ceiling map and subtract the same ratchet marks, so they cannot disagree about a function.</p>
 
 <figure class="panel">
-<svg viewBox="0 0 900 392" role="img" aria-label="The per-edit advisory and the commit gate across one editing session">
-  <rect class="boxw" x="20" y="10" width="860" height="118" rx="10" stroke-dasharray="7 5"/>
+<svg viewBox="0 0 900 410" role="img" aria-label="The per-edit advisory and the commit gate across one editing session">
+  <rect class="boxw" x="20" y="10" width="860" height="136" rx="10" stroke-dasharray="7 5"/>
   <text x="40" y="36" class="lbl" font-weight="700">per edit · <tspan class="mono">crapkit claude-hook</tspan> · ADVISORY</text>
   <text x="860" y="36" text-anchor="end" class="lbl" font-weight="700" fill="var(--warn)">never blocks</text>
-  <text x="40" y="60" class="sm">fires after every Edit and Write, in every repo on the machine</text>
-  <text x="40" y="78" class="sm">reads the file on disk plus <tspan class="mono">git diff HEAD</tspan> for that one path · never opens the store · writes nothing</text>
-  <text x="40" y="96" class="sm">a breach: three lines on stderr and exit 2 · the model reads them and keeps working</text>
-  <text x="40" y="114" class="sm">no crapkit.toml · file in no scope · mid-rebase · bad input · any internal error → exit 0, silent</text>
+  <text x="40" y="60" class="sm">fires on Edit and Write in every repo on the machine, and on Bash where you register that matcher</text>
+  <text x="40" y="78" class="sm">the plugin ships <tspan class="mono">Edit|Write</tspan> only · the Bash half is a second entry in your own settings, <tspan class="mono">*.py</tspan> only</text>
+  <text x="40" y="96" class="sm">reads the file on disk plus <tspan class="mono">git diff HEAD</tspan> for that one path · never opens the store · writes nothing</text>
+  <text x="40" y="114" class="sm">a breach: three lines on stderr and exit 2 · the model reads them and keeps working</text>
+  <text x="40" y="132" class="sm">no crapkit.toml · file in no scope · mid-rebase · bad input · any internal error → exit 0, silent</text>
 
-  <text x="140" y="146" text-anchor="middle" class="sm">silent</text>
-  <text x="290" y="146" text-anchor="middle" class="sm">silent</text>
-  <text x="440" y="146" text-anchor="middle" class="sm" fill="var(--warn)">ccn 9 named</text>
-  <text x="590" y="146" text-anchor="middle" class="sm">silent</text>
-  <path class="arrow" d="M140 152 V 168"/>
-  <path class="arrow" d="M290 152 V 168"/>
-  <path class="arrow" d="M440 152 V 168"/>
-  <path class="arrow" d="M590 152 V 168"/>
+  <text x="140" y="164" text-anchor="middle" class="sm">silent</text>
+  <text x="290" y="164" text-anchor="middle" class="sm">silent</text>
+  <text x="440" y="164" text-anchor="middle" class="sm" fill="var(--warn)">ccn 9 named</text>
+  <text x="590" y="164" text-anchor="middle" class="sm">silent</text>
+  <path class="arrow" d="M140 170 V 186"/>
+  <path class="arrow" d="M290 170 V 186"/>
+  <path class="arrow" d="M440 170 V 186"/>
+  <path class="arrow" d="M590 170 V 186"/>
 
-  <path class="arrow" d="M40 176 H 866"/>
-  <circle cx="140" cy="176" r="4.5" fill="var(--muted)"/>
-  <circle cx="290" cy="176" r="4.5" fill="var(--muted)"/>
-  <circle cx="440" cy="176" r="4.5" fill="var(--warn)"/>
-  <circle cx="590" cy="176" r="4.5" fill="var(--muted)"/>
-  <circle cx="790" cy="176" r="6" fill="var(--accent)"/>
-  <text x="140" y="196" text-anchor="middle" class="sm">edit</text>
-  <text x="290" y="196" text-anchor="middle" class="sm">edit</text>
-  <text x="440" y="196" text-anchor="middle" class="sm">edit</text>
-  <text x="590" y="196" text-anchor="middle" class="sm">edit</text>
-  <text x="790" y="196" text-anchor="middle" class="sm mono" fill="var(--accent)">git commit</text>
-  <text x="866" y="164" text-anchor="end" class="sm">one session →</text>
+  <path class="arrow" d="M40 194 H 866"/>
+  <circle cx="140" cy="194" r="4.5" fill="var(--muted)"/>
+  <circle cx="290" cy="194" r="4.5" fill="var(--muted)"/>
+  <circle cx="440" cy="194" r="4.5" fill="var(--warn)"/>
+  <circle cx="590" cy="194" r="4.5" fill="var(--muted)"/>
+  <circle cx="790" cy="194" r="6" fill="var(--accent)"/>
+  <text x="140" y="214" text-anchor="middle" class="sm">edit</text>
+  <text x="290" y="214" text-anchor="middle" class="sm">edit</text>
+  <text x="440" y="214" text-anchor="middle" class="sm">edit</text>
+  <text x="590" y="214" text-anchor="middle" class="sm">edit</text>
+  <text x="790" y="214" text-anchor="middle" class="sm mono" fill="var(--accent)">git commit</text>
+  <text x="866" y="182" text-anchor="end" class="sm">one session →</text>
 
-  <path class="arrow" d="M790 204 V 246"/>
-  <rect class="boxa" x="20" y="250" width="860" height="126" rx="10"/>
-  <text x="40" y="276" class="lbl" font-weight="700">at commit · <tspan class="mono">crapkit hook-precommit</tspan> · THE GATE</text>
-  <text x="860" y="276" text-anchor="end" class="lbl" font-weight="700" fill="var(--accent)">this one blocks</text>
-  <text x="40" y="300" class="sm">reads the staged blobs in one <tspan class="mono">git cat-file --batch</tspan> · cc-only, no store, no coverage, no network</text>
-  <text x="40" y="318" class="sm">a breach: the hook exits 6, git reports 1, the commit does not happen · decompose, or sign for the debt</text>
-  <text x="40" y="336" class="sm">exempt: any function the committed ratchet already marks, counted in one stderr line</text>
-  <text x="40" y="354" class="sm">costs the size of the commit, not the size of the repo</text>
-  <text x="860" y="354" text-anchor="end" class="sm"><tspan class="mono">crapkit verify</tspan> fails a mark that rises</text>
+  <path class="arrow" d="M790 222 V 264"/>
+  <rect class="boxa" x="20" y="268" width="860" height="126" rx="10"/>
+  <text x="40" y="294" class="lbl" font-weight="700">at commit · <tspan class="mono">crapkit hook-precommit</tspan> · THE GATE</text>
+  <text x="860" y="294" text-anchor="end" class="lbl" font-weight="700" fill="var(--accent)">this one blocks</text>
+  <text x="40" y="318" class="sm">reads the staged blobs in one <tspan class="mono">git cat-file --batch</tspan> · cc-only, no store, no coverage, no network</text>
+  <text x="40" y="336" class="sm">a breach: the hook exits 6, git reports 1, the commit does not happen · decompose, or sign for the debt</text>
+  <text x="40" y="354" class="sm">exempt: any function the committed ratchet already marks, counted in one stderr line</text>
+  <text x="40" y="372" class="sm">costs the size of the commit, not the size of the repo</text>
+  <text x="860" y="372" text-anchor="end" class="sm"><tspan class="mono">crapkit verify</tspan> fails a mark that rises</text>
 </svg>
 <figcaption>Two hooks, one ceiling map, one set of ratchet marks. That agreement is why a session of green advisories cannot end at a refused commit.</figcaption>
 </figure>

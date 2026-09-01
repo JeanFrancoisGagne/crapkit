@@ -9,6 +9,7 @@ reads the numbers back out of each page and compares them with the module.
 A page that names the window has to name the cap too: the reader who learns
 "12 seconds" and not "25 files" is told half the rule.
 """
+import json
 import re
 from pathlib import Path
 
@@ -64,3 +65,54 @@ def test_a_page_with_a_different_number_would_be_caught():
 
     assert windows == {30}
     assert caps == {25}
+
+
+# --- the section 06 panel, held to the matcher the plugin ships ---------------
+
+HOOKS_JSON = "plugin/hooks/hooks.json"
+# Found by its aria-label, so a renamed figure fails loudly instead of passing
+# on an empty match.
+_PANEL = re.compile(
+    r'<svg[^>]*aria-label="The per-edit advisory[^"]*"[^>]*>(.*?)</svg>', re.S)
+_SVG_TEXT = re.compile(r"<text\b[^>]*>(.*?)</text>", re.S)
+
+
+def panel_lines() -> list[str]:
+    """Every line of text drawn inside the section 06 panel, tags stripped."""
+    page = (ROOT / "docs/handbook.html").read_text(encoding="utf-8")
+    panel = _PANEL.search(page)
+    assert panel, "the handbook lost its section 06 advisory panel"
+    return [re.sub(r"<[^>]+>", "", line).strip()
+            for line in _SVG_TEXT.findall(panel.group(1))]
+
+
+def shipped_matchers() -> set[str]:
+    manifest = json.loads((ROOT / HOOKS_JSON).read_text(encoding="utf-8"))
+    return {entry["matcher"] for entry in manifest["hooks"]["PostToolUse"]}
+
+
+def test_the_panel_names_bash_where_it_names_the_events_the_advisory_fires_on():
+    """The picture drew the pre-0.4.7 rule while the prose fifty lines down
+    carried the current one, so a reader who trusted the panel concluded a
+    heredoc write is never judged. Any panel line that says what the advisory
+    fires on names all three events."""
+    fires = [line for line in panel_lines()
+             if "fires" in line and "Edit" in line and "Write" in line]
+
+    assert fires, "the panel no longer says which events the advisory fires on"
+    for line in fires:
+        assert "Bash" in line, f"panel line names Edit and Write but not Bash: {line!r}"
+
+
+def test_the_panel_says_the_bash_half_is_the_readers_to_register():
+    """`plugin/hooks/hooks.json` registers `Edit|Write` and no Bash matcher, so
+    the panel may not hand the reader the Bash half as something that already
+    fires. It has to say who registers it, and that only *.py is judged."""
+    assert shipped_matchers() == {"Edit|Write"}, \
+        "the shipped matcher changed; the panel's qualifier has to change with it"
+
+    bash = " ".join(line for line in panel_lines() if "Bash" in line)
+
+    assert bash, "the panel never names Bash"
+    assert "register" in bash, f"the panel does not say who registers Bash: {bash!r}"
+    assert "*.py" in bash, f"the panel does not say Bash judges *.py only: {bash!r}"

@@ -253,3 +253,47 @@ def test_the_handbook_is_self_contained():
             f"the handbook shows {src!r}, which is not committed beside it"
     assert 'href="https://' not in page.replace('href="https://github.com', ""), \
         "handbook links an external stylesheet or resource"
+
+
+# --- the adoption page's own launcher rule, applied to its own example --------
+
+_TOML_FENCE = re.compile(r"^```toml\n(.*?)^```", re.M | re.S)
+_TOML_ENTRY = re.compile(r'^(\w+) = "([^"]+)"$', re.M)
+
+
+def _scoped_test_templates(page: str) -> list[tuple[str, str]]:
+    """Every `[crapkit.scoped_tests]` entry printed in a fenced toml block."""
+    entries = []
+    for block in _TOML_FENCE.findall(_doc(page)):
+        table = block.split("[crapkit.scoped_tests]", 1)
+        if len(table) == 2:
+            entries += _TOML_ENTRY.findall(table[1].split("\n[", 1)[0])
+    return entries
+
+
+def test_the_adoption_example_carries_the_launcher_prefix_the_page_demands():
+    """The page states the rule, then printed the example that breaks it: two
+    paragraphs above, every python line names the lockfile's launcher; the
+    whole-suite block twenty lines down started at a bare `python`. That block
+    is the recommended way out of the two-templated-scopes trap, so it is the
+    one a reader copies, and copying it on a uv.lock repo measures one
+    environment in step 3 and tests another in step 4."""
+    from crapkit.scaffold import LOCKFILE_RUNNERS
+
+    launchers = tuple(runner for _, runner in LOCKFILE_RUNNERS)
+    templates = _scoped_test_templates(ADOPTION)
+
+    assert templates, "the adoption page prints no scoped_tests example"
+    for scope, command in templates:
+        assert command.startswith(launchers), (
+            f"{scope} runs {command!r}, which names no launcher")
+
+
+def test_the_page_names_the_lockfile_that_makes_its_example_a_uv_run_repo():
+    """The prefix is not decoration: it is what the example repo's lockfile
+    picks. A reader on a repo with no lockfile drops it, so the page has to say
+    which case it is showing rather than leave the prefix unexplained."""
+    page = _doc(ADOPTION)
+
+    assert "uv.lock" in page, "the page shows `uv run` and never says where it comes from"
+    assert "no lockfile" in page, "the page never tells the reader when the prefix drops"
