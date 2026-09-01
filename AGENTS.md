@@ -601,8 +601,8 @@ rejected in review.
 ## Tests
 
     python -m pytest                      # both suites
-    python -m pytest tests/unit           # 2,441 tests, about a minute (16 s at -n 8)
-    python -m pytest tests/e2e -n 8       # 614 tests, about 1m30
+    python -m pytest tests/unit           # 2,483 tests, about a minute (16 s at -n 8)
+    python -m pytest tests/e2e -n 8       # 617 tests, about 1m30
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else: no xdist and no
