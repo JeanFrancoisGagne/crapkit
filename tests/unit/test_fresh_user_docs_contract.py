@@ -288,17 +288,24 @@ def test_no_page_claims_this_repos_ci_blocks_on_the_ratchet(page: str):
     Two different lines, two different answers. The diff gate does block: the
     `test` job runs `python -m crapkit hook-precommit` and the exit code stands
     (`test_ci_does_not_swallow_the_crapkit_gate_exit_code` holds it there). The
-    `dogfood` job's `verify` still ends in `|| true`, so a rising mark, a new
-    test failure or a dark diff line is reported and not enforced. A page
-    claiming otherwise promises an enforcement point nothing arms, which is why
-    the anchor below is the `verify` line rather than the gate's.
+    `dogfood` job still reports its verdict without enforcing it, so a rising
+    mark, a new test failure or a dark diff line is reported and not enforced. A
+    page claiming otherwise promises an enforcement point nothing arms, which is
+    why the anchor below is the verdict's line rather than the gate's.
+
+    That line moved when the dogfood job became a consumer of the composite
+    action. It used to be `verify --json > verdict.json || true`, the job
+    running verify itself and dropping the code; now the action runs verify and
+    `gate: "false"` is what decides whether the code reaches the check. Same
+    answer, and the anchor follows it.
     """
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     text = " ".join(_doc(page).lower().split())
 
-    assert "verify --json > verdict.json || true" in workflow, (
-        "the caveat below is about this line; arm it and these claims become "
-        "sayable")
+    assert 'gate: "false"' in workflow, (
+        "the caveat below is about this line; the dogfood job runs the action "
+        "with the gate off, so verify's verdict is reported and not enforced. "
+        "Arm it and these claims become sayable")
     for claim in ("ci blocks", "ci enforces", "ci fails the", "blocked in ci",
                   "enforced in ci", "ratchet in ci"):
         assert claim not in text, f"{page}: {claim!r}"
