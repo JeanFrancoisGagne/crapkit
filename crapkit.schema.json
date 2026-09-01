@@ -64,6 +64,7 @@
           "container_ok": {"type": "boolean"},
           "results_artifact": {"type": "string", "description": "junit XML feeding the no-NEW-failures check"},
           "timeout_seconds": {"type": "integer", "minimum": 0, "description": "crapkit kills the command past this (0 = no timeout)"},
+          "no_progress_seconds": {"type": "integer", "minimum": 0, "description": "crapkit kills the command when its log has not grown for this many seconds (0 = no progress watch)"},
           "retries": {"type": "integer", "minimum": 0, "description": "reruns after a timeout or missing artifact"},
           "retest_command": {"type": "string", "description": "{tests} template rerunning just the newly-failed ids before exit 8"}
         }

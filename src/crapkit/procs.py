@@ -16,10 +16,29 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from typing import IO
 
 _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
               if os.name == "nt" else {"start_new_session": True})
+
+# How often the progress watch looks at the stream. Small enough that the kill
+# lands close to the deadline, large enough that watching a two-hour suite costs
+# nothing measurable.
+_TICK = 0.5
+
+
+class NoProgress(Exception):
+    """The command was alive and silent for `seconds`, and its tree was killed.
+
+    Only a caller that passed `no_progress` can see this. A total deadline still
+    returns None, because the two say different things: one command ran too
+    long, the other stopped doing anything at all.
+    """
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(f"no output for {seconds:g}s")
+        self.seconds = seconds
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
@@ -42,10 +61,59 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     proc.wait()
 
 
+def _stream_size(stream: IO | None) -> int:
+    """Bytes the command has written so far, or -1 when nothing can be measured.
+    The child writes to the file behind this handle, so its size is the only
+    progress signal available without a pipe to read."""
+    try:
+        return os.fstat(stream.fileno()).st_size
+    except (AttributeError, OSError, ValueError):
+        return -1
+
+
+def _progress(stream: IO | None, size: int, since: float) -> tuple[int, float]:
+    """The stream's size and the moment it last changed."""
+    grown = _stream_size(stream)
+    return (grown, time.monotonic()) if grown != size else (size, since)
+
+
+def _expired(limit: float | None) -> bool:
+    return limit is not None and time.monotonic() >= limit
+
+
+def _wait_watching(proc: subprocess.Popen, timeout: float | None, no_progress: float,
+                   stream: IO) -> int | None:
+    """Wait in ticks so a command that stops writing can be caught between them.
+
+    A suite that hangs at 0% CPU never trips a total deadline the user did not
+    set, and `timeout_seconds` defaults to none at all, so the run sat on it
+    forever with nothing watching the log. The log IS the signal: it grows while
+    the runner reports and stops when the runner does.
+    """
+    limit = None if timeout is None else time.monotonic() + timeout
+    size, since = _stream_size(stream), time.monotonic()
+    while True:
+        try:
+            return proc.wait(timeout=_TICK)
+        except subprocess.TimeoutExpired:
+            size, since = _progress(stream, size, since)
+        if time.monotonic() - since >= no_progress:
+            _kill_tree(proc)
+            raise NoProgress(no_progress)
+        if _expired(limit):
+            _kill_tree(proc)
+            return None
+
+
 def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None,
-                **popen_kwargs) -> int | None:
+                no_progress: float | None = None, **popen_kwargs) -> int | None:
     """The exit code, or None when the deadline expired and the tree was killed.
     A timeout of None is no deadline at all: the caller waits for the command.
+
+    `no_progress` adds a second deadline on top of the first: the tree is killed
+    and NoProgress raised when `stream` has not grown for that many seconds. It
+    needs a stream to watch, so it is ignored when output goes to DEVNULL, where
+    there is nothing to measure and every command would read as stalled.
 
     Output goes to DEVNULL by default, never a pipe: nobody here reads it, and a
     pipe outlives the timeout - the drain has no deadline of its own, so the
@@ -59,6 +127,8 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
     proc = subprocess.Popen(command, shell=True, stdin=subprocess.DEVNULL,
                             stdout=out, stderr=subprocess.STDOUT,
                             **_OWN_GROUP, **popen_kwargs)
+    if no_progress and stream is not None:
+        return _wait_watching(proc, timeout, no_progress, stream)
     try:
         return proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:

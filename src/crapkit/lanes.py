@@ -24,7 +24,7 @@ from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
-from .procs import run_bounded
+from .procs import NoProgress, run_bounded
 from .uncovered import fold_dead_lines
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -142,6 +142,17 @@ def _deadline(lane: Lane) -> float | None:
     return lane.timeout_seconds or None
 
 
+def _no_progress(lane: Lane) -> float | None:
+    """The lane's idle deadline, or None for no progress watch.
+
+    The second half of the same guard: a total deadline has to be longer than
+    the slowest honest run, so it cannot cut a suite that hangs early without
+    also cutting the slow ones. This one measures the log instead, and 0, the
+    default, leaves the total deadline as the only one.
+    """
+    return lane.no_progress_seconds or None
+
+
 def _log_header(fh: IO[str], command: str, attempt: int) -> None:
     if attempt > 1:
         fh.write(f"\n--- attempt {attempt} ---\n")
@@ -149,13 +160,25 @@ def _log_header(fh: IO[str], command: str, attempt: int) -> None:
     fh.flush()
 
 
+def _raise_stalled(fh: IO[str], lane: Lane, log_path: Path, attempt: int) -> None:
+    """A lane killed for silence, not for running long. The message says which:
+    the command was still alive and had written nothing since the header."""
+    fh.write(f"\n[crapkit] no output for {lane.no_progress_seconds}s; killed\n")
+    raise ToolError(f"lane {lane.name!r} wrote no output for {lane.no_progress_seconds}s "
+                    f"(attempt {attempt}), so crapkit killed it; log: {log_path}")
+
+
 def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int:
     with open(log_path, "a" if attempt > 1 else "w", encoding="utf-8", errors="replace") as fh:
         _log_header(fh, lane.command, attempt)
         # The log is a file, not a pipe, so streaming costs the deadline nothing:
         # run_bounded kills the shell's whole tree, which is where the suite is.
-        code = run_bounded(lane.command, _deadline(lane), stream=fh,
-                           **_popen_kwargs(root, lane))
+        # It is also what the progress watch measures.
+        try:
+            code = run_bounded(lane.command, _deadline(lane), stream=fh,
+                               no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
+        except NoProgress:
+            _raise_stalled(fh, lane, log_path, attempt)
         if code is None:
             fh.write(f"\n[crapkit] timed out after {lane.timeout_seconds}s; killed\n")
             raise ToolError(f"lane {lane.name!r} timed out after {lane.timeout_seconds}s "
@@ -721,7 +744,11 @@ def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
     with open(log_path, "a", encoding="utf-8", errors="replace") as fh:
         fh.write(f"\n--- flake retest ---\n$ {command}\n")
         fh.flush()
-        code = run_bounded(command, _deadline(lane), stream=fh, **_popen_kwargs(root, lane))
+        try:
+            code = run_bounded(command, _deadline(lane), stream=fh,
+                               no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
+        except NoProgress:
+            return set()
     if code is None:
         return set()
     still = _still_failed(root, lane)

@@ -847,6 +847,33 @@ The same bounded spawn backs `mutation_timeout_seconds` and `init`'s pytest-cov 
 looping mutant is cut instead of outliving the run that gave up on it. The lane log still
 streams while the command runs.
 
+### A suite that stops making progress
+
+`timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite
+that hangs at minute three without also cutting the slow ones. And its default is `0`, no
+deadline at all, which is where a hang costs you the whole run: crapkit waits, the suite
+sits at 0% CPU, and nothing watches the log.
+
+`no_progress_seconds` is the other half. crapkit polls while the lane runs and kills the
+tree when the log has not grown for that many seconds:
+
+```toml
+no_progress_seconds = 300
+timeout_seconds = 1800
+```
+
+```
+crapkit: lane 'py' FAILED: lane 'py' wrote no output for 300s (attempt 1), so crapkit killed it; log: /repo/.crapkit/lane-py.log
+```
+
+`.crapkit/lane-py.log` ends `[crapkit] no output for 300s; killed`, which is a different
+line from the timeout's `[crapkit] timed out after 1800s; killed`: one command ran too
+long, the other stopped doing anything. `retries` covers both the same way.
+
+Set it above the longest quiet stretch your runner has. A suite that prints a line per test
+stalls in seconds; one that runs a silent build step first needs that step's duration.
+Leave it `0` (the default) and the total deadline is the only one.
+
 ---
 
 ## Flake retest

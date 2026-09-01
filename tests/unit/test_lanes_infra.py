@@ -106,3 +106,13 @@ def test_config_rejects_negative_timeout_or_retries():
         load_config_text(base + "timeout_seconds = -5\n")
     with pytest.raises(ConfigError, match="retries"):
         load_config_text(base + "retries = -1\n")
+    with pytest.raises(ConfigError, match="no_progress_seconds"):
+        load_config_text(base + "no_progress_seconds = -1\n")
+
+
+def test_config_parses_the_progress_deadline():
+    cfg = load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
+        '[[lane]]\nname = "py"\ncommand = "pytest --cov"\nartifact = "c.json"\n'
+        'parser = "coveragepy"\nscopes = ["src"]\nno_progress_seconds = 300\n')
+    assert cfg.lanes[0].no_progress_seconds == 300

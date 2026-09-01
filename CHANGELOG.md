@@ -2,6 +2,16 @@
 
 ## 0.4.12 — unreleased
 
+### New lane key `no_progress_seconds` kills a suite that stops making progress
+`timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite
+that hangs at minute three without cutting the slow ones too, and its default is no
+deadline at all: a lane that hung sat at 0% CPU with crapkit waiting on it and nothing
+watching the log. `no_progress_seconds` watches the log instead. crapkit polls while the
+lane runs and kills the whole process tree when the log has not grown for that many
+seconds, then says so in words a stall earns: `lane 'py' wrote no output for 300s (attempt
+1), so crapkit killed it`, with `[crapkit] no output for 300s; killed` at the end of the
+log. `retries` covers it the way it covers a timeout. Default `0`, no watch.
+
 ### A lane that produced no artifact says whether its coverage shards survived
 `coverage run --parallel-mode`, which pytest-xdist turns on, writes one `.coverage.*` per
 process and combines them only at the end. A killed run therefore leaves every measurement

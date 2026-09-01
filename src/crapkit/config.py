@@ -49,6 +49,10 @@ class Lane(NamedTuple):
     container_ok: bool = False
     results_artifact: str = ""
     timeout_seconds: int = 0  # 0 = no crapkit-owned timeout
+    # Kill the lane when its log has not grown for this many seconds. A total
+    # deadline cannot bound a suite that hangs at 0% CPU without also bounding
+    # the slow runs it cannot tell apart from one. 0 = no progress watch.
+    no_progress_seconds: int = 0
     retries: int = 0
     retest_command: str = ""  # {tests} template for the flake retry before exit 8
 
@@ -525,6 +529,7 @@ def _parse_lane(row: dict, scope_names: set) -> Lane:
                 full_suite=full_suite, container_ok=bool(row.get("container_ok", False)),
                 results_artifact=row.get("results_artifact", ""),
                 timeout_seconds=_nonneg_int(row, "timeout_seconds"),
+                no_progress_seconds=_nonneg_int(row, "no_progress_seconds"),
                 retries=_nonneg_int(row, "retries"),
                 retest_command=row.get("retest_command", ""))
 
