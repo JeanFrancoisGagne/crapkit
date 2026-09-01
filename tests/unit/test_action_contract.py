@@ -174,6 +174,10 @@ def test_the_action_installs_crapkit_from_its_own_checkout():
 
     assert "pip install" in joined
     assert "GITHUB_ACTION_PATH" in joined, "the install must name the action's own checkout"
+    assert 'pip install -e "$GITHUB_ACTION_PATH"' in joined, (
+        "the install must be editable: a regular install replaces a consumer's editable "
+        "install of the same package, and when that consumer is crapkit itself the lane's "
+        "--cov=crapkit then measures site-packages, which the wrong-tree refusal rejects")
 
 
 # --- the sticky comment ------------------------------------------------------

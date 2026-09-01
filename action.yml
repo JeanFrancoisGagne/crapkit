@@ -33,9 +33,14 @@ runs:
     # consumer pinned in `uses:`. Installing from it is what makes
     # `crapkit@v0.4.8` mean the 0.4.8 code: `pip install crapkit` here would
     # score every consumer with whatever released last, whatever they pinned.
+    # Editable, because a regular install replaces an editable one of the same
+    # package that the consumer's own setup step made, and when that consumer
+    # is crapkit itself (`uses: ./`) the lane's `--cov=crapkit` then measures the
+    # copy in site-packages: 61 files outside the checkout, and the wrong-tree
+    # refusal failed the lane on the first run of this action.
     - name: install crapkit from this action's own checkout
       shell: bash
-      run: pip install "$GITHUB_ACTION_PATH"
+      run: pip install -e "$GITHUB_ACTION_PATH"
 
     # Every step below keeps its own status at 0 and records what it got. The
     # comment is this action's output, and a job that dies at step three posts
