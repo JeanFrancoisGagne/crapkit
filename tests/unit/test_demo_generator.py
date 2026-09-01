@@ -13,6 +13,11 @@ from pathlib import Path
 
 import pytest
 
+# Rendering needs Pillow, which the dev extra does not ship: CI installs the
+# suite's needs, and regenerating the demo is a maintainer step. Without it these
+# tests skip; the docs contract on the committed GIF still runs everywhere.
+pytest.importorskip("PIL")
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(ROOT / "tools" / "demo"))
 
