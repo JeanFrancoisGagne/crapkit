@@ -1254,6 +1254,9 @@ def _spawned_cli() -> tuple[str, str] | None:
 
 
 def _no_crapkit_on_path() -> str:
+    """The FAIL for a machine where nothing the plugin declares can start. It
+    names both files that spawn the bare name, because the reader is about to
+    look for a plugin problem and the problem is an install location."""
     return ("crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and "
             ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
             "that cannot start and the MCP server never comes up. Install it where the "
