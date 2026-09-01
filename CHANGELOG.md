@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.9 — unreleased
+## 0.4.9 — 2026-09-01
 
 ### The handbook's advisory panel draws the Bash half it has answered since 0.4.7
 Section 06 of `docs/handbook.html` pairs a picture of the two hooks with prose about
