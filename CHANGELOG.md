@@ -2,26 +2,143 @@
 
 ## 0.4.12 — unreleased
 
-### Every next step and refusal names the crapkit that is running
-`init` closed with "next: run `crapkit coverage`", and every refusal behind it prescribed
-the same bare name. That name is the console script, and two documented ways of running
-crapkit put no such name on PATH: `python -m crapkit` from a source checkout, which the
-README prints, and `exec <venv>/Scripts/python -m crapkit hook-precommit` from a git hook,
-spelled that way because git runs hooks outside the activated venv. A reader in either one
-copied the line the program had just printed and their shell exited 127. The process
-already knew: `sys.argv[0]` is the console script when that started it and the package's
-`__main__.py` when `python -m` did. 35 messages across the ten CLI families, the MCP
-server's unmeasured-directory result and the HTML report now read it, so the line says
-`crapkit coverage` under the console script and `<the interpreter running this process>
--m crapkit coverage` otherwise, quoted when that path holds a space (`C:\Program Files\…`
-reaches cmd.exe as three arguments unquoted). `sys.executable`, never a bare `python`: on
-Windows that resolves to the WindowsApps stub, a venv holding no crapkit, or the base
-interpreter a venv wraps. Eight strings keep the console-script spelling on purpose,
-because something other than the printing process reads them: the brief packet's
-`commands.gate`, `commands.verify` and `commands.refresh` (#37), the two crapkit.toml
-template comments `init` writes into a consumer's repo, the `--claim` help text, the
-`doctor` WARN about a scope with no `[crapkit.scoped_tests]` entry, and the hook's
-stderr note about marked functions.
+### A lane that writes nothing no longer scores the previous run's artifact
+crapkit asked only whether the artifact file existed, never whether the run that just
+finished wrote it. So a lane failed loud exactly once, on the first run against an empty
+`.crapkit/`, and went quietly wrong on every run after: the suite dies in collection, last
+run's coverage JSON is still sitting there, and crapkit scores it as fresh, stamps it with
+the current commit and hands `--reuse-unchanged` a reason to keep trusting it. A vitest
+lane without `reportOnFailure` and a pytest lane hitting a collection error both land here.
+A lane now records the modification time of every file it declares before each attempt and
+requires it to move, so the refusal fires on the second run the way it did on the first. A
+leftover file gets its own wording — `wrote no artifact this run — the .crapkit/cov/py.json
+on disk predates it and is the previous run's` — because the old sentence, about a path
+that holds a report, reads as crapkit failing to see the file. Where the artifact is missing
+and the leftover is some other declared file, the artifact path still leads: `produced no
+artifact at .crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the previous
+run's`. `results_artifact` is held to
+the same rule, so a killed suite's junit cannot feed the test-count and no-new-failures
+checks last run's numbers. The check is the mtime and not the bytes, so a runner that
+rewrites an identical report stays green, and `--reuse-artifacts` is untouched.
+
+### `mutate` refuses to score a suite that never ran
+`crapkit mutate` read any nonzero exit from `mutation_command` as a killed mutant, so a
+command that cannot run here killed all of them and printed a 100% mutation score for a
+suite that never imported the code under test. The documented command is
+`python -m pytest -q -x`, a bare name, so any machine whose PATH `python` is not the
+interpreter holding pytest — a hook, a cron, cmd.exe, the Windows Store stub that exits
+9009 — got a perfect score. The command now runs once against the unmutated tree before
+the first mutant, in the worker's own checkout when the run is parallel. A baseline that
+does not exit 0 ends the command (exit 5) naming the runner word, its exit code and the
+score it would otherwise have printed, instead of scoring anything.
+
+### A scope path spelled `./src` claims the files under `src`
+`paths = ["./src"]` claimed nothing. The declared string is hoisted straight into a
+match prefix, so the matcher looked for `./src/...` while `git ls-files` emits
+`src/a.py`: the scope scored zero files, every file under it became unclaimed, and
+`doctor` printed two FAILs that named neither the dot — it blamed the empty scope, then
+blamed the file for having no scope, which sends the reader to declare a second scope
+for a path the first one already owned. Outside `doctor` it was quieter still:
+`crapkit inventory` reported `0 functions in 0 files` and exited 0. Backslashes were
+already collapsed one layer down, which made the tool look like it normalized paths.
+Scope paths are now normalized where they are parsed: a leading `./`, a leading or
+trailing `/`, and `\` as a separator. A path holding `..` or a drive letter is a config
+error naming the scope, because no tracked file can ever match it.
+
+### `duplication --top 0` no longer prints a clean bill of health
+`crapkit duplication --top 0` printed "no near-duplicate functions found" and exited 0
+over a tree full of duplicate pairs, which is a false all-clear and the thing a CI job
+reads. `--top -1` sliced from the tail and dropped the last pair with nothing said.
+`coupling --top` sat behind the same unguarded slice. Both commands now refuse anything
+below 1 at the entry, before they open the store: `duplication --top must be >= 1, got
+0`, exit 3.
+
+### `next-item --top 0` refuses instead of handing out an item
+`crapkit next-item --top 0` printed an item and, with `--claim`, took a claim on it that
+hid that function from every other session. `--top -1` did the same. The slice was
+written `ranked[:max(top, 1)]`, so a 0 widened back to one, and the emit branch tested
+`top > 1`, so anything below it fell through to the single-item shape. An agent
+templating `--top {budget}` that computed 0 got work it had not asked for, locked. Its
+sibling `crapkit worklist --top 0` already exited 3 naming the rule. `next-item` now
+answers the same way: `next-item --top must be >= 1, got 0`, exit 3, no claim taken.
+
+### One unimportable test file no longer takes the whole pytest lane down
+A repo with a renamed module, a missing optional extra or a stale editable install got
+`coverage exit=5` and `every lane failed (1 of 1)` from a suite whose other test files
+collected fine. pytest raises `Interrupted` at the end of collection when any module
+fails to import, so pytest-cov's session finish never runs and the lane writes no
+coverage JSON at all; the junit lands anyway, which makes the run read as half finished
+rather than as a flag. `doctor` said "no problems found". The lane `init` writes now
+carries `--continue-on-collection-errors`, and so does the commented template beside it,
+which is pytest's half of the `--coverage.reportOnFailure` the vitest lane already got.
+Nothing is hidden: the uncollected file's tests stay in the junit as errors. The vitest
+and jest lanes are untouched.
+
+### The vitest lane still writes coverage when a test fails
+vitest writes no coverage report at all on a failed run, so a repo with one red test got
+exit 5 naming a missing `coverage-final.json`: a message about a file, for a run that was
+really about a flag. The junit report landed anyway, which made the run look half
+finished. The scaffolded vitest lane now carries `--coverage.reportOnFailure`, in the live
+lane and in the commented template alike. jest gets no such flag: it reports on a red run
+already, and exits on a flag it does not know. Setting `reportOnFailure: true` in your
+vitest config is still the other way to spell it; `init` writes the flag because it must
+not edit your vitest config to write a lane.
+
+### A coverage.py report without branch data scores instead of failing the lane
+`pytest --cov --cov-report=json` without `--cov-branch` is the default shape of an existing
+CI artifact, and it failed the whole lane: nothing scored, exit 5, on a report holding
+per-function statement counts crapkit's own model already knows how to divide. Every
+function falls back to statement coverage when it holds no branches, and that fallback runs
+on every normal report, so the guard was blocking arithmetic crapkit performs all day. It
+is now one stderr warning naming the lane and saying the coverage term is statement-based
+for this artifact. A report carrying neither branch nor statement data is still refused,
+because there is nothing to divide by and every function in it would score fully covered.
+
+### One file with no function regions no longer throws the whole report away
+coverage.py writes the per-file `functions` key once per code-region kind that file's own
+reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
+template coverage — loses the key while every `.py` file in the same report keeps it. That
+single entry failed the lane, the run scored nothing, and the files that were fine were
+never mentioned. Those files are now skipped and named in one warning, and the rest of the
+report is scored. A report where NO file carries regions is still exit 5, which is the
+"coverage is too old" case the message was written for. Both readers weigh that verdict
+before the branch-data one, so `pytest --cov --cov-report=json` on a coverage below 7.6 —
+missing regions and branch data at once — is told which version it needs instead of being
+sent to add `--cov-branch`, which would change nothing.
+
+### `--reuse-artifacts` no longer refuses a salvaged coverage run
+A killed suite leaves a good coverage JSON only if you combine its shards by hand, and
+the junit beside it is the killed run's own: empty, or missing. Reading that report was
+a hard exit 5, so the only way through was deleting `results_artifact` from the config,
+which gives up the crashed-worker and no-new-failures checks on every future run instead
+of on this one. Under `--reuse-artifacts` an unreadable junit is now one warning naming
+the file and what cannot be checked, and the lane scores off the coverage JSON. The lane
+lands on the no-counts path `verify` already reports. Nothing changed for a lane that
+actually ran: a report that says the run did not finish still fails it, which is the
+whole point of the check.
+
+### A lane that produced no artifact says whether its coverage shards survived
+`coverage run --parallel-mode`, which pytest-xdist turns on, writes one `.coverage.*` per
+process and combines them only at the end. A killed run therefore leaves every measurement
+it took on disk and no JSON, one directory above the artifact path the refusal names, and
+the refusal never mentioned them: one reporter found them on their own and combined them
+by hand. The message now counts the shards, says which directory holds them, and gives the
+two commands that turn them into a scored run (`coverage combine && coverage json -o
+<artifact>`, then `--reuse-artifacts`), with the `-o` target written relative to that
+directory so a lane with a `cwd` writes the JSON where crapkit reads it. Only a
+`coveragepy` lane gets the recipe. crapkit does not combine them itself: shards from
+an interrupted suite merge into a report that looks like a whole run, which is what the
+crashed-worker check exists to refuse.
+
+### New lane key `no_progress_seconds` kills a suite that stops making progress
+`timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite
+that hangs at minute three without cutting the slow ones too, and its default is no
+deadline at all: a lane that hung sat at 0% CPU with crapkit waiting on it and nothing
+watching the log. `no_progress_seconds` watches the log instead. crapkit polls while the
+lane runs and kills the whole process tree when the log has not grown for that many
+seconds, then says so in words a stall earns: `lane 'py' wrote no output for 300s (attempt
+1), so crapkit killed it`, with `[crapkit] no output for 300s; killed` at the end of the
+log. `retries` covers it the way it covers a timeout. Default `0`, no watch.
 
 ### `init` writes the venv the repo carries, not the python the shell answers with
 A library whose own `.venv` holds pytest and pytest-cov, on a machine whose PATH `python`
@@ -47,92 +164,38 @@ command with no directory of its own, said it about every repo but its own. A fi
 carrying a separator is now looked for under the lane's `cwd`, the way a named script
 already was; a bare name is still PATH's question.
 
-### The missing-pytest-cov note names which python it asked
+### `doctor` reads a lane's runner on the PATH the lane runs with
+The other half of the same check: a bare first word. `lanes.py` starts a lane with
+`{**os.environ, **lane.env}`, so a lane that ships its own toolchain through
+`[lane.env] PATH` runs a runner crapkit's own process cannot see. The check asked
+`which()` with the process environment, so such a lane came back
+`FAIL lane 'be': executable 'suite.bat' does not resolve on PATH` and `doctor` exited 1 on a
+lane that works. The lane's `cwd` had just been threaded through this check; its env was not.
+A bare first word is now looked for on the lane's own PATH when it declares one, and on the
+process PATH when it does not.
+
+### `crapkit init`'s missing-pytest-cov note names which python it asked
 The note said "this python cannot import pytest_cov" and named no interpreter. A machine
 has more than one, and the repo above has two: the note fired for the PATH `python` while
 the venv beside it already carried the plugin, so the printed fix (install a package) was
 the wrong move for that tree. The note now names the word the lane runs, the path that
 word resolves to here, and an install bound to it (`python -m pip install pytest-cov`),
 so the reader can tell whether to install anything or repoint the lane.
-### `init` puts the js lane in the workspace that owns the runner
-In a monorepo the root `package.json` names no test runner: its `test` script only chains
-the workspaces, and vitest lives in `web/` with the only `package.json` that lists it.
-`init` read the root and nothing else, so it wrote `npm run test -- --coverage` with no
-coverage directory, no junit report and no `cwd`. `doctor` then WARNed twice about the
-config `init` had just written, and the lane could not produce the artifact it was asked
-for. `init` now reads every tracked `package.json` outside `node_modules`. When the root
-names no runner and exactly one workspace does, the lane runs there: `cwd` is that
-directory, and every path in the command climbs back to the repo root
-(`--coverage.reportsDirectory=../.crapkit/cov/js`), while `artifact` stays root-relative
-because crapkit resolves it from the root. Two workspaces naming a runner is a question
-file presence cannot answer, so that case keeps the root lane it always got, and a root
-that names a runner itself is untouched.
 
-### The vitest lane still writes coverage when a test fails
-vitest writes no coverage report at all on a failed run, so a repo with one red test got
-exit 5 naming a missing `coverage-final.json`: a message about a file, for a run that was
-really about a flag. The junit report landed anyway, which made the run look half
-finished. The scaffolded vitest lane now carries `--coverage.reportOnFailure`, in the live
-lane and in the commented template alike. jest gets no such flag: it reports on a red run
-already, and exits on a flag it does not know. Setting `reportOnFailure: true` in your
-vitest config is still the other way to spell it; `init` writes the flag because it must
-not edit your vitest config to write a lane.
-
-### `init` and `doctor` agree about the root and the dot-directories
-`doctor` failed on files `init` itself had walked past: `.github/workflows/gen.py`,
-`.cursor/skills/skill.py`, a root `conftest.py`, a vendored tree. Two halves of one gap.
-Dot-directories now leave the corpus unconditionally, the way test directories already do,
-which repairs configs that are already committed and not only the ones `init` writes next;
-a dot *file* stays in. And the default excludes carry the root form beside every nested
-form, because a glob is whole-path and `**/vendor/**` needs a directory before `vendor`:
-`vendor/**`, `dist/**`, `build/**`, `node_modules/**`, `conftest.py`, `test_*.py`,
-`*_test.py`, `*.test.*`, `*.spec.*` and `*_test.go` join the set. A repo-root `vendor/`
-therefore stops becoming a scope of its own, which `doctor` then failed as a scope no lane
-measures, and which silently joined the js lane in a repo that had one, scoring vendored
-code as the team's own debt. Production code at the root, `build.sh` and `tool.js`, still
-FAILs: it is unmeasured source, and a scope may name a file.
-### New lane key `no_progress_seconds` kills a suite that stops making progress
-`timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite
-that hangs at minute three without cutting the slow ones too, and its default is no
-deadline at all: a lane that hung sat at 0% CPU with crapkit waiting on it and nothing
-watching the log. `no_progress_seconds` watches the log instead. crapkit polls while the
-lane runs and kills the whole process tree when the log has not grown for that many
-seconds, then says so in words a stall earns: `lane 'py' wrote no output for 300s (attempt
-1), so crapkit killed it`, with `[crapkit] no output for 300s; killed` at the end of the
-log. `retries` covers it the way it covers a timeout. Default `0`, no watch.
-
-### A lane that produced no artifact says whether its coverage shards survived
-`coverage run --parallel-mode`, which pytest-xdist turns on, writes one `.coverage.*` per
-process and combines them only at the end. A killed run therefore leaves every measurement
-it took on disk and no JSON, one directory above the artifact path the refusal names, and
-the refusal never mentioned them: one reporter found them on their own and combined them
-by hand. The message now counts the shards, says which directory holds them, and gives the
-two commands that turn them into a scored run (`coverage combine && coverage json -o
-<artifact>`, then `--reuse-artifacts`), with the `-o` target written relative to that
-directory so a lane with a `cwd` writes the JSON where crapkit reads it. Only a
-`coveragepy` lane gets the recipe. crapkit does not combine them itself: shards from
-an interrupted suite merge into a report that looks like a whole run, which is what the
-crashed-worker check exists to refuse.
-
-### `--reuse-artifacts` no longer refuses a salvaged coverage run
-A killed suite leaves a good coverage JSON only if you combine its shards by hand, and
-the junit beside it is the killed run's own: empty, or missing. Reading that report was
-a hard exit 5, so the only way through was deleting `results_artifact` from the config,
-which gives up the crashed-worker and no-new-failures checks on every future run instead
-of on this one. Under `--reuse-artifacts` an unreadable junit is now one warning naming
-the file and what cannot be checked, and the lane scores off the coverage JSON. The lane
-lands on the no-counts path `verify` already reports. Nothing changed for a lane that
-actually ran: a report that says the run did not finish still fails it, which is the
-whole point of the check.
-### A repo path handed to crapkit says where the repo goes
-`crapkit ~/some-repo` and `crapkit ./mini` read as "score this repo", and argparse
-answered both with the invalid-choice dump of every subcommand name, none of which
-was the route the reader wanted: the repo is a flag, `--repo`, on a subcommand. The
-word repo never appeared in the output. A first argument shaped like a path (a
-separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventory
---repo <path>` and `crapkit --help`. It is still exit 2, because it was exit 2 before,
-and shape is the only trigger: a directory named `inventory` in the cwd cannot hijack
-the subcommand, and a plain typo like `inventry` still gets argparse's usage dump.
+### The lane-failure hint from `crapkit coverage` names the environment the package has to land in
+When a lane failed because pytest rejected `--cov`, the hint read `pip install pytest-cov`
+and named no environment at all. The package has to land in the interpreter the LANE runs,
+and a repo whose lane points at its own venv gets a line that resolves to whatever venv the
+shell has active: one reporter ran it verbatim, pip reported success, and the next
+`crapkit coverage` failed identically. The hint now names the environment the suite runs in,
+and binds the install to an interpreter under the condition `crapkit init` uses: the lane
+starts with the word that runs pytest, and that word is a python. So `python -m pytest --cov`
+gets `python -m pip install pytest-cov`, while `uv run pytest --cov` and `coverage run -m
+pytest` get the environment named and no command — neither `uv` nor `coverage` has a `-m pip
+install`, and running one costs the reader a second, unrelated failure. The word is read with
+the shell that runs the command, so a quoted interpreter path stays one word instead of
+breaking at its space.
+`init`'s own note, above, is the other half.
 
 ### The full-suite refusal names the fix for a suite that cannot collect itself
 A repo whose `pytest.ini` names four testpaths, and whose whole-suite run dies during
@@ -151,203 +214,33 @@ config carries the detected lane plus one commented sibling lane per testpath, e
 with its own artifact and junit report. Detection still reads files only; nothing is
 run and nothing is imported.
 
-### `report --out` writes to an absolute path
-`crapkit report --out /somewhere/else/r.html` was refused with "report --out stays
-inside <repo>", and on Windows no repo-relative spelling reaches another drive at all,
-so the page could only be moved by copying it afterwards. The guard's own docstring
-justified itself by pointing at `--export` and `--sarif`, which enforce nothing. An
-absolute `--out` now writes where you pointed it and prints that path. A relative
-`--out` that climbs out of the tree is still refused, and the refusal now says that
-an absolute path is the way to write outside the repo.
+### `init` puts the js lane in the workspace that owns the runner
+In a monorepo the root `package.json` names no test runner: its `test` script only chains
+the workspaces, and vitest lives in `web/` with the only `package.json` that lists it.
+`init` read the root and nothing else, so it wrote `npm run test -- --coverage` with no
+coverage directory, no junit report and no `cwd`. `doctor` then WARNed twice about the
+config `init` had just written, and the lane could not produce the artifact it was asked
+for. `init` now reads every tracked `package.json` outside `node_modules`. When the root
+names no runner and exactly one workspace does, the lane runs there: `cwd` is that
+directory, and every path in the command climbs back to the repo root
+(`--coverage.reportsDirectory=../.crapkit/cov/js`), while `artifact` stays root-relative
+because crapkit resolves it from the root. Two workspaces naming a runner is a question
+file presence cannot answer, so that case keeps the root lane it always got, and a root
+that names a runner itself is untouched.
 
-### A lane that writes nothing no longer scores the previous run's artifact
-crapkit asked only whether the artifact file existed, never whether the run that just
-finished wrote it. So a lane failed loud exactly once, on the first run against an empty
-`.crapkit/`, and went quietly wrong on every run after: the suite dies in collection, last
-run's coverage JSON is still sitting there, and crapkit scores it as fresh, stamps it with
-the current commit and hands `--reuse-unchanged` a reason to keep trusting it. A vitest
-lane without `reportOnFailure` and a pytest lane hitting a collection error both land here.
-A lane now records the modification time of every file it declares before each attempt and
-requires it to move, so the refusal fires on the second run the way it did on the first. A
-leftover file gets its own wording — `wrote no artifact this run — the .crapkit/cov/py.json
-on disk predates it and is the previous run's` — because the old sentence, about a path
-that holds a report, reads as crapkit failing to see the file. Where the artifact is missing
-and the leftover is some other declared file, the artifact path still leads: `produced no
-artifact at .crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the previous
-run's`. `results_artifact` is held to
-the same rule, so a killed suite's junit cannot feed the test-count and no-new-failures
-checks last run's numbers. The check is the mtime and not the bytes, so a runner that
-rewrites an identical report stays green, and `--reuse-artifacts` is untouched.
-
-### The container guard fires where a suite launches, not where one is read
-Inside a container, a `coveragepy` lane was refused even under `--reuse-artifacts`, where
-crapkit runs no suite at all: the guard sat one line above the branch that decides whether
-to launch anything. The message it printed — the python suite is host-only, container runs
-OOM — described something the lane was not about to do, and the OOM it names cannot happen
-while parsing a file that is already on disk. crapkit ships a Dockerfile and its own action
-runs `crapkit verify --json --reuse-artifacts`, so reading host-built artifacts in a
-container is a shape users reach for. The guard now sits on the launch path, and
-`container_ok` still governs a lane that really runs.
-
-### The pytest-cov refusal names the environment the package has to land in
-When a lane failed because pytest rejected `--cov`, the hint read `pip install pytest-cov`
-and named no environment at all. The package has to land in the interpreter the LANE runs,
-and a repo whose lane points at its own venv gets a line that resolves to whatever venv the
-shell has active: one reporter ran it verbatim, pip reported success, and the next
-`crapkit coverage` failed identically. The hint now names the environment the suite runs in,
-and binds the install to an interpreter under the condition `crapkit init` uses: the lane
-starts with the word that runs pytest, and that word is a python. So `python -m pytest --cov`
-gets `python -m pip install pytest-cov`, while `uv run pytest --cov` and `coverage run -m
-pytest` get the environment named and no command — neither `uv` nor `coverage` has a `-m pip
-install`, and running one costs the reader a second, unrelated failure. The word is read with
-the shell that runs the command, so a quoted interpreter path stays one word instead of
-breaking at its space.
-
-### A coverage.py report without branch data scores instead of failing the lane
-`pytest --cov --cov-report=json` without `--cov-branch` is the default shape of an existing
-CI artifact, and it failed the whole lane: nothing scored, exit 5, on a report holding
-per-function statement counts crapkit's own model already knows how to divide. Every
-function falls back to statement coverage when it holds no branches, and that fallback runs
-on every normal report, so the guard was blocking arithmetic crapkit performs all day. It
-is now one stderr warning naming the lane and saying the coverage term is statement-based
-for this artifact. A report carrying neither branch nor statement data is still refused,
-because there is nothing to divide by and every function in it would score fully covered.
-
-### One file with no function regions no longer throws the whole report away
-coverage.py writes the per-file `functions` key once per code-region kind that file's own
-reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
-template coverage — loses the key while every `.py` file in the same report keeps it. That
-single entry failed the lane, the run scored nothing, and the files that were fine were
-never mentioned. Those files are now skipped and named in one warning, and the rest of the
-report is scored. A report where NO file carries regions is still exit 5, which is the
-"coverage is too old" case the message was written for. Both readers weigh that verdict
-before the branch-data one, so `pytest --cov --cov-report=json` on a coverage below 7.6 —
-missing regions and branch data at once — is told which version it needs instead of being
-sent to add `--cov-branch`, which would change nothing.
-### `next-item --top 0` refuses instead of handing out an item
-`crapkit next-item --top 0` printed an item and, with `--claim`, took a claim on it that
-hid that function from every other session. `--top -1` did the same. The slice was
-written `ranked[:max(top, 1)]`, so a 0 widened back to one, and the emit branch tested
-`top > 1`, so anything below it fell through to the single-item shape. An agent
-templating `--top {budget}` that computed 0 got work it had not asked for, locked. Its
-sibling `crapkit worklist --top 0` already exited 3 naming the rule. `next-item` now
-answers the same way: `next-item --top must be >= 1, got 0`, exit 3, no claim taken.
-
-### `duplication --top 0` no longer prints a clean bill of health
-`crapkit duplication --top 0` printed "no near-duplicate functions found" and exited 0
-over a tree full of duplicate pairs, which is a false all-clear and the thing a CI job
-reads. `--top -1` sliced from the tail and dropped the last pair with nothing said.
-`coupling --top` sat behind the same unguarded slice. Both commands now refuse anything
-below 1 at the entry, before they open the store: `duplication --top must be >= 1, got
-0`, exit 3.
-
-### `crapkit ratchet` no longer demands a file no action wants
-Bare `crapkit ratchet` exited 2 with "the following arguments are required: action,
-FILE". FILE is not required: `ratchet report`, `ratchet seed` and `ratchet prune` all run
-with no file and exit 0. argparse calls a `nargs="*"` positional required when it carries
-no default, so the message sent the reader hunting for an argument three of the five
-actions refuse to use. The positional now defaults to the empty list, and `cmd_ratchet`
-keeps the per-action arity check that already told `merge` it wants three paths and
-`move` two.
-
-### `crapkit help` and `crapkit help TOPIC`
-`crapkit help`, the habit git, npm and docker all answer to, fell into the same
-invalid-choice branch as a typo: exit 2 and a brace dump of 25 subcommand names, which
-never says that `--help` is the way to any one of them. `crapkit help` now prints the
-command list and `crapkit help coverage` prints that subcommand's own help, both exit 0.
-A TOPIC naming no subcommand exits 3 and says so.
-
-### One spelling for a file argument, `./` and absolute included
-`crapkit test-scoped ./src/a.py` answered `./src/a.py belongs to no declared scope`,
-which was false: the scope declaring it is in the same crapkit.toml that `src/a.py` and
-its backslash spelling both route through. Worse, `crapkit rescore --gate` handed an absolute path
-scored nothing and exited 0, a gate PASS on the same over-ceiling function that exits 6
-spelled relative, which is what a wrapper or an agent hands crapkit when it already holds
-the full path. Three commands each collapsed backslashes and did nothing else, so
-`owning_scope`, which matches on a prefix, saw a path sharing none. `test-scoped`,
-`rescore` and `mutate --files` now put every argument through one normalizer: backslashes
-collapse, a `./` prefix goes, and an absolute path is resolved against the repo root. A
-path that resolves outside the root is refused with `is outside the repo at <root>`
-rather than matched against nothing.
-
-### `--export`, `--sarif` and `--emit-baseline` create the directory they write into
-`crapkit inventory --export out/new/inv.tsv` raised a Python traceback,
-`FileNotFoundError`, and exit 1, a code crapkit's exit table does not define, when
-`out/new/` did not exist yet. `report --out` created it. For `coverage --sarif` the crash
-landed after the run was already committed to the store, so a run that had succeeded read
-as an unrecoverable failure; `verify --emit-baseline` crashed after the lanes had run.
-All three flags now go through the same rule `report --out` follows: the parent directory
-is created, a relative path stays repo-relative and is refused when it climbs out of the
-tree, and an absolute path writes where you named it. `report --out` reads that rule from
-the same helper, so the four writers cannot drift apart again.
-
-### A bad line in the ratchet file no longer costs the whole answer
-A hand-edited `crapkit-ratchet.tsv` with one two-field line made `crapkit explain` and
-`crapkit brief` die on an unhandled `ValueError` with a Python stack trace, and made
-`rescore --gate` answer 1 with that trace instead of its own exit code. A three-field
-line whose mark is empty or is not a number — the trailing tab a hand edit leaves — did
-the same. Both explain and brief are also MCP tools, so an agent got the traceback. The
-mark is one optional field of what those commands answer; the trajectory, the source, the
-dark lines and the churn were all available. The read-only callers now skip either shape
-and name it on stderr, which can only take a ceiling away from a gate, never raise one.
-Every caller
-that REWRITES the file keeps the strict refusal, the merge driver included, because a
-skipped line there would delete a mark the repo signed for, and that refusal now arrives
-as `unreadable ratchet file <name>` rather than a stack trace.
-### One unimportable test file no longer takes the whole pytest lane down
-A repo with a renamed module, a missing optional extra or a stale editable install got
-`coverage exit=5` and `every lane failed (1 of 1)` from a suite whose other test files
-collected fine. pytest raises `Interrupted` at the end of collection when any module
-fails to import, so pytest-cov's session finish never runs and the lane writes no
-coverage JSON at all; the junit lands anyway, which makes the run read as half finished
-rather than as a flag. `doctor` said "no problems found". The lane `init` writes now
-carries `--continue-on-collection-errors`, and so does the commented template beside it,
-which is pytest's half of the `--coverage.reportOnFailure` the vitest lane already got.
-Nothing is hidden: the uncollected file's tests stay in the junit as errors. The vitest
-and jest lanes are untouched.
-
-### The Pester exclude example matches a test file at the repo root
-docs/configuration.md told PowerShell users that `globs = ["**/*.Tests.ps1"]` excludes
-their Pester suite. Globs match the whole path, so that pattern needs a directory in
-front of the file name and never claims a repo-root `Deploy.Tests.ps1` — and PowerShell
-repos keep scripts at the root more than most. The file stayed in the corpus, `doctor`
-FAILed it as a tracked file no scope claims, and the FAIL pointed the reader back at the
-page that gave the glob. The example now ships both forms with the reason, the way the
-`**/dist/**` advice on the same page already does.
-
-### The override receipt is spelled for the shell you are in
-`hook-precommit` granted an override and printed `unset CRAPKIT_OVERRIDE_REASON`.
-`unset` is a POSIX builtin: on Windows PowerShell answered
-`CommandNotFoundException`, the variable stayed set, and the next commit was granted a
-full override for a brand new violating function with nobody typing a reason. The
-receipt now names `$env:CRAPKIT_OVERRIDE_REASON = $null` and `set
-CRAPKIT_OVERRIDE_REASON=` on Windows and keeps `unset` everywhere else, and it adds the
-line it was missing: a variable a CI job or a launcher exported is cleared where it was
-set, not by any command in this shell.
-
-### A scope path spelled `./src` claims the files under `src`
-`paths = ["./src"]` claimed nothing. The declared string is hoisted straight into a
-match prefix, so the matcher looked for `./src/...` while `git ls-files` emits
-`src/a.py`: the scope scored zero files, every file under it became unclaimed, and
-`doctor` printed two FAILs that named neither the dot — it blamed the empty scope, then
-blamed the file for having no scope, which sends the reader to declare a second scope
-for a path the first one already owned. Outside `doctor` it was quieter still:
-`crapkit inventory` reported `0 functions in 0 files` and exited 0. Backslashes were
-already collapsed one layer down, which made the tool look like it normalized paths.
-Scope paths are now normalized where they are parsed: a leading `./`, a leading or
-trailing `/`, and `\` as a separator. A path holding `..` or a drive letter is a config
-error naming the scope, because no tracked file can ever match it.
-
-### `mutate` refuses to score a suite that never ran
-`crapkit mutate` read any nonzero exit from `mutation_command` as a killed mutant, so a
-command that cannot run here killed all of them and printed a 100% mutation score for a
-suite that never imported the code under test. The documented command is
-`python -m pytest -q -x`, a bare name, so any machine whose PATH `python` is not the
-interpreter holding pytest — a hook, a cron, cmd.exe, the Windows Store stub that exits
-9009 — got a perfect score. The command now runs once against the unmutated tree before
-the first mutant, in the worker's own checkout when the run is parallel. A baseline that
-does not exit 0 ends the command (exit 5) naming the runner word, its exit code and the
-score it would otherwise have printed, instead of scoring anything.
+### `init` and `doctor` agree about the root and the dot-directories
+`doctor` failed on files `init` itself had walked past: `.github/workflows/gen.py`,
+`.cursor/skills/skill.py`, a root `conftest.py`, a vendored tree. Two halves of one gap.
+Dot-directories now leave the corpus unconditionally, the way test directories already do,
+which repairs configs that are already committed and not only the ones `init` writes next;
+a dot *file* stays in. And the default excludes carry the root form beside every nested
+form, because a glob is whole-path and `**/vendor/**` needs a directory before `vendor`:
+`vendor/**`, `dist/**`, `build/**`, `node_modules/**`, `conftest.py`, `test_*.py`,
+`*_test.py`, `*.test.*`, `*.spec.*` and `*_test.go` join the set. A repo-root `vendor/`
+therefore stops becoming a scope of its own, which `doctor` then failed as a scope no lane
+measures, and which silently joined the js lane in a repo that had one, scoring vendored
+code as the team's own debt. Production code at the root, `build.sh` and `tool.js`, still
+FAILs: it is unmeasured source, and a scope may name a file.
 
 ### `doctor --plugin-root` checks the crapkit the hook will actually spawn
 The one command written to check a plugin against, in `plugin.json`'s own words, the CLI it
@@ -362,14 +255,131 @@ cannot start and the MCP server never came up. The check now resolves `crapkit` 
 compares the manifest against that executable's own `--version`, and names the executable in
 the line. No `crapkit` on PATH is a FAIL naming both files that spawn it.
 
-### `doctor` reads a lane's runner on the PATH the lane runs with
-`lanes.py` starts a lane with `{**os.environ, **lane.env}`, so a lane that ships its own
-toolchain through `[lane.env] PATH` runs a runner crapkit's own process cannot see. The
-check asked `which()` with the process environment, so such a lane came back
-`FAIL lane 'be': executable 'suite.bat' does not resolve on PATH` and `doctor` exited 1 on a
-lane that works. The lane's `cwd` was already threaded through this check; its env was not.
-A bare first word is now looked for on the lane's own PATH when it declares one, and on the
-process PATH when it does not.
+### A repo path handed to crapkit says where the repo goes
+`crapkit ~/some-repo` and `crapkit ./mini` read as "score this repo", and argparse
+answered both with the invalid-choice dump of every subcommand name, none of which
+was the route the reader wanted: the repo is a flag, `--repo`, on a subcommand. The
+word repo never appeared in the output. A first argument shaped like a path (a
+separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventory
+--repo <path>` and `crapkit --help`. It is still exit 2, because it was exit 2 before,
+and shape is the only trigger: a directory named `inventory` in the cwd cannot hijack
+the subcommand, and a plain typo like `inventry` still gets argparse's usage dump.
+
+### `crapkit help` answers the way git, npm and docker do
+`crapkit help`, the habit git, npm and docker all answer to, fell into the same
+invalid-choice branch as a typo: exit 2 and a brace dump of 25 subcommand names, which
+never says that `--help` is the way to any one of them. `crapkit help` now prints the
+command list and `crapkit help coverage` prints that subcommand's own help, both exit 0.
+A TOPIC naming no subcommand exits 3 and says so.
+
+### `crapkit ratchet` no longer demands a file no action wants
+Bare `crapkit ratchet` exited 2 with "the following arguments are required: action,
+FILE". FILE is not required: `ratchet report`, `ratchet seed` and `ratchet prune` all run
+with no file and exit 0. argparse calls a `nargs="*"` positional required when it carries
+no default, so the message sent the reader hunting for an argument three of the five
+actions refuse to use. The positional now defaults to the empty list, and `cmd_ratchet`
+keeps the per-action arity check that already told `merge` it wants three paths and
+`move` two.
+
+### One spelling for a file argument, `./` and absolute included
+`crapkit test-scoped ./src/a.py` answered `./src/a.py belongs to no declared scope`,
+which was false: the scope declaring it is in the same crapkit.toml that `src/a.py` and
+its backslash spelling both route through. Worse, `crapkit rescore --gate` handed an absolute path
+scored nothing and exited 0, a gate PASS on the same over-ceiling function that exits 6
+spelled relative, which is what a wrapper or an agent hands crapkit when it already holds
+the full path. Three commands each collapsed backslashes and did nothing else, so
+`owning_scope`, which matches on a prefix, saw a path sharing none. `test-scoped`,
+`rescore` and `mutate --files` now put every argument through one normalizer: backslashes
+collapse, a `./` prefix goes, and an absolute path is resolved against the repo root. A
+path that resolves outside the root is refused with `is outside the repo at <root>`
+rather than matched against nothing.
+
+### `report --out` writes to an absolute path
+`crapkit report --out /somewhere/else/r.html` was refused with "report --out stays
+inside <repo>", and on Windows no repo-relative spelling reaches another drive at all,
+so the page could only be moved by copying it afterwards. The guard's own docstring
+justified itself by pointing at `--export` and `--sarif`, which enforce nothing. An
+absolute `--out` now writes where you pointed it and prints that path. A relative
+`--out` that climbs out of the tree is still refused, and the refusal now says that
+an absolute path is the way to write outside the repo.
+
+### `--export`, `--sarif` and `--emit-baseline` create the directory they write into
+`crapkit inventory --export out/new/inv.tsv` raised a Python traceback,
+`FileNotFoundError`, and exit 1, a code crapkit's exit table does not define, when
+`out/new/` did not exist yet. `report --out` created it. For `coverage --sarif` the crash
+landed after the run was already committed to the store, so a run that had succeeded read
+as an unrecoverable failure; `verify --emit-baseline` crashed after the lanes had run.
+All three flags now go through the same rule `report --out` follows: the parent directory
+is created, a relative path stays repo-relative and is refused when it climbs out of the
+tree, and an absolute path writes where you named it. `report --out` reads that rule from
+the same helper, so the four writers cannot drift apart again.
+
+### The container guard fires where a suite launches, not where one is read
+Inside a container, a `coveragepy` lane was refused even under `--reuse-artifacts`, where
+crapkit runs no suite at all: the guard sat one line above the branch that decides whether
+to launch anything. The message it printed — the python suite is host-only, container runs
+OOM — described something the lane was not about to do, and the OOM it names cannot happen
+while parsing a file that is already on disk. crapkit ships a Dockerfile and its own action
+runs `crapkit verify --json --reuse-artifacts`, so reading host-built artifacts in a
+container is a shape users reach for. The guard now sits on the launch path, and
+`container_ok` still governs a lane that really runs.
+
+### Every next step and refusal names the crapkit that is running
+`init` closed with "next: run `crapkit coverage`", and every refusal behind it prescribed
+the same bare name. That name is the console script, and two documented ways of running
+crapkit put no such name on PATH: `python -m crapkit` from a source checkout, which the
+README prints, and `exec <venv>/Scripts/python -m crapkit hook-precommit` from a git hook,
+spelled that way because git runs hooks outside the activated venv. A reader in either one
+copied the line the program had just printed and their shell exited 127. The process
+already knew: `sys.argv[0]` is the console script when that started it and the package's
+`__main__.py` when `python -m` did. 32 messages now read it: 28 across nine of the ten CLI
+families (`claude-hook` prints none), the MCP server's unmeasured-directory result, the
+ratchet's metric-version refusal, the stale-lane note and `report`'s row-cap refusal. The
+line says `crapkit coverage` under the console script and `<the interpreter running this
+process> -m crapkit coverage` otherwise, quoted when that path holds a space
+(`C:\Program Files\…` reaches cmd.exe as three arguments unquoted). `sys.executable`,
+never a bare `python`: on Windows that resolves to the WindowsApps stub, a venv holding no
+crapkit, or the base interpreter a venv wraps. Eleven strings keep the console-script
+spelling on purpose, because something other than the printing process reads them: the
+brief packet's `commands.gate`, `commands.verify` and `commands.refresh`
+(docs/agent-json.md pins them), the two crapkit.toml template comments `init` writes into
+a consumer's repo, the `--claim` help text, the `doctor` WARN about a scope with no
+`[crapkit.scoped_tests]` entry, the hook's stderr note about marked functions, and the
+three commands the HTML report embeds (two `crapkit coverage`, one
+`crapkit explain PATH NAME`), because the page travels to readers on other machines.
+
+### A bad line in the ratchet file no longer costs the whole answer
+A hand-edited `crapkit-ratchet.tsv` with one two-field line made `crapkit explain` and
+`crapkit brief` die on an unhandled `ValueError` with a Python stack trace, and made
+`rescore --gate` answer 1 with that trace instead of its own exit code. A three-field
+line whose mark is empty or is not a number — the trailing tab a hand edit leaves — did
+the same. Both explain and brief are also MCP tools, so an agent got the traceback. The
+mark is one optional field of what those commands answer; the trajectory, the source, the
+dark lines and the churn were all available. The read-only callers now skip either shape
+and name it on stderr, which can only take a ceiling away from a gate, never raise one.
+Every caller
+that REWRITES the file keeps the strict refusal, the merge driver included, because a
+skipped line there would delete a mark the repo signed for, and that refusal now arrives
+as `unreadable ratchet file <name>` rather than a stack trace.
+
+### The override receipt is spelled for the shell you are in
+`hook-precommit` granted an override and printed `unset CRAPKIT_OVERRIDE_REASON`.
+`unset` is a POSIX builtin: on Windows PowerShell answered
+`CommandNotFoundException`, the variable stayed set, and the next commit was granted a
+full override for a brand new violating function with nobody typing a reason. The
+receipt now names `$env:CRAPKIT_OVERRIDE_REASON = $null` and `set
+CRAPKIT_OVERRIDE_REASON=` on Windows and keeps `unset` everywhere else, and it adds the
+line it was missing: a variable a CI job or a launcher exported is cleared where it was
+set, not by any command in this shell.
+
+### The Pester exclude example matches a test file at the repo root
+docs/configuration.md told PowerShell users that `globs = ["**/*.Tests.ps1"]` excludes
+their Pester suite. Globs match the whole path, so that pattern needs a directory in
+front of the file name and never claims a repo-root `Deploy.Tests.ps1` — and PowerShell
+repos keep scripts at the root more than most. The file stayed in the corpus, `doctor`
+FAILed it as a tracked file no scope claims, and the FAIL pointed the reader back at the
+page that gave the glob. The example now ships both forms with the reason, the way the
+`**/dist/**` advice on the same page already does.
 
 ## 0.4.11 — 2026-09-01
 
