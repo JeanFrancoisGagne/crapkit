@@ -196,3 +196,18 @@ def test_coupling_tolerates_a_fileless_commit():
     from crapkit.coupling import change_coupling
     log = "\x01alice\x021000\n\n\x01bob\x022000\nsrc/a.ts\nsrc/b.ts\n"
     assert change_coupling(log, min_support=1, min_confidence=0.5) != []
+
+
+# --- a repo path handed to the CLI where a subcommand belongs -----------------
+
+def test_a_repo_path_as_the_first_argument_names_the_repo_flag(tmp_path: Path):
+    """`crapkit ./mini` on a real wired repo. It stays exit 2, because the repo
+    is a flag on a subcommand and never a bare positional, but the message now
+    says so instead of dumping 24 choices with the word repo in none of them."""
+    (tmp_path / "mini").mkdir()
+
+    done = run_cli(tmp_path, "./mini")
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert "--repo" in done.stderr
+    assert "invalid choice" not in done.stderr

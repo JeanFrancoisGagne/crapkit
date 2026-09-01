@@ -259,8 +259,9 @@ def build_parser() -> argparse.ArgumentParser:
                                         "the per-scope grades, the trend, and a staleness banner")
     rep.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
     rep.add_argument("--out", default=".crapkit/report.html", metavar="PATH",
-                     help="where to write the page, relative to the repo "
-                          "(default: .crapkit/report.html); the path is printed on stdout")
+                     help="where to write the page: repo-relative, or an absolute path "
+                          "you name (default: .crapkit/report.html); the path is "
+                          "printed on stdout")
     rep.set_defaults(func=_Handler("reports", "cmd_report"))
 
     tsc = sub.add_parser("test-scoped", help="run the configured isolated test command for the files' scope")
@@ -429,10 +430,44 @@ def _unknown_claude_command(argv: list[str] | None) -> bool:
     return args[0] not in _CLAUDE_SUBCOMMANDS
 
 
+def _looks_like_a_path(arg: str) -> bool:
+    """Shapes no subcommand name can take. Existence is deliberately not asked:
+    `Path(arg).exists()` would let a directory named `inventory` in the cwd
+    hijack a real subcommand."""
+    return arg in (".", "..") or arg.startswith("~") or "/" in arg or os.sep in arg
+
+
+def _path_first_arg(argv: list[str] | None) -> str | None:
+    """A first argument shaped like a repository path, or None.
+
+    Answered before `parse_args`, like the claude-* guard above it. `crapkit
+    ./mini` reads as "score this repo", and argparse answers it with the
+    invalid-choice dump of every subcommand name without ever printing the
+    word repo, which is where the path goes: a flag on a subcommand.
+    """
+    args = sys.argv[1:] if argv is None else argv
+    if args and _looks_like_a_path(args[0]):
+        return args[0]
+    return None
+
+
+def _refuse_path_argument(arg: str) -> int:
+    """Same exit code argparse already gave this argv, with the route the dump
+    left out. Nothing that used to work changes: every argv reaching here was a
+    usage error before."""
+    print(f"crapkit: {arg!r} is not a subcommand; the repo is a flag on one, "
+          f"e.g. `crapkit inventory --repo {arg}` "
+          f"(`crapkit --help` lists the subcommands)", file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     _reconfigure_streams()
     if _unknown_claude_command(argv):
         return 0
+    named_path = _path_first_arg(argv)
+    if named_path is not None:
+        return _refuse_path_argument(named_path)
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

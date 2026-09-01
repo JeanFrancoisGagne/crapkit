@@ -81,8 +81,10 @@ def test_the_page_is_written_with_lf_on_every_host(tmp_path):
 
 
 def test_the_writer_refuses_a_path_outside_the_repo(tmp_path):
-    """`--out` is repo-relative like `--export` and `--sarif`. An absolute path
-    or a climb out of the tree writes somewhere nobody asked for."""
+    """A relative `--out` is repo-relative, so one that climbs out of the tree
+    writes somewhere nobody asked for and is refused. Writing outside the repo
+    is what an absolute path is for, pinned below by
+    test_an_absolute_out_writes_where_the_reader_pointed."""
     from crapkit.cli.reports import _write_report
 
     with pytest.raises(ConfigError):
@@ -159,3 +161,41 @@ def test_the_joined_note_load_uncovered_reports_is_built_from_the_same_states(tm
 
     assert note == "; ".join(n for _, n in lane_states(tmp_path, cfg, _CleanGit()) if n)
     assert "lane 'a'" in note and "lane 'b'" in note
+
+
+# --- an --out the reader named in full ---------------------------------------
+
+def test_an_absolute_out_writes_where_the_reader_pointed(tmp_path):
+    """`--export` and `--sarif` have always written an absolute path. `--out`
+    refused one, so a page destined for a sibling directory could only be
+    reached by copying it afterwards."""
+    from crapkit.cli.reports import _write_report
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = tmp_path / "sibling" / "r.html"
+
+    written = _write_report(repo, str(target), "<html>out</html>")
+
+    assert written == target
+    assert target.read_text(encoding="utf-8") == "<html>out</html>"
+
+
+def test_a_rooted_out_with_no_drive_letter_is_written_too(tmp_path, monkeypatch):
+    """On Windows `Path('/tmp/r.html').is_absolute()` is False, because the
+    drive is missing. That spelling took the repo-relative branch, joined to
+    the repo root, failed the containment test and was refused with "pass an
+    absolute path to write outside it" — the advice the reader had just
+    followed. A rooted path names the current drive's root, never a place in
+    the repo, so it is written where it points."""
+    from crapkit.cli.reports import _write_report
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = tmp_path / "sibling" / "r.html"
+    monkeypatch.chdir(tmp_path)
+
+    written = _write_report(repo, str(target)[len(target.drive):], "<html>rooted</html>")
+
+    assert Path(written).resolve() == target
+    assert target.read_text(encoding="utf-8") == "<html>rooted</html>"

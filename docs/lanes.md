@@ -80,7 +80,7 @@ Single quotes on Windows, the most common way to trip the guard:
 ```
 # command = "python -m pytest -m 'not live and not perf' --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
 $ crapkit doctor
-crapkit: lane 'py': positional argument 'live' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)
+crapkit: lane 'py': positional argument 'live' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes); a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
 EXIT=3
 ```
 
@@ -96,7 +96,7 @@ too:
 ```
 # command = "python -m pytest --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json && python -m pytest calc/hot.py"
 $ crapkit doctor
-crapkit: lane 'py': positional argument 'calc/hot.py' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+crapkit: lane 'py': positional argument 'calc/hot.py' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
 EXIT=3
 ```
 
@@ -107,7 +107,7 @@ On Windows a `;` starts nothing, so what follows it is pytest's:
 ```
 # command = "python -m pytest --cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json; echo done"
 $ crapkit doctor
-crapkit: lane 'py': positional argument 'echo' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+crapkit: lane 'py': positional argument 'echo' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
 EXIT=3
 ```
 
@@ -621,12 +621,51 @@ crapkit's own lane uses the module form because of it.
 A lane whose `parser` is `coveragepy` refuses a positional argument in a pytest command:
 
 ```
-crapkit: lane 'api': positional argument 'api' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+crapkit: lane 'api': positional argument 'api' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
 ```
 
 Subset coverage under a suite with cross-file pollution is run-order dependent, so the
-number moves for reasons that have nothing to do with your code. If your suite really is
-scoped and isolated, opt out explicitly with `full_suite = false` on the lane.
+number moves for reasons that have nothing to do with your code. Two situations get past
+the refusal, and they take different edits.
+
+**The suite really is scoped and isolated.** Opt out explicitly with `full_suite = false`
+on the lane.
+
+**The testpaths cannot be collected together.** A repo whose `pytest.ini` names four
+testpaths and whose whole-suite run dies during collection has no full-suite command to
+write at all. The reported case is a `conftest.py` two testpaths both import, which under
+`--import-mode=importlib` registers the same plugin module twice and ends the run with
+`ValueError: Plugin already registered under a different name` before one test runs.
+Setting `full_suite = false` on a single narrowed lane clears the refusal and measures one
+testpath; the other three go dark, their functions score `no-lane`, and nothing says so.
+
+Declare one lane per collectable testpath instead, each with `full_suite = false` and its
+own artifact:
+
+```toml
+[[lane]]
+name = "py-conform"
+command = "python -m pytest conform --cov --cov-branch --cov-report=json:.crapkit/cov/py-conform.json --junitxml=.crapkit/cov/junit-py-conform.xml"
+artifact = ".crapkit/cov/py-conform.json"
+results_artifact = ".crapkit/cov/junit-py-conform.xml"
+parser = "coveragepy"
+full_suite = false
+scopes = ["impl"]
+
+[[lane]]
+name = "py-impl"
+command = "python -m pytest impl --cov --cov-branch --cov-report=json:.crapkit/cov/py-impl.json --junitxml=.crapkit/cov/junit-py-impl.xml"
+artifact = ".crapkit/cov/py-impl.json"
+results_artifact = ".crapkit/cov/junit-py-impl.xml"
+parser = "coveragepy"
+full_suite = false
+scopes = ["impl"]
+```
+
+Several lanes may name the same scope: the parts table at the top of this page forbids
+two lanes sharing an `artifact` path, and nothing else. Every testpath stays measured,
+and each lane fails on its own. `crapkit init` writes this block for you, commented out,
+when the repo's pytest config names more than one testpath.
 
 A flag's value is not a positional. `-n 8`, `-o timeout=300`, `-p no:randomly` and
 `--deselect tests/test_x.py::test_slow` all pass: the guard knows the pytest options that
@@ -640,7 +679,7 @@ does not know, a bare word is that flag's value too — only a path or a node id
 
 ```
 $ crapkit doctor       # command = "python -m pytest -q pylib/unit"
-crapkit: lane 'py': positional argument 'pylib/unit' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately
+crapkit: lane 'py': positional argument 'pylib/unit' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
 ```
 
 When the refused token really was a value, the attached form is the one-edit fix: dropping

@@ -152,6 +152,16 @@ def _present_markers(root: Path) -> frozenset[str]:
     return frozenset(name for name in PYTEST_MARKERS if (root / name).is_file())
 
 
+def _marker_texts(root: Path) -> dict[str, str]:
+    """The pytest config files this repo carries, by name. Presence of one picks
+    the lane; `testpaths` inside it says whether one lane can measure them all."""
+    from ..scaffold import PYTEST_MARKERS
+
+    return {name: (root / name).read_text(encoding="utf-8", errors="replace")
+            for name in PYTEST_MARKERS if (root / name).is_file()}
+
+
+
 def _package_json(root: Path) -> dict[str, str]:
     """Every tracked package.json's text, keyed by the directory holding it and
     "" for the root one.
@@ -170,7 +180,6 @@ def _package_json(root: Path) -> dict[str, str]:
         if (root / path).is_file():
             found[directory] = (root / path).read_text(encoding="utf-8")
     return found
-
 
 def _next_step(scopes: dict, lanes: tuple) -> str:
     """What to run next, which is not the same sentence in all three cases.
@@ -490,7 +499,8 @@ def _extend_gitignore(root: Path, lanes: tuple) -> None:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    from ..scaffold import detect_lanes, live_lanes, sniff_scopes, starter_toml
+    from ..scaffold import (detect_lanes, live_lanes, pytest_testpaths, sniff_scopes,
+                            starter_toml)
 
     root = Path(args.repo).resolve()
     toml_path = root / "crapkit.toml"
@@ -506,7 +516,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     # uncomments.
     interpreter = _interpreter(root, tuple(scopes))
     lanes = detect_lanes(_present_markers(root), _package_json(root), interpreter=interpreter)
-    text = starter_toml(scopes, lanes, interpreter=interpreter)
+    text = starter_toml(scopes, lanes, interpreter=interpreter,
+                        testpaths=pytest_testpaths(_marker_texts(root)))
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes)

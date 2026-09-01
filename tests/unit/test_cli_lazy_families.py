@@ -165,3 +165,31 @@ def test_dir_still_lists_every_name_it_listed():
 def test_a_name_no_family_owns_is_still_an_attribute_error():
     with pytest.raises(AttributeError):
         crapkit.cli.cmd_not_a_command
+
+
+# --- a path where a subcommand belongs ---------------------------------------
+
+@pytest.mark.parametrize("arg", ["~/some-repo", "./mini", "/abs/path", ".."])
+def test_a_path_as_the_first_argument_names_the_repo_flag(arg, capsys):
+    """`crapkit ./mini` reads as "score this repo". argparse answered it with the
+    invalid-choice dump of every subcommand and never printed the word repo,
+    which is where the path goes."""
+    from crapkit.cli import main
+
+    code = main([arg])
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "--repo" in err
+    assert "invalid choice" not in err
+
+
+def test_a_misspelled_subcommand_is_still_argparses_error():
+    """Shape is the whole trigger, so a typo carrying no path separator still
+    gets the usage dump a human is there to read."""
+    from crapkit.cli import main
+
+    with pytest.raises(SystemExit) as exit_code:
+        main(["inventry"])
+
+    assert exit_code.value.code == 2

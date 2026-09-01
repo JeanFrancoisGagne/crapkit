@@ -181,6 +181,85 @@ def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
                     _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES, _PY_RESULTS)
 
 
+# Where pytest keeps `testpaths`, and the order it reads those files in: the
+# first file carrying a pytest section ends the search, whether or not that
+# section names testpaths, because pytest picks one inifile and never consults a
+# lower-ranked one. A repo holding all three is read the way pytest reads it.
+# This is the same presence-and-config signal that picks the lane itself — the
+# file is parsed, never executed and never imported.
+_TESTPATHS_SECTION = {"pytest.ini": "pytest", "setup.cfg": "tool:pytest"}
+_TESTPATHS_ORDER = ("pytest.ini", "pyproject.toml", "setup.cfg")
+
+
+def _ini_testpaths(text: str, section: str) -> tuple[str, ...] | None:
+    """`testpaths` out of an ini file, or None when the file carries no pytest
+    section for the search to stop at. A file that will not parse carries
+    nothing: init is describing the repo, not judging its pytest config."""
+    import configparser
+
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        return None
+    if not parser.has_section(section):
+        return None
+    return tuple(parser.get(section, "testpaths", fallback="").split())
+
+
+def _toml_value(data, *keys: str):
+    """One key path through nested tables, or None the moment it leaves them."""
+    for key in keys:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def _toml_testpaths(text: str) -> tuple[str, ...] | None:
+    """None unless `[tool.pytest.ini_options]` is there, which is the table
+    pytest itself looks for before it reads a pyproject as its inifile."""
+    import tomllib
+
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None
+    section = _toml_value(data, "tool", "pytest", "ini_options")
+    if not isinstance(section, dict):
+        return None
+    found = section.get("testpaths")
+    return tuple(str(path) for path in found) if isinstance(found, list) else ()
+
+
+def _testpaths_of(name: str, text: str) -> tuple[str, ...] | None:
+    if name == "pyproject.toml":
+        return _toml_testpaths(text)
+    return _ini_testpaths(text, _TESTPATHS_SECTION[name])
+
+
+def pytest_testpaths(marker_texts: dict[str, str]) -> tuple[str, ...]:
+    """The paths a bare `pytest` in this repo collects, in the order declared.
+
+    More than one of them is the shape that can defeat the full-suite lane: a
+    conftest two testpaths both import registers twice under
+    `--import-mode=importlib` and the whole run dies during collection, with no
+    full-suite command left to write. init cannot know whether that happens
+    without running the suite, so it reads the count and writes the fallback
+    commented out.
+
+    The first file carrying a pytest section answers, empty section included:
+    that is the file pytest reads, and a `[pytest]` naming no testpaths means a
+    bare `pytest` collects from the rootdir. Falling through to the next file
+    would name paths the repo's own run never collects.
+    """
+    for name in _TESTPATHS_ORDER:
+        found = _testpaths_of(name, marker_texts.get(name, ""))
+        if found is not None:
+            return found
+    return ()
+
+
 def _npm_test_script(scripts: dict) -> str | None:
     """The script name npm would run tests with: "test" when it exists, else the
     alphabetically first name starting with "test", so the choice never moves."""
@@ -379,6 +458,69 @@ def _lane_stanza(lane: LaneSpec, scope_names: tuple[str, ...]) -> list[str]:
             *cwd, *_lane_env(lane.env), f"scopes = [{_quoted(scope_names)}]", ""]
 
 
+# What a reader who hits the collection error needs in front of them: the shape
+# of the fix, in this repo's own paths, rather than a page to go find.
+_TESTPATH_STUB_INTRO = (
+    "# This repo's pytest config names several testpaths. If they cannot be collected",
+    "# in one process (a conftest two of them import registers twice under",
+    "# --import-mode=importlib, and the run dies before a test runs), the lane above",
+    "# has no command to write. Replace it with these, one lane per testpath: each",
+    "# declares full_suite = false and its own artifact, so every testpath stays",
+    "# measured and each lane fails on its own.",
+)
+
+
+def _testpath_slug(testpath: str) -> str:
+    """A lane name out of a testpath. It also names the lane's artifact and log
+    file, so anything a path may hold and a filename may not becomes a dash."""
+    stripped = testpath.replace("\\", "/").strip("./")
+    return "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in stripped)
+
+
+def _testpath_lane(lane: LaneSpec, testpath: str) -> LaneSpec:
+    """The detected pytest lane narrowed to one testpath, carrying its own
+    artifact pair: two lanes may not declare the same artifact path."""
+    name = f"{lane.name}-{_testpath_slug(testpath)}"
+    artifact = f"{_COV_DIR}/{name}.json"
+    results = f"{_COV_DIR}/junit-{name}.xml"
+    command = (lane.command.replace(_PYTEST_INVOCATION, f"{_PYTEST_INVOCATION}{testpath} ")
+               .replace(lane.artifact, artifact).replace(lane.results_artifact, results))
+    return lane._replace(name=name, command=command, artifact=artifact,
+                         results_artifact=results)
+
+
+def _commented_lane(lane: LaneSpec, scope_names: tuple[str, ...]) -> list[str]:
+    """One lane stanza, commented out. `full_suite = false` is not decoration:
+    the command carries a positional, which is exactly what the full-suite guard
+    refuses, so a stub without it would not load when uncommented."""
+    body = [line for line in _lane_stanza(lane, scope_names) if line]
+    return [f"# {line}" for line in body + ["full_suite = false"]] + [""]
+
+
+def _detected_pytest_lane(lanes: tuple[LaneSpec, ...]) -> LaneSpec | None:
+    for lane in lanes:
+        if _PYTEST_INVOCATION in lane.command:
+            return lane
+    return None
+
+
+def _testpath_lane_stubs(lanes: tuple[LaneSpec, ...], scopes: dict[str, tuple[str, ...]],
+                         testpaths: tuple[str, ...]) -> list[str]:
+    """The one-lane-per-testpath fallback, commented out, or nothing.
+
+    Nothing for a single testpath, which collects in one process by definition,
+    and nothing when no detected pytest lane measures a scope: there is no lane
+    to split and the stubs would name paths nothing in this config covers.
+    """
+    lane = _detected_pytest_lane(lanes)
+    scope_names = _scopes_for(lane, scopes) if lane else ()
+    if not scope_names or len(testpaths) < 2:
+        return []
+    stubs = [line for path in testpaths
+             for line in _commented_lane(_testpath_lane(lane, path), scope_names)]
+    return [*_TESTPATH_STUB_INTRO, *stubs]
+
+
 def _scopes_for(lane: LaneSpec, scopes: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
     return tuple(name for name, languages in scopes.items()
                  if set(languages).intersection(lane.languages))
@@ -564,15 +706,22 @@ def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
 
 
 def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = (),
-                 *, interpreter: str = _DEFAULT_PYTHON) -> str:
+                 *, interpreter: str = _DEFAULT_PYTHON,
+                 testpaths: tuple[str, ...] = ()) -> str:
     """The starter crapkit.toml. `interpreter` is the python a committed config
     on this repo can call, the lockfile's manager prefix included; every python
-    line the file holds names it, commented templates as much as live lanes."""
+    line the file holds names it, commented templates as much as live lanes.
+
+    `testpaths` is what the repo's pytest config collects. More than one of them
+    and the file also carries the fallback for a suite that cannot collect them
+    together, commented out: one lane per testpath at `full_suite = false`.
+    """
     lines = ["[crapkit]", "target = 6", ""]
     for name, languages in scopes.items():
         lines += _scope_stanza(name, languages)
     lines += _exclude_stanza()
     live, covered = _live_lanes(lanes, scopes)
+    live += _testpath_lane_stubs(lanes, scopes, testpaths)
     launcher = python_launcher(lanes, interpreter)
     return "\n".join(lines + live + _template_lines(covered, scopes, launcher)
                      + _scoped_tests_stub(scopes, _confirmed_languages(lanes), launcher))

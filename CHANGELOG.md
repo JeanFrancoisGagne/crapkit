@@ -103,6 +103,41 @@ the file and what cannot be checked, and the lane scores off the coverage JSON. 
 lands on the no-counts path `verify` already reports. Nothing changed for a lane that
 actually ran: a report that says the run did not finish still fails it, which is the
 whole point of the check.
+### A repo path handed to crapkit says where the repo goes
+`crapkit ~/some-repo` and `crapkit ./mini` read as "score this repo", and argparse
+answered both with the invalid-choice dump of every subcommand name, none of which
+was the route the reader wanted: the repo is a flag, `--repo`, on a subcommand. The
+word repo never appeared in the output. A first argument shaped like a path (a
+separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventory
+--repo <path>` and `crapkit --help`. It is still exit 2, because it was exit 2 before,
+and shape is the only trigger: a directory named `inventory` in the cwd cannot hijack
+the subcommand, and a plain typo like `inventry` still gets argparse's usage dump.
+
+### The full-suite refusal names the fix for a suite that cannot collect itself
+A repo whose `pytest.ini` names four testpaths, and whose whole-suite run dies during
+collection because a shared `conftest.py` is registered twice under
+`--import-mode=importlib`, has no full-suite pytest command to write. The lane `init`
+wrote failed, the one command that collected (`pytest conform`) was refused for
+narrowing a full-suite run, and the only exit the refusal named was `full_suite =
+false` on that one lane: it clears the refusal, exits 0 everywhere, and silently leaves
+the other three testpaths unmeasured.
+
+The refusal now names the second exit, one lane per testpath with `full_suite = false`
+and its own artifact, and `docs/lanes.md` shows the block. `crapkit init` writes it for
+you: when the repo's pytest config names more than one testpath (`pytest.ini`,
+`setup.cfg` or `[tool.pytest.ini_options]`, read in pytest's own order), the starter
+config carries the detected lane plus one commented sibling lane per testpath, each
+with its own artifact and junit report. Detection still reads files only; nothing is
+run and nothing is imported.
+
+### `report --out` writes to an absolute path
+`crapkit report --out /somewhere/else/r.html` was refused with "report --out stays
+inside <repo>", and on Windows no repo-relative spelling reaches another drive at all,
+so the page could only be moved by copying it afterwards. The guard's own docstring
+justified itself by pointing at `--export` and `--sarif`, which enforce nothing. An
+absolute `--out` now writes where you pointed it and prints that path. A relative
+`--out` that climbs out of the tree is still refused, and the refusal now says that
+an absolute path is the way to write outside the repo.
 
 ## 0.4.11 — 2026-09-01
 
