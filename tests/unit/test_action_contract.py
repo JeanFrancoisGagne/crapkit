@@ -44,6 +44,12 @@ def _steps() -> list[dict]:
     return _action()["runs"]["steps"]
 
 
+def _step_named(name: str) -> dict:
+    step = next((s for s in _steps() if s.get("name") == name), None)
+    assert step is not None, f"the action lost its {name!r} step"
+    return step
+
+
 def _run_bodies() -> list[str]:
     """Every `run:` block, comment lines dropped. What a step invokes is what
     the shell reaches, and a `#` line reaches nothing."""
@@ -136,9 +142,75 @@ def test_every_input_the_readme_names_exists_on_the_action():
     """The other direction: a documented input a consumer sets is silently
     ignored, because `inputs.<name>` on an undeclared name is the empty
     string."""
-    named = set(re.findall(r"`(gate|top|python-version)`", _readme_section()))
+    named = set(re.findall(r"`(gate|top|python-version|delta)`", _readme_section()))
 
     assert named - set(_action()["inputs"]) == set()
+
+
+# --- the pull request's own delta --------------------------------------------
+
+def test_the_delta_input_is_on_by_default():
+    """The verdict a reviewer wants is the one for the commits in front of them.
+    A consumer who does not want the second lane run sets `delta: "false"`."""
+    assert _action()["inputs"]["delta"]["default"] == "true"
+
+
+def test_the_delta_step_only_runs_on_a_pull_request():
+    """A push event has no base commit to score and no pull request to comment
+    on, so the second lane run would buy nothing."""
+    step = _step_named("score the base commit")
+
+    assert "pull_request" in step["if"]
+    assert "inputs.delta" in step["if"]
+
+
+def test_the_delta_step_scores_the_base_sha_in_a_worktree_of_its_own():
+    """Scoring the base commit in place would need a checkout that throws the
+    pull request's own tree away. A detached worktree holds both at once."""
+    body = _step_named("score the base commit")["run"]
+
+    assert "git worktree add --detach" in body
+    assert "BASE_SHA" in body
+    assert "merge-base" in body, (
+        "base.sha is the base branch's tip, not the fork point: a base branch that moved "
+        "after the fork leaves verify with no run at or behind the diff basis")
+
+
+def test_the_delta_step_leaves_its_run_in_the_store_the_verdict_reads():
+    """Two runs in one store is what `--base` picks between: the base commit's
+    run is the baseline, the checkout's run is what it judges. A run left in the
+    worktree's own `.crapkit/` is invisible to the step that needs it."""
+    body = _step_named("score the base commit")["run"]
+
+    assert "crap.sqlite" in body, "the base run has to reach the checkout's store"
+
+
+def test_the_verdict_measures_the_diff_from_the_base_commit():
+    """`--base REF` moves the diff basis to merge-base(REF, HEAD), so the gate
+    judges the functions the pull request changed rather than none of them."""
+    body = _step_named("the verdict")["run"]
+
+    assert "--base" in body
+    assert "--base" in _flags("verify"), "crapkit verify takes no --base"
+
+
+def test_the_verdict_still_runs_without_a_base_run_behind_it():
+    """A shallow clone, a fork point git does not hold, a lane that failed on the
+    base commit: the delta is best effort and the comment still has to land."""
+    body = _step_named("the verdict")["run"]
+    calls = [m.group(2) for m in _CALL.finditer(body) if m.group(1) == "verify"]
+
+    assert len(calls) == 2, "one verify call with --base and one without"
+    assert sum("--base" in tail for tail in calls) == 1
+
+
+def test_the_readme_names_the_cost_of_the_delta_run():
+    """Two lane runs on a pull request is the price, and a consumer whose suite
+    is slow needs to read it before the bill arrives."""
+    section = _readme_section()
+
+    assert "two lane runs" in section
+    assert 'delta: "false"' in section
 
 
 # --- what the steps actually invoke ------------------------------------------
@@ -221,6 +293,19 @@ def test_the_dogfood_job_runs_the_action_from_this_checkout():
 
     assert uses, "the dogfood job stopped running the action"
     assert uses[0].get("with", {}).get("gate") in (False, "false"), "crapkit's own job stays advisory"
+
+
+def test_the_dogfood_job_names_delta_rather_than_taking_the_default():
+    """crapkit's `py` lane spells `--cov=crapkit`, which the action's editable
+    install of this checkout resolves to this checkout. A base worktree run
+    would measure HEAD's source, `crapkit coverage` refuses that artifact, and
+    the delta run costs a suite and buys nothing. The job says so out loud, so
+    the default flipping does not quietly add eight minutes to every pull
+    request."""
+    job = _ci()["jobs"]["dogfood"]
+    step = next(s for s in job["steps"] if s.get("uses") == "./")
+
+    assert step["with"]["delta"] in (False, "false")
 
 
 def test_the_dogfood_job_can_write_the_comment():

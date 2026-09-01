@@ -13,6 +13,13 @@ inputs:
       Anything else exits 0 and the comment is the whole output.
     required: false
     default: "false"
+  delta:
+    description: >-
+      "true", the default, scores the pull request's base commit first so the
+      verdict covers the commits the pull request adds. It costs a second lane
+      run. Anything else, and on a push event, scores the checkout alone.
+    required: false
+    default: "true"
   top:
     description: worklist rows to render for the changed files.
     required: false
@@ -45,6 +52,49 @@ runs:
     # Every step below keeps its own status at 0 and records what it got. The
     # comment is this action's output, and a job that dies at step three posts
     # nothing and explains nothing.
+
+    # verify measures the diff from its baseline run's commit, and a fresh CI
+    # checkout holds no run at all. This step makes the one the verdict wants:
+    # a detached worktree at the fork point, the lanes run there, and that store
+    # copied over the checkout's, so the step below has a run at the fork point
+    # to pick as its baseline. The price is a second lane run on every pull
+    # request; `delta: "false"` buys it back.
+    #
+    # merge-base, not base.sha itself: base.sha is the base branch's tip when
+    # the event fired, and a base branch that moved after the fork puts commits
+    # in it that HEAD never saw. verify would then look for a run at or behind
+    # the real fork, find none, and refuse.
+    #
+    # Every failure here is the same failure: no base run. A shallow clone
+    # without the fork point, a fork point that predates crapkit.toml, a lane
+    # that will not run against that tree. None of them stops the job, and the
+    # verdict below falls back to judging the checkout against its own run.
+    - name: score the base commit
+      if: ${{ github.event_name == 'pull_request' && inputs.delta == 'true' }}
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        code=0
+        base="$RUNNER_TEMP/crapkit-base"
+        rm -rf "$base"
+        git worktree prune
+        fork="$(git merge-base "$BASE_SHA" HEAD)" || code=$?
+        if [ "$code" = 0 ]; then
+          git worktree add --detach "$base" "$fork" || code=$?
+        fi
+        if [ "$code" = 0 ]; then
+          crapkit coverage --repo "$base" --json > "$RUNNER_TEMP/crapkit-base.json" || code=$?
+        fi
+        if [ "$code" = 0 ]; then
+          mkdir -p .crapkit
+          cp "$base/.crapkit/crap.sqlite" .crapkit/crap.sqlite || code=$?
+        fi
+        if [ "$code" = 0 ]; then
+          echo "$fork" > "$RUNNER_TEMP/crapkit-base.sha"
+        fi
+        echo "crapkit base scoring exited $code"
+
     - name: score the checkout
       shell: bash
       run: |
@@ -54,14 +104,26 @@ runs:
 
     # --reuse-artifacts parses the lane artifacts the step above just wrote from
     # this same tree, instead of running the whole suite a second time for the
-    # same numbers. The baseline is that run, so on a clean checkout the diff
-    # verify judges is empty: what this line reports is the tree's own health,
-    # and README's `## The GitHub Action` says how to make it judge the diff.
+    # same numbers.
+    #
+    # `--base SHA` moves the diff basis to merge-base(SHA, HEAD) and takes the
+    # newest trusted run at or behind that fork as the baseline, which is the
+    # run the base step wrote. So the gate judges the functions the pull request
+    # changed. Without that run the basis is the checkout's own run and the diff
+    # is empty, which reports the tree's own health and judges no function.
     - name: the verdict
       shell: bash
       run: |
         code=0
-        crapkit verify --json --reuse-artifacts > "$RUNNER_TEMP/crapkit-verify.json" || code=$?
+        sha="$RUNNER_TEMP/crapkit-base.sha"
+        out="$RUNNER_TEMP/crapkit-verify.json"
+        if [ -s "$sha" ]; then
+          echo "the verdict covers the diff from $(cat "$sha")"
+          crapkit verify --json --reuse-artifacts --base "$(cat "$sha")" > "$out" || code=$?
+        else
+          echo "no run at the fork point: the verdict covers this checkout alone"
+          crapkit verify --json --reuse-artifacts > "$out" || code=$?
+        fi
         echo "$code" > "$RUNNER_TEMP/crapkit-verify.exit"
         echo "crapkit verify exited $code"
 
@@ -73,9 +135,12 @@ runs:
         echo "crapkit worklist exited $code"
 
     # The rows a reviewer can act on are the ones in the diff in front of them.
-    # base.sha is empty on a push, and a shallow clone does not hold the commit
-    # it names; either way the list is empty and the comment ranks the whole
-    # repository instead of a slice of it.
+    # Three dots, so the list is what the branch added since the fork rather
+    # than every difference between two tips: a base branch that moved would
+    # otherwise put its own commits in the pull request's table. base.sha is
+    # empty on a push, and a shallow clone does not hold the commit it names;
+    # either way the list is empty and the comment ranks the whole repository
+    # instead of a slice of it.
     - name: the changed files
       shell: bash
       env:
@@ -84,7 +149,7 @@ runs:
         changed="$RUNNER_TEMP/crapkit-changed.txt"
         : > "$changed"
         if [ -n "$BASE_SHA" ]; then
-          git diff --name-only "$BASE_SHA" HEAD > "$changed" || : > "$changed"
+          git diff --name-only "$BASE_SHA...HEAD" > "$changed" || : > "$changed"
         fi
         echo "$(wc -l < "$changed") changed file(s)"
 
