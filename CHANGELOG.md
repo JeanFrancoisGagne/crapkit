@@ -78,11 +78,12 @@ template instead, and that template still read a bare `python`. Uncommenting it 
 reader back the environment bug the prefix exists to prevent.
 
 The template now carries a `{python}` placeholder, filled the same way the
-`[crapkit.scoped_tests]` entries already fill theirs, so every python line `init`
-writes names one launcher, whether that is the live lane, the scoped-tests entry, or the
-commented template that stands in for a lane the repo did not get. `python_launcher` takes the launcher as its fallback for a repo with no lane to
-read it back off. The js templates are unchanged; they carry no placeholder. A repo with
-no lockfile writes `python` (or `python3`, or `py`) exactly as before.
+`[crapkit.scoped_tests]` entries already fill theirs, so every python line `init` writes
+names one launcher, whether that is the live lane, the scoped-tests entry, or the
+commented template that stands in for a lane the repo did not get. `python_launcher` takes
+the launcher as its fallback for a repo with no lane to read it back off. The js templates
+are unchanged; they carry no placeholder. A repo with no lockfile writes `python` (or
+`python3`, or `py`) exactly as before.
 
 `_warn_missing_pytest_cov` now documents the rule it applies rather than the one it used
 to. A manager-headed lane names no python in the position the probe reads, so it is never
