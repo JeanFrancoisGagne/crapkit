@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.10 — unreleased
+
+### The action is named "crapkit complexity gate"
+The GitHub Marketplace refuses an action whose name matches an existing user or
+organization, and a GitHub user named `craPkit` exists, so `name: crapkit` in
+`action.yml` could not be published. The action is now "crapkit complexity gate"; the
+`uses:` line a consumer writes is unchanged, since that names the repository, not the
+action. A contract test keeps the name from collapsing back to the project's.
+
 ## 0.4.9 — 2026-09-01
 
 ### The handbook's advisory panel draws the Bash half it has answered since 0.4.7

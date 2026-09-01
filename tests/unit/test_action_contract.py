@@ -102,6 +102,10 @@ def test_the_action_declares_the_keys_a_runner_requires():
     data = _action()
 
     assert data["name"]
+    assert data["name"].lower() != "crapkit", (
+        "the Marketplace refuses an action name that matches an existing user or "
+        "organization, and a GitHub user named craPkit exists; the name has to say "
+        "more than the project's")
     assert data["description"]
     assert data["runs"]["using"] == "composite"
     assert _steps(), "a composite action with no steps runs nothing"

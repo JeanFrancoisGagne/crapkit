@@ -1,4 +1,4 @@
-name: crapkit
+name: crapkit complexity gate
 description: Score the checkout with crapkit and comment the worklist and the verdict on the pull request.
 author: Jean-Francois Gagne
 
