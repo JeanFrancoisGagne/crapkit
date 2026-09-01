@@ -1,0 +1,109 @@
+name: Field report
+description: crapkit did something wrong in your repo, and you can say what you expected instead.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when crapkit ran and the answer was wrong for your tree: a score
+        that does not match the code, a refusal on a setup that is legitimate, a
+        gate verdict that disagrees with `crapkit verify`, output the docs do not
+        describe. Use **Bug report** instead when crapkit crashed or printed a
+        traceback: that form asks for the stderr and the `doctor` report, which
+        is what a crash needs.
+
+        Six answers below make a field report actionable on the first read. The
+        seventh, the lane log, is where a wrong coverage number almost always
+        turns out to have come from.
+
+  - type: input
+    id: version
+    attributes:
+      label: crapkit --version
+      description: Paste the whole line.
+      placeholder: crapkit 0.4.7
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The exact command
+      description: >
+        The command line, copied, not retyped. Flags change what runs: `--json`
+        picks a different writer, `--reuse-artifacts` skips the lanes entirely,
+        and a scope or lane name narrows the work to a subset.
+      render: shell
+      placeholder: crapkit coverage --json --top 20
+    validations:
+      required: true
+
+  - type: input
+    id: exit
+    attributes:
+      label: The exit code
+      description: >
+        `echo $?` on sh, `echo %ERRORLEVEL%` on cmd.exe, `$LASTEXITCODE` in
+        PowerShell, on the line right after the command. crapkit's codes carry
+        meaning, so the number alone rules out most of the tree: read it before
+        the output.
+      placeholder: "5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: lane_log
+    attributes:
+      label: The lane log
+      description: >
+        A lane streams its command's output to `.crapkit/lane-<name>.log` while
+        it runs, so the log holds what the runner said even when the artifact
+        looks fine. Paste the tail of the log for the lane involved, and name the
+        file you took it from. Write `no lane` if the command runs none.
+      render: shell
+      placeholder: |
+        .crapkit/lane-py.log
+        ... last 40 lines ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Your crapkit.toml
+      description: >
+        The whole file, redact the paths if you must but keep the shape. Scopes
+        decide which files are scored and against which ceiling; lanes decide
+        what coverage is joined on. Between them they explain most reports of a
+        wrong number.
+      render: toml
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS and shell
+      description: >
+        crapkit runs a lane command with the shell that will run it, cmd.exe on
+        Windows and sh everywhere else, so the same command can pass on one and
+        be refused on the other. Name the shell you typed the command into as
+        well when it is not the default one.
+      placeholder: Windows 11, Git Bash, lanes run through cmd.exe
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: >
+        One or two sentences, and the number or the line you expected where you
+        can name it. This is the half a stack trace cannot supply: it says which
+        of two defensible answers your repo needed.
+      placeholder: |
+        Expected src/parse.py:112 to score covered. Its tests run in the `py`
+        lane and the coverage report lists the file, but crapkit calls it
+        untested.
+    validations:
+      required: true
