@@ -201,7 +201,11 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
     # `lane_errors` and not `lanes`: a cc-only repo declares no lanes, so nothing
     # succeeded and nothing failed either, and that run is still a scored run.
     if lane_errors and not succeeded:
-        raise ToolError(f"every lane failed: {'; '.join(lane_errors.values())}")
+        # A count and a pointer, not the errors again: every one of them has
+        # already printed above, log paths and all, and quoting them here made
+        # the reader read the same block twice.
+        raise ToolError(f"every lane failed ({len(lane_errors)} of {len(lanes)}); "
+                        "the errors are above")
     return coverage_by_path, provenance, lane_errors, succeeded
 
 

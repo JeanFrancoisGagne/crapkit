@@ -857,7 +857,7 @@ makes it step 4 of the burn-down loop. Every key is in
 ```
 $ crapkit doctor
 ok   config keys all recognized
-ok   scope 'calc': 1 files
+ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 ok   lizard 1.24.0
@@ -974,7 +974,7 @@ crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/cov
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 
 (exit 1)
-crapkit: every lane failed: ...
+crapkit: every lane failed (1 of 1); the errors are above
 ```
 
 That failure **writes no run**. Every lane failed, so `coverage` exits before it opens a

@@ -17,6 +17,30 @@ bump touched `crapkit X.Y.Z` and `rev: vX.Y.Z` and nothing else, and no test rea
 third pin. A contract now holds every `uses:` pin in the README to `crapkit.__version__`,
 so a bump that forgets it fails before the tag.
 
+### A run with no surviving lane prints each failure once
+`coverage` printed every failed lane's refusal, log path and all, and then raised
+`every lane failed: <the same texts, joined>`, which the CLI printed again. On the
+screen most first-time users meet, a vitest lane with no coverage provider installed,
+that was one eight-line block twice over, with the same absolute paths in both copies,
+and nothing in the second copy that was not in the first. The closing line is now a
+count and a pointer, `every lane failed (1 of 1); the errors are above`. README.md,
+`docs/lanes.md` and the `crapkit-recover` skill show the new line.
+
+### `doctor` counts one file as one file
+The per-scope line read `ok   scope 'calc': 1 files`. It is the first proof a reader
+gets that a scope path matches anything, and the quickstart publishes it, so the first
+crapkit output a new user saw was ungrammatical. The noun now follows the count, and
+zero keeps the plural, which is the FAIL case the line exists for.
+
+### The onboarding transcript names no machine and no release
+The worked `crapkit doctor --plugin-root` example in `plugin/skills/crapkit-onboard`
+was pasted off one machine: it printed that machine's home directory, spelled with the
+name of whoever ran it, ending in an install six releases old. A reader matched their
+own output against a path nobody else has and a version they were not meant to have.
+It now reads `<home>\.claude\plugins\cache\crapkit\crapkit\<version>`, and
+`tests/unit/test_skills_contract.py` holds every shipped skill page to it: no home
+directory on any of them, and no release number on that line.
+
 ## 0.4.10 — 2026-09-01
 
 ### The action is named "crapkit complexity gate"

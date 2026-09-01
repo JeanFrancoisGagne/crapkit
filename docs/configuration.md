@@ -178,8 +178,8 @@ Declaring `src` first and `src/hot` second, `src/hot` still gets its file:
 ```
 $ crapkit doctor
 ok   config keys all recognized
-ok   scope 'src': 1 files
-ok   scope 'hot': 1 files
+ok   scope 'src': 1 file
+ok   scope 'hot': 1 file
 ok   every tracked source file belongs to a scope
 ```
 

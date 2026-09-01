@@ -433,8 +433,11 @@ def _doctor_scope_files(files_by_scope: dict, cfg, show_files: bool) -> list[Fin
     out: list[Finding] = []
     for scope in cfg.scopes:
         files = files_by_scope.get(scope.name, [])
+        # The quickstart publishes this line, so a one-file scope printing
+        # "1 files" is the first crapkit output a new reader sees.
+        noun = "file" if len(files) == 1 else "files"
         out.append(Finding("ok" if files else "FAIL",
-                           f"scope {scope.name!r}: {len(files)} files"))
+                           f"scope {scope.name!r}: {len(files)} {noun}"))
         out += _listed_files(files, show_files)
     return out
 

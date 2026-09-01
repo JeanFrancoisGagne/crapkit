@@ -149,6 +149,17 @@ def test_every_lane_failing_ends_the_run_instead_of_scoring_nothing(repo, capsys
     assert runs(repo) == []
 
 
+def test_the_final_refusal_counts_the_failures_instead_of_quoting_them_again(repo, capsys):
+    """Each lane prints its own refusal, absolute paths and all. The line that
+    ends the run used to join those same texts back together, so the screen a
+    first-time reader gets showed one lane's error twice."""
+    code, _, err = run(["coverage", "--reuse-artifacts", "--lane", "unit"], repo, capsys)
+
+    assert code == 5
+    assert err.count("coverage/unit.json") == 1, err
+    assert "every lane failed (1 of 1)" in err, err
+
+
 def test_a_lane_subset_is_a_partial_run(repo, capsys):
     seed_artifacts(repo)
 
