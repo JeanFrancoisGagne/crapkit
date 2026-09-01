@@ -2,6 +2,17 @@
 
 ## 0.4.12 — unreleased
 
+### A lane that produced no artifact says whether its coverage shards survived
+`coverage run --parallel-mode`, which pytest-xdist turns on, writes one `.coverage.*` per
+process and combines them only at the end. A killed run therefore leaves every measurement
+it took on disk and no JSON, one directory above the artifact path the refusal names, and
+the refusal never mentioned them: one reporter found them on their own and combined them
+by hand. The message now counts the shards, says which directory holds them, and gives the
+two commands that turn them into a scored run (`coverage combine && coverage json -o
+<artifact>`, then `--reuse-artifacts`). crapkit does not combine them itself: shards from
+an interrupted suite merge into a report that looks like a whole run, which is what the
+crashed-worker check exists to refuse.
+
 ### `--reuse-artifacts` no longer refuses a salvaged coverage run
 A killed suite leaves a good coverage JSON only if you combine its shards by hand, and
 the junit beside it is the killed run's own: empty, or missing. Reading that report was

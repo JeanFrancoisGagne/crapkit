@@ -1047,6 +1047,23 @@ each half came from. The banner counts only as a whole line, so log output quoti
 words mid-line starts no attempt, and attempt 1 writes no banner at all, which makes a
 bannerless log one attempt.
 
+### A killed run leaves its coverage shards behind
+
+`coverage run --parallel-mode`, which pytest-xdist turns on for you, writes one
+`.coverage.<host>.<pid>.<random>` per process and combines them only when the run ends. A
+run that was killed leaves every measurement it took on disk and no JSON, one directory
+above the artifact path the refusal names. So the refusal counts the shards and says where
+they are:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); full log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine && coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
+```
+
+crapkit does not run the combine for you. Shards from an interrupted suite merge into a
+report that looks exactly like a whole run, and taking that for a full measurement is what
+the crashed-worker check above refuses. Whether a half-run is worth scoring is your call,
+and `--reuse-artifacts` is where you make it.
+
 ---
 
 ## An artifact that measured a different tree

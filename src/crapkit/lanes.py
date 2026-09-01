@@ -182,7 +182,31 @@ def _missing_plugin_hint(tail: str) -> str:
     return ""
 
 
-def _raise_no_artifact(lane: Lane, log_path: Path, exit_code: int | None) -> None:
+def _shard_hint(root: Path, lane: Lane) -> str:
+    """What the `.coverage.*` files beside a failed lane are, and what to do
+    with them.
+
+    coverage.py in parallel mode writes one shard per process and combines them
+    only when the run ends, so a suite that was killed leaves every measurement
+    it took on disk and no JSON. One reporter combined them by hand and got a
+    usable artifact; crapkit reported the missing JSON and never mentioned the
+    shards, which sit a directory above the path the message names.
+
+    A hint, never the combine itself. Shards from an interrupted suite merge
+    into a report that looks exactly like a whole run, which is the illusion the
+    crashed-worker check exists to refuse; whether this half-run is worth
+    scoring is the operator's call, and `--reuse-artifacts` is where they say so.
+    """
+    shards = sorted((root / lane.cwd if lane.cwd else root).glob(".coverage.*"))
+    if not shards:
+        return ""
+    return (f"; {len(shards)} coverage shards ({shards[0].name}, ...) sit in "
+            f"{shards[0].parent}, which is what a killed parallel run leaves behind: "
+            f"`coverage combine && coverage json -o {lane.artifact}` there, then a "
+            "re-run with --reuse-artifacts, scores what that suite did measure")
+
+
+def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None) -> None:
     """The log PATH before the log's words. A tail is 500 characters of a file
     that holds the whole story, and a reader who is not told where that file is
     has to go looking for it — one reporter had to ask another agent to find
@@ -191,7 +215,8 @@ def _raise_no_artifact(lane: Lane, log_path: Path, exit_code: int | None) -> Non
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
     raise ToolError(f"lane {lane.name!r} produced no artifact at {lane.artifact}{detail}"
-                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail)}")
+                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail)}"
+                    f"{_shard_hint(root, lane)}")
 
 
 def _run_attempts(root: Path, lane: Lane) -> int | None:
@@ -201,7 +226,7 @@ def _run_attempts(root: Path, lane: Lane) -> int | None:
         exit_code = _attempt_once(root, lane, log_path, attempt)
         if exit_code is not None and (root / lane.artifact).is_file():
             return exit_code
-    _raise_no_artifact(lane, log_path, exit_code)
+    _raise_no_artifact(root, lane, log_path, exit_code)
     return None  # unreachable; keeps the signature honest
 
 
@@ -747,7 +772,7 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
     """
     path = root / lane.artifact
     if not path.is_file():
-        _raise_no_artifact(lane, _lane_log_path(root, lane), None)
+        _raise_no_artifact(root, lane, _lane_log_path(root, lane), None)
     return path
 
 
