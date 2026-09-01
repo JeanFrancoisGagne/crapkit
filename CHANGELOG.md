@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.11 — unreleased
+## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute
 PyPI publishes the README verbatim as the long description, so its 36 repo-relative

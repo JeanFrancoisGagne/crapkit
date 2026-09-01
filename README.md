@@ -124,7 +124,7 @@ leaves the box
 
 ```
 $ crapkit --version
-crapkit 0.4.10
+crapkit 0.4.11
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
@@ -354,7 +354,7 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
     # crapkit's release step rewrites this line to the tag it just cut
-    rev: v0.4.10
+    rev: v0.4.11
     hooks:
       - id: crapkit-gate
 ```
@@ -460,7 +460,7 @@ to a workflow, and every input has a default:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: JeanFrancoisGagne/crapkit@v0.4.10
+      - uses: JeanFrancoisGagne/crapkit@v0.4.11
 ```
 
 The whole job those four lines sit in:
@@ -480,7 +480,7 @@ jobs:
         with:
           python-version: "3.12"       # the interpreter the install below lands in
       - run: pip install -e ".[dev]"   # whatever your lanes need to run
-      - uses: JeanFrancoisGagne/crapkit@v0.4.10
+      - uses: JeanFrancoisGagne/crapkit@v0.4.11
         with:
           gate: "false"
 ```
