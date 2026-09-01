@@ -235,11 +235,21 @@ def test_bare_command_spans_in_the_handbook_start_with_real_subcommands():
     assert bare, "the handbook's moment tables print no bare commands"
 
 
+_IMG_SRC = re.compile(r'<img [^>]*src="([^"]+)"')
+
+
 def test_the_handbook_is_self_contained():
     """No network: the page must reference no external stylesheet, font host,
-    script src, or raster image — it reads the same from file:// on a clone."""
+    script src, or remote image — it reads the same from file:// on a clone.
+
+    `<img` was on the ban list until 0.4.8, when the page started showing
+    docs/demo.gif on its first screen. A raster fetched from a host breaks the
+    rule; one committed beside the page does not, so the src is what is judged."""
     page = _doc(HANDBOOK)
-    for needle in ("http://", "https://fonts.", "<script src", "<img", "@import"):
+    for needle in ("http://", "https://fonts.", "<script src", "@import"):
         assert needle not in page, f"handbook is not self-contained: found {needle!r}"
+    for src in _IMG_SRC.findall(page):
+        assert (ROOT / "docs" / src).is_file(), \
+            f"the handbook shows {src!r}, which is not committed beside it"
     assert 'href="https://' not in page.replace('href="https://github.com', ""), \
         "handbook links an external stylesheet or resource"

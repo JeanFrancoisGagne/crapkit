@@ -1,0 +1,11 @@
+[project]
+name = "ledger"
+version = "0.1.0"
+description = "A tiny ledger the crapkit demo scores."
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["calc"]
+branch = true

@@ -77,6 +77,8 @@
 
   figure { margin: 22px 0; }
   figure.panel { background: var(--card); border: 1px solid var(--card-line); border-radius: 10px; padding: 18px 18px 10px; overflow-x: auto; }
+  figure.demo { margin: 24px 0 4px; }
+  figure.demo img { display: block; width: 100%; height: auto; border: 1px solid var(--card-line); border-radius: 10px; }
   figcaption { font-size: 13px; color: var(--faint); margin-top: 8px; max-width: 70ch; }
   svg { display: block; max-width: 100%; height: auto; }
   svg text { font-family: system-ui, "Segoe UI", sans-serif; fill: var(--ink); }
@@ -148,6 +150,10 @@
   <h1>crapkit</h1>
   <p class="standfirst">A deterministic <strong>change-risk gate</strong> for Python, TypeScript, TSX, JavaScript, Vue, Go, Rust, shell, PowerShell, Swift, C and C++, Objective-C, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
   <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
+  <figure class="demo">
+    <img src="demo.gif" alt="A terminal session: crapkit init writes a config, crapkit coverage scores eight functions, crapkit worklist --top 5 ranks them, a shell heredoc appends a function at ccn 7, the per-edit advisory reports it and exits 2, and the commit gate refuses the staged file with exit 6.">
+    <figcaption>Ninety seconds, one small Python repo, no editing. Every frame is captured output: <code>tools/demo/generate.py</code> builds the fixture repo, runs these five commands and renders what they printed.</figcaption>
+  </figure>
   <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> (Change Risk Anti-Patterns) was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
   <nav class="toc">
     <a href="#intro"><b>01</b>Why crapkit exists</a>
@@ -606,6 +612,8 @@ scopes           = ["src"]</code></pre>
   <li><strong>Housekeeping:</strong> everything writes under <code>.crapkit/</code>. <code>doctor</code> warns about lanes littering the repo root, unclaimed files, and scopes with no test template, and FAILs a lane whose runner does not resolve on PATH or will not start.</li>
   <li><strong>Where the root sits:</strong> <code>crapkit.toml</code> does not have to be at the git top. A package one directory down is a supported shape, with no monorepo mode to turn on: <code>crapkit coverage --repo packages/api</code> scores that package. 0.4.4 made the scored paths and the churn behind them relative to that root; 0.4.5 finished the job, so the commit gate, verify's changed files, lane reuse, <code>mutate</code>'s targets, the ratchet's rename follow and the per-edit advisory all join on root-relative paths too. Every git call now also runs with <code>core.quotePath=false</code>, which is what made a dirty file with a non-ASCII name invisible to lane reuse: git quoted the name, <code>ls-files</code> did not, and the two never matched. The nested shape is written up in <a href="lanes.md">docs/lanes.md</a>.</li>
 </ul>
+
+<p>One gap costs a python lane its numbers with nothing said, and it is not crapkit's to fix: pytest-cov 7.0.0 dropped its own subprocess measurement, so a suite that drives a CLI through <code>subprocess.run</code> reads every entry point at 0% and the lane still succeeds. crapkit's own suite is such a suite. <a href="notes/pytest-cov-7-subprocess-coverage.html">pytest-cov 7 and subprocess coverage</a> has the measurements and the two config lines that restore it.</p>
 
 <h3>Zero overlap has three readings</h3>
 <p>An artifact can parse, measure hundreds of files, and touch none of the paths its lane's scopes declare. Joining it would score every function in those scopes <code>untested</code>: a confident grade F assembled out of a tooling mistake, which is worse than a missing artifact because it looks like an answer. Since 0.4.7 the measured paths say which of three things happened, judged against the repo root.</p>
