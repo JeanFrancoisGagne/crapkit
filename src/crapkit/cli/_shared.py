@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..invocation import _self
 from ..store import SnapshotStore
 
 
@@ -191,7 +192,7 @@ def _latest_scored(store: SnapshotStore):
 def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `crapkit {first_command}` first")
+        raise CrapkitError(f"no snapshot in {root} — run `{_self()} {first_command}` first")
     return SnapshotStore(db_path)
 
 

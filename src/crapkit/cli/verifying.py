@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..invocation import _self
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
@@ -32,7 +33,7 @@ def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
 
 
 def _no_baseline(root: Path) -> str:
-    return (f"no trusted scored baseline in {root} — run `crapkit coverage` first "
+    return (f"no trusted scored baseline in {root} — run `{_self()} coverage` first "
             "(failed verifies and hook runs never serve as baselines)")
 
 
@@ -80,7 +81,8 @@ def _wrong_baseline(store: SnapshotStore, requested: int, trusted: list[dict]) -
     ids = ", ".join(str(r["id"]) for r in trusted)
     named = next((r for r in store.list_runs() if r["id"] == requested), None)
     if named is None:
-        return f"no run {requested} in the store (`crapkit runs` lists them); trusted runs: {ids}"
+        return (f"no run {requested} in the store (`{_self()} runs` lists them); "
+                f"trusted runs: {ids}")
     return (f"run {requested} is {_untrusted_reason(named)} and cannot serve as a baseline; "
             f"trusted runs: {ids}; pass `--baseline {trusted[-1]['id']}` for the newest")
 
@@ -118,7 +120,7 @@ def _require_ancestor(git, commit: str) -> None:
     if not git.is_ancestor(commit):
         raise GitError(
             f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-            "(rebase or amend rewrote history) — run `crapkit coverage` for a fresh baseline")
+            f"(rebase or amend rewrote history) — run `{_self()} coverage` for a fresh baseline")
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -133,7 +135,7 @@ def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
     behind = [r for r in trusted_runs(store) if git.is_ancestor(r["commit"], basis)]
     if not behind:
         raise CrapkitError(
-            f"no trusted scored run at or behind {basis[:11]} — run `crapkit coverage` "
+            f"no trusted scored run at or behind {basis[:11]} — run `{_self()} coverage` "
             "on the base commit before verifying against it")
     return behind[-1]
 
@@ -199,7 +201,7 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     is created here, since this run is the first thing that will ever write it."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not (db_path.is_file() or tsv_baseline):
-        raise CrapkitError(f"no baseline snapshot in {root} — run `crapkit coverage` first")
+        raise CrapkitError(f"no baseline snapshot in {root} — run `{_self()} coverage` first")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return SnapshotStore(db_path)
 
@@ -225,7 +227,7 @@ def _guard_ratchet_stamp(ratchet_path: Path, name: str) -> None:
     recorded = read_stamp(ratchet_path.read_text(encoding="utf-8"))
     if not recorded:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
-              "re-baseline with `crapkit ratchet seed` to stamp it", file=sys.stderr)
+              f"re-baseline with `{_self()} ratchet seed` to stamp it", file=sys.stderr)
         return
     conflict = stamp_conflict(recorded, metric_version())
     if conflict:

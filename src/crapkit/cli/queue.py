@@ -13,6 +13,7 @@ from .. import packet
 from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit, ls_files
+from ..invocation import _self
 from ..keys import key_names, key_of, split_ordinal
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
@@ -25,11 +26,11 @@ def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
     """The store and the run next-item ranks, or the error naming what to run."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `crapkit coverage` first")
+        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
     store = SnapshotStore(db_path)
     latest = _latest_scored(store)
     if latest is None:
-        raise CrapkitError(f"no scored run in {root} — run `crapkit coverage` first")
+        raise CrapkitError(f"no scored run in {root} — run `{_self()} coverage` first")
     return store, latest
 
 
@@ -848,7 +849,7 @@ def _resolve_top(requested: int | None, cfg) -> int:
 def _stale_warning(stale: bool, as_json: bool, latest: dict) -> None:
     if stale and not as_json:
         print(f"warning: snapshot is for {latest['commit'][:11]}, HEAD has moved on — "
-              "rerun `crapkit coverage`", file=sys.stderr)
+              f"rerun `{_self()} coverage`", file=sys.stderr)
 
 
 def _entry_json(e) -> dict:
@@ -931,8 +932,8 @@ def _worklist_run(root: Path, store) -> dict:
     runs = rowful_runs(store)
     if runs:
         return runs[-1]
-    raise CrapkitError(f"no snapshot in {root} — run `crapkit coverage` first "
-                       "(or `crapkit inventory` for complexity-only ranking, "
+    raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first "
+                       f"(or `{_self()} inventory` for complexity-only ranking, "
                        "with no coverage, flags or remedies)")
 
 

@@ -18,6 +18,7 @@ import pytest
 
 from crapkit.cli import queue
 from crapkit.errors import CrapkitError
+from crapkit.invocation import _self
 from crapkit.score import ScoredRow
 from crapkit.uncovered import MissingLines
 
@@ -168,7 +169,7 @@ def test_the_preview_row_says_it_needs_a_run_behind_it(tmp_path):
     with pytest.raises(CrapkitError) as raised:
         _open_store(tmp_path)
 
-    assert "run `crapkit coverage` first" in str(raised.value)
+    assert f"run `{_self()} coverage` first" in str(raised.value)
     assert raised.value.exit_code == 1
     assert "after the first coverage run" in _gate_row("crapkit rescore FILE --gate")
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from .invocation import _self
 from .score import ScoredRow
 
 _HEADER = "path\tlong_name\tcrap"
@@ -69,7 +70,7 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
         return None
     return (f"ratchet marks were recorded under [{recorded}] but this run measures "
             f"[{current}] — CRAP scores are not comparable across metric versions; "
-            "re-baseline with `crapkit ratchet seed`")
+            f"re-baseline with `{_self()} ratchet seed`")
 
 
 def _is_skippable(line: str) -> bool:

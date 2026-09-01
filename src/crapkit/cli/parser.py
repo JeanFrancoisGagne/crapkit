@@ -9,6 +9,7 @@ import sys
 
 from .. import __version__
 from ..errors import ConfigError, CrapkitError
+from ..invocation import _self
 
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
@@ -155,7 +156,7 @@ def _help_topic(parser: argparse.ArgumentParser, topic: str | None):
         return parser
     topics = _help_topics(parser)
     if topic not in topics:
-        raise ConfigError(f"no subcommand {topic!r}; `crapkit help` lists them")
+        raise ConfigError(f"no subcommand {topic!r}; `{_self()} help` lists them")
     return topics[topic]
 
 
@@ -494,8 +495,8 @@ def _refuse_path_argument(arg: str) -> int:
     left out. Nothing that used to work changes: every argv reaching here was a
     usage error before."""
     print(f"crapkit: {arg!r} is not a subcommand; the repo is a flag on one, "
-          f"e.g. `crapkit inventory --repo {arg}` "
-          f"(`crapkit --help` lists the subcommands)", file=sys.stderr)
+          f"e.g. `{_self()} inventory --repo {arg}` "
+          f"(`{_self()} --help` lists the subcommands)", file=sys.stderr)
     return 2
 
 

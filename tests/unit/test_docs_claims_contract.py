@@ -8,6 +8,7 @@ against the code, the git history or the scaffolder that produces it.
 import json
 import re
 import subprocess
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -366,13 +367,20 @@ def test_the_readme_prints_the_taint_warning_the_code_produces():
     assert f"warning: {_taint_note(pick)}" in _doc("README.md")
 
 
-def test_the_ratchet_page_prints_the_refusal_seed_raises_on_an_untrusted_store(tmp_path):
-    """docs/ratchet.md quotes the refusal a store with no trusted run produces."""
+def test_the_ratchet_page_prints_the_refusal_seed_raises_on_an_untrusted_store(tmp_path,
+                                                                              monkeypatch):
+    """docs/ratchet.md quotes the refusal a store with no trusted run produces.
+
+    The page's session is `$ crapkit ratchet seed`, so the refusal it quotes is
+    the one a console-script run prints. The message names the invocation the
+    process was started with, and pytest is not that one.
+    """
     from crapkit.cli.ratchet_cmds import _latest_full_run
     from crapkit.errors import CrapkitError
     from crapkit.snapshot import InventoryRow
     from crapkit.store import SnapshotStore
 
+    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "ratchet", "seed"])
     store = SnapshotStore(tmp_path / "crap.sqlite")
     store.write_run(commit="a" * 40, tool_versions={},
                     rows=[InventoryRow("src", "src/a.py", "f( )", 1, 9, 7, 5, 5, 8, 1, 2)],

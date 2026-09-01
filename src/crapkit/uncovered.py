@@ -18,6 +18,8 @@ from pathlib import Path
 from threading import Lock
 from typing import NamedTuple
 
+from .invocation import _self
+
 
 class MissingLines(NamedTuple):
     """Per-file dead lines, plus the reason there are none to report.
@@ -201,7 +203,7 @@ def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
     if not lane_unchanged(root, lane, scope_paths, git):
         return (f"lane {lane.name!r}: files in its scopes changed since {lane.artifact} "
                 "was written (uncommitted edits count), so its line numbers are stale — "
-                "commit or revert them, then rerun `crapkit coverage`")
+                f"commit or revert them, then rerun `{_self()} coverage`")
     return ""
 
 

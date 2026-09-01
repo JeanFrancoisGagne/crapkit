@@ -13,6 +13,7 @@ import pytest
 
 from crapkit.cli.verifying import _named_baseline, _untrusted_reason
 from crapkit.errors import CrapkitError
+from crapkit.invocation import _self
 
 ROOT = Path("/repo")
 
@@ -100,7 +101,8 @@ def test_an_id_no_run_carries_says_so_and_lists_the_trusted_ones():
 def test_an_empty_store_keeps_the_line_that_was_written_for_it():
     msg = refusal(Store(), 1)
 
-    assert "no trusted scored baseline" in msg and "run `crapkit coverage` first" in msg, msg
+    assert "no trusted scored baseline" in msg, msg
+    assert f"run `{_self()} coverage` first" in msg, msg
 
 
 def test_a_store_with_only_untrusted_runs_keeps_that_line_too():

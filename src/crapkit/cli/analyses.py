@@ -11,6 +11,7 @@ from pathlib import Path
 from ..churn_log import log_lines
 from ..errors import ConfigError, CrapkitError
 from ..gitio import ls_files
+from ..invocation import _self
 from ._shared import (_load_repo_config, _load_sources, _open_store, _positive_top,
                       _print_json, _repo_relative)
 
@@ -193,7 +194,7 @@ def cmd_duplication(args: argparse.Namespace) -> int:
     store = _open_store(root, first_command="inventory")
     runs = rowful_runs(store)
     if not runs:
-        raise CrapkitError(f"no snapshot in {root} — run `crapkit inventory` first")
+        raise CrapkitError(f"no snapshot in {root} — run `{_self()} inventory` first")
     rows = store.read_rows(runs[-1]["id"])
     # A loader, never a bound dict: whoever names those texts pins every byte of
     # them across the pair counting (146 MB of peak on a 104 MB repo).

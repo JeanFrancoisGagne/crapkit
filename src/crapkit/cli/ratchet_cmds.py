@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 
 from ..errors import ConfigError, CrapkitError
+from ..invocation import _self
 from ..store import SnapshotStore
 from ._shared import (_load_ratchet_or_die, _load_repo_config, _open_store, _print_json,
                       _ratchet_or_die)
@@ -31,11 +32,11 @@ def _no_full_run(pick) -> str:
     """Why there is nothing to seed or prune against: no trusted run at all, or
     a failure standing in front of every one there is."""
     if pick.blocker is None:
-        return ("no trusted full run to work from — run `crapkit coverage` first "
+        return (f"no trusted full run to work from — run `{_self()} coverage` first "
                 "(failed verifies and hook runs never serve as baselines)")
     return (f"no run to work from: verify run {pick.blocker['id']} FAILED with "
             f"{pick.blocker['findings']} finding(s), nothing older is left to work from, "
-            "and a fresh `crapkit coverage` would only be refused the same way — "
+            f"and a fresh `{_self()} coverage` would only be refused the same way — "
             "fix the findings and let a verify pass")
 
 
@@ -78,7 +79,7 @@ def _merge_stamp(texts: list[str]) -> str:
         raise ConfigError(
             f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
             f"[{theirs or 'unstamped'}] — marks from different metric versions cannot "
-            "merge; re-baseline one side with `crapkit ratchet seed`")
+            f"merge; re-baseline one side with `{_self()} ratchet seed`")
     return ours
 
 

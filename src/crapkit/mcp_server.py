@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .invocation import _self
+
 PROTOCOL_VERSION = "2024-11-05"
 
 _REPO = {"repo": {"type": "string", "description": "repo root (default: the server's)"}}
@@ -102,7 +104,7 @@ def _no_config_result(repo: str) -> dict:
     repo with nothing to report.
     """
     return _result(f"no crapkit.toml in {repo} — nothing measured here. "
-                   "Run `crapkit init` in the repo you want scored, or pass this tool a "
+                   f"Run `{_self()} init` in the repo you want scored, or pass this tool a "
                    "`repo` argument (or start the server with --repo) pointing at one.",
                    is_error=True)
 

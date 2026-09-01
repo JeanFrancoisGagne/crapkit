@@ -29,6 +29,7 @@ from __future__ import annotations
 from html import escape
 
 from .errors import ConfigError
+from .invocation import _self
 
 # Measured at 46,567 rows / 9.85 MB. A few thousand rows is already a page
 # nobody scrolls; past that it is a page nobody opens.
@@ -57,7 +58,7 @@ def report_top(worklist_top: int) -> int:
         raise ConfigError(
             f"report renders at most {REPORT_ROW_CEILING} rows and worklist_top is "
             f"{worklist_top}: lower [crapkit] worklist_top, or read the whole "
-            "ranking with `crapkit worklist --json`")
+            f"ranking with `{_self()} worklist --json`")
     return worklist_top
 
 
@@ -128,6 +129,10 @@ def _no_lane_reason(lanes: list[dict]) -> list[str]:
             "any test ran. Coverage reads 0 by default here, not by measurement.</p>"]
 
 
+# The three sentences embedded in the HTML name the console script on purpose:
+# the page is a document that travels to readers on other machines, and the
+# generating interpreter's path is that machine's business, not the reader's.
+# The report_top refusal above is terminal output and keeps _self().
 def _stale_lane_reason(lanes: list[dict]) -> list[str]:
     """The blackout, stated at its real size.
 
@@ -156,7 +161,7 @@ def _behind_head_reason(wl: dict) -> list[str]:
     return [f'<p>The snapshot is run {_esc(wl["run_id"])} at '
             f'<code>{_esc(wl["commit"][:11])}</code> and HEAD has moved on. Fresh '
             f'artifacts do not rescue a run measured at another commit: rerun '
-            f'<code>crapkit coverage</code>.</p>']
+            '<code>crapkit coverage</code>.</p>']
 
 
 # --- per-scope grades --------------------------------------------------------
