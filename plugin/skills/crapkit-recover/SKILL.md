@@ -1,6 +1,6 @@
 ---
 name: crapkit-recover
-description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the five causes behind \"produced no artifact\", the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/5/6/7/8/9, a lane reports \"produced no artifact\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
+description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the seven causes behind a lane that wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/5/6/7/8/9, a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
 ---
 
 # Recovering a refused run
@@ -17,18 +17,25 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 |---|---|---|
 | "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
 | "crapkit gate: N staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
-| "crapkit doctor: the plugin at PATH is version X, this crapkit is Y", exit 1 | The plugin and the CLI ship as separate artifacts and drifted apart | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
+| "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
 | "crapkit doctor: checking PATH", then nothing | You named a directory above the plugin root and doctor found the install under it. The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
 | "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | `crapkit ratchet seed` stamps it: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
+| "crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches", from `crapkit coverage` | The lane scored on statements instead of branches, so CRAP is understated on branchy functions. A report carrying neither branches nor statements is still exit 5 | Add `--cov-branch` to the lane command, then rerun `crapkit coverage`: [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
+| "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) — those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where NO file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
 
-Three more lines come out of `crapkit doctor --plugin-root`, same exit 1.
+Four more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
 a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
 plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
-with `claude plugin install crapkit@crapkit`, or pass a PATH. `crapkit claude-hook` and
+with `claude plugin install crapkit@crapkit`, or pass a PATH.
+"crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name
+its hooks and `.mcp.json` spawn resolves nowhere, so every PostToolUse edit fires a command
+that cannot start and the MCP server never comes up. A `pip install` into a project `.venv`
+is the usual way to land there: `pipx install crapkit`, or point the plugin at the
+environment holding it. `crapkit claude-hook` and
 `crapkit doctor --plugin-root` are both specified in
 [README: subcommands](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands).
 
@@ -70,7 +77,7 @@ one word per space, so the guard sees a positional that would narrow the run. Re
 value in double quotes:
 [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start).
 
-## "produced no artifact": five causes
+## a lane that wrote no artifact: seven causes
 
 The lane log names which one. It sits at `.crapkit/lane-<name>.log`; the failure line quotes
 its tail and names that path in full, so read the log before guessing — the tail is 500
@@ -89,9 +96,11 @@ single attempt and its whole output is in scope.
 | No coverage provider installed, pytest | `unrecognized arguments: --cov`, so pytest-cov is missing from the environment the SUITE runs in, which a pipx or uv-tool install of crapkit never shares | [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | Tests failed, so the runner wrote no report | a red suite and no file, vitest with `reportOnFailure` unset | [docs: reportOnFailure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#reportonfailure) |
 | The report landed somewhere the lane does not name | the suite passed and `artifact` still points at nothing | [docs: where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live) |
-| Killed or refused before it could write | `timed out after Ns (attempt N)`, or `host-only (container runs OOM)` | [docs: timeouts and retries](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#timeouts-and-retries) |
+| Killed or refused before it could write | `timed out after Ns (attempt N)`, `wrote no output for Ns (attempt N), so crapkit killed it` (the `no_progress_seconds` watch), or `host-only (container runs OOM)` | [docs: a suite that stops making progress](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-suite-that-stops-making-progress), [docs: timeouts and retries](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#timeouts-and-retries) |
+| pytest died during collection, so the coverage plugin wrote nothing | "Interrupted: N error during collection" in the log, with the junit on disk and the coverage JSON missing | Add `--continue-on-collection-errors` to the lane command, which `crapkit init` now writes: [docs: --continue-on-collection-errors](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#--continue-on-collection-errors) |
+| The lane reran and rewrote nothing | "wrote no artifact this run — the PATH on disk predates it and is the previous run's" | [docs: the artifact has to be the one this run wrote](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#the-artifact-has-to-be-the-one-this-run-wrote) |
 
-Before triaging any of the five, check that the command ran at all. `crapkit doctor` reads
+Before triaging any of the seven, check that the command ran at all. `crapkit doctor` reads
 each lane with the shell that will run it and FAILs one whose first word will not start:
 `lane 'py': cmd.exe cannot run 'python' (exit 9009)`. On Windows that is usually the Store
 `python.exe` alias a stock PATH carries with no Store app behind it, which resolves and

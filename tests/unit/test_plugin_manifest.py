@@ -122,7 +122,8 @@ def test_the_slug_rule_matches_the_headings_it_is_pointed_at():
     """Guards the test above: a slug rule that mangles every heading also passes
     it, because the anchors then match nothing and the set comprehension is
     filtered by `anchor and ...`."""
-    assert _slug('"produced no artifact": five causes') == "produced-no-artifact-five-causes"
+    assert (_slug("a lane that wrote no artifact: seven causes")
+            == "a-lane-that-wrote-no-artifact-seven-causes")
     assert "exit-codes" in _anchors("README.md")
     assert "reportonfailure" in _anchors("docs/lanes.md")
 

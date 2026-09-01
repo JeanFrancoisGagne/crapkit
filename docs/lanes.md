@@ -714,25 +714,27 @@ own artifact:
 ```toml
 [[lane]]
 name = "py-conform"
-command = "python -m pytest conform --cov --cov-branch --cov-report=json:.crapkit/cov/py-conform.json --junitxml=.crapkit/cov/junit-py-conform.xml"
+command = "python -m pytest conform --cov --cov-branch --cov-report=json:.crapkit/cov/py-conform.json --junitxml=.crapkit/cov/junit-py-conform.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py-conform.json"
 results_artifact = ".crapkit/cov/junit-py-conform.xml"
 parser = "coveragepy"
-full_suite = false
 scopes = ["impl"]
+full_suite = false
 
 [[lane]]
 name = "py-impl"
-command = "python -m pytest impl --cov --cov-branch --cov-report=json:.crapkit/cov/py-impl.json --junitxml=.crapkit/cov/junit-py-impl.xml"
+command = "python -m pytest impl --cov --cov-branch --cov-report=json:.crapkit/cov/py-impl.json --junitxml=.crapkit/cov/junit-py-impl.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py-impl.json"
 results_artifact = ".crapkit/cov/junit-py-impl.xml"
 parser = "coveragepy"
-full_suite = false
 scopes = ["impl"]
+full_suite = false
 ```
 
 Several lanes may name the same scope: the parts table at the top of this page forbids
-two lanes sharing an `artifact` path, and nothing else. Every testpath stays measured,
+two lanes sharing an `artifact` path, and nothing else. Both lanes above name `impl`, the
+only scope this repo sniffed: `conform` holds tests, not scored source, and `init` copies
+the scopes it found onto every stub it writes. Every testpath stays measured,
 and each lane fails on its own. `crapkit init` writes this block for you, commented out,
 when the repo's pytest config names more than one testpath.
 
