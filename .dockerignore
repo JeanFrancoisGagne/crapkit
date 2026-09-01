@@ -1,0 +1,20 @@
+# The build copies pyproject.toml, README.md, LICENSE and src/. Everything
+# else is context the daemon reads and throws away, and .crapkit/ alone is a
+# sqlite store plus one git worktree per mutation worker.
+.crapkit/
+.git/
+.github/
+tests/
+docs/
+plugin/
+tools/
+git-hooks/
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+.venv/
+.coverage*
+crapkit-junit.xml
+coverage-py.json

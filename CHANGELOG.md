@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.9 — unreleased
+
+### A Dockerfile that runs the MCP server over stdio
+`Dockerfile` at the repository root builds `crapkit mcp` as an image, for a client or a
+registry that starts a server from a Dockerfile rather than from an installed package:
+
+```
+docker build -t crapkit .
+docker run -i --rm -v "$PWD:/repo" -w /repo crapkit
+```
+
+python:3.12-slim, `pip install .` over four copied paths (pyproject.toml, README.md,
+LICENSE and src/), and git, which the image needs because every MCP tool shells to the CLI
+and the CLI reads git. The server runs as an unprivileged account and serves `/repo`, the
+directory the run command mounts. That account also carries
+`git config --global --add safe.directory '*'`: a bind mount keeps the host's ownership,
+git under a different uid refuses a repo it calls dubious, and the tools would report an
+empty history rather than the repo's own.
+
+`.dockerignore` keeps tests, docs and `.crapkit/` out of the build context.
+`tests/unit/test_dockerfile_contract.py` reads the Dockerfile the way the action contract
+reads `action.yml`: the ENTRYPOINT names a `[project.scripts]` console script and a
+subcommand the parser defines, every COPY names a path that exists, and the image installs
+git and drops root. [docs/agent-json.md](docs/agent-json.md) documents the two commands
+under its MCP section.
+
 ## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request

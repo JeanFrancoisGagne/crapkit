@@ -1250,3 +1250,20 @@ true whenever the underlying CLI call exited non-zero, and then the text is what
 wrote to stderr. It is true in one case where no CLI call runs at all: the missing-config
 result above.
 
+## Docker
+
+The Dockerfile at the repository root builds the same stdio server as an image, which is
+what a client or a registry that starts servers from a Dockerfile needs rather than from
+an installed package.
+
+```
+docker build -t crapkit .
+docker run -i --rm -v "$PWD:/repo" -w /repo crapkit
+```
+
+`-i` is the transport, not a convenience: with stdin closed the server reads EOF and exits
+before `initialize`. The mount is the checkout being scored. The image serves `/repo`, so a
+repo mounted anywhere else needs `--repo` on the command line, and an unmounted container
+answers each `tools/call` with the missing-config result above. The image carries git,
+because every tool shells to the CLI and the CLI reads git, and it serves as an
+unprivileged account.
