@@ -202,10 +202,12 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
     # succeeded and nothing failed either, and that run is still a scored run.
     if lane_errors and not succeeded:
         # A count and a pointer, not the errors again: every one of them has
-        # already printed above, log paths and all, and quoting them here made
-        # the reader read the same block twice.
-        raise ToolError(f"every lane failed ({len(lane_errors)} of {len(lanes)}); "
-                        "the errors are above")
+        # already printed above, and quoting them here made the reader read the
+        # same block twice. Counted off `lanes`, not the error dict: the config
+        # does not force lane names to be unique, and two failed lanes sharing
+        # a name would collapse to one key.
+        failed = len(lanes) - len(succeeded)
+        raise ToolError(f"every lane failed ({failed} of {len(lanes)}); the errors are above")
     return coverage_by_path, provenance, lane_errors, succeeded
 
 

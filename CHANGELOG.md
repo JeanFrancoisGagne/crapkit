@@ -18,7 +18,7 @@ third pin. A contract now holds every `uses:` pin in the README to `crapkit.__ve
 so a bump that forgets it fails before the tag.
 
 ### A run with no surviving lane prints each failure once
-`coverage` printed every failed lane's refusal, log path and all, and then raised
+`coverage` printed every failed lane's refusal and then raised
 `every lane failed: <the same texts, joined>`, which the CLI printed again. On the
 screen most first-time users meet, a vitest lane with no coverage provider installed,
 that was one eight-line block twice over, with the same absolute paths in both copies,

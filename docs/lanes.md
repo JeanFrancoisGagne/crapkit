@@ -999,7 +999,7 @@ Exit 5. Four consequences:
    scripts`, exit 5. A verdict with a blind lane is not a verdict.
 4. **Every lane failing raises** `every lane failed (N of N); the errors are above`, exit 5,
    with no run written. That last line is a count and a pointer: each lane already printed
-   its own refusal, with its own log path, on the lines above it.
+   its own refusal on the lines above it.
 
 `coverage --json` carries the reasons under `lane_failures`, keyed by lane name, alongside
 the successful lanes' provenance under `lanes`.
