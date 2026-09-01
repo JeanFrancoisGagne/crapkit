@@ -877,17 +877,19 @@ def test_the_root_section_names_the_one_subcommand_without_repo():
     assert "every subcommand that reads a repo takes it" not in section
 
 
-_CAUSE_HEADING = re.compile(r'^## "produced no artifact": (\w+) causes$', re.M)
+_CAUSE_HEADING = re.compile(r"^## a lane that wrote no artifact: (\w+) causes$", re.M)
 _COUNT_WORDS = {"three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
 
 
 def test_the_handbook_counts_the_no_artifact_causes_the_skill_lists():
     """Two published surfaces of one list. Splitting the coverage-provider row
     into a vitest one and a pytest one made it five in the recover skill and
-    left the handbook telling readers to look for four."""
+    left the handbook telling readers to look for four. The heading dropped the
+    quoted string when a lane that rewrote nothing got its own row: that failure
+    prints "wrote no artifact this run" and would have routed nowhere."""
     skill = _doc("plugin/skills/crapkit-recover/SKILL.md")
     (word,) = _CAUSE_HEADING.findall(skill)
-    table = _section(skill, f'## "produced no artifact": {word} causes').splitlines()
+    table = _section(skill, f"## a lane that wrote no artifact: {word} causes").splitlines()
     rows = [ln for ln in table if ln.startswith("| ")]
 
     assert len(rows) - 1 == _COUNT_WORDS[word], "the skill's own heading and table disagree"

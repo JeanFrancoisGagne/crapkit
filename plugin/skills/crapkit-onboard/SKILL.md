@@ -26,8 +26,9 @@ picks a root for you it names the one it chose:
     crapkit doctor: checking <home>\.claude\plugins\cache\crapkit\crapkit\<version>
 
 Nothing after that line, and exit 0, means the manifest version and the hook protocol both
-agree with this CLI. Otherwise it prints one line per disagreement, at exit 1. Finding no
-install at all is its own line, and which line you get depends on how you asked. Both exit 1.
+agree with the `crapkit` on PATH, which is the one the hooks spawn. Otherwise it prints
+one line per disagreement, at exit 1. Finding no install at all is its own line, and which
+line you get depends on how you asked. Both exit 1.
 
 With no path, the search names the command that fixes it:
 
@@ -94,6 +95,13 @@ that launcher, the commented `[[lane]]` template included, which a repo with no 
 marker file (`pyproject.toml`, `pytest.ini`, `setup.cfg`) gets in place of a live lane.
 Uncommenting it is therefore safe now: it used to hand back a bare `python`, which binds
 to whichever venv the shell has active rather than the one the repo pins.
+
+With no lockfile, `init` looks for a venv the repo carries (`.venv`, `venv`, or one
+`.venv` per sniffed scope) and writes its interpreter as a repo-relative path, but only
+when that directory holds `pyvenv.cfg` and its python imports pytest. The committed line
+reads `.venv\\Scripts\\python.exe` on Windows because crapkit.toml is TOML; the loader
+hands the lane the single-backslash path. With no venv either, it falls back to `python`,
+`python3`, or `py`.
 
 Read init's notes before the first `crapkit coverage`. Two of them are about the
 interpreter, and they are different problems. One says the shell cannot run the word the
