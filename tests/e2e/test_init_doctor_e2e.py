@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -590,3 +591,77 @@ def test_without_a_lockfile_the_commented_template_keeps_the_bare_interpreter(
     text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
 
     assert re.search(r'# command = "(python3?|py) -m pytest --cov', text), text
+
+
+# --- the virtualenv the repo carries ------------------------------------------
+#
+# A library whose own .venv holds pytest, checked out where the PATH python holds
+# none: init wrote `python -m pytest --cov`, doctor called that config clean, and
+# `crapkit coverage` exited 5 on "No module named pytest" with the right
+# interpreter sitting in the tree the whole time.
+
+_VENV_LAUNCHER = r".venv\Scripts\python.exe" if os.name == "nt" else ".venv/bin/python"
+
+
+def _repo_venv(repo: Path) -> None:
+    """A real virtualenv in the repo, with pytest importable through it.
+
+    `--without-pip` keeps it under a second, and a stub on its own path answers
+    the import: what this test is about is which interpreter init names, not
+    what a package installer does.
+    """
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(repo / ".venv")],
+                   check=True, capture_output=True)
+    (site,) = (repo / ".venv").glob("**/site-packages")
+    for module in ("pytest.py", "pytest_cov.py"):
+        (site / module).write_text("", encoding="utf-8")
+
+
+def test_init_binds_the_lane_to_the_venv_the_repo_carries(pytest_repo: Path):
+    """The lane and step 4 both, because a lane measuring one environment while
+    the scoped tests run in another is the same bug one command later."""
+    _repo_venv(pytest_repo)
+
+    res = run_cli(pytest_repo, "init")
+
+    assert res.returncode == 0, res.stderr
+    from crapkit.config import load_config_text
+    cfg = load_config_text((pytest_repo / "crapkit.toml").read_text(encoding="utf-8"))
+    (lane,) = cfg.lanes
+    assert lane.command.startswith(f"{_VENV_LAUNCHER} -m pytest "), lane.command
+    assert dict(cfg.scoped_tests)["pylib"].startswith(f"{_VENV_LAUNCHER} -m pytest ")
+    assert "pytest_cov" not in res.stderr, "the venv carries the plugin: nothing to say"
+
+
+def test_doctor_clears_the_venv_lane_init_just_wrote(pytest_repo: Path):
+    """The config init writes has to survive its own doctor. This one names a
+    path rather than a bare word, and doctor both resolves it and starts it.
+
+    Asked twice, from two directories. `--repo` is how every caller that is not
+    a shell reaches doctor — `mcp_server._run_cli` spawns
+    `crapkit doctor --repo <repo>` with no cwd of its own — and a relative
+    launcher read against the caller's directory instead of the repo's failed
+    that call on every repo but the one the caller happened to be sitting in.
+    """
+    _repo_venv(pytest_repo)
+    assert run_cli(pytest_repo, "init").returncode == 0
+
+    inside = run_cli(pytest_repo, "doctor")
+    outside = run_cli(pytest_repo.parent, "doctor", "--repo", str(pytest_repo))
+
+    for res in (inside, outside):
+        assert res.returncode == 0, res.stdout
+        assert "does not resolve" not in res.stdout and "cannot run" not in res.stdout
+
+
+def test_a_venv_without_pytest_leaves_the_bare_name_alone(pytest_repo: Path):
+    """An empty environment is not the one the lane wants. Naming it would
+    trade a lane that runs the wrong python for one that runs no pytest."""
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip",
+                    str(pytest_repo / ".venv")], check=True, capture_output=True)
+
+    assert run_cli(pytest_repo, "init").returncode == 0
+
+    from crapkit.config import load_config_text
+    cfg = load_config_text((pytest_repo / "crapkit.toml").read_text(encoding="utf-8"))
+    assert re.match(r"(python3?|py) -m pytest ", cfg.lanes[0].command), cfg.lanes[0].command
