@@ -34,6 +34,9 @@ def test_a_scope_matching_nothing_fails_and_stays_plural():
 
 
 def test_show_files_still_trails_each_scope_with_its_paths():
-    assert lines({"calc": ["calc/grade.py"]}, "calc") + [("", "       calc/grade.py")] == \
-        [(f.level, f.text)
-         for f in _doctor_scope_files({"calc": ["calc/grade.py"]}, _cfg("calc"), True)]
+    """Both halves pinned as literals: a test that compared the function with
+    itself would stay green if the scope line went back to `1 files`."""
+    findings = _doctor_scope_files({"calc": ["calc/grade.py"]}, _cfg("calc"), True)
+
+    assert [(f.level, f.text) for f in findings] == [
+        ("ok", "scope 'calc': 1 file"), ("", "       calc/grade.py")]
