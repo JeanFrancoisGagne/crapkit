@@ -12,6 +12,7 @@ A page that names the window has to name the cap too: the reader who learns
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -116,3 +117,67 @@ def test_the_panel_says_the_bash_half_is_the_readers_to_register():
     assert bash, "the panel never names Bash"
     assert "register" in bash, f"the panel does not say who registers Bash: {bash!r}"
     assert "*.py" in bash, f"the panel does not say Bash judges *.py only: {bash!r}"
+
+
+# --- the advisory's own wording --------------------------------------------
+# `_advisory_lines` is a pure function and its first line is the one every
+# reader meets: it opens the stderr the model holds beside a nonzero exit. Three
+# pages print a rendered sample of it and nothing compared them with the format
+# string, so rewording the parenthetical left all three teaching the old
+# sentence — AGENTS.md included, which is where an agent learns what exit 2
+# means.
+#
+# The values differ per page (each names its own file), so the sample supplies
+# them and the function supplies the wording around them. Comparing the whole
+# line is then a comparison of wording alone.
+#
+# `plugin/skills/crapkit-recover/SKILL.md` prints the line with `N`, `C` and
+# `PATH` left as placeholders rather than a rendered sample, so it is not one of
+# these pages.
+ADVISORY_PAGES = ("AGENTS.md", "docs/agent-json.md", "docs/handbook.html")
+
+_VALUES = re.compile(r"(\d+) function\(s\) over ceiling (\d+) in (\S+)")
+
+_BREACH = SimpleNamespace(ccn=9, start=41, long_name="refreshToken ( req , store )")
+
+
+def advisory_samples(text: str) -> list[str]:
+    """Every line a page prints as advisory output. A line that only mentions
+    the advisory mid-sentence is not a sample and is not read as one."""
+    stripped = (line.strip() for line in text.splitlines())
+    return [line for line in stripped if line.startswith("crapkit advisory:")]
+
+
+def rendered_head(sample: str) -> str:
+    """The head line the hook would build for the values this sample names."""
+    values = _VALUES.search(sample)
+    assert values, f"no count, ceiling and path to read out of {sample!r}"
+    count, ceiling, rel = int(values.group(1)), int(values.group(2)), values.group(3)
+    return claude_hook._advisory_lines(rel, [_BREACH] * count, ceiling)[0]
+
+
+@pytest.mark.parametrize("page", ADVISORY_PAGES)
+def test_the_page_prints_the_head_line_the_hook_builds(page):
+    samples = advisory_samples(_prose(page))
+
+    assert samples, f"{page} no longer prints the advisory head line"
+    for sample in samples:
+        assert sample == rendered_head(sample), page
+
+
+@pytest.mark.parametrize("page", ADVISORY_PAGES)
+def test_the_page_prints_the_closing_line_the_hook_builds(page):
+    """The third line is the other half a reader acts on: it says where the
+    breach is enforced. It comes out of the same function and drifts the same way."""
+    closing = claude_hook._advisory_lines("calc/grade.py", [_BREACH], 6)[-1]
+
+    assert closing in _prose(page), f"{page} does not carry {closing!r}"
+
+
+def test_a_page_that_kept_an_older_wording_would_be_caught():
+    """The reader this contract exists for: a page still promising the commit
+    gate's sentence on output that blocked nothing."""
+    stale = ("crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py "
+             "(decompose before committing)")
+
+    assert rendered_head(stale) != stale

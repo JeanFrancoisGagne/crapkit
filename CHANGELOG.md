@@ -51,6 +51,33 @@ crapkit --version, unedited`, which cannot age.
 `tests/unit/test_issue_forms_contract.py` holds the rule for the next one: every
 `placeholder` value under `.github/ISSUE_TEMPLATE/` either names the version this tree
 ships or names no version at all.
+### The advisory's own wording is held to the pages that print it
+`_advisory_lines` in `src/crapkit/cli/claude_hook.py` builds the three lines the
+PostToolUse hook writes to stderr, and the first of them says outright that the edit
+landed and nothing was blocked. That sentence is load-bearing: the reader is a model
+holding a nonzero exit code, and the commit gate's own wording would tell it a landed
+edit was rejected.
+
+`AGENTS.md`, `docs/agent-json.md` and `docs/handbook.html` each print a rendered sample
+of those lines, and nothing compared them with the format string. A new case in
+`tests/unit/test_claude_hook_docs_contract.py` reads each page's sample, feeds its count,
+ceiling and path back through `_advisory_lines`, and compares the whole line. The values
+come from the page and the wording comes from the code, so what is compared is the
+wording alone. The closing line, `the commit gate enforces this`, is pinned the same way.
+
+### The istanbul half of the absolute-path refusal is covered end to end
+A lane whose artifact measures this checkout but spells every path absolutely joins with
+nothing, because the join is root-relative. `src/crapkit/lanes.py` refuses it and picks
+the advice from the lane's parser: coverage.py gets `relative_files = true`, istanbul
+gets its reporter's own cwd/root option. Only the coveragepy branch had a test.
+
+`tests/e2e/test_lane_absolute_paths_istanbul_e2e.py` runs `crapkit coverage` against a
+fixture repo with an istanbul lane and asserts exit 5, the istanbul advice, and none of
+the coveragepy advice. Staging it needs a root spelled two ways, since a reporter that
+spells it as crapkit does is rebased and joins fine: the lane's script reaches the
+checkout through its parent, the way a reporter writes keys when its root option was
+joined rather than resolved. Case and symlinks stage the same thing on one platform each;
+this spelling stages it on both.
 
 ## 0.4.8 — 2026-09-01
 
