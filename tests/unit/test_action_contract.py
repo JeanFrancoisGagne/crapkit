@@ -275,6 +275,29 @@ def test_the_section_reader_walks_past_a_heading_inside_a_fence():
     assert _until_next_section(body)[-1] == "tail"
 
 
+def _whole_job_snippet() -> str:
+    """The section's second yaml block: the whole job, not the four-line one.
+
+    `permissions:` is what tells them apart, because only the job carries one.
+    """
+    blocks = re.findall(r"```yaml\n(.*?)```", _readme_section(), re.S)
+    jobs = [block for block in blocks if "permissions:" in block]
+    assert len(jobs) == 1, f"expected one whole-job snippet, found {len(jobs)}"
+    return jobs[0]
+
+
+def test_the_readme_job_sets_python_up_before_the_teams_own_install():
+    """The action's own first step is `actions/setup-python`, so a job that pip
+    installs before it installs into whatever interpreter the runner defaulted
+    to, and the action then runs the lanes on another one. The dependencies are
+    on the machine and the lane still cannot import them."""
+    job = _whole_job_snippet()
+
+    assert "actions/setup-python" in job, "the snippet sets no interpreter up"
+    assert job.index("actions/setup-python") < job.index("pip install"), \
+        "the pip install lands in an interpreter the lanes never run on"
+
+
 def test_the_readme_states_the_permission_the_comment_needs():
     """Without it the `gh api` POST is a 403 on a job whose every other step
     passed."""

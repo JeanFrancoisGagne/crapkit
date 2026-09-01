@@ -17,6 +17,55 @@ bump touched `crapkit X.Y.Z` and `rev: vX.Y.Z` and nothing else, and no test rea
 third pin. A contract now holds every `uses:` pin in the README to `crapkit.__version__`,
 so a bump that forgets it fails before the tag.
 
+### The 60-second start says when `init` writes a lane and when it writes a template
+The comment on the `crapkit init` line promised "scopes, a coverage lane, .gitignore
+lines" with no condition attached, so a reader whose repo carries neither a pytest marker
+file nor a JS test setup expected a lane, got a commented template, and ran `crapkit
+coverage` into a config that measures nothing. The line now names what `init` recognizes
+(`pyproject.toml`, `pytest.ini` or `setup.cfg` for pytest; a test script or vitest/jest in
+`package.json` for the JS side) and what happens without one: the lane comes commented
+out, `init` says to declare one, and `docs/lanes.md` is how to fill it in.
+
+### The formula says who coined the metric
+The README printed `CRAP = ccn^2 * (1 - cov)^3 + ccn` with nothing under it about where
+the score came from, which reads as if crapkit invented it. C.R.A.P., Change Risk
+Anti-Patterns, was coined for crap4j by Alberto Savoia and Bob Evans in 2007, and the
+handbook has said so from its first draft. The README now carries the same credit
+directly under the formula, and a contract holds the four names in the paragraph that
+formula sits in.
+
+### The sample worklist explains its own `risk 0.0`
+The 60-second start prints a worklist row scoring `risk 0.0`, which a first-time reader
+takes as a broken ranking rather than as arithmetic. Churn weight is position in the
+commit log, so a one-commit repo weights every file the same and the ranking falls back to
+ccn order. The sample now says that in a clause and points at the Risk section, which has
+carried the full explanation all along.
+
+### The Action's whole-job snippet sets an interpreter up before installing into it
+The snippet showed `pip install -e ".[dev]"` as the step before the action, with no
+`actions/setup-python` in front of it. The action's own first step is
+`actions/setup-python`, so a team copying that job installed their dependencies into
+whatever interpreter the runner defaulted to and the lanes then ran on a different one:
+the packages are on the machine and the lane still cannot import them. The snippet now
+mirrors this repo's own dogfood job, `actions/setup-python@v5` with `python-version:
+"3.12"` ahead of the install, and the `python-version` row of the inputs table says to
+match the two. A contract holds the order in the snippet.
+
+### The plugin section says which skills Claude reaches on its own
+The section listed three skills as one set, so a reader waited for Claude to pick up
+`crapkit-onboard` and it never did. `plugin/skills/crapkit-onboard/SKILL.md` carries
+`disable-model-invocation: true`: wiring a repo up happens once, and its description has
+no business in every turn's window. The section now splits them: `crapkit` and
+`crapkit-recover` are the two Claude reaches by itself, and the third is
+`/crapkit:crapkit-onboard`, which you type.
+
+### The Install section says nothing leaves the machine
+Nothing on the page told a reader evaluating crapkit for a private repo where their source
+goes. It goes nowhere: scoring runs the reader's own test command locally and reads the
+artifact it writes, and `src/crapkit` makes no network call of any kind. The Install
+section now says so and links `SECURITY.md`, which has carried the same claim under
+"It never phones home".
+
 ## 0.4.10 — 2026-09-01
 
 ### The action is named "crapkit complexity gate"

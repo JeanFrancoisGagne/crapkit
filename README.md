@@ -19,6 +19,9 @@ because half the callers are coding agents.
 CRAP = ccn^2 * (1 - cov)^3 + ccn
 ```
 
+The name is not ours: C.R.A.P. (Change Risk Anti-Patterns) was coined for crap4j by
+Alberto Savoia and Bob Evans in 2007.
+
 `ccn` is the smaller of standard and modified cyclomatic complexity, both read off one
 lizard pass. `cov` is branch coverage inside the function's span; with no branches it
 falls back to statement coverage, and with no statements to invoked-or-not, so a
@@ -38,7 +41,11 @@ it.
 ```
 pip install crapkit
 cd your-repo
-crapkit init        # writes crapkit.toml: scopes, a coverage lane, .gitignore lines
+crapkit init        # crapkit.toml and .gitignore lines, plus a live coverage lane when it
+                    # recognizes the runner: pyproject.toml, pytest.ini or setup.cfg for
+                    # pytest, a test script or vitest/jest in package.json for the JS side
+                    # python or JS source and no runner it knows: the lane comes commented
+                    # out, init says to declare one, docs/lanes.md is how to fill it in
 crapkit coverage    # runs the lane, joins coverage, stores a scored run
 crapkit worklist    # the ranked risk map
 crapkit ratchet seed && git add crapkit.toml crapkit-ratchet.tsv .gitignore
@@ -54,6 +61,9 @@ $ crapkit worklist
 worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
   risk      0.0  ccn  14 ( 14 std)    1c/1a w   0.00  calc/grade.py:7  classify( score , attempts , late , bonus )
 ```
+
+`risk 0.0` is what a one-commit repo scores, because churn needs a spread of commits to
+rank and ccn order stands in until then ([Risk](#risk-what-ranks-the-worklist)).
 
 `ratchet seed` signs today's debt at today's score. From then on marks only ever fall, so
 the repo can get better and never worse while you burn it down.
@@ -105,6 +115,11 @@ Every route pulls one dependency, `lizard>=1.24.0`, a normal PyPI wheel, so an o
 mirror installs fine. Requires Python 3.11 or newer. The `pip install -e ".[dev]"` under
 [Development](#development) is a different thing: it adds the test extra, for people
 changing crapkit.
+
+Scoring runs your own test command on your own machine and reads the artifact it writes.
+There is no network call anywhere in crapkit, so no source, no score and no telemetry
+leaves the box
+([SECURITY.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/SECURITY.md)).
 
 ```
 $ crapkit --version
@@ -183,9 +198,11 @@ claude plugin install crapkit@crapkit
 ```
 
 Two commands, installed once per user, and every repo on the machine gets it. The plugin
-ships three skills (`crapkit`, `crapkit-recover`, `crapkit-onboard`), the read-only MCP
-server, and one advisory PostToolUse hook that names any function an edit pushed over its
-ceiling. It adds no files to your repo, and it needs the crapkit CLI on PATH.
+ships three skills, the read-only MCP server, and one advisory PostToolUse hook that names
+any function an edit pushed over its ceiling. Claude reaches two of the skills by itself,
+`crapkit` and `crapkit-recover`; the third you type, as `/crapkit:crapkit-onboard`, because
+wiring a repo up happens once and its description has no business in every turn's window.
+It adds no files to your repo, and it needs the crapkit CLI on PATH.
 
 A repo with no `crapkit.toml` costs a silent sub-50 ms no-op per edit. Other agent
 runtimes have no marketplace: copy `plugin/skills/*` into their skills directory instead.
@@ -458,6 +475,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0               # the diff, and verify's baseline commit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"       # the interpreter the install below lands in
       - run: pip install -e ".[dev]"   # whatever your lanes need to run
       - uses: JeanFrancoisGagne/crapkit@v0.4.10
         with:
@@ -526,7 +546,7 @@ behind the checkout to measure from.
 | `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. Anything else exits 0 and the comment is the whole output |
 | `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone |
 | `top` | `"5"` | worklist rows rendered in the table |
-| `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into |
+| `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
 
 `gate: "false"` is the default on purpose. A team adopts the action before it has decided
 which findings should stop a merge, and a check that fails on day one gets turned off on
