@@ -23,6 +23,17 @@ for want of a run at or behind the real fork. The changed-file list the comment'
 is filtered to moved to `base.sha...HEAD` for the same reason, so both counts in the
 comment now describe the branch's own commits.
 
+Measured on a two-commit repository whose second commit adds one uncovered ccn-10
+function, running the step bodies against the first commit as the base. 0.4.8's call, and
+0.4.9's beside it:
+
+```
+verify OK @ 04a8eefdd3d vs baseline 04a8eefdd3d (0 changed files)          # exit 0
+
+verify FAILED @ 04a8eefdd3d vs baseline d2358fe6c0a (1 changed files)      # exit 6
+  GATE  crap    110.0  ccn  10 cov 0%  calc/grade.py:8  curve( scores , mode , floor , ceiling , skip_none )  -> decompose
+```
+
 The price is two lane runs on a pull request, and the new `delta` input buys it back:
 `delta: "false"` skips the base run and keeps 0.4.8's behaviour. A `push` event keeps it
 too, having no base commit to score and no pull request to comment on.
