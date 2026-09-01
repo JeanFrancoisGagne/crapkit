@@ -956,7 +956,7 @@ carries no `crapkit` at all, there is nothing to compare and nothing that can st
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: FAIL no `crapkit` on PATH - the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
+crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
 ```
 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console

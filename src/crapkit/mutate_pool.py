@@ -331,7 +331,16 @@ def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[
 
 def run_mutants(root: Path, cfg, mutants: list, report) -> list[bool]:
     """One killed flag per mutant, in mutant order. Workers past the mutant
-    count would only pay for empty worktrees."""
+    count would only pay for empty worktrees.
+
+    No mutants is no score to protect. The baseline is there to stop a broken
+    runner from printing 100%, and an empty run prints no percentage at all: a
+    diff with nothing mutable returned at exit 0 without starting anything, and
+    running a whole test suite for it would be a new bill and a new exit 5 on an
+    invocation that was free.
+    """
+    if not mutants:
+        return []
     workers = min(cfg.mutation_workers, len(mutants))
     if workers > 1:
         return _run_parallel(root, cfg, mutants, workers, report)

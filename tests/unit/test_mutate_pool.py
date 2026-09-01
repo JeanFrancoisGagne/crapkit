@@ -244,3 +244,23 @@ def test_a_baseline_that_times_out_says_so_rather_than_naming_an_exit_code(tmp_p
         mutate_pool.run_bounded = original
 
     assert "timed out" in str(caught.value), caught.value
+
+
+def test_a_run_with_no_mutants_starts_no_suite_at_all(tmp_path):
+    """A diff with no mutable lines used to cost nothing: `mutate` returned at
+    exit 0 without starting anything. There is no first mutant here for a
+    baseline to protect, so running one buys a whole test suite and a new exit 5
+    on an invocation that was free."""
+    from crapkit.mutate_pool import run_mutants
+
+    started = []
+    original = mutate_pool.run_bounded
+    try:
+        mutate_pool.run_bounded = lambda command, *a, **kw: started.append(command) or 1
+        verdicts = run_mutants(tmp_path, _Cfg("no-such-runner-anywhere -m pytest"), [],
+                               lambda *a: None)
+    finally:
+        mutate_pool.run_bounded = original
+
+    assert verdicts == []
+    assert started == [], f"nothing to score, so nothing may run: {started}"

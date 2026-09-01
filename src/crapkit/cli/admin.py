@@ -624,7 +624,7 @@ def _missing_named_script(cwd: Path, tok: str) -> bool:
     return not (cwd / tok).is_file()
 
 
-def _lane_path(lane) -> str | None:
+def _lane_path(lane, windows: bool | None = None) -> str | None:
     """The PATH the lane's runner will be looked for on, or None when the lane
     names none and the process PATH is the whole answer.
 
@@ -633,9 +633,18 @@ def _lane_path(lane) -> str | None:
     own process cannot see. doctor asked which() with its own environment and
     FAILed that lane at exit 1 — a red CI check for a lane that works. The
     lane's cwd was already threaded through this check; its env was not.
+
+    The key is matched the way that merge matches it, which is not the way
+    cmd.exe reads one. The merge is a plain dict update: on POSIX a lane
+    declaring `Path` adds a second variable and leaves `PATH` alone, so the lane
+    really runs on the process PATH and reading the mis-cased key here would
+    bring back the same false FAIL for a runner that resolves. Only on Windows,
+    where the env block is one case-insensitive namespace, does `Path` carry the
+    value the child will read.
     """
+    windows = os.name == "nt" if windows is None else windows
     for key, value in lane.env:
-        if key.upper() == "PATH":  # cmd.exe reads `Path` and `PATH` as one name
+        if key == "PATH" or (windows and key.upper() == "PATH"):
             return value
     return None
 
@@ -1212,7 +1221,13 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
 
 def _probed_cli_version(executable: str) -> str:
     """What `<executable> --version` answers, reduced to the number the manifest
-    carries, or this module's own `__version__` when the probe cannot run.
+    carries, or this module's own `__version__` when the probe cannot run OR
+    does not exit 0.
+
+    Only a clean exit is a version. A `crapkit` that starts and then errors — a
+    stale shim, a broken entry point printing a traceback, an argparse usage
+    dump — still has a last word, and taking it made the gap line name a version
+    nothing on the machine reports.
 
     Spawned directly rather than through `run_bounded`: this probe needs the
     OUTPUT, and with no shell in between the real program is the child, so
@@ -1226,7 +1241,7 @@ def _probed_cli_version(executable: str) -> str:
                               timeout=_PROBE_TIMEOUT_SECONDS)
     except (OSError, subprocess.SubprocessError):
         return __version__
-    answer = (done.stdout or done.stderr).split()
+    answer = (done.stdout or done.stderr).split() if done.returncode == 0 else []
     return answer[-1] if answer else __version__
 
 

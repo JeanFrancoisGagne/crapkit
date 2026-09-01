@@ -532,12 +532,12 @@ missing optional extra or one stale editable install takes the whole lane down a
 every scope it measures to no-lane. Same repo, same command, only that flag toggled:
 
 ```
-$ python -m pytest --cov --cov-report=json:.crapkit/cov/py.json   # one bad import
+$ python -m pytest --cov --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml   # one bad import
 Interrupted: 1 error during collection
 $ ls .crapkit/cov/
 junit-py.xml
 
-$ python -m pytest --cov --cov-report=json:.crapkit/cov/py.json --continue-on-collection-errors
+$ python -m pytest --cov --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors
 $ ls .crapkit/cov/
 junit-py.xml  py.json
 ```

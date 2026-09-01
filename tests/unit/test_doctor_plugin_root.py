@@ -428,3 +428,34 @@ def test_an_executable_that_answers_nothing_falls_back_to_this_module(tmp_path):
     about versions, and a handshake that reported '' would be worse than one
     that reports the number it does hold."""
     assert admin._probed_cli_version(str(tmp_path / "no-such-executable")) == CLI
+
+
+def _failing_shim(directory: Path, says: str) -> str:
+    """A `crapkit` on PATH that starts, prints, and exits nonzero — a stale shim,
+    a broken entry point, an argparse usage dump."""
+    directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        shim = directory / "crapkit.bat"
+        shim.write_text(f"@echo {says}\n@exit /b 2\n", encoding="utf-8")
+        return str(shim)
+    shim = directory / "crapkit"
+    shim.write_text(f'#!/bin/sh\necho "{says}"\nexit 2\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return str(shim)
+
+
+def test_an_executable_that_errors_is_not_read_for_a_version(tmp_path):
+    """The last word of a traceback or a usage line is not a version number, and
+    the gap line printed it as one: the reader was told the CLI reports a version
+    nothing on the machine reports."""
+    shim = _failing_shim(tmp_path / "bin", "usage: crapkit [-h] COMMAND")
+
+    assert admin._probed_cli_version(shim) == CLI
+
+
+def test_a_zero_exit_is_still_read_for_its_version(tmp_path):
+    """The guard must not swallow the answer it exists to protect."""
+    _crapkit_shim(tmp_path / "ok", "9.9.9")
+    name = "crapkit.bat" if os.name == "nt" else "crapkit"
+
+    assert admin._probed_cli_version(str(tmp_path / "ok" / name)) == "9.9.9"

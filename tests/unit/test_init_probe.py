@@ -993,9 +993,13 @@ def test_a_lane_that_declares_no_path_still_asks_the_process_one(tmp_path, monke
     assert _lane_command_problems(tmp_path, lane) == []
 
 
-def test_the_lanes_path_is_read_whatever_the_key_is_cased_as(tmp_path, monkeypatch):
-    """cmd.exe reads `Path` and `PATH` as one name, and config keeps env keys as
-    written, so the lookup cannot key on the exact spelling."""
+def test_a_mis_cased_path_key_is_read_the_way_the_child_will_read_it(tmp_path, monkeypatch):
+    """`Path` and `PATH` are one name to Windows and two to POSIX, and doctor has
+    to answer whichever one the lane's child process will. lanes.py merges
+    `{**os.environ, **lane.env}`, so on POSIX a lane declaring `Path` leaves the
+    process `PATH` in place and really runs on it: reading the mis-cased key
+    there would FAIL a runner that resolves, which is the false FAIL this whole
+    check was written to remove."""
     toolchain = tmp_path / "toolchain"
     word = _runner_on(toolchain)
     empty = tmp_path / "empty"
@@ -1004,4 +1008,52 @@ def test_the_lanes_path_is_read_whatever_the_key_is_cased_as(tmp_path, monkeypat
     lane = Lane(name="be", command=f"{word} --cov", artifact="cov.json",
                 parser="coveragepy", scopes=("be",), env=(("Path", str(toolchain)),))
 
-    assert _lane_command_problems(tmp_path, lane) == []
+    problems = _lane_command_problems(tmp_path, lane)
+
+    if os.name == "nt":
+        assert problems == [], "cmd.exe starts the runner off the lane's own Path"
+    else:
+        assert problems == [
+            f"lane 'be': executable {word!r} does not resolve on PATH"], (
+            "POSIX reads PATH alone, so the lane runs on the process PATH here")
+
+
+def test_only_windows_reads_a_mis_cased_key_as_the_path():
+    """Both branches on one machine, since a platform-gated assertion only ever
+    exercises the half that machine runs. `windows` is the same injected-flag
+    shape `config.shell_words` uses for the same reason."""
+    lane = Lane(name="be", command="runner --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("Path", "/opt/bin"),))
+
+    assert admin._lane_path(lane, windows=True) == "/opt/bin"
+    assert admin._lane_path(lane, windows=False) is None
+
+
+def test_the_exact_key_is_the_lanes_path_on_either_platform():
+    lane = Lane(name="be", command="runner --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("PATH", "/opt/bin"),))
+
+    assert admin._lane_path(lane, windows=True) == "/opt/bin"
+    assert admin._lane_path(lane, windows=False) == "/opt/bin"
+
+
+def test_a_mis_cased_path_key_does_not_hide_the_process_path_from_posix(tmp_path,
+                                                                        monkeypatch):
+    """The other side of the same merge: on POSIX the runner the PROCESS PATH
+    carries is the one the lane starts, whatever `Path` says. On Windows the
+    lane's own value wins and that runner is out of reach."""
+    toolchain = tmp_path / "toolchain"
+    word = _runner_on(toolchain)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(toolchain))
+    lane = Lane(name="be", command=f"{word} --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), env=(("Path", str(empty)),))
+
+    problems = _lane_command_problems(tmp_path, lane)
+
+    if os.name == "nt":
+        assert problems == [
+            f"lane 'be': executable {word!r} does not resolve on PATH"]
+    else:
+        assert problems == []

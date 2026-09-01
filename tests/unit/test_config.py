@@ -450,6 +450,20 @@ def test_a_path_no_tracked_file_could_match_is_refused_by_name(written: str):
     assert repr(written) in str(caught.value), caught.value
 
 
+@pytest.mark.parametrize("written", ["src/../etc", "src/..", "a/../../b", "src/../"])
+def test_a_path_that_climbs_out_mid_string_is_refused_too(written: str):
+    """`..` was refused only at the front, so `src/../etc` was accepted and then
+    matched nothing — the silent empty scope this guard exists to close, reached
+    by the spelling a reader writes when they mean a sibling directory. The
+    message, docs/configuration.md and the CHANGELOG all said `a path holding
+    `..`` already; this is the code catching up to them."""
+    with pytest.raises(ConfigError) as caught:
+        _one_scope(written)
+
+    assert "'s'" in str(caught.value), caught.value
+    assert repr(written) in str(caught.value), caught.value
+
+
 @pytest.mark.parametrize("written", [".", "./"])
 def test_a_root_scope_is_left_the_way_it_was_written(written: str):
     """Whether a scope may declare the repo root is the matcher's question, not
