@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/crapkit)](https://pypi.org/project/crapkit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-![crapkit init, coverage and worklist --top 5 on a small Python repo, then a shell heredoc adding a function at ccn 7: the per-edit advisory reports it and exits 2, and the commit gate refuses the staged file with exit 6](docs/demo.gif)
+![crapkit init, coverage and worklist --top 5 on a small Python repo, then a shell heredoc adding a function at ccn 7: the per-edit advisory reports it and exits 2, and the commit gate refuses the staged file with exit 6](https://raw.githubusercontent.com/JeanFrancoisGagne/crapkit/main/docs/demo.gif)
 
 crapkit scores every function in your repo on complexity times uncovered risk, ranks the
 worst ones by how often the file changes, and blocks commits that add more. It reads

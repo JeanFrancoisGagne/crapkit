@@ -42,6 +42,18 @@ def test_the_readme_alt_text_says_what_the_demo_shows():
         assert word in alt, f"the alt text never mentions {word!r}"
 
 
+def test_the_readme_fetches_the_demo_by_an_absolute_url():
+    """PyPI renders the README as the project page and resolves no relative
+    image path, so a `docs/demo.gif` reference shows a broken image there. The
+    raw GitHub URL renders on GitHub and on PyPI alike; the handbook, which has
+    to work from file:// on a clone, keeps its relative src instead."""
+    line = next(l for l in _page("README.md").splitlines() if "docs/demo.gif" in l)
+    target = line[line.index("](") + 2:line.rindex(")")]
+
+    assert target.startswith("https://raw.githubusercontent.com/JeanFrancoisGagne/crapkit/"), target
+    assert target.endswith("/docs/demo.gif"), target
+
+
 def test_the_handbook_shows_the_demo_on_its_first_screen():
     page = _page("docs/handbook.html")
     head = page[:page.index('<h2 id="intro"')]
