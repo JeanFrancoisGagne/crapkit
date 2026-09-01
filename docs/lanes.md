@@ -517,8 +517,23 @@ parser = "coveragepy"
 scopes = ["api"]
 ```
 
-`--cov-branch` is not optional. Without it, coverage.py writes a report with no branch data
-and the lane is refused rather than quietly downgraded to statement coverage:
+`--cov-branch` is what makes the coverage term measure the same structure the complexity
+term counts. Without it, coverage.py writes a report with no branch data, and since 0.4.12
+that scores from statements with the downgrade said out loud rather than failing the lane:
+
+```
+$ crapkit coverage
+crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches
+```
+
+Every function in the model already falls back to statement coverage when it holds no
+branches, so refusing the report blocked arithmetic crapkit performs on every run, and
+`pytest --cov --cov-report=json` is the shape most existing CI artifacts have — which is
+what `--reuse-artifacts` is for. Add the flag anyway: statement coverage overstates a
+branchy function, and the CRAP number is cubed in `(1 - cov)`.
+
+One report is still refused, because there is nothing to divide by and every function in it
+would come out fully covered:
 
 ```
 $ crapkit coverage
@@ -527,6 +542,22 @@ crapkit: every lane failed (1 of 1); the errors are above
 ```
 
 Exit 5.
+
+### A file the report carries no regions for
+
+coverage.py writes the per-file `functions` key once per code-region kind that file's own
+reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
+template coverage — loses the key while every `.py` file in the same report keeps it. That
+one entry used to fail the lane and throw away every other file in the report, including
+the ones that were fine. Those files are now skipped and named, and the rest is scored:
+
+```
+crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) — those files are skipped and the rest of the report is scored
+```
+
+A report where NO file carries regions is still exit 5, which is the "coverage is too old"
+case the message was written for: `coverage.py report has no function regions for any of
+its 40 file(s) — needs coverage >= 7.6`.
 
 ### The interpreter a lane binds to
 

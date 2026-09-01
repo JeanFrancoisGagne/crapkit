@@ -525,7 +525,8 @@ def _read_and_parse(lane: Lane, root: Path,
         fold_dead_lines(artifact_path, dead)
         return per_file, digest
     if lane.parser == "coveragepy":
-        return parse_coveragepy_file(artifact_path, path_prefix=lane.path_prefix)
+        return parse_coveragepy_file(artifact_path, path_prefix=lane.path_prefix,
+                                     label=f"lane {lane.name!r}")
     raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
 
 

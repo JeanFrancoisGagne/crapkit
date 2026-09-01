@@ -175,6 +175,25 @@ with and binds the install to it, the same sentence `crapkit init` prints for th
 The word is read with the shell that runs the command, so a quoted interpreter path stays
 one word instead of breaking at its space.
 
+### A coverage.py report without branch data scores instead of failing the lane
+`pytest --cov --cov-report=json` without `--cov-branch` is the default shape of an existing
+CI artifact, and it failed the whole lane: nothing scored, exit 5, on a report holding
+per-function statement counts crapkit's own model already knows how to divide. Every
+function falls back to statement coverage when it holds no branches, and that fallback runs
+on every normal report, so the guard was blocking arithmetic crapkit performs all day. It
+is now one stderr warning naming the lane and saying the coverage term is statement-based
+for this artifact. A report carrying neither branch nor statement data is still refused,
+because there is nothing to divide by and every function in it would score fully covered.
+
+### One file with no function regions no longer throws the whole report away
+coverage.py writes the per-file `functions` key once per code-region kind that file's own
+reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
+template coverage — loses the key while every `.py` file in the same report keeps it. That
+single entry failed the lane, the run scored nothing, and the files that were fine were
+never mentioned. Those files are now skipped and named in one warning, and the rest of the
+report is scored. A report where NO file carries regions is still exit 5, which is the
+"coverage is too old" case the message was written for.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

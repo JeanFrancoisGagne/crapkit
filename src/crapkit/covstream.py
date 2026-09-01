@@ -213,7 +213,6 @@ def _guarded(work, message: str):
 
 _BAD_ISTANBUL = "unparseable istanbul artifact"
 _BAD_REPORT = "unparseable coverage.py report"
-_NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
 
 
 def _istanbul_map(w: _Window, repo_root: str, per_file) -> dict:
@@ -298,50 +297,53 @@ def _meta_has_branch(key: str, value: object) -> bool:
     return bool(value.get("branch_coverage"))
 
 
-def _require_branch(seen: bool) -> None:
-    if not seen:
-        raise ToolError(_NO_BRANCH)
+class _Files:
+    """What the walk learned about the report's files, decided at the end.
 
-
-def _add_file(out: dict, prefix: str, raw_path: str, data: dict, to_functions):
-    """Record one file's functions, or hand back the error it raised.
-
-    The error is CARRIED, not thrown: the whole-document parser saw the report
-    before it read a single file, so it always refused a report with no branch
-    data first. Members are not ordered — json.dump(sort_keys=True) writes
-    "files" ahead of "meta" — so streaming only keeps that precedence by
-    finishing the walk before it decides which complaint wins.
+    Both verdicts wait for the whole walk. Members are not ordered —
+    json.dump(sort_keys=True) writes "files" ahead of "meta" — so a reader that
+    judges at the first file refuses a report whose branch flag it has not read
+    yet, and the whole-document parser has always seen meta first.
     """
-    try:
-        out[prefix + raw_path.replace("\\", "/")] = to_functions(raw_path, data)
-        return None
-    except Exception as exc:
-        return exc
+
+    def __init__(self) -> None:
+        self.per_file: dict[str, list[FnCoverage]] = {}
+        self.regionless: list[str] = []
+        self.total = 0
+
+    def add(self, prefix: str, raw_path: str, data: dict) -> None:
+        from .coverage_py import _file_functions, has_regions
+
+        self.total += 1
+        if not has_regions(data):
+            self.regionless.append(raw_path)
+            return
+        self.per_file[prefix + raw_path.replace("\\", "/")] = _file_functions(data)
 
 
-def _coveragepy_functions(w: _Window, prefix: str) -> dict:
-    """path -> function coverage, refusing a report with no branch data."""
-    from .coverage_py import _file_functions
+def _coveragepy_functions(w: _Window, prefix: str, label: str) -> dict:
+    """path -> function coverage, salvaging the same way the whole-document
+    parser does: a statement-based downgrade with no branch data, and files with
+    no regions skipped rather than fatal."""
+    from .coverage_py import judge_branch, judge_regions
 
-    out: dict = {}
-    branch, failure = False, None
+    files, branch = _Files(), False
     for key, value, kind in walk_report(w, "files"):
         if kind == "member":
             branch = branch or _meta_has_branch(key, value)
             continue
-        failure = failure or _add_file(out, prefix, key, value, _file_functions)
-    _require_branch(branch)
-    if failure is not None:
-        raise failure
-    return out
+        files.add(prefix, key, value)
+    judge_branch(branch, files.per_file, label)
+    judge_regions(files.regionless, files.total, label)
+    return files.per_file
 
 
-def parse_coveragepy_file(path: Path | str, *, path_prefix: str, chunk: int = CHUNK
-                          ) -> tuple[dict[str, list[FnCoverage]], str]:
+def parse_coveragepy_file(path: Path | str, *, path_prefix: str, chunk: int = CHUNK,
+                          label: str = "") -> tuple[dict[str, list[FnCoverage]], str]:
     """Per-file function coverage plus the sha256 of the report's own bytes."""
     w, handle = _window(path, chunk)
     with handle:
-        per_file = _guarded(lambda: _coveragepy_functions(w, lane_prefix(path_prefix)),
+        per_file = _guarded(lambda: _coveragepy_functions(w, lane_prefix(path_prefix), label),
                             _BAD_REPORT)
     return per_file, w.hasher.hexdigest()
 
