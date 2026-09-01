@@ -16,6 +16,20 @@ ceiling and path back through `_advisory_lines`, and compares the whole line. Th
 come from the page and the wording comes from the code, so what is compared is the
 wording alone. The closing line, `the commit gate enforces this`, is pinned the same way.
 
+### The istanbul half of the absolute-path refusal is covered end to end
+A lane whose artifact measures this checkout but spells every path absolutely joins with
+nothing, because the join is root-relative. `src/crapkit/lanes.py` refuses it and picks
+the advice from the lane's parser: coverage.py gets `relative_files = true`, istanbul
+gets its reporter's own cwd/root option. Only the coveragepy branch had a test.
+
+`tests/e2e/test_lane_absolute_paths_istanbul_e2e.py` runs `crapkit coverage` against a
+fixture repo with an istanbul lane and asserts exit 5, the istanbul advice, and none of
+the coveragepy advice. Staging it needs a root spelled two ways, since a reporter that
+spells it as crapkit does is rebased and joins fine: the lane's script reaches the
+checkout through its parent, the way a reporter writes keys when its root option was
+joined rather than resolved. Case and symlinks stage the same thing on one platform each;
+this spelling stages it on both.
+
 ## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request
