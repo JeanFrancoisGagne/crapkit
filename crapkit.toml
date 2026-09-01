@@ -25,6 +25,16 @@ notes = [
 # What carries it is pyproject.toml's [tool.coverage.run] patch = ["subprocess"]
 # (coverage >= 7.10.6), not pytest-cov: 7.0.0 dropped its own COV_CORE_SOURCE
 # hook, and without the patch key every cmd_* in cli/ reads 0% on pytest-cov 7.
+[[scope]]
+name = "tools"
+paths = ["tools"]
+languages = ["python"]
+# The comment builder the Action runs, the demo generator and the pytest-cov
+# reproduction. Nothing under here has a lane: coverage_optional keeps the ccn
+# ceiling on them and asks for nothing else. The demo's sample repo and its
+# history are excluded above; they are the subject of the demo, not crapkit.
+coverage_optional = true
+
 [[lane]]
 name = "py"
 command = "python -m pytest --cov=crapkit --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit.xml"
@@ -34,4 +44,4 @@ scopes = ["src"]
 results_artifact = ".crapkit/cov/junit.xml"
 
 [exclude]
-globs = ["tests/**"]
+globs = ["tests/**", "tools/demo/fixture/**", "tools/demo/history/**"]
