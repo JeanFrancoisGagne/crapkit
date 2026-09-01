@@ -77,15 +77,37 @@ def _is_skippable(line: str) -> bool:
     return not line.strip() or line == _HEADER or line.startswith("#")
 
 
-def load_ratchet(text: str) -> list[RatchetEntry]:
-    entries = []
+def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
+    """The marks, and one complaint per line that carries none.
+
+    Split out from `load_ratchet` so a READ-ONLY caller can salvage the file. A
+    mark is one optional field of what `explain` and `brief` answer, so a single
+    hand-edited short line used to cost the whole answer: a ValueError traceback
+    where a trajectory, a source listing and a churn count were all available.
+    Dropping a line can only take a ceiling away from a gate, never raise one,
+    so the read side is safe to salvage. The write side is not, and keeps
+    `load_ratchet`.
+    """
+    entries, complaints = [], []
     for i, line in enumerate(text.splitlines()):
         if _is_skippable(line):
             continue
         parts = line.split("\t")
-        if len(parts) != 3:
-            raise ValueError(f"ratchet line {i + 1} has {len(parts)} fields, expected 3: {line!r}")
-        entries.append(RatchetEntry(parts[0], parts[1], float(parts[2])))
+        if len(parts) == 3:
+            entries.append(RatchetEntry(parts[0], parts[1], float(parts[2])))
+        else:
+            complaints.append(f"ratchet line {i + 1} has {len(parts)} fields, "
+                              f"expected 3: {line!r}")
+    return entries, complaints
+
+
+def load_ratchet(text: str) -> list[RatchetEntry]:
+    """Every mark, refusing a file that holds a line carrying none. What every
+    caller that REWRITES the file reads with: a line skipped there would delete
+    a mark the repo signed for."""
+    entries, complaints = read_ratchet(text)
+    if complaints:
+        raise ValueError(complaints[0])
     return entries
 
 

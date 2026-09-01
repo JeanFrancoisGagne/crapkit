@@ -8,7 +8,7 @@ import os
 import sys
 
 from .. import __version__
-from ..errors import CrapkitError
+from ..errors import ConfigError, CrapkitError
 
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
@@ -134,6 +134,35 @@ class _VersionAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         print(_version_line())
         parser.exit()
+
+
+def cmd_help(args) -> int:
+    """`crapkit help [TOPIC]`, the habit git, npm and docker all answer to.
+
+    Without it `help` fell into the same invalid-choice branch as a typo: exit 2
+    and a brace dump of 25 subcommand names, which never says that `--help` is
+    the way to any one of them. It rebuilds the tree rather than capturing it,
+    so nothing holds a second parser alive for the invocations that never ask.
+    """
+    parser = build_parser()
+    _help_topic(parser, args.topic).print_help()
+    return 0
+
+
+def _help_topic(parser: argparse.ArgumentParser, topic: str | None):
+    """The parser `help` prints from: one subcommand's, or the whole CLI's."""
+    if topic is None:
+        return parser
+    topics = _help_topics(parser)
+    if topic not in topics:
+        raise ConfigError(f"no subcommand {topic!r}; `crapkit help` lists them")
+    return topics[topic]
+
+
+def _help_topics(parser: argparse.ArgumentParser) -> dict:
+    """Every subcommand the parser defines, by name."""
+    groups = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    return dict(groups[0].choices)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -352,7 +381,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "merge: 3-way git merge driver (BASE OURS THEIRS); "
                           "move: re-path marks at their recorded values (OLD NEW); "
                           "report: burn-down from the marks file's git history")
-    rat.add_argument("files", nargs="*", metavar="FILE",
+    # default=[] and not just nargs="*": argparse calls a ZERO_OR_MORE positional
+    # with no default REQUIRED, so bare `crapkit ratchet` used to answer "the
+    # following arguments are required: action, FILE" while report, seed and prune
+    # all run with no file at all. cmd_ratchet keeps its own per-action arity check.
+    rat.add_argument("files", nargs="*", metavar="FILE", default=[],
                      help="for merge: the three files git passes as %%O %%A %%B; "
                           "for move: OLD NEW, where a trailing '/' on OLD moves a directory")
     rat.add_argument("--json", action="store_true", help="machine output (report)")
@@ -400,6 +433,11 @@ def build_parser() -> argparse.ArgumentParser:
     cpl.add_argument("--top", type=int, default=50, help="cap the pair list (default 50)")
     cpl.add_argument("--json", action="store_true", help="machine output")
     cpl.set_defaults(func=_Handler("analyses", "cmd_coupling"))
+
+    hlp = sub.add_parser("help", help="print one subcommand's help, or the command list")
+    hlp.add_argument("topic", nargs="?", default=None, metavar="TOPIC",
+                     help="the subcommand to explain (default: the whole CLI)")
+    hlp.set_defaults(func=_Handler("parser", "cmd_help"))
     return parser
 
 

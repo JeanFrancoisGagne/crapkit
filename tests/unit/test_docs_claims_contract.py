@@ -843,13 +843,19 @@ def test_the_lanes_page_documents_a_root_below_the_git_top():
     assert "churn" in section, "the root-relative half is the whole fix"
 
 
+# `help` prints strings the parser already holds and opens nothing, so it is not
+# a subcommand that reads a repo without a way to name one.
+_READS_NO_REPO = {"help"}
+
+
 def _without_repo() -> list[str]:
-    """Subcommands the parser gives no --repo."""
+    """Subcommands that read a repo and are given no --repo."""
     import argparse
 
     subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
     return sorted(name for name, sub in subs[0].choices.items()
-                  if "--repo" not in {opt for act in sub._actions for opt in act.option_strings})
+                  if name not in _READS_NO_REPO
+                  and "--repo" not in {opt for act in sub._actions for opt in act.option_strings})
 
 
 def test_the_root_section_names_the_one_subcommand_without_repo():

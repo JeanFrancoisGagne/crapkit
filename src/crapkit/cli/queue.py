@@ -18,7 +18,7 @@ from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import admission, build_worklist, sql_floor
 from ._shared import (_latest_scored, _load_repo_config, _load_sources, _open_store,
-                      _print_json, _ratchet_entries)
+                      _positive_top, _print_json, _ratchet_entries)
 
 
 def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
@@ -44,6 +44,7 @@ def _pushdown_floor(cfg) -> int:
 
 
 def cmd_next_item(args: argparse.Namespace) -> int:
+    _positive_top("next-item", args.top)
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
     store, latest = _scored_store(root)
@@ -112,9 +113,9 @@ def _next_head(latest: dict, skipped_no_lane: int, skipped_claimed: int,
 
 
 def _claimable(ranked: list, top: int) -> list:
-    """What this call is about to hand out — nothing at all once the queue is
+    """What this call is about to hand out. Nothing at all once the queue is
     finished, so an exploratory --claim on it cannot hide tomorrow's top item."""
-    return ranked[:max(top, 1)] if _actionable(ranked) else []
+    return ranked[:top] if _actionable(ranked) else []
 
 
 def _maybe_claim(store, commit: str, take: bool, items: list, handles=None) -> None:
@@ -159,7 +160,7 @@ def _emit_next(store, head: dict, ranked, top: int, adm, cfg, scored,
         head.update(empty=True,
                     reasons=_next_reasons(store, head["run_id"], ranked, scored, adm, cfg,
                                           excludes, scopes))
-    elif top and top > 1:
+    elif top > 1:
         head.update(empty=False,
                     items=[_next_item_payload(r, adm, cfg, uncovered, _handle(handles, r))
                            for r in ranked[:top]])

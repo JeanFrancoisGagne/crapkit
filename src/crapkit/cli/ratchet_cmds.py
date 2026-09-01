@@ -9,7 +9,8 @@ from pathlib import Path
 
 from ..errors import ConfigError, CrapkitError
 from ..store import SnapshotStore
-from ._shared import _load_ratchet_or_die, _load_repo_config, _open_store, _print_json
+from ._shared import (_load_ratchet_or_die, _load_repo_config, _open_store, _print_json,
+                      _ratchet_or_die)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -82,13 +83,13 @@ def _merge_stamp(texts: list[str]) -> str:
 
 
 def _ratchet_merge(files: list) -> int:
-    from ..ratchet import dump_ratchet, load_ratchet, merge_ratchets
+    from ..ratchet import dump_ratchet, merge_ratchets
 
     if len(files) != 3:
         raise ConfigError("ratchet merge takes exactly three files: BASE OURS THEIRS (git %O %A %B)")
     texts = [Path(f).read_text(encoding="utf-8") for f in files]
     stamp = _merge_stamp(texts)
-    merged = merge_ratchets(*(load_ratchet(t) for t in texts))
+    merged = merge_ratchets(*(_ratchet_or_die(t, f) for t, f in zip(texts, files)))
     Path(files[1]).write_text(dump_ratchet(merged, stamp=stamp), encoding="utf-8", newline="\n")
     print(f"ratchet merge: {len(merged)} mark(s)")
     return 0

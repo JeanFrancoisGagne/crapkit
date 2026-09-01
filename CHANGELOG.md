@@ -139,6 +139,73 @@ absolute `--out` now writes where you pointed it and prints that path. A relativ
 `--out` that climbs out of the tree is still refused, and the refusal now says that
 an absolute path is the way to write outside the repo.
 
+### `next-item --top 0` refuses instead of handing out an item
+`crapkit next-item --top 0` printed an item and, with `--claim`, took a claim on it that
+hid that function from every other session. `--top -1` did the same. The slice was
+written `ranked[:max(top, 1)]`, so a 0 widened back to one, and the emit branch tested
+`top > 1`, so anything below it fell through to the single-item shape. An agent
+templating `--top {budget}` that computed 0 got work it had not asked for, locked. Its
+sibling `crapkit worklist --top 0` already exited 3 naming the rule. `next-item` now
+answers the same way: `next-item --top must be >= 1, got 0`, exit 3, no claim taken.
+
+### `duplication --top 0` no longer prints a clean bill of health
+`crapkit duplication --top 0` printed "no near-duplicate functions found" and exited 0
+over a tree full of duplicate pairs, which is a false all-clear and the thing a CI job
+reads. `--top -1` sliced from the tail and dropped the last pair with nothing said.
+`coupling --top` sat behind the same unguarded slice. Both commands now refuse anything
+below 1 at the entry, before they open the store: `duplication --top must be >= 1, got
+0`, exit 3.
+
+### `crapkit ratchet` no longer demands a file no action wants
+Bare `crapkit ratchet` exited 2 with "the following arguments are required: action,
+FILE". FILE is not required: `ratchet report`, `ratchet seed` and `ratchet prune` all run
+with no file and exit 0. argparse calls a `nargs="*"` positional required when it carries
+no default, so the message sent the reader hunting for an argument three of the five
+actions refuse to use. The positional now defaults to the empty list, and `cmd_ratchet`
+keeps the per-action arity check that already told `merge` it wants three paths and
+`move` two.
+
+### `crapkit help` and `crapkit help TOPIC`
+`crapkit help`, the habit git, npm and docker all answer to, fell into the same
+invalid-choice branch as a typo: exit 2 and a brace dump of 25 subcommand names, which
+never says that `--help` is the way to any one of them. `crapkit help` now prints the
+command list and `crapkit help coverage` prints that subcommand's own help, both exit 0.
+A TOPIC naming no subcommand exits 3 and says so.
+
+### One spelling for a file argument, `./` and absolute included
+`crapkit test-scoped ./src/a.py` answered `./src/a.py belongs to no declared scope`,
+which was false: the scope declaring it is in the same crapkit.toml that `src/a.py` and
+its backslash spelling both route through. Worse, `crapkit rescore --gate` handed an absolute path
+scored nothing and exited 0, a gate PASS on the same over-ceiling function that exits 6
+spelled relative, which is what a wrapper or an agent hands crapkit when it already holds
+the full path. Three commands each collapsed backslashes and did nothing else, so
+`owning_scope`, which matches on a prefix, saw a path sharing none. `test-scoped`,
+`rescore` and `mutate --files` now put every argument through one normalizer: backslashes
+collapse, a `./` prefix goes, and an absolute path is resolved against the repo root. A
+path that resolves outside the root is refused with `is outside the repo at <root>`
+rather than matched against nothing.
+
+### `--export` and `--sarif` create the directory they write into
+`crapkit inventory --export out/new/inv.tsv` raised a Python traceback,
+`FileNotFoundError`, and exit 1, a code crapkit's exit table does not define, when
+`out/new/` did not exist yet. `report --out` created it. For `coverage --sarif` the crash
+landed after the run was already committed to the store, so a run that had succeeded read
+as an unrecoverable failure. Both flags now go through the same rule `report --out`
+follows: the parent directory is created, a relative path stays repo-relative and is
+refused when it climbs out of the tree, and an absolute path writes where you named it.
+
+### A short line in the ratchet file no longer costs the whole answer
+A hand-edited `crapkit-ratchet.tsv` with one two-field line made `crapkit explain` and
+`crapkit brief` die on an unhandled `ValueError` with a Python stack trace, and made
+`rescore --gate` answer 1 with that trace instead of its own exit code. Both explain and
+brief are also MCP tools, so an agent got the traceback. The mark is one optional field
+of what those commands answer; the trajectory, the source, the dark lines and the churn
+were all available. The read-only callers now skip a line they cannot parse and name it
+on stderr, which can only take a ceiling away from a gate, never raise one. Every caller
+that REWRITES the file keeps the strict refusal, the merge driver included, because a
+skipped line there would delete a mark the repo signed for, and that refusal now arrives
+as `unreadable ratchet file <name>` rather than a stack trace.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

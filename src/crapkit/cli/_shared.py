@@ -1,10 +1,13 @@
 """Helpers more than one command family needs: the JSON envelope and its schema
 version, repo config loading, the snapshot store openers, TSV/SARIF writers, the
-ratchet file reader, and the gate line every gate prints. Nothing here belongs to
-one command; anything that does lives with its family."""
+ratchet file reader, the argument guards every command spells the same way, and
+the gate line every gate prints. Nothing here belongs to one command; anything
+that does lives with its family."""
 from __future__ import annotations
 
 import json
+import posixpath
+import sys
 from pathlib import Path
 
 from ..config import load_config_text
@@ -13,6 +16,78 @@ from ..store import SnapshotStore
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
+
+
+def _positive_top(command: str, top: int) -> int:
+    """`--top N` names how many rows to hand back, so nothing under 1 is a
+    question anyone asks.
+
+    Unchecked, the same 0 meant two different wrong things. `next-item` widened
+    it back to one with `max(top, 1)` and handed out an item the caller had not
+    asked for, claim and all. `duplication` and `coupling` sliced `[:0]` and
+    printed their all-clear over a tree full of pairs: an exit-0 clean bill of
+    health that was false, which is what a CI gate reads. A negative sliced from
+    the tail and dropped rows with nothing said.
+    """
+    if top < 1:
+        raise ConfigError(f"{command} --top must be >= 1, got {top}")
+    return top
+
+
+def _repo_relative(raw: str, root: Path = Path(".")) -> str:
+    """One spelling for a file argument, whatever the shell handed in.
+
+    `src/a.py`, `src\a.py`, `./src/a.py` and the absolute path tab completion
+    returns all name one file, and every one of them has to reach
+    `universe.owning_scope` as the repo-relative posix path the scopes are
+    declared in. Three commands spelled this as `raw.replace("\\", "/")` and
+    nothing else, so the `./` form — the one shells, `find` and coding agents
+    produce most often — matched no scope prefix in any of them: `test-scoped`
+    called it a file belonging to no declared scope, and `rescore --gate` scored
+    nothing and passed a gate the same file failed spelled relative.
+    """
+    path = raw.replace("\\", "/")
+    if _is_rooted(path):
+        return _under_root(path, root)
+    return posixpath.normpath(path)
+
+
+def _is_rooted(path: str) -> bool:
+    """A rooted path with no drive (`/tmp/a.py` on Windows) counts too: it names
+    the current drive's root, not a place under the repo."""
+    named = Path(path)
+    return named.is_absolute() or bool(named.root)
+
+
+def _under_root(path: str, root: Path) -> str:
+    """An absolute argument, said the way the scopes are declared. One that
+    lands outside the repo is refused rather than matched against nothing:
+    scoring no functions is not an answer to a path crapkit cannot place."""
+    try:
+        return Path(path).resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        raise ConfigError(f"{path} is outside the repo at {root}") from None
+
+
+def _repo_out_path(root: Path, out: str) -> Path:
+    """Where a writer flag puts its file, with the directory to hold it.
+
+    `report --out` created a missing parent; `--export` and `--sarif` opened the
+    path straight and died on FileNotFoundError with a Python traceback and exit
+    1, a code crapkit's exit table does not define. `coverage --sarif` died there
+    after the run was already committed to the store, so a run that had succeeded
+    looked unrecoverable. A relative path is repo-relative and may not climb out
+    of the tree; an absolute one is the caller naming a destination on purpose.
+    
+    """
+    named = Path(out)
+    rooted = named.is_absolute() or bool(named.root)
+    path = named if rooted else (root / out).resolve()
+    if not rooted and root.resolve() not in path.parents:
+        raise ConfigError(f"{out!r} is repo-relative and climbs out of {root}; "
+                          "pass an absolute path to write outside it")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _print_json(payload: dict) -> None:
@@ -71,21 +146,30 @@ def _emit_findings(root: Path, sarif_path: str | None, github: bool, results: li
     from ..sarifio import write_sarif
 
     if sarif_path:
-        write_sarif(root / sarif_path, results)
+        write_sarif(_repo_out_path(root, sarif_path), results)
     if github:
         for r in results:
             print(github_annotation(r))
 
 
-def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
+def _ratchet_or_die(text: str, name: str) -> list:
+    """The marks in a file crapkit is about to REWRITE, or a named refusal.
+
+    Strict on purpose: seed, prune, move and the merge driver all write the file
+    back, and salvaging a line crapkit could not parse would delete a mark the
+    repo signed for."""
     from ..ratchet import load_ratchet
 
-    if not ratchet_path.is_file():
-        return []
     try:
-        return load_ratchet(ratchet_path.read_text(encoding="utf-8"))
+        return load_ratchet(text)
     except ValueError as exc:
         raise ConfigError(f"unreadable ratchet file {name}: {exc}") from exc
+
+
+def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
+    if not ratchet_path.is_file():
+        return []
+    return _ratchet_or_die(ratchet_path.read_text(encoding="utf-8"), name)
 
 
 def _dirty_tag(dirty: bool) -> str:
@@ -112,13 +196,26 @@ def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
 
 
 def _ratchet_entries(root: Path, cfg) -> list | None:
-    """The committed marks, or None when the repo carries no marks file yet."""
-    from ..ratchet import load_ratchet
+    """The committed marks, or None when the repo carries no marks file yet.
+
+    Lenient, because every caller here only READS the marks: `explain`, `brief`
+    and `rescore --gate`. A line crapkit cannot parse carries no mark, so
+    dropping it can only make the gate stricter, never let a regression through.
+    One hand-edited short line used to reach explain and brief, which are also
+    two of the MCP tools an agent calls, as a raw ValueError traceback, with the
+    trajectory, source, dark lines and churn the caller asked for all sitting
+    there available.
+    """
+    from ..ratchet import read_ratchet
 
     ratchet_path = root / cfg.ratchet_file
     if not ratchet_path.is_file():
         return None
-    return load_ratchet(ratchet_path.read_text(encoding="utf-8"))
+    entries, complaints = read_ratchet(ratchet_path.read_text(encoding="utf-8"))
+    for complaint in complaints:
+        print(f"crapkit: skipped an unreadable mark in {cfg.ratchet_file}: {complaint}",
+              file=sys.stderr)
+    return entries
 
 
 def _load_sources(root: Path, paths: set) -> dict:

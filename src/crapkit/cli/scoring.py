@@ -19,6 +19,7 @@ from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
 from ._shared import (_analysis_tools, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _print_json, _ratchet_entries,
+                      _repo_out_path, _repo_relative,
                       _write_tsv)
 
 
@@ -102,7 +103,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=rows, kind="inventory")
 
     if args.export:
-        _write_tsv(root / args.export, tsv_lines(rows))
+        _write_tsv(_repo_out_path(root, args.export), tsv_lines(rows))
 
     summary = {
         "run_id": run_id,
@@ -317,7 +318,7 @@ def _select_lanes(cfg, requested):
 def _export_scored(root: Path, export: str, scored) -> None:
     from ..score import scored_tsv_lines
 
-    _write_tsv(root / export, scored_tsv_lines(scored))
+    _write_tsv(_repo_out_path(root, export), scored_tsv_lines(scored))
 
 
 def _flag_counts(scored) -> dict[str, int]:
@@ -434,7 +435,7 @@ def _rescore_analyze(root: Path, cfg, files) -> tuple[list, list, dict]:
     """Fresh complexity for the named files; the shared cache is merged, never truncated."""
     from ..hook import file_ceilings
 
-    rel_paths = sorted({p.replace("\\", "/") for p in files})
+    rel_paths = sorted({_repo_relative(p, root) for p in files})
     files_by_scope = assign_files(rel_paths, cfg, size_of=_file_sizer(root))
     flat = sorted(set().union(*files_by_scope.values())) if files_by_scope else []
     records_by_path = _rescored_records(root, root / ".crapkit" / "cache.json", flat,
