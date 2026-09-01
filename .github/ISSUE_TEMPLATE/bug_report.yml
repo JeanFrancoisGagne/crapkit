@@ -7,7 +7,7 @@ body:
     attributes:
       label: crapkit --version
       description: Paste the whole line.
-      placeholder: crapkit 0.4.0
+      placeholder: the output of crapkit --version, unedited
     validations:
       required: true
 

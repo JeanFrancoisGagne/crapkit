@@ -29,6 +29,28 @@ example repo's own lockfile talking and that a repo with no lockfile names no la
 `tests/unit/test_skills_contract.py` pulls every `[crapkit.scoped_tests]` entry out of the
 page's fenced toml and holds each one to the launcher names `scaffold.LOCKFILE_RUNNERS`
 carries.
+### The Bash matcher snippet is parsed on all three pages that print it
+README.md, `docs/agent-json.md` and the 0.4.7 section of CHANGELOG.md each carry the
+JSON a consumer pastes into their own settings to register the `Bash` half of the
+advisory. Nothing loaded any of the three, so a trailing comma, a renamed key or a
+timeout that drifted from the shipped one would have shipped green and failed on the
+reader's machine.
+
+`tests/unit/test_hook_snippet_contract.py` pulls every fenced json block naming a
+matcher off those pages, parses it, and holds it to one `PostToolUse` entry with matcher
+`Bash` running one `command` hook, whose command line and timeout are read out of
+`plugin/hooks/hooks.json` rather than typed again here.
+
+### Issue-form placeholders stopped naming a release
+`.github/ISSUE_TEMPLATE/bug_report.yml` offered `crapkit 0.4.0` as the example version
+line, and `field_report.yml` offered `crapkit 0.4.7`. A placeholder is what a reporter
+pattern-matches against, so a stale one teaches an old number as the normal answer, and
+it goes stale again at every release with nothing failing. Both now read `the output of
+crapkit --version, unedited`, which cannot age.
+
+`tests/unit/test_issue_forms_contract.py` holds the rule for the next one: every
+`placeholder` value under `.github/ISSUE_TEMPLATE/` either names the version this tree
+ships or names no version at all.
 
 ## 0.4.8 — 2026-09-01
 
