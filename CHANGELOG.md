@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.9 — unreleased
+
+### Issue-form placeholders stopped naming a release
+`.github/ISSUE_TEMPLATE/bug_report.yml` offered `crapkit 0.4.0` as the example version
+line, and `field_report.yml` offered `crapkit 0.4.7`. A placeholder is what a reporter
+pattern-matches against, so a stale one teaches an old number as the normal answer, and
+it goes stale again at every release with nothing failing. Both now read `the output of
+crapkit --version, unedited`, which cannot age.
+
+`tests/unit/test_issue_forms_contract.py` holds the rule for the next one: every
+`placeholder` value under `.github/ISSUE_TEMPLATE/` either names the version this tree
+ships or names no version at all.
+
 ## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request
