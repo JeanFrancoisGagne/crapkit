@@ -66,7 +66,7 @@ runs:
     # the real fork, find none, and refuse.
     #
     # Every failure here is the same failure: no base run. A shallow clone
-    # without the base commit, a base commit that predates crapkit.toml, a lane
+    # without the fork point, a fork point that predates crapkit.toml, a lane
     # that will not run against that tree. None of them stops the job, and the
     # verdict below falls back to judging the checkout against its own run.
     - name: score the base commit
@@ -121,7 +121,7 @@ runs:
           echo "the verdict covers the diff from $(cat "$sha")"
           crapkit verify --json --reuse-artifacts --base "$(cat "$sha")" > "$out" || code=$?
         else
-          echo "no run at a base commit: the verdict covers this checkout alone"
+          echo "no run at the fork point: the verdict covers this checkout alone"
           crapkit verify --json --reuse-artifacts > "$out" || code=$?
         fi
         echo "$code" > "$RUNNER_TEMP/crapkit-verify.exit"
