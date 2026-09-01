@@ -158,6 +158,40 @@ def test_a_progress_deadline_with_no_stream_to_watch_never_fires(tmp_path):
     assert code == 0
 
 
+class _UnmeasurableStream:
+    """A stream the spawn can write to and the watch cannot size.
+
+    `fileno` answers the spawn with the log's real descriptor and refuses every
+    later ask the way a closed file does, which is what `_stream_size` reads as
+    -1. Popen asks once, at the spawn; the progress watch asks after it.
+    """
+
+    def __init__(self, fh) -> None:
+        self._fh, self._spawned = fh, False
+
+    def fileno(self) -> int:
+        if self._spawned:
+            raise ValueError("I/O operation on closed file")
+        self._spawned = True
+        return self._fh.fileno()
+
+
+def test_a_stream_whose_size_cannot_be_read_skips_the_progress_watch(tmp_path):
+    """`_stream_size` answers -1 for a stream it cannot fstat, and an unchanging
+    -1 reads as no growth, so the watch would kill a perfectly busy command at
+    the deadline. run_bounded says the watch is ignored where there is nothing
+    to measure; a stream is nothing to measure whether it is DEVNULL or a handle
+    fstat refuses."""
+    log = tmp_path / "out.log"
+
+    with open(log, "w", encoding="utf-8") as fh:
+        code = run_bounded(f'"{sys.executable}" -c "import time; time.sleep({_IDLE * 2})"',
+                           None, stream=_UnmeasurableStream(fh), no_progress=_IDLE,
+                           cwd=tmp_path)
+
+    assert code == 0, "a stream nothing can measure must not read as a stalled command"
+
+
 def test_a_lane_without_a_progress_deadline_gets_no_watch():
     """0 is the config default: the total deadline is the only one."""
     assert _no_progress(Lane(name="n", command="c", artifact="a", parser="istanbul",

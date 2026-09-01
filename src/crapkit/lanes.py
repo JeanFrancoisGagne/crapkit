@@ -160,11 +160,16 @@ def _log_header(fh: IO[str], command: str, attempt: int) -> None:
     fh.flush()
 
 
-def _raise_stalled(fh: IO[str], lane: Lane, log_path: Path, attempt: int) -> None:
+def _raise_stalled(fh: IO[str], lane: Lane, log_path: Path, attempt: int,
+                   seconds: float) -> None:
     """A lane killed for silence, not for running long. The message says which:
-    the command was still alive and had written nothing since the header."""
-    fh.write(f"\n[crapkit] no output for {lane.no_progress_seconds}s; killed\n")
-    raise ToolError(f"lane {lane.name!r} wrote no output for {lane.no_progress_seconds}s "
+    the command was still alive and had written nothing since the header.
+
+    The seconds come from the killer, not from the config it read: one number,
+    measured once, so the log and the error cannot drift from what was waited.
+    """
+    fh.write(f"\n[crapkit] no output for {seconds:g}s; killed\n")
+    raise ToolError(f"lane {lane.name!r} wrote no output for {seconds:g}s "
                     f"(attempt {attempt}), so crapkit killed it; log: {log_path}")
 
 
@@ -177,8 +182,8 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int
         try:
             code = run_bounded(lane.command, _deadline(lane), stream=fh,
                                no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
-        except NoProgress:
-            _raise_stalled(fh, lane, log_path, attempt)
+        except NoProgress as stalled:
+            _raise_stalled(fh, lane, log_path, attempt, stalled.seconds)
         if code is None:
             fh.write(f"\n[crapkit] timed out after {lane.timeout_seconds}s; killed\n")
             raise ToolError(f"lane {lane.name!r} timed out after {lane.timeout_seconds}s "
@@ -219,13 +224,27 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     into a report that looks exactly like a whole run, which is the illusion the
     crashed-worker check exists to refuse; whether this half-run is worth
     scoring is the operator's call, and `--reuse-artifacts` is where they say so.
+
+    `coverage combine` is coverage.py's command, so only a coveragepy lane gets
+    the recipe: a JS lane sharing the root with a python one finds the python
+    lane's shards and would be handed advice that cannot work for it.
+
+    The `-o` target is printed relative to the shard directory, because that is
+    where the operator is told to stand. `artifact` is repo-relative, so a lane
+    with a `cwd` that pasted the key verbatim wrote the JSON one directory below
+    the path crapkit reads, and the next run refused it again.
     """
-    shards = sorted((root / lane.cwd if lane.cwd else root).glob(".coverage.*"))
+    if lane.parser != "coveragepy":
+        return ""
+    shard_dir = root / lane.cwd if lane.cwd else root
+    shards = sorted(shard_dir.glob(".coverage.*"))
     if not shards:
         return ""
-    return (f"; {len(shards)} coverage shards ({shards[0].name}, ...) sit in "
-            f"{shards[0].parent}, which is what a killed parallel run leaves behind: "
-            f"`coverage combine && coverage json -o {lane.artifact}` there, then a "
+    target = Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix()
+    noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
+    return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
+            f"{shard_dir}, which is what a killed parallel run leaves behind: "
+            f"`coverage combine && coverage json -o {target}` there, then a "
             "re-run with --reuse-artifacts, scores what that suite did measure")
 
 
@@ -650,8 +669,10 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
 
 def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict]:
     """The lane junit's failing ids and counts, or a ToolError saying why the
-    report cannot be read. The message names the report and not the lane, so
-    both callers below can spend it in a sentence of their own."""
+    report cannot be read. The message names the report and not the lane: one
+    caller, two paths out of it, and each supplies the lane itself. The re-raise
+    reaches the runner, which prefixes the lane name; `_warn_unreadable_results`
+    names the lane in its own sentence."""
     from .junitparse import suite_summary
 
     results_path = root / lane.results_artifact

@@ -601,7 +601,7 @@ rejected in review.
 ## Tests
 
     python -m pytest                      # both suites
-    python -m pytest tests/unit           # 2,513 tests, about a minute (16 s at -n 8)
+    python -m pytest tests/unit           # 2,515 tests, about a minute (16 s at -n 8)
     python -m pytest tests/e2e -n 8       # 617 tests, about 1m30
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and

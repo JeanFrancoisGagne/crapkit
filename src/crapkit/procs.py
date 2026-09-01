@@ -112,8 +112,9 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
 
     `no_progress` adds a second deadline on top of the first: the tree is killed
     and NoProgress raised when `stream` has not grown for that many seconds. It
-    needs a stream to watch, so it is ignored when output goes to DEVNULL, where
-    there is nothing to measure and every command would read as stalled.
+    needs a stream whose size can be read, so it is ignored for DEVNULL and for
+    a handle `os.fstat` refuses: there is nothing to measure in either, and an
+    unchanging -1 would read as a stall on every command.
 
     Output goes to DEVNULL by default, never a pipe: nobody here reads it, and a
     pipe outlives the timeout - the drain has no deadline of its own, so the
@@ -127,7 +128,7 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
     proc = subprocess.Popen(command, shell=True, stdin=subprocess.DEVNULL,
                             stdout=out, stderr=subprocess.STDOUT,
                             **_OWN_GROUP, **popen_kwargs)
-    if no_progress and stream is not None:
+    if no_progress and stream is not None and _stream_size(stream) != -1:
         return _wait_watching(proc, timeout, no_progress, stream)
     try:
         return proc.wait(timeout=timeout)

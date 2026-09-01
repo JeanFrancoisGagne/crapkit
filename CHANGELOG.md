@@ -19,7 +19,9 @@ it took on disk and no JSON, one directory above the artifact path the refusal n
 the refusal never mentioned them: one reporter found them on their own and combined them
 by hand. The message now counts the shards, says which directory holds them, and gives the
 two commands that turn them into a scored run (`coverage combine && coverage json -o
-<artifact>`, then `--reuse-artifacts`). crapkit does not combine them itself: shards from
+<artifact>`, then `--reuse-artifacts`), with the `-o` target written relative to that
+directory so a lane with a `cwd` writes the JSON where crapkit reads it. Only a
+`coveragepy` lane gets the recipe. crapkit does not combine them itself: shards from
 an interrupted suite merge into a report that looks like a whole run, which is what the
 crashed-worker check exists to refuse.
 

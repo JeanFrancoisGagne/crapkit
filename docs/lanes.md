@@ -1086,6 +1086,13 @@ they are:
 crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); full log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine && coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
 ```
 
+The `-o` target is written relative to the shard directory, because that is where the
+message tells you to stand: on a lane with a `cwd` it reads `../.crapkit/cov/coverage.json`
+rather than the repo-relative `artifact` key, which would have put the JSON one directory
+below the path the next run opens. Only a `coveragepy` lane gets the recipe. `coverage
+combine` is coverage.py's command, so a jest or vitest lane rooted beside a python one is
+never told to run it over the python lane's leftovers.
+
 crapkit does not run the combine for you. Shards from an interrupted suite merge into a
 report that looks exactly like a whole run, and taking that for a full measurement is what
 the crashed-worker check above refuses. Whether a half-run is worth scoring is your call,
