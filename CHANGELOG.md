@@ -17,6 +17,16 @@ bump touched `crapkit X.Y.Z` and `rev: vX.Y.Z` and nothing else, and no test rea
 third pin. A contract now holds every `uses:` pin in the README to `crapkit.__version__`,
 so a bump that forgets it fails before the tag.
 
+### A fork's read-only token no longer fails the whole action
+A pull request from a fork carries a read-only token, so the `gh api` call that posts
+the comment came back 403. Composite `run` steps use bash's `-e`, and that 403 failed
+the step and the job: the check went red on a pull request whose scoring had all
+passed, and the verdict the steps above computed was never explained anywhere. The step
+now opens `code=0` and records what each `gh api` call got, the way every step above it
+already did, and closes with a line naming the exit code and, when it is not zero, the
+token as the likely cause. `gate: true` is once again the only thing that can fail this
+action, and a contract test holds it there.
+
 ## 0.4.10 — 2026-09-01
 
 ### The action is named "crapkit complexity gate"
