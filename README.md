@@ -78,7 +78,8 @@ command when `pytest_cov` is missing; `pip install "crapkit[py]"` pulls the plug
 alongside crapkit when the two share a venv. On a Windows PATH holding only the `py`
 launcher it writes `py`, not a `python3` the lane could never run, and when cmd.exe cannot
 start the interpreter at all (exit 9009, the Store alias) it names that instead of guessing
-at pytest-cov. The two quickstarts below walk a real repo end to end.
+at pytest-cov. A repo that pins no lockfile and carries its own `.venv` gets that venv's
+interpreter in the lane rather than whichever python the shell answers with. The two quickstarts below walk a real repo end to end.
 
 **On Windows a lane command is read by cmd.exe**, the shell that will run it, not by sh.
 Double quotes are the portable quoting. A single-quoted value is refused at config load

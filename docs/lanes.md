@@ -476,6 +476,17 @@ The `--cov` family of flags comes from the `pytest-cov` package, not pytest itse
 `crapkit init` probes the lane's python and prints this fix when the plugin is missing.
 Write that install command in double quotes: single quotes do not survive cmd.exe.
 
+That note names the interpreter word it probed and the path that word resolves to here,
+and its install command is bound to the same word:
+
+```
+note: lane 'py' names `python`, which resolves here to /home/dev/venvbare/bin/python and cannot import pytest_cov — run `python -m pip install pytest-cov` in the environment the suite runs in (pip install "crapkit[py]" when that is crapkit's own environment), then `crapkit coverage`
+```
+
+A machine has more than one python, and the note used to say only "this python". Where the
+one it names is not the one the suite should run in, installing the package is the wrong
+move: repoint the lane instead.
+
 The probe asks the interpreter that runs pytest, found in the segment that holds the
 `pytest` token. `coverage run -m pytest --cov=pylib && coverage json` names no interpreter
 in front of pytest, so nothing is asked and no note is printed. If cmd.exe cannot start that
@@ -528,14 +539,30 @@ along with everything else:
 | `poetry.lock` | `poetry run python -m pytest …` |
 | `pdm.lock` | `pdm run python -m pytest …` |
 | `Pipfile.lock` | `pipenv run python -m pytest …` |
-| none | `python -m pytest …` (or `python3`, or `py` on Windows: the first that resolves) |
+| none, and a venv in the tree | `.venv/bin/python -m pytest …` (`.venv\\Scripts\\python.exe` on Windows) |
+| none at all | `python -m pytest …` (or `python3`, or `py` on Windows: the first that resolves) |
 
 The first match in that order wins, so a repo mid-migration between two managers gets the
-same config every time. Every python line `init` writes carries the same prefix, and there
-are two in any one file: the `[crapkit.scoped_tests]` entry, plus either the live
-`[[lane]]` command or, in a repo with no pytest marker file, the commented `[[lane]]`
-template that stands in for it. Step 3
-measuring one environment while step 4 tests another is the same bug one command later,
+same config every time.
+
+With no lockfile, `init` looks for the environment the repo carries: `.venv`, `venv`, and
+one `.venv` inside each scope it just sniffed. A directory counts only when it holds
+`pyvenv.cfg` and its interpreter imports `pytest`, so an empty environment, or a `venv/`
+package of somebody's sources, leaves the bare name alone. The path is repo-relative
+because an absolute one does not survive the repo reaching anyone else, and the Windows
+spelling is the file's, not the shell's: crapkit.toml is TOML, where `\` opens a string
+escape, so the committed line reads `command = ".venv\\Scripts\\python.exe -m pytest …"`
+and the loader hands the lane the single-backslash path. Forward slashes are not an
+option there: cmd.exe reads an unquoted `/` as the end of the command name and answers
+`'.venv' is not recognized`. That spelling is also the one gap in the row: a config
+written on Windows names `Scripts\python.exe`, which no Unix collaborator has, the same
+way `py` does not travel.
+
+Every python line `init` writes carries the same prefix, and there are two in any one
+file: the `[crapkit.scoped_tests]` entry, plus either the live `[[lane]]` command or,
+in a repo with no pytest marker file, the commented `[[lane]]` template that stands in
+for it. Step 3 measuring one environment while step 4 tests another is the same bug one
+command later,
 and a template that reads `python -m pytest` on a `uv.lock` repo is that same bug one
 uncomment later.
 

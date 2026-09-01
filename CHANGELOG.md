@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.12 — unreleased
+
+### `init` writes the venv the repo carries, not the python the shell answers with
+A library whose own `.venv` holds pytest and pytest-cov, on a machine whose PATH `python`
+holds neither, got a lane reading `python -m pytest --cov`. `init` exited 0, `doctor`
+called that config clean, and the first `crapkit coverage` exited 5 with `No module named
+pytest` while the right interpreter sat in the tree the whole time. With no lockfile to
+pin the environment, `init` now looks for one: `.venv`, `venv`, and a `.venv` inside each
+scope it just sniffed. A directory counts only when it holds `pyvenv.cfg` and its
+interpreter imports pytest, so an empty environment and a `venv/` package of sources both
+leave the bare name alone, and a lockfile still wins outright. The lane and the
+`[crapkit.scoped_tests]` entry get the same repo-relative launcher, `.venv/bin/python` or
+`.venv\\Scripts\\python.exe` in the file on Windows, which is the TOML escape for the
+one path cmd.exe can start: an unquoted `.venv/Scripts/python` answers `'.venv' is not
+recognized`.
+
+### The missing-pytest-cov note names which python it asked
+The note said "this python cannot import pytest_cov" and named no interpreter. A machine
+has more than one, and the repo above has two: the note fired for the PATH `python` while
+the venv beside it already carried the plugin, so the printed fix (install a package) was
+the wrong move for that tree. The note now names the word the lane runs, the path that
+word resolves to here, and an install bound to it (`python -m pip install pytest-cov`),
+so the reader can tell whether to install anything or repoint the lane.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

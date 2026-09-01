@@ -47,7 +47,82 @@ def _python_name() -> str:
     return "python3"
 
 
-def _interpreter(root: Path) -> str:
+# Where a repo keeps the environment it means, and what a venv looks like from
+# the outside: `pyvenv.cfg` is the file that makes a directory one, so a `venv/`
+# package of somebody's sources is never mistaken for an interpreter.
+_VENV_MARKER = "pyvenv.cfg"
+_VENV_DIR_NAMES = (".venv", "venv")
+_VENV_LAUNCHER = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+
+
+def _venv_dirs(root: Path, scopes: tuple[str, ...]) -> list[Path]:
+    """The directories that may hold this repo's own environment: beside
+    crapkit.toml first, then inside a scope, for a repo whose python sits one
+    level down and keeps its venv down there with it."""
+    return [root / name for name in _VENV_DIR_NAMES] + [root / s / ".venv" for s in scopes]
+
+
+def _venv_launcher(venv: Path) -> Path | None:
+    """The interpreter inside this venv, or None when the directory is not a
+    venv or does not carry one."""
+    if not (venv / _VENV_MARKER).is_file():
+        return None
+    launcher = venv.joinpath(*_VENV_LAUNCHER)
+    return launcher if launcher.is_file() else None
+
+
+def _imports_pytest(launcher: Path) -> bool:
+    """Does this environment carry the suite's own runner? An empty venv is not
+    the environment the lane wants, and naming it would trade one broken lane
+    for another. Asked through the same shell the lane runs under, with an
+    absolute path, so the answer does not depend on where init was invoked.
+
+    init already probes the interpreter it picks for pytest-cov, so asking the
+    same interpreter one more question costs one more spawn and no new rule.
+    """
+    from ..procs import run_bounded
+
+    probe = f'{_shell_quote(str(launcher))} -c "import pytest"'
+    try:
+        return run_bounded(probe, _PROBE_TIMEOUT_SECONDS) == 0
+    except OSError:
+        return False
+
+
+def _committed_launcher(venv: Path, root: Path) -> str:
+    r"""The launcher as a committed config spells it: repo-relative, so it
+    travels the way an absolute path never could, and written for the file it
+    lands in.
+
+    Windows takes both halves of that. cmd.exe reads an unquoted `/` as the end
+    of the command name (`.venv/Scripts/python --version` answers `'.venv' is
+    not recognized`), so the separator has to be a backslash; and `\` opens an
+    escape inside a TOML basic string, so init writes `.venv\\Scripts\\python.exe`
+    and the config loader hands back the single-backslash path that runs. Both
+    spellings start under cmd.exe, which is why the probe reads this one.
+    """
+    separator = "\\\\" if os.name == "nt" else "/"
+    return separator.join([*venv.relative_to(root).parts, *_VENV_LAUNCHER])
+
+
+def _repo_venv_python(root: Path, scopes: tuple[str, ...] = ()) -> str | None:
+    """The repo's own virtualenv launcher, or None when it has none that can
+    run the suite.
+
+    A bare `python` is the shell's answer, not the repo's: a library whose
+    `.venv` holds pytest, checked out on a machine whose PATH python holds
+    none, got a lane naming that PATH python. init exited 0, doctor called the
+    config clean, and the first `crapkit coverage` exited 5 on `No module named
+    pytest` — with the right interpreter sitting in the tree the whole time.
+    """
+    for venv in _venv_dirs(root, scopes):
+        launcher = _venv_launcher(venv)
+        if launcher and _imports_pytest(launcher):
+            return _committed_launcher(venv, root)
+    return None
+
+
+def _interpreter(root: Path, scopes: tuple[str, ...] = ()) -> str:
     """The python invocation a committed config can call.
 
     A lockfile at the root wins: `uv run python` and its siblings resolve to the
@@ -58,12 +133,17 @@ def _interpreter(root: Path) -> str:
     The manager only PREFIXES the name; which name it prefixes is still
     `_python_name`'s answer, so a Windows PATH carrying no `python` gets
     `uv run py` rather than a word the shell cannot start.
+
+    With no lockfile, a virtualenv in the tree is the next best thing the repo
+    says about its own environment, and the bare name is what is left when it
+    says nothing at all.
     """
     from ..scaffold import lockfile_runner
 
     runner = lockfile_runner(_present_lockfiles(root))
-    name = _python_name()
-    return f"{runner} {name}" if runner else name
+    if runner:
+        return f"{runner} {_python_name()}"
+    return _repo_venv_python(root, scopes) or _python_name()
 
 
 def _present_markers(root: Path) -> frozenset[str]:
@@ -286,9 +366,21 @@ def _dead_interpreter_note(name: str, word: str, code: int) -> str:
             f"(exit {code}) — {fix}, then `crapkit coverage`")
 
 
-def _missing_pytest_cov_note(name: str) -> str:
-    return (f"note: lane {name!r} runs `pytest --cov`, and this python cannot "
-            "import pytest_cov — pip install pytest-cov where the suite runs "
+def _missing_pytest_cov_note(name: str, word: str) -> str:
+    """Name the interpreter the probe asked and where that word landed here.
+
+    "this python" named nothing, and a machine has more than one. A repo whose
+    own `.venv` carries pytest-cov still gets this note when the lane names the
+    `python` a stock PATH answers with, and then installing a package is the
+    wrong move: the reader has to be able to tell which of the two was asked.
+    The install command carries the same word, so it lands in that interpreter's
+    environment rather than whichever one the reader's shell has active."""
+    import shutil
+
+    resolved = shutil.which(word) or word
+    return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
+            f"cannot import pytest_cov — run `{word} -m pip install pytest-cov` in the "
+            "environment the suite runs in "
             # Double quotes, not single: cmd.exe passes ' through as an
             # ordinary character and pip rejects the requirement. Double
             # quotes are the one form cmd, PowerShell, bash and zsh share,
@@ -335,8 +427,9 @@ def _lane_first_run_note(lane) -> str | None:
     dead = _dead_first_word(lane.command)
     if dead:
         return _dead_interpreter_note(lane.name, *dead)
-    if not _pytest_cov_probe(lane.command):
-        return _missing_pytest_cov_note(lane.name)
+    word = _probe_interpreter(lane.command)
+    if word and not _pytest_cov_probe(lane.command):
+        return _missing_pytest_cov_note(lane.name, word)
     return None
 
 
@@ -396,7 +489,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # The interpreter goes to both: a repo with no pytest marker file gets no
     # lane to read it back off, and its commented template is what the reader
     # uncomments.
-    interpreter = _interpreter(root)
+    interpreter = _interpreter(root, tuple(scopes))
     lanes = detect_lanes(_present_markers(root), _package_json(root), interpreter=interpreter)
     text = starter_toml(scopes, lanes, interpreter=interpreter)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back

@@ -12,6 +12,7 @@ import sys
 import time
 import types
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -739,3 +740,130 @@ def test_the_lockfiles_init_reads_are_the_ones_it_looks_for(tmp_path):
     _repo(tmp_path, "pdm.lock", "package-lock.json")
 
     assert admin._present_lockfiles(tmp_path) == frozenset({"pdm.lock"})
+
+
+# --- the virtualenv the repo carries -----------------------------------------
+#
+# `python -m pytest` binds to whatever venv the shell has active. A library
+# whose own .venv holds pytest, on a machine whose PATH python holds none, got
+# a lane naming that PATH python: init exited 0, doctor called the config
+# clean, and the first `crapkit coverage` exited 5 on "No module named pytest".
+
+_VENV_WORD = ".venv\\\\Scripts\\\\python.exe" if os.name == "nt" else ".venv/bin/python"
+
+
+def _fake_venv(root, *parts: str):
+    """A directory that looks like a virtualenv: the `pyvenv.cfg` marker and a
+    launcher where this OS keeps it. The launcher is an empty file, because
+    whether it imports pytest is the probe's answer and every test here hands
+    that in."""
+    venv = root.joinpath(*parts)
+    bindir = venv / ("Scripts" if os.name == "nt" else "bin")
+    bindir.mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+    (bindir / ("python.exe" if os.name == "nt" else "python")).write_text("", encoding="utf-8")
+    return venv
+
+
+def _pytest_imports(monkeypatch, answer: bool) -> None:
+    monkeypatch.setattr(admin, "_imports_pytest", lambda launcher: answer)
+
+
+def test_the_repos_own_venv_is_the_interpreter_the_lane_gets(tmp_path, monkeypatch):
+    _fake_venv(tmp_path, ".venv")
+    _pytest_imports(monkeypatch, True)
+
+    assert admin._repo_venv_python(tmp_path) == _VENV_WORD
+
+
+def test_a_venv_directory_without_the_marker_is_not_a_venv(tmp_path, monkeypatch):
+    """`venv/` is also an ordinary package name. pyvenv.cfg is what makes the
+    directory an environment, and without it the launcher is somebody's source
+    file."""
+    (tmp_path / "venv" / ("Scripts" if os.name == "nt" else "bin")).mkdir(parents=True)
+    _pytest_imports(monkeypatch, True)
+
+    assert admin._repo_venv_python(tmp_path) is None
+
+
+def test_a_venv_that_cannot_import_pytest_is_refused(tmp_path, monkeypatch):
+    """An environment without the suite's runner is not the environment the
+    lane wants, and naming it would trade one broken lane for another."""
+    _fake_venv(tmp_path, ".venv")
+    _pytest_imports(monkeypatch, False)
+
+    assert admin._repo_venv_python(tmp_path) is None
+
+
+def test_a_scopes_own_venv_counts_too(tmp_path, monkeypatch):
+    """A repo whose python sits one level down keeps its venv down there with
+    it. init already sniffed the scopes, so the answer costs nothing."""
+    _fake_venv(tmp_path, "api", ".venv")
+    _pytest_imports(monkeypatch, True)
+
+    assert admin._repo_venv_python(tmp_path) is None, "not a candidate without the scope"
+    word = admin._repo_venv_python(tmp_path, ("api",))
+    assert word == _VENV_WORD.replace(".venv", "api\\\\.venv" if os.name == "nt" else "api/.venv")
+
+
+def test_the_root_venv_wins_over_a_scopes(tmp_path, monkeypatch):
+    _fake_venv(tmp_path, ".venv")
+    _fake_venv(tmp_path, "api", ".venv")
+    _pytest_imports(monkeypatch, True)
+
+    assert admin._repo_venv_python(tmp_path, ("api",)) == _VENV_WORD
+
+
+def test_the_venv_beats_a_bare_name_and_loses_to_a_lockfile(tmp_path, monkeypatch):
+    """The lockfile is the repo saying which environment is right, and its
+    manager's `run` already binds to one. The venv answers the case where the
+    repo said nothing and a bare `python` picked the shell's."""
+    _fake_venv(tmp_path, ".venv")
+    _pytest_imports(monkeypatch, True)
+
+    assert admin._interpreter(tmp_path) == _VENV_WORD
+
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    assert admin._interpreter(tmp_path) == "uv run python"
+
+
+def test_a_repo_with_no_venv_still_gets_a_bare_name(tmp_path):
+    assert admin._interpreter(tmp_path) in ("python", "python3", "py")
+
+
+def test_the_venv_word_survives_the_config_it_is_written_into(tmp_path, monkeypatch):
+    r"""The one that has to hold on Windows. crapkit.toml is TOML, where `\` is
+    a string escape, and cmd.exe reads an unquoted `/` as the end of the
+    command name — so the word init writes carries doubled backslashes there,
+    and the config loader hands back the path that runs."""
+    import tomllib
+
+    _fake_venv(tmp_path, ".venv")
+    _pytest_imports(monkeypatch, True)
+    word = admin._repo_venv_python(tmp_path)
+
+    value = tomllib.loads(f'command = "{word} -m pytest --cov"')["command"]
+
+    assert value.endswith("python.exe -m pytest --cov") or value.endswith("python -m pytest --cov")
+    assert "//" not in value and "\\\\" not in value, "the escape unescapes to one separator"
+    assert admin._is_python(admin._first_word(word)), "the probe has to read it as a python"
+
+
+def test_the_pytest_import_probe_asks_a_real_interpreter():
+    assert admin._imports_pytest(Path(sys.executable)) is True
+
+
+def test_the_pytest_cov_note_names_the_python_it_asked(tmp_path, monkeypatch, capsys):
+    """"this python" named nothing. A repo whose own .venv carries pytest-cov
+    can still get this note for the `python` a stock PATH answers with, and
+    installing a package is then the wrong move: the reader has to be able to
+    tell which of the two was asked."""
+    _interpreter_shim(tmp_path, monkeypatch, 1)
+
+    _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
+
+    err = capsys.readouterr().err
+    assert "`python`" in err, "the word the lane names"
+    assert str(tmp_path) in err, "and where that word resolves on this machine"
+    assert "python -m pip install pytest-cov" in err, "an install bound to that interpreter"
+    assert '"crapkit[py]"' in err
