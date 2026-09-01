@@ -584,16 +584,21 @@ def test_an_unknown_flag_swallows_a_word_but_never_a_path():
         _covpy_lane("python -m pytest -q pylib/unit")
 
 
-def test_the_refusal_names_the_attached_form_as_a_remedy():
+def test_the_refusal_names_every_remedy_it_has():
     """Dropping the token is the wrong fix when it really is a flag's value, and
-    the old message offered nothing else. `-n8` / `--numprocesses=8` is the edit
-    that both keeps the command working and satisfies the guard."""
+    the first message offered nothing else. `-n8` / `--numprocesses=8` is the
+    edit that keeps the command working and satisfies the guard. The last clause
+    is for the suite that cannot collect its testpaths in one process: it has no
+    full-suite command to write, and taking `full_suite = false` on one narrowed
+    lane leaves its other testpaths unmeasured with nothing saying so."""
     with pytest.raises(ConfigError) as caught:
         _covpy_lane("python -m pytest pylib/unit")
     assert str(caught.value) == (
         "lane 'py': positional argument 'pylib/unit' narrows a full-suite coverage run; "
         "drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
-        "or set full_suite = false deliberately")
+        "or set full_suite = false deliberately; a suite whose testpaths cannot be "
+        "collected in one process needs one lane per testpath, each with "
+        "full_suite = false and its own artifact")
 
 
 # --- parse_git_log: malformed and mixed logs --------------------------------
