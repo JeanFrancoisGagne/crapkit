@@ -27,6 +27,13 @@ README_HEADING = "## The GitHub Action"
 _CALL = re.compile(r"(?:^|&&|\|\||[;|]|\$\()\s*crapkit\s+([a-z][a-z0-9-]*)([^\n]*)", re.M)
 _FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*)")
 
+# An `exit` and the word after it, where the shell would read one. The two
+# guards are the strings that surround it in this file: `exited $code`, which
+# every step logs its status with, and `crapkit-verify.exit`, the file the
+# verdict writes that code to. Reading either as an exit would put every step
+# in the list of things that can fail the job.
+_EXIT = re.compile(r"(?<![\w.-])exit\b(?:\s+(\S+))?")
+
 
 @lru_cache(maxsize=None)
 def _action() -> dict:
@@ -56,6 +63,23 @@ def _run_bodies() -> list[str]:
     bodies = [step["run"] for step in _steps() if "run" in step]
     return ["\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("#"))
             for body in bodies]
+
+
+def _logical_lines(body: str) -> list[str]:
+    """One entry per command the shell reads. A trailing backslash continues a
+    line, so a `gh api` call spread over three physical lines is one command and
+    its `|| code=$?` tail sits on the last of them."""
+    lines, pending = [], ""
+    for line in body.splitlines():
+        pending += line.rstrip()
+        if pending.endswith("\\"):
+            pending = pending[:-1]
+            continue
+        lines.append(pending.strip())
+        pending = ""
+    if pending:
+        lines.append(pending.strip())
+    return lines
 
 
 def _subcommands() -> dict:
@@ -302,6 +326,39 @@ def test_the_readme_states_the_permission_the_comment_needs():
     """Without it the `gh api` POST is a 403 on a job whose every other step
     passed."""
     assert "pull-requests: write" in _readme_section()
+
+
+def test_the_post_step_opens_by_keeping_its_own_status():
+    """`shell: bash` runs with -e, so the first command that fails takes the step
+    and the job with it. The scoring steps open `code=0` and record what they got;
+    this one posts the action's whole output and has the most to lose."""
+    body = _step_named("post the comment")["run"]
+
+    assert _logical_lines(body)[0] == "code=0"
+
+
+def test_every_gh_api_call_records_its_status_rather_than_failing_the_step():
+    """A pull request from a fork carries a read-only token, so the POST is a 403
+    on a job whose scoring all passed. Bare, that 403 fails the job and the
+    verdict the steps above computed is never explained anywhere."""
+    for body in _run_bodies():
+        for line in _logical_lines(body):
+            if "gh api" in line:
+                assert re.search(r"\|\| [a-z_]+=\$\?$", line), f"a gh api call can fail the step: {line}"
+
+
+def test_only_the_exit_code_step_exits_on_a_status_it_chose():
+    """The gate's own comment says `gate: true` is the only thing that fails this
+    action. Any other step that exits non-zero, or exits on whatever status it
+    last got, makes that sentence false. A regression guard, not the test that
+    drove the post step's change: that step's only exit was already `exit 0`.
+    A bare command failing under -e is the other way out, and the two tests
+    above hold the `gh api` calls; the steps that run crapkit keep `code=0`."""
+    exiting = [body for body in _run_bodies()
+               if any(match.group(1) != "0" for match in _EXIT.finditer(body))]
+
+    assert len(exiting) == 1, "a step other than the gate decides this action's exit code"
+    assert exiting[0] in _step_named("the exit code")["run"]
 
 
 def test_the_readme_states_the_fetch_depth_verify_needs():

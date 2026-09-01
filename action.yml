@@ -49,9 +49,10 @@ runs:
       shell: bash
       run: pip install -e "$GITHUB_ACTION_PATH"
 
-    # Every step below keeps its own status at 0 and records what it got. The
-    # comment is this action's output, and a job that dies at step three posts
-    # nothing and explains nothing.
+    # The steps below that run crapkit, and the one that posts the comment, keep
+    # their own status at 0 and record what they got. The comment is this
+    # action's output, and a job that dies at step three posts nothing and
+    # explains nothing.
 
     # verify measures the diff from its baseline run's commit, and a fresh CI
     # checkout holds no run at all. This step makes the one the verdict wants:
@@ -173,6 +174,11 @@ runs:
     # finds it, so a fifteen-push branch carries one comment and not fifteen.
     # A push event has no pull request to carry one: the text is in the log
     # above and nothing is posted.
+    #
+    # A pull request from a fork carries a read-only token, so both writes come
+    # back 403. That is the consumer's permissions, not a finding, and the
+    # comment is only ever this action's output: the step records the status the
+    # way the scoring steps above do and the gate below still decides the job.
     - name: post the comment
       shell: bash
       env:
@@ -180,20 +186,30 @@ runs:
         PR: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: |
+        code=0
+        lookup=0
         if [ -z "$PR" ]; then
           echo "no pull request on this event: the comment above was not posted"
           exit 0
         fi
         id="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
                 --jq 'map(select(.body | contains("<!-- crapkit-action -->"))) | .[0].id // empty' \
-              | head -n 1)"
+              | head -n 1)" || lookup=$?
+        if [ "$lookup" != 0 ]; then
+          echo "looking the existing comment up exited $lookup: posting a fresh one"
+        fi
         if [ -n "$id" ]; then
           gh api --silent --method PATCH "repos/$REPO/issues/comments/$id" \
-            --input "$RUNNER_TEMP/crapkit-comment.json"
+            --input "$RUNNER_TEMP/crapkit-comment.json" || code=$?
         else
           gh api --silent --method POST "repos/$REPO/issues/$PR/comments" \
-            --input "$RUNNER_TEMP/crapkit-comment.json"
+            --input "$RUNNER_TEMP/crapkit-comment.json" || code=$?
         fi
+        why=""
+        if [ "$code" != 0 ]; then
+          why=": a fork pull request's token cannot write comments, and the verdict is in this job's log"
+        fi
+        echo "posting the crapkit comment exited $code$why"
 
     # `gate: true` is the only thing that can fail this action. Adoption starts
     # advisory: the comment lands, the check stays green, and the team turns the

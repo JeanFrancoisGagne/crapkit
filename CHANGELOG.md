@@ -65,6 +65,16 @@ goes. It goes nowhere: scoring runs the reader's own test command locally and re
 artifact it writes, and `src/crapkit` makes no network call of any kind. The Install
 section now says so and links `SECURITY.md`, which has carried the same claim under
 "It never phones home".
+### A fork's read-only token no longer fails the whole action
+A pull request from a fork carries a read-only token, so the `gh api` call that posts
+the comment came back 403. Composite `run` steps use bash's `-e`, and that 403 failed
+the step and the job: the check went red on a pull request whose scoring had all
+passed, and the verdict the steps above computed was never explained anywhere. The step
+now opens `code=0` and records what each `gh api` call got, the way the scoring steps
+above it already did, and closes with a line naming the exit code and, when it is not
+zero, the token as the likely cause. The comment lookup keeps a status of its own, so a
+lookup that died on a closed pipe cannot blame the token for a comment that posted. No
+step but the gate's now exits on a status it chose, and a contract test holds it there.
 
 ## 0.4.10 — 2026-09-01
 
