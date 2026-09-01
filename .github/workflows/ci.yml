@@ -67,8 +67,25 @@ jobs:
       - name: the marketplace manifest validates
         run: claude plugin validate .
 
+  # The composite action at the repo root is the one surface no Python test can
+  # execute: `action.yml` is read by the runner, never imported. So crapkit runs
+  # it on crapkit, on every push and every pull request, and a step that breaks
+  # breaks here rather than in a consumer's job. `uses: ./` takes the working
+  # copy, so the action a pull request changes is the action this job runs.
+  #
+  # The dev extra goes in first, and with the same python the action selects:
+  # the action installs crapkit and nothing else, and crapkit.toml's `py` lane
+  # shells out to `pytest --cov`, which is pytest-cov's flag and pytest's
+  # runner. Without them the lane writes no artifact and the comment has no run
+  # to describe.
+  #
+  # gate stays false: crapkit's gate on crapkit is `hook-precommit` in the test
+  # job above, and this job's job is to prove the action, not to judge the tree
+  # twice.
   dogfood:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,8 +94,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - name: crapkit scores itself
-        run: |
-          python -m crapkit coverage --json > coverage.json
-          python -m crapkit verify --json > verdict.json || true
-          python -m crapkit worklist --top 5
+      - name: crapkit scores itself through its own action
+        uses: ./
+        with:
+          gate: "false"
+          top: "5"
+          python-version: "3.12"

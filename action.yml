@@ -1,0 +1,141 @@
+name: crapkit
+description: Score the checkout with crapkit and comment the worklist and the verdict on the pull request.
+author: Jean-Francois Gagne
+
+branding:
+  icon: bar-chart-2
+  color: red
+
+inputs:
+  gate:
+    description: >-
+      "true" exits with crapkit verify's own code, so a finding fails the check.
+      Anything else exits 0 and the comment is the whole output.
+    required: false
+    default: "false"
+  top:
+    description: worklist rows to render for the changed files.
+    required: false
+    default: "5"
+  python-version:
+    description: the python actions/setup-python installs crapkit into.
+    required: false
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # GITHUB_ACTION_PATH is this action's own checkout, which is the ref the
+    # consumer pinned in `uses:`. Installing from it is what makes
+    # `crapkit@v0.4.8` mean the 0.4.8 code: `pip install crapkit` here would
+    # score every consumer with whatever released last, whatever they pinned.
+    - name: install crapkit from this action's own checkout
+      shell: bash
+      run: pip install "$GITHUB_ACTION_PATH"
+
+    # Every step below keeps its own status at 0 and records what it got. The
+    # comment is this action's output, and a job that dies at step three posts
+    # nothing and explains nothing.
+    - name: score the checkout
+      shell: bash
+      run: |
+        code=0
+        crapkit coverage --json > "$RUNNER_TEMP/crapkit-coverage.json" || code=$?
+        echo "crapkit coverage exited $code"
+
+    # --reuse-artifacts parses the lane artifacts the step above just wrote from
+    # this same tree, instead of running the whole suite a second time for the
+    # same numbers. The baseline is that run, so on a clean checkout the diff
+    # verify judges is empty: what this line reports is the tree's own health,
+    # and README's `## The GitHub Action` says how to make it judge the diff.
+    - name: the verdict
+      shell: bash
+      run: |
+        code=0
+        crapkit verify --json --reuse-artifacts > "$RUNNER_TEMP/crapkit-verify.json" || code=$?
+        echo "$code" > "$RUNNER_TEMP/crapkit-verify.exit"
+        echo "crapkit verify exited $code"
+
+    - name: the ranked worklist
+      shell: bash
+      run: |
+        code=0
+        crapkit worklist --json > "$RUNNER_TEMP/crapkit-worklist.json" || code=$?
+        echo "crapkit worklist exited $code"
+
+    # The rows a reviewer can act on are the ones in the diff in front of them.
+    # base.sha is empty on a push, and a shallow clone does not hold the commit
+    # it names; either way the list is empty and the comment ranks the whole
+    # repository instead of a slice of it.
+    - name: the changed files
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        changed="$RUNNER_TEMP/crapkit-changed.txt"
+        : > "$changed"
+        if [ -n "$BASE_SHA" ]; then
+          git diff --name-only "$BASE_SHA" HEAD > "$changed" || : > "$changed"
+        fi
+        echo "$(wc -l < "$changed") changed file(s)"
+
+    - name: build the comment
+      shell: bash
+      env:
+        TOP: ${{ inputs.top }}
+      run: |
+        python "$GITHUB_ACTION_PATH/tools/action/comment.py" \
+          --coverage "$RUNNER_TEMP/crapkit-coverage.json" \
+          --verify "$RUNNER_TEMP/crapkit-verify.json" \
+          --verify-exit "$(cat "$RUNNER_TEMP/crapkit-verify.exit")" \
+          --worklist "$RUNNER_TEMP/crapkit-worklist.json" \
+          --changed "$RUNNER_TEMP/crapkit-changed.txt" \
+          --top "$TOP" \
+          --out "$RUNNER_TEMP/crapkit-comment.md" \
+          --json-out "$RUNNER_TEMP/crapkit-comment.json"
+        cat "$RUNNER_TEMP/crapkit-comment.md"
+
+    # One comment, edited in place. The marker line the builder writes is what
+    # finds it, so a fifteen-push branch carries one comment and not fifteen.
+    # A push event has no pull request to carry one: the text is in the log
+    # above and nothing is posted.
+    - name: post the comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        if [ -z "$PR" ]; then
+          echo "no pull request on this event: the comment above was not posted"
+          exit 0
+        fi
+        id="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                --jq 'map(select(.body | contains("<!-- crapkit-action -->"))) | .[0].id // empty' \
+              | head -n 1)"
+        if [ -n "$id" ]; then
+          gh api --silent --method PATCH "repos/$REPO/issues/comments/$id" \
+            --input "$RUNNER_TEMP/crapkit-comment.json"
+        else
+          gh api --silent --method POST "repos/$REPO/issues/$PR/comments" \
+            --input "$RUNNER_TEMP/crapkit-comment.json"
+        fi
+
+    # `gate: true` is the only thing that can fail this action. Adoption starts
+    # advisory: the comment lands, the check stays green, and the team turns the
+    # gate on when it has decided which findings should stop a merge.
+    - name: the exit code
+      shell: bash
+      env:
+        GATE: ${{ inputs.gate }}
+      run: |
+        code="$(cat "$RUNNER_TEMP/crapkit-verify.exit")"
+        if [ "$GATE" = "true" ]; then
+          echo "gate is on: exiting with verify's code $code"
+          exit "$code"
+        fi
+        echo "gate is off: verify's code $code is in the comment, this check stays green"
