@@ -120,6 +120,18 @@ def test_report_without_function_regions_anywhere_is_rejected():
         parse_coveragepy(json.dumps(old), path_prefix="")
 
 
+def test_an_old_report_without_cov_branch_names_the_coverage_version():
+    """`pytest --cov --cov-report=json` on a coverage below 7.6 is one shape,
+    not two: no regions anywhere AND no branch data. The branch verdict got
+    there first and sent the reader off to add --cov-branch, which changes
+    nothing, before they could learn the version is the cause."""
+    old = {"meta": {"branch_coverage": False},
+           "files": {"a.py": {"summary": {}}, "b.py": {"summary": {}}}}
+
+    with pytest.raises(ToolError, match="function regions"):
+        parse_coveragepy(json.dumps(old), path_prefix="")
+
+
 def test_malformed_report_is_loud():
     with pytest.raises(ToolError, match="coverage.py"):
         parse_coveragepy("not json", path_prefix="")

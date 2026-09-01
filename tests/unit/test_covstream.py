@@ -297,6 +297,20 @@ def test_a_streamed_report_with_no_regions_at_all_is_still_refused(tmp_path, chu
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
+def test_a_streamed_old_report_without_cov_branch_still_names_the_version(tmp_path, chunk):
+    """The same verdict order as the whole-document reader: a report with no
+    regions and no branch data is the coverage-too-old case, whichever reader
+    read it."""
+    from crapkit.covstream import parse_coveragepy_file
+
+    report = {"meta": {"branch_coverage": False},
+              "files": {"a.py": {"executed_lines": []}, "b.py": {"executed_lines": []}}}
+    path = _write(tmp_path, report)
+    with pytest.raises(ToolError, match="function regions"):
+        parse_coveragepy_file(path, path_prefix="", chunk=chunk)
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
 def test_a_malformed_report_is_still_a_loud_error(tmp_path, chunk):
     from crapkit.covstream import parse_coveragepy_file
 
@@ -475,17 +489,19 @@ def test_a_report_written_with_sorted_keys_still_finds_its_branch_flag(tmp_path,
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
-def test_no_branch_data_outranks_a_bad_file_whatever_order_they_are_written_in(tmp_path, chunk):
-    """The whole-document parser read meta before any file, so this report has
-    always complained about branch data first. Member order must not flip it."""
+def test_missing_regions_outrank_missing_branch_data_whatever_order_they_are_in(tmp_path, chunk):
+    """Two faults in one report, and both readers have to name the same one.
+    Regions win: a coverage too old to emit them emits no statement counts
+    either, so `--cov-branch` is a rerun that changes nothing. Member order must
+    not flip it — json.dump(sort_keys=True) writes "files" before "meta"."""
     from crapkit.coverage_py import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     report = {"files": {"a.py": {"executed_lines": []}}, "meta": {"branch_coverage": False}}
     path = _write(tmp_path, report, sort_keys=True)
-    with pytest.raises(ToolError, match="branch data"):
+    with pytest.raises(ToolError, match="function regions"):
         parse_coveragepy(path.read_text(encoding="utf-8"), path_prefix="")
-    with pytest.raises(ToolError, match="branch data"):
+    with pytest.raises(ToolError, match="function regions"):
         parse_coveragepy_file(path, path_prefix="", chunk=chunk)
 
 

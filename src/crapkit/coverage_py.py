@@ -152,8 +152,11 @@ def parse_coveragepy(text: str, *, path_prefix: str,
         prefix = (path_prefix.rstrip("/") + "/") if path_prefix else ""
         files = report.get("files", {})
         per_file = _scored_files(files, prefix)
-        judge_branch(bool(report.get("meta", {}).get("branch_coverage")), per_file, label)
+        # Regions first: a report with none of them has no statement counts
+        # either, so the branch verdict would answer "add --cov-branch" to a
+        # coverage too old to emit regions at all, and the rerun changes nothing.
         judge_regions(_regionless_files(files), len(files), label)
+        judge_branch(bool(report.get("meta", {}).get("branch_coverage")), per_file, label)
         return per_file
     except ToolError:
         raise

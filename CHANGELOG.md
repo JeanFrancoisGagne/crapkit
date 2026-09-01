@@ -150,7 +150,10 @@ A lane now records the modification time of every file it declares before each a
 requires it to move, so the refusal fires on the second run the way it did on the first. A
 leftover file gets its own wording — `wrote no artifact this run — the .crapkit/cov/py.json
 on disk predates it and is the previous run's` — because the old sentence, about a path
-that holds a report, reads as crapkit failing to see the file. `results_artifact` is held to
+that holds a report, reads as crapkit failing to see the file. Where the artifact is missing
+and the leftover is some other declared file, the artifact path still leads: `produced no
+artifact at .crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the previous
+run's`. `results_artifact` is held to
 the same rule, so a killed suite's junit cannot feed the test-count and no-new-failures
 checks last run's numbers. The check is the mtime and not the bytes, so a runner that
 rewrites an identical report stays green, and `--reuse-artifacts` is untouched.
@@ -170,10 +173,14 @@ When a lane failed because pytest rejected `--cov`, the hint read `pip install p
 and named no environment at all. The package has to land in the interpreter the LANE runs,
 and a repo whose lane points at its own venv gets a line that resolves to whatever venv the
 shell has active: one reporter ran it verbatim, pip reported success, and the next
-`crapkit coverage` failed identically. The hint now names the word the lane command starts
-with and binds the install to it, the same sentence `crapkit init` prints for the same gap.
-The word is read with the shell that runs the command, so a quoted interpreter path stays
-one word instead of breaking at its space.
+`crapkit coverage` failed identically. The hint now names the environment the suite runs in,
+and binds the install to an interpreter under the condition `crapkit init` uses: the lane
+starts with the word that runs pytest, and that word is a python. So `python -m pytest --cov`
+gets `python -m pip install pytest-cov`, while `uv run pytest --cov` and `coverage run -m
+pytest` get the environment named and no command — neither `uv` nor `coverage` has a `-m pip
+install`, and running one costs the reader a second, unrelated failure. The word is read with
+the shell that runs the command, so a quoted interpreter path stays one word instead of
+breaking at its space.
 
 ### A coverage.py report without branch data scores instead of failing the lane
 `pytest --cov --cov-report=json` without `--cov-branch` is the default shape of an existing
@@ -192,7 +199,10 @@ template coverage — loses the key while every `.py` file in the same report ke
 single entry failed the lane, the run scored nothing, and the files that were fine were
 never mentioned. Those files are now skipped and named in one warning, and the rest of the
 report is scored. A report where NO file carries regions is still exit 5, which is the
-"coverage is too old" case the message was written for.
+"coverage is too old" case the message was written for. Both readers weigh that verdict
+before the branch-data one, so `pytest --cov --cov-report=json` on a coverage below 7.6 —
+missing regions and branch data at once — is told which version it needs instead of being
+sent to add `--cov-branch`, which would change nothing.
 
 ## 0.4.11 — 2026-09-01
 

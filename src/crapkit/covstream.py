@@ -333,8 +333,10 @@ def _coveragepy_functions(w: _Window, prefix: str, label: str) -> dict:
             branch = branch or _meta_has_branch(key, value)
             continue
         files.add(prefix, key, value)
-    judge_branch(branch, files.per_file, label)
+    # Same order as the whole-document reader: regions decide first, so the two
+    # cannot answer one report differently.
     judge_regions(files.regionless, files.total, label)
+    judge_branch(branch, files.per_file, label)
     return files.per_file
 
 

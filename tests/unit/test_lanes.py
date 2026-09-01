@@ -143,6 +143,27 @@ def test_a_junit_the_run_did_not_rewrite_is_the_previous_run_s_too(tmp_path):
     assert "junit.xml" in str(raised.value)
 
 
+def test_a_missing_artifact_beside_a_stale_junit_still_names_the_artifact(tmp_path):
+    """Two failures at once: the run wrote no coverage AND left last run's junit
+    behind. The leftover wording alone names only the junit, and the path the
+    reader has to look at is the artifact — which is also what the recover skill
+    triages on ("produced no artifact at <path>")."""
+    (tmp_path / "junit.xml").write_text(
+        '<?xml version="1.0"?><testsuites><testsuite name="s" tests="1">'
+        '<testcase classname="t" name="one"/></testsuite></testsuites>',
+        encoding="utf-8")
+    lane = Lane(name="py", command=f'"{sys.executable}" -c "import sys; sys.exit(2)"',
+                artifact="cov.json", parser="istanbul", scopes=(),
+                results_artifact="junit.xml")
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane)
+
+    message = str(raised.value)
+    assert "produced no artifact at cov.json" in message, "the path with nothing at it"
+    assert "junit.xml" in message, "and the leftover, as a second clause"
+
+
 def test_no_private_project_namespace_ships_in_the_library():
     """A general-purpose tool cannot gate on another project's env vars: nobody
     outside that project will ever set one, so the switch is dead on arrival."""
@@ -316,6 +337,49 @@ def test_a_quoted_interpreter_path_reaches_the_hint_as_one_word(tmp_path):
         _raise_no_artifact(tmp_path, lane, log, 4)
 
     assert "C:/Program Files/py/python.exe" in str(raised.value)
+
+
+def _cov_hint(tmp_path, command: str) -> str:
+    from crapkit.lanes import _raise_no_artifact
+
+    lane = Lane(name="py", command=command, artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+    log = _plant_log(tmp_path, _NO_COV)
+    with pytest.raises(ToolError) as raised:
+        _raise_no_artifact(tmp_path, lane, log, 4)
+    return str(raised.value)
+
+
+def test_a_managed_lane_is_not_handed_a_pip_line_through_its_manager(tmp_path):
+    """`uv run pytest --cov` starts with `uv`, and `uv -m pip install pytest-cov`
+    is not a command: the reader runs it and gets a second, unrelated failure.
+    `uv run` and its siblings sync the project environment themselves, which is
+    why `init` says nothing about pytest-cov for such a lane."""
+    message = _cov_hint(tmp_path, "uv run pytest --cov")
+
+    assert "-m pip install" not in message, "no install line the manager cannot run"
+    assert "the environment the lane's suite runs in" in message
+    assert "shell's active venv" in message, "which environment is still the point"
+
+
+def test_a_coverage_run_lane_is_not_handed_a_coverage_pip_line(tmp_path):
+    """`coverage run -m pytest` names no interpreter in front of pytest, so
+    there is no word to bind the install to. `coverage -m pip install` is the
+    same dead end: coverage.py has no `-m`."""
+    message = _cov_hint(tmp_path, "coverage run -m pytest --cov=pylib && coverage json")
+
+    assert "-m pip install" not in message
+    assert "the environment the lane's suite runs in" in message
+
+
+def test_a_lane_that_starts_with_pytest_itself_names_no_interpreter(tmp_path):
+    """A bare `pytest --cov` lane starts with pytest, not with the python that
+    holds the package. `pytest -m pip install pytest-cov` runs pytest against a
+    directory called `pip`."""
+    message = _cov_hint(tmp_path, "pytest --cov=src")
+
+    assert "-m pip install" not in message
+    assert "the environment the lane's suite runs in" in message
 
 
 def test_one_line_longer_than_the_budget_says_it_was_cut(tmp_path):

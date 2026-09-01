@@ -495,10 +495,15 @@ one it names is not the one the suite should run in, installing the package is t
 move: repoint the lane instead.
 
 A lane that reaches `crapkit coverage` with the plugin still missing gets the same fact from
-the refusal, which names the word the lane starts with and says the install has to land in
-that environment rather than in the shell's active venv. Before 0.4.12 it read `pip install
-pytest-cov` and named no environment at all, so a reader whose lane ran its own venv
-installed the package where it changed nothing.
+the refusal: the package has to land in the environment the SUITE runs in, not in the shell's
+active venv. Before 0.4.12 it read `pip install pytest-cov` and named no environment at all,
+so a reader whose lane ran its own venv installed the package where it changed nothing. The
+refusal binds the install to an interpreter under the same condition the probe uses — the
+lane starts with the word that runs pytest, and that word is a python — so
+`python -m pytest --cov` earns `python -m pip install pytest-cov` while `uv run pytest --cov`
+and `coverage run -m pytest --cov=pylib` name the environment and stop there. Neither `uv`
+nor `coverage` has a `-m pip install`, and a reader who runs one gets a second, unrelated
+failure.
 
 The probe asks the interpreter that runs pytest, found in the segment that holds the
 `pytest` token. `coverage run -m pytest --cov=pylib && coverage json` names no interpreter
@@ -557,7 +562,9 @@ crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(
 
 A report where NO file carries regions is still exit 5, which is the "coverage is too old"
 case the message was written for: `coverage.py report has no function regions for any of
-its 40 file(s) — needs coverage >= 7.6`.
+its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
+a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
+which a coverage that old would not fix.
 
 ### The interpreter a lane binds to
 
@@ -1165,20 +1172,26 @@ the successful lanes' provenance under `lanes`.
 
 ### The artifact has to be the one this run wrote
 
-A lane passes when its command finishes AND every file the lane declares has a newer
-modification time than it had before the attempt. Existence used to be the whole test, so a
-lane failed loud exactly once — on the first run, against an empty `.crapkit/` — and scored
-the previous run's file on every run after that. A vitest lane without `reportOnFailure`
-and a pytest run that dies in collection both land there, and what came out was a confident
-grade off a measurement nothing took, stamped with the current commit so `--reuse-unchanged`
-went on trusting it.
+A lane passes when its command finishes AND every file the lane declares that was already
+on disk has a different modification time after the attempt. A file that was never there is
+not part of that check: it is the missing-artifact refusal crapkit already had, and a
+`results_artifact` that never appeared gets its own sentence from the provenance reader.
+Existence used to be the whole test, so a lane failed loud exactly once — on the first run,
+against an empty `.crapkit/` — and scored the previous run's file on every run after that. A
+vitest lane without `reportOnFailure` and a pytest run that dies in collection both land
+there, and what came out was a confident grade off a measurement nothing took, stamped with
+the current commit so `--reuse-unchanged` went on trusting it.
 
-A leftover file says so in its own words, because "produced no artifact at
+A leftover artifact says so in its own words, because "produced no artifact at
 .crapkit/cov/py.json" about a path that holds a report reads as crapkit failing to see it:
 
 ```
 crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json on disk predates it and is the previous run's (command exit 2); full log: /repo/.crapkit/lane-py.log; last output: ...
 ```
+
+When the artifact is not on disk at all and the leftover is some other declared file, the
+artifact path leads and the leftover follows it: `produced no artifact at
+.crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the previous run's`.
 
 The check is the modification time, not the bytes: a runner that rewrites a byte-identical
 report still bumps it, so an unchanged rerun stays green. `results_artifact` is held to the

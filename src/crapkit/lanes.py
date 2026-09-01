@@ -16,10 +16,10 @@ import os
 import re
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import IO, NamedTuple
 
-from .config import Lane, shell_words
+from .config import Lane, shell_segments, shell_words
 from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
@@ -212,23 +212,68 @@ def _lane_runner(lane: Lane) -> str:
     return words[0] if words else lane.command
 
 
+# The names a python answers to, matched against the last segment of the word:
+# `python`, `python3`, `py`, `python3.12`, `C:/Program Files/py/python.exe`.
+# Init reads the same set (`_is_python` in cli/admin.py) to decide which lanes it
+# can name an interpreter for.
+_PYTHON_WORD = re.compile(r"py(thon3?(\.\d+)?)?(\.exe)?$", re.IGNORECASE)
+
+
+def _pytest_segment(command: str) -> list[str]:
+    """The one command on the line that runs pytest, or nothing when none does.
+    A lane chains steps (`coverage run -m pytest --cov=pylib && coverage json`)
+    and only the step holding pytest says anything about pytest-cov."""
+    for segment in shell_segments(command):
+        if any(token.endswith("pytest") for token in segment):
+            return segment
+    return []
+
+
+def _pytest_runner(lane: Lane) -> str:
+    """The interpreter this lane runs pytest with, or "" when no python does.
+
+    Init's rule: the word has to head the step that runs pytest, and it has to
+    be a python. `uv run pytest --cov` starts with `uv`, `coverage run -m pytest
+    --cov=pylib` starts with `coverage`, and a bare `pytest --cov` lane starts
+    with pytest. None of the three takes `-m pip install`, and both of the first
+    two are lanes this repo documents.
+    """
+    word = _lane_runner(lane)
+    segment = _pytest_segment(lane.command)
+    if not segment or segment[0] != word:
+        return ""
+    return word if _PYTHON_WORD.fullmatch(PurePath(word).name) else ""
+
+
+def _pytest_cov_home(lane: Lane) -> str:
+    """Which environment the package has to land in, as concretely as the lane
+    command allows.
+
+    A repo whose lane runs its own venv got `pip install pytest-cov`, which
+    lands in whatever venv the reader's shell has active; the reporter ran it
+    verbatim, it installed fine, and the next `crapkit coverage` failed
+    identically. So the hint binds the install to the interpreter the lane
+    names. When the lane names no interpreter, it says which environment and
+    stops there: an install line built around a word that has no `-m` flag costs
+    the reader a second, unrelated failure before they are back where they were.
+    """
+    word = _pytest_runner(lane)
+    if not word:
+        return "the environment the lane's suite runs in"
+    return f"the environment `{word}` runs in (`{word} -m pip install pytest-cov`)"
+
+
 def _missing_plugin_hint(tail: str, lane: Lane) -> str:
     """The one failure signature a new user cannot decode: pytest rejecting
     --cov points at crapkit's config when the real gap is the pytest-cov package.
 
     Which environment it is missing from is the other half of the hint, and it
-    used to name none. A repo whose lane runs its own venv got `pip install
-    pytest-cov`, which lands in whatever venv the reader's shell has active; the
-    reporter ran it verbatim, it installed fine, and the next `crapkit coverage`
-    failed identically. Same sentence `init` prints for the same gap, so a
-    reader who has seen one recognises the other.
+    used to name none.
     """
     if "unrecognized arguments" not in tail or "--cov" not in tail:
         return ""
-    word = _lane_runner(lane)
     return (f" — the --cov flags come from the pytest-cov package, which has to be "
-            f"installed in the environment `{word}` runs in (`{word} -m pip install "
-            f"pytest-cov`), not in the shell's active venv")
+            f"installed in {_pytest_cov_home(lane)}, not in the shell's active venv")
 
 
 def _shard_hint(root: Path, lane: Lane) -> str:
@@ -269,19 +314,25 @@ def _shard_hint(root: Path, lane: Lane) -> str:
             "re-run with --reuse-artifacts, scores what that suite did measure")
 
 
-def _no_artifact_head(lane: Lane, stale: list[str]) -> str:
+def _no_artifact_head(root: Path, lane: Lane, stale: list[str]) -> str:
     """What the lane failed to do, in the words the disk supports.
 
     An empty `.crapkit/` and a leftover file are the same failure — this run
     wrote nothing — and they read completely differently to whoever has to fix
     it. Told "produced no artifact at .crapkit/cov/py.json" about a path that
-    holds a report, a reader concludes crapkit cannot see the file, so the
-    leftover case says which run the file belongs to instead.
+    holds a report, a reader concludes crapkit cannot see the file, so a lane
+    whose artifact IS the leftover says which run the file belongs to instead.
+
+    When the artifact is not on disk at all, that path leads: it is where the
+    reader has to look, and the recover skill triages on "produced no artifact
+    at <path>". The leftover results file rides behind it as a second clause.
     """
     if not stale:
         return f"produced no artifact at {lane.artifact}"
-    return (f"wrote no artifact this run — the {', '.join(stale)} on disk predates it "
-            f"and is the previous run's")
+    leftover = f"the {', '.join(stale)} on disk"
+    if (root / lane.artifact).is_file():
+        return f"wrote no artifact this run — {leftover} predates it and is the previous run's"
+    return f"produced no artifact at {lane.artifact}, and {leftover} is the previous run's"
 
 
 def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None,
@@ -293,7 +344,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     detail = f" (command exit {exit_code})" if exit_code is not None else ""
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
-    raise ToolError(f"lane {lane.name!r} {_no_artifact_head(lane, stale or [])}{detail}"
+    raise ToolError(f"lane {lane.name!r} {_no_artifact_head(root, lane, stale or [])}{detail}"
                     f"; full log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
                     f"{_shard_hint(root, lane)}")
 
