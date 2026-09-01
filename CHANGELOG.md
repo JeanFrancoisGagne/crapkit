@@ -70,6 +70,39 @@ therefore stops becoming a scope of its own, which `doctor` then failed as a sco
 measures, and which silently joined the js lane in a repo that had one, scoring vendored
 code as the team's own debt. Production code at the root, `build.sh` and `tool.js`, still
 FAILs: it is unmeasured source, and a scope may name a file.
+### New lane key `no_progress_seconds` kills a suite that stops making progress
+`timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite
+that hangs at minute three without cutting the slow ones too, and its default is no
+deadline at all: a lane that hung sat at 0% CPU with crapkit waiting on it and nothing
+watching the log. `no_progress_seconds` watches the log instead. crapkit polls while the
+lane runs and kills the whole process tree when the log has not grown for that many
+seconds, then says so in words a stall earns: `lane 'py' wrote no output for 300s (attempt
+1), so crapkit killed it`, with `[crapkit] no output for 300s; killed` at the end of the
+log. `retries` covers it the way it covers a timeout. Default `0`, no watch.
+
+### A lane that produced no artifact says whether its coverage shards survived
+`coverage run --parallel-mode`, which pytest-xdist turns on, writes one `.coverage.*` per
+process and combines them only at the end. A killed run therefore leaves every measurement
+it took on disk and no JSON, one directory above the artifact path the refusal names, and
+the refusal never mentioned them: one reporter found them on their own and combined them
+by hand. The message now counts the shards, says which directory holds them, and gives the
+two commands that turn them into a scored run (`coverage combine && coverage json -o
+<artifact>`, then `--reuse-artifacts`), with the `-o` target written relative to that
+directory so a lane with a `cwd` writes the JSON where crapkit reads it. Only a
+`coveragepy` lane gets the recipe. crapkit does not combine them itself: shards from
+an interrupted suite merge into a report that looks like a whole run, which is what the
+crashed-worker check exists to refuse.
+
+### `--reuse-artifacts` no longer refuses a salvaged coverage run
+A killed suite leaves a good coverage JSON only if you combine its shards by hand, and
+the junit beside it is the killed run's own: empty, or missing. Reading that report was
+a hard exit 5, so the only way through was deleting `results_artifact` from the config,
+which gives up the crashed-worker and no-new-failures checks on every future run instead
+of on this one. Under `--reuse-artifacts` an unreadable junit is now one warning naming
+the file and what cannot be checked, and the lane scores off the coverage JSON. The lane
+lands on the no-counts path `verify` already reports. Nothing changed for a lane that
+actually ran: a report that says the run did not finish still fails it, which is the
+whole point of the check.
 
 ## 0.4.11 — 2026-09-01
 

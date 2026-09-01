@@ -21,10 +21,11 @@ import pytest
 
 from crapkit.config import Lane
 from crapkit.errors import ToolError
-from crapkit.lanes import _deadline, run_lane
-from crapkit.procs import run_bounded
+from crapkit.lanes import _deadline, _no_progress, run_lane
+from crapkit.procs import NoProgress, run_bounded
 
 _TIMEOUT = 2
+_IDLE = 1        # the no-progress deadline: shorter, and it starts at the header
 _CEILING = 5     # the ToolError has to land between the two
 _SLEEP = 30      # long enough that a survivor is unmistakable
 _POLL = 3.0
@@ -92,6 +93,109 @@ def test_a_timed_out_lane_takes_its_whole_process_tree_with_it(tmp_path):
     log = (tmp_path / ".crapkit" / "lane-slow.log").read_text(encoding="utf-8")
     assert f"[crapkit] timed out after {_TIMEOUT}s; killed" in log
     assert _gone(token), "the lane command outlived the timeout the log says killed it"
+
+
+@pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
+def test_a_lane_that_stops_writing_dies_at_the_progress_deadline(tmp_path):
+    """The reported hang: a suite that stops making progress at 0% CPU. With no
+    `timeout_seconds` the wait had no deadline at all, so crapkit sat on it
+    forever with nothing watching the log. `no_progress_seconds` watches the
+    log: it grows while the suite reports, and stops when the suite stops."""
+    command, token, started = _long_sleeper(tmp_path)
+    lane = Lane(name="stalled", command=command, artifact="cov.json", parser="istanbul",
+                scopes=(), no_progress_seconds=_IDLE)
+
+    start = time.perf_counter()
+    with pytest.raises(ToolError, match="wrote no output for"):
+        run_lane(tmp_path, lane)
+
+    assert time.perf_counter() - start < _CEILING
+    assert started.is_file(), "the lane command never started: this proved nothing"
+    log = (tmp_path / ".crapkit" / "lane-stalled.log").read_text(encoding="utf-8")
+    assert f"[crapkit] no output for {_IDLE}s; killed" in log
+    assert _gone(token), "the stalled command outlived the deadline that killed the lane"
+
+
+def test_run_bounded_says_which_deadline_killed_the_tree(tmp_path):
+    """The seam: a total deadline returns None, a stall raises. The caller has
+    two different things to write in the log, and one of them says the suite
+    was still alive and silent."""
+    log = tmp_path / "out.log"
+
+    with open(log, "w", encoding="utf-8") as fh:
+        fh.write("started\n")
+        fh.flush()
+        with pytest.raises(NoProgress, match="no output for"):
+            run_bounded(f'"{sys.executable}" -c "import time; time.sleep({_SLEEP})"', None,
+                        stream=fh, no_progress=_IDLE, cwd=tmp_path)
+
+
+def test_a_command_that_keeps_writing_outlives_the_progress_deadline(tmp_path):
+    """The deadline measures GROWTH, not wall time: a suite printing a dot per
+    test runs as long as it likes. A deadline that fired on elapsed time would
+    be `timeout_seconds` under another name."""
+    script = tmp_path / "chatty.py"
+    script.write_text("import sys, time\n"
+                      "for _ in range(8):\n"
+                      "    sys.stdout.write('tick\\n'); sys.stdout.flush(); time.sleep(0.25)\n",
+                      encoding="utf-8")
+    log = tmp_path / "out.log"
+
+    with open(log, "w", encoding="utf-8") as fh:
+        code = run_bounded(f'"{sys.executable}" "{script}"', None, stream=fh,
+                           no_progress=_IDLE, cwd=tmp_path)
+
+    assert code == 0
+    assert log.read_text(encoding="utf-8").count("tick") == 8
+
+
+def test_a_progress_deadline_with_no_stream_to_watch_never_fires(tmp_path):
+    """Output going to DEVNULL leaves nothing to measure, and a watch that
+    cannot see growth would read every command as stalled and kill it."""
+    code = run_bounded(f'"{sys.executable}" -c "import time; time.sleep(1.5)"', None,
+                       no_progress=_IDLE, cwd=tmp_path)
+
+    assert code == 0
+
+
+class _UnmeasurableStream:
+    """A stream the spawn can write to and the watch cannot size.
+
+    `fileno` answers the spawn with the log's real descriptor and refuses every
+    later ask the way a closed file does, which is what `_stream_size` reads as
+    -1. Popen asks once, at the spawn; the progress watch asks after it.
+    """
+
+    def __init__(self, fh) -> None:
+        self._fh, self._spawned = fh, False
+
+    def fileno(self) -> int:
+        if self._spawned:
+            raise ValueError("I/O operation on closed file")
+        self._spawned = True
+        return self._fh.fileno()
+
+
+def test_a_stream_whose_size_cannot_be_read_skips_the_progress_watch(tmp_path):
+    """`_stream_size` answers -1 for a stream it cannot fstat, and an unchanging
+    -1 reads as no growth, so the watch would kill a perfectly busy command at
+    the deadline. run_bounded says the watch is ignored where there is nothing
+    to measure; a stream is nothing to measure whether it is DEVNULL or a handle
+    fstat refuses."""
+    log = tmp_path / "out.log"
+
+    with open(log, "w", encoding="utf-8") as fh:
+        code = run_bounded(f'"{sys.executable}" -c "import time; time.sleep({_IDLE * 2})"',
+                           None, stream=_UnmeasurableStream(fh), no_progress=_IDLE,
+                           cwd=tmp_path)
+
+    assert code == 0, "a stream nothing can measure must not read as a stalled command"
+
+
+def test_a_lane_without_a_progress_deadline_gets_no_watch():
+    """0 is the config default: the total deadline is the only one."""
+    assert _no_progress(Lane(name="n", command="c", artifact="a", parser="istanbul",
+                             scopes=())) is None
 
 
 _PAYLOAD = "line one\nline two: 42 -> 43\nline three\n"

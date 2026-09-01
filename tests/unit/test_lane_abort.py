@@ -9,6 +9,7 @@ unexecuted functions scored cov 0 and every number downstream was wrong.
 The fixtures are recorded junit: one carrying the crash error, one clean.
 """
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,8 @@ from crapkit.lanes import run_lane
 RECORDED = Path(__file__).resolve().parent.parent / "fixtures" / "recorded"
 CRASHED = (RECORDED / "junit_xdist_worker_crash.xml").read_text(encoding="utf-8")
 CLEAN = (RECORDED / "junit_xdist_clean.xml").read_text(encoding="utf-8")
+EMPTY = '<?xml version="1.0" encoding="utf-8"?><testsuites />'
+NOOP = f'"{sys.executable}" -c ""'
 
 
 def istanbul(root: Path) -> str:
@@ -35,10 +38,10 @@ def istanbul(root: Path) -> str:
     }})
 
 
-def lane_over(root: Path, junit: str) -> Lane:
+def lane_over(root: Path, junit: str, command: str = "never runs") -> Lane:
     (root / "cov.json").write_text(istanbul(root), encoding="utf-8")
     (root / "junit.xml").write_text(junit, encoding="utf-8")
-    return Lane(name="py", command="never runs", artifact="cov.json", parser="istanbul",
+    return Lane(name="py", command=command, artifact="cov.json", parser="istanbul",
                 scopes=("src",), results_artifact="junit.xml")
 
 
@@ -52,13 +55,54 @@ def test_the_crash_report_names_the_worker_and_the_test_it_died_on():
 
 def test_a_crashed_worker_fails_the_lane_the_way_a_missing_artifact_does(tmp_path):
     """Exit 5: the lane is recorded failed, its scopes fall back to no-lane, the
-    run is typed partial and no baseline reader will take it."""
-    lane = lane_over(tmp_path, CRASHED)
+    run is typed partial and no baseline reader will take it. The lane RAN here,
+    which is where the refusal belongs: crapkit watched the suite produce this
+    report, so the report is the whole story of what it measured."""
+    lane = lane_over(tmp_path, CRASHED, NOOP)
 
     with pytest.raises(ToolError, match="gw1") as exc:
-        run_lane(tmp_path, lane, reuse_artifact=True)
+        run_lane(tmp_path, lane)
 
     assert exc.value.exit_code == 5
+
+
+def test_a_missing_junit_still_fails_a_lane_that_ran(tmp_path):
+    """A declared results_artifact the run did not write makes the no-NEW-failures
+    check pass vacuously, so the lane fails instead."""
+    lane = lane_over(tmp_path, CLEAN, NOOP)
+    (tmp_path / "junit.xml").unlink()
+
+    with pytest.raises(ToolError, match="results_artifact junit.xml is missing"):
+        run_lane(tmp_path, lane)
+
+
+def test_a_reused_junit_that_never_finished_warns_instead_of_failing(tmp_path, capsys):
+    """--reuse-artifacts says run nothing, read what is on disk. One reporter got
+    there by combining a killed run's coverage shards by hand: the coverage JSON
+    was good, the junit beside it was the killed run's empty one, and the refusal
+    left them deleting results_artifact from the config, which gives up the check
+    on every future run instead of on this one."""
+    lane = lane_over(tmp_path, EMPTY)
+
+    outcome = run_lane(tmp_path, lane, reuse_artifact=True)
+
+    assert "tests_total" not in outcome.provenance
+    assert "failures" not in outcome.provenance
+    assert outcome.coverage, "the coverage artifact is what the reuse came for"
+    err = capsys.readouterr().err
+    assert "junit.xml" in err and "zero testcases" in err
+    assert "no-new-failures" in err
+
+
+def test_a_reused_junit_that_is_gone_warns_instead_of_failing(tmp_path, capsys):
+    """Same door, the other half: the file the config names is not there at all."""
+    lane = lane_over(tmp_path, CLEAN)
+    (tmp_path / "junit.xml").unlink()
+
+    outcome = run_lane(tmp_path, lane, reuse_artifact=True)
+
+    assert "tests_total" not in outcome.provenance
+    assert "results_artifact junit.xml is missing" in capsys.readouterr().err
 
 
 def test_a_clean_junit_still_measures_the_lane(tmp_path):

@@ -881,6 +881,33 @@ The same bounded spawn backs `mutation_timeout_seconds` and `init`'s pytest-cov 
 looping mutant is cut instead of outliving the run that gave up on it. The lane log still
 streams while the command runs.
 
+### A suite that stops making progress
+
+`timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite
+that hangs at minute three without also cutting the slow ones. And its default is `0`, no
+deadline at all, which is where a hang costs you the whole run: crapkit waits, the suite
+sits at 0% CPU, and nothing watches the log.
+
+`no_progress_seconds` is the other half. crapkit polls while the lane runs and kills the
+tree when the log has not grown for that many seconds:
+
+```toml
+no_progress_seconds = 300
+timeout_seconds = 1800
+```
+
+```
+crapkit: lane 'py' FAILED: lane 'py' wrote no output for 300s (attempt 1), so crapkit killed it; log: /repo/.crapkit/lane-py.log
+```
+
+`.crapkit/lane-py.log` ends `[crapkit] no output for 300s; killed`, which is a different
+line from the timeout's `[crapkit] timed out after 1800s; killed`: one command ran too
+long, the other stopped doing anything. `retries` covers both the same way.
+
+Set it above the longest quiet stretch your runner has. A suite that prints a line per test
+stalls in seconds; one that runs a silent build step first needs that step's duration.
+Leave it `0` (the default) and the total deadline is the only one.
+
 ---
 
 ## Flake retest
@@ -980,6 +1007,25 @@ no baseline reader will take. `verify` refuses to conclude at all.
 
 A clean junit changes nothing, and an ordinary errored test is still just a failed test.
 
+### Under `--reuse-artifacts` it is a warning
+
+The refusal is about a run crapkit watched. `--reuse-artifacts` is you saying run nothing
+and read what is on disk, and what is on disk can be a salvage: a coverage JSON combined
+by hand out of a killed run's `.coverage.*` shards, with that run's empty or missing junit
+still sitting beside it. So there the same two refusals are one line on stderr, and the
+lane scores off the coverage JSON:
+
+```
+$ crapkit coverage --reuse-artifacts
+crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: junit report contains zero testcases — the suite crashed before collecting, not a pass; the crashed-worker and no-new-failures checks cannot run for this lane
+run 11 @ 525a3276065: 5 functions scored — 5 measured / 0 untested / 0 no-lane / 0 cc-only, ...
+```
+
+The lane records no test counts, which is the same no-counts path a lane with no
+`results_artifact` takes, and `verify` says so against its baseline. The alternative was
+deleting `results_artifact` from the config, which gives up both checks on every future
+run to get past one.
+
 ### The test count is the second check
 
 A runner killed from outside — an OOM, a signal — writes no crash into its report at all, and
@@ -1061,6 +1107,30 @@ report the ImportError over the retry's own output, with nothing marking which a
 each half came from. The banner counts only as a whole line, so log output quoting those
 words mid-line starts no attempt, and attempt 1 writes no banner at all, which makes a
 bannerless log one attempt.
+
+### A killed run leaves its coverage shards behind
+
+`coverage run --parallel-mode`, which pytest-xdist turns on for you, writes one
+`.coverage.<host>.<pid>.<random>` per process and combines them only when the run ends. A
+run that was killed leaves every measurement it took on disk and no JSON, one directory
+above the artifact path the refusal names. So the refusal counts the shards and says where
+they are:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); full log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine && coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
+```
+
+The `-o` target is written relative to the shard directory, because that is where the
+message tells you to stand: on a lane with a `cwd` it reads `../.crapkit/cov/coverage.json`
+rather than the repo-relative `artifact` key, which would have put the JSON one directory
+below the path the next run opens. Only a `coveragepy` lane gets the recipe. `coverage
+combine` is coverage.py's command, so a jest or vitest lane rooted beside a python one is
+never told to run it over the python lane's leftovers.
+
+crapkit does not run the combine for you. Shards from an interrupted suite merge into a
+report that looks exactly like a whole run, and taking that for a full measurement is what
+the crashed-worker check above refuses. Whether a half-run is worth scoring is your call,
+and `--reuse-artifacts` is where you make it.
 
 ---
 

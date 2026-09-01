@@ -540,8 +540,9 @@ def _suite_size_lines(name: str, base: dict, prov: dict) -> list[str]:
     Both counts are optional. A baseline recorded before the lane declared a
     `results_artifact` carries none and compares nothing. A lane that wrote no
     junit THIS run (the lane declares no `results_artifact` at the commit under
-    test; a declared file missing after the run is a lane failure and never
-    reaches here) has nothing to compare either; reading its absent count as
+    test, or `--reuse-artifacts` read one it could not check; a declared file
+    missing after a real run is a lane failure and never reaches here) has
+    nothing to compare either; reading its absent count as
     zero once turned every such run into a KeyError after the lane had run.
     """
     b_total = base.get("tests_total")

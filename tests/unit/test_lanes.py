@@ -78,7 +78,7 @@ def _refusal(tmp_path, lines: list[str]) -> str:
 
     log = _plant_log(tmp_path, lines)
     with pytest.raises(ToolError) as raised:
-        _raise_no_artifact(_py_lane(), log, 2)
+        _raise_no_artifact(tmp_path, _py_lane(), log, 2)
     return str(raised.value)
 
 
@@ -197,7 +197,7 @@ def test_a_refusal_with_no_log_at_all_still_names_where_it_would_be(tmp_path):
 
     missing = tmp_path / ".crapkit" / "lane-py.log"
     with pytest.raises(ToolError) as raised:
-        _raise_no_artifact(_py_lane(), missing, None)
+        _raise_no_artifact(tmp_path, _py_lane(), missing, None)
 
     assert str(missing) in str(raised.value)
     assert "last output" not in str(raised.value), "no log, nothing to quote"

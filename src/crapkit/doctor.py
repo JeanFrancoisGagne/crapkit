@@ -13,7 +13,8 @@ _KNOWN = {
                 "max_parallel_lanes", "analysis_workers", "tighten_max_jump"},
     "scope": {"name", "paths", "languages", "target", "coverage_optional", "notes"},
     "lane": {"name", "command", "artifact", "parser", "scopes", "cwd", "path_prefix", "env",
-             "full_suite", "container_ok", "results_artifact", "timeout_seconds", "retries",
+             "full_suite", "container_ok", "results_artifact", "timeout_seconds",
+             "no_progress_seconds", "retries",
              "retest_command"},
     "exclude": {"globs", "max_file_bytes"},
 }

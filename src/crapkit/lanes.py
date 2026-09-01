@@ -24,7 +24,7 @@ from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
-from .procs import run_bounded
+from .procs import NoProgress, run_bounded
 from .uncovered import fold_dead_lines
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -142,6 +142,17 @@ def _deadline(lane: Lane) -> float | None:
     return lane.timeout_seconds or None
 
 
+def _no_progress(lane: Lane) -> float | None:
+    """The lane's idle deadline, or None for no progress watch.
+
+    The second half of the same guard: a total deadline has to be longer than
+    the slowest honest run, so it cannot cut a suite that hangs early without
+    also cutting the slow ones. This one measures the log instead, and 0, the
+    default, leaves the total deadline as the only one.
+    """
+    return lane.no_progress_seconds or None
+
+
 def _log_header(fh: IO[str], command: str, attempt: int) -> None:
     if attempt > 1:
         fh.write(f"\n--- attempt {attempt} ---\n")
@@ -149,13 +160,30 @@ def _log_header(fh: IO[str], command: str, attempt: int) -> None:
     fh.flush()
 
 
+def _raise_stalled(fh: IO[str], lane: Lane, log_path: Path, attempt: int,
+                   seconds: float) -> None:
+    """A lane killed for silence, not for running long. The message says which:
+    the command was still alive and had written nothing since the header.
+
+    The seconds come from the killer, not from the config it read: one number,
+    measured once, so the log and the error cannot drift from what was waited.
+    """
+    fh.write(f"\n[crapkit] no output for {seconds:g}s; killed\n")
+    raise ToolError(f"lane {lane.name!r} wrote no output for {seconds:g}s "
+                    f"(attempt {attempt}), so crapkit killed it; log: {log_path}")
+
+
 def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int:
     with open(log_path, "a" if attempt > 1 else "w", encoding="utf-8", errors="replace") as fh:
         _log_header(fh, lane.command, attempt)
         # The log is a file, not a pipe, so streaming costs the deadline nothing:
         # run_bounded kills the shell's whole tree, which is where the suite is.
-        code = run_bounded(lane.command, _deadline(lane), stream=fh,
-                           **_popen_kwargs(root, lane))
+        # It is also what the progress watch measures.
+        try:
+            code = run_bounded(lane.command, _deadline(lane), stream=fh,
+                               no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
+        except NoProgress as stalled:
+            _raise_stalled(fh, lane, log_path, attempt, stalled.seconds)
         if code is None:
             fh.write(f"\n[crapkit] timed out after {lane.timeout_seconds}s; killed\n")
             raise ToolError(f"lane {lane.name!r} timed out after {lane.timeout_seconds}s "
@@ -182,7 +210,45 @@ def _missing_plugin_hint(tail: str) -> str:
     return ""
 
 
-def _raise_no_artifact(lane: Lane, log_path: Path, exit_code: int | None) -> None:
+def _shard_hint(root: Path, lane: Lane) -> str:
+    """What the `.coverage.*` files beside a failed lane are, and what to do
+    with them.
+
+    coverage.py in parallel mode writes one shard per process and combines them
+    only when the run ends, so a suite that was killed leaves every measurement
+    it took on disk and no JSON. One reporter combined them by hand and got a
+    usable artifact; crapkit reported the missing JSON and never mentioned the
+    shards, which sit a directory above the path the message names.
+
+    A hint, never the combine itself. Shards from an interrupted suite merge
+    into a report that looks exactly like a whole run, which is the illusion the
+    crashed-worker check exists to refuse; whether this half-run is worth
+    scoring is the operator's call, and `--reuse-artifacts` is where they say so.
+
+    `coverage combine` is coverage.py's command, so only a coveragepy lane gets
+    the recipe: a JS lane sharing the root with a python one finds the python
+    lane's shards and would be handed advice that cannot work for it.
+
+    The `-o` target is printed relative to the shard directory, because that is
+    where the operator is told to stand. `artifact` is repo-relative, so a lane
+    with a `cwd` that pasted the key verbatim wrote the JSON one directory below
+    the path crapkit reads, and the next run refused it again.
+    """
+    if lane.parser != "coveragepy":
+        return ""
+    shard_dir = root / lane.cwd if lane.cwd else root
+    shards = sorted(shard_dir.glob(".coverage.*"))
+    if not shards:
+        return ""
+    target = Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix()
+    noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
+    return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
+            f"{shard_dir}, which is what a killed parallel run leaves behind: "
+            f"`coverage combine && coverage json -o {target}` there, then a "
+            "re-run with --reuse-artifacts, scores what that suite did measure")
+
+
+def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None) -> None:
     """The log PATH before the log's words. A tail is 500 characters of a file
     that holds the whole story, and a reader who is not told where that file is
     has to go looking for it — one reporter had to ask another agent to find
@@ -191,7 +257,8 @@ def _raise_no_artifact(lane: Lane, log_path: Path, exit_code: int | None) -> Non
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
     raise ToolError(f"lane {lane.name!r} produced no artifact at {lane.artifact}{detail}"
-                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail)}")
+                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail)}"
+                    f"{_shard_hint(root, lane)}")
 
 
 def _run_attempts(root: Path, lane: Lane) -> int | None:
@@ -201,7 +268,7 @@ def _run_attempts(root: Path, lane: Lane) -> int | None:
         exit_code = _attempt_once(root, lane, log_path, attempt)
         if exit_code is not None and (root / lane.artifact).is_file():
             return exit_code
-    _raise_no_artifact(lane, log_path, exit_code)
+    _raise_no_artifact(root, lane, log_path, exit_code)
     return None  # unreachable; keeps the signature honest
 
 
@@ -600,15 +667,47 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
 
 
-def _results_provenance(root: Path, lane: Lane) -> dict:
+def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict]:
+    """The lane junit's failing ids and counts, or a ToolError saying why the
+    report cannot be read. The message names the report and not the lane: one
+    caller, two paths out of it, and each supplies the lane itself. The re-raise
+    reaches the runner, which prefixes the lane name; `_warn_unreadable_results`
+    names the lane in its own sentence."""
     from .junitparse import suite_summary
 
     results_path = root / lane.results_artifact
     if not results_path.is_file():
-        # Under --reuse-artifacts too: a declared-but-missing results file
-        # would make the no-NEW-failures check pass vacuously.
-        raise ToolError(f"lane {lane.name!r}: results_artifact {lane.results_artifact} is missing")
-    failed, counts = suite_summary(results_path.read_text(encoding="utf-8"))
+        raise ToolError(f"results_artifact {lane.results_artifact} is missing")
+    return suite_summary(results_path.read_text(encoding="utf-8"))
+
+
+def _warn_unreadable_results(lane: Lane, reason: ToolError) -> None:
+    """The path first: the reader's next move is opening that file."""
+    print(f"crapkit: lane {lane.name!r} reused {lane.results_artifact} and cannot check "
+          f"it: {reason}; the crashed-worker and no-new-failures checks cannot run for "
+          "this lane", file=sys.stderr)
+
+
+def _results_provenance(root: Path, lane: Lane, *, reuse_artifact: bool = False) -> dict:
+    """Counts and failures from the lane's junit; {} when reuse read a report
+    that is not there or says the run never finished.
+
+    A run refuses both: a missing results file would make the no-NEW-failures
+    check pass vacuously, and a report with no testcases is a suite that stopped
+    before it measured anything. `--reuse-artifacts` is the operator saying run
+    nothing and read what is on disk, and the coverage JSON beside that junit
+    can be a salvage of a killed run, hand-combined from its shards. Refusing it
+    there sent one reporter to the only other exit, deleting results_artifact
+    from the config, which gives up both checks on every future run. Warning
+    instead lands the lane on the no-counts path verify already documents.
+    """
+    try:
+        failed, counts = _results_summary(root, lane)
+    except ToolError as reason:
+        if not reuse_artifact:
+            raise
+        _warn_unreadable_results(lane, reason)
+        return {}
     return {"failures": sorted(failed),
             "tests_total": counts["tests"], "tests_skipped": counts["skipped"]}
 
@@ -666,7 +765,11 @@ def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
     with open(log_path, "a", encoding="utf-8", errors="replace") as fh:
         fh.write(f"\n--- flake retest ---\n$ {command}\n")
         fh.flush()
-        code = run_bounded(command, _deadline(lane), stream=fh, **_popen_kwargs(root, lane))
+        try:
+            code = run_bounded(command, _deadline(lane), stream=fh,
+                               no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
+        except NoProgress:
+            return set()
     if code is None:
         return set()
     still = _still_failed(root, lane)
@@ -717,7 +820,7 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
     """
     path = root / lane.artifact
     if not path.is_file():
-        _raise_no_artifact(lane, _lane_log_path(root, lane), None)
+        _raise_no_artifact(root, lane, _lane_log_path(root, lane), None)
     return path
 
 
@@ -735,6 +838,6 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
         "scopes": list(lane.scopes),
     }
     if lane.results_artifact:
-        provenance.update(_results_provenance(root, lane))
+        provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
     stamp = {} if reuse_artifact else _stamp_entry(facts, lane, seconds)
     return LaneOutcome(coverage, provenance, stamp)

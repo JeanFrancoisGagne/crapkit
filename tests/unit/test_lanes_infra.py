@@ -1,5 +1,6 @@
 """Lane infrastructure: streamed logs, crapkit-owned timeouts, retries. Real subprocesses."""
 import json
+import re
 import sys
 
 import pytest
@@ -45,6 +46,79 @@ def test_lane_log_streams_the_command_header_even_on_failure(tmp_path):
     assert log.startswith("$ "), "the log opens with the command that ran"
 
 
+def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path):
+    """coverage.py in parallel mode writes one `.coverage.<host>.<pid>.<rand>`
+    per process and merges them only at the end, so a run that was killed leaves
+    every measurement on disk and no JSON. One reporter combined them by hand
+    and got a usable artifact; crapkit said only that the artifact was missing,
+    and the shards sit a directory above the path it names."""
+    (tmp_path / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+    (tmp_path / ".coverage.box.pid6.bbbb").write_text("x", encoding="utf-8")
+    lane = Lane(name="py", command=f'"{PY}" -c "import sys; sys.exit(1)"',
+                artifact=".crapkit/cov/coverage.json", parser="coveragepy", scopes=())
+
+    with pytest.raises(ToolError) as exc:
+        run_lane(tmp_path, lane)
+
+    message = str(exc.value)
+    assert "2 coverage shards" in message
+    assert "coverage combine" in message and ".crapkit/cov/coverage.json" in message
+    assert "--reuse-artifacts" in message
+
+
+def test_the_shard_hint_looks_in_the_directory_the_lane_ran_in(tmp_path):
+    """A lane with a `cwd` writes its shards there, not at the repo root.
+
+    `artifact` is repo-relative and the hint is run from the shard directory, so
+    printing the key verbatim tells the operator to write the JSON one directory
+    down from where crapkit reads it. The `-o` target has to resolve, from the
+    directory the hint names, to the file the next run opens. The count is one,
+    so the noun is singular: `1 coverage shards` is a message that says crapkit
+    did not read what it wrote.
+    """
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+    lane = Lane(name="py", command=f'"{PY}" -c "import sys; sys.exit(1)"',
+                artifact=".crapkit/cov/coverage.json", parser="coveragepy",
+                scopes=(), cwd="pkg")
+
+    with pytest.raises(ToolError, match=r"1 coverage shard \(") as exc:
+        run_lane(tmp_path, lane)
+
+    message = str(exc.value)
+    assert str(tmp_path / "pkg") in message
+    target = re.search(r"coverage json -o (\S+)` there", message).group(1)
+    assert (tmp_path / "pkg" / target).resolve() == (tmp_path / lane.artifact).resolve()
+
+
+def test_an_istanbul_lane_is_never_told_to_combine_coverage_shards(tmp_path):
+    """`coverage combine` is a coverage.py command. Two lanes rooted at the same
+    directory means the python lane's shards sit beside the JS lane's refusal,
+    and a recipe that cannot work for the lane it is printed under is worse than
+    no recipe: the reader spends a run finding that out."""
+    (tmp_path / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+    lane = Lane(name="js", command=f'"{PY}" -c "import sys; sys.exit(1)"',
+                artifact="cov.json", parser="istanbul", scopes=())
+
+    with pytest.raises(ToolError) as exc:
+        run_lane(tmp_path, lane)
+
+    assert "coverage shard" not in str(exc.value)
+    assert "coverage combine" not in str(exc.value)
+
+
+def test_a_lane_with_no_shards_gets_no_salvage_hint(tmp_path):
+    """The hint is for the one failure it fits. Printing it on every missing
+    artifact is how a reader learns to skip the end of the message."""
+    lane = Lane(name="py", command=f'"{PY}" -c "import sys; sys.exit(1)"',
+                artifact="cov.json", parser="coveragepy", scopes=())
+
+    with pytest.raises(ToolError) as exc:
+        run_lane(tmp_path, lane)
+
+    assert "coverage shard" not in str(exc.value)
+
+
 def test_config_parses_timeout_and_retries():
     cfg = load_config_text(
         '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
@@ -61,3 +135,13 @@ def test_config_rejects_negative_timeout_or_retries():
         load_config_text(base + "timeout_seconds = -5\n")
     with pytest.raises(ConfigError, match="retries"):
         load_config_text(base + "retries = -1\n")
+    with pytest.raises(ConfigError, match="no_progress_seconds"):
+        load_config_text(base + "no_progress_seconds = -1\n")
+
+
+def test_config_parses_the_progress_deadline():
+    cfg = load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
+        '[[lane]]\nname = "py"\ncommand = "pytest --cov"\nartifact = "c.json"\n'
+        'parser = "coveragepy"\nscopes = ["src"]\nno_progress_seconds = 300\n')
+    assert cfg.lanes[0].no_progress_seconds == 300

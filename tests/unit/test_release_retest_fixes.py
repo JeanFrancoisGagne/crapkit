@@ -48,9 +48,9 @@ def test_a_repo_with_no_coverable_language_gets_no_lane_template_at_all():
     assert _template_lines(set(), {"cmd": ("go",)}) == []
 
 
-def test_missing_pytest_cov_failure_names_the_package():
+def test_missing_pytest_cov_failure_names_the_package(tmp_path):
     with pytest.raises(ToolError) as err:
-        _raise_no_artifact(_lane(), _FakeLog("ERROR: usage: python -m pytest\n"
+        _raise_no_artifact(tmp_path, _lane(), _FakeLog("ERROR: usage: python -m pytest\n"
                                              "python -m pytest: error: unrecognized "
                                              "arguments: --cov --cov-branch"), 4)
     assert "pip install pytest-cov" in str(err.value)
