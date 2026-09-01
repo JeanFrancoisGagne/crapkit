@@ -106,7 +106,7 @@ changing crapkit.
 
 ```
 $ crapkit --version
-crapkit 0.4.6
+crapkit 0.4.7
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
@@ -334,7 +334,7 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
     # crapkit's release step rewrites this line to the tag it just cut
-    rev: v0.4.6
+    rev: v0.4.7
     hooks:
       - id: crapkit-gate
 ```

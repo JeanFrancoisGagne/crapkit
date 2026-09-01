@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.7 — unreleased
+## 0.4.7 — 2026-08-31
 
 One contributed capability and three fixes. The capability is the per-edit advisory,
 which now hears writes that arrive through a shell: PR #45, from @nicolaschapados. The
