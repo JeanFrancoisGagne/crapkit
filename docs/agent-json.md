@@ -1083,7 +1083,7 @@ names rather than a spelling that joins to nothing.
 ## `claude-hook`
 
 The one command on this page Claude Code runs for you, after every Edit or Write of a source
-file. It names functions that edit pushed over their ceiling, while the session can still act
+file, and after every Bash command wherever you register that matcher. It names functions that edit pushed over their ceiling, while the session can still act
 on it.
 
 ```
@@ -1124,7 +1124,8 @@ judge.
 A `Bash` event names no `file_path` — its `tool_input` carries the `command` — so it takes a
 working-tree fallback instead: the `*.py` files git reports dirty or untracked, whose mtime
 falls inside a **12-second** freshness window, at most **25** of them, each judged through
-the same per-file ladder. That is what catches source written through a shell heredoc or
+the same per-file ladder. Each breaching file gets its own advisory block, so one Bash event can print
+several; the exit is 2 when any of them breached. That is what catches source written through a shell heredoc or
 `python - <<'PY'`, which some harness modes use for every write.
 
 Each bound has its own reason. The window keeps a later `ls` from re-advising a file that was

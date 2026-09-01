@@ -58,7 +58,7 @@ command, matcher `Bash`:
     "PostToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "crapkit claude-hook --protocol 1" }]
+        "hooks": [{ "type": "command", "command": "crapkit claude-hook --protocol 1", "timeout": 20 }]
       }
     ]
 

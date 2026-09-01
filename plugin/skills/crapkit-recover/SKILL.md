@@ -128,8 +128,8 @@ no partial run for `verify` to refuse against.
 
 The lane wrote a real artifact, and none of the paths in it reach the scopes the lane
 claims — so the join finds nothing and every function in those scopes would score
-`untested`. **Read the exit code first**: this message comes in two verdicts, and only one
-of them failed the lane. The measured paths decide which, and the message quotes a few of
+`untested`. **Read the paths first**: this message comes in three verdicts, two of them exit 5 and
+only one of them lets the run score on. The measured paths decide which, and the message quotes a few of
 them:
 
 | The paths it reports | Verdict | Cause and fix |
@@ -139,7 +139,7 @@ them:
 | repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory — set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key) — or the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
 
 So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N file(s) …
-so every function in those scopes will score untested`. Nothing in the exit-5 row applies
+so every function in those scopes will score untested`. Nothing in either exit-5 row applies
 to it. And `path_prefix` only ever PREPENDS, so it cannot rescue an absolute path in the
 other direction.
 

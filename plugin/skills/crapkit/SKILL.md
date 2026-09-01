@@ -43,8 +43,9 @@ through a heredoc or a `python - <<PY` block names no file for the hook to judge
 back to the working tree: the `*.py` files git reports dirty or untracked whose mtime
 lands inside a 12-second window, at most 25 of them, each through the same per-file ladder
 an Edit takes. Scope, sequencing, ratchet marks and the untracked rule mean what they
-already meant, and exit 2 means what it always meant, one advisory line about a function
-the write pushed over its ceiling, with nothing blocked.
+already meant, and exit 2 means what it always meant: an advisory block naming the functions the write
+pushed over their ceiling, with nothing blocked. A Bash event judges each fresh file on
+its own, so one event can print one block per file.
 
 Only Python. Every other language stays the commit gate's business.
 

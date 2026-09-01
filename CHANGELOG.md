@@ -78,9 +78,9 @@ template instead, and that template still read a bare `python`. Uncommenting it 
 reader back the environment bug the prefix exists to prevent.
 
 The template now carries a `{python}` placeholder, filled the same way the
-`[crapkit.scoped_tests]` entries already fill theirs, so all three python lines `init`
-writes name one launcher: the live lane, the scoped-tests entry, and the commented
-template. `python_launcher` takes the launcher as its fallback for a repo with no lane to
+`[crapkit.scoped_tests]` entries already fill theirs, so every python line `init`
+writes names one launcher, whether that is the live lane, the scoped-tests entry, or the
+commented template that stands in for a lane the repo did not get. `python_launcher` takes the launcher as its fallback for a repo with no lane to
 read it back off. The js templates are unchanged; they carry no placeholder. A repo with
 no lockfile writes `python` (or `python3`, or `py`) exactly as before.
 
@@ -104,7 +104,7 @@ start.
         {
           "matcher": "Bash",
           "hooks": [
-            { "type": "command", "command": "crapkit claude-hook --protocol 1" }
+            { "type": "command", "command": "crapkit claude-hook --protocol 1", "timeout": 20 }
           ]
         }
       ]

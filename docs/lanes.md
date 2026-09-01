@@ -532,8 +532,9 @@ along with everything else:
 
 The first match in that order wins, so a repo mid-migration between two managers gets the
 same config every time. Every python line `init` writes carries the same prefix, and there
-are three: the `[[lane]]` command, the `[crapkit.scoped_tests]` entry, and the commented
-`[[lane]]` template a repo with no pytest marker file gets instead of a live lane. Step 3
+are two in any one file: the `[crapkit.scoped_tests]` entry, plus either the live
+`[[lane]]` command or, in a repo with no pytest marker file, the commented `[[lane]]`
+template that stands in for it. Step 3
 measuring one environment while step 4 tests another is the same bug one command later,
 and a template that reads `python -m pytest` on a `uv.lock` repo is that same bug one
 uncomment later.

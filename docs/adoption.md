@@ -225,7 +225,10 @@ compares the two and prints nothing when they agree.
 The plugin registers that hook on `Edit|Write`. A session that writes source through a
 shell heredoc gets no advisory until the consumer adds a second entry of their own with
 matcher `Bash`, which costs one `git rev-parse` plus one `git status` per shell call and
-is therefore opt-in. The snippet is in the `crapkit-onboard` skill.
+is therefore opt-in. The snippet is in the `crapkit-onboard` skill. `doctor --plugin-root`
+does not cover that entry: it reads the plugin's own `hooks/hooks.json` and nothing else, so
+a protocol bump shows up for the shipped matcher and stays silent for the one you wrote.
+Re-check it by hand after a CLI upgrade.
 
 Every other harness takes one of the two surfaces under it. The table is the whole list; no
 adapter beyond it exists yet.
