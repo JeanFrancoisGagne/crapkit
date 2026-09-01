@@ -220,6 +220,17 @@ def test_sarif_creates_the_directory_it_writes_into(scored, capsys):
     assert (scored / "out" / "new" / "x.sarif").is_file()
 
 
+def test_emit_baseline_creates_the_directory_it_writes_into(scored, capsys):
+    """The last writer still opening its path straight. `verify` writes the
+    baseline before the verdict, so the traceback landed on a run whose lanes
+    had already finished."""
+    code, _, err = run(["verify", "--reuse-artifacts", "--emit-baseline", "out/new/b.tsv"],
+                       scored, capsys)
+
+    assert code == 0, err
+    assert (scored / "out" / "new" / "b.tsv").is_file()
+
+
 def test_a_relative_export_may_not_climb_out_of_the_repo(scored, capsys):
     code, _, err = run(["inventory", "--export", "../escaped.tsv"], scored, capsys)
 
@@ -237,6 +248,14 @@ def _short_ratchet_line(root) -> None:
                     encoding="utf-8")
 
 
+def _unreadable_mark(root, mark: str) -> None:
+    """Three fields, and the third is not a number: the trailing tab a hand edit
+    leaves, or a word where the score belongs."""
+    path = root / "crapkit-ratchet.tsv"
+    path.write_text(f"path\tlong_name\tcrap\nsrc/app.ts\tgnarly( a , b )\t{mark}\n",
+                    encoding="utf-8")
+
+
 def test_explain_salvages_a_ratchet_file_with_a_short_line(scored, capsys):
     """The mark is one optional field of the packet. The trajectory the reader
     asked for is all there, so a broken line is dropped with a warning rather
@@ -247,6 +266,20 @@ def test_explain_salvages_a_ratchet_file_with_a_short_line(scored, capsys):
 
     assert code == 0, err
     assert "expected 3" in err, err
+    assert "dispatch" in out, out
+
+
+@pytest.mark.parametrize("mark", ["", "n/a"])
+def test_explain_salvages_a_ratchet_line_whose_mark_is_not_a_number(scored, capsys, mark):
+    """The lenient reader counted fields and nothing else, so `float(parts[2])`
+    still raised out of it. explain and brief are MCP tools, and a trailing tab
+    answered both with a ValueError traceback at exit 1."""
+    _unreadable_mark(scored, mark)
+
+    code, out, err = run(["explain", "src/app.ts", "dispatch"], scored, capsys)
+
+    assert code == 0, err
+    assert "unreadable mark" in err, err
     assert "dispatch" in out, out
 
 
@@ -275,3 +308,19 @@ def test_ratchet_merge_names_the_unreadable_file(scored, capsys, tmp_path):
 
     assert code == 3, err
     assert "expected 3" in err, err
+
+
+def test_the_merge_refusal_names_the_line_whose_mark_is_unreadable(scored, capsys, tmp_path):
+    """The strict side went through `float()` too, so it named a Python
+    conversion instead of the line the operator has to open."""
+    sides = []
+    for name in ("base", "ours", "theirs"):
+        p = tmp_path / f"{name}.tsv"
+        p.write_text("path\tlong_name\tcrap\nsrc/app.ts\tgnarly( a , b )\t\n",
+                     encoding="utf-8")
+        sides.append(str(p))
+
+    code, _, err = run(["ratchet", "merge", *sides], scored, capsys)
+
+    assert code == 3, err
+    assert "ratchet line 2 has an unreadable mark" in err, err

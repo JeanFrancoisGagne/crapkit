@@ -35,7 +35,7 @@ def _positive_top(command: str, top: int) -> int:
 
 
 def _repo_relative(raw: str, root: Path = Path(".")) -> str:
-    """One spelling for a file argument, whatever the shell handed in.
+    r"""One spelling for a file argument, whatever the shell handed in.
 
     `src/a.py`, `src\a.py`, `./src/a.py` and the absolute path tab completion
     returns all name one file, and every one of them has to reach
@@ -72,17 +72,17 @@ def _under_root(path: str, root: Path) -> str:
 def _repo_out_path(root: Path, out: str) -> Path:
     """Where a writer flag puts its file, with the directory to hold it.
 
-    `report --out` created a missing parent; `--export` and `--sarif` opened the
-    path straight and died on FileNotFoundError with a Python traceback and exit
-    1, a code crapkit's exit table does not define. `coverage --sarif` died there
-    after the run was already committed to the store, so a run that had succeeded
-    looked unrecoverable. A relative path is repo-relative and may not climb out
-    of the tree; an absolute one is the caller naming a destination on purpose.
-    
+    `report --out` created a missing parent; `--export`, `--sarif` and
+    `--emit-baseline` opened the path straight and died on FileNotFoundError
+    with a Python traceback and exit 1, a code crapkit's exit table does not
+    define. `coverage --sarif` died there after the run was already committed to
+    the store, so a run that had succeeded looked unrecoverable. A relative path
+    is repo-relative and may not climb out of the tree; an absolute one is the
+    caller naming a destination on purpose. `report --out` is the rule's origin
+    and now reads it from here, so the four writers cannot drift.
     """
-    named = Path(out)
-    rooted = named.is_absolute() or bool(named.root)
-    path = named if rooted else (root / out).resolve()
+    rooted = _is_rooted(out)
+    path = Path(out) if rooted else (root / out).resolve()
     if not rooted and root.resolve() not in path.parents:
         raise ConfigError(f"{out!r} is repo-relative and climbs out of {root}; "
                           "pass an absolute path to write outside it")

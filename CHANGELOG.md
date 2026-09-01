@@ -185,23 +185,27 @@ collapse, a `./` prefix goes, and an absolute path is resolved against the repo 
 path that resolves outside the root is refused with `is outside the repo at <root>`
 rather than matched against nothing.
 
-### `--export` and `--sarif` create the directory they write into
+### `--export`, `--sarif` and `--emit-baseline` create the directory they write into
 `crapkit inventory --export out/new/inv.tsv` raised a Python traceback,
 `FileNotFoundError`, and exit 1, a code crapkit's exit table does not define, when
 `out/new/` did not exist yet. `report --out` created it. For `coverage --sarif` the crash
 landed after the run was already committed to the store, so a run that had succeeded read
-as an unrecoverable failure. Both flags now go through the same rule `report --out`
-follows: the parent directory is created, a relative path stays repo-relative and is
-refused when it climbs out of the tree, and an absolute path writes where you named it.
+as an unrecoverable failure; `verify --emit-baseline` crashed after the lanes had run.
+All three flags now go through the same rule `report --out` follows: the parent directory
+is created, a relative path stays repo-relative and is refused when it climbs out of the
+tree, and an absolute path writes where you named it. `report --out` reads that rule from
+the same helper, so the four writers cannot drift apart again.
 
-### A short line in the ratchet file no longer costs the whole answer
+### A bad line in the ratchet file no longer costs the whole answer
 A hand-edited `crapkit-ratchet.tsv` with one two-field line made `crapkit explain` and
 `crapkit brief` die on an unhandled `ValueError` with a Python stack trace, and made
-`rescore --gate` answer 1 with that trace instead of its own exit code. Both explain and
-brief are also MCP tools, so an agent got the traceback. The mark is one optional field
-of what those commands answer; the trajectory, the source, the dark lines and the churn
-were all available. The read-only callers now skip a line they cannot parse and name it
-on stderr, which can only take a ceiling away from a gate, never raise one. Every caller
+`rescore --gate` answer 1 with that trace instead of its own exit code. A three-field
+line whose mark is empty or is not a number — the trailing tab a hand edit leaves — did
+the same. Both explain and brief are also MCP tools, so an agent got the traceback. The
+mark is one optional field of what those commands answer; the trajectory, the source, the
+dark lines and the churn were all available. The read-only callers now skip either shape
+and name it on stderr, which can only take a ceiling away from a gate, never raise one.
+Every caller
 that REWRITES the file keeps the strict refusal, the merge driver included, because a
 skipped line there would delete a mark the repo signed for, and that refusal now arrives
 as `unreadable ratchet file <name>` rather than a stack trace.

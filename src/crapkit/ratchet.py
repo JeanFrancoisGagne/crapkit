@@ -82,22 +82,26 @@ def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
 
     Split out from `load_ratchet` so a READ-ONLY caller can salvage the file. A
     mark is one optional field of what `explain` and `brief` answer, so a single
-    hand-edited short line used to cost the whole answer: a ValueError traceback
-    where a trajectory, a source listing and a churn count were all available.
-    Dropping a line can only take a ceiling away from a gate, never raise one,
-    so the read side is safe to salvage. The write side is not, and keeps
-    `load_ratchet`.
+    hand-edited line used to cost the whole answer: a ValueError traceback where
+    a trajectory, a source listing and a churn count were all available. Two
+    shapes reach here, and a hand edit or a botched merge produces both: too few
+    fields, and three fields whose mark is empty or is not a number. Dropping a
+    line can only take a ceiling away from a gate, never raise one, so the read
+    side is safe to salvage. The write side is not, and keeps `load_ratchet`.
     """
     entries, complaints = [], []
     for i, line in enumerate(text.splitlines()):
         if _is_skippable(line):
             continue
         parts = line.split("\t")
-        if len(parts) == 3:
-            entries.append(RatchetEntry(parts[0], parts[1], float(parts[2])))
-        else:
+        if len(parts) != 3:
             complaints.append(f"ratchet line {i + 1} has {len(parts)} fields, "
                               f"expected 3: {line!r}")
+            continue
+        try:
+            entries.append(RatchetEntry(parts[0], parts[1], float(parts[2])))
+        except ValueError:
+            complaints.append(f"ratchet line {i + 1} has an unreadable mark: {line!r}")
     return entries, complaints
 
 
