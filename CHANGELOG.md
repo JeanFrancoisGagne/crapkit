@@ -139,6 +139,71 @@ absolute `--out` now writes where you pointed it and prints that path. A relativ
 `--out` that climbs out of the tree is still refused, and the refusal now says that
 an absolute path is the way to write outside the repo.
 
+### A lane that writes nothing no longer scores the previous run's artifact
+crapkit asked only whether the artifact file existed, never whether the run that just
+finished wrote it. So a lane failed loud exactly once, on the first run against an empty
+`.crapkit/`, and went quietly wrong on every run after: the suite dies in collection, last
+run's coverage JSON is still sitting there, and crapkit scores it as fresh, stamps it with
+the current commit and hands `--reuse-unchanged` a reason to keep trusting it. A vitest
+lane without `reportOnFailure` and a pytest lane hitting a collection error both land here.
+A lane now records the modification time of every file it declares before each attempt and
+requires it to move, so the refusal fires on the second run the way it did on the first. A
+leftover file gets its own wording — `wrote no artifact this run — the .crapkit/cov/py.json
+on disk predates it and is the previous run's` — because the old sentence, about a path
+that holds a report, reads as crapkit failing to see the file. Where the artifact is missing
+and the leftover is some other declared file, the artifact path still leads: `produced no
+artifact at .crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the previous
+run's`. `results_artifact` is held to
+the same rule, so a killed suite's junit cannot feed the test-count and no-new-failures
+checks last run's numbers. The check is the mtime and not the bytes, so a runner that
+rewrites an identical report stays green, and `--reuse-artifacts` is untouched.
+
+### The container guard fires where a suite launches, not where one is read
+Inside a container, a `coveragepy` lane was refused even under `--reuse-artifacts`, where
+crapkit runs no suite at all: the guard sat one line above the branch that decides whether
+to launch anything. The message it printed — the python suite is host-only, container runs
+OOM — described something the lane was not about to do, and the OOM it names cannot happen
+while parsing a file that is already on disk. crapkit ships a Dockerfile and its own action
+runs `crapkit verify --json --reuse-artifacts`, so reading host-built artifacts in a
+container is a shape users reach for. The guard now sits on the launch path, and
+`container_ok` still governs a lane that really runs.
+
+### The pytest-cov refusal names the environment the package has to land in
+When a lane failed because pytest rejected `--cov`, the hint read `pip install pytest-cov`
+and named no environment at all. The package has to land in the interpreter the LANE runs,
+and a repo whose lane points at its own venv gets a line that resolves to whatever venv the
+shell has active: one reporter ran it verbatim, pip reported success, and the next
+`crapkit coverage` failed identically. The hint now names the environment the suite runs in,
+and binds the install to an interpreter under the condition `crapkit init` uses: the lane
+starts with the word that runs pytest, and that word is a python. So `python -m pytest --cov`
+gets `python -m pip install pytest-cov`, while `uv run pytest --cov` and `coverage run -m
+pytest` get the environment named and no command — neither `uv` nor `coverage` has a `-m pip
+install`, and running one costs the reader a second, unrelated failure. The word is read with
+the shell that runs the command, so a quoted interpreter path stays one word instead of
+breaking at its space.
+
+### A coverage.py report without branch data scores instead of failing the lane
+`pytest --cov --cov-report=json` without `--cov-branch` is the default shape of an existing
+CI artifact, and it failed the whole lane: nothing scored, exit 5, on a report holding
+per-function statement counts crapkit's own model already knows how to divide. Every
+function falls back to statement coverage when it holds no branches, and that fallback runs
+on every normal report, so the guard was blocking arithmetic crapkit performs all day. It
+is now one stderr warning naming the lane and saying the coverage term is statement-based
+for this artifact. A report carrying neither branch nor statement data is still refused,
+because there is nothing to divide by and every function in it would score fully covered.
+
+### One file with no function regions no longer throws the whole report away
+coverage.py writes the per-file `functions` key once per code-region kind that file's own
+reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
+template coverage — loses the key while every `.py` file in the same report keeps it. That
+single entry failed the lane, the run scored nothing, and the files that were fine were
+never mentioned. Those files are now skipped and named in one warning, and the rest of the
+report is scored. A report where NO file carries regions is still exit 5, which is the
+"coverage is too old" case the message was written for. Both readers weigh that verdict
+before the branch-data one, so `pytest --cov --cov-report=json` on a coverage below 7.6 —
+missing regions and branch data at once — is told which version it needs instead of being
+sent to add `--cov-branch`, which would change nothing.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute

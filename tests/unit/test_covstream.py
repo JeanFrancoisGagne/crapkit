@@ -245,20 +245,66 @@ def test_streamed_coveragepy_missing_equals_the_whole_document_parse(tmp_path, c
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
-def test_a_report_without_branch_data_is_still_refused(tmp_path, chunk):
+def test_a_report_without_branch_data_streams_the_same_statement_scores(tmp_path, chunk):
+    """The stream and the whole-document parser make the same salvage, so a
+    lane cannot score one way and a test another."""
+    from crapkit.coverage_py import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "meta": {"branch_coverage": False}}
+    path = _write(tmp_path, report)
+
+    per_file, _ = parse_coveragepy_file(path, path_prefix="", chunk=chunk)
+
+    assert per_file == parse_coveragepy(path.read_text(encoding="utf-8"), path_prefix="")
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+def test_a_streamed_report_with_no_data_to_divide_by_is_still_refused(tmp_path, chunk):
+    from crapkit.covstream import parse_coveragepy_file
+
+    report = {"meta": {"branch_coverage": False},
+              "files": {"a.py": {"functions": {"f": {
+                  "start_line": 1, "executed_lines": [1], "missing_lines": [],
+                  "summary": {"covered_lines": 1, "num_statements": 0}}}}}}
     path = _write(tmp_path, report)
     with pytest.raises(ToolError, match="branch data"):
         parse_coveragepy_file(path, path_prefix="", chunk=chunk)
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
-def test_a_file_without_function_regions_is_still_refused(tmp_path, chunk):
+def test_one_streamed_file_without_regions_leaves_the_others_scored(tmp_path, chunk):
+    from crapkit.coverage_py import parse_coveragepy
+    from crapkit.covstream import parse_coveragepy_file
+
+    report = {**REPORT, "files": {**REPORT["files"], "tpl/page.html": {"executed_lines": []}}}
+    path = _write(tmp_path, report)
+
+    per_file, _ = parse_coveragepy_file(path, path_prefix="", chunk=chunk)
+
+    assert "tpl/page.html" not in per_file
+    assert per_file == parse_coveragepy(path.read_text(encoding="utf-8"), path_prefix="")
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+def test_a_streamed_report_with_no_regions_at_all_is_still_refused(tmp_path, chunk):
     from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "files": {"a.py": {"executed_lines": []}}}
+    path = _write(tmp_path, report)
+    with pytest.raises(ToolError, match="function regions"):
+        parse_coveragepy_file(path, path_prefix="", chunk=chunk)
+
+
+@pytest.mark.parametrize("chunk", CHUNKS)
+def test_a_streamed_old_report_without_cov_branch_still_names_the_version(tmp_path, chunk):
+    """The same verdict order as the whole-document reader: a report with no
+    regions and no branch data is the coverage-too-old case, whichever reader
+    read it."""
+    from crapkit.covstream import parse_coveragepy_file
+
+    report = {"meta": {"branch_coverage": False},
+              "files": {"a.py": {"executed_lines": []}, "b.py": {"executed_lines": []}}}
     path = _write(tmp_path, report)
     with pytest.raises(ToolError, match="function regions"):
         parse_coveragepy_file(path, path_prefix="", chunk=chunk)
@@ -443,17 +489,19 @@ def test_a_report_written_with_sorted_keys_still_finds_its_branch_flag(tmp_path,
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
-def test_no_branch_data_outranks_a_bad_file_whatever_order_they_are_written_in(tmp_path, chunk):
-    """The whole-document parser read meta before any file, so this report has
-    always complained about branch data first. Member order must not flip it."""
+def test_missing_regions_outrank_missing_branch_data_whatever_order_they_are_in(tmp_path, chunk):
+    """Two faults in one report, and both readers have to name the same one.
+    Regions win: a coverage too old to emit them emits no statement counts
+    either, so `--cov-branch` is a rerun that changes nothing. Member order must
+    not flip it — json.dump(sort_keys=True) writes "files" before "meta"."""
     from crapkit.coverage_py import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     report = {"files": {"a.py": {"executed_lines": []}}, "meta": {"branch_coverage": False}}
     path = _write(tmp_path, report, sort_keys=True)
-    with pytest.raises(ToolError, match="branch data"):
+    with pytest.raises(ToolError, match="function regions"):
         parse_coveragepy(path.read_text(encoding="utf-8"), path_prefix="")
-    with pytest.raises(ToolError, match="branch data"):
+    with pytest.raises(ToolError, match="function regions"):
         parse_coveragepy_file(path, path_prefix="", chunk=chunk)
 
 

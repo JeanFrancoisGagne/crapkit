@@ -53,15 +53,82 @@ def test_path_prefix_rebases_to_repo_relative():
     assert list(per_file) == ["scripts/pylib/mod.py"]
 
 
-def test_report_without_branch_coverage_is_rejected():
-    no_branch = dict(REPORT, meta={"branch_coverage": False})
+# --- a report that carries less than crapkit asked for --------------------
+#
+# `pytest --cov --cov-report=json` without --cov-branch is the default shape of
+# an existing CI artifact, which is exactly what --reuse-artifacts is for, and
+# it used to fail the whole lane. So did one file that lost its "functions" key,
+# which threw away every other file in the same report.
+
+NO_BRANCH = {
+    "meta": {"branch_coverage": False, "version": "7.13.2"},
+    "files": {"pylib/mod.py": {"functions": {
+        "guarded": {"start_line": 1, "executed_lines": [1, 2, 3], "missing_lines": [4],
+                    "summary": {"covered_lines": 3, "num_statements": 4}},
+    }}},
+}
+
+
+def test_a_report_without_branch_data_scores_from_its_statements(capsys):
+    """The model already falls back to statements for every branchless function,
+    so the refusal blocked arithmetic crapkit performs on every normal run."""
+    per_file = parse_coveragepy(json.dumps(NO_BRANCH), path_prefix="")
+
+    (guarded,) = per_file["pylib/mod.py"]
+    assert guarded.coverage == 0.75, "3 of 4 statements"
+    assert "statement" in capsys.readouterr().err, "and the downgrade is said out loud"
+
+
+def test_the_statement_downgrade_names_the_lane_that_read_the_report(capsys):
+    parse_coveragepy(json.dumps(NO_BRANCH), path_prefix="", label="lane 'py'")
+
+    assert "lane 'py'" in capsys.readouterr().err
+
+
+def test_a_report_with_neither_branch_nor_statement_data_is_still_refused():
+    """The one case the refusal was really written for: nothing to divide by, so
+    every function would score as fully covered."""
+    hollow = {"meta": {"branch_coverage": False},
+              "files": {"a.py": {"functions": {"f": {
+                  "start_line": 1, "executed_lines": [1], "missing_lines": [],
+                  "summary": {"covered_lines": 1, "num_statements": 0}}}}}}
+
     with pytest.raises(ToolError, match="branch"):
-        parse_coveragepy(json.dumps(no_branch), path_prefix="")
+        parse_coveragepy(json.dumps(hollow), path_prefix="")
 
 
-def test_report_without_function_regions_is_rejected():
+def test_one_file_without_function_regions_does_not_throw_the_report_away(capsys):
+    """coverage.py writes "functions" once per code-region kind the file's
+    reporter declares, so a file measured by a plugin reporter that declares
+    none loses the key while every .py file in the same report keeps it."""
+    mixed = {"meta": {"branch_coverage": True},
+             "files": {"pylib/mod.py": REPORT["files"]["pylib\\mod.py"],
+                       "tpl/page.html": {"summary": {"num_statements": 3}}}}
+
+    per_file = parse_coveragepy(json.dumps(mixed), path_prefix="")
+
+    assert sorted(per_file) == ["pylib/mod.py"], "the file with no regions joins nothing"
+    assert len(per_file["pylib/mod.py"]) == 2, "and the file that was fine is scored"
+    assert "tpl/page.html" in capsys.readouterr().err, "the skipped file is named"
+
+
+def test_report_without_function_regions_anywhere_is_rejected():
+    """No file in the report carries regions, which is the "coverage is too old"
+    case the message is written for."""
     old = {"meta": {"branch_coverage": True}, "files": {"a.py": {"summary": {}}}}
-    with pytest.raises(ToolError, match="function"):
+    with pytest.raises(ToolError, match="function regions"):
+        parse_coveragepy(json.dumps(old), path_prefix="")
+
+
+def test_an_old_report_without_cov_branch_names_the_coverage_version():
+    """`pytest --cov --cov-report=json` on a coverage below 7.6 is one shape,
+    not two: no regions anywhere AND no branch data. The branch verdict got
+    there first and sent the reader off to add --cov-branch, which changes
+    nothing, before they could learn the version is the cause."""
+    old = {"meta": {"branch_coverage": False},
+           "files": {"a.py": {"summary": {}}, "b.py": {"summary": {}}}}
+
+    with pytest.raises(ToolError, match="function regions"):
         parse_coveragepy(json.dumps(old), path_prefix="")
 
 

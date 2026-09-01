@@ -494,6 +494,17 @@ A machine has more than one python, and the note used to say only "this python".
 one it names is not the one the suite should run in, installing the package is the wrong
 move: repoint the lane instead.
 
+A lane that reaches `crapkit coverage` with the plugin still missing gets the same fact from
+the refusal: the package has to land in the environment the SUITE runs in, not in the shell's
+active venv. Before 0.4.12 it read `pip install pytest-cov` and named no environment at all,
+so a reader whose lane ran its own venv installed the package where it changed nothing. The
+refusal binds the install to an interpreter under the same condition the probe uses — the
+lane starts with the word that runs pytest, and that word is a python — so
+`python -m pytest --cov` earns `python -m pip install pytest-cov` while `uv run pytest --cov`
+and `coverage run -m pytest --cov=pylib` name the environment and stop there. Neither `uv`
+nor `coverage` has a `-m pip install`, and a reader who runs one gets a second, unrelated
+failure.
+
 The probe asks the interpreter that runs pytest, found in the segment that holds the
 `pytest` token. `coverage run -m pytest --cov=pylib && coverage json` names no interpreter
 in front of pytest, so nothing is asked and no note is printed. If cmd.exe cannot start that
@@ -511,8 +522,23 @@ parser = "coveragepy"
 scopes = ["api"]
 ```
 
-`--cov-branch` is not optional. Without it, coverage.py writes a report with no branch data
-and the lane is refused rather than quietly downgraded to statement coverage:
+`--cov-branch` is what makes the coverage term measure the same structure the complexity
+term counts. Without it, coverage.py writes a report with no branch data, and since 0.4.12
+that scores from statements with the downgrade said out loud rather than failing the lane:
+
+```
+$ crapkit coverage
+crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches
+```
+
+Every function in the model already falls back to statement coverage when it holds no
+branches, so refusing the report blocked arithmetic crapkit performs on every run, and
+`pytest --cov --cov-report=json` is the shape most existing CI artifacts have — which is
+what `--reuse-artifacts` is for. Add the flag anyway: statement coverage overstates a
+branchy function, and the CRAP number is cubed in `(1 - cov)`.
+
+One report is still refused, because there is nothing to divide by and every function in it
+would come out fully covered:
 
 ```
 $ crapkit coverage
@@ -521,6 +547,24 @@ crapkit: every lane failed (1 of 1); the errors are above
 ```
 
 Exit 5.
+
+### A file the report carries no regions for
+
+coverage.py writes the per-file `functions` key once per code-region kind that file's own
+reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
+template coverage — loses the key while every `.py` file in the same report keeps it. That
+one entry used to fail the lane and throw away every other file in the report, including
+the ones that were fine. Those files are now skipped and named, and the rest is scored:
+
+```
+crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) — those files are skipped and the rest of the report is scored
+```
+
+A report where NO file carries regions is still exit 5, which is the "coverage is too old"
+case the message was written for: `coverage.py report has no function regions for any of
+its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
+a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
+which a coverage that old would not fix.
 
 ### The interpreter a lane binds to
 
@@ -819,7 +863,10 @@ crapkit: lane 'py' FAILED: lane 'py' runs the python suite, which is host-only (
 Two triggers, either one is enough: the file `/.dockerenv` exists, or
 `CRAPKIT_INSIDE_CONTAINER=1` is set in the environment. The guard exists because a python
 suite under coverage is memory-hungry and a container memory cap turns that into an OOM kill
-that looks like a flaky lane. If your container is sized for it, say so per lane:
+that looks like a flaky lane. It fires on the path that launches the suite and nowhere else,
+so `--reuse-artifacts` reads a host-built report inside a container without hitting it: that
+run parses a file already on disk and starts nothing. If your container is sized for it, say
+so per lane:
 
 ```toml
 container_ok = true
@@ -1122,6 +1169,35 @@ Exit 5. Four consequences:
 
 `coverage --json` carries the reasons under `lane_failures`, keyed by lane name, alongside
 the successful lanes' provenance under `lanes`.
+
+### The artifact has to be the one this run wrote
+
+A lane passes when its command finishes AND every file the lane declares that was already
+on disk has a different modification time after the attempt. A file that was never there is
+not part of that check: it is the missing-artifact refusal crapkit already had, and a
+`results_artifact` that never appeared gets its own sentence from the provenance reader.
+Existence used to be the whole test, so a lane failed loud exactly once — on the first run,
+against an empty `.crapkit/` — and scored the previous run's file on every run after that. A
+vitest lane without `reportOnFailure` and a pytest run that dies in collection both land
+there, and what came out was a confident grade off a measurement nothing took, stamped with
+the current commit so `--reuse-unchanged` went on trusting it.
+
+A leftover artifact says so in its own words, because "produced no artifact at
+.crapkit/cov/py.json" about a path that holds a report reads as crapkit failing to see it:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json on disk predates it and is the previous run's (command exit 2); full log: /repo/.crapkit/lane-py.log; last output: ...
+```
+
+When the artifact is not on disk at all and the leftover is some other declared file, the
+artifact path leads and the leftover follows it: `produced no artifact at
+.crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the previous run's`.
+
+The check is the modification time, not the bytes: a runner that rewrites a byte-identical
+report still bumps it, so an unchanged rerun stays green. `results_artifact` is held to the
+same rule, so a killed suite's junit cannot feed the test-count and no-new-failures checks
+last run's numbers. `--reuse-artifacts` is untouched — there the operator is saying read
+what is on disk, and the staleness warning is what that path already prints.
 
 ### The failure message names its own log
 

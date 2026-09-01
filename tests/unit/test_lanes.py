@@ -1,4 +1,5 @@
 """Lane runner seam: config lane in, coverage + provenance out; failures carry the command's voice."""
+import json
 import sys
 from pathlib import Path
 
@@ -8,6 +9,16 @@ import crapkit
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.lanes import run_lane
+
+COVERAGEPY = json.dumps({
+    "meta": {"branch_coverage": True},
+    "files": {"src/a.py": {"functions": {"hot": {
+        "start_line": 1, "executed_lines": [1, 2], "missing_lines": [],
+        "summary": {"covered_lines": 2, "num_statements": 2,
+                    "num_branches": 2, "covered_branches": 2}}}}},
+})
+
+ISTANBUL = json.dumps({"C:/r/src/a.ts": {"fnMap": {}, "f": {}, "branchMap": {}, "b": {}}})
 
 
 def test_failing_lane_error_carries_stderr_tail_and_log_file(tmp_path):
@@ -41,6 +52,116 @@ def test_container_ok_lane_is_allowed_through_the_guard(tmp_path, monkeypatch):
                 parser="coveragepy", scopes=(), container_ok=True)
     with pytest.raises(ToolError, match="no artifact"):
         run_lane(tmp_path, lane)
+
+
+def test_reuse_artifacts_reads_a_coveragepy_artifact_inside_a_container(tmp_path, monkeypatch):
+    """The guard names an OOM that the reuse path cannot reach: `--reuse-artifacts`
+    launches nothing and only parses the file already on disk. crapkit ships a
+    Dockerfile and its own action's verdict step is `verify --reuse-artifacts`,
+    so a container reading host-built artifacts is the shape users land in."""
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    (tmp_path / "cov.json").write_text(COVERAGEPY, encoding="utf-8")
+    lane = Lane(name="py", command="python -m pytest", artifact="cov.json",
+                parser="coveragepy", scopes=())
+
+    coverage, _, _ = run_lane(tmp_path, lane, reuse_artifact=True)
+
+    assert list(coverage) == ["src/a.py"]
+
+
+# --- the artifact a run wrote, not the one a previous run left ---------------
+#
+# Existence was the whole check, so a lane failed loud exactly once: on the
+# first run, against an empty .crapkit/. Every run after that scored the
+# previous run's file. A vitest lane without reportOnFailure and a pytest lane
+# dying in collection both land here, and the grade that comes out looks like an
+# answer.
+
+def _dead_lane(tmp_path, name: str = "py") -> Lane:
+    return Lane(name=name, command=f'"{sys.executable}" -c "import sys; sys.exit(2)"',
+                artifact="cov.json", parser="istanbul", scopes=())
+
+
+def test_a_run_that_wrote_nothing_does_not_inherit_the_last_run_s_artifact(tmp_path):
+    (tmp_path / "cov.json").write_text(ISTANBUL, encoding="utf-8")
+
+    with pytest.raises(ToolError, match="predates") as raised:
+        run_lane(tmp_path, _dead_lane(tmp_path))
+
+    assert "cov.json" in str(raised.value)
+    assert "command exit 2" in str(raised.value), "the exit code the run really had"
+
+
+def test_the_stale_artifact_refusal_still_carries_the_log_and_its_tail(tmp_path):
+    """Same refusal, so it keeps the same evidence: a reader told the file is
+    the previous run's still needs the log that says why this one wrote none."""
+    (tmp_path / "cov.json").write_text(ISTANBUL, encoding="utf-8")
+    lane = Lane(name="py", command=f'"{sys.executable}" -c '
+                                   '"import sys; sys.stderr.write(\'boom: no tests ran\')'
+                                   '; sys.exit(2)"',
+                artifact="cov.json", parser="istanbul", scopes=())
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane)
+
+    assert str(tmp_path / ".crapkit" / "lane-py.log") in str(raised.value)
+    assert "no tests ran" in str(raised.value)
+
+
+def test_a_rerun_that_writes_the_same_bytes_is_still_this_run_s_artifact(tmp_path):
+    """Freshness is the mtime, not the content: a runner that rewrites an
+    identical report bumps it, so a byte-identical rerun must stay green."""
+    (tmp_path / "cov.json").write_text(ISTANBUL, encoding="utf-8")
+    script = tmp_path / "write.py"
+    script.write_text(f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL!r})\n",
+                      encoding="utf-8")
+    lane = Lane(name="py", command=f'"{sys.executable}" "{script}"',
+                artifact="cov.json", parser="istanbul", scopes=())
+
+    _, prov, _ = run_lane(tmp_path, lane)
+
+    assert prov["exit_code"] == 0
+
+
+def test_a_junit_the_run_did_not_rewrite_is_the_previous_run_s_too(tmp_path):
+    """The results file is read by the same existence test, so a suite that
+    wrote fresh coverage over a killed run's junit fed the test-count drop
+    warning and the no-new-failures check last run's numbers."""
+    (tmp_path / "junit.xml").write_text(
+        '<?xml version="1.0"?><testsuites><testsuite name="s" tests="1">'
+        '<testcase classname="t" name="one"/></testsuite></testsuites>',
+        encoding="utf-8")
+    script = tmp_path / "write.py"
+    script.write_text(f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL!r})\n",
+                      encoding="utf-8")
+    lane = Lane(name="py", command=f'"{sys.executable}" "{script}"', artifact="cov.json",
+                parser="istanbul", scopes=(), results_artifact="junit.xml")
+
+    with pytest.raises(ToolError, match="predates") as raised:
+        run_lane(tmp_path, lane)
+
+    assert "junit.xml" in str(raised.value)
+
+
+def test_a_missing_artifact_beside_a_stale_junit_still_names_the_artifact(tmp_path):
+    """Two failures at once: the run wrote no coverage AND left last run's junit
+    behind. The leftover wording alone names only the junit, and the path the
+    reader has to look at is the artifact — which is also what the recover skill
+    triages on ("produced no artifact at <path>")."""
+    (tmp_path / "junit.xml").write_text(
+        '<?xml version="1.0"?><testsuites><testsuite name="s" tests="1">'
+        '<testcase classname="t" name="one"/></testsuite></testsuites>',
+        encoding="utf-8")
+    lane = Lane(name="py", command=f'"{sys.executable}" -c "import sys; sys.exit(2)"',
+                artifact="cov.json", parser="istanbul", scopes=(),
+                results_artifact="junit.xml")
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane)
+
+    message = str(raised.value)
+    assert "produced no artifact at cov.json" in message, "the path with nothing at it"
+    assert "junit.xml" in message, "and the leftover, as a second clause"
 
 
 def test_no_private_project_namespace_ships_in_the_library():
@@ -177,11 +298,88 @@ def test_a_tail_that_already_says_why_is_not_repeated(tmp_path):
     assert message.count("no module named 'faro'") == 1
 
 
-def test_the_pytest_cov_hint_still_fires_through_the_new_tail(tmp_path):
-    lines = ["$ python -m pytest --cov",
-             "pytest: error: unrecognized arguments: --cov --cov-branch", "(exit 4)"]
+_NO_COV = ["$ python -m pytest --cov",
+           "pytest: error: unrecognized arguments: --cov --cov-branch", "(exit 4)"]
 
-    assert "pip install pytest-cov" in _refusal(tmp_path, lines)
+
+def test_the_pytest_cov_hint_still_fires_through_the_new_tail(tmp_path):
+    assert "pytest-cov" in _refusal(tmp_path, _NO_COV)
+
+
+def test_the_pytest_cov_hint_names_the_interpreter_the_lane_runs(tmp_path):
+    """`pip install pytest-cov` named no environment at all, and the package has
+    to land in the one the LANE names. A repo whose lane runs its own venv got a
+    hint that resolves to whatever venv the shell has active, where installing
+    it changes nothing: the reporter ran the line verbatim and the next
+    `crapkit coverage` failed identically."""
+    from crapkit.lanes import _raise_no_artifact
+
+    lane = Lane(name="py", command='".venv/Scripts/python.exe" -m pytest --cov',
+                artifact=".crapkit/cov/py.json", parser="coveragepy", scopes=("src",))
+    log = _plant_log(tmp_path, _NO_COV)
+    with pytest.raises(ToolError) as raised:
+        _raise_no_artifact(tmp_path, lane, log, 4)
+
+    message = str(raised.value)
+    assert ".venv/Scripts/python.exe" in message, "the interpreter the lane starts with"
+    assert "shell" in message, "and that the shell's active venv is the wrong place"
+
+
+def test_a_quoted_interpreter_path_reaches_the_hint_as_one_word(tmp_path):
+    """Read with the shell that runs the command, never str.split: a quoted
+    path with a space in it is one word, and half of it is not an interpreter."""
+    from crapkit.lanes import _raise_no_artifact
+
+    lane = Lane(name="py", command='"C:/Program Files/py/python.exe" -m pytest --cov',
+                artifact=".crapkit/cov/py.json", parser="coveragepy", scopes=("src",))
+    log = _plant_log(tmp_path, _NO_COV)
+    with pytest.raises(ToolError) as raised:
+        _raise_no_artifact(tmp_path, lane, log, 4)
+
+    assert "C:/Program Files/py/python.exe" in str(raised.value)
+
+
+def _cov_hint(tmp_path, command: str) -> str:
+    from crapkit.lanes import _raise_no_artifact
+
+    lane = Lane(name="py", command=command, artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+    log = _plant_log(tmp_path, _NO_COV)
+    with pytest.raises(ToolError) as raised:
+        _raise_no_artifact(tmp_path, lane, log, 4)
+    return str(raised.value)
+
+
+def test_a_managed_lane_is_not_handed_a_pip_line_through_its_manager(tmp_path):
+    """`uv run pytest --cov` starts with `uv`, and `uv -m pip install pytest-cov`
+    is not a command: the reader runs it and gets a second, unrelated failure.
+    `uv run` and its siblings sync the project environment themselves, which is
+    why `init` says nothing about pytest-cov for such a lane."""
+    message = _cov_hint(tmp_path, "uv run pytest --cov")
+
+    assert "-m pip install" not in message, "no install line the manager cannot run"
+    assert "the environment the lane's suite runs in" in message
+    assert "shell's active venv" in message, "which environment is still the point"
+
+
+def test_a_coverage_run_lane_is_not_handed_a_coverage_pip_line(tmp_path):
+    """`coverage run -m pytest` names no interpreter in front of pytest, so
+    there is no word to bind the install to. `coverage -m pip install` is the
+    same dead end: coverage.py has no `-m`."""
+    message = _cov_hint(tmp_path, "coverage run -m pytest --cov=pylib && coverage json")
+
+    assert "-m pip install" not in message
+    assert "the environment the lane's suite runs in" in message
+
+
+def test_a_lane_that_starts_with_pytest_itself_names_no_interpreter(tmp_path):
+    """A bare `pytest --cov` lane starts with pytest, not with the python that
+    holds the package. `pytest -m pip install pytest-cov` runs pytest against a
+    directory called `pip`."""
+    message = _cov_hint(tmp_path, "pytest --cov=src")
+
+    assert "-m pip install" not in message
+    assert "the environment the lane's suite runs in" in message
 
 
 def test_one_line_longer_than_the_budget_says_it_was_cut(tmp_path):

@@ -23,7 +23,17 @@ RECORDED = Path(__file__).resolve().parent.parent / "fixtures" / "recorded"
 CRASHED = (RECORDED / "junit_xdist_worker_crash.xml").read_text(encoding="utf-8")
 CLEAN = (RECORDED / "junit_xdist_clean.xml").read_text(encoding="utf-8")
 EMPTY = '<?xml version="1.0" encoding="utf-8"?><testsuites />'
-NOOP = f'"{sys.executable}" -c ""'
+
+
+def writing(root: Path, *names: str) -> str:
+    """A command that writes the files the fixture planted, so the lane under
+    test is one that RAN and produced them. A command writing nothing is now
+    refused for reusing the previous run's artifact, which is a different
+    failure from the junit these tests are about."""
+    script = root / "runner.py"
+    script.write_text("import os\n" + "".join(f"os.utime({n!r})\n" for n in names),
+                      encoding="utf-8")
+    return f'"{sys.executable}" "{script}"'
 
 
 def istanbul(root: Path) -> str:
@@ -58,7 +68,7 @@ def test_a_crashed_worker_fails_the_lane_the_way_a_missing_artifact_does(tmp_pat
     run is typed partial and no baseline reader will take it. The lane RAN here,
     which is where the refusal belongs: crapkit watched the suite produce this
     report, so the report is the whole story of what it measured."""
-    lane = lane_over(tmp_path, CRASHED, NOOP)
+    lane = lane_over(tmp_path, CRASHED, writing(tmp_path, "cov.json", "junit.xml"))
 
     with pytest.raises(ToolError, match="gw1") as exc:
         run_lane(tmp_path, lane)
@@ -69,7 +79,7 @@ def test_a_crashed_worker_fails_the_lane_the_way_a_missing_artifact_does(tmp_pat
 def test_a_missing_junit_still_fails_a_lane_that_ran(tmp_path):
     """A declared results_artifact the run did not write makes the no-NEW-failures
     check pass vacuously, so the lane fails instead."""
-    lane = lane_over(tmp_path, CLEAN, NOOP)
+    lane = lane_over(tmp_path, CLEAN, writing(tmp_path, "cov.json"))
     (tmp_path / "junit.xml").unlink()
 
     with pytest.raises(ToolError, match="results_artifact junit.xml is missing"):
