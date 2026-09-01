@@ -56,6 +56,33 @@ def _subcommand_row(name: str) -> str:
     return _row_starting(_section(_doc(README), "## Subcommands"), f"`{name}")
 
 
+# --- the score's provenance --------------------------------------------------
+
+FORMULA = "CRAP = ccn^2 * (1 - cov)^3 + ccn"
+
+
+def _formula_paragraph() -> str:
+    """The fenced formula and the prose directly under it.
+
+    Blank lines separate the blocks, so this is the fence plus the first
+    paragraph beneath it: the two things a reader takes in together.
+    """
+    blocks = _doc(README).split("\n\n")
+    index = next(i for i, block in enumerate(blocks) if FORMULA in block)
+    return "\n\n".join(blocks[index:index + 2])
+
+
+def test_the_formula_says_who_coined_the_metric():
+    """C.R.A.P. is not crapkit's invention, and a page that prints the formula
+    with no source reads as if it were. The handbook has carried the credit
+    from its first draft; the README is where most readers meet the formula.
+    """
+    paragraph = _formula_paragraph()
+
+    for name in ("Savoia", "Evans", "crap4j", "2007"):
+        assert name in paragraph, f"the formula's paragraph never names {name}"
+
+
 # --- step 2: the doctor transcript -------------------------------------------
 #
 # Measured: `crapkit doctor` on the quickstart's own repo prints five ok lines
