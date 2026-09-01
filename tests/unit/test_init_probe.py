@@ -530,6 +530,70 @@ def test_doctor_says_nothing_about_a_test_path_inside_a_quoted_value(tmp_path):
     assert _lane_command_problems(tmp_path, _doctor_lane(command)) == []
 
 
+# --- and a launcher the repo carries is read from where the lane runs --------
+#
+# which() reads a relative first word against the PROCESS cwd. Now that init
+# writes `.venv\Scripts\python.exe` into the lane, that made doctor's answer
+# depend on the directory doctor was invoked from, and the lane never runs
+# there: lanes.py starts it with cwd=root/lane.cwd.
+
+def _launcher_under(cwd: Path, *parts: str) -> str:
+    """A committed launcher's two halves: the file on disk under the directory
+    the lane runs in, and the relative word the lane names it by."""
+    launcher = cwd.joinpath(*parts)
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    launcher.write_text("", encoding="utf-8")
+    return os.sep.join(parts)
+
+
+def test_a_launcher_the_repo_carries_resolves_from_any_directory(tmp_path, monkeypatch):
+    """The lane init just wrote, checked from outside the repo. which() found
+    no `.venv\\Scripts\\python.exe` under the directory doctor happened to
+    start in, so `crapkit doctor --repo <path>` failed a config that runs — and
+    mcp_server._run_cli spawns exactly that call with no cwd=, so the MCP
+    doctor tool answered every repo but the server's own with a false FAIL."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    word = _launcher_under(repo, ".venv", *admin._VENV_LAUNCHER)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    problems = _lane_command_problems(repo, _doctor_lane(f"{word} -m pytest --cov"))
+
+    assert problems == []
+
+
+def test_a_launcher_the_repo_does_not_carry_is_still_a_problem(tmp_path, monkeypatch):
+    """The other half: reading the word from the lane's directory must not turn
+    into reading it nowhere. A config naming a venv this checkout never built
+    still fails doctor, which is the finding that sends the reader to
+    `python -m venv`."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    word = os.sep.join((".venv", *admin._VENV_LAUNCHER))
+    monkeypatch.chdir(tmp_path)
+
+    problems = _lane_command_problems(repo, _doctor_lane(f"{word} -m pytest --cov"))
+
+    assert problems == [f"lane 'py': executable {word!r} does not resolve on PATH"]
+
+
+def test_a_launcher_is_read_from_the_directory_the_lane_runs_in(tmp_path, monkeypatch):
+    """A lane with a cwd names its launcher from that cwd, not from the repo
+    root, because that is where lanes.py starts it. Spelled with the separator
+    a hand-written config may carry, which is the other half of the check."""
+    repo = tmp_path / "repo"
+    (repo / "web").mkdir(parents=True)
+    _launcher_under(repo / "web", ".venv", *admin._VENV_LAUNCHER)
+    word = "/".join((".venv", *admin._VENV_LAUNCHER))
+    monkeypatch.chdir(tmp_path)
+
+    lane = _doctor_lane(f"{word} -m pytest --cov", cwd="web")
+
+    assert _lane_command_problems(repo, lane) == []
+
+
 # --- timeout= has to bound the wall clock, here and in the mutant runner -----
 #
 # Both calls run under shell=True, so the shell is the child and the program is

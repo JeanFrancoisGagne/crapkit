@@ -635,14 +635,23 @@ def test_init_binds_the_lane_to_the_venv_the_repo_carries(pytest_repo: Path):
 
 def test_doctor_clears_the_venv_lane_init_just_wrote(pytest_repo: Path):
     """The config init writes has to survive its own doctor. This one names a
-    path rather than a bare word, and doctor both resolves it and starts it."""
+    path rather than a bare word, and doctor both resolves it and starts it.
+
+    Asked twice, from two directories. `--repo` is how every caller that is not
+    a shell reaches doctor — `mcp_server._run_cli` spawns
+    `crapkit doctor --repo <repo>` with no cwd of its own — and a relative
+    launcher read against the caller's directory instead of the repo's failed
+    that call on every repo but the one the caller happened to be sitting in.
+    """
     _repo_venv(pytest_repo)
     assert run_cli(pytest_repo, "init").returncode == 0
 
-    res = run_cli(pytest_repo, "doctor")
+    inside = run_cli(pytest_repo, "doctor")
+    outside = run_cli(pytest_repo.parent, "doctor", "--repo", str(pytest_repo))
 
-    assert res.returncode == 0, res.stdout
-    assert "does not resolve" not in res.stdout and "cannot run" not in res.stdout
+    for res in (inside, outside):
+        assert res.returncode == 0, res.stdout
+        assert "does not resolve" not in res.stdout and "cannot run" not in res.stdout
 
 
 def test_a_venv_without_pytest_leaves_the_bare_name_alone(pytest_repo: Path):

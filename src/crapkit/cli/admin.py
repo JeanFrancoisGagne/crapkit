@@ -598,15 +598,32 @@ def _missing_named_script(cwd: Path, tok: str) -> bool:
     return not (cwd / tok).is_file()
 
 
+def _missing_runner(cwd: Path, tok: str) -> bool:
+    r"""A runner the lane could not start, asked the way the shell will ask.
+
+    A first word carrying a separator is a path, and the shell reads it from the
+    directory the lane runs in (lanes.py starts the lane with cwd=root/lane.cwd).
+    which() reads it against whatever directory doctor itself was started in, so
+    the `.venv\Scripts\python.exe` init writes cleared doctor from inside the
+    repo and failed it from everywhere else — including `mcp_server._run_cli`,
+    which spawns `crapkit doctor --repo <repo>` with no cwd of its own.
+
+    A bare name stays PATH's question, which is the one which() answers.
+    """
+    import shutil
+
+    if os.sep in tok or "/" in tok:
+        return not (cwd / tok).is_file()
+    return shutil.which(tok) is None
+
+
 def _segment_problems(name: str, cwd: Path, tokens: list[str]) -> list[str]:
     """One command's argv: its runner, then the files it names. Nothing is
     executed."""
-    import shutil
-
     if not tokens:
         return []
     runner = ([f"lane {name!r}: executable {tokens[0]!r} does not resolve on PATH"]
-              if shutil.which(tokens[0]) is None else [])
+              if _missing_runner(cwd, tokens[0]) else [])
     return runner + [f"lane {name!r}: command names {tok!r}, which does not exist"
                      for tok in tokens[1:] if _missing_named_script(cwd, tok)]
 

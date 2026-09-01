@@ -16,6 +16,16 @@ leave the bare name alone, and a lockfile still wins outright. The lane and the
 one path cmd.exe can start: an unquoted `.venv/Scripts/python` answers `'.venv' is not
 recognized`.
 
+### `doctor` reads a lane's runner from the directory the lane runs in
+A lane naming the launcher above passed `doctor` inside the repo and failed it from
+anywhere else: the check resolved the first word against the directory `doctor` was
+started in, not the one the lane runs in. So `crapkit doctor --repo <path>` reported
+`FAIL lane 'py': executable '.venv\\Scripts\\python.exe' does not resolve on PATH` against
+the config `crapkit init` had just written, and the MCP `doctor` tool, which spawns that
+command with no directory of its own, said it about every repo but its own. A first word
+carrying a separator is now looked for under the lane's `cwd`, the way a named script
+already was; a bare name is still PATH's question.
+
 ### The missing-pytest-cov note names which python it asked
 The note said "this python cannot import pytest_cov" and named no interpreter. A machine
 has more than one, and the repo above has two: the note fired for the PATH `python` while
