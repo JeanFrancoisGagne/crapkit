@@ -129,6 +129,10 @@ def _no_lane_reason(lanes: list[dict]) -> list[str]:
             "any test ran. Coverage reads 0 by default here, not by measurement.</p>"]
 
 
+# The three sentences embedded in the HTML name the console script on purpose:
+# the page is a document that travels to readers on other machines, and the
+# generating interpreter's path is that machine's business, not the reader's.
+# The report_top refusal above is terminal output and keeps _self().
 def _stale_lane_reason(lanes: list[dict]) -> list[str]:
     """The blackout, stated at its real size.
 
@@ -141,7 +145,7 @@ def _stale_lane_reason(lanes: list[dict]) -> list[str]:
         return []
     return [f"<p><b>{len(stale)} of {len(lanes)} lanes are stale.</b> One stale lane "
             "blacks out line-level coverage repo-wide, not just its own scopes. "
-            f"Commit or revert the edits, then rerun <code>{_self()} coverage</code>.</p>"
+            "Commit or revert the edits, then rerun <code>crapkit coverage</code>.</p>"
             + _lane_list(stale)]
 
 
@@ -157,7 +161,7 @@ def _behind_head_reason(wl: dict) -> list[str]:
     return [f'<p>The snapshot is run {_esc(wl["run_id"])} at '
             f'<code>{_esc(wl["commit"][:11])}</code> and HEAD has moved on. Fresh '
             f'artifacts do not rescue a run measured at another commit: rerun '
-            f'<code>{_self()} coverage</code>.</p>']
+            '<code>crapkit coverage</code>.</p>']
 
 
 # --- per-scope grades --------------------------------------------------------
@@ -250,7 +254,7 @@ def _remedy_tone(remedy) -> str:
 
 def _drill_down(entry: dict) -> str:
     """The command that answers what this page deliberately does not carry."""
-    return _esc(f'{_self()} explain {entry["path"]} "{entry["function"]}"')
+    return _esc(f'crapkit explain {entry["path"]} "{entry["function"]}"')
 
 
 # --- the trend series --------------------------------------------------------
