@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.9 — unreleased
+
+### The advisory's own wording is held to the pages that print it
+`_advisory_lines` in `src/crapkit/cli/claude_hook.py` builds the three lines the
+PostToolUse hook writes to stderr, and the first of them says outright that the edit
+landed and nothing was blocked. That sentence is load-bearing: the reader is a model
+holding a nonzero exit code, and the commit gate's own wording would tell it a landed
+edit was rejected.
+
+`AGENTS.md`, `docs/agent-json.md` and `docs/handbook.html` each print a rendered sample
+of those lines, and nothing compared them with the format string. A new case in
+`tests/unit/test_claude_hook_docs_contract.py` reads each page's sample, feeds its count,
+ceiling and path back through `_advisory_lines`, and compares the whole line. The values
+come from the page and the wording comes from the code, so what is compared is the
+wording alone. The closing line, `the commit gate enforces this`, is pinned the same way.
+
 ## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request
