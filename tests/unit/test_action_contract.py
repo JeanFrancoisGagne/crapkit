@@ -63,13 +63,28 @@ def _flags(name: str) -> set[str]:
     return {opt for action in _subcommands()[name]._actions for opt in action.option_strings}
 
 
+def _until_next_section(rest: list[str]) -> list[str]:
+    """Down to the next `## `, ignoring the ones inside a fence.
+
+    The section quotes the rendered comment, and that comment is markdown with
+    its own `## crapkit` heading. A reader that stops at the first `## ` stops
+    four lines in, and every assertion below it passes on an empty body.
+    """
+    body, fenced = [], False
+    for line in rest:
+        if line.startswith("```"):
+            fenced = not fenced
+        if line.startswith("## ") and not fenced:
+            break
+        body.append(line)
+    return body
+
+
 @lru_cache(maxsize=None)
 def _readme_section() -> str:
     lines = (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
     assert README_HEADING in lines, f"README lost its {README_HEADING!r} heading"
-    rest = lines[lines.index(README_HEADING) + 1:]
-    end = next((i for i, ln in enumerate(rest) if ln.startswith("## ")), len(rest))
-    return "\n".join(rest[:end])
+    return "\n".join(_until_next_section(lines[lines.index(README_HEADING) + 1:]))
 
 
 # --- the shape a runner will accept ------------------------------------------
@@ -171,6 +186,13 @@ def test_the_marker_the_action_greps_for_is_the_one_the_builder_writes():
 
     assert marker, "the builder declares no marker"
     assert marker.group(1) in ACTION.read_text(encoding="utf-8")
+
+
+def test_the_section_reader_walks_past_a_heading_inside_a_fence():
+    """Guards the reader above, which otherwise passes on an empty body."""
+    body = ["intro", "```markdown", "## crapkit", "```", "tail", "## Next", "gone"]
+
+    assert _until_next_section(body)[-1] == "tail"
 
 
 def test_the_readme_states_the_permission_the_comment_needs():

@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.4.8 — unreleased
+
+### A composite action that comments the worklist and the verdict on a pull request
+`action.yml` at the repository root makes crapkit four lines in a consumer's workflow:
+
+```yaml
+      - uses: JeanFrancoisGagne/crapkit@v0.4.8
+        with:
+          gate: "false"
+```
+
+The action sets up python, installs crapkit, and runs `crapkit coverage --json`,
+`crapkit verify --json --reuse-artifacts` and `crapkit worklist --json` in the consumer's
+checkout. The three payloads become one comment: what the run measured, the verdict line
+with verify's own exit code, and the ranked worklist rows for the files the pull request
+changed. A hidden `<!-- crapkit-action -->` line lets the next push find that comment
+through the API and edit it, so a fifteen-push branch carries one comment and not fifteen.
+A push event has no pull request to carry one, and the same text goes to the job log
+instead.
+
+The install reads `$GITHUB_ACTION_PATH`, the action's own checkout, rather than
+`pip install crapkit`: the crapkit that scores a tree is the one in the ref the consumer
+pinned in `uses:`, so `@v0.4.8` cannot drift to whatever released last.
+
+`gate` decides the exit code. `false`, the default, exits 0 whatever verify found and
+leaves the comment as the whole output, which is how a team adopts the action before it
+has decided which findings should stop a merge. `true` exits with verify's code, so a
+finding fails the check. `top` caps the rendered rows at 5 by default and
+`python-version` picks the interpreter. Posting the comment needs `pull-requests: write`
+and nothing else.
+
+What the verdict covers is worth reading once. The baseline is the coverage run the same
+job wrote a step earlier, so on a clean checkout verify judges an empty diff and reports
+the tree's own health rather than the pull request's delta. README's
+[The GitHub Action](README.md#the-github-action) says so in the same words and names the
+portable baseline that makes it judge the diff instead.
+
+crapkit's own dogfood job runs the action on crapkit with `uses: ./`, on every push and
+every pull request. `action.yml` is read by the runner and never imported, so that job is
+the only thing that executes its steps; `tests/unit/test_action_contract.py` covers what a
+unit test can, which is that the file parses, that every step names its shell, that every
+`crapkit` call in it exists on the parser with the flags it passes, and that the marker
+the builder writes is the one the action greps for.
+
 ## 0.4.7 — 2026-08-31
 
 One contributed capability and three fixes. The capability is the per-edit advisory,

@@ -430,6 +430,122 @@ commit, and a row in the override log. All three land or nothing does, and an un
 `alert_command` refuses the override outright. See
 [docs/ratchet.md](docs/ratchet.md#overrides-and-the-audit-trail).
 
+## The GitHub Action
+
+[action.yml](action.yml) at this repository's root is a composite action, so a reviewer
+sees crapkit's numbers on the pull request without installing anything. Four lines add it
+to a workflow, and every input has a default:
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: JeanFrancoisGagne/crapkit@v0.4.8
+```
+
+The whole job those four lines sit in:
+
+```yaml
+on: pull_request
+jobs:
+  crapkit:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write             # the comment, and nothing else
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0               # the diff, and verify's baseline commit
+      - run: pip install -e ".[dev]"   # whatever your lanes need to run
+      - uses: JeanFrancoisGagne/crapkit@v0.4.8
+        with:
+          gate: "false"
+```
+
+That `pip install` step is the one people leave out, and it is the same one Route 4 above
+names: the action installs crapkit and nothing else, so your lanes still need whatever
+your test command needs. Without it the lane writes no artifact and the comment says so.
+
+`fetch-depth: 0` is the other one. `actions/checkout` clones a single commit; the action
+reads the pull request's changed files out of git and `verify` reads the diff against the
+baseline's commit. With a shallow clone the file list comes back empty and the comment
+ranks the whole repository instead of the diff.
+
+The action installs crapkit from `$GITHUB_ACTION_PATH`, which is its own checkout of the
+ref you pinned in `uses:`. So `@v0.4.8` scores your tree with 0.4.8's crapkit rather than
+with whatever released last, and pinning a tag is the whole version policy.
+
+### What the comment looks like
+
+One comment per pull request, edited in place on every push. A hidden
+`<!-- crapkit-action -->` line is how the next run finds it, so a fifteen-push branch
+carries one comment and not fifteen. On a `push` event there is no pull request to carry
+it, and the same text goes to the job log instead.
+
+Rendered against this repository's own store, with a base commit fifteen back standing in
+for a pull request:
+
+```markdown
+<!-- crapkit-action -->
+
+## crapkit
+
+1333 functions in 61 files, 0 over target, CRAP load 3713.89, grade A+.
+
+**verify passed.** Run 2 against baseline 1, 7 changed files.
+
+### Worklist: 39 changed files
+
+| File | Function | ccn | risk | remedy |
+|---|---|---:|---:|---|
+| `src/crapkit/cli/admin.py:1026` | `_recorded_roots( recorded )` | 6 | 10.9908 | ok |
+| `src/crapkit/lanes.py:646` | `build_retest_command( template : str , tests : set [ str ] )` | 6 | 10.8234 | ok |
+| `src/crapkit/cli/admin.py:80` | `_next_step( scopes : dict , lanes : tuple )` | 5 | 9.159 | ok |
+| `src/crapkit/cli/admin.py:239` | `_pytest_cov_probe( command : str )` | 5 | 9.159 | ok |
+| `src/crapkit/cli/admin.py:505` | `_segment_problems( name : str , cwd : Path , tokens : list [ str ] )` | 5 | 9.159 | ok |
+```
+
+The rows are the ranked worklist for the files the pull request changed, worst first,
+`top` of them. `risk` is ccn times churn weight, the number `crapkit worklist` ranks on,
+and `remedy` is the run's own verdict for that function: `decompose`, `add-tests` or `ok`.
+A pull request that touches no ranked function gets the heading and no table.
+
+The two file counts describe two different diffs, and both are wanted. `39 changed files`
+is the pull request's own list, `git diff --name-only` against the base commit, and it is
+what the table is filtered to. `7 changed files` on the verdict line is what `verify`
+measured against its baseline run, which is the section below.
+
+### The inputs
+
+| Input | Default | What it does |
+|---|---|---|
+| `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. Anything else exits 0 and the comment is the whole output |
+| `top` | `"5"` | worklist rows rendered in the table |
+| `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into |
+
+`gate: "false"` is the default on purpose. A team adopts the action before it has decided
+which findings should stop a merge, and a check that fails on day one gets turned off on
+day two.
+
+### What the verdict line covers
+
+The action runs `crapkit coverage --json` and then `crapkit verify --json
+--reuse-artifacts`, so the baseline is the run written a step earlier, at this same
+commit. On a clean checkout that diff is empty: the verdict line reports the tree's own
+health and the exit code verify returned, not the pull request's delta. The gate that
+judges the delta is the portable baseline in [Route 4](#route-4-ci): commit
+`crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv
+crapkit-baseline.tsv` in a step of your own beside this one.
+
+`--reuse-artifacts` is what keeps the job to one test run. `coverage` ran the lanes
+moments earlier on this same tree, and verify parses those artifacts rather than running
+your whole suite a second time for the same numbers.
+
+The comment is posted with `gh api` and the job's own `GITHUB_TOKEN`, which needs
+`pull-requests: write`. Two things it cannot do: a pull request from a fork gets a
+read-only token, so the POST is a 403 there, and a self-hosted runner without the `gh` CLI
+on PATH fails that step. Both leave the rendered text in the job log.
+
 ## Subcommands
 
 Every subcommand takes `--repo PATH` (default `.`), and the flag goes **after** the
