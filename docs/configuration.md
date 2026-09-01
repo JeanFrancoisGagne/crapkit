@@ -251,27 +251,29 @@ Test directories are excluded **unconditionally**, before `globs` is consulted: 
 component matching `test`, `tests` or `__tests__`, case-insensitively. You do not need a
 glob for them, and you cannot glob your way back in.
 
-Globs are whole-path, so `**/dist/**` requires at least one directory *before* `dist`. It
-matches `web/dist/bundle.js` and not a repo-root `dist/bundle.js`. That matters because
-`init` applies the same rule, so a tracked build directory at the repo root becomes a scope:
+Dot-directories go the same way, and for the same reason: any path with a component that
+opens on a dot leaves the corpus before `globs` is read, `.github/workflows/gen.py` and
+`.cursor/skills/skill.py` alike. `init` refuses to build a scope out of one, so a file in
+there had nothing that could own it and came back from `doctor` as a tracked file matching
+a scope language with no scope path. A dot *file* is not a dot directory and stays in.
 
-```
-$ crapkit init
-wrote crapkit.toml with 2 scope(s): dist, src
-```
-
-Add the unanchored form beside it, then delete the scope `init` wrote (an emptied scope is a
-`doctor` FAIL):
+Globs are whole-path, so `**/dist/**` requires at least one directory *before* `dist`: it
+matches `web/dist/bundle.js` and not a repo-root `dist/bundle.js`. Write the root form
+beside the nested one for anything you want gone in both places:
 
 ```toml
 globs = ["**/dist/**", "dist/**"]
 ```
 
+`init` ships both forms for the four generated trees and for the test-file spellings, so a
+tracked `vendor/` or `dist/` at the repo root no longer becomes a scope of its own, which is
+what it did before, and then either failed `doctor` as a scope no lane measures or joined
+the js lane in a repo that had one, scoring vendored code as the team's own debt.
 `crapkit init` writes this default set:
 
 ```toml
 [exclude]
-globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
+globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "node_modules/**", "dist/**", "build/**", "vendor/**", "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
 ```
 
 The six `*.config.*` entries keep runner config files (`vitest.config.ts` and friends) out
@@ -361,7 +363,7 @@ retest_command = "python -m pytest --junitxml=.crapkit/cov/junit-api.xml -q -k \
 
 [[lane]]
 name = "web"
-command = "npm run test -- --coverage --coverage.reportsDirectory=../.crapkit/cov/js --reporter=default --reporter=junit --outputFile=../.crapkit/cov/js/junit.xml"
+command = "npm run test -- --coverage --coverage.reportsDirectory=../.crapkit/cov/js --coverage.reportOnFailure --reporter=default --reporter=junit --outputFile=../.crapkit/cov/js/junit.xml"
 artifact = ".crapkit/cov/js/coverage-final.json"
 results_artifact = ".crapkit/cov/js/junit.xml"
 parser = "istanbul"

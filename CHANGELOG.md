@@ -33,6 +33,43 @@ the venv beside it already carried the plugin, so the printed fix (install a pac
 the wrong move for that tree. The note now names the word the lane runs, the path that
 word resolves to here, and an install bound to it (`python -m pip install pytest-cov`),
 so the reader can tell whether to install anything or repoint the lane.
+### `init` puts the js lane in the workspace that owns the runner
+In a monorepo the root `package.json` names no test runner: its `test` script only chains
+the workspaces, and vitest lives in `web/` with the only `package.json` that lists it.
+`init` read the root and nothing else, so it wrote `npm run test -- --coverage` with no
+coverage directory, no junit report and no `cwd`. `doctor` then WARNed twice about the
+config `init` had just written, and the lane could not produce the artifact it was asked
+for. `init` now reads every tracked `package.json` outside `node_modules`. When the root
+names no runner and exactly one workspace does, the lane runs there: `cwd` is that
+directory, and every path in the command climbs back to the repo root
+(`--coverage.reportsDirectory=../.crapkit/cov/js`), while `artifact` stays root-relative
+because crapkit resolves it from the root. Two workspaces naming a runner is a question
+file presence cannot answer, so that case keeps the root lane it always got, and a root
+that names a runner itself is untouched.
+
+### The vitest lane still writes coverage when a test fails
+vitest writes no coverage report at all on a failed run, so a repo with one red test got
+exit 5 naming a missing `coverage-final.json`: a message about a file, for a run that was
+really about a flag. The junit report landed anyway, which made the run look half
+finished. The scaffolded vitest lane now carries `--coverage.reportOnFailure`, in the live
+lane and in the commented template alike. jest gets no such flag: it reports on a red run
+already, and exits on a flag it does not know. Setting `reportOnFailure: true` in your
+vitest config is still the other way to spell it; `init` writes the flag because it must
+not edit your vitest config to write a lane.
+
+### `init` and `doctor` agree about the root and the dot-directories
+`doctor` failed on files `init` itself had walked past: `.github/workflows/gen.py`,
+`.cursor/skills/skill.py`, a root `conftest.py`, a vendored tree. Two halves of one gap.
+Dot-directories now leave the corpus unconditionally, the way test directories already do,
+which repairs configs that are already committed and not only the ones `init` writes next;
+a dot *file* stays in. And the default excludes carry the root form beside every nested
+form, because a glob is whole-path and `**/vendor/**` needs a directory before `vendor`:
+`vendor/**`, `dist/**`, `build/**`, `node_modules/**`, `conftest.py`, `test_*.py`,
+`*_test.py`, `*.test.*`, `*.spec.*` and `*_test.go` join the set. A repo-root `vendor/`
+therefore stops becoming a scope of its own, which `doctor` then failed as a scope no lane
+measures, and which silently joined the js lane in a repo that had one, scoring vendored
+code as the team's own debt. Production code at the root, `build.sh` and `tool.js`, still
+FAILs: it is unmeasured source, and a scope may name a file.
 
 ## 0.4.11 — 2026-09-01
 

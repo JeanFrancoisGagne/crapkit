@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from crapkit.config import Config, Scope
-from crapkit.universe import _TEST_DIR, assign_files, exclude_matcher, excluded
+from crapkit.universe import (_TEST_DIR, assign_files, exclude_matcher, excluded,
+                              scan_files)
 
 
 CFG = Config(
@@ -192,3 +193,34 @@ def test_the_packet_reads_the_language_arm_the_scored_row_was_assigned_by():
     assert assign_files(["src/deep/x.py"], cfg)["a"] == ["src/deep/x.py"]
     assert _packet_scope(cfg, row.path, row.scope) == "a"
     assert _row_ceiling(cfg, row) == 5
+
+
+# --- dot-directories leave the corpus the way test directories do -------------
+#
+# `.github/`, `.cursor/` and `.specify/` carry helper scripts written in the
+# repo's own languages. `crapkit init` refuses to build a scope out of a
+# dot-directory, so the config it writes has nothing that can own those files,
+# and every one of them came back from doctor as a tracked file matching a scope
+# language with no scope path — a FAIL on the config init had just written.
+
+def test_dot_directories_leave_the_corpus_without_a_glob():
+    match = exclude_matcher(())
+    assert excluded(".github/workflows/gen.py", match)
+    assert excluded(".cursor/skills/skill.py", match)
+    assert excluded("a/.hidden/x.py", match), "nested, not only at the root"
+
+
+def test_a_dot_inside_a_name_is_not_a_dot_directory():
+    match = exclude_matcher(())
+    assert not excluded("src/pkg/mod.py", match)
+    assert not excluded("web/a.b/mod.ts", match), "the dot has to open the component"
+    assert not excluded(".eslintrc.js", match), "a dot FILE is nobody's hidden directory"
+
+
+def test_a_dot_directorys_source_is_never_unclaimed():
+    """What the FAIL counted. The file leaves the corpus, so it is neither a
+    scope member nor a file doctor asks the reader to claim."""
+    uni = scan_files([".github/workflows/gen.py", "scripts/c.py"], CFG)
+
+    assert uni.by_scope == {"src": [], "py": ["scripts/c.py"]}
+    assert uni.unclaimed == ()

@@ -28,6 +28,12 @@ def cc_only_scope(languages: tuple[str, ...]) -> bool:
 DEFAULT_EXCLUDES = (
     "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
     "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py",
+    # The same globs anchored at the root. `**/vendor/**` needs a directory
+    # before `vendor`, so it never reached a repo-root vendor/: init made that
+    # tree a scope, no lane measured it, and doctor FAILed the config init had
+    # just written. A root conftest.py went unclaimed for the same reason.
+    "node_modules/**", "dist/**", "build/**", "vendor/**",
+    "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go",
     # Go puts its tests beside the source, so the test-directory rule never
     # fires on them and every _test.go file would score as production code
     "**/*_test.go",
@@ -93,6 +99,7 @@ class LaneSpec(NamedTuple):
     languages: tuple[str, ...]
     results_artifact: str = ""
     env: tuple[tuple[str, str], ...] = ()
+    cwd: str = ""  # the directory the command runs in; "" is the repo root
 
 
 PYTEST_MARKERS = ("pyproject.toml", "pytest.ini", "setup.cfg")
@@ -148,13 +155,21 @@ _JS_REPORTS_DIR_FLAG = {"jest": "--coverageDirectory=",
 # jest cannot resolve turns a working lane into an error — so its flags are
 # written only when package.json already carries it.
 _JS_JUNIT_FLAGS = {"jest": "--reporters=default --reporters=jest-junit",
-                   "vitest": f"--reporter=default --reporter=junit --outputFile={_JS_RESULTS}"}
+                   "vitest": "--reporter=default --reporter=junit "
+                             "--outputFile={cov}/junit.xml"}
+
+# vitest writes no coverage report when a test fails, so one red test turned
+# `crapkit coverage` into exit 5 naming a missing coverage-final.json — a
+# message about a file, for a run that was really about a flag. Per runner, not
+# shared: jest reports on a red run already and exits on a flag it does not
+# know, which is the failure `_js_runner` exists to prevent.
+_JS_EXTRA_FLAGS = {"vitest": " --coverage.reportOnFailure"}
 _JS_JUNIT_PACKAGE = {"jest": "jest-junit"}
 # jest-junit takes no path on the command line: package.json, the jest config or
 # these two variables are the whole list, and the first two are the repo's files
 # to own. Without them it drops junit.xml at the repo root, which is the litter
 # `artifact` was routed away from in the first place.
-_JS_JUNIT_ENV = {"jest": (("JEST_JUNIT_OUTPUT_DIR", _JS_COV_DIR),
+_JS_JUNIT_ENV = {"jest": (("JEST_JUNIT_OUTPUT_DIR", "{cov}"),
                           ("JEST_JUNIT_OUTPUT_NAME", "junit.xml"))}
 
 
@@ -204,16 +219,53 @@ def _js_runner(dev_dependencies: dict) -> str | None:
     return named[0] if len(named) == 1 else None
 
 
-def _js_junit(runner: str, dev_dependencies: dict) -> tuple[str, str, tuple]:
+def _js_junit(runner: str, dev_dependencies: dict, cov_dir: str) -> tuple[str, str, tuple]:
     """Flags, results_artifact and env for this runner's junit report, or three
-    empty values when the reporter it needs is not installed."""
+    empty values when the reporter it needs is not installed.
+
+    `cov_dir` is the report directory as the lane's own cwd spells it, so a
+    workspace lane's junit flags climb back to the root exactly the way its
+    coverage flag does. `results_artifact` stays root-relative either way:
+    crapkit reads it from the root, never from the lane's cwd.
+    """
     package = _JS_JUNIT_PACKAGE.get(runner)
     if package is not None and package not in dev_dependencies:
         return "", "", ()
-    return f" {_JS_JUNIT_FLAGS[runner]}", _JS_RESULTS, _JS_JUNIT_ENV.get(runner, ())
+    env = tuple((key, value.format(cov=cov_dir))
+                for key, value in _JS_JUNIT_ENV.get(runner, ()))
+    return f" {_JS_JUNIT_FLAGS[runner].format(cov=cov_dir)}", _JS_RESULTS, env
 
 
-def _js_lane(package_json: str) -> LaneSpec | None:
+def _npm_test_command(scripts: dict) -> str | None:
+    """The `npm run` line for this package's test script, or None when it
+    declares none and the runner has to be called directly."""
+    script = _npm_test_script(scripts)
+    return f"npm run {script} -- --coverage" if script else None
+
+
+def _js_command(package: dict) -> str | None:
+    """What npm would run tests with, or the runner's own command when the
+    package declares no test script at all."""
+    return (_npm_test_command(package.get("scripts", {}))
+            or _js_runner_command(package.get("devDependencies", {})))
+
+
+def _js_routed_lane(package: dict, command: str, runner: str, cwd: str) -> LaneSpec:
+    """The lane with both of its reports routed under .crapkit/, run from `cwd`.
+
+    Every path in the command is written from `cwd`, so a lane running in a
+    workspace climbs one `../` per level to reach the root that holds
+    `.crapkit/`. `artifact` does not: crapkit resolves that against the root.
+    """
+    up = "../" * (cwd.count("/") + 1) if cwd else ""
+    cov_dir = up + _JS_COV_DIR
+    junit, results, env = _js_junit(runner, package.get("devDependencies", {}), cov_dir)
+    routing = f" {_JS_REPORTS_DIR_FLAG[runner]}{cov_dir}"
+    return LaneSpec("js", command + routing + _JS_EXTRA_FLAGS.get(runner, "") + junit,
+                    _JS_ARTIFACT, "istanbul", _JS_LANGUAGES, results, env, cwd)
+
+
+def _js_root_lane(package: dict) -> LaneSpec | None:
     """A test script, or vitest/jest in devDependencies: either says the repo
     already knows how to produce istanbul coverage.
 
@@ -222,27 +274,77 @@ def _js_lane(package_json: str) -> LaneSpec | None:
     checks read. Init writing the lane without the second one left doctor
     WARNing about the config init had just written.
     """
-    package = _load_json(package_json)
-    dev = package.get("devDependencies", {})
-    script = _npm_test_script(package.get("scripts", {}))
-    command = (f"npm run {script} -- --coverage" if script else _js_runner_command(dev))
-    runner = _js_runner(dev)
+    command = _js_command(package)
     if command is None:
         return None
+    runner = _js_runner(package.get("devDependencies", {}))
     if runner is None:
         return LaneSpec("js", command, _JS_DEFAULT_ARTIFACT, "istanbul", _JS_LANGUAGES)
-    junit, results, env = _js_junit(runner, dev)
-    routing = f" {_JS_REPORTS_DIR_FLAG[runner]}{_JS_COV_DIR}"
-    return LaneSpec("js", command + routing + junit, _JS_ARTIFACT, "istanbul",
-                    _JS_LANGUAGES, results, env)
+    return _js_routed_lane(package, command, runner, "")
 
 
-def detect_lanes(markers: frozenset[str], package_json: str, *,
+def _runner_workspaces(packages: dict[str, str]) -> list[tuple[str, str]]:
+    """The workspace directories whose own devDependencies name one runner,
+    each paired with the runner it named, so no caller asks twice."""
+    named = ((directory, _js_runner(_load_json(text).get("devDependencies", {})))
+             for directory, text in packages.items() if directory)
+    return sorted((directory, runner) for directory, runner in named if runner)
+
+
+def _js_workspace_lane(packages: dict[str, str]) -> LaneSpec | None:
+    """The lane for the one workspace that owns a runner, or None when the
+    workspaces name none or several.
+
+    A monorepo's root test script only chains the workspaces' own, so the root
+    package.json names no runner and the lane init built from it could not
+    produce a coverage artifact at all: unrouted command, no results_artifact,
+    two doctor WARNs on a config init had just written. The workspace that ships
+    the runner is the one that can produce it, so the lane runs there.
+
+    Several workspaces naming a runner is the case file presence cannot decide,
+    and it falls back to the root lane rather than picking one.
+    """
+    named = _runner_workspaces(packages)
+    if len(named) != 1:
+        return None
+    directory, runner = named[0]
+    package = _load_json(packages[directory])
+    command = _npm_test_command(package.get("scripts", {})) or _JS_RUNNER_COMMAND[runner]
+    return _js_routed_lane(package, command, runner, directory)
+
+
+def _packages(package_json: str | dict[str, str]) -> dict[str, str]:
+    """package.json texts keyed by the directory holding them, "" for the root.
+
+    A bare string is the root's text and nothing else, which is what init read
+    before workspaces got their turn and what a caller passing one still means.
+    """
+    return {"": package_json} if isinstance(package_json, str) else package_json
+
+
+def _js_lane(package_json: str | dict[str, str]) -> LaneSpec | None:
+    """The js lane, from the root package.json and the workspaces beside it.
+
+    The root wins when it names a runner itself. Only a root that names none
+    hands the question to the workspaces, so a repo that already worked keeps
+    the lane it always got.
+    """
+    packages = _packages(package_json)
+    root = _load_json(packages.get("", ""))
+    if _js_runner(root.get("devDependencies", {})) is None:
+        workspace = _js_workspace_lane(packages)
+        if workspace is not None:
+            return workspace
+    return _js_root_lane(root)
+
+
+def detect_lanes(markers: frozenset[str], package_json: str | dict[str, str], *,
                  interpreter: str = "python") -> tuple[LaneSpec, ...]:
     """The lanes this repo can already run, decided from files alone.
 
     Nothing is executed and nothing is imported: presence of a pytest marker
-    file, and what package.json says about itself, are the whole signal.
+    file, and what the package.json files say about themselves, are the whole
+    signal.
     """
     found = (_pytest_lane(markers, interpreter), _js_lane(package_json))
     return tuple(lane for lane in found if lane)
@@ -271,9 +373,10 @@ def _lane_env(env: tuple[tuple[str, str], ...]) -> list[str]:
 
 def _lane_stanza(lane: LaneSpec, scope_names: tuple[str, ...]) -> list[str]:
     results = [f'results_artifact = "{lane.results_artifact}"'] if lane.results_artifact else []
+    cwd = [f'cwd = "{lane.cwd}"'] if lane.cwd else []
     return ["[[lane]]", f'name = "{lane.name}"', f'command = "{lane.command}"',
             f'artifact = "{lane.artifact}"', *results, f'parser = "{lane.parser}"',
-            *_lane_env(lane.env), f"scopes = [{_quoted(scope_names)}]", ""]
+            *cwd, *_lane_env(lane.env), f"scopes = [{_quoted(scope_names)}]", ""]
 
 
 def _scopes_for(lane: LaneSpec, scopes: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
@@ -315,8 +418,9 @@ _TEMPLATES = {
                    f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
     "istanbul": ("# [[lane]]", '# name = "js"',
                  '# command = "npx vitest run --coverage '
-                 f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR} '
-                 f'{_JS_JUNIT_FLAGS["vitest"]}"',
+                 f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR}'
+                 f'{_JS_EXTRA_FLAGS["vitest"]} '
+                 f'{_JS_JUNIT_FLAGS["vitest"].format(cov=_JS_COV_DIR)}"',
                  f'# artifact = "{_JS_ARTIFACT}"',
                  f'# results_artifact = "{_JS_RESULTS}"', '# parser = "istanbul"'),
 }

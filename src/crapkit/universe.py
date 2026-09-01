@@ -39,6 +39,15 @@ LANGUAGE_EXTENSIONS = {
 # Test directories are excluded case-insensitively: Swift convention capitalizes Tests/.
 _TEST_DIR = re.compile(r"(^|/)(tests?|__tests__)(/|$)", re.IGNORECASE)
 
+# So are dot-directories, and for the same reason: `.github/`, `.cursor/` and
+# `.specify/` hold helper scripts written in the repo's own languages, and
+# `crapkit init` refuses to build a scope out of a directory whose name opens
+# with a dot. Without this the two halves of the tool disagreed about whether
+# .github/ is code — init left it unscoped, doctor FAILed the config init had
+# just written for exactly that. A dot FILE stays in the corpus; only a
+# directory component is hidden.
+_DOT_DIR = re.compile(r"(^|/)\.[^/]+/")
+
 _NEVER = re.compile(r"(?!x)x").match  # an empty glob list must exclude NOTHING
 
 
@@ -56,7 +65,7 @@ def exclude_matcher(globs: tuple[str, ...]) -> Callable[[str], re.Match[str] | N
 
 
 def excluded(path: str, match_glob: Callable[[str], re.Match[str] | None]) -> bool:
-    return bool(_TEST_DIR.search(path) or match_glob(path.lower()))
+    return bool(_TEST_DIR.search(path) or _DOT_DIR.search(path) or match_glob(path.lower()))
 
 
 def _source_extensions(languages: tuple[str, ...]) -> tuple[str, ...]:

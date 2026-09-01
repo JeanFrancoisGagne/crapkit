@@ -392,12 +392,19 @@ $ npx vitest run --coverage          # reportOnFailure: true
 .crapkit/cov/js/coverage-final.json
 ```
 
+`crapkit init` writes `--coverage.reportOnFailure` on the vitest lane it scaffolds, so a
+repo that starts from `init` gets the report on a red run without touching its vitest
+config. The key above is the same switch spelled in the file that already holds your other
+coverage settings; either one is enough, and init writes the flag because it must not edit
+your vitest config to write a lane. jest gets no such flag: it reports on a red run already,
+and exits on a flag it does not know.
+
 ### The lane
 
 ```toml
 [[lane]]
 name = "js"
-command = "npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml"
+command = "npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --coverage.reportOnFailure --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml"
 artifact = ".crapkit/cov/js/coverage-final.json"
 results_artifact = ".crapkit/cov/js/junit.xml"
 parser = "istanbul"

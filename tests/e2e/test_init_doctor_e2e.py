@@ -665,3 +665,93 @@ def test_a_venv_without_pytest_leaves_the_bare_name_alone(pytest_repo: Path):
     from crapkit.config import load_config_text
     cfg = load_config_text((pytest_repo / "crapkit.toml").read_text(encoding="utf-8"))
     assert re.match(r"(python3?|py) -m pytest ", cfg.lanes[0].command), cfg.lanes[0].command
+# --- what init leaves outside every scope -------------------------------------
+#
+# init refuses to build a scope out of a root-level loose file or a
+# dot-directory, and the excludes it wrote missed both, so doctor came back with
+# a FAIL on files init itself had walked past: a root conftest.py, a .github
+# helper, and a vendored tree the root form of `**/vendor/**` never reached.
+
+@pytest.fixture()
+def scattered_repo(tmp_path: Path) -> Path:
+    """A python repo carrying a root conftest.py, a .github helper and a
+    vendored tree, each written in a language one of its scopes declares."""
+    repo = _bare_git_repo(tmp_path, "scattered")
+    (repo / "pylib").mkdir()
+    (repo / "pylib" / "mod.py").write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
+    (repo / "pyproject.toml").write_text('[project]\nname = "scattered"\n', encoding="utf-8")
+    (repo / "conftest.py").write_text("import sys\n", encoding="utf-8")
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / ".github" / "workflows" / "gen.py").write_text("def gen():\n    return 1\n",
+                                                           encoding="utf-8")
+    (repo / "vendor").mkdir()
+    (repo / "vendor" / "lib.py").write_text("def v():\n    return 1\n", encoding="utf-8")
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def test_init_scopes_only_the_source_and_doctor_agrees_with_it(scattered_repo: Path):
+    res = run_cli(scattered_repo, "init")
+    assert res.returncode == 0, res.stderr
+    assert "1 scope(s): pylib" in res.stdout, res.stdout
+
+    doctor = run_cli(scattered_repo, "doctor")
+
+    assert doctor.returncode == 0, doctor.stdout + doctor.stderr
+    assert "no scope path" not in doctor.stdout, doctor.stdout
+
+
+def test_a_repo_root_vendor_tree_never_becomes_a_lane_less_scope(scattered_repo: Path):
+    """The scope doctor FAILed: init made one out of vendor/, and no lane
+    measured it."""
+    assert run_cli(scattered_repo, "init").returncode == 0
+
+    config = (scattered_repo / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert 'name = "vendor"' not in config, config
+
+
+# --- a workspace repo names its runner one level down -------------------------
+
+@pytest.fixture()
+def workspace_repo(tmp_path: Path) -> Path:
+    """A monorepo whose root test script only chains the workspaces': vitest
+    lives in web/, and so does the only package.json that names it."""
+    repo = _bare_git_repo(tmp_path, "workspace")
+    (repo / "web" / "src").mkdir(parents=True)
+    (repo / "web" / "src" / "app.ts").write_text(
+        "export function f(a: number) { return a ? 1 : 2; }\n", encoding="utf-8")
+    (repo / "package.json").write_text(
+        json.dumps({"private": True, "workspaces": ["web"],
+                    "scripts": {"test": "npm run --workspaces test"}}), encoding="utf-8")
+    (repo / "web" / "package.json").write_text(
+        json.dumps({"name": "web", "scripts": {"test": "vitest run"},
+                    "devDependencies": {"vitest": "^2.0.0"}}), encoding="utf-8")
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def test_init_runs_the_js_lane_where_the_runner_lives(workspace_repo: Path):
+    from crapkit.config import load_config_text
+
+    assert run_cli(workspace_repo, "init").returncode == 0
+
+    cfg = load_config_text((workspace_repo / "crapkit.toml").read_text(encoding="utf-8"))
+
+    (lane,) = cfg.lanes
+    assert lane.cwd == "web"
+    assert "--coverage.reportsDirectory=../.crapkit/cov/js" in lane.command
+    assert lane.artifact == ".crapkit/cov/js/coverage-final.json", "resolved from the root"
+    assert lane.results_artifact == ".crapkit/cov/js/junit.xml"
+
+
+def test_doctor_has_nothing_to_say_about_the_workspace_lane(workspace_repo: Path):
+    """Both WARNs the reporter got on this shape: no results_artifact, and a
+    coverage report written at the repo root."""
+    assert run_cli(workspace_repo, "init").returncode == 0
+
+    res = run_cli(workspace_repo, "doctor")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "results_artifact" not in res.stdout, res.stdout
+    assert "at the repo root" not in res.stdout, res.stdout
