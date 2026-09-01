@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from ..errors import ConfigError, CrapkitError, GitError, ToolError
+from ..invocation import _self
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
 from ._shared import (_load_repo_config, _open_store, _print_json, _ratchet_entries,
@@ -67,7 +68,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `crapkit coverage` first")
+        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
     store = SnapshotStore(db_path)
     pair = _digest_pair(store)
     if pair is None:

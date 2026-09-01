@@ -18,6 +18,7 @@ from ..config import load_config_text, shell_words
 from ..doctor import Finding
 from ..errors import ConfigError, ToolError
 from ..gitio import _common_dir, _git_dir, ls_files
+from ..invocation import _self
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
 from ._shared import _file_sizer, _load_repo_config, _print_json
@@ -193,13 +194,13 @@ def _next_step(scopes: dict, lanes: tuple) -> str:
 
     if lanes:
         return (f"detected {len(lanes)} lane(s) from this repo's own files: "
-                f"{', '.join(lane.name for lane in lanes)} — next: run `crapkit coverage`")
+                f"{', '.join(lane.name for lane in lanes)} — next: run `{_self()} coverage`")
     if all(cc_only_scope(languages) for languages in scopes.values()):
         return ("no coverage parser reads this repo's languages, so every scope is "
                 "cc-only (coverage_optional = true) and needs no lane — next: run "
-                "`crapkit coverage`")
+                f"`{_self()} coverage`")
     return ("next: declare a [[lane]] per coverage command (see the commented template), "
-            "then run `crapkit coverage`")
+            f"then run `{_self()} coverage`")
 
 
 def _print_init_summary(scopes: dict, lanes: tuple) -> None:
@@ -387,7 +388,7 @@ def _dead_interpreter_note(name: str, word: str, code: int) -> str:
            if config.SHELL_IS_CMD else "install it, or point the lane at an "
            "interpreter this machine has")
     return (f"note: lane {name!r} names `{word}`, and {_shell_label()} cannot run it "
-            f"(exit {code}) — {fix}, then `crapkit coverage`")
+            f"(exit {code}) — {fix}, then `{_self()} coverage`")
 
 
 def _missing_pytest_cov_note(name: str, word: str) -> str:
@@ -410,7 +411,7 @@ def _missing_pytest_cov_note(name: str, word: str) -> str:
             # quotes are the one form cmd, PowerShell, bash and zsh share,
             # and the bare form still breaks zsh's globbing.
             '(pip install "crapkit[py]" when that is crapkit\'s own environment), '
-            "then `crapkit coverage`")
+            f"then `{_self()} coverage`")
 
 
 def _absent_manager(command: str) -> str | None:
@@ -436,7 +437,7 @@ def _absent_manager(command: str) -> str | None:
 def _missing_manager_note(name: str, manager: str) -> str:
     return (f"note: lane {name!r} runs through `{manager}`, which this machine's PATH does "
             f"not carry — install {manager}, or point the lane's command in crapkit.toml at "
-            f"an interpreter that resolves here, then `crapkit coverage`")
+            f"an interpreter that resolves here, then `{_self()} coverage`")
 
 
 def _lane_first_run_note(lane) -> str | None:

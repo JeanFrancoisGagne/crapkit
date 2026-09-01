@@ -14,6 +14,7 @@ from .. import __version__
 from ..cache import merged_cache
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..gitio import GitFacts, ls_files
+from ..invocation import _self
 from ..snapshot import build_inventory_rows, tsv_lines
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
@@ -579,11 +580,11 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `crapkit coverage` first")
+        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
     store = SnapshotStore(db_path)
     latest = _latest_scored(store)
     if latest is None:
-        raise CrapkitError(f"no scored run in {root} — run `crapkit coverage` first")
+        raise CrapkitError(f"no scored run in {root} — run `{_self()} coverage` first")
 
     rows, flat, ceilings = _rescore_analyze(root, cfg, args.files)
     overlay = _rescore_overlay(store, latest, rows, flat, cfg)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.invocation import _self
 from crapkit.store import SnapshotStore
 from crapkit.watch import snapshot_mtimes
 
@@ -279,7 +280,8 @@ def test_duplication_refuses_a_store_holding_only_hook_runs(tmp_path: Path):
     store.write_run(commit="0" * 40, tool_versions={}, rows=[], kind="hook")
     res = run_cli(repo, "duplication")
     assert res.returncode == 1
-    assert "run `crapkit inventory` first" in res.stderr
+    # The suite spawns `python -m crapkit`, so the refusal names that form.
+    assert f"run `{_self()} inventory` first" in res.stderr
 
 
 def pruneable_repo(tmp_path: Path) -> Path:

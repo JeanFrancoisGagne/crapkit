@@ -29,6 +29,7 @@ from __future__ import annotations
 from html import escape
 
 from .errors import ConfigError
+from .invocation import _self
 
 # Measured at 46,567 rows / 9.85 MB. A few thousand rows is already a page
 # nobody scrolls; past that it is a page nobody opens.
@@ -57,7 +58,7 @@ def report_top(worklist_top: int) -> int:
         raise ConfigError(
             f"report renders at most {REPORT_ROW_CEILING} rows and worklist_top is "
             f"{worklist_top}: lower [crapkit] worklist_top, or read the whole "
-            "ranking with `crapkit worklist --json`")
+            f"ranking with `{_self()} worklist --json`")
     return worklist_top
 
 
@@ -140,7 +141,7 @@ def _stale_lane_reason(lanes: list[dict]) -> list[str]:
         return []
     return [f"<p><b>{len(stale)} of {len(lanes)} lanes are stale.</b> One stale lane "
             "blacks out line-level coverage repo-wide, not just its own scopes. "
-            "Commit or revert the edits, then rerun <code>crapkit coverage</code>.</p>"
+            f"Commit or revert the edits, then rerun <code>{_self()} coverage</code>.</p>"
             + _lane_list(stale)]
 
 
@@ -156,7 +157,7 @@ def _behind_head_reason(wl: dict) -> list[str]:
     return [f'<p>The snapshot is run {_esc(wl["run_id"])} at '
             f'<code>{_esc(wl["commit"][:11])}</code> and HEAD has moved on. Fresh '
             f'artifacts do not rescue a run measured at another commit: rerun '
-            f'<code>crapkit coverage</code>.</p>']
+            f'<code>{_self()} coverage</code>.</p>']
 
 
 # --- per-scope grades --------------------------------------------------------
@@ -249,7 +250,7 @@ def _remedy_tone(remedy) -> str:
 
 def _drill_down(entry: dict) -> str:
     """The command that answers what this page deliberately does not carry."""
-    return _esc(f'crapkit explain {entry["path"]} "{entry["function"]}"')
+    return _esc(f'{_self()} explain {entry["path"]} "{entry["function"]}"')
 
 
 # --- the trend series --------------------------------------------------------

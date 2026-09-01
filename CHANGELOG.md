@@ -2,6 +2,27 @@
 
 ## 0.4.12 — unreleased
 
+### Every next step and refusal names the crapkit that is running
+`init` closed with "next: run `crapkit coverage`", and every refusal behind it prescribed
+the same bare name. That name is the console script, and two documented ways of running
+crapkit put no such name on PATH: `python -m crapkit` from a source checkout, which the
+README prints, and `exec <venv>/Scripts/python -m crapkit hook-precommit` from a git hook,
+spelled that way because git runs hooks outside the activated venv. A reader in either one
+copied the line the program had just printed and their shell exited 127. The process
+already knew: `sys.argv[0]` is the console script when that started it and the package's
+`__main__.py` when `python -m` did. 35 messages across the ten CLI families, the MCP
+server's unmeasured-directory result and the HTML report now read it, so the line says
+`crapkit coverage` under the console script and `<the interpreter running this process>
+-m crapkit coverage` otherwise, quoted when that path holds a space (`C:\Program Files\…`
+reaches cmd.exe as three arguments unquoted). `sys.executable`, never a bare `python`: on
+Windows that resolves to the WindowsApps stub, a venv holding no crapkit, or the base
+interpreter a venv wraps. Eight strings keep the console-script spelling on purpose,
+because something other than the printing process reads them: the brief packet's
+`commands.gate`, `commands.verify` and `commands.refresh` (#37), the two crapkit.toml
+template comments `init` writes into a consumer's repo, the `--claim` help text, the
+`doctor` WARN about a scope with no `[crapkit.scoped_tests]` entry, and the hook's
+stderr note about marked functions.
+
 ### `init` writes the venv the repo carries, not the python the shell answers with
 A library whose own `.venv` holds pytest and pytest-cov, on a machine whose PATH `python`
 holds neither, got a lane reading `python -m pytest --cov`. `init` exited 0, `doctor`
