@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.8 — unreleased
+
+### A note on the Pages site: what pytest-cov 7 stopped measuring
+`docs/notes/pytest-cov-7-subprocess-coverage.html` writes up the trap that made crapkit
+floor `coverage>=7.10.6` and set `[tool.coverage.run] patch = ["subprocess"]` in the first
+place, for readers who will never install crapkit. pytest-cov 7.0.0 (2025-09-09) dropped
+its own subprocess measurement, so any suite that drives a CLI through `subprocess.run`
+loses the coverage of every entry point on upgrade, with nothing printed and the tests
+still green.
+
+The numbers on the page are not remembered, they are produced.
+`tools/notes/pytest_cov7_repro.py` builds one virtualenv per pytest-cov pin, installs
+crapkit editable into each, and runs `tests/e2e/test_init_doctor_e2e.py` four times: two
+pins times the patch key present and absent. It toggles the key through
+`COVERAGE_RCFILE`, so the tree under measurement is never edited, and writes the executed
+and total statement counts for `src/crapkit/cli/admin.py` to
+`tools/notes/pytest_cov7_repro.json`. Committed run: 324/521 statements under pytest-cov
+6.3.0 with or without the key, 324/521 under 7.1.0 with it, and 0/521 under 7.1.0 without
+it. All four runs exited 0.
+
+`tests/unit/test_notes_contract.py` joins the two. Every measurement row on the page has
+to match the JSON on the pin, the coverage version, the state of the key and the count, so
+a number edited by hand fails the suite.
+
 ## 0.4.7 — 2026-08-31
 
 One contributed capability and three fixes. The capability is the per-edit advisory,
