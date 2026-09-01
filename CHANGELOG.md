@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.12 — unreleased
+
+### A repo path handed to crapkit says where the repo goes
+`crapkit ~/some-repo` and `crapkit ./mini` read as "score this repo", and argparse
+answered both with the invalid-choice dump of all 24 subcommand names, none of which
+was the route the reader wanted: the repo is a flag, `--repo`, on a subcommand. The
+word repo never appeared in the output. A first argument shaped like a path (a
+separator, a `~` prefix, `.` or `..`) now gets one line naming `crapkit inventory
+--repo <path>` and `crapkit --help`. It is still exit 2, because it was exit 2 before,
+and shape is the only trigger: a directory named `inventory` in the cwd cannot hijack
+the subcommand, and a plain typo like `inventry` still gets argparse's usage dump.
+
 ## 0.4.11 — 2026-09-01
 
 ### Every README and handbook link is absolute
