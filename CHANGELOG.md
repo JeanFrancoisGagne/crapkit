@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.11 — unreleased
+
+### The README pins `uses:` to the release it documents
+The Action snippets in the README still said `@v0.4.8` two releases later: the release
+bump touched `crapkit X.Y.Z` and `rev: vX.Y.Z` and nothing else, and no test read the
+third pin. A contract now holds every `uses:` pin in the README to `crapkit.__version__`,
+so a bump that forgets it fails before the tag.
+
 ## 0.4.10 — 2026-09-01
 
 ### The action is named "crapkit complexity gate"

@@ -409,3 +409,21 @@ def test_the_request_body_is_json_so_no_shell_quotes_the_comment(tmp_path):
     _builder().main(["--out", str(out), "--json-out", str(body)])
 
     assert json.loads(body.read_text(encoding="utf-8"))["body"] == out.read_text(encoding="utf-8")
+
+
+# --- the pin the README hands the consumer ------------------------------------
+
+_USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")
+
+
+def test_the_readme_pins_uses_to_the_release_it_documents():
+    """`uses:` resolves action.yml at the tag it names, so a README that kept an
+    older pin hands every new consumer an older action. The 0.4.9 and 0.4.10
+    READMEs both said `@v0.4.8`: the release bump touched `crapkit X.Y.Z` and
+    `rev: vX.Y.Z` and nothing else, and no test read the third pin."""
+    from crapkit import __version__
+
+    pins = set(_USES_PIN.findall((ROOT / "README.md").read_text(encoding="utf-8")))
+
+    assert pins, "the README no longer shows a uses: pin"
+    assert pins == {__version__}, f"README pins {sorted(pins)}, this release is {__version__}"

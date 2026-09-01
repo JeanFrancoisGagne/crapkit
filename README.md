@@ -442,7 +442,7 @@ to a workflow, and every input has a default:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: JeanFrancoisGagne/crapkit@v0.4.8
+      - uses: JeanFrancoisGagne/crapkit@v0.4.10
 ```
 
 The whole job those four lines sit in:
@@ -459,7 +459,7 @@ jobs:
         with:
           fetch-depth: 0               # the diff, and verify's baseline commit
       - run: pip install -e ".[dev]"   # whatever your lanes need to run
-      - uses: JeanFrancoisGagne/crapkit@v0.4.8
+      - uses: JeanFrancoisGagne/crapkit@v0.4.10
         with:
           gate: "false"
 ```
@@ -474,8 +474,9 @@ baseline's commit. With a shallow clone the file list comes back empty and the c
 ranks the whole repository instead of the diff.
 
 The action installs crapkit from `$GITHUB_ACTION_PATH`, which is its own checkout of the
-ref you pinned in `uses:`. So `@v0.4.8` scores your tree with 0.4.8's crapkit rather than
-with whatever released last, and pinning a tag is the whole version policy.
+ref you pinned in `uses:`. So a pin left at last month's tag scores your tree with last
+month's crapkit rather than with whatever released since, and pinning a tag is the whole
+version policy; the snippets above name the current release.
 
 ### What the comment looks like
 
