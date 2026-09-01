@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.8 — unreleased
+
+### The README and the handbook open with a generated demo
+`docs/demo.gif` and `docs/demo.svg` show a 90-second terminal session: `init` sniffing a
+small Python repo, `coverage` scoring it, `worklist --top 5` ranking it, a shell heredoc
+appending a function at ccn 7 while the per-edit advisory reports it and exits 2, and the
+commit gate refusing the staged file with exit 6. The README embeds the GIF under its
+badges and the handbook shows it on its first screen.
+
+Nothing in the frames is written by hand. `python tools/demo/generate.py` builds a git
+repo from the fixture under `tools/demo/fixture/`, replays its commit plan so the
+worklist has real churn to rank, runs those five commands against this checkout's crapkit
+and renders what they printed. Every captured line goes through a redaction pass that
+strips the temp repo's path, wall-clock stamps and durations, and the generator refuses
+to write an image if a machine path survived it. Two runs on an unchanged tree write
+byte-identical files, which `tests/unit/test_demo_generator.py` holds them to, so
+regenerating the demo for a release is a no-op unless the output actually moved.
+
+The handbook's lanes section also links a new note on pytest-cov 7 and subprocess
+coverage, beside the lane rules it belongs to.
+
 ## 0.4.7 — 2026-08-31
 
 One contributed capability and three fixes. The capability is the per-edit advisory,
