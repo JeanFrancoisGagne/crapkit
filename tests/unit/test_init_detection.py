@@ -7,9 +7,9 @@ package.json content only — nothing is executed, nothing is imported.
 import json
 
 from crapkit.config import load_config_text
-from crapkit.scaffold import (LaneSpec, detect_lanes, gitignore_entries, gitignore_update,
-                              live_lanes, lockfile_runner, python_launcher, source_candidates,
-                              starter_toml)
+from crapkit.scaffold import (DEFAULT_EXCLUDES, LaneSpec, detect_lanes, gitignore_entries,
+                              gitignore_update, live_lanes, lockfile_runner, python_launcher,
+                              sniff_scopes, source_candidates, starter_toml)
 
 SCOPES = {"pylib": ("python",), "src": ("typescript",)}
 
@@ -189,6 +189,7 @@ def test_vitest_is_routed_with_the_flag_vitest_spells_it_with():
 
     assert lane.command == ("npx vitest run --coverage "
                             "--coverage.reportsDirectory=.crapkit/cov/js "
+                            "--coverage.reportOnFailure "
                             "--reporter=default --reporter=junit "
                             "--outputFile=.crapkit/cov/js/junit.xml")
     assert lane.artifact == ".crapkit/cov/js/coverage-final.json"
@@ -226,6 +227,7 @@ def test_a_test_script_is_routed_when_devdependencies_name_one_runner():
 
     assert lane.command == ("npm run test -- --coverage "
                             "--coverage.reportsDirectory=.crapkit/cov/js "
+                            "--coverage.reportOnFailure "
                             "--reporter=default --reporter=junit "
                             "--outputFile=.crapkit/cov/js/junit.xml")
     assert lane.artifact == ".crapkit/cov/js/coverage-final.json"
@@ -455,3 +457,149 @@ def test_with_no_lockfile_the_commented_template_keeps_the_bare_name():
 
     assert '# command = "python -m pytest --cov --cov-branch' in text
     assert '# pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text
+
+
+# --- a red test must still leave a coverage report ----------------------------
+#
+# vitest writes no coverage report when a test fails, so the first `crapkit
+# coverage` on a repo with one red test exited 5 naming a missing
+# coverage-final.json: a message about a file, for a run that was really about a
+# flag. The junit report landed either way, which made the run look half
+# finished. jest writes its report on a red run already, and exits on a flag it
+# does not know, so this flag is vitest's alone.
+
+def test_the_vitest_lane_asks_for_a_report_even_when_a_test_fails():
+    (lane,) = detect_lanes(frozenset(), _package(devDependencies={"vitest": "^2.0.0"}))
+
+    assert "--coverage.reportOnFailure" in lane.command
+
+
+def test_the_commented_vitest_template_carries_the_flag_the_live_lane_carries():
+    """What a reader uncomments has to be what init would have written live."""
+    assert "--coverage.reportOnFailure" in starter_toml({"web": ("typescript",)})
+
+
+def test_jest_never_gets_the_flag_vitest_spells_it_with():
+    (lane,) = detect_lanes(frozenset(), _package(devDependencies={"jest": "^29.0.0"}))
+
+    assert "reportOnFailure" not in lane.command
+
+
+# --- the excludes reach the repo root -----------------------------------------
+#
+# Globs are whole-path, so `**/vendor/**` needs a directory before `vendor` and
+# never matched a repo-root vendor/. init turned that tree into a scope no lane
+# measured and doctor FAILed it; the root conftest.py init left unscoped was the
+# same glob missing the same file.
+
+def _default_match():
+    from crapkit.universe import exclude_matcher
+
+    return exclude_matcher(DEFAULT_EXCLUDES)
+
+
+def test_the_default_excludes_reach_a_repo_root_tree():
+    from crapkit.universe import excluded
+
+    match = _default_match()
+
+    assert excluded("vendor/lib.js", match)
+    assert excluded("dist/bundle.js", match)
+    assert excluded("build/gen.py", match)
+    assert excluded("node_modules/pkg/index.js", match)
+    assert excluded("conftest.py", match)
+    assert excluded("test_thing.py", match)
+    assert excluded("main_test.go", match)
+
+
+def test_the_default_excludes_still_leave_source_in_the_corpus():
+    from crapkit.universe import excluded
+
+    match = _default_match()
+
+    assert not excluded("src/pkg/mod.py", match)
+    assert not excluded("web/src/w.ts", match)
+    assert not excluded("a/b.py", match)
+    assert not excluded("build.sh", match), "a root build SCRIPT is production code"
+
+
+def test_a_repo_root_vendor_tree_is_never_sniffed_as_a_scope():
+    assert sniff_scopes(["vendor/lib.js", "web/app.ts"]) == {"web": ("typescript",)}
+
+
+# --- a monorepo names its runner in the workspace that owns the tests ---------
+#
+# init read the root package.json and nothing else. In a workspace repo the root
+# `test` script only chains the workspaces' own and the runner lives one level
+# down, so init wrote a lane with no routing at all: doctor WARNed twice about
+# the config init had just written, and the lane could not produce the artifact
+# it was asked for.
+
+def _workspace_packages(directory: str) -> dict[str, str]:
+    return {"": _package(scripts={"test": "npm run --workspaces test"},
+                         devDependencies={"typescript": "^5.0.0"}),
+            directory: _package(scripts={"test": "vitest run"},
+                                devDependencies={"vitest": "^2.0.0"})}
+
+
+def test_the_one_workspace_that_names_a_runner_gets_the_lane():
+    (lane,) = detect_lanes(frozenset(), _workspace_packages("web"))
+
+    assert lane.cwd == "web"
+    assert lane.command == ("npm run test -- --coverage "
+                            "--coverage.reportsDirectory=../.crapkit/cov/js "
+                            "--coverage.reportOnFailure "
+                            "--reporter=default --reporter=junit "
+                            "--outputFile=../.crapkit/cov/js/junit.xml")
+    assert lane.artifact == ".crapkit/cov/js/coverage-final.json", "resolved from the root"
+    assert lane.results_artifact == ".crapkit/cov/js/junit.xml"
+
+
+def test_a_nested_workspace_climbs_back_to_the_root_once_per_level():
+    (lane,) = detect_lanes(frozenset(), _workspace_packages("packages/web"))
+
+    assert lane.cwd == "packages/web"
+    assert "--coverage.reportsDirectory=../../.crapkit/cov/js" in lane.command
+    assert "--outputFile=../../.crapkit/cov/js/junit.xml" in lane.command
+
+
+def test_a_workspace_with_no_test_script_runs_its_runner_directly():
+    packages = {"": _package(scripts={"test": "npm run --workspaces test"}),
+                "web": _package(devDependencies={"vitest": "^2.0.0"})}
+
+    (lane,) = detect_lanes(frozenset(), packages)
+
+    assert lane.command.startswith("npx vitest run --coverage ")
+    assert lane.cwd == "web"
+
+
+def test_two_workspaces_naming_a_runner_leave_the_root_lane_alone():
+    """Which one measures the repo is exactly what file presence cannot say."""
+    packages = {"": _package(scripts={"test": "npm run --workspaces test"}),
+                "web": _package(devDependencies={"vitest": "^2.0.0"}),
+                "api": _package(devDependencies={"jest": "^29.0.0"})}
+
+    (lane,) = detect_lanes(frozenset(), packages)
+
+    assert lane.command == "npm run test -- --coverage"
+    assert lane.cwd == ""
+
+
+def test_a_root_that_names_the_runner_itself_keeps_the_root_lane():
+    packages = {"": _package(scripts={"test": "vitest run"},
+                             devDependencies={"vitest": "^2.0.0"}),
+                "web": _package(devDependencies={"vitest": "^2.0.0"})}
+
+    (lane,) = detect_lanes(frozenset(), packages)
+
+    assert lane.cwd == ""
+    assert "--coverage.reportsDirectory=.crapkit/cov/js" in lane.command
+
+
+def test_the_workspace_lanes_cwd_survives_into_the_config_init_writes():
+    lanes = detect_lanes(frozenset(), _workspace_packages("web"))
+
+    cfg = load_config_text(starter_toml({"web": ("typescript",)}, lanes))
+
+    (lane,) = cfg.lanes
+    assert lane.cwd == "web"

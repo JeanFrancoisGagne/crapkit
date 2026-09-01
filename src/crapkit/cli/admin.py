@@ -72,9 +72,24 @@ def _present_markers(root: Path) -> frozenset[str]:
     return frozenset(name for name in PYTEST_MARKERS if (root / name).is_file())
 
 
-def _package_json(root: Path) -> str:
-    path = root / "package.json"
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
+def _package_json(root: Path) -> dict[str, str]:
+    """Every tracked package.json's text, keyed by the directory holding it and
+    "" for the root one.
+
+    A monorepo names its test runner in the workspace that owns the tests. Read
+    from the root alone, init bound the js lane to a root script that only
+    chains the workspaces and produces no coverage of its own. A vendored
+    node_modules is skipped: its packages describe somebody else's tests.
+    """
+    found: dict[str, str] = {}
+    for raw in ls_files(root):
+        path = raw.replace("\\", "/")
+        directory, _, name = path.rpartition("/")
+        if name != "package.json" or "node_modules/" in path:
+            continue
+        if (root / path).is_file():
+            found[directory] = (root / path).read_text(encoding="utf-8")
+    return found
 
 
 def _next_step(scopes: dict, lanes: tuple) -> str:
