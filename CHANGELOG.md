@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.8 — unreleased
+## 0.4.8 — 2026-09-01
 
 ### A composite action that comments the worklist and the verdict on a pull request
 `action.yml` at the repository root makes crapkit four lines in a consumer's workflow:
