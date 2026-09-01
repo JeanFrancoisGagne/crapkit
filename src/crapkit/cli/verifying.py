@@ -14,7 +14,8 @@ from ..errors import ConfigError, CrapkitError, ToolError
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
-                      _load_ratchet_or_die, _load_repo_config, _print_json, _write_tsv)
+                      _load_ratchet_or_die, _load_repo_config, _print_json,
+                      _repo_out_path, _repo_relative, _write_tsv)
 from .scoring import _scored_run
 
 
@@ -177,7 +178,10 @@ def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, st
 
 def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | None) -> None:
     """Write the baseline this run used as a portable file, before the verdict:
-    a run that ends in a failure still owes the operator its basis."""
+    a run that ends in a failure still owes the operator its basis.
+
+    Through `_repo_out_path`, so `--emit-baseline out/new/b.tsv` creates the
+    directory the way `--export`, `--sarif` and `report --out` do."""
     from ..verify import baseline_tsv_lines
 
     if not rel:
@@ -185,7 +189,8 @@ def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | 
     rows = baseline.get("rows")
     if rows is None:
         rows = store.read_scored(baseline["id"])
-    _write_tsv(root / rel, baseline_tsv_lines(baseline["commit"], baseline["kind"], rows))
+    _write_tsv(_repo_out_path(root, rel),
+               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows))
 
 
 def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
@@ -613,11 +618,16 @@ def _route_unowned(path: str, templates: dict) -> str:
     raise ConfigError(f"{path} belongs to no declared scope")
 
 
-def _group_files_by_scope(files, scope_paths: dict, templates: dict) -> dict[str, list[str]]:
-    """Route each requested file to its owning scope; unowned or untemplated is a config error."""
+def _group_files_by_scope(files, scope_paths: dict, templates: dict,
+                          root: Path = Path(".")) -> dict[str, list[str]]:
+    """Route each requested file to its owning scope; unowned or untemplated is a config error.
+
+    Every spelling of a path arrives here as the one the scopes are declared in,
+    because `owning_scope` matches on a prefix and `./src/a.py` shares none with
+    `src`."""
     by_scope: dict[str, list[str]] = {}
     for raw in files:
-        path = raw.replace("\\", "/")
+        path = _repo_relative(raw, root)
         owner = _owning_scope(path, scope_paths) or _route_unowned(path, templates)
         if owner not in templates:
             raise ConfigError(f"no [crapkit.scoped_tests] template for scope {owner!r}")
@@ -645,7 +655,7 @@ def cmd_test_scoped(args: argparse.Namespace) -> int:
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
     templates = dict(cfg.scoped_tests)
-    by_scope = _group_files_by_scope(args.files, cfg.scope_paths, templates)
+    by_scope = _group_files_by_scope(args.files, cfg.scope_paths, templates, root)
 
     for scope, files in sorted(by_scope.items()):
         command = _scoped_command(templates[scope], files)

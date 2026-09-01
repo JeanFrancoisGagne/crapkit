@@ -11,7 +11,8 @@ from pathlib import Path
 from ..churn_log import log_lines
 from ..errors import ConfigError, CrapkitError
 from ..gitio import ls_files
-from ._shared import _load_repo_config, _load_sources, _open_store, _print_json
+from ._shared import (_load_repo_config, _load_sources, _open_store, _positive_top,
+                      _print_json, _repo_relative)
 
 
 def _at_default_thresholds(args: argparse.Namespace) -> bool:
@@ -45,6 +46,7 @@ def _coupling_pairs(root: Path, cfg, args: argparse.Namespace) -> list[dict]:
 def cmd_coupling(args: argparse.Namespace) -> int:
     """Ranked over the tracked set: a pair naming a path git no longer has is a
     recommendation to open a file that is not there."""
+    _positive_top("coupling", args.top)
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
     pairs = _coupling_pairs(root, cfg, args)
@@ -71,7 +73,7 @@ def _mutation_targets(root: Path, files: list | None) -> dict:
     from ..gitio import diff_since
 
     if files:
-        return {f.replace("\\", "/"): None for f in files}
+        return {_repo_relative(f, root): None for f in files}
     targets = {p: _range_lines(rs) for p, rs in changed_ranges(diff_since(root, "HEAD")).items()}
     if not targets:
         raise CrapkitError("no changes vs HEAD to mutate — name files with --files")
@@ -185,6 +187,7 @@ def cmd_duplication(args: argparse.Namespace) -> int:
     from ..dup import find_duplicates
     from ..store import rowful_runs
 
+    _positive_top("duplication", args.top)
     root = Path(args.repo).resolve()
     _load_repo_config(root)  # config errors first, like every command
     store = _open_store(root, first_command="inventory")

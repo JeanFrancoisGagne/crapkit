@@ -12,7 +12,8 @@ from typing import NamedTuple
 from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
-from ._shared import _load_repo_config, _open_store, _print_json, _ratchet_entries
+from ._shared import (_load_repo_config, _open_store, _print_json, _ratchet_entries,
+                      _repo_out_path)
 
 
 def _digest_pair(store):
@@ -186,26 +187,15 @@ def _report_payload(root: Path, cfg, store: SnapshotStore) -> dict:
 def _write_report(root: Path, out: str, page: str) -> Path:
     """Write the page and say where it went.
 
-    A relative `--out` is repo-relative, and one that climbs out of the tree
-    (`../report.html`) writes somewhere nobody asked for, so it is refused. An
-    absolute path is the reader naming a destination on purpose and is written
-    there: the page carries no relative asset and reads nothing from where it
+    `_repo_out_path` decides where: a relative `--out` is repo-relative and may
+    not climb out of the tree, an absolute one is the reader naming a
+    destination on purpose, and the parent directory is created. That rule
+    started here and three other writers copied it, so it lives in one place
+    now. The page carries no relative asset and reads nothing from where it
     lands, so the destination changes nothing but who can open it. LF endings,
     because the page is an artifact people diff and publish.
-
-    A rooted path with no drive (`/tmp/r.html` on Windows) counts as absolute
-    too. `is_absolute()` says False there, so it used to be refused with the
-    advice the reader had just followed; it names the current drive's root, not
-    a place under the repo.
     """
-    base = root.resolve()
-    named = Path(out)
-    rooted = named.is_absolute() or bool(named.root)
-    path = named if rooted else (base / out).resolve()
-    if not rooted and base not in path.parents:
-        raise ConfigError(f"report --out is repo-relative and {out!r} climbs out of "
-                          f"{base}; pass an absolute path to write outside it")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = _repo_out_path(root, out)
     path.write_text(page, encoding="utf-8", newline="\n")
     print(path)
     return path
