@@ -493,10 +493,12 @@ def _scope_path(name, raw: str) -> str:
     was sent to declare a second scope for a path the first one already owned.
     A path that climbs above the root or names a drive can never match a
     tracked path at all, so it is refused here rather than reported later as an
-    empty scope.
+    empty scope. A bare `.` is left exactly as it is: whether a scope can
+    declare the repo root is the matcher's question, not this one's, and
+    `doctor` already reports such a scope as `0 files`.
     """
     path = _unrooted(raw)
-    if path in ("", ".", "..") or path.startswith("../") or ":" in path:
+    if path in ("", "..") or path.startswith("../") or ":" in path:
         raise ConfigError(f"scope {name!r}: path {raw!r} can never match a tracked file — "
                           "scope paths are repo-relative, with no drive and no `..` "
                           "(docs/configuration.md)")

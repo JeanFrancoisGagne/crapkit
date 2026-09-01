@@ -439,7 +439,7 @@ def test_backslashes_reach_the_matcher_as_slashes():
     assert _one_scope(r"packages\web").paths == ("packages/web",)
 
 
-@pytest.mark.parametrize("written", ["../shared", "..", "C:/repo/src", "./"])
+@pytest.mark.parametrize("written", ["../shared", "..", "C:/repo/src", "", "/"])
 def test_a_path_no_tracked_file_could_match_is_refused_by_name(written: str):
     """An empty scope is what these produced, reported later and somewhere else.
     They can never match a git-tracked path, so they are a config error."""
@@ -448,3 +448,12 @@ def test_a_path_no_tracked_file_could_match_is_refused_by_name(written: str):
 
     assert "'s'" in str(caught.value), caught.value
     assert repr(written) in str(caught.value), caught.value
+
+
+@pytest.mark.parametrize("written", [".", "./"])
+def test_a_root_scope_is_left_the_way_it_was_written(written: str):
+    """Whether a scope may declare the repo root is the matcher's question, not
+    this one's. `.` owns nothing today and `doctor` reports it as `0 files`;
+    normalizing it into something else here would change that answer without
+    making the scope work, and crapkit's own mutate fixtures declare it."""
+    assert _one_scope(written).paths == (".",)
