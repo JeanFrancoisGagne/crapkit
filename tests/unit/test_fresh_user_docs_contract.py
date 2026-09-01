@@ -209,12 +209,33 @@ def test_the_explain_row_states_how_it_resolves_a_name():
 
 def test_the_handbook_links_out_by_url_not_by_relative_path():
     """`../README.md` resolves above the project site on GitHub Pages, which is
-    a 404 for every reader who did not open the page from a clone."""
+    a 404 for every reader who did not open the page from a clone. A bare
+    `lanes.md` is worse: Pages serves the file as text/markdown and the browser
+    downloads it, so the reader gets a file where they expected a page."""
     page = _doc(HANDBOOK)
 
     assert 'href="../' not in page
-    for name in ("README.md", "AGENTS.md"):
+    assert not re.search(r'href="[^"#:]*[.]md[#"]', page),         "the handbook links a .md file by relative path; Pages downloads those"
+    for name in ("README.md", "AGENTS.md", "docs/lanes.md", "docs/ratchet.md",
+                 "docs/configuration.md", "docs/agent-json.md", "docs/adoption.md"):
         assert f'href="{BLOB}/{name}"' in page, f"the handbook lost its {name} link"
+
+
+# --- the README as PyPI renders it --------------------------------------------
+
+_LINK_TARGET = re.compile(r"\]\(([^)\s]+)\)")
+
+
+def test_the_readme_links_out_by_url_so_pypi_renders_them():
+    """PyPI publishes README.md verbatim as the long description, and a
+    relative target like `docs/lanes.md` resolves against pypi.org there, where
+    nothing answers. Every link target is absolute or an in-page anchor, and the
+    handbook link opens the rendered page rather than its source."""
+    targets = _LINK_TARGET.findall(_doc(README))
+
+    relative = [t for t in targets if not re.match(r"https?://|#|mailto:", t)]
+    assert relative == [], f"README links that go nowhere on PyPI: {relative}"
+    assert "https://jeanfrancoisgagne.github.io/crapkit/handbook.html" in targets
 
 
 def _packet_keys(monkeypatch) -> set[str]:

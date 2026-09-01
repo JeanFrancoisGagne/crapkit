@@ -2,6 +2,15 @@
 
 ## 0.4.11 — unreleased
 
+### Every README and handbook link is absolute
+PyPI publishes the README verbatim as the long description, so its 36 repo-relative
+links (`docs/lanes.md`, `LICENSE`, `action.yml`, ...) resolved against pypi.org and
+answered nothing there. The handbook linked its five deep-reference pages as bare
+`lanes.md`, which GitHub Pages serves as text/markdown, so the browser downloaded a
+file where the reader expected a page. Both now link out by full URL, the README's
+handbook link opens the rendered page on the project site, and two contracts hold
+the relative form out.
+
 ### The README pins `uses:` to the release it documents
 The Action snippets in the README still said `@v0.4.8` two releases later: the release
 bump touched `crapkit X.Y.Z` and `rev: vX.Y.Z` and nothing else, and no test read the
