@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.15 — unreleased
+## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing
 
