@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.14 — unreleased
+## 0.4.14 — 2026-09-01
 
 ### The MCP Registry can verify and list this server
 `server.json` at the repository root describes the server the way the official MCP
