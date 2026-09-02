@@ -55,5 +55,5 @@ def test_the_manifest_and_the_marker_agree_on_the_name():
 def test_the_description_reads_as_one_plain_sentence():
     description = _manifest()["description"]
 
-    assert description.strip() == description and len(description) <= 100, \n        "the registry refuses a description over 100 characters (measured with mcp-publisher validate)"
+    assert description.strip() == description and len(description) <= 100, "the registry refuses over 100 chars"
     assert re.match(r"^[A-Z]", description) and description.endswith(".")
