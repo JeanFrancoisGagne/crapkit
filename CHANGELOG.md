@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.13 — unreleased
+## 0.4.13 — 2026-09-01
 
 ### The MCP handshake speaks the client's protocol revision
 The server answered every `initialize` with `2024-11-05`, the protocol's first revision,
