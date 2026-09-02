@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.14 — unreleased
+
+### The MCP Registry can verify and list this server
+`server.json` at the repository root describes the server the way the official MCP
+Registry (registry.modelcontextprotocol.io) reads it: the PyPI package, the stdio
+transport, and the `mcp` subcommand a client passes to it. The README carries the
+`mcp-name:` ownership marker the registry checks against the package's own description,
+which is why the marker ships in a release rather than living only on GitHub. A contract
+holds both version fields in the manifest to `crapkit.__version__`, so a release bump
+cannot leave the registry pointing at last release's package.
+
+### A comparison page for the reader who already runs a neighbour
+`docs/comparison.md` says what radon, xenon, wily, coverage.py and SonarQube each
+measure and gate, where crapkit's complexity-times-uncovered join sits next to them, and
+that nothing conflicts: crapkit reads the same coverage artifact the suite already
+writes. The README's deep-reference table links it.
+
 ## 0.4.13 — 2026-09-01
 
 ### The MCP handshake speaks the client's protocol revision

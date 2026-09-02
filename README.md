@@ -1,5 +1,7 @@
 # crapkit
 
+<!-- mcp-name: io.github.jeanfrancoisgagne/crapkit -->
+
 [![ci](https://github.com/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml/badge.svg)](https://github.com/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/crapkit)](https://pypi.org/project/crapkit/)
 [![Python](https://img.shields.io/pypi/pyversions/crapkit)](https://pypi.org/project/crapkit/)
@@ -1151,6 +1153,7 @@ that block is advisory unless `diff_uncovered_max` is set
 | [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) | The lane model, vitest and jest and pytest recipes, artifact reuse, flake retest, containers. |
 | [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md) | Seeding, pruning, the git merge driver, metric stamps, debt policy, overrides. |
 | [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
+| [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md) | Where crapkit sits next to radon, xenon, wily, coverage.py and SonarQube, and how they run together. |
 | [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md) | The burn-down loop an agent runs, and the rules for changing crapkit itself. |
 | [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | The Claude Code plugin: three skills, the read-side MCP server, and the advisory PostToolUse hook. |
 
