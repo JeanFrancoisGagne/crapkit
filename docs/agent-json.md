@@ -1208,9 +1208,15 @@ CLI degrades to silence instead of an argparse usage dump on every edit.
 crapkit mcp
 ```
 
-A dependency-free stdio MCP server: JSON-RPC 2.0, one message per line, protocol version
-`2024-11-05`. Read-only. Every tool shells to the CLI's own surface, so the MCP view cannot
-drift from what the CLI reports, and nothing here writes a baseline, a ratchet, or a mutant.
+A dependency-free stdio MCP server: JSON-RPC 2.0, one message per line. The handshake
+negotiates the protocol revision: a client's offer of `2025-06-18`, `2025-03-26` or
+`2024-11-05` is spoken verbatim, and anything else gets `2025-06-18`, the newest this
+server implements. Read-only, and declared so: every tool carries
+`readOnlyHint`/`idempotentHint` annotations, `initialize` returns `instructions` naming
+the two-command prerequisite, and a tool whose text is a JSON object also carries it
+parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
+view cannot drift from what the CLI reports, and nothing here writes a baseline, a
+ratchet, or a mutant.
 
 Answering those calls from one long-lived process instead was measured for 0.4.5 and
 rejected. A kept process serves a `source` the session has already edited, and a packet whose

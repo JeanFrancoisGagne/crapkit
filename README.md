@@ -4,6 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/crapkit)](https://pypi.org/project/crapkit/)
 [![Python](https://img.shields.io/pypi/pyversions/crapkit)](https://pypi.org/project/crapkit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/JeanFrancoisGagne/crapkit/blob/main/LICENSE)
+[![crapkit MCP server](https://glama.ai/mcp/servers/JeanFrancoisGagne/crapkit/badges/score.svg)](https://glama.ai/mcp/servers/JeanFrancoisGagne/crapkit)
 
 ![crapkit init, coverage and worklist --top 5 on a small Python repo, then a shell heredoc adding a function at ccn 7: the per-edit advisory reports it and exits 2, and the commit gate refuses the staged file with exit 6](https://raw.githubusercontent.com/JeanFrancoisGagne/crapkit/main/docs/demo.gif)
 

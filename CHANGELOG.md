@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.13 — unreleased
+
+### The MCP handshake speaks the client's protocol revision
+The server answered every `initialize` with `2024-11-05`, the protocol's first revision,
+which told a current client to drop everything newer. The handshake now echoes the
+client's revision when the server implements it (`2025-06-18`, `2025-03-26` or
+`2024-11-05`) and offers `2025-06-18` otherwise. A tool whose text is a JSON object now
+also carries it parsed as `structuredContent`, which is how a client on the current
+revision reads machine output; prose, arrays and error text stay text-only.
+
+### Every MCP tool says when to reach for it and what each argument means
+The nine tool descriptions were one-line noun phrases, several arguments carried a bare
+type with no description, and nothing in the listing said the tools were read-only. Every
+description is now two sentences (what it answers, then when to use it or how it relates
+to its neighbour), every argument names its meaning and default, every tool declares
+`readOnlyHint`/`idempotentHint`/`openWorldHint` annotations, and `initialize` returns
+`instructions` carrying the two-command prerequisite a connected model otherwise learns
+from nine identical error results.
+
 ## 0.4.12 — 2026-09-01
 
 ### A lane that writes nothing no longer scores the previous run's artifact
