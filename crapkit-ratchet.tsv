@@ -1,3 +1,2 @@
 # crapkit-analysis=8 lizard=1.24.0
 path	long_name	crap
-src/crapkit/procs.py	_wait_watching( proc : subprocess . Popen , timeout : float | None , no_progress : float , stream : IO )	6.5625
