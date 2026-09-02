@@ -149,6 +149,19 @@ def test_a_command_that_keeps_writing_outlives_the_progress_deadline(tmp_path):
     assert log.read_text(encoding="utf-8").count("tick") == 8
 
 
+def test_the_total_deadline_still_kills_a_watched_command_that_keeps_writing(tmp_path):
+    """Both deadlines at once: a suite that writes happily forever trips the
+    total deadline, not the watch, and the caller gets the same None the
+    unwatched timeout path hands back. The watch must not eat the deadline."""
+    script = tmp_path / "chatty.py"
+    script.write_text("import time" + chr(10) + "while True:" + chr(10) + "    print(chr(42), flush=True)" + chr(10) + "    time.sleep(0.1)" + chr(10), encoding="utf-8")
+    with open(tmp_path / "lane.log", "w+b") as fh:
+        code = run_bounded(f'"{sys.executable}" "{script}"', _TIMEOUT, stream=fh,
+                           no_progress=_TIMEOUT * 4, cwd=tmp_path)
+
+    assert code is None
+
+
 def test_a_progress_deadline_with_no_stream_to_watch_never_fires(tmp_path):
     """Output going to DEVNULL leaves nothing to measure, and a watch that
     cannot see growth would read every command as stalled and kill it."""

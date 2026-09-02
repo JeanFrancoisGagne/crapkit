@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.12 — unreleased
+## 0.4.12 — 2026-09-01
 
 ### A lane that writes nothing no longer scores the previous run's artifact
 crapkit asked only whether the artifact file existed, never whether the run that just
