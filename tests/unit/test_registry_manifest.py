@@ -13,7 +13,7 @@ from pathlib import Path
 from crapkit import __version__
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-NAME = "io.github.jeanfrancoisgagne/crapkit"
+NAME = "io.github.JeanFrancoisGagne/crapkit"
 
 
 def _manifest() -> dict:

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.15 — unreleased
+
+### The registry name follows GitHub's casing
+
+The MCP Registry grants each GitHub user the namespace spelled the way GitHub spells the login, so the server is `io.github.JeanFrancoisGagne/crapkit` in `server.json`, in the README ownership marker and in the contract that pins the two together. The lowercase form was refused with a 403 at publish time.
+
 ## 0.4.14 — 2026-09-01
 
 ### The MCP Registry can verify and list this server

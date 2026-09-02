@@ -1,6 +1,6 @@
 # crapkit
 
-<!-- mcp-name: io.github.jeanfrancoisgagne/crapkit -->
+<!-- mcp-name: io.github.JeanFrancoisGagne/crapkit -->
 
 [![ci](https://github.com/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml/badge.svg)](https://github.com/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/crapkit)](https://pypi.org/project/crapkit/)
