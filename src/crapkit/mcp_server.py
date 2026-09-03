@@ -108,6 +108,18 @@ TOOLS: tuple[dict, ...] = (
                     "velocity from git history. Use it to see whether marked debt is being "
                     "paid down or piling up.",
      "properties": {}},
+    # `rescore PATH --gate --json`: read-only like the rest (it writes the
+    # analysis cache, never a run). Exit 6 is the verdict, not a failure, so it
+    # comes back as a result whose `gate.ok` is false; 3, 4 and 5 stay errors.
+    {"name": "gate", "argv": ["rescore", "--gate"], "json_flag": True, "positional": ("path",),
+     "flags": {}, "verdict_exits": (6,),
+     "description": "Whether an edited file clears the commit gate, judged the way the "
+                    "pre-commit hook will: fresh ccn of every function the working tree "
+                    "changed against its scope's ceiling, minus marked debt, as rescore "
+                    "--gate. Call it after an edit and before the commit; a breach answers "
+                    "ok false with the functions, not a tool error.",
+     "properties": {"path": {"type": "string", "description": "repo-relative source file "
+                                                               "to judge as edited"}}},
 )
 
 # Every tool shells to a read-only CLI command against a store on this machine:
@@ -183,12 +195,15 @@ def _no_config_result(repo: str) -> dict:
 
 def _run_cli(tool: dict, arguments: dict, repo: str) -> dict:
     """One tool, run as the CLI command it maps to. A command that printed
-    nothing answers with its stderr, so a refusal reaches the caller as text."""
+    nothing answers with its stderr, so a refusal reaches the caller as text.
+    An exit the tool declares in `verdict_exits` is an answer, not a failure:
+    `gate` exits 6 on a breach and its payload says so in `gate.ok`."""
     argv = build_argv(tool, arguments) + ["--repo", repo]
     proc = subprocess.run([sys.executable, "-m", "crapkit", *argv],
                           capture_output=True, text=True, timeout=600)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
-    return _structured(_result(text, is_error=proc.returncode != 0))
+    failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
+    return _structured(_result(text, is_error=failed))
 
 
 # JSON Schema type names to the Python shapes json.loads produces for them. A
@@ -262,15 +277,16 @@ def _call_tool(root: Path, name: str, arguments: dict) -> dict:
 
 
 # What a connected model needs before its first call, in the one field the
-# protocol reserves for it. The nine error results a model would otherwise
-# collect from an unmeasured repo teach the same thing nine times, slower.
+# protocol reserves for it. The ten error results a model would otherwise
+# collect from an unmeasured repo teach the same thing ten times, slower.
 _INSTRUCTIONS = (
-    "crapkit scores every function as ccn^2 x (1 - coverage)^3 + ccn; these nine tools read "
+    "crapkit scores every function as ccn^2 x (1 - coverage)^3 + ccn; these ten tools read "
     "the newest scored run and every one is read-only: nothing here runs a test suite or "
     "writes to the repo. They need a repo measured once (crapkit init, then crapkit "
     "coverage); an unmeasured repo answers with a one-line pointer instead of data. Start "
     "with next_item for one function to fix, worklist for the whole ranking, brief for "
-    "everything about one function.")
+    "everything about one function, and gate after an edit to learn whether the file "
+    "clears the commit gate.")
 
 
 def _negotiated(params: dict) -> str:

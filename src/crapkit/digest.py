@@ -2,13 +2,16 @@
 
 The digest speaks only on change (an unchanged week is silence, per the
 empty-channel rule) and keeps to a handful of numbers: totals delta, the worst
-per-function regressions, improvements, and new over-target functions.
+per-function regressions, improvements, and new over-ceiling functions.
 """
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 from .score import ScoredRow, grade
+
+# scope -> the ceiling its rows are judged against
+_CeilingOf = Callable[[str], int]
 
 
 class Totals(NamedTuple):
@@ -24,8 +27,17 @@ class Digest(NamedTuple):
     lines: list[str]
 
 
-def _over_count(rows, target: int, scope_targets) -> int:
-    return sum(1 for r in rows if r.crap > (scope_targets or {}).get(r.scope, target))
+def _ceiling_rule(target: int, scope_targets: dict[str, int] | None) -> _CeilingOf:
+    """The per-scope ceiling as Config.ceiling_of spells it, rebuilt from the
+    pair this module is handed: a scope's own target, else the repo's. Every
+    count below reads the rule through this one function, so the digest and
+    the trend judge a row the same way."""
+    own = scope_targets or {}
+    return lambda scope: own.get(scope, target)
+
+
+def _over_count(rows, ceiling_of: _CeilingOf) -> int:
+    return sum(1 for r in rows if r.crap > ceiling_of(r.scope))
 
 
 def totals_from_counts(functions: int, over_target: int, load: float) -> Totals:
@@ -43,7 +55,7 @@ def totals_from_counts(functions: int, over_target: int, load: float) -> Totals:
 
 def totals(rows: list[ScoredRow], *, target: int,
            scope_targets: dict[str, int] | None = None) -> Totals:
-    return totals_from_counts(len(rows), _over_count(rows, target, scope_targets),
+    return totals_from_counts(len(rows), _over_count(rows, _ceiling_rule(target, scope_targets)),
                               sum(r.crap for r in rows))
 
 
@@ -130,32 +142,33 @@ def _regressions(moves: list[_Move]) -> list[_Delta]:
     return [(delta, after) for delta, _before, after in moves if delta > 0.01]
 
 
-def _improvements(moves: list[_Move], target: int) -> list[_Delta]:
-    """Only a function that WAS over target improves; drift below it is not news."""
+def _improvements(moves: list[_Move], ceiling_of: _CeilingOf) -> list[_Delta]:
+    """Only a function that WAS over its ceiling improves; drift below it is not news."""
     return [(delta, after) for delta, before, after in moves
-            if delta < -0.01 and before.crap > target]
+            if delta < -0.01 and before.crap > ceiling_of(before.scope)]
 
 
 def _appeared(prev_by_key: dict[_Key, ScoredRow], cur_by_key: dict[_Key, ScoredRow],
-              target: int) -> list[ScoredRow]:
-    """Functions the previous run never saw; new code under target is not news."""
+              ceiling_of: _CeilingOf) -> list[ScoredRow]:
+    """Functions the previous run never saw; new code under its ceiling is not news."""
     return [row for key, row in cur_by_key.items()
-            if key not in prev_by_key and row.crap > target]
+            if key not in prev_by_key and row.crap > ceiling_of(row.scope)]
 
 
-def _changes_between(prev: list[ScoredRow], cur: list[ScoredRow], target: int) -> _Changes:
+def _changes_between(prev: list[ScoredRow], cur: list[ScoredRow],
+                     ceiling_of: _CeilingOf) -> _Changes:
     prev_by_key, cur_by_key = _by_key(prev), _by_key(cur)
     moves = _moves(prev_by_key, cur_by_key)
     return _Changes(
         regressions=_regressions(moves),
-        improvements=_improvements(moves, target),
-        appeared=_appeared(prev_by_key, cur_by_key, target),
+        improvements=_improvements(moves, ceiling_of),
+        appeared=_appeared(prev_by_key, cur_by_key, ceiling_of),
     )
 
 
 def _totals_line(t_prev: Totals, t_cur: Totals) -> str:
     return (f"CRAP load {t_prev.crap_load} -> {t_cur.crap_load}; "
-            f"over target {t_prev.over_target} -> {t_cur.over_target}; "
+            f"over ceiling {t_prev.over_target} -> {t_cur.over_target}; "
             f"functions {t_prev.functions} -> {t_cur.functions}")
 
 
@@ -169,7 +182,7 @@ def _regression_lines(regressions: list[_Delta], top: int) -> list[str]:
 
 
 def _appeared_lines(appeared: list[ScoredRow], top: int) -> list[str]:
-    return [_fn_line("new over target", row)
+    return [_fn_line("new over ceiling", row)
             for row in sorted(appeared, key=lambda r: -r.crap)[:top]]
 
 
@@ -178,9 +191,14 @@ def _improvement_lines(improvements: list[_Delta], top: int) -> list[str]:
             for delta, row in sorted(improvements, key=lambda x: x[0])[:top]]
 
 
-def build_digest(prev: list[ScoredRow], cur: list[ScoredRow], *, target: int, top: int = 5) -> Digest:
-    t_prev, t_cur = totals(prev, target=target), totals(cur, target=target)
-    changed = _changes_between(prev, cur, target)
+def build_digest(prev: list[ScoredRow], cur: list[ScoredRow], *, target: int,
+                 scope_targets: dict[str, int] | None = None, top: int = 5) -> Digest:
+    """`scope_targets` is what makes this agree with `trend`: both count a row
+    against its own scope's ceiling, and a new function under that ceiling is
+    not news even when it sits over the repo's."""
+    t_prev = totals(prev, target=target, scope_targets=scope_targets)
+    t_cur = totals(cur, target=target, scope_targets=scope_targets)
+    changed = _changes_between(prev, cur, _ceiling_rule(target, scope_targets))
     if t_prev == t_cur and changed.nothing_moved():
         return Digest(quiet=True, lines=[])
     return Digest(quiet=False, lines=[

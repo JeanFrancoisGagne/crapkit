@@ -127,7 +127,10 @@ def test_coverage_single_lane_flags_other_scope_no_lane(mini_repo: Path):
     assert res.returncode == 0, res.stderr
     s = json.loads(res.stdout)
     assert s["measured"] == 1 and s["untested"] == 2 and s["no_lane"] == 1, s
-    assert s["over_target"] == 1, "guarded: cc5 at cov 0 in a no-lane scope scores 30"
+    # guarded: cc5 at cov 0 in the skipped py scope scores 30, which is py's debt
+    # under by_scope and not this partial run's grade
+    assert s["kind"] == "partial" and s["unmeasured_scopes"] == ["py"], s
+    assert s["over_target"] == 0 and s["by_scope"]["py"]["over_target"] == 1, s
 
 
 def test_coverage_end_to_end_scores_and_flags(mini_repo: Path):
@@ -416,7 +419,7 @@ def test_digest_silent_when_unchanged_and_speaks_on_regression(mini_repo: Path):
     _stage(mini_repo, "src/extra.ts", HIGH_CC_FN)
     assert run_cli(mini_repo, "coverage", "--json", "--reuse-artifacts").returncode == 0
     loud = run_cli(mini_repo, "digest")
-    assert loud.returncode == 0 and "new over target" in loud.stdout, loud.stdout
+    assert loud.returncode == 0 and "new over ceiling" in loud.stdout, loud.stdout
     assert "tangled" in loud.stdout
 
     trend = run_cli(mini_repo, "trend", "--json")

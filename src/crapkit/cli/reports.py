@@ -76,7 +76,8 @@ def cmd_digest(args: argparse.Namespace) -> int:
     prev, cur = pair
     # read_crap, not read_scored: build_digest names four of a ScoredRow's
     # sixteen fields, and a digest carries two whole runs at once
-    d = build_digest(store.read_crap(prev["id"]), store.read_crap(cur["id"]), target=cfg.target)
+    d = build_digest(store.read_crap(prev["id"]), store.read_crap(cur["id"]),
+                     target=cfg.target, scope_targets=cfg.scope_targets)
     if d.quiet:
         return 0  # an unchanged week says nothing
     for line in d.lines:
@@ -153,17 +154,12 @@ def _report_worklist(root: Path, cfg, store: SnapshotStore) -> dict:
     Reassembling it here would let the page rank one function first and the
     command another, off one run.
     """
-    from ..churn_cache import load_churn
     from ..gitio import head_commit
     from ..report import report_top
-    from ..worklist import build_worklist
-    from .queue import _pushdown_floor, _worklist_marks, _worklist_payload, _worklist_run
+    from .queue import _worklist_for, _worklist_payload, _worklist_run
 
     latest = _worklist_run(root, store)
-    rows = store.read_rows(latest["id"], min_ccn=_pushdown_floor(cfg), scopes=[])
-    wl = build_worklist(rows, load_churn(root, cfg.churn_window_months),
-                        floor=cfg.worklist_floor, top=report_top(cfg.worklist_top),
-                        marks=_worklist_marks(store, cfg, latest["id"], []))
+    wl = _worklist_for(root, cfg, store, latest, top=report_top(cfg.worklist_top), scopes=[])
     return _worklist_payload(wl, latest, cfg, latest["commit"] != head_commit(root), None)
 
 

@@ -59,7 +59,8 @@ crapkit ratchet seed && git add crapkit.toml crapkit-ratchet.tsv .gitignore
 
 ```
 $ crapkit coverage
-run 1 @ fae4db93108: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 41.0, grade F
+run 1 @ fae4db93108: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load 41.0, grade F
+-> next: crapkit worklist
 
 $ crapkit worklist
 worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
@@ -657,7 +658,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. Exit 2 and an advisory on stderr is the only thing it ever says, one block per judged file (a head line, one line per breaching function, a closing line): no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `help [TOPIC]` | The help git, npm and docker answer to. With no TOPIC it prints the command list; with one it prints that subcommand's own help, the same page as `crapkit TOPIC --help`. A TOPIC that names no subcommand exits 3. |
-| `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing nine read-only tools. Every tool shells to the CLI's own `--json` surface, so the MCP view cannot drift from what the CLI reports. Answering from a kept in-process store was benchmarked and rejected: a packet's `source` would go stale behind the edit it describes. See [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server). |
+| `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing ten read-only tools. Every tool shells to the CLI's own `--json` surface, so the MCP view cannot drift from what the CLI reports. Answering from a kept in-process store was benchmarked and rejected: a packet's `source` would go stale behind the edit it describes. See [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server). |
 
 ## Reading the output
 
@@ -926,7 +927,8 @@ and exit 0.
 
 ```
 $ crapkit coverage
-run 1 @ fae4db93108: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 41.0, grade F
+run 1 @ fae4db93108: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load 41.0, grade F
+-> next: crapkit worklist
 
 $ crapkit worklist
 worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
@@ -979,7 +981,8 @@ $ crapkit verify
 verify OK @ 8d10c13303d vs baseline fae4db93108 (5 changed files)
 
 $ crapkit coverage
-run 3 @ 8d10c13303d: 5 functions scored — 5 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 19.0, grade A+
+run 3 @ 8d10c13303d: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 19.0, grade A+
+-> next: crapkit worklist
 ```
 
 CRAP load 41.0 to 19.0, grade F to A+. `verify` reruns the lanes and checks three things
@@ -1066,7 +1069,8 @@ job; either one is enough. The full block is in
 
 ```
 $ crapkit coverage
-run 1 @ 8bfbe613fcd: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 56.68, grade F
+run 1 @ 8bfbe613fcd: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load 56.68, grade F
+-> next: crapkit worklist
 
 $ crapkit worklist
 worklist @ 8bfbe613fcd (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
@@ -1163,7 +1167,8 @@ $ crapkit verify
 verify OK @ 2af3433d979 vs baseline 8bfbe613fcd (3 changed files)
 
 $ crapkit coverage
-run 3 @ 2af3433d979: 5 functions scored — 5 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 22.0, grade A+
+run 3 @ 2af3433d979: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 22.0, grade A+
+-> next: crapkit worklist
 ```
 
 CRAP load 56.68 to 22.0, grade F to A+, and the mark seeded in step 4 is gone: `verify`

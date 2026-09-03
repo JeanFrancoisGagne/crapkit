@@ -133,3 +133,59 @@ def test_worklist_and_next_item_take_a_scope_array(inventoried_repo: Path):
     assert nxt["isError"] is True, nxt
     assert nxt["content"][0]["text"].startswith("crapkit: no scored run"), \
         "the scope array reached the CLI, which wants a scored run before it hands out a packet"
+
+
+# --- the gate tool against the real server (0.5.0) -----------------------------
+
+TANGLED = """
+
+def tangled(n):
+    if n > 1:
+        n = n + 1
+    if n > 2:
+        n = n + 1
+    if n > 3:
+        n = n + 1
+    if n > 4:
+        n = n + 1
+    if n > 5:
+        n = n + 1
+    if n > 6:
+        n = n + 1
+    if n > 7:
+        n = n + 1
+    return n
+"""
+
+
+@pytest.fixture()
+def scored_repo(repo: Path) -> Path:
+    """One coverage run, so rescore has a baseline to overlay."""
+    res = run_cli(repo, "coverage", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+    return repo
+
+
+def test_gate_answers_the_post_edit_question(scored_repo: Path):
+    """A clean edit is `ok: true`; a ccn-8 function added to the working tree
+    is `ok: false` with the breach in the payload, and neither is a tool error."""
+    mod = scored_repo / "pylib" / "mod.py"
+    mod.write_text(mod.read_text(encoding="utf-8").replace("x % 2", "x % 3"), encoding="utf-8")
+    clean = _serve(scored_repo, [_call(1, "gate", {"path": "pylib/mod.py"})])[1]["result"]
+    mod.write_text(mod.read_text(encoding="utf-8") + TANGLED, encoding="utf-8")
+    breached = _serve(scored_repo, [_call(2, "gate", {"path": "pylib/mod.py"})])[2]["result"]
+
+    assert clean["isError"] is False and clean["structuredContent"]["gate"]["ok"] is True, clean
+    assert breached["isError"] is False, breached
+    gate = breached["structuredContent"]["gate"]
+    assert gate["ok"] is False and [b["function"] for b in gate["breaches"]] == ["tangled( n )"]
+    assert gate["breaches"][0]["ceiling"] == 6 and gate["ceilings"] == {"pylib/mod.py": 6}
+
+
+def test_gate_without_a_scored_run_is_still_a_tool_error(inventoried_repo: Path):
+    reply = _serve(inventoried_repo, [_call(1, "gate", {"path": "pylib/mod.py"})])[1]["result"]
+
+    assert reply["isError"] is True and "structuredContent" not in reply, reply
+    error = json.loads(reply["content"][0]["text"])["error"]
+    assert (error["exit"], error["kind"]) == (1, "state")
+    assert error["message"].startswith("no scored run"),         "the CLI's --json error object is the text: exit 1 is a refusal, not a verdict"

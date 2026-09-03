@@ -183,7 +183,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     cov = sub.add_parser("coverage", help="run coverage lanes, join onto a fresh inventory, write a scored run")
     cov.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
-    cov.add_argument("--lane", default=None, help="run only this lane (default: all)")
+    cov.add_argument("--lane", default=None,
+                     help="run only this lane (default: all); the run is partial and never a "
+                          "baseline, so rerun the rest with --reuse-unchanged")
     cov.add_argument("--reuse-artifacts", action="store_true", help="skip lane commands, parse existing artifacts")
     cov.add_argument("--reuse-unchanged", action="store_true",
                      help="rerun only lanes whose scope files changed since their artifact; reuse the rest")
@@ -409,7 +411,8 @@ def build_parser() -> argparse.ArgumentParser:
     mut = sub.add_parser("mutate", help="diff-scoped mutation testing: flip operators on changed lines, run the suite per mutant")
     mut.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
     mut.add_argument("--files", nargs="*", default=None,
-                     help="mutate these whole files instead of the working-tree diff vs HEAD")
+                     help="mutate these whole files instead of the working-tree diff vs HEAD "
+                          "(files outside the scored corpus are named and skipped)")
     mut.add_argument("--max-mutants", type=int, default=100, help="hard cap per run (default 100)")
     mut.add_argument("--drop-pool", action="store_true",
                      help="remove the worktrees mutation_workers > 1 keeps in "
@@ -512,4 +515,15 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except CrapkitError as exc:
         print(f"crapkit: {exc}", file=sys.stderr)
+        if getattr(args, "json", False):
+            _print_error_object(exc)
         return exc.exit_code
+
+
+def _print_error_object(exc: CrapkitError) -> None:
+    """The one object `--json` promised, when the command died before printing
+    its own: a wrapper reads the sentence naming the fix off stdout instead of
+    "wrote no run summary". The stderr line and the exit code are unchanged."""
+    from ._shared import _print_json
+
+    _print_json({"error": {"exit": exc.exit_code, "kind": exc.kind, "message": str(exc)}})

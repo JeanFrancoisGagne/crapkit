@@ -170,7 +170,9 @@ def test_worklist_scope_nobody_declared_is_a_configuration_error(repo: Path):
 
     assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
     assert "no scope named 'nope'" in res.stderr and "core, extra, empty" in res.stderr
-    assert res.stdout == ""
+    error = json.loads(res.stdout)["error"]
+    assert (error["exit"], error["kind"]) == (3, "config"), "under --json the refusal is one object"
+    assert error["message"] == "no scope named 'nope'; declared: core, extra, empty"
 
 
 def test_next_item_scope_flag_picks_the_top_of_that_scope(repo: Path):

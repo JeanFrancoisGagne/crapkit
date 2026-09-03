@@ -93,3 +93,45 @@ def test_a_scope_with_no_debt_grades_apart_from_a_scope_with_debt():
 
     assert out["ui"] == {"functions": 1, "over_target": 0, "crap_load": 3.0, "grade": "A+"}
     assert out["src"]["grade"] == "F"
+
+
+# --- the per-scope ceiling (0.5.0) ---------------------------------------------
+#
+# digest counted every row against the repo ceiling while trend counted each
+# row against its scope's, so the two disagreed on the same run pair.
+
+def reports_row(cov: float):
+    """ccn 9 in the `reports` scope: over a ceiling of 6, under one of 12 at
+    cov 0.7 (crap 11.2)."""
+    return scored("reports/r.ts", "r( )", 9, cov, scope="reports")
+
+
+def test_the_digest_counts_over_ceiling_per_scope_like_trend_does():
+    grown = BASE + [reports_row(0.7)]
+
+    d = build_digest(BASE, grown, target=6, scope_targets={"reports": 12})
+
+    assert d.lines[0].endswith("over ceiling 1 -> 1; functions 2 -> 3"), d.lines
+    assert not any("r( )" in line for line in d.lines), \
+        "a function under its own scope's ceiling is not new debt"
+
+
+def test_without_scope_ceilings_the_same_function_is_new_debt():
+    d = build_digest(BASE, BASE + [reports_row(0.7)], target=6)
+
+    assert "over ceiling 1 -> 2" in d.lines[0], d.lines
+    assert any(line.startswith("new over ceiling: reports/r.ts r( )") for line in d.lines), d.lines
+
+
+def test_an_improvement_is_judged_against_the_scopes_own_ceiling():
+    """Dropping from 19.1 to 11.2 clears a ceiling of 12: an improvement of a
+    function that WAS over, and one debt fewer. Under the repo ceiling of 6 it
+    improved too, and is still over. Only the over-count differs."""
+    before, after = BASE + [reports_row(0.5)], BASE + [reports_row(0.7)]
+
+    scoped = build_digest(before, after, target=6, scope_targets={"reports": 12})
+    flat = build_digest(before, after, target=6)
+
+    assert any("improved" in line and "r( )" in line for line in scoped.lines), scoped.lines
+    assert any("improved" in line and "r( )" in line for line in flat.lines), flat.lines
+    assert "over ceiling 2 -> 1" in scoped.lines[0] and "over ceiling 2 -> 2" in flat.lines[0]

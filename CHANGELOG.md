@@ -150,6 +150,50 @@ untimestamped log already got, so the first worklist ranks by ccn times one; the
 promotion is off when every file weighs the same, since a top 10% of equal weights would
 be every file. Repositories with two or more commit times are unchanged.
 
+### One ceiling rule, and a coverage summary that says what shape the run is
+
+`Config.ceiling_of(scope)` is the one spelling of "a scope's own `target`, else the repo's";
+`digest` now takes the per-scope ceilings like `trend` does, so the two agree on the same run
+pair (on a repo with scopes at 6, 12 and 4, `digest` said `over target 154 -> 153` while
+`trend` said 153 -> 152), and its lines read `over ceiling 1 -> 2` and `new over ceiling: ...`.
+The coverage summary carries the run's shape on every path: `--json` gains `kind` (`coverage`
+or `partial`), `unmeasured_scopes` and `ceilings` (`{"default": 6, "reports": 12}`) beside
+`lane_failures`, and `over_target` and `grade` are counted over the measured scopes only, so a
+`--lane web` run no longer books the other scope's no-lane functions as this run's debt
+(`by_scope` still carries them). The plain form reads `run 1 @ fae4db93108: 2 functions
+scored: 2 measured, 1 over ceiling 6, CRAP load 41.0, grade F` (zero buckets dropped, the
+ceiling labelled, or `over their ceilings (6; reports 12, util 4)`), then `-> next: crapkit
+worklist`; a partial run opens with `partial run (lane web; api unmeasured; not a baseline)`
+and ends with `-> rerun changed lanes: crapkit coverage --reuse-unchanged`, which the `--lane`
+help now names. The `report` page collects its worklist through the same shaping `worklist
+--json` prints, so its rows carry `ratchet_mark`. Moved contracts: the coverage line in
+tests/unit/test_cli_scoring_inproc.py and the docs regex in
+tests/unit/test_docs_claims_contract.py; `new over target` in tests/e2e/test_inventory_e2e.py
+and tests/unit/test_store_prune.py; every pasted summary line in README.md, docs/lanes.md and
+docs/ratchet.md.
+
+### `--json` prints one error object when a command dies
+
+A crapkit error escaping a command under `--json` used to leave stdout empty: `coverage
+--json` with pytest-cov missing exited 5 with 0 bytes, so the Action's comment read "wrote no
+run summary" while the sentence naming the fix stayed in the job log. stdout now carries
+`{"error": {"exit": 5, "kind": "tool", "message": "every lane failed (2 of 2); the errors are
+above"}, "schema": 1}`, with `kind` one of `state` (exit 1), `config` (3), `git` (4) or `tool`
+(5); the stderr line and the exit code are unchanged, and without `--json` stdout stays
+empty. docs/agent-json.md gains an Errors section.
+
+### `rescore --gate` carries its verdict, and a tenth MCP tool hands it to agents
+
+`rescore --gate --json` adds a `gate` block: `ok`, `judged` (the functions the working tree
+changed since HEAD, untracked files in full), `ceilings` per rescored file, `breaches` (path,
+function, start, ccn, cov, crap, remedy, key_name, ceiling) and `untracked`; exit 6 on a
+breach is unchanged. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling
+6` when the gate passes, so the exit code is no longer the only signal. A tenth MCP tool,
+`gate`, maps `path` to `rescore PATH --gate --json` with the same read-only annotations; a
+breach comes back as a result with `gate.ok` false and `structuredContent`, while exits 3, 4
+and 5 stay tool errors. The server's instructions, AGENTS.md and both MCP tables count ten
+tools.
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing
