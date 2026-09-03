@@ -49,7 +49,21 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 8  # 8: shell blocks nest. `fi`, `done` and `esac` close what
+ANALYSIS_VERSION = 9  # 9: a Python row's nesting is the depth the cognitive
+#                          pass measured, not lizard's ND count of structures,
+#                          so every cached .py record carries a count under the
+#                          depth's name (a flat seven-`if` function read 7).
+#                          The pass also reads a Python token's owner after
+#                          lizard has, so the first token of the line that
+#                          dedents out of a function is no longer charged to
+#                          it: `cognitive` moves too for an outer function
+#                          resuming after a nested `def`, for a last function
+#                          followed by a module-level `if __name__`, and for
+#                          one called at import right after its `def` (read as
+#                          recursion). Measured on crapkit's own tree: 6 of
+#                          5,258 rows. Python is the only language whose
+#                          stored values move; ccn is untouched everywhere.
+#                       8: shell blocks nest. `fi`, `done` and `esac` close what
 #                          `if`, a loop keyword or `case` opened, `do`/`then`/`in`
 #                          are free, and a bare `break` is not a labeled one, so
 #                          every cached .sh and .bash record carries a cognitive
@@ -141,6 +155,22 @@ def _extensions_for(rel_path: str) -> list:
     return _EXTENSIONS
 
 
+# The suffix lizard routes to PythonReader (`PythonReader.ext`), and the one
+# language whose `nesting` is not lizard's. lizard's ND extension counts
+# nesting STRUCTURES for Python rather than depth: a flat function of seven
+# `if`s read 7 and a three-deep one read 3, the same number for opposite
+# shapes. The cognitive pass keeps a per-function stack of open blocks for the
+# Sonar nesting increment, and the deepest it gets is the depth. Brace
+# languages keep lizard's column, which reads their braces.
+_PYTHON_SUFFIXES = (".py",)
+
+
+def _nesting_depth(rel_path: str, fn) -> int:
+    if rel_path.lower().endswith(_PYTHON_SUFFIXES):
+        return getattr(fn, "cognitive_nesting", 0) or 0
+    return getattr(fn, "max_nesting_depth", 0) or 0
+
+
 def _record(rel_path: str, fn) -> FunctionRecord:
     std = fn.cyclomatic_complexity
     mod = std + (getattr(fn, "modified_delta", 0) or 0)
@@ -154,7 +184,7 @@ def _record(rel_path: str, fn) -> FunctionRecord:
         ccn=min(std, mod),
         nloc=fn.nloc,
         params=len(fn.parameters),
-        nesting=getattr(fn, "max_nesting_depth", 0) or 0,
+        nesting=_nesting_depth(rel_path, fn),
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
     )
 

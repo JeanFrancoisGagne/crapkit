@@ -19,11 +19,12 @@ from crapkit.lizardcognitive import LizardExtension
 class _FakeFn:
     """A FunctionInfo as the extension sees it. __slots__ pins the instance size,
     so a freed one and a fresh one land in the same allocator size class."""
-    __slots__ = ("name", "cognitive_complexity", "__weakref__")
+    __slots__ = ("name", "cognitive_complexity", "cognitive_nesting", "__weakref__")
 
     def __init__(self, name: str) -> None:
         self.name = name
         self.cognitive_complexity = 0
+        self.cognitive_nesting = 0
 
 
 class _FakeContext:

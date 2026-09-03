@@ -120,8 +120,10 @@ def test_kotlin_script_files_take_the_same_chain_as_kotlin():
 
 
 def test_the_drain_never_touched_ccn_or_nesting():
-    """Only the cognitive column was wrong: ccn and nesting come from lizard's own
-    counters, which sit downstream of the drain and always saw the tokens."""
+    """Only the cognitive column was wrong: ccn comes from lizard's own counter,
+    which sits downstream of the drain and always saw the tokens, and so does
+    nesting for the three brace languages. Python's nesting comes from the
+    cognitive pass itself since 0.5.0, and PythonReader drains nothing."""
     for name in SOURCES:
         record = _probe(name)
         assert record.ccn == EXPECTED_CCN, name

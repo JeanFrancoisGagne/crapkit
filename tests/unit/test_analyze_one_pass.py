@@ -117,9 +117,18 @@ def _raw(abs_path: str, rel_path: str, extensions):
     return [RawFn(path=rel_path, long_name=f.long_name, start=f.start_line,
                   end=f.end_line, ccn=f.cyclomatic_complexity, nloc=f.nloc,
                   params=len(f.parameters),
-                  nesting=getattr(f, "max_nesting_depth", 0) or 0,
+                  nesting=_nesting(rel_path, f),
                   cognitive=getattr(f, "cognitive_complexity", 0) or 0)
             for f in analysis.function_list]
+
+
+def _nesting(rel_path: str, f) -> int:
+    """0.5.0, spec item 15: a Python row's nesting is the depth the cognitive
+    pass measured; every other language keeps lizard's ND column. The reference
+    spells the rule out rather than importing the production helper."""
+    if rel_path.endswith(".py"):
+        return getattr(f, "cognitive_nesting", 0) or 0
+    return getattr(f, "max_nesting_depth", 0) or 0
 
 
 def _corpus() -> list[Path]:

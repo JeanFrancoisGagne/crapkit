@@ -61,7 +61,7 @@ $ crapkit next-item
     "flag": "measured",
     "function": "classify( score , attempts , late , bonus )",
     "handle": "classify",
-    "nesting": 6,
+    "nesting": 3,
     "nloc": 24,
     "path": "calc/grade.py",
     "remedy": "decompose",
@@ -104,7 +104,7 @@ $ crapkit next-item
 | `ccn_std` | int | Standard cyclomatic complexity. |
 | `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
 | `nloc` | int | Non-comment lines of code. |
-| `nesting` | int | Maximum nesting depth. |
+| `nesting` | int | Maximum nesting depth. A Python row reads it off crapkit's cognitive pass: the deepest that pass's nesting stack gets, one level per `if`, `elif`, `else`, `for`, `while`, `except` and comprehension `for`, none for `with`, `try`, `finally`, `match`, `case` or a nested `def` (a nested function's blocks count on its own row). A flat function of seven `if`s reads 1, a three-deep one reads 3, an `if` inside a `with` inside an `if` reads 2. Every other language keeps lizard's ND column. |
 | `cov` | float | Branch coverage in the span, 0.0 to 1.0. |
 | `flag` | string | `measured`, `untested`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). |
 | `crap` | float | The score. |
@@ -353,7 +353,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
   "scored": {
     "ccn": 9, "ccn_mod": 9, "ccn_std": 9, "cognitive": 8, "cov": 0.6,
     "crap": 14.184000000000001, "end": 16, "flag": "measured",
-    "long_name": "parse_row( text , strict , sep , header )", "nesting": 6,
+    "long_name": "parse_row( text , strict , sep , header )", "nesting": 2,
     "nloc": 13, "params": 4, "path": "app/parse_csv.py", "remedy": "decompose",
     "scope": "app", "start": 4
   },
