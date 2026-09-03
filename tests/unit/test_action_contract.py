@@ -6,7 +6,10 @@ consumer finds out when the job exits 2 on their pull request. These read
 `action.yml` the way `test_cli_docs_contract.py` reads README's Subcommands
 table, and they read the dogfood job that runs the action on this repo.
 """
+import os
 import re
+import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 
@@ -525,6 +528,70 @@ def test_the_exit_step_fails_only_a_pull_request_whose_base_run_was_attempted_an
     assert re.search(r"(?<![\w.-])exit 1\b", step["run"])
 
 
+def test_the_exit_step_asks_whether_the_base_run_was_attempted_in_the_base_steps_own_words():
+    """ATTEMPTED is the base step's `if:` typed a second time. Edited alone, the
+    gate exits 1 on a pull request whose base step never ran, or never exits 1
+    on one that did."""
+    assert _step_named("the exit code")["env"]["ATTEMPTED"] == _step_named("score the base commit")["if"]
+
+
+_REASON = "shallow clone does not hold the fork point of 1234abc; set fetch-depth: 0 on the checkout"
+
+
+def _bash() -> str:
+    """The bash a runner's `shell: bash` step runs under, or a skip. On Windows
+    the `bash` on PATH can be the WSL launcher under System32, which cannot
+    read the files this test writes."""
+    bash = shutil.which("bash")
+    if bash is None or "system32" in bash.lower():
+        pytest.skip("no bash on PATH to run the step under")
+    return bash
+
+
+def _run_exit_step(tmp_path, gate: str, attempted: str, verify_exit: int, base_sha):
+    """The exit step's body under `bash --noprofile --norc -eo pipefail`, which
+    is what `shell: bash` means on a runner, over the files the earlier steps
+    leave in RUNNER_TEMP: verify's exit always, the base step's sha when it
+    made a run, its reason when it did not."""
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    (runner_temp / "crapkit-verify.exit").write_text(f"{verify_exit}\n", encoding="utf-8")
+    (runner_temp / "crapkit-base.reason").write_text(_REASON + "\n", encoding="utf-8")
+    if base_sha is not None:
+        (runner_temp / "crapkit-base.sha").write_text(base_sha + "\n", encoding="utf-8")
+    script = tmp_path / "exit-step.sh"
+    script.write_text(_step_named("the exit code")["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, "GATE": gate, "ATTEMPTED": attempted, "RUNNER_TEMP": runner_temp.as_posix()}
+    return subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                          env=env, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("gate, attempted, verify_exit, base_sha, expected", [
+    ("true", "true", 0, None, 1),
+    ("true", "true", 5, None, 1),
+    ("true", "true", 0, "1234abc", 0),
+    ("true", "true", 6, "1234abc", 6),
+    ("true", "false", 0, None, 0),
+    ("true", "false", 7, None, 7),
+    ("false", "true", 0, None, 0),
+])
+def test_the_exit_step_run_under_bash_fails_only_an_attempted_base_run_that_was_not_made(
+        tmp_path, gate, attempted, verify_exit, base_sha, expected):
+    """Decision 7, run rather than read: exit 1 only when the base run was
+    attempted (a pull request with delta on) and left no sha, whatever verify
+    said; an attempted base run that was made, a push, `delta: "false"` and a
+    gate that is off all keep the code verify wrote."""
+    result = _run_exit_step(tmp_path, gate, attempted, verify_exit, base_sha)
+
+    assert result.returncode == expected, result.stdout + result.stderr
+
+
+def test_the_exit_steps_failure_prints_the_reason_the_base_step_wrote(tmp_path):
+    result = _run_exit_step(tmp_path, "true", "true", 0, None)
+
+    assert _REASON in result.stdout
+
+
 def test_the_comment_step_hands_the_builder_the_base_files():
     """The renderer stays git-free: the sha and the reason reach it as files
     the base step wrote, the way the three payloads do."""
@@ -737,7 +804,7 @@ def test_the_verdict_names_the_rule_each_exit_code_stands_for():
     line = _builder().verdict_line
 
     assert "exit 6: complexity gate" in line(_failing_verify(gate_violations=[_violation()]), 6)
-    assert "exit 7: ratchet regression" in line(_failing_verify(), 7)
+    assert "exit 7: ratchet regressions" in line(_failing_verify(), 7)
     assert "exit 8: new test failures" in line(_failing_verify(), 8)
     assert "exit 9: diff-coverage ceiling 3" in line(_failing_verify(diff_uncovered_max=3), 9)
 

@@ -550,7 +550,7 @@ error object it printed instead: `` `crapkit coverage` exited 5: lane 'py' canno
 pytest-cov; pip install pytest-cov. ``
 
 The verdict opens with the exit code and the rule it stands for (`complexity gate`,
-`ratchet regression`, `new test failures`, `diff-coverage ceiling N`), then one bullet per
+`ratchet regressions`, `new test failures`, `diff-coverage ceiling N`), then one bullet per
 finding: each gate violation with its function, ccn, coverage, CRAP and remedy; each
 ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
 uncovered changed lines, one bullet per file, with a count of the rest. The counts line

@@ -29,8 +29,8 @@ stopped writing its artifact was refused by `coverage` (exit 5) and then `verify
 artifact that lane had left from an earlier run, passed over it, and `runs list` showed
 that run as the trusted baseline. The checkout step now records coverage's exit, the verdict
 step reads it first and does not call `verify` when it is non-zero, and the comment says
-`**no verdict: `crapkit coverage` exited 5 (lane 'py' failed: <first line of the lane
-failure>); verify did not run.**`, quoting the error object's message when `coverage --json`
+`` **no verdict: `crapkit coverage` exited 5 (lane 'py' failed: <first line of the lane
+failure>); verify did not run.** ``, quoting the error object's message when `coverage --json`
 died before a summary, or pointing at the job log when every lane failed and nothing was
 printed. `gate: "true"` then exits with coverage's code. The renderer takes the code as
 `--coverage-exit`.
@@ -41,12 +41,12 @@ On exit 6 the comment read `1 gate violation, 0 ratchet regressions, ...` over a
 which the pull request's own untested `route()` and an untouched ratchet-marked
 `legacy_router()` were two identical rows, and on exit 9 the ceiling and the uncovered lines
 were only in the job log. The verdict now opens with the rule the exit code stands for,
-`**verify failed, exit 6: complexity gate.**` (7 `ratchet regression`, 8 `new test failures`,
+`**verify failed, exit 6: complexity gate.**` (7 `ratchet regressions`, 8 `new test failures`,
 9 `diff-coverage ceiling 3`, the ceiling read from the receipt's `diff_uncovered_max`), then
-one bullet per finding: `- gate: \`app/calc.py:34\` \`route( a , b , c , d )\` ccn 8, cov 0%,
-crap 72.0 -> decompose`, `- ratchet: \`app/calc.py\` \`legacy_router( ... )\` 72.0 -> 80.5
-(recorded -> fresh)`, `- new test failure: \`tests/test_calc.py::test_route\``, and the first
-twenty uncovered changed lines as `- uncovered lines in \`app/calc.py\`: 35, 36, ...` with one
+one bullet per finding: `` - gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 0%,
+crap 72.0 -> decompose ``, `` - ratchet: `app/calc.py` `legacy_router( ... )` 72.0 -> 80.5
+(recorded -> fresh) ``, `` - new test failure: `tests/test_calc.py::test_route` ``, and the first
+twenty uncovered changed lines as `` - uncovered lines in `app/calc.py`: 35, 36, ... `` with one
 bullet per file and `- and N more uncovered changed lines` for the rest. The counts line
 closes the block unchanged. In the table, a row whose function the committed ratchet carries
 a mark for (the worklist row's `ratchet_mark`) reads `decompose (accepted debt)`, and the

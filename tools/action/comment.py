@@ -28,7 +28,7 @@ _HEADER = "| File | Function | ccn | risk | remedy |\n|---|---|---:|---:|---|"
 # The rule each verify exit code stands for. verify reports the first that
 # fires, so the phrase names the rule that refused the tree and the bullets
 # below it list every finding the payload carries.
-_RULES = {6: "complexity gate", 7: "ratchet regression", 8: "new test failures",
+_RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures",
           9: "diff-coverage ceiling"}
 
 # The verify lists whose entries name a function. The comment's table lists
