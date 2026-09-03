@@ -162,7 +162,11 @@ def test_the_note_names_the_head_of_the_segment_that_runs_pytest(monkeypatch):
 
 
 def test_the_real_probe_answers_for_this_interpreter():
-    report = admin._runner_report(f'"{sys.executable}"')
+    # The parsed word, never the shell's spelling of it: shell_words strips the quotes
+    # a lane command carries, and _runner_report quotes for the shell it runs under.
+    # Handing it a pre-quoted path passed under cmd.exe and failed under sh, where
+    # shlex.quote wrapped the quotes into the program name (CI, 2026-09-03).
+    report = admin._runner_report(sys.executable)
 
     assert report is not None
     assert report[0].lower() == sys.executable.lower()
