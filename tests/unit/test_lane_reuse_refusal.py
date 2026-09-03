@@ -1,10 +1,11 @@
 """The reuse door after a failed attempt, at the lane runner and the fold.
 
 `_run_attempts` refuses the artifact a run did not rewrite (0.4.12). Reuse then
-read the same file back on the next command and scored it. The refused
-artifact's modification time is now persisted through the stamps file, and
-reuse refuses the file while its modification time still equals the refused
-one; a salvage rewritten after the failure carries a new one and reuses.
+read the same file back on the next command and scored it. The refusal now
+carries the modification time of the file the attempt left, the fold persists
+it through the stamps file, and reuse refuses the file while its modification
+time still equals the refused one; a salvage rewritten after the failure
+carries a new one and reuses.
 """
 import json
 import os
@@ -15,16 +16,18 @@ import pytest
 from crapkit.cli import _collect_lanes
 from crapkit.config import Lane
 from crapkit.errors import ToolError
-from crapkit.lanes import LaneOutcome, before_attempt, read_stamps, run_lane, write_stamps
+from crapkit.lanes import LaneOutcome, read_stamps, run_lane, write_stamps
 
 ISTANBUL = json.dumps({"C:/r/src/a.ts": {"fnMap": {}, "f": {}, "branchMap": {}, "b": {}}})
 BEFORE = 1_000_000_000
 LATER = 2_000_000_000
-LATEST = 3_000_000_000
+
+# A lane command that runs and writes nothing: the failed attempt this file is about.
+WRITES_NOTHING = "python -c pass"
 
 
-def _lane(name: str = "py", artifact: str = "cov.json") -> Lane:
-    return Lane(name=name, command="never runs", artifact=artifact, parser="istanbul", scopes=())
+def _lane(name: str = "py", artifact: str = "cov.json", command: str = WRITES_NOTHING) -> Lane:
+    return Lane(name=name, command=command, artifact=artifact, parser="istanbul", scopes=())
 
 
 def _plant(root: Path, rel: str, ns: int, text: str = ISTANBUL) -> int:
@@ -86,61 +89,63 @@ def test_a_refusal_for_a_file_that_is_gone_is_the_missing_artifact_refusal(tmp_p
         run_lane(tmp_path, lane, reuse_artifact=True)
 
 
-# --- _collect_lanes: the refusal is persisted through the stamps ---------------
+# --- _collect_lanes: the refusal the attempt raised is persisted ----------------
 
-def _attempted(root: Path, lane: Lane, ns: int) -> None:
-    """What every attempt does to the lane log: truncates and rewrites it."""
-    _plant(root, f".crapkit/lane-{lane.name}.log", ns, text="$ never runs\n(exit 2)\n")
+def _failed_attempt(root: Path, lane: Lane) -> ToolError:
+    """Run the lane and hand back the error it raised, the way `_run_one_lane`
+    hands it to the fold."""
+    with pytest.raises(ToolError) as raised:
+        run_lane(root, lane)
+    return raised.value
 
 
-def _fold_one_failed(root: Path, lane: Lane, error: str, before: dict) -> None:
+def _fold_one_failed(root: Path, lane: Lane, error: ToolError) -> None:
     """The fold over a run whose only lane failed. It persists the stamps and
     THEN raises `every lane failed`: a single-lane repo, the commonest shape,
     is exactly where the refusal has to survive the run dying."""
     with pytest.raises(ToolError, match="every lane failed"):
-        _collect_lanes(root, [lane], {lane: (None, error)}, before)
+        _collect_lanes(root, [lane], {lane: (None, error)})
 
 
 def test_a_failed_attempt_records_the_mtime_of_the_artifact_it_left_behind(tmp_path):
     lane = _lane("ui", "ui.json")
     mtime = _plant(tmp_path, "ui.json", BEFORE)
-    before = {lane: before_attempt(tmp_path, lane)}
-    _attempted(tmp_path, lane, LATEST)
+    refusal = _failed_attempt(tmp_path, lane)
+    assert "wrote no artifact this run" in str(refusal)
 
-    _fold_one_failed(tmp_path, lane, "wrote no artifact this run", before)
+    _fold_one_failed(tmp_path, lane, refusal)
 
-    assert read_stamps(tmp_path)["ui.json"]["refused_mtime_ns"] == mtime
-    assert read_stamps(tmp_path)["ui.json"]["lane"] == "ui"
+    assert read_stamps(tmp_path)["ui.json"] == {"lane": "ui", "refused_mtime_ns": mtime}
 
 
-def test_a_lane_refused_before_its_first_attempt_records_nothing(tmp_path):
+def test_a_lane_refused_before_its_first_attempt_records_nothing(tmp_path, monkeypatch):
     """The container guard refuses a python lane before it runs, and
     `--reuse-artifacts` is the documented way through it: a refusal that made
-    no attempt must not close that door. The untouched lane log says no
-    attempt happened."""
-    lane = _lane("ui", "ui.json")
-    _plant(tmp_path, "ui.json", BEFORE)
-    _attempted(tmp_path, lane, BEFORE)
-    before = {lane: before_attempt(tmp_path, lane)}
+    no attempt must not close that door."""
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    lane = Lane(name="py", command=WRITES_NOTHING, artifact="py.json", parser="coveragepy",
+                scopes=())
+    _plant(tmp_path, "py.json", BEFORE)
+    refusal = _failed_attempt(tmp_path, lane)
+    assert "host-only" in str(refusal)
 
-    _fold_one_failed(tmp_path, lane, "host-only", before)
+    _fold_one_failed(tmp_path, lane, refusal)
 
-    assert "refused_mtime_ns" not in read_stamps(tmp_path).get("ui.json", {})
+    assert "py.json" not in read_stamps(tmp_path)
 
 
 def test_a_failed_lane_that_rewrote_its_artifact_records_nothing(tmp_path):
-    """A lane can fail after writing: a junit that says the run did not finish,
-    an artifact describing another tree. Those files are this run's, and reuse
+    """A lane can fail after writing: an artifact that does not parse, a junit
+    that says the run did not finish. Those files are this run's, and reuse
     judges them on its own terms."""
-    lane = _lane("ui", "ui.json")
+    lane = _lane("ui", "ui.json", command="python -c \"open('ui.json', 'w').write('{')\"")
     _plant(tmp_path, "ui.json", BEFORE)
-    before = {lane: before_attempt(tmp_path, lane)}
-    _attempted(tmp_path, lane, LATER)
-    _plant(tmp_path, "ui.json", LATEST)
+    refusal = _failed_attempt(tmp_path, lane)
+    assert "wrote no artifact" not in str(refusal)
 
-    _fold_one_failed(tmp_path, lane, "worker 'gw1' crashed", before)
+    _fold_one_failed(tmp_path, lane, refusal)
 
-    assert "refused_mtime_ns" not in read_stamps(tmp_path).get("ui.json", {})
+    assert "ui.json" not in read_stamps(tmp_path)
 
 
 def test_the_refusal_keeps_the_commit_and_duration_the_last_success_recorded(tmp_path):
@@ -149,10 +154,8 @@ def test_the_refusal_keeps_the_commit_and_duration_the_last_success_recorded(tmp
     lane = _lane("ui", "ui.json")
     write_stamps(tmp_path, {"ui.json": {"commit": "abc", "lane": "ui", "seconds": 12.5}})
     mtime = _plant(tmp_path, "ui.json", BEFORE)
-    before = {lane: before_attempt(tmp_path, lane)}
-    _attempted(tmp_path, lane, LATEST)
 
-    _fold_one_failed(tmp_path, lane, "wrote no artifact this run", before)
+    _fold_one_failed(tmp_path, lane, _failed_attempt(tmp_path, lane))
 
     assert read_stamps(tmp_path)["ui.json"] == {"commit": "abc", "lane": "ui", "seconds": 12.5,
                                                 "refused_mtime_ns": mtime}
@@ -162,14 +165,11 @@ def test_a_refused_lane_beside_a_measured_one_is_recorded_without_ending_the_run
     lane = _lane("ui", "ui.json")
     mtime = _plant(tmp_path, "ui.json", BEFORE)
     other = _lane("unit", "unit.json")
-    before = {lane: before_attempt(tmp_path, lane), other: before_attempt(tmp_path, other)}
-    _attempted(tmp_path, lane, LATEST)
     fresh = LaneOutcome({}, {"scopes": []}, {"commit": "def", "lane": "unit", "seconds": 1.0})
 
-    _, _, errors, succeeded = _collect_lanes(
-        tmp_path, [other, lane], {other: (fresh, ""), lane: (None, "wrote no artifact")}, before)
+    _collect_lanes(tmp_path, [other, lane],
+                   {other: (fresh, ""), lane: (None, _failed_attempt(tmp_path, lane))})
 
-    assert errors == {"ui": "wrote no artifact"} and [l.name for l in succeeded] == ["unit"]
     assert read_stamps(tmp_path)["ui.json"] == {"lane": "ui", "refused_mtime_ns": mtime}
     assert read_stamps(tmp_path)["unit.json"] == {"commit": "def", "lane": "unit", "seconds": 1.0}
 
@@ -177,14 +177,24 @@ def test_a_refused_lane_beside_a_measured_one_is_recorded_without_ending_the_run
 def test_a_succeeding_lane_clears_the_refusal(tmp_path):
     lane = _lane("ui", "ui.json")
     _refused(tmp_path, lane, _plant(tmp_path, "ui.json", BEFORE))
-    before = {lane: before_attempt(tmp_path, lane)}
-    _attempted(tmp_path, lane, LATER)
-    _plant(tmp_path, "ui.json", LATEST)
     fresh = LaneOutcome({}, {"scopes": []}, {"commit": "def", "lane": "ui", "seconds": 2.0})
 
-    _collect_lanes(tmp_path, [lane], {lane: (fresh, "")}, before)
+    _collect_lanes(tmp_path, [lane], {lane: (fresh, "")})
 
     assert read_stamps(tmp_path)["ui.json"] == {"commit": "def", "lane": "ui", "seconds": 2.0}
+
+
+def test_an_error_text_carrying_no_refusal_records_nothing(tmp_path):
+    """The (None, text) shape the scheduling tests fold: an error with no
+    attempt behind it has no refusal to persist."""
+    lane = _lane("ui", "ui.json")
+    _plant(tmp_path, "ui.json", BEFORE)
+    other = _lane("unit", "unit.json")
+    fresh = LaneOutcome({}, {"scopes": []}, {"commit": "def", "lane": "unit", "seconds": 1.0})
+
+    _collect_lanes(tmp_path, [other, lane], {other: (fresh, ""), lane: (None, "no artifact")})
+
+    assert "ui.json" not in read_stamps(tmp_path)
 
 
 def test_the_lanes_page_and_the_changelog_quote_the_refusal_reuse_prints(tmp_path):
@@ -208,17 +218,3 @@ def test_the_lanes_page_and_the_changelog_quote_the_refusal_reuse_prints(tmp_pat
     assert printed.split("lane 'py' ", 1)[1] in unwrapped, "the changelog quotes something else"
     for page in (lanes_page, changelog):
         assert "`--reuse-artifacts` is untouched" not in page, "a promise 0.5.0 broke is still made"
-
-
-def test_without_a_snapshot_the_fold_records_no_refusal(tmp_path):
-    """The three-argument call the scheduling tests make: nothing was measured
-    before the lanes ran, so nothing is judged."""
-    lane = _lane("ui", "ui.json")
-    _plant(tmp_path, "ui.json", BEFORE)
-    _attempted(tmp_path, lane, LATEST)
-    other = _lane("unit", "unit.json")
-    fresh = LaneOutcome({}, {"scopes": []}, {"commit": "def", "lane": "unit", "seconds": 1.0})
-
-    _collect_lanes(tmp_path, [other, lane], {other: (fresh, ""), lane: (None, "no artifact")})
-
-    assert "ui.json" not in read_stamps(tmp_path)

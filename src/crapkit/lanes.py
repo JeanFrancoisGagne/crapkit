@@ -342,18 +342,34 @@ def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = Fa
     return f"produced no artifact at {lane.artifact}, and {leftover} is the previous run's"
 
 
+class UnwrittenArtifact(ToolError):
+    """The refusal a lane draws when its attempt wrote no artifact, or left a
+    declared file unwritten. `refused_mtimes` is the modification time of each
+    leftover, keyed by its declared path: what the fold persists as the
+    refusal and what reuse reads back. Empty when nothing was left behind."""
+
+    def __init__(self, message: str, refused_mtimes: dict[str, int]) -> None:
+        super().__init__(message)
+        self.refused_mtimes = refused_mtimes
+
+
 def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None,
-                       stale: list[str] | None = None, *, reuse: bool = False) -> None:
+                       refused: dict[str, int] | None = None, *, reuse: bool = False) -> None:
     """The log PATH before the log's words. A tail is 500 characters of a file
     that holds the whole story, and a reader who is not told where that file is
     has to go looking for it — one reporter had to ask another agent to find
-    .crapkit/lane-py.log while ten collection tracebacks sat inside it."""
+    .crapkit/lane-py.log while ten collection tracebacks sat inside it.
+
+    `refused` is the leftover files with the modification time each still
+    carries; the message names them, the error carries them."""
+    refused = refused or {}
     detail = f" (command exit {exit_code})" if exit_code is not None else ""
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
-    raise ToolError(f"lane {lane.name!r} {_no_artifact_head(root, lane, stale or [], reuse)}{detail}"
-                    f"; full log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
-                    f"{_shard_hint(root, lane)}")
+    raise UnwrittenArtifact(
+        f"lane {lane.name!r} {_no_artifact_head(root, lane, list(refused), reuse)}{detail}"
+        f"; full log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
+        f"{_shard_hint(root, lane)}", refused)
 
 
 def _declared_files(lane: Lane) -> tuple[str, ...]:
@@ -373,9 +389,9 @@ def _declared_mtimes(root: Path, lane: Lane) -> dict[str, int | None]:
     return {name: _mtime_ns(root / name) for name in _declared_files(lane)}
 
 
-def _unwritten(root: Path, before: dict[str, int | None]) -> list[str]:
+def _unwritten(root: Path, before: dict[str, int | None]) -> dict[str, int]:
     """The declared files that were already on disk and that this attempt did
-    not rewrite.
+    not rewrite, each with the modification time it still carries.
 
     Existence was the whole check until 0.4.12, so a lane failed loud exactly
     once — on the first run, against an empty `.crapkit/` — and scored the
@@ -386,23 +402,24 @@ def _unwritten(root: Path, before: dict[str, int | None]) -> list[str]:
     A file that is not there at all is left out: that is the refusal crapkit
     already had, and a missing results_artifact has its own sentence one layer
     up. mtime, not content, because a runner that rewrites a byte-identical
-    report still bumps it, so an unchanged rerun stays green.
+    report still bumps it, so an unchanged rerun stays green. The time rides
+    on the refusal so reuse can recognize the same leftover later.
     """
-    return [name for name, stamp in before.items()
-            if stamp is not None and _mtime_ns(root / name) == stamp]
+    return {name: stamp for name, stamp in before.items()
+            if stamp is not None and _mtime_ns(root / name) == stamp}
 
 
 def _run_attempts(root: Path, lane: Lane) -> int | None:
     log_path = _lane_log_path(root, lane)
     exit_code: int | None = None
-    stale: list[str] = []
+    unwritten: dict[str, int] = {}
     for attempt in range(1, lane.retries + 2):
         before = _declared_mtimes(root, lane)
         exit_code = _attempt_once(root, lane, log_path, attempt)
-        stale = _unwritten(root, before)
-        if exit_code is not None and not stale and (root / lane.artifact).is_file():
+        unwritten = _unwritten(root, before)
+        if exit_code is not None and not unwritten and (root / lane.artifact).is_file():
             return exit_code
-    _raise_no_artifact(root, lane, log_path, exit_code, stale)
+    _raise_no_artifact(root, lane, log_path, exit_code, unwritten)
     return None  # unreachable; keeps the signature honest
 
 
@@ -476,36 +493,28 @@ def _refused_on_disk(entry: dict, path: Path) -> bool:
     return refused is not None and refused == _mtime_ns(path)
 
 
-def before_attempt(root: Path, lane: Lane) -> dict[str, int | None]:
-    """What the disk says before a lane runs: the artifact's modification time
-    and the lane log's. `refusal_entry` reads both back after the run. Taken on
-    one thread before any lane starts, since a lane command writes to the
-    working tree and could move what the next lane is judged against."""
-    return {"artifact": _mtime_ns(root / lane.artifact),
-            "log": _mtime_ns(_lane_log_path(root, lane))}
+def refusal_stamp(root: Path, lane: Lane, error: object) -> dict[str, dict]:
+    """The stamp that records the lane's artifact as the one its last attempt
+    failed to write, keyed by artifact path like every stamp, or {} when
+    `error` carries no such refusal.
 
-
-def refusal_entry(root: Path, lane: Lane, before: dict, stamps: dict) -> dict:
-    """The stamp that records the artifact as the one this lane's last attempt
-    failed to write, or {} when there is nothing to record.
-
-    Two files answer two questions. The lane log says whether an attempt
-    happened: every attempt truncates and rewrites it, so a lane refused before
-    its first attempt (the container guard) leaves the log alone and records
-    nothing, which keeps `--reuse-artifacts` the way through that guard. The
-    artifact says whether the attempt wrote it: an unmoved modification time is
-    the test `_unwritten` applies during the run. The log's own time never
-    judges the artifact: its exit line lands after the artifact does, so that
-    comparison would refuse every honest run.
+    The refusal is the one `_run_attempts` raised, not a second reading of the
+    disk: the attempt already knew which file it left unwritten and what time
+    that file carried. A lane refused before it ran (the container guard) and a
+    lane that failed after rewriting its artifact (a file that does not parse,
+    one from another tree) raise something else and record nothing, which
+    keeps `--reuse-artifacts` the way through the guard and leaves reuse to
+    judge the rewritten file on its own terms. A refusal about the results
+    artifact alone records nothing either: the stamp is the coverage file's.
 
     The previous stamp's fields ride along. Its commit is still where the file
     on disk was built, and its duration still orders parallel starts.
     """
-    artifact = _mtime_ns(root / lane.artifact)
-    attempted = _mtime_ns(_lane_log_path(root, lane)) != before.get("log")
-    if artifact is None or artifact != before.get("artifact") or not attempted:
+    refused = getattr(error, "refused_mtimes", {}).get(lane.artifact)
+    if refused is None:
         return {}
-    return {**_stamp_dict(stamps, lane.artifact), "lane": lane.name, "refused_mtime_ns": artifact}
+    entry = _stamp_dict(read_stamps(root), lane.artifact)
+    return {lane.artifact: {**entry, "lane": lane.name, "refused_mtime_ns": refused}}
 
 
 def _recorded_seconds(entry: object) -> float | None:
@@ -1029,9 +1038,10 @@ def _refuse_unwritten_artifact(root: Path, lane: Lane) -> None:
     that is gone falls through to `_artifact_path`, whose sentence is the one
     the recover skill triages on."""
     path = root / lane.artifact
-    if path.is_file() and _refused_on_disk(_stamp_dict(read_stamps(root), lane.artifact), path):
-        _raise_no_artifact(root, lane, _lane_log_path(root, lane), None, [lane.artifact],
-                           reuse=True)
+    stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    if path.is_file() and _refused_on_disk(stamp, path):
+        _raise_no_artifact(root, lane, _lane_log_path(root, lane), None,
+                           {lane.artifact: stamp["refused_mtime_ns"]}, reuse=True)
 
 
 def _artifact_path(root: Path, lane: Lane) -> Path:

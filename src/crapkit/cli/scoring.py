@@ -142,13 +142,15 @@ def _progress(message: str) -> None:
 
 
 def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git):
-    """One lane's outcome or its error text; a failed lane never sinks the run."""
+    """One lane's outcome or the error that failed it; a failed lane never sinks
+    the run. The error object, not its text: a refusal carries the modification
+    times of the files the attempt left unwritten, which the fold persists."""
     from ..lanes import run_lane
 
     try:
         return run_lane(root, lane, reuse_artifact=reuse, scope_paths=scope_paths, git=git), ""
     except ToolError as exc:
-        return None, str(exc)
+        return None, exc
 
 
 def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git):
@@ -170,24 +172,12 @@ def _execute_parallel(root: Path, ordered, reuse: dict, scope_paths, git, max_pa
 
 
 def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int) -> dict:
-    """lane -> (outcome, error text), keyed by the Lane itself rather than its
+    """lane -> (outcome, error), keyed by the Lane itself rather than its
     name, which the config does not force to be unique. Serial below 2, which is
     the default: same thread, same order, none of the started/finished chatter."""
     if max_parallel < 2:
         return {lane: _run_one_lane(root, lane, reuse[lane], scope_paths, git) for lane in ordered}
     return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel)
-
-
-def _refused_stamps(root: Path, lanes, outcomes: dict, before: dict) -> dict[str, dict]:
-    """The stamps that record a failed lane's artifact as the one its attempt
-    did not write, keyed by artifact path like every stamp. A lane the run
-    reused has no snapshot in `before` and nothing to judge; a lane that failed
-    after rewriting its artifact, or before its first attempt, records {}."""
-    from ..lanes import read_stamps, refusal_entry
-
-    stamps = read_stamps(root)
-    return {lane.artifact: refusal_entry(root, lane, before[lane], stamps)
-            for lane in lanes if lane in before and outcomes[lane][1]}
 
 
 def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
@@ -203,12 +193,12 @@ def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
         raise ToolError(f"every lane failed ({failed} of {len(lanes)}); the errors are above")
 
 
-def _collect_lanes(root: Path, lanes, outcomes: dict, before: dict | None = None):
+def _collect_lanes(root: Path, lanes, outcomes: dict):
     """Fold the outcomes back together in DECLARATION order, whatever order they
     finished in, and persist every stamp in one write: the fresh stamps of the
-    lanes that succeeded, and the refusals of the lanes that ran and left their
-    artifact unwritten, judged against the `before` snapshot `_run_lanes` took."""
-    from ..lanes import write_stamps
+    lanes that succeeded, and the refusal each failed lane's error carries for
+    the artifact its attempt left unwritten."""
+    from ..lanes import refusal_stamp, write_stamps
 
     coverage_by_path: dict[str, list] = {}
     provenance: dict[str, dict] = {}
@@ -218,24 +208,18 @@ def _collect_lanes(root: Path, lanes, outcomes: dict, before: dict | None = None
     for lane in lanes:
         outcome, error = outcomes[lane]
         if error:
-            lane_errors[lane.name] = error
+            lane_errors[lane.name] = str(error)
             print(f"crapkit: lane {lane.name!r} FAILED: {error}", file=sys.stderr)
+            stamps.update(refusal_stamp(root, lane, error))
             continue
         for path, fns in outcome.coverage.items():
             coverage_by_path.setdefault(path, []).extend(fns)
         provenance[lane.name] = outcome.provenance
         stamps[lane.artifact] = outcome.stamp
         succeeded.append(lane)
-    write_stamps(root, {**stamps, **_refused_stamps(root, lanes, outcomes, before or {})})
+    write_stamps(root, stamps)
     _refuse_all_failed(lanes, lane_errors, succeeded)
     return coverage_by_path, provenance, lane_errors, succeeded
-
-
-def _reuse_decisions(root: Path, lanes, scope_paths: dict | None, reuse_artifacts: bool,
-                     reuse_unchanged: bool, facts) -> dict:
-    return {lane: _lane_reuse(root, lane, scope_paths or {}, reuse_artifacts,
-                               reuse_unchanged, facts)
-            for lane in lanes}
 
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
@@ -244,19 +228,19 @@ def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | Non
 
     Every reuse decision is taken up front, on one thread: it reads the working
     tree and a lane command WRITES to the working tree, so deciding lane by lane
-    would let one lane's output change the next lane's answer. The snapshot a
-    failed lane's refusal is judged against is taken there too, for the lanes
-    that will run. Results then merge in declaration order however the lanes
-    finished, so max_parallel_lanes moves wall time only — never a score.
+    would let one lane's output change the next lane's answer. Results then merge
+    in declaration order however the lanes finished, so max_parallel_lanes moves
+    wall time only — never a score.
     """
-    from ..lanes import before_attempt, lane_order
+    from ..lanes import lane_order
 
     facts = git or GitFacts(root)
-    reuse = _reuse_decisions(root, lanes, scope_paths, reuse_artifacts, reuse_unchanged, facts)
-    before = {lane: before_attempt(root, lane) for lane in lanes if not reuse[lane]}
+    reuse = {lane: _lane_reuse(root, lane, scope_paths or {}, reuse_artifacts,
+                               reuse_unchanged, facts)
+             for lane in lanes}
     ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
-    outcomes = _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel)
-    return _collect_lanes(root, lanes, outcomes, before)
+    return _collect_lanes(root, lanes,
+                          _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel))
 
 
 class _ScoredRun(NamedTuple):

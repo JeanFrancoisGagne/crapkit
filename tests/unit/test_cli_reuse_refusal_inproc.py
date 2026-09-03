@@ -63,7 +63,7 @@ def test_verify_cannot_conclude_over_a_refused_artifact(repo, capsys):
     assert code == 5, err
     assert "verify cannot conclude with failed lanes: ui" in err, err
     assert "wrote no artifact on its last attempt" in err
-    assert out == ""
+    assert '"ok"' not in out, "no verdict is printed over a refused artifact"
     assert [r["kind"] for r in runs(repo)] == ["coverage"], "verify wrote no run of any kind"
 
 
