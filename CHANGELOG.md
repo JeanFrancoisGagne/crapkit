@@ -21,11 +21,14 @@ is untouched" no longer holds; see it below.
 ### The full-suite guard knows pytest's `testpaths`
 `python -m pytest tests --cov=app` beside `testpaths = ["tests"]` collects the whole suite,
 and the guard refused it (`positional argument 'tests' narrows a full-suite coverage run`,
-exit 3) from every command that loads the configuration. The loader now takes the repository
-root, reads `testpaths` from the file pytest would pick where the lane runs (`pytest.ini`,
-`.pytest.ini`, `pyproject.toml`, `tox.ini`, `setup.cfg`, the first holding a pytest section
-deciding) and accepts a positional equal to a configured entry. A positional the testpaths
-do not name is refused as before, and a lane without a positional reads no file.
+exit 3) from every command that loads the configuration, and the advisory hook stayed silent
+in that repo. The loader now takes the repository root, reads `testpaths` from the file
+pytest would pick where the lane runs (`pytest.ini` and `.pytest.ini` decide when present,
+even empty; `pyproject.toml`, `tox.ini` and `setup.cfg` when they hold a pytest section) and
+accepts the positionals when together they name every configured entry. One entry of
+several, or a positional the testpaths do not name, is refused as before, and a lane
+without a positional reads no file. `doctor`, `coverage`, `digest`, `ratchet seed` and the
+hook all load such a lane.
 
 ## 0.4.15 — 2026-09-02
 

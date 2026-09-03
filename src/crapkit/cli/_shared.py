@@ -120,7 +120,7 @@ def _load_repo_config(root: Path):
     config_path = root / "crapkit.toml"
     if not config_path.is_file():
         raise ConfigError(f"no crapkit.toml at {root} — nothing to analyze")
-    return load_config_text(config_path.read_text(encoding="utf-8"))
+    return load_config_text(config_path.read_text(encoding="utf-8"), root=root)
 
 
 def _file_sizer(root: Path):

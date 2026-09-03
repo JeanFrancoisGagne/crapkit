@@ -6,10 +6,8 @@ seed all exited 3 with `positional argument 'tests' narrows a full-suite
 coverage run`, from a command that collects the whole suite.
 
 The CLI reaches the guard through `cli/_shared.py:_load_repo_config`, which
-has to hand the loader the root it found: `load_config_text(text, root=root)`.
-That file belongs to another slice, so the test that needs the line is a
-strict expected failure until it lands; it then XPASSes, and the marker comes
-off in the same change.
+hands the loader the root it found (`load_config_text(text, root=root)`); the
+loader then reads pytest's own configuration where the lane runs.
 """
 import subprocess
 from pathlib import Path
@@ -63,16 +61,17 @@ def repo(tmp_path: Path) -> Path:
     return repo
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "cli/_shared.py:_load_repo_config must call load_config_text(text, root=root); "
-    "that file is the rows slice's. Drop this marker with that one-line change."))
 def test_the_positional_that_names_the_configured_testpaths_passes_every_command(repo: Path):
     doctor = run_cli(repo, "doctor")
     inventory = run_cli(repo, "inventory", "--json")
+    coverage = run_cli(repo, "coverage", "--json", timeout=300)
 
     assert NARROWS not in doctor.stderr, doctor.stderr
     assert NARROWS not in inventory.stderr, inventory.stderr
     assert inventory.returncode == 0, inventory.stderr
+    assert coverage.returncode == 0, coverage.stderr
+    assert '"measured": 1' in coverage.stdout, "the lane ran and measured the one function"
+    assert '"no_lane": 0' in coverage.stdout, coverage.stdout
 
 
 def test_the_same_positional_is_refused_when_no_testpaths_names_it(repo: Path):

@@ -320,13 +320,16 @@ def _narrowing_arguments(tokens: list[str]) -> list[str]:
             if i not in values and not tok.startswith("-") and "=" not in tok]
 
 
-# Where pytest keeps `testpaths`, in the order pytest picks its inifile: the
-# first file holding a pytest section decides, whether or not that section names
-# testpaths, because pytest reads one inifile and never consults a lower-ranked
-# one. pyproject.toml's section is the `[tool.pytest.ini_options]` table, named
-# by an empty section here. Parsed, never executed and never imported.
-_PYTEST_INI_FILES = (("pytest.ini", "pytest"), (".pytest.ini", "pytest"), ("pyproject.toml", ""),
-                     ("tox.ini", "pytest"), ("setup.cfg", "tool:pytest"))
+# Where pytest keeps `testpaths`, in the order pytest picks its inifile, as
+# (file, pytest section, decides even without that section). pytest reads one
+# inifile and never consults a lower-ranked one: pytest.ini and .pytest.ini
+# decide the moment they exist, even empty, while the other three decide only
+# when they hold a pytest section. pyproject.toml's section is the
+# `[tool.pytest.ini_options]` table, named by an empty section here. Parsed,
+# never executed and never imported.
+_PYTEST_INI_FILES = (("pytest.ini", "pytest", True), (".pytest.ini", "pytest", True),
+                     ("pyproject.toml", "", False), ("tox.ini", "pytest", False),
+                     ("setup.cfg", "tool:pytest", False))
 
 
 def _split_testpaths(value) -> tuple[str, ...]:
@@ -338,9 +341,10 @@ def _split_testpaths(value) -> tuple[str, ...]:
     return ()
 
 
-def _ini_testpaths(text: str, section: str) -> tuple[str, ...] | None:
+def _ini_testpaths(text: str, section: str, always: bool) -> tuple[str, ...] | None:
     """`testpaths` out of an ini file, or None when the file holds no pytest
-    section for the search to stop at. A file that will not parse holds none."""
+    section for the search to stop at; a file that decides `always` stops it
+    with () instead. A file that will not parse holds none either way."""
     import configparser
 
     parser = configparser.ConfigParser(interpolation=None)
@@ -349,7 +353,7 @@ def _ini_testpaths(text: str, section: str) -> tuple[str, ...] | None:
     except configparser.Error:
         return None
     if not parser.has_section(section):
-        return None
+        return () if always else None
     return _split_testpaths(parser.get(section, "testpaths", fallback=""))
 
 
@@ -375,24 +379,25 @@ def _toml_testpaths(text: str) -> tuple[str, ...] | None:
     return _split_testpaths(section.get("testpaths"))
 
 
-def _testpaths_in(path: Path, section: str) -> tuple[str, ...] | None:
-    """One file's answer: None when it is absent or holds no pytest section,
-    else its testpaths, () included."""
+def _testpaths_in(path: Path, section: str, always: bool) -> tuple[str, ...] | None:
+    """One file's answer: None when it is absent, or holds no pytest section
+    and does not decide without one; else its testpaths, () included."""
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    return _toml_testpaths(text) if not section else _ini_testpaths(text, section)
+    return _toml_testpaths(text) if not section else _ini_testpaths(text, section, always)
 
 
 def pytest_testpaths_at(directory: str | os.PathLike) -> tuple[str, ...]:
     """The `testpaths` a bare `pytest` run in `directory` collects, read from
-    the file pytest would pick there: pytest.ini, .pytest.ini, pyproject.toml,
-    tox.ini, setup.cfg, the first holding a pytest section deciding. () when
-    none does, or the section names no testpaths. stdlib only. `init` reads
-    the same files to decide whether a positional is worth writing at all."""
-    for name, section in _PYTEST_INI_FILES:
-        found = _testpaths_in(Path(directory) / name, section)
+    the file pytest would pick there, in pytest's order: pytest.ini and
+    .pytest.ini decide when present, even empty; pyproject.toml, tox.ini and
+    setup.cfg decide when they hold a pytest section. () when no file decides,
+    or the deciding one names no testpaths. stdlib only. `init` reads the same
+    files to decide whether a positional is worth writing at all."""
+    for name, section, always in _PYTEST_INI_FILES:
+        found = _testpaths_in(Path(directory) / name, section, always)
         if found is not None:
             return found
     return ()
@@ -407,16 +412,29 @@ def _as_testpath(token: str) -> str:
     return spelled.rstrip("/")
 
 
-def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[str]:
-    """The positionals that are not a configured `testpaths` entry: the ones
-    that narrow the run. `pytest tests` under `testpaths = ["tests"]` collects
-    exactly what a bare `pytest` collects, and refusing it sent a maintainer
-    to `full_suite = false` on a lane that runs the whole suite. pytest's files
-    are opened only when there is a positional to judge and a directory to
-    read them in, so the common lane costs a read-only command no file read."""
+def _declared_testpaths(positionals: list[str], lane_dir: Path | None) -> set[str]:
+    """The configured `testpaths` entries in the guard's spelling, or an empty
+    set when there is nothing to judge. pytest's files are opened only when
+    there is a positional to judge and a directory to read them in, so the
+    common lane costs a read-only command no file read."""
     if not positionals or lane_dir is None:
+        return set()
+    return {_as_testpath(path) for path in pytest_testpaths_at(lane_dir)}
+
+
+def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[str]:
+    """The positionals that narrow the run: all of them, unless together they
+    name every configured `testpaths` entry, in which case the entries drop out
+    and only the extras are left. `pytest tests` under `testpaths = ["tests"]`
+    collects exactly what a bare `pytest` collects, and refusing it sent a
+    maintainer to `full_suite = false` on a lane that runs the whole suite;
+    `pytest tests` under `testpaths = ["tests", "integration"]` collects half
+    of what a bare `pytest` does, which is the narrowing this guard exists to
+    refuse, so one entry of several is not enough."""
+    declared = _declared_testpaths(positionals, lane_dir)
+    if not declared <= {_as_testpath(tok) for tok in positionals}:
         return positionals
-    declared = {_as_testpath(path) for path in pytest_testpaths_at(lane_dir)}
+    # An empty `declared` is a subset of anything and drops nothing below.
     return [tok for tok in positionals if _as_testpath(tok) not in declared]
 
 

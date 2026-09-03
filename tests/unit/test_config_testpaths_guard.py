@@ -114,6 +114,30 @@ def test_a_scoped_lane_reads_no_file_either(tmp_path, monkeypatch):
     assert cfg.lanes[0].full_suite is False
 
 
+# --- the positionals have to cover every configured entry ---------------------
+
+TWO_ENTRIES = '[tool.pytest.ini_options]\ntestpaths = ["tests", "integration"]\n'
+
+
+def test_one_entry_of_several_still_narrows_the_run(tmp_path):
+    """`testpaths = ["tests", "integration"]`: a bare `pytest` collects both, so
+    `pytest tests` runs half the suite, the run-order narrowing the guard exists
+    to refuse. Naming one configured entry is not enough; together the
+    positionals have to name every entry."""
+    _write(tmp_path, "pyproject.toml", TWO_ENTRIES)
+
+    with pytest.raises(ConfigError, match="positional argument 'tests' narrows"):
+        load_config_text(_toml("python -m pytest tests --cov=app"), root=tmp_path)
+
+
+def test_every_entry_named_together_leaves_only_the_extra_to_refuse(tmp_path):
+    _write(tmp_path, "pyproject.toml", TWO_ENTRIES)
+
+    with pytest.raises(ConfigError, match="positional argument 'app/hot.py' narrows"):
+        load_config_text(_toml("python -m pytest tests integration app/hot.py --cov=app"),
+                         root=tmp_path)
+
+
 # --- pytest_testpaths_at: the files pytest reads, in pytest's order ------------
 
 @pytest.mark.parametrize("filename,text", [
@@ -137,7 +161,20 @@ def test_a_pyproject_string_value_is_split_the_way_pytest_splits_it(tmp_path):
     assert pytest_testpaths_at(tmp_path) == ("tests", "integration")
 
 
-def test_the_first_file_holding_a_pytest_section_decides_even_without_testpaths(tmp_path):
+@pytest.mark.parametrize("filename", ["pytest.ini", ".pytest.ini"])
+def test_an_empty_pytest_ini_decides_and_names_no_testpaths(tmp_path, filename: str):
+    """pytest.ini and .pytest.ini take precedence over every other file even
+    when empty: beside one, a bare `pytest` collects from the rootdir and never
+    reads the pyproject below it, so `pytest tests` narrows that run."""
+    _write(tmp_path, filename, "")
+    _write(tmp_path, "pyproject.toml", PYPROJECT)
+
+    assert pytest_testpaths_at(tmp_path) == ()
+    with pytest.raises(ConfigError, match="narrows"):
+        load_config_text(_toml("python -m pytest tests --cov=app"), root=tmp_path)
+
+
+def test_a_pytest_ini_holding_a_pytest_section_without_testpaths_decides_too(tmp_path):
     """pytest picks one inifile and never consults a lower-ranked one: a
     `[pytest]` naming no testpaths means a bare `pytest` collects from the
     rootdir, and the pyproject below it is never read."""
@@ -149,7 +186,7 @@ def test_the_first_file_holding_a_pytest_section_decides_even_without_testpaths(
         load_config_text(_toml("python -m pytest tests --cov=app"), root=tmp_path)
 
 
-def test_a_file_without_a_pytest_section_does_not_end_the_search(tmp_path):
+def test_the_other_files_decide_only_when_they_hold_a_pytest_section(tmp_path):
     _write(tmp_path, "pyproject.toml", "[project]\nname = 'app'\n")
     _write(tmp_path, "tox.ini", "[tox]\nenvlist = py311\n")
     _write(tmp_path, "setup.cfg", "[tool:pytest]\ntestpaths = tests\n")

@@ -756,14 +756,16 @@ crapkit: lane 'py': positional argument 'pylib/unit' narrows a full-suite covera
 When the refused token really was a value, the attached form is the one-edit fix: dropping
 it breaks the command, because the flag then eats whatever comes next.
 
-A positional that names a configured `testpaths` entry is not narrowing either. `python -m
-pytest tests --cov=app` beside a `pyproject.toml` whose `[tool.pytest.ini_options]` says
-`testpaths = ["tests"]` collects exactly what a bare `pytest` collects there, so it loads.
-The entry is read from the file pytest would pick where the lane runs (`cwd` when the lane
-sets one): `pytest.ini`, `.pytest.ini`, `pyproject.toml`, `tox.ini`, `setup.cfg`, the first
-holding a pytest section deciding, whether or not it names testpaths. `tests/`, `./tests`
-and `tests` are one entry; `tests/unit` under `testpaths = ["tests"]` is still a subset and
-is still refused. A lane without a positional reads none of those files.
+Positionals that together name every configured `testpaths` entry are not narrowing either.
+`python -m pytest tests --cov=app` beside a `pyproject.toml` whose `[tool.pytest.ini_options]`
+says `testpaths = ["tests"]` collects exactly what a bare `pytest` collects there, so it
+loads. The entries are read from the file pytest would pick where the lane runs (`cwd` when
+the lane sets one), in pytest's order: `pytest.ini` and `.pytest.ini` decide when present,
+even empty; `pyproject.toml`, `tox.ini` and `setup.cfg` decide when they hold a pytest
+section. `tests/`, `./tests` and `tests` are one entry. One entry of several is still
+narrowing: `pytest tests` under `testpaths = ["tests", "integration"]` runs half of what a
+bare `pytest` runs and is refused, and so is `tests/unit` under `testpaths = ["tests"]`. A
+lane without a positional reads none of those files.
 
 ### Test attribution for `explain --tests`
 
