@@ -221,9 +221,10 @@ def test_the_json_pages_stop_sentence_carries_every_clause():
     assert "skipped_claimed" in paragraph and "no_lane_over_target" in paragraph
 
 
-def test_the_below_floor_move_says_an_over_target_row_is_never_stuck_there():
+def test_the_below_floor_move_says_an_over_ceiling_row_is_never_stuck_there():
     row = _table_row(_section(_doc("AGENTS.md"), "## The termination rule"), "`below_floor`")
-    assert "over target" in row, "the move cell must say why ignoring these rows is safe"
+    assert "over ceiling" in row, "the move cell must say why ignoring these rows is safe"
+    assert "over target" not in row, "ceiling is the concept; target is the config key"
 
 
 def test_the_untested_note_sends_an_agent_to_write_a_test():
@@ -284,6 +285,27 @@ def test_every_coverage_summary_in_the_docs_adds_up(page: str):
         partial = n > 0 and lines[n - 1].startswith("partial run (")
         judged = int(total) - (counts.get("no-lane", 0) if partial else 0)
         assert grade(int(over), judged) == letter, f"{page}: {over}/{judged} is not {letter}"
+
+
+# --- the gate a reader installs from Route 1 ---------------------------------
+
+def _route_one() -> str:
+    return _section(_doc("README.md"), "### Route 1: `.git/hooks/pre-commit` (local, not committed)")
+
+
+def test_route_one_carries_a_powershell_form_that_writes_no_byte_order_mark():
+    """`Out-File` under PowerShell 5.1 writes UTF-16, git answers `cannot spawn
+    .git/hooks/pre-commit`, and the commit goes through ungated. The form the
+    page prints has to be the one that writes plain bytes, with the interpreter
+    quoted and forward-slashed so git's sh can exec it."""
+    block = _route_one()
+    powershell = block[block.index("```powershell"):]
+
+    assert "Set-Content" in powershell and "-Encoding ascii" in powershell, block
+    assert "Out-File" not in powershell, "the form that writes the mark must not be the recipe"
+    assert "-replace '\\\\', '/'" in powershell, "the interpreter path is forward-slashed"
+    assert "exec '$python' -m crapkit hook-precommit" in powershell, "quoted, as sh reads it"
+    assert "cannot spawn" in block, "the failure the form avoids is named"
 
 
 # --- the gate a reader installs from Route 2 ---------------------------------

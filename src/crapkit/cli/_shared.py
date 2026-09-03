@@ -146,11 +146,44 @@ def _analysis_tools():
     return lizard, analyze_files, load_cache, save_cache
 
 
+def repo_text(path: Path, what: str) -> str:
+    """The text of a file the repository owns (crapkit.toml, the marks file, a
+    portable baseline), read the way the shells that write them write them.
+
+    utf-8-sig, because PowerShell 5.1's `Out-File -Encoding utf8` puts a BOM in
+    front, which tomllib read as `Invalid statement (at line 1, column 1)` and
+    the marks reader as a stamp line that was not a stamp followed by a header
+    with one field. A bare `Out-File` writes UTF-16 LE instead; that one cannot
+    be read as the same file, so it is refused as a configuration error naming
+    the bytes and the fix, where before it was a UnicodeDecodeError traceback at
+    exit 1, a code the exit table does not define. `claude_hook._config` inlines
+    the decode rather than importing this module, which opens the store.
+    """
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(_not_utf8(what, data, exc)) from None
+
+
+def _not_utf8(what: str, data: bytes, exc: UnicodeDecodeError) -> str:
+    """The refusal, blaming UTF-16 when the first bytes are its mark and the
+    offending byte otherwise. The decoder strips a BOM before it reads, so the
+    offset it reports is moved back onto the file's own bytes."""
+    head = data[:2]
+    if head in (b"\xff\xfe", b"\xfe\xff"):
+        reason = f"first bytes {head.hex(' ')} = UTF-16, the PowerShell 5.1 Out-File default"
+    else:
+        offset = exc.start + (len(data) - len(exc.object))
+        reason = f"byte {data[offset]:02x} at offset {offset}"
+    return f"{what} is not UTF-8 ({reason}); save it as UTF-8"
+
+
 def _load_repo_config(root: Path):
     config_path = root / "crapkit.toml"
     if not config_path.is_file():
-        raise ConfigError(f"no crapkit.toml at {root} — nothing to analyze")
-    return load_config_text(config_path.read_text(encoding="utf-8"), root=root)
+        raise ConfigError(f"no crapkit.toml at {root} - nothing to analyze")
+    return load_config_text(repo_text(config_path, "crapkit.toml"), root=root)
 
 
 def _file_sizer(root: Path):
@@ -200,7 +233,7 @@ def _ratchet_or_die(text: str, name: str) -> list:
 def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
     if not ratchet_path.is_file():
         return []
-    return _ratchet_or_die(ratchet_path.read_text(encoding="utf-8"), name)
+    return _ratchet_or_die(repo_text(ratchet_path, name), name)
 
 
 def _dirty_tag(dirty: bool) -> str:
@@ -242,7 +275,7 @@ def _ratchet_entries(root: Path, cfg) -> list | None:
     ratchet_path = root / cfg.ratchet_file
     if not ratchet_path.is_file():
         return None
-    entries, complaints = read_ratchet(ratchet_path.read_text(encoding="utf-8"))
+    entries, complaints = read_ratchet(repo_text(ratchet_path, cfg.ratchet_file))
     for complaint in complaints:
         print(f"crapkit: skipped an unreadable mark in {cfg.ratchet_file}: {complaint}",
               file=sys.stderr)

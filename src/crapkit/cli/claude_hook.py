@@ -282,10 +282,18 @@ def _judge(root: Path, rel: str) -> int:
 
 def _config(root: Path):
     """crapkit.toml, parsed straight rather than through `cli._shared`, whose
-    module scope imports the snapshot store this hook must never open."""
+    module scope imports the snapshot store this hook must never open.
+
+    utf-8-sig, the same decode `_shared.repo_text` makes, inlined for the same
+    reason: a config PowerShell's `Out-File -Encoding utf8` wrote carries a BOM,
+    and reading it strictly made every advisory in that repo exit 0 on a
+    `does not parse` the catch-all swallowed. A UTF-16 file still fails here,
+    and the catch-all still turns that into silence; `crapkit doctor` is where
+    that file gets named."""
     from ..config import load_config_text
 
-    return load_config_text((root / "crapkit.toml").read_text(encoding="utf-8"), root=root)
+    text = (root / "crapkit.toml").read_bytes().decode("utf-8-sig")
+    return load_config_text(text, root=root)
 
 
 def _scoped(cfg, rel: str) -> dict | None:

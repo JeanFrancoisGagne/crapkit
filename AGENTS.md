@@ -448,7 +448,7 @@ ranking and never about which snapshot each is describing. `ratchet seed` and `p
 their run by the same rule `verify` uses, so neither signs marks off a run verify refused.
 They print which run they took and which they passed over:
 
-    crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 3 (86fb0cc6bce), skipped failed verify run 4
+    crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 3 (86fb0cc6bce), skipped failed verify run 4
 
 The `worklist_floor` is not part of the judgement: a function under the floor whose CRAP
 is over its ceiling is queued like any other, so an empty queue is never the floor hiding
@@ -461,7 +461,7 @@ emptied the queue rather than the work being finished:
 
 | Key | What it counts | Your move |
 |---|---|---|
-| `below_floor` | ccn under `worklist_floor` (default 5) | nothing: a row over target is queued whatever its ccn, so every row counted here is at or under its ceiling |
+| `below_floor` | ccn under `worklist_floor` (default 5) | nothing: a row over ceiling is queued whatever its ccn, so every row counted here is at or under its ceiling |
 | `no_lane` | scored rows no lane covers | wiring gap: `crapkit doctor` names the scope, then declare a `[[lane]]` for it |
 | `no_lane_over_target` | of those, the ones over their ceiling | the same wiring gap, now blocking the stop condition: declare the lane, or set `coverage_optional` if the scope is meant to go unmeasured |
 | `no_churn_in_window` | file has no commits inside `churn_window_months` | nothing, cold code; `crapkit worklist` lists it as dormant when you want to look |

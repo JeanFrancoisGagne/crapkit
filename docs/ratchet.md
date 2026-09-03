@@ -153,7 +153,7 @@ run 1 @ 549e0ccdcdf: 3 functions scored: 2 measured / 1 untested, 2 over ceiling
 -> next: crapkit worklist
 
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 2, tightened 0 — 2 mark(s) vs run 1 (549e0ccdcdf)
+crapkit-ratchet.tsv: added 2, tightened 0 - 2 mark(s) vs run 1 (549e0ccdcdf)
 ```
 
 `seed` marks every function over its scope ceiling from the latest full run, at its current
@@ -196,10 +196,10 @@ run 3 the fresh `coverage` somebody ran to move on. Both actions walk back to ru
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 0, tightened 0 — 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
 
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) — 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
+crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
 ```
 
 The clause names the failed verifies only, so the ordinary line is unchanged when nothing was
@@ -270,7 +270,7 @@ the one every consumer meets on the first run after the upgrade. Re-seed and it 
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 0, tightened 0 — 2 mark(s) vs run 9 (4a06338604a)
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a)
 
 $ head -1 crapkit-ratchet.tsv
 # crapkit-analysis=8 lizard=1.24.0
@@ -297,7 +297,7 @@ only diff-visible record. Running `prune` is you confirming.
 
 ```
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) — 2 mark(s) vs run 11 (7d09097ea8a)
+crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) - 2 mark(s) vs run 11 (7d09097ea8a)
 ```
 
 **A rename follows instead of dropping.** Before pruning, crapkit asks git for renames since
@@ -324,7 +324,7 @@ renames like any other. Here the top holds `pkg/`, crapkit runs in `pkg`, and th
 
 ```
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) — 2 mark(s) vs run 2 (db28702d61c)
+crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) - 2 mark(s) vs run 2 (db28702d61c)
 ```
 
 The marks file says `calc/grade.py` before and `calc/grading.py` after, and carries the
@@ -456,7 +456,7 @@ have not committed yet is still debt somebody owes, and the report says so:
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 2 (d9cdcfdcb1a)
+crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 2 (d9cdcfdcb1a)
 
 $ crapkit ratchet report
 ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)

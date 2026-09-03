@@ -214,6 +214,6 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     else:
         entries, note = _pruned(root, store, prior, fresh)
     ratchet_path.write_text(dump_ratchet(entries), encoding="utf-8", newline="\n")
-    print(f"{cfg.ratchet_file}: {note} — {len(entries)} mark(s) vs run {latest['id']} "
+    print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(skipped)}")
     return 0

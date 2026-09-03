@@ -21,7 +21,7 @@ from ..gitio import _common_dir, _git_dir, ls_files
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
-from ._shared import _file_sizer, _load_repo_config, _print_json
+from ._shared import _file_sizer, _load_repo_config, _print_json, repo_text
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -194,10 +194,10 @@ def _next_step(scopes: dict, lanes: tuple) -> str:
 
     if lanes:
         return (f"detected {len(lanes)} lane(s) from this repo's own files: "
-                f"{', '.join(lane.name for lane in lanes)} — next: run `{_self()} coverage`")
+                f"{', '.join(lane.name for lane in lanes)} - next: run `{_self()} coverage`")
     if all(cc_only_scope(languages) for languages in scopes.values()):
         return ("no coverage parser reads this repo's languages, so every scope is "
-                "cc-only (coverage_optional = true) and needs no lane — next: run "
+                "cc-only (coverage_optional = true) and needs no lane - next: run "
                 f"`{_self()} coverage`")
     return ("next: declare a [[lane]] per coverage command (see the commented template), "
             f"then run `{_self()} coverage`")
@@ -424,7 +424,7 @@ def _missing_pytest_cov_note(name: str, word: str) -> str:
 
     resolved = shutil.which(word) or word
     return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
-            f"cannot import pytest_cov — run `{word} -m pip install pytest-cov` in the "
+            f"cannot import pytest_cov - run `{word} -m pip install pytest-cov` in the "
             "environment the suite runs in "
             # Double quotes, not single: cmd.exe passes ' through as an
             # ordinary character and pip rejects the requirement. Double
@@ -1028,6 +1028,56 @@ def _doctor_hook_modes(root: Path) -> list[Finding]:
             for path in non_executable_hooks(_hook_modes(root))]
 
 
+# The byte-order marks a Windows editor or shell puts in front of a script, and
+# how the warning names each. git execs the file as-is, and no kernel or sh
+# reads `\xef\xbb\xbf#!/bin/sh` as a shebang.
+_LEADING_MARKS = (
+    (b"\xef\xbb\xbf", "a UTF-8 byte-order mark (ef bb bf)"),
+    (b"\xff\xfe", "a UTF-16 byte-order mark (ff fe, the PowerShell 5.1 Out-File default)"),
+    (b"\xfe\xff", "a UTF-16 byte-order mark (fe ff)"),
+)
+
+
+def _hook_file(root: Path) -> str | None:
+    """The pre-commit hook git would spawn for this checkout, spelled the way git
+    spells it: under `core.hooksPath` when that is set, else the admin
+    directory's `hooks/`, so a linked worktree lands on the right one. None
+    outside a repository."""
+    from ..errors import GitError
+    from ..gitio import _git
+
+    try:
+        return _git(root, "rev-parse", "--git-path", "hooks/pre-commit").strip() or None
+    except GitError:
+        return None
+
+
+def _leading_mark(path: Path) -> str | None:
+    """What the file opens with when that is a byte-order mark, else None; a
+    hook that is not there is not a finding."""
+    try:
+        head = path.read_bytes()[:3]
+    except OSError:
+        return None
+    return next((what for sign, what in _LEADING_MARKS if head.startswith(sign)), None)
+
+
+def _doctor_hook_encoding(root: Path) -> list[Finding]:
+    """WARN on a pre-commit hook whose first bytes git cannot spawn.
+
+    A Windows author who wrote the hook with `Out-File` got a BOM (or UTF-16)
+    in front of the shebang, git said `cannot spawn .git/hooks/pre-commit` at
+    the first commit and let it through ungated, and doctor had passed the
+    file. WARN, not FAIL: the config is fine, the file beside it is not.
+    """
+    named = _hook_file(root)
+    mark = _leading_mark(root / named) if named else None
+    if mark is None:
+        return []
+    return [Finding("WARN", f"{named} starts with {mark}, which git cannot spawn; rewrite "
+                            "it as ASCII (PowerShell: Set-Content -Encoding ascii)")]
+
+
 _CG_SIGNATURE = b"CGPH"
 _BLOOM_CHUNK = b"BIDX"  # the changed-path Bloom filter index
 
@@ -1107,6 +1157,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_lanes(root, cfg)
             + _doctor_artifact_litter(cfg)
             + _doctor_hook_modes(root)
+            + _doctor_hook_encoding(root)
             + _doctor_commit_graph(root)
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
@@ -1478,7 +1529,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)  # a config that does not parse already exits 3 here
     if args.tune:
         return _doctor_tune(root, cfg)
-    raw = tomllib.loads((root / "crapkit.toml").read_text(encoding="utf-8"))
+    raw = tomllib.loads(repo_text(root / "crapkit.toml", "crapkit.toml"))
     findings = _doctor_findings(root, cfg, raw, ls_files(root), args.show_files)
     _emit_doctor(root, cfg, findings, args.json)
     return 1 if _at_level(findings, "FAIL") else 0
@@ -1519,7 +1570,7 @@ def _watch_banner(watched: int, interval: float, cycles: int | None) -> str:
     """The first line, naming how this run ends. Telling an operator to press
     ctrl-c on a `--cycles 3` run describes a loop that is not the one running."""
     stop = "ctrl-c to stop" if cycles is None else f"{cycles} poll(s) then stop"
-    return f"watching {watched} tracked files every {interval}s — {stop}"
+    return f"watching {watched} tracked files every {interval}s - {stop}"
 
 
 def _watch_cycle(root: Path, files: list[str], prev: dict[str, float],

@@ -114,7 +114,7 @@ def _print_trend(as_json: bool, rows_out: list, target: int) -> None:
         return
     for r in rows_out:
         print(f"run {r['run_id']:>3} @ {r['commit'][:11]} {r['created_at']}: "
-              f"{r['over_target']} over target, load {r['crap_load']}, avg {r['avg']}")
+              f"{r['over_target']} over ceiling, load {r['crap_load']}, avg {r['avg']}")
 
 
 def _trend_payload(cfg, store: SnapshotStore) -> dict:

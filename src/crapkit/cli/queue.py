@@ -928,7 +928,7 @@ def _worklist_print(as_json: bool, wl, latest: dict, cfg, stale: bool,
         _print_json(_worklist_payload(wl, latest, cfg, stale, batches))
         return
     print(f"worklist @ {latest['commit'][:11]} (run {latest['id']}, floor ccn>={cfg.worklist_floor}, "
-          f"churn {cfg.churn_window_months}mo) — {len(wl.active)} of {wl.active_total} active "
+          f"churn {cfg.churn_window_months}mo) - {len(wl.active)} of {wl.active_total} active "
           f"({cap}), {len(wl.dormant)} dormant")
     for e in wl.active:
         print(_row_text(e))
