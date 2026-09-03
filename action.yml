@@ -125,11 +125,19 @@ runs:
       run: |
         code=0
         crapkit coverage --json > "$RUNNER_TEMP/crapkit-coverage.json" || code=$?
+        echo "$code" > "$RUNNER_TEMP/crapkit-coverage.exit"
         echo "crapkit coverage exited $code"
 
     # --reuse-artifacts parses the lane artifacts the step above just wrote from
     # this same tree, instead of running the whole suite a second time for the
     # same numbers.
+    #
+    # Which is why coverage's exit is read first. When it is not 0 the lanes
+    # did not write what verify would parse, and on a runner that keeps its
+    # workspace (`clean: false`) --reuse-artifacts would read the artifact the
+    # dead lane left from an earlier run, pass over it, and make that run the
+    # trusted baseline. So there is no verdict: coverage's code stands in for
+    # verify's, the comment says which lane failed, and verify does not run.
     #
     # `--base SHA` moves the diff basis to merge-base(SHA, HEAD) and takes the
     # newest trusted run at or behind that fork as the baseline, which is the
@@ -140,18 +148,24 @@ runs:
       shell: bash
       run: |
         code=0
+        covered="$(cat "$RUNNER_TEMP/crapkit-coverage.exit")"
         sha="$RUNNER_TEMP/crapkit-base.sha"
         out="$RUNNER_TEMP/crapkit-verify.json"
-        if [ -s "$sha" ]; then
+        : > "$out"
+        if [ "$covered" != 0 ]; then
+          code="$covered"
+          echo "crapkit coverage exited $covered: no verdict, verify does not run over a failed measurement"
+        elif [ -s "$sha" ]; then
           echo "the verdict covers the diff from $(cat "$sha")"
           crapkit verify --json --reuse-artifacts --base "$(cat "$sha")" > "$out" || code=$?
+          echo "crapkit verify exited $code"
         else
           why="$(cat "$RUNNER_TEMP/crapkit-base.reason" 2>/dev/null || echo "no base commit")"
           echo "no run at the fork point ($why): the verdict covers this checkout alone"
           crapkit verify --json --reuse-artifacts > "$out" || code=$?
+          echo "crapkit verify exited $code"
         fi
         echo "$code" > "$RUNNER_TEMP/crapkit-verify.exit"
-        echo "crapkit verify exited $code"
 
     - name: the ranked worklist
       shell: bash
@@ -186,6 +200,7 @@ runs:
       run: |
         python "$GITHUB_ACTION_PATH/tools/action/comment.py" \
           --coverage "$RUNNER_TEMP/crapkit-coverage.json" \
+          --coverage-exit "$(cat "$RUNNER_TEMP/crapkit-coverage.exit")" \
           --verify "$RUNNER_TEMP/crapkit-verify.json" \
           --verify-exit "$(cat "$RUNNER_TEMP/crapkit-verify.exit")" \
           --base-sha "$RUNNER_TEMP/crapkit-base.sha" \

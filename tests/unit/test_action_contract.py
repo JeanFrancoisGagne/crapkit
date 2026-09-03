@@ -624,6 +624,96 @@ def test_the_readme_gate_row_names_the_base_run_precondition():
     assert "judged no changed function" in section
 
 
+# --- no verdict over a failed measurement (spec item 7, Action half) -----------
+#
+# The verdict step ran verify whatever coverage had exited. On a persistent
+# runner with `clean: false`, a lane that stopped writing its artifact was
+# refused by coverage (exit 5) and then verify --reuse-artifacts read the old
+# artifact, passed, and became the trusted baseline.
+
+def test_the_checkout_step_records_coverages_exit_for_the_verdict_step():
+    body = _step_named("score the checkout")["run"]
+
+    assert "crapkit-coverage.exit" in body
+
+
+def test_the_verdict_step_reads_coverages_exit_before_calling_verify():
+    """Coverage's exit is the first thing the step reads; when it is non-zero
+    that code becomes the verdict's and neither verify call runs."""
+    body = _step_named("the verdict")["run"]
+    lines = _logical_lines(body)
+    first_read = next(i for i, ln in enumerate(lines) if "crapkit-coverage.exit" in ln)
+    first_verify = next(i for i, ln in enumerate(lines) if _CALL.search(ln) and "verify" in ln)
+
+    assert first_read < first_verify, "verify must not run before coverage's exit is read"
+    assert "crapkit-verify.exit" in body
+
+
+def test_the_comment_step_hands_the_builder_coverages_exit():
+    body = _step_named("build the comment")["run"]
+    line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
+
+    assert "--coverage-exit" in line
+    assert _builder()._parse(["--out", "x", "--coverage-exit", "5"]).coverage_exit == 5
+
+
+def test_a_failed_coverage_yields_no_verdict_and_quotes_the_lane_failures_first_line():
+    coverage = {"functions": 4, "files": 2, "lane_failures": {
+        "py": "lane 'py' wrote no artifact on its last attempt; the .crapkit/cov/py.json on disk predates it\nsecond line"}}
+
+    line = _builder().no_verdict_line(coverage, 5)
+
+    assert line.startswith("**no verdict: `crapkit coverage` exited 5 (")
+    assert "lane 'py' failed: lane 'py' wrote no artifact on its last attempt" in line
+    assert "second line" not in line
+    assert "verify did not run" in line
+
+
+def test_no_verdict_falls_back_to_the_job_log_when_coverage_printed_no_summary():
+    """When every lane fails, coverage raises before any summary and the
+    redirect target is empty; the lane names are only in the job log."""
+    line = _builder().no_verdict_line(None, 5)
+
+    assert "exited 5" in line
+    assert "job log" in line
+
+
+def test_no_verdict_quotes_the_error_object_when_coverage_printed_one():
+    """0.5.0's --json prints one error object when a crapkit error escapes."""
+    coverage = {"error": {"exit": 5, "kind": "tool", "message": "every lane failed (1 of 1); the errors are above\n"}, "schema": 1}
+
+    line = _builder().no_verdict_line(coverage, 5)
+
+    assert "(every lane failed (1 of 1); the errors are above)" in line
+
+
+def test_the_body_renders_no_verdict_in_place_of_the_verify_line_when_coverage_failed():
+    coverage = {"lane_failures": {"py": "lane 'py' wrote no artifact on its last attempt"}}
+
+    text = _builder().body(coverage, None, 1, None, [], 5, coverage_exit=5)
+
+    assert "**no verdict: `crapkit coverage` exited 5" in text
+    assert "wrote no verdict" not in text
+
+
+def test_main_reads_coverages_exit_and_says_no_verdict(tmp_path):
+    import json
+
+    cov = tmp_path / "cov.json"
+    cov.write_text(json.dumps({"lane_failures": {"py": "lane 'py' wrote no artifact on its last attempt"}}), encoding="utf-8")
+    out = tmp_path / "c.md"
+    _builder().main(["--coverage", str(cov), "--coverage-exit", "5", "--verify-exit", "5", "--out", str(out)])
+
+    assert "no verdict: `crapkit coverage` exited 5 (lane 'py' failed:" in out.read_text(encoding="utf-8")
+
+
+def test_the_readme_says_verify_is_skipped_when_coverage_fails():
+    section = _readme_section()
+
+    assert "no verdict" in section
+    assert "verify did not run" in section
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

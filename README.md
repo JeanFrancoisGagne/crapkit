@@ -611,6 +611,21 @@ worktree is the quiet one. Point the lane at the tree, or set `delta: "false"`.
 ran the lanes moments earlier on that tree, and verify parses those artifacts rather than
 running the whole suite a second time for the same numbers.
 
+Which is why `crapkit coverage` has to exit 0 for there to be a verdict. When it exits
+anything else (a lane that failed, an artifact it refused), the action does not run
+`verify`: on a runner that keeps its workspace between jobs (`clean: false`), a
+`verify --reuse-artifacts` over a failed measurement read the artifact the dead lane had
+left from an earlier run, passed over it, and made that run the trusted baseline. The
+comment then carries coverage's failure in place of the verdict:
+
+```markdown
+**no verdict: `crapkit coverage` exited 5 (lane 'py' failed: lane 'py' wrote no artifact on its last attempt; the .crapkit/cov/py.json on disk predates it); verify did not run.**
+```
+
+The parenthesis is the first line of the lane failure the summary carries. When every
+lane failed, `coverage` prints no summary at all and the lane errors are only in the job
+log, and the line says so. With `gate: "true"` the job exits with coverage's code.
+
 The other gate that judges a delta is the portable baseline in [Route 4](#route-4-ci):
 commit `crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv
 crapkit-baseline.tsv` in a step of your own. It needs no second lane run, and it needs

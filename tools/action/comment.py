@@ -73,6 +73,41 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
+def _first_line(text) -> str:
+    lines = str(text or "").strip().splitlines()
+    return lines[0].strip() if lines else ""
+
+
+def coverage_failure(coverage: dict | None) -> str:
+    """Why `crapkit coverage` failed, in one line.
+
+    The first line of the first lane failure the summary carries; the error
+    object's message when the command died before a summary (0.5.0 prints one
+    under --json); or a pointer at the job log when nothing was printed at all,
+    which is what every lane failing looks like: the lane errors went to
+    stderr and the redirect target is empty.
+    """
+    if not coverage:
+        return "no run summary was printed, so every lane failed; the lane errors are in the job log"
+    error = coverage.get("error")
+    if error:
+        return _first_line(error.get("message"))
+    for name, text in (coverage.get("lane_failures") or {}).items():
+        return f"lane {name!r} failed: {_first_line(text)}"
+    return "the summary names no failed lane; read the job log"
+
+
+def no_verdict_line(coverage: dict | None, coverage_exit: int) -> str:
+    """The verdict line when `crapkit coverage` failed.
+
+    The action does not run verify then: a `verify --reuse-artifacts` over a
+    failed measurement read the artifact the dead lane left from an earlier
+    run, passed over it, and became the trusted baseline.
+    """
+    return (f"**no verdict: `crapkit coverage` exited {coverage_exit} "
+            f"({coverage_failure(coverage)}); verify did not run.**")
+
+
 def scored_line(coverage: dict | None) -> str:
     """What the run measured, in the words `crapkit coverage` uses for it."""
     if not coverage:
@@ -155,13 +190,15 @@ def _scope_line(changed: list[str], entries: list[dict]) -> str:
 
 
 def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,
-         base_reason: str | None = None) -> str:
+         base_reason: str | None = None, coverage_exit: int = 0) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
     it and the next run still edits this comment instead of adding one."""
     entries = rows(worklist, changed, top)
+    verdict = (no_verdict_line(coverage, coverage_exit) if coverage_exit
+               else verdict_line(verify, exit_code, base_reason))
     return "\n".join([MARKER, "", "## crapkit", "",
                       scored_line(coverage), "",
-                      verdict_line(verify, exit_code, base_reason), "",
+                      verdict, "",
                       _scope_line(changed, entries), "",
                       table(entries), ""])
 
@@ -169,6 +206,8 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
 def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--coverage", help="crapkit coverage --json output")
+    parser.add_argument("--coverage-exit", type=int, default=0,
+                        help="coverage's exit code; non-zero means verify was not run")
     parser.add_argument("--verify", help="crapkit verify --json output")
     parser.add_argument("--verify-exit", type=int, default=0, help="verify's exit code")
     parser.add_argument("--base-sha", help="file holding the fork point the base run was made at; "
@@ -186,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
                 _read_json(args.worklist), _read_lines(args.changed), args.top,
-                _base_reason(args.base_sha, args.base_reason))
+                _base_reason(args.base_sha, args.base_reason), args.coverage_exit)
     Path(args.out).write_text(text, encoding="utf-8", newline="\n")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps({"body": text}),

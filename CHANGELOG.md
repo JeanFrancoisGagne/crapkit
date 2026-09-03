@@ -21,6 +21,20 @@ the sha and the reason reach `tools/action/comment.py` as `--base-sha` and `--ba
 files. Moved contracts: the README's `gate` and `delta` input rows, and the "What the
 verdict line covers" passage that said none of the three failures fails the job.
 
+### The Action does not ask verify for a verdict over a failed coverage
+
+The verdict step ran `crapkit verify --json --reuse-artifacts` whatever `crapkit coverage`
+had exited. On a runner that keeps its workspace between jobs (`clean: false`), a lane that
+stopped writing its artifact was refused by `coverage` (exit 5) and then `verify` read the
+artifact that lane had left from an earlier run, passed over it, and `runs list` showed
+that run as the trusted baseline. The checkout step now records coverage's exit, the verdict
+step reads it first and does not call `verify` when it is non-zero, and the comment says
+`**no verdict: `crapkit coverage` exited 5 (lane 'py' failed: <first line of the lane
+failure>); verify did not run.**`, quoting the error object's message when `coverage --json`
+died before a summary, or pointing at the job log when every lane failed and nothing was
+printed. `gate: "true"` then exits with coverage's code. The renderer takes the code as
+`--coverage-exit`.
+
 ### The MCP server survives a bad call
 
 A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.
