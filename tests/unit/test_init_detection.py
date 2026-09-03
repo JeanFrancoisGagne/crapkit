@@ -302,13 +302,14 @@ def test_routed_lanes_add_nothing_to_gitignore_beyond_the_store():
 def test_init_writes_live_entries_for_the_runner_it_detected():
     """AGENTS.md's loop step 5 is `crapkit test-scoped FILES`, which needs one
     template per scope. The pytest lane's presence signal makes the python
-    command known-good, so it lands live; the js runner stays a commented
-    template because presence cannot pick the right vitest config."""
+    command known-good, so it lands live, in the whole-suite form since no
+    tracked file list says the scope holds its own tests; with no package.json
+    naming a runner the js entry is the commented placeholder."""
     text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), ""))
 
     assert "[crapkit.scoped_tests]" in text
-    assert 'pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text
-    assert '# src = "npx vitest run {files}"' in text
+    assert 'pylib = "python -m pytest -q -p no:cacheprovider"' in text
+    assert '# src = "<your test command> {files}"' in text
 
 
 def test_the_stub_stays_commented_so_no_scope_gets_a_command_it_cannot_run():
@@ -327,8 +328,8 @@ def test_the_stub_uncomments_into_a_config_crapkit_reads_back():
     cfg = load_config_text(text + "\n" + live)
 
     assert dict(cfg.scoped_tests) == {
-        "pylib": "python -m pytest {files} -q -p no:cacheprovider",
-        "src": "npx vitest run {files}"}
+        "pylib": "python -m pytest -q -p no:cacheprovider",
+        "src": "<your test command> {files}"}
 
 
 def test_a_scope_in_a_language_with_no_known_runner_gets_a_placeholder():
@@ -339,12 +340,12 @@ def test_a_scope_in_a_language_with_no_known_runner_gets_a_placeholder():
 
 def test_a_detected_pytest_lane_activates_the_python_scoped_tests_entry():
     """The presence signal that wrote the py coverage lane is the same signal
-    that makes `python -m pytest {files}` known-good, so init writes it live:
+    that makes `python -m pytest` known-good, so init writes it live:
     a fresh repo then has no scoped-tests gap for doctor to warn about."""
     lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
     cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
 
-    assert dict(cfg.scoped_tests)["src"] == "python -m pytest {files} -q -p no:cacheprovider"
+    assert dict(cfg.scoped_tests)["src"] == "python -m pytest -q -p no:cacheprovider"
 
 
 def test_an_undetected_runner_keeps_its_scoped_tests_entry_commented():
@@ -354,7 +355,7 @@ def test_an_undetected_runner_keeps_its_scoped_tests_entry_commented():
 
     assert "src" in dict(cfg.scoped_tests)
     assert "ui" not in dict(cfg.scoped_tests)
-    assert '# ui = "npx vitest run {files}"' in text
+    assert '# ui = "<your test command> {files}"' in text
 
 
 # --- the environment the scaffolded lane binds to -----------------------------
@@ -404,7 +405,7 @@ def test_the_scoped_tests_entry_runs_the_same_python_the_lane_does():
     cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
 
     assert dict(cfg.scoped_tests)["src"] == (
-        "uv run python -m pytest {files} -q -p no:cacheprovider")
+        "uv run python -m pytest -q -p no:cacheprovider")
 
 
 def test_the_launcher_is_read_back_off_the_lane_rather_than_guessed():
@@ -450,7 +451,7 @@ def test_the_commented_lane_template_carries_the_managers_python_too():
             '--cov-report=json:.crapkit/cov/py.json '
             '--junitxml=.crapkit/cov/junit-py.xml '
             '--continue-on-collection-errors"') in text
-    assert '# pylib = "uv run python -m pytest {files} -q -p no:cacheprovider"' in text, \
+    assert '# pylib = "uv run python -m pytest -q -p no:cacheprovider"' in text, \
         "one launcher for every python line the file holds"
     assert '# command = "npx vitest run --coverage' in text, "the js template is untouched"
 
@@ -459,7 +460,7 @@ def test_with_no_lockfile_the_commented_template_keeps_the_bare_name():
     text = starter_toml({"pylib": ("python",)})
 
     assert '# command = "python -m pytest --cov --cov-branch' in text
-    assert '# pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text
+    assert '# pylib = "python -m pytest -q -p no:cacheprovider"' in text
 
 
 # --- a red test must still leave a coverage report ----------------------------

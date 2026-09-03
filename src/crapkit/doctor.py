@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+from .universe import scopes_with_tests
+
 _KNOWN = {
     "": {"crapkit", "scope", "lane", "exclude"},
     "crapkit": {"target", "churn_window_months", "worklist_floor", "worklist_top",
@@ -96,6 +98,37 @@ def scoped_test_gaps(lanes, scoped_tests) -> tuple[Finding, ...]:
     laned = {scope for lane in lanes for scope in lane.scopes}
     return tuple(Finding("WARN", _NO_TEMPLATE.format(name=name))
                  for name in sorted(laned - templated))
+
+
+_FILES_WITHOUT_TESTS = (
+    "scope {name!r} template names {{files}} but no test file lives under {paths}: "
+    "`crapkit test-scoped` would hand the runner source paths to collect from and find "
+    "no tests (runner exit 5, crapkit exit 1); drop {{files}} so the template runs the "
+    "whole suite, or point it at the tests"
+)
+
+
+def _files_without_tests(name: str, template: str, scope_paths: dict,
+                         tested: frozenset[str]) -> bool:
+    return name in scope_paths and "{files}" in template and name not in tested
+
+
+def files_template_gaps(scoped_tests, scope_paths: dict[str, tuple[str, ...]],
+                        tracked) -> tuple[Finding, ...]:
+    """A `{files}` template on a scope whose declared paths hold no test file,
+    sorted by scope. FAIL.
+
+    That template is the one init wrote for every python scope before 0.5.0,
+    and on the ordinary pkg/ + tests/ layout it hands pytest a source file to
+    collect from: `no tests ran`, runner exit 5, which four reporters read as
+    the suite failing. A template for a scope the config does not declare is
+    the loader's business, not this check's.
+    """
+    tested = scopes_with_tests(tracked, scope_paths)
+    gaps = sorted(name for name, template in scoped_tests
+                  if _files_without_tests(name, template, scope_paths, tested))
+    return tuple(Finding("FAIL", _FILES_WITHOUT_TESTS.format(
+        name=name, paths=", ".join(scope_paths[name]))) for name in gaps)
 
 
 class Knobs(NamedTuple):

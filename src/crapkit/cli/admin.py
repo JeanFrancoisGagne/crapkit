@@ -203,9 +203,29 @@ def _next_step(scopes: dict, lanes: tuple) -> str:
             f"then run `{_self()} coverage`")
 
 
-def _print_init_summary(scopes: dict, lanes: tuple) -> None:
+def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
+    """Why there is no js lane when several workspaces could each have had
+    one. File presence cannot pick among them, and saying nothing left a
+    monorepo lead to learn it from doctor's next line."""
+    from ..scaffold import runner_workspaces
+
+    named = runner_workspaces(package_json)
+    if len(named) < 2 or any(lane.parser == "istanbul" for lane in written):
+        return None
+    listed = ", ".join(f"{directory}: {runner}" for directory, runner in named)
+    return (f"{len(named)} workspaces name a runner ({listed}) and the root names none, so "
+            "no js lane was written: declare one [[lane]] per workspace from the commented "
+            "template, each with its own cwd and artifact")
+
+
+def _print_init_summary(scopes: dict, lanes: tuple, package_json="") -> None:
+    from ..scaffold import live_lanes
+
     print(f"wrote crapkit.toml with {len(scopes)} scope(s): {', '.join(scopes)}")
     print(_next_step(scopes, lanes))
+    note = _unrouted_workspaces_note(live_lanes(lanes, scopes), package_json)
+    if note:
+        print(note)
 
 
 def _no_scopes_reason(root: Path) -> str:
@@ -507,21 +527,25 @@ def cmd_init(args: argparse.Namespace) -> int:
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
         raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
-    scopes = sniff_scopes(ls_files(root))
+    files = ls_files(root)
+    scopes = sniff_scopes(files)
     if not scopes:
         raise ConfigError(_no_scopes_reason(root))
     # A config whose lanes are all commented out scores every function no-lane,
     # so a fresh repo cannot rank anything until somebody hand-writes a lane.
     # The interpreter goes to both: a repo with no pytest marker file gets no
     # lane to read it back off, and its commented template is what the reader
-    # uncomments.
+    # uncomments. The tracked files and the package.json map go to the starter
+    # too: they decide which scoped-test form each scope gets.
     interpreter = _interpreter(root, tuple(scopes))
-    lanes = detect_lanes(_present_markers(root), _package_json(root), interpreter=interpreter)
+    packages = _package_json(root)
+    lanes = detect_lanes(_present_markers(root), packages, interpreter=interpreter)
     text = starter_toml(scopes, lanes, interpreter=interpreter,
-                        testpaths=pytest_testpaths(_marker_texts(root)))
+                        testpaths=pytest_testpaths(_marker_texts(root)),
+                        tracked=files, package_json=packages)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
-    _print_init_summary(scopes, lanes)
+    _print_init_summary(scopes, lanes, packages)
     _warn_missing_pytest_cov(live_lanes(lanes, scopes))
     _extend_gitignore(root, live_lanes(lanes, scopes))
     return 0
@@ -721,15 +745,96 @@ def _doctor_lane_summary(cfg) -> Finding:
     return Finding("ok", "no [[lane]] declared: every scope is cc-only, so none is needed")
 
 
+def _lane_problems_of(root: Path, lane) -> list[str]:
+    return [p for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
+                        _lane_start_problem(lane)) if p]
+
+
 def _lane_problems(root: Path, cfg) -> list[str]:
-    return [p for lane in cfg.lanes
-            for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
-                      _lane_start_problem(lane)) if p]
+    return [p for lane in cfg.lanes for p in _lane_problems_of(root, lane)]
+
+
+def _lane_findings(cfg, problems: list[str]) -> list[Finding]:
+    return [Finding("FAIL", p) for p in problems] or [_doctor_lane_summary(cfg)]
 
 
 def _doctor_lanes(root: Path, cfg) -> list[Finding]:
-    return ([Finding("FAIL", p) for p in _lane_problems(root, cfg)]
-            or [_doctor_lane_summary(cfg)]) + _doctor_results_artifacts(cfg)
+    """The lane checks, then the probe of every lane that passed them. A lane
+    with a problem of its own is not probed: the dead-interpreter FAIL already
+    names the word, and init's note would say it again one line down."""
+    by_lane = [(lane, _lane_problems_of(root, lane)) for lane in cfg.lanes]
+    healthy = [lane for lane, problems in by_lane if not problems]
+    return (_lane_findings(cfg, [p for _, problems in by_lane for p in problems])
+            + _doctor_results_artifacts(cfg) + _doctor_lane_probes(healthy))
+
+
+# One probe answers three questions about the python a lane names: where the
+# word lands, and which pytest and pytest-cov it carries. Printed on a clean
+# doctor, because `no problems found` on a lane running the system python
+# while the repo's own venv held the plugin is the report this came from.
+_VERSION_PROBE = ('-c "import sys, pytest, pytest_cov; '
+                  'print(sys.executable, pytest.__version__, pytest_cov.__version__)"')
+
+
+@lru_cache(maxsize=None)
+def _runner_report(word: str) -> tuple[str, str, str] | None:
+    """(executable, pytest version, pytest-cov version) the interpreter word
+    answers through the lane's shell, or None when it cannot say. Memoized on
+    the word for the reason `_start_probe` is: one machine fact per word,
+    however many lanes name it. The path may hold spaces, so the two versions
+    are split off the right."""
+    import subprocess
+
+    try:
+        done = subprocess.run(f"{_shell_quote(word)} {_VERSION_PROBE}", shell=True,
+                              capture_output=True, text=True, timeout=_PROBE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parts = done.stdout.strip().rsplit(None, 2) if done.returncode == 0 else []
+    return (parts[0], parts[1], parts[2]) if len(parts) == 3 else None
+
+
+def _same_file(a: str, b: str) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _foreign_interpreter(name: str, executable: str) -> list[Finding]:
+    """WARN when the lane's python is not the one running this doctor. A
+    package installed in one is invisible to the other, which is how a lane
+    ran the system python while the repo's venv held pytest-cov."""
+    if _same_file(executable, sys.executable):
+        return []
+    return [Finding("WARN", f"lane {name!r} runs {executable}, not the python running this "
+                            f"doctor ({sys.executable}); a package installed in one is not "
+                            "seen by the other")]
+
+
+def _lane_probe_findings(lane) -> list[Finding]:
+    """init's first-run note as a FAIL, or the interpreter and plugin versions
+    a healthy lane resolves to, plus a WARN when that interpreter is foreign."""
+    note = _lane_first_run_note(lane)
+    if note:
+        return [Finding("FAIL", note.removeprefix("note: "))]
+    word = _probe_interpreter(lane.command)
+    report = _runner_report(word) if word else None
+    if report is None:
+        return []
+    executable, pytest_version, cov_version = report
+    resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} "
+                             f"(pytest {pytest_version}, pytest-cov {cov_version})")
+    return [resolved, *_foreign_interpreter(lane.name, executable)]
+
+
+def _doctor_lane_probes(lanes) -> list[Finding]:
+    """init's first-run lane note, asked again of every coverage.py lane that
+    runs `pytest --cov`, so a lane whose python cannot import pytest-cov fails
+    doctor instead of the first `crapkit coverage`. Only those lanes: a
+    manager-headed one names no python to ask, and an istanbul lane has no
+    plugin to import."""
+    return [finding for lane in _probed_lanes(lanes) for finding in _lane_probe_findings(lane)]
 
 
 _RESULTS_HINT = {
@@ -968,13 +1073,17 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_hook_modes(root)
             + _doctor_commit_graph(root)
             + _doctor_tools()
-            + _doctor_scoped_tests(cfg)
+            + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))
 
 
-def _doctor_scoped_tests(cfg) -> list[Finding]:
-    from ..doctor import scoped_test_gaps
-    return list(scoped_test_gaps(cfg.lanes, cfg.scoped_tests))
+def _doctor_scoped_tests(cfg, files: list[str]) -> list[Finding]:
+    """The scope a lane measures with no template (WARN), and the {files}
+    template on a scope that holds no test file (FAIL)."""
+    from ..doctor import files_template_gaps, scoped_test_gaps
+
+    return (list(scoped_test_gaps(cfg.lanes, cfg.scoped_tests))
+            + list(files_template_gaps(cfg.scoped_tests, cfg.scope_paths, files)))
 
 
 def _at_level(findings: list[Finding], level: str) -> list[str]:

@@ -4,6 +4,25 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### `init` writes a scoped-test command that collects a test, and `doctor` repeats its lane probe
+A python scope whose own paths hold no test file gets the whole-suite form,
+`python -m pytest tests -q -p no:cacheprovider`, naming the repo's test directory unless
+pytest's `testpaths` already collects it, in which case the positional is omitted;
+`{files}` stays only where the tests live under the scope's paths. Before, every python
+scope got `{files}`, and on the ordinary pkg/ + tests/ layout `crapkit test-scoped pkg/x.py`
+handed pytest a source file to collect from and exited 5. An npm workspace scope with a
+test script gets `npm run test -w <dir>`, written live; a root JavaScript scope gets the
+runner's related-tests mode keyed by what package.json names (`npx vitest related --run
+{files}`, `npx jest --findRelatedTests {files}`) instead of a vitest command for every
+language, and the placeholder when nothing names a runner; one comment line above each
+entry names the form chosen. `init` also says when two workspaces name a runner and no js
+lane was written. `doctor` re-runs `init`'s first-run note for every coverage.py lane, so a
+lane whose python cannot import pytest-cov now fails doctor with the same sentence instead
+of the first `crapkit coverage`; a healthy lane prints
+`ok lane 'py': python -> <path> (pytest X, pytest-cov Y)`, with a WARN when that python is
+not the one running doctor; and a `{files}` template on a scope that holds no test file
+fails, naming the whole-suite form as the fix.
+
 ### One exclude glob reaches the repo root and every nested copy
 A leading `**/` in an `[exclude]` glob matches zero or more directories, so `**/dist/**`
 excludes a repo-root `dist/` as well as `web/dist/`, and `src/distro/` stays in. Under

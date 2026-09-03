@@ -36,6 +36,7 @@ ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
+ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0)
 ok   lizard 1.24.0
 doctor: no problems found
 ```

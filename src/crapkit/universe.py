@@ -130,6 +130,34 @@ def path_matchers(scope_paths: dict[str, tuple[str, ...]]) -> tuple[ScopeMatch, 
                     for name, paths in scope_paths.items() for p in paths)
 
 
+# What a tracked file has to look like to count as a test when init and doctor
+# ask whether a scope holds one: under a test directory, or named the way the
+# runner conventions name a test (test_x.py, x_test.py, x.test.ts, x.spec.ts,
+# and Go's x_test.go). A conftest.py configures tests and is none.
+_TEST_NAME = re.compile(
+    r"(^|/)(test_[^/]*\.py|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.[^/]+)$", re.IGNORECASE)
+
+
+def is_test_file(path: str) -> bool:
+    """Is this tracked path a test, by directory or by name?"""
+    return bool(_TEST_DIR.search(path) or _TEST_NAME.search(path))
+
+
+def scopes_with_tests(files, scope_paths: dict[str, tuple[str, ...]]) -> frozenset[str]:
+    """The scopes whose declared paths hold at least one test file.
+
+    Read with the extension arm open, the way lane staleness and `test-scoped`
+    read ownership: a test is claimed by its path, whatever its language. Both
+    `init` (which scoped-test form to write) and `doctor` (whether a {files}
+    template can collect anything) ask here, so the two cannot disagree about
+    one scope.
+    """
+    matchers = path_matchers(scope_paths)
+    paths = [raw.replace("\\", "/") for raw in files]
+    owners = (owning_scope(path, matchers) for path in paths if is_test_file(path))
+    return frozenset(owner for owner in owners if owner is not None)
+
+
 def owning_scope(path: str, matchers: tuple[ScopeMatch, ...]) -> str | None:
     """Name of the scope that claims path, or None when no scope does.
 

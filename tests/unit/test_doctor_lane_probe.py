@@ -1,0 +1,168 @@
+"""`doctor` repeats init's first-run lane probe and judges the {files} template.
+
+init printed a note when a lane's python could not import pytest_cov, and
+doctor then called the same config clean. Doctor now FAILs with that sentence,
+prints the interpreter and plugin versions a healthy lane resolves to, WARNs
+when that interpreter is not the one running doctor, and FAILs a `{files}`
+template on a scope that holds no test file, which is the template that hands
+the runner a source path and collects nothing.
+"""
+import sys
+
+import pytest
+
+from crapkit.cli import admin
+from crapkit.config import Config, Lane, Scope
+from crapkit.doctor import files_template_gaps
+
+
+def _lane(name: str = "py", command: str = "python -m pytest --cov", parser: str = "coveragepy") -> Lane:
+    return Lane(name=name, command=command, artifact=f"{name}.json", parser=parser,
+                scopes=("pkg",), results_artifact=f"{name}-junit.xml")
+
+
+@pytest.fixture(autouse=True)
+def _forget_probed_words():
+    admin._runner_report.cache_clear()
+    yield
+    admin._runner_report.cache_clear()
+
+
+# --- the {files} template on a scope holding no test file ----------------------
+
+def test_a_files_template_on_a_scope_with_no_test_file_fails():
+    gaps = files_template_gaps((("pkg", "python -m pytest {files} -q"),),
+                               {"pkg": ("pkg",)}, ["pkg/x.py", "tests/test_x.py"])
+
+    assert [f.level for f in gaps] == ["FAIL"]
+    assert "'pkg'" in gaps[0].text and "{files}" in gaps[0].text
+    assert "whole suite" in gaps[0].text, "the fix is the form without {files}"
+
+
+def test_a_files_template_on_a_scope_holding_its_tests_is_fine():
+    assert files_template_gaps((("pkg", "python -m pytest {files} -q"),),
+                               {"pkg": ("pkg",)}, ["pkg/x.py", "pkg/test_x.py"]) == ()
+
+
+def test_a_template_without_files_is_never_judged_here():
+    assert files_template_gaps((("pkg", "python -m pytest -q"),),
+                               {"pkg": ("pkg",)}, ["pkg/x.py"]) == ()
+
+
+def test_a_template_for_an_undeclared_scope_is_not_this_check_s_business():
+    assert files_template_gaps((("ghost", "a {files}"),), {"pkg": ("pkg",)}, ["pkg/x.py"]) == ()
+
+
+def test_gaps_come_out_in_scope_name_order():
+    templates = (("web", "b {files}"), ("api", "a {files}"))
+
+    gaps = files_template_gaps(templates, {"api": ("api",), "web": ("web",)}, ["api/a.py"])
+
+    assert [f.text.split("'")[1] for f in gaps] == ["api", "web"]
+
+
+# --- init's note, repeated by doctor -------------------------------------------
+
+def _cfg(*lanes: Lane) -> Config:
+    return Config(target=6, scopes=(Scope(name="pkg", paths=("pkg",), languages=("python",)),),
+                  exclude_globs=(), lanes=lanes)
+
+
+def test_doctor_fails_with_inits_sentence_when_the_lane_cannot_import_pytest_cov(monkeypatch):
+    monkeypatch.setattr(admin, "_lane_first_run_note",
+                        lambda lane: "note: lane 'py' names `python`, which cannot import pytest_cov")
+
+    findings = admin._doctor_lane_probes([_lane()])
+
+    assert [(f.level, f.text) for f in findings] == [
+        ("FAIL", "lane 'py' names `python`, which cannot import pytest_cov")]
+
+
+def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_to(monkeypatch):
+    monkeypatch.setattr(admin, "_lane_first_run_note", lambda lane: None)
+    monkeypatch.setattr(admin, "_runner_report", lambda word: (sys.executable, "8.3.3", "7.1.0"))
+
+    findings = admin._doctor_lane_probes([_lane()])
+
+    assert [f.level for f in findings] == ["ok"]
+    assert findings[0].text == (f"lane 'py': python -> {sys.executable} "
+                                "(pytest 8.3.3, pytest-cov 7.1.0)")
+
+
+def test_a_lane_running_another_python_than_this_doctor_warns(monkeypatch):
+    monkeypatch.setattr(admin, "_lane_first_run_note", lambda lane: None)
+    monkeypatch.setattr(admin, "_runner_report",
+                        lambda word: ("/srv/venv/bin/python", "8.3.3", "7.1.0"))
+
+    findings = admin._doctor_lane_probes([_lane()])
+
+    assert [f.level for f in findings] == ["ok", "WARN"]
+    assert "/srv/venv/bin/python" in findings[1].text
+    assert sys.executable in findings[1].text, "name both, so the reader knows which is which"
+
+
+def test_only_a_cov_flagged_coveragepy_lane_is_probed(monkeypatch):
+    def boom(lane):
+        raise AssertionError("this lane must not be probed")
+
+    monkeypatch.setattr(admin, "_lane_first_run_note", boom)
+
+    assert admin._doctor_lane_probes([_lane(command="npx vitest run --coverage", parser="istanbul"),
+                                      _lane(command="python -m pytest")]) == []
+
+
+def test_a_probe_that_cannot_answer_prints_nothing(monkeypatch):
+    """A manager-headed lane names no python to ask, and a stub interpreter
+    with no version to print is not a finding either."""
+    monkeypatch.setattr(admin, "_lane_first_run_note", lambda lane: None)
+    monkeypatch.setattr(admin, "_runner_report", lambda word: None)
+
+    assert admin._doctor_lane_probes([_lane(), _lane(command="uv run python -m pytest --cov")]) == []
+
+
+def test_the_real_probe_answers_for_this_interpreter():
+    report = admin._runner_report(f'"{sys.executable}"')
+
+    assert report is not None
+    assert report[0].lower() == sys.executable.lower()
+    assert report[1] == pytest.__version__
+
+
+def test_a_lane_with_a_problem_of_its_own_is_not_probed_twice(monkeypatch, tmp_path):
+    """The dead-interpreter FAIL already names the word; the first-run note
+    would say it again one line down."""
+    monkeypatch.setattr(admin, "_lane_first_run_note",
+                        lambda lane: "note: lane 'py' names `python`, and the shell cannot run it")
+
+    findings = admin._doctor_lanes(tmp_path, _cfg(_lane(command="no-such-runner-7f3a -m pytest --cov")))
+
+    assert [f.level for f in findings] == ["FAIL"], findings
+    assert "does not resolve" in findings[0].text
+
+
+# --- init's summary names the workspaces it could not route ----------------------
+
+def test_init_says_when_two_workspaces_name_a_runner_and_no_js_lane_was_written(capsys):
+    packages = {"": '{"private": true}',
+                "api": '{"devDependencies": {"jest": "1"}}',
+                "web": '{"devDependencies": {"vitest": "1"}}'}
+
+    admin._print_init_summary({"api": ("typescript",), "web": ("typescript",)}, (), packages)
+
+    out = capsys.readouterr().out
+    assert "2 workspaces name a runner (api: jest, web: vitest)" in out
+    assert "no js lane was written" in out
+    assert "[[lane]]" in out, "the fix is one lane per workspace"
+
+
+def test_the_summary_is_silent_about_workspaces_once_a_js_lane_was_written(capsys):
+    from crapkit.scaffold import LaneSpec
+
+    js = LaneSpec("js", "npm run test -- --coverage", "coverage/coverage-final.json",
+                  "istanbul", ("typescript",))
+    packages = {"api": '{"devDependencies": {"jest": "1"}}',
+                "web": '{"devDependencies": {"vitest": "1"}}'}
+
+    admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
+
+    assert "workspaces name a runner" not in capsys.readouterr().out
