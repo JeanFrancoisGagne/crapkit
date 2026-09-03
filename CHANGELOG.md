@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 — unreleased
+
+The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing
