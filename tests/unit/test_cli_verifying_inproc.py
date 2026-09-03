@@ -326,6 +326,30 @@ def test_an_override_grants_a_pure_gate_violation_and_leaves_a_record(baselined,
         (baselined / "alerts.log").read_text(encoding="utf-8")
 
 
+def test_a_granted_override_names_the_mark_it_wrote_and_asks_for_git_add(baselined, capsys):
+    """The grant is the override's own write to the marks file: the OK line
+    says so and names the file to stage, so a dirty marks file after a green
+    run is no more a surprise here than after a tighten."""
+    code, out, _ = run(["verify", "--reuse-artifacts", "--override", "shipping the spike"],
+                       _knotty(baselined), capsys)
+
+    assert code == 0
+    assert (f"verify OK @ {head(baselined)[:11]} vs baseline {head(baselined)[:11]} "
+            f"(1 changed files) ratchet: 1 mark granted -> git add {MARKS}") in out, out
+
+
+def test_a_granted_override_keeps_ratchet_changes_null_under_json(baselined, capsys):
+    """`ratchet_changes` counts what a tighten did; a grant is listed under
+    `overridden` and is not counted twice."""
+    code, out, _ = run(["verify", "--reuse-artifacts", "--override", "shipping the spike",
+                        "--json"], _knotty(baselined), capsys)
+
+    payload = json.loads(out)
+    assert code == 0
+    assert payload["ratchet_changes"] is None
+    assert [v["long_name"] for v in payload["overridden"]] == ["knotty ( n )"]
+
+
 def test_an_override_never_grants_a_ratchet_regression(baselined, capsys):
     """Regressions and new failures never qualify. A run holding both keeps its
     findings, and the exit code is still the gate's."""
@@ -928,6 +952,19 @@ def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, 
     _, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
     assert "ratchet:" not in out and "git add" not in out, out
+
+
+def test_a_marks_file_written_before_stamping_is_restamped_and_says_so(marked_debt, capsys):
+    """The one rewrite that moves no mark: a legacy file gains the stamp line.
+    `0 dropped, 0 tightened` explained nothing about the dirty file it left."""
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp="")
+
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert code == 0
+    assert "carries no metric stamp" in err, err
+    assert f"(0 changed files) ratchet: restamped -> git add {MARKS}" in out, out
+    assert (marked_debt / MARKS).read_text(encoding="utf-8").startswith("# crapkit-analysis=")
 
 
 def test_a_green_run_never_creates_a_marks_file_to_hold_zero_marks(baselined, capsys):

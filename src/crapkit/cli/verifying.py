@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
@@ -19,6 +20,9 @@ from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _repo_out_path, _repo_relative, _write_tsv)
 from .scoring import _scored_run
+
+if TYPE_CHECKING:
+    from ..ratchet import RatchetDelta, RatchetEntry
 
 
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
@@ -361,7 +365,8 @@ def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
     return frozenset((r.path, r.long_name) for r in refusals)
 
 
-def _write_marks_if_changed(ratchet_path: Path, prior, updated):
+def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
+                            updated: list[RatchetEntry]) -> RatchetDelta | None:
     """Rewrite the marks file only when its text would change, and never create
     one to hold zero marks. Returns what the write did, or None when the file
     was left alone.
@@ -384,9 +389,10 @@ def _write_marks_if_changed(ratchet_path: Path, prior, updated):
 
 
 def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
-                   ratchet_path: Path, ratchet, scored, cfg, *, args, commit: str):
+                   ratchet_path: Path, ratchet, scored, cfg, *, args,
+                   commit: str) -> RatchetDelta | None:
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
-    Returns the tighten's counts, or None when the marks file was left alone.
+    Returns the tighten's counts, or None when the tighten wrote nothing.
 
     `--no-tighten` is the blunt escape: the verdict still stands, the marks file
     is simply not rewritten.
@@ -506,22 +512,35 @@ def _warn_diff_uncovered(uncovered: list) -> None:
         print(f"  uncovered {path}:{line}", file=sys.stderr)
 
 
-def _receipt(tool_versions: dict, ratchet_sha256: str | None, changes) -> dict:
+def _receipt(tool_versions: dict, ratchet_sha256: str | None,
+             changes: RatchetDelta | None) -> dict:
     """What produced the verdict and what the run did to the marks file: the
     tool versions, the marks as read (hashed before any tighten, so the receipt
-    names the input), and the tighten's counts, null when the file was left
-    alone (a failed run, an override, --no-tighten, or nothing to move)."""
+    names the input), and the tighten's counts, null when this run's tighten
+    wrote nothing (a failed run, --no-tighten, nothing to move). An override's
+    grant is its own write and is listed under `overridden`, not counted here."""
     return {"tool_versions": tool_versions, "ratchet_sha256": ratchet_sha256,
             "ratchet_changes": None if changes is None else changes._asdict()}
 
 
-def _ratchet_suffix(changes: dict | None, ratchet_file: str) -> str:
-    """The OK line's tail when the run rewrote the marks file. The `git add` is
-    the point: a dirty marks file after a green run was a surprise before."""
+def _marks_moved(changes: dict) -> str:
+    """`6 dropped, 1 tightened`, or `restamped` for the one rewrite that moves
+    no mark: a file written before stamping gains its stamp line."""
+    if changes["dropped"] or changes["tightened"]:
+        return f"{changes['dropped']} dropped, {changes['tightened']} tightened"
+    return "restamped"
+
+
+def _ratchet_suffix(changes: dict | None, overridden: list, ratchet_file: str) -> str:
+    """The OK line's tail when the run wrote the marks file, by a tighten or by
+    an override's grant. The `git add` is the point: a dirty marks file after
+    a green run was a surprise before."""
+    if overridden:
+        plural = "" if len(overridden) == 1 else "s"
+        return f" ratchet: {len(overridden)} mark{plural} granted -> git add {ratchet_file}"
     if changes is None:
         return ""
-    return (f" ratchet: {changes['dropped']} dropped, {changes['tightened']} tightened "
-            f"-> git add {ratchet_file}")
+    return f" ratchet: {_marks_moved(changes)} -> git add {ratchet_file}"
 
 
 def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: str) -> None:
@@ -531,7 +550,7 @@ def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: 
     state = "OK" if verdict.ok else "FAILED"
     print(f"verify {state} @ {out['commit'][:11]} vs baseline {out['baseline_commit'][:11]} "
           f"({out['changed_files']} changed files)"
-          f"{_ratchet_suffix(out['ratchet_changes'], ratchet_file)}")
+          f"{_ratchet_suffix(out['ratchet_changes'], overridden, ratchet_file)}")
     _print_verify_findings(verdict, overridden)
     _print_finding_split(verdict)
 

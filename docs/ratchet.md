@@ -512,9 +512,9 @@ A clean pass tightens it automatically. After a green `verify`:
   code is gone; that is what `prune` is for.
 
 The marks file is written only when its text would change, and never created to hold zero
-marks: a clean checkout with no marks file stays clean, and a file whose marks all held
-stays byte-identical. When the run did rewrite it, the OK line says what moved and what to
-do about it:
+marks: a clean checkout with no marks file stays clean, and a stamped file whose marks all
+held stays byte-identical. When the run did rewrite it, the OK line says what moved and what
+to do about it:
 
 ```
 $ crapkit verify
@@ -523,7 +523,10 @@ verify OK @ 8c780bb18da vs baseline 8c780bb18da (3 changed files) ratchet: 6 dro
 
 `dropped` counts marks whose function is now at or under its ceiling; `tightened` counts
 marks that fell. The JSON receipt carries the same two numbers as `ratchet_changes`, `null`
-when the file was left alone ([agent-json.md](agent-json.md#verify)).
+when the tighten wrote nothing ([agent-json.md](agent-json.md#verify)). One rewrite moves no
+mark: a file written before stamping (the one `verify` warns about on stderr) is rewritten
+once to gain its stamp line, and the OK line says `ratchet: restamped -> git add
+crapkit-ratchet.tsv` instead of two zero counts.
 
 A run that passed **because of an `--override`** does not tighten anything. The override
 already wrote the debt it granted, and letting the same run also rewrite every other mark
@@ -610,10 +613,14 @@ With it configured:
 
 ```
 $ crapkit verify --override "shipping the hotfix, ticket 412"
-verify OK @ 8c780bb18da vs baseline 8c780bb18da (2 changed files)
+verify OK @ 8c780bb18da vs baseline 8c780bb18da (2 changed files) ratchet: 1 mark granted -> git add crapkit-ratchet.tsv
   OVERRIDDEN  app/m.py:9  route( a , b , c , d )
 EXIT=0
 ```
+
+The grant is the override's own write to the marks file, so the OK line ends with the same
+`git add` a tighten's does; `ratchet_changes` stays `null` in the JSON receipt, the grant
+being listed under `overridden`.
 
 ```
 $ crapkit overrides

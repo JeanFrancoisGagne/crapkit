@@ -813,7 +813,7 @@ reasonably look at `committed_findings` alone.
 |---|---|
 | `tool_versions` | `{"crapkit": ..., "lizard": ...}`. The metric identity behind the numbers. |
 | `ratchet_sha256` | Digest of the ratchet file as read. **`null` when the repo has no ratchet file.** Pin it to prove which marks a verdict was measured against. |
-| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the file was left alone**: a failed run, an override, `--no-tighten`, no marks file, or nothing to move. The text form prints the same two counts on the OK line with the `git add` to run. |
+| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is listed under `overridden`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
 
 ---
 

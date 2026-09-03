@@ -21,7 +21,12 @@ untracked marks file holding a stamp, a header and no rows, and a repo with mark
 dirty file with nothing on the OK line to say why. The file is now written only when its
 text would change and never created to hold zero marks. When it is written, the OK line
 ends with `ratchet: 6 dropped, 1 tightened -> git add crapkit-ratchet.tsv`, and the JSON
-receipt carries the same counts as `ratchet_changes` (`null` when the file was left alone).
+receipt carries the same counts as `ratchet_changes` (`null` when the tighten wrote nothing).
+A file written before stamping is rewritten once to gain its stamp line, and the OK line
+says `ratchet: restamped -> git add crapkit-ratchet.tsv` for that rewrite. An override that
+applied writes its grant to the same file, so its OK line ends with `ratchet: 1 mark granted
+-> git add crapkit-ratchet.tsv`; `ratchet_changes` stays `null`, the grant being listed
+under `overridden`.
 
 ### A shallow clone is named when the baseline commit is missing
 
