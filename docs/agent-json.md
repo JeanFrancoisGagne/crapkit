@@ -1254,21 +1254,36 @@ can serve several checkouts.
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `worklist` | `top` | JSON text |
+| `worklist` | `top` (int), `scope` (array of strings: one declared scope name per element, each becoming its own `--scope`) | JSON text |
 | `runs` | | JSON text |
 | `brief` | `path`, `name` | JSON text |
 | `coupling` | `min_support`, `min_confidence` | JSON text |
 | `duplication` | `similarity` | JSON text |
 | `ratchet_report` | | JSON text |
-| `explain` | `path`, `name` | **plain text**, not JSON |
-| `doctor` | | **plain text**, not JSON |
-| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`) | JSON text |
+| `explain` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
+| `doctor` | | JSON text (the `doctor --json` report) |
+| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `worklist`) | JSON text |
 
-Results arrive as MCP text content. For the seven JSON tools the text is the payload; parse
-it. For `explain` and `doctor` it is the human output, which has no schema. `isError` is
-true whenever the underlying CLI call exited non-zero, and then the text is whatever the CLI
-wrote to stderr. It is true in one case where no CLI call runs at all: the missing-config
-result above.
+Results arrive as MCP text content, and every tool's text is the payload of the CLI's
+`--json` form: parse it, or read `structuredContent`, which carries the same object parsed
+whenever the call exited 0. `isError` is true whenever the underlying CLI call exited
+non-zero, and then the text is what the CLI printed: for `doctor` that is still the JSON
+report (it exits 1 on any FAIL, so a failing `doctor` answers JSON text with `isError: true`
+and no `structuredContent`); for the other tools it is the stderr line. `isError` is also
+true in the cases where no CLI call runs at all: the missing-config result above, an
+unknown tool name, and an argument the tool's own table refuses.
+
+Arguments are checked against the served schema before anything is spawned. `tools/list`
+declares `required` from each tool's positionals (`brief` and `explain` require `path` and
+`name`). A missing positional answers `brief needs name (see inputSchema.required)`, an
+undeclared key answers `worklist does not take 'bogus'; accepted: repo, top, scope`, and a
+wrong type answers `top must be an integer (got "three")`. Each is a tool result with
+`isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
+the precedent the missing-config answer set; the reason is recorded in
+[ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
+reserved for the protocol: an unknown method answers `-32601`, and an exception escaping
+the server answers `-32603` and the loop reads on, so no single call ends the session.
+`ping` answers an empty result, so a client's keepalive never reads as an error.
 
 ## Docker
 

@@ -4,6 +4,18 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### The MCP server survives a bad call
+
+A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.
+
+### explain and doctor answer JSON over MCP
+
+Both tools shell to their `--json` form, so all nine tools return one shape and carry `structuredContent` whenever the CLI exits 0. `explain` takes `history` and `tests` (booleans; true adds `commits` and `tests` to each function, the CLI's `--history` and `--tests`). A `doctor` that finds a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`. Moved contracts: the two MCP e2e asserts that read `no problems found` from the doctor tool now read `problems: []`; the two "plain text" rows leave the MCP tables in docs/agent-json.md and AGENTS.md, and the agents guide's `initialize reports protocol 2024-11-05` line, stale since 0.4.13, names the negotiated revisions.
+
+### worklist and next_item take a scope over MCP
+
+Both tools accept `scope`, an array of declared scope names, one `--scope` each, so a large repository is partitioned before `top` applies; the CLI's answer to the flags comes back as the tool's result.
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

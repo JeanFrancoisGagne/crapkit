@@ -543,22 +543,32 @@ Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
     }
 
 `--repo` sets the default root; every tool also takes an optional `repo` argument that
-overrides it per call. `initialize` reports protocol `2024-11-05` and server name
-`crapkit`.
+overrides it per call. `initialize` negotiates the protocol revision (a client's
+`2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
+`2025-06-18`) and reports server name `crapkit`.
 
-Nine tools:
+Nine tools, every one the CLI command's `--json` form:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `worklist` | `top` | JSON |
+| `worklist` | `top` (int), `scope` (array of strings: one declared scope name per element, each becoming its own `--scope`) | JSON |
 | `brief` | `path`, `name` | JSON |
 | `runs` | none | JSON |
 | `coupling` | `min_support`, `min_confidence` | JSON |
 | `duplication` | `similarity` | JSON |
 | `ratchet_report` | none | JSON |
-| `explain` | `path`, `name` | plain text |
-| `doctor` | none | plain text |
-| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`) | JSON text |
+| `explain` | `path`, `name`, `history` (bool: adds `commits`), `tests` (bool: adds `tests`) | JSON |
+| `doctor` | none | JSON (the `doctor --json` report) |
+| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `worklist`) | JSON text |
+
+Arguments are checked against the served schema before the CLI spawns. `tools/list`
+carries `required` from each tool's positionals, and a missing positional, an undeclared
+key or a wrong type answers a tool result with `isError` true, in the tool's words
+(`brief needs name (see inputSchema.required)`), not a `-32602` protocol error; ADR 0001
+under `docs/adr/` says why. `ping` answers `{}`. An exception escaping the server answers
+`-32603` and the loop continues. `structuredContent` rides beside the text whenever the
+CLI exited 0; a `doctor` that finds a FAIL exits 1 and answers its JSON text with
+`isError: true` and no `structuredContent`.
 
 The server is read-only. Every tool shells to a read command, so nothing it exposes
 writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`,

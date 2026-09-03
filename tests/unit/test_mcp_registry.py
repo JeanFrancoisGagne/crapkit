@@ -157,3 +157,27 @@ def test_prose_and_errors_stay_text_only():
     assert "structuredContent" not in prose
     assert "structuredContent" not in err
 
+
+
+# --- the scope argument (0.5.0) -----------------------------------------------
+#
+# A large repo is partitioned by scope before `top` means anything. The MCP
+# tools mirror the CLI's repeatable --scope: an array of strings, one flag per
+# element, the same shape exclude already uses.
+
+def test_worklist_and_next_item_type_scope_as_an_array_of_strings():
+    served = {t["name"]: t["inputSchema"]["properties"] for t in tool_listing()}
+
+    for name in ("worklist", "next_item"):
+        scope = served[name]["scope"]
+        assert scope["type"] == "array" and scope["items"] == {"type": "string"}, name
+        assert "declared" in scope["description"], f"{name}.scope never says the names must be declared"
+
+
+def test_every_scope_in_the_array_becomes_its_own_scope_flag():
+    for name in ("worklist", "next_item"):
+        tool = next(t for t in TOOLS if t["name"] == name)
+
+        argv = build_argv(tool, {"scope": ["api", "web"]})
+
+        assert [argv[i + 1] for i, a in enumerate(argv) if a == "--scope"] == ["api", "web"], name
