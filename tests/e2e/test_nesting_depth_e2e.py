@@ -6,6 +6,7 @@ in the 0.4.15 review took that for seven levels deep. Spec item 15 derives the
 Python value from crapkit's own cognitive pass, whose per-function stack is a
 depth, and leaves brace languages on lizard's column.
 """
+import re
 from pathlib import Path
 
 from conftest import git_commit_all, git_init_repo, run_cli
@@ -85,3 +86,22 @@ def test_a_brace_language_row_keeps_lizards_depth(tmp_path):
     nesting = _nesting_by_name(_repo(tmp_path))
 
     assert nesting["f"] == 3
+
+
+def test_a_cache_written_before_the_depth_misses_once_then_hits_again(tmp_path):
+    """Every .py record cached before 0.5.0 carries the structure count under
+    the depth's name, so the analysis fingerprint moved: the first `inventory`
+    after upgrading re-measures the corpus, and the one after it hits again."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "inventory").returncode == 0
+    warm = run_cli(repo, "inventory")
+    assert "(3 cached)" in warm.stdout, warm.stdout
+
+    cache = repo / ".crapkit" / "cache.json"
+    stale = re.sub(r"analysis=\d+", "analysis=8", cache.read_text(encoding="utf-8"))
+    cache.write_text(stale, encoding="utf-8")
+    cold = run_cli(repo, "inventory")
+
+    assert cold.returncode == 0, cold.stderr
+    assert "(0 cached)" in cold.stdout, cold.stdout
+    assert "(3 cached)" in run_cli(repo, "inventory").stdout

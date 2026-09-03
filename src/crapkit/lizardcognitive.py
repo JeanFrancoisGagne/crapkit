@@ -143,19 +143,52 @@ class LizardExtension:
         states: dict[object, _FnState] = {}
         reader_name = type(reader).__name__
         is_python = reader_name.lower().startswith("python")
-        c_family = reader_name in _DECLARATOR_READERS
-        match_kw = reader_name in _MATCH_READERS
-        is_shell = reader_name in _SHELL_READERS
+        flags = (reader_name in _DECLARATOR_READERS, reader_name in _MATCH_READERS,
+                 reader_name in _SHELL_READERS)
+        last = None
         for token in tokens:
+            if is_python:
+                yield token  # the owner is read after lizard has; see _state_for
             fn = reader.context.current_function
-            state = states.get(fn)
-            if state is None:
-                state = states[fn] = _FnState(getattr(fn, "name", ""), c_family,
-                                              match_kw, is_shell)
+            state = last = _state_for(states, fn, last, flags)
             _step(state, token, is_python)
             fn.cognitive_complexity = state.total
             fn.cognitive_nesting = state.max_depth
-            yield token
+            if not is_python:
+                yield token
+
+
+def _state_for(states: dict, fn, last, flags: tuple) -> _FnState:
+    """The state that owns this token, standing where the stream stands.
+
+    A Python token's owner is read AFTER the token is yielded (see __call__).
+    lizard's PythonReader closes a nested `def` on the first token of the line
+    that dedents past it, inside its own `preprocess`, which sits behind this
+    extension in the chain; read before the yield, that token still names the
+    inner function, the outer function's own `if` on that line is stepped
+    under the inner, and the outer resumes one level short with its next `if`
+    read as an inline one. Measured before the fix: a helper followed by two
+    nested `if`s read outer nesting 1, cognitive 1 and inner 1, 1; the outer
+    owns both (2, 3) and the inner nothing. The same token closes the last
+    function of a module: a module-level `if __name__` cost it a point and a
+    level, and `register()` called at import right after `def register()`
+    read as recursion (six rows of crapkit's own 5,258). Brace languages keep
+    step-then-yield, because their function ends on the `}` the state must
+    still see.
+
+    Line position belongs to the stream, not to a function: the newline and
+    indent tokens that opened the line were stepped under whichever function
+    lizard named at the time. So a state that was not the last one stepped
+    takes the last one's position, or the outer resumes with a stale
+    `at_line_start` and reads its `if` as the ternary form, which opens nothing.
+    """
+    state = states.get(fn)
+    if state is None:
+        state = states[fn] = _FnState(getattr(fn, "name", ""), *flags)
+    if last is not None and state is not last:
+        state.line_indent = last.line_indent
+        state.at_line_start = last.at_line_start
+    return state
 
 
 def _step(state: _FnState, token: str, is_python: bool) -> None:

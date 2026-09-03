@@ -53,8 +53,16 @@ ANALYSIS_VERSION = 9  # 9: a Python row's nesting is the depth the cognitive
 #                          pass measured, not lizard's ND count of structures,
 #                          so every cached .py record carries a count under the
 #                          depth's name (a flat seven-`if` function read 7).
-#                          Python is the only language whose stored values
-#                          move; ccn and cognitive are untouched everywhere.
+#                          The pass also reads a Python token's owner after
+#                          lizard has, so the first token of the line that
+#                          dedents out of a function is no longer charged to
+#                          it: `cognitive` moves too for an outer function
+#                          resuming after a nested `def`, for a last function
+#                          followed by a module-level `if __name__`, and for
+#                          one called at import right after its `def` (read as
+#                          recursion). Measured on crapkit's own tree: 6 of
+#                          5,258 rows. Python is the only language whose
+#                          stored values move; ccn is untouched everywhere.
 #                       8: shell blocks nest. `fi`, `done` and `esac` close what
 #                          `if`, a loop keyword or `case` opened, `do`/`then`/`in`
 #                          are free, and a bare `break` is not a labeled one, so
