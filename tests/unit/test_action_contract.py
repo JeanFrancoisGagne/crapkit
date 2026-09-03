@@ -6,7 +6,10 @@ consumer finds out when the job exits 2 on their pull request. These read
 `action.yml` the way `test_cli_docs_contract.py` reads README's Subcommands
 table, and they read the dogfood job that runs the action on this repo.
 """
+import os
 import re
+import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 
@@ -489,6 +492,495 @@ def test_the_request_body_is_json_so_no_shell_quotes_the_comment(tmp_path):
     _builder().main(["--out", str(out), "--json-out", str(body)])
 
     assert json.loads(body.read_text(encoding="utf-8"))["body"] == out.read_text(encoding="utf-8")
+
+
+# --- a verdict with no base run is not a pass (spec item 4, decision 7) --------
+#
+# On a depth-1 clone the base step made no run, verify judged the checkout against
+# its own run (an empty diff), and the comment said "verify passed" over a pull
+# request that exits 6 at full depth. The base step now records why, the comment
+# says what was judged, and gate: true fails the check when the base run was
+# attempted and failed.
+
+def test_the_base_step_records_a_reason_on_every_failure_path():
+    """A shallow clone, a fork point older than crapkit.toml, a lane that fails
+    there: each used to leave `crapkit base scoring exited N` in the log and
+    nothing the comment could quote."""
+    body = _step_named("score the base commit")["run"]
+
+    assert "crapkit-base.reason" in body
+    assert "is-shallow-repository" in body, "a depth-1 clone must be told apart from a rewrite"
+    assert "shallow clone" in body and "fetch-depth: 0" in body
+    assert "crapkit.toml at the fork point" in body
+    assert "lane failed at the fork point" in body
+
+
+def test_the_exit_step_fails_only_a_pull_request_whose_base_run_was_attempted_and_failed():
+    """With `gate: true`, exit 1 when the base step ran on a pull request and
+    made no run; a push or `delta: "false"` keeps verify's own code, because
+    those are documented opt-ins and the comment renders the honest line."""
+    step = _step_named("the exit code")
+    env = " ".join(str(v) for v in step.get("env", {}).values())
+
+    assert "pull_request" in env and "inputs.delta" in env, (
+        "the step must know whether the base run was attempted")
+    assert "crapkit-base.sha" in step["run"], "an attempted base run leaves its sha behind"
+    assert re.search(r"(?<![\w.-])exit 1\b", step["run"])
+
+
+def test_the_exit_step_asks_whether_the_base_run_was_attempted_in_the_base_steps_own_words():
+    """ATTEMPTED is the base step's `if:` typed a second time. Edited alone, the
+    gate exits 1 on a pull request whose base step never ran, or never exits 1
+    on one that did."""
+    assert _step_named("the exit code")["env"]["ATTEMPTED"] == _step_named("score the base commit")["if"]
+
+
+_REASON = "shallow clone does not hold the fork point of 1234abc; set fetch-depth: 0 on the checkout"
+
+
+def _bash() -> str:
+    """The bash a runner's `shell: bash` step runs under, or a skip. On Windows
+    the `bash` on PATH can be the WSL launcher under System32, which cannot
+    read the files this test writes."""
+    bash = shutil.which("bash")
+    if bash is None or "system32" in bash.lower():
+        pytest.skip("no bash on PATH to run the step under")
+    return bash
+
+
+def _run_exit_step(tmp_path, gate: str, attempted: str, verify_exit: int, base_sha):
+    """The exit step's body under `bash --noprofile --norc -eo pipefail`, which
+    is what `shell: bash` means on a runner, over the files the earlier steps
+    leave in RUNNER_TEMP: verify's exit always, the base step's sha when it
+    made a run, its reason when it did not."""
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    (runner_temp / "crapkit-verify.exit").write_text(f"{verify_exit}\n", encoding="utf-8")
+    (runner_temp / "crapkit-base.reason").write_text(_REASON + "\n", encoding="utf-8")
+    if base_sha is not None:
+        (runner_temp / "crapkit-base.sha").write_text(base_sha + "\n", encoding="utf-8")
+    script = tmp_path / "exit-step.sh"
+    script.write_text(_step_named("the exit code")["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, "GATE": gate, "ATTEMPTED": attempted, "RUNNER_TEMP": runner_temp.as_posix()}
+    return subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                          env=env, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("gate, attempted, verify_exit, base_sha, expected", [
+    ("true", "true", 0, None, 1),
+    ("true", "true", 5, None, 1),
+    ("true", "true", 0, "1234abc", 0),
+    ("true", "true", 6, "1234abc", 6),
+    ("true", "false", 0, None, 0),
+    ("true", "false", 7, None, 7),
+    ("false", "true", 0, None, 0),
+])
+def test_the_exit_step_run_under_bash_fails_only_an_attempted_base_run_that_was_not_made(
+        tmp_path, gate, attempted, verify_exit, base_sha, expected):
+    """Decision 7, run rather than read: exit 1 only when the base run was
+    attempted (a pull request with delta on) and left no sha, whatever verify
+    said; an attempted base run that was made, a push, `delta: "false"` and a
+    gate that is off all keep the code verify wrote."""
+    result = _run_exit_step(tmp_path, gate, attempted, verify_exit, base_sha)
+
+    assert result.returncode == expected, result.stdout + result.stderr
+
+
+def test_the_exit_steps_failure_prints_the_reason_the_base_step_wrote(tmp_path):
+    result = _run_exit_step(tmp_path, "true", "true", 0, None)
+
+    assert _REASON in result.stdout
+
+
+def test_the_comment_step_hands_the_builder_the_base_files():
+    """The renderer stays git-free: the sha and the reason reach it as files
+    the base step wrote, the way the three payloads do."""
+    body = _step_named("build the comment")["run"]
+    line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
+
+    assert "--base-sha" in line and "--base-reason" in line
+    args = _builder()._parse(["--out", "x", "--base-sha", "s", "--base-reason", "r"])
+    assert (args.base_sha, args.base_reason) == ("s", "r")
+
+
+def _passing_verify() -> dict:
+    return {"ok": True, "run_id": 3, "baseline_run": 3, "changed_files": 0,
+            "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
+            "diff_uncovered_count": 0}
+
+
+def test_a_passing_verdict_with_no_base_run_says_it_judged_no_changed_function():
+    reason = "shallow clone does not hold the fork point of abc123; set fetch-depth: 0 on the checkout"
+
+    line = _builder().verdict_line(_passing_verify(), 0, base_reason=reason)
+
+    assert "verify judged no changed function" in line
+    assert f"the base run was not made ({reason})" in line
+    assert "verify passed" not in line
+
+
+def test_a_passing_verdict_with_a_base_run_still_passes():
+    line = _builder().verdict_line(_passing_verify(), 0, base_reason=None)
+
+    assert line.startswith("**verify passed.**")
+
+
+def test_a_failed_verdict_keeps_its_findings_whatever_the_base_reason():
+    """The ratchet runs without a base, so exit 7 there is a finding and not a
+    judgement of nothing."""
+    verify = {**_passing_verify(), "ok": False, "ratchet_regressions": [
+        {"path": "app/calc.py", "long_name": "f( )", "recorded": 10.0, "fresh_crap": 20.0}]}
+
+    line = _builder().verdict_line(verify, 7, base_reason="no base commit")
+
+    assert "verify failed" in line
+    assert "judged no changed function" not in line
+
+
+def _render(tmp_path, verify: dict, **files) -> str:
+    """main() over a verify payload and the base files the action leaves;
+    `sha=None` leaves that flag off, `sha=""` names a missing file."""
+    import json
+
+    payload = tmp_path / "verify.json"
+    payload.write_text(json.dumps(verify), encoding="utf-8")
+    argv = ["--verify", str(payload), "--out", str(tmp_path / "c.md")]
+    for flag, text in files.items():
+        path = tmp_path / f"base.{flag}"
+        if text:
+            path.write_text(text, encoding="utf-8")
+        argv += [f"--base-{flag}", str(path)]
+    _builder().main(argv)
+    return (tmp_path / "c.md").read_text(encoding="utf-8")
+
+
+def test_main_reads_the_reason_the_base_step_wrote(tmp_path):
+    text = _render(tmp_path, _passing_verify(), sha="", reason="lane failed at the fork point 1234abc: crapkit: lane 'py' FAILED: exited 1")
+
+    assert "the base run was not made (lane failed at the fork point 1234abc: crapkit: lane 'py' FAILED: exited 1)" in text
+
+
+def test_a_push_event_leaves_no_base_files_and_the_comment_says_no_base_commit(tmp_path):
+    """The base step is skipped on a push and under delta: "false", so neither
+    file exists; the honest line still names why nothing was judged."""
+    text = _render(tmp_path, _passing_verify(), sha="", reason="")
+
+    assert "the base run was not made (no base commit)" in text
+
+
+def test_a_base_sha_on_disk_keeps_the_pass(tmp_path):
+    text = _render(tmp_path, _passing_verify(), sha="1234abc" + chr(10), reason="")
+
+    assert "**verify passed.**" in text
+
+
+def test_a_render_without_the_base_flags_keeps_the_pass(tmp_path):
+    """Three saved payloads and no base files is the README's own render route."""
+    text = _render(tmp_path, _passing_verify())
+
+    assert "**verify passed.**" in text
+
+
+def test_the_readme_gate_row_names_the_base_run_precondition():
+    """`gate: "true"` now fails a pull request whose base run was attempted and
+    not made; a consumer reading the inputs table learns it there."""
+    section = _readme_section()
+    gate_row = next(ln for ln in section.splitlines() if ln.startswith("| `gate` |"))
+
+    assert "base run" in gate_row
+    assert "judged no changed function" in section
+
+
+# --- no verdict over a failed measurement (spec item 7, Action half) -----------
+#
+# The verdict step ran verify whatever coverage had exited. On a persistent
+# runner with `clean: false`, a lane that stopped writing its artifact was
+# refused by coverage (exit 5) and then verify --reuse-artifacts read the old
+# artifact, passed, and became the trusted baseline.
+
+def test_the_checkout_step_records_coverages_exit_for_the_verdict_step():
+    body = _step_named("score the checkout")["run"]
+
+    assert "crapkit-coverage.exit" in body
+
+
+def test_the_verdict_step_reads_coverages_exit_before_calling_verify():
+    """Coverage's exit is the first thing the step reads; when it is non-zero
+    that code becomes the verdict's and neither verify call runs."""
+    body = _step_named("the verdict")["run"]
+    lines = _logical_lines(body)
+    first_read = next(i for i, ln in enumerate(lines) if "crapkit-coverage.exit" in ln)
+    first_verify = next(i for i, ln in enumerate(lines) if _CALL.search(ln) and "verify" in ln)
+
+    assert first_read < first_verify, "verify must not run before coverage's exit is read"
+    assert "crapkit-verify.exit" in body
+
+
+def test_the_comment_step_hands_the_builder_coverages_exit():
+    body = _step_named("build the comment")["run"]
+    line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
+
+    assert "--coverage-exit" in line
+    assert _builder()._parse(["--out", "x", "--coverage-exit", "5"]).coverage_exit == 5
+
+
+def test_a_failed_coverage_yields_no_verdict_and_quotes_the_lane_failures_first_line():
+    coverage = {"functions": 4, "files": 2, "lane_failures": {
+        "py": "lane 'py' wrote no artifact on its last attempt; the .crapkit/cov/py.json on disk predates it\nsecond line"}}
+
+    line = _builder().no_verdict_line(coverage, 5)
+
+    assert line.startswith("**no verdict: `crapkit coverage` exited 5 (")
+    assert "lane 'py' failed: lane 'py' wrote no artifact on its last attempt" in line
+    assert "second line" not in line
+    assert "verify did not run" in line
+
+
+def test_no_verdict_falls_back_to_the_job_log_when_coverage_printed_no_summary():
+    """When every lane fails, coverage raises before any summary and the
+    redirect target is empty; the lane names are only in the job log."""
+    line = _builder().no_verdict_line(None, 5)
+
+    assert "exited 5" in line
+    assert "job log" in line
+
+
+def test_no_verdict_quotes_the_error_object_when_coverage_printed_one():
+    """0.5.0's --json prints one error object when a crapkit error escapes."""
+    coverage = {"error": {"exit": 5, "kind": "tool", "message": "every lane failed (1 of 1); the errors are above\n"}, "schema": 1}
+
+    line = _builder().no_verdict_line(coverage, 5)
+
+    assert "(every lane failed (1 of 1); the errors are above)" in line
+
+
+def test_the_body_renders_no_verdict_in_place_of_the_verify_line_when_coverage_failed():
+    coverage = {"lane_failures": {"py": "lane 'py' wrote no artifact on its last attempt"}}
+
+    text = _builder().body(coverage, None, 1, None, [], 5, coverage_exit=5)
+
+    assert "**no verdict: `crapkit coverage` exited 5" in text
+    assert "wrote no verdict" not in text
+
+
+def test_main_reads_coverages_exit_and_says_no_verdict(tmp_path):
+    import json
+
+    cov = tmp_path / "cov.json"
+    cov.write_text(json.dumps({"lane_failures": {"py": "lane 'py' wrote no artifact on its last attempt"}}), encoding="utf-8")
+    out = tmp_path / "c.md"
+    _builder().main(["--coverage", str(cov), "--coverage-exit", "5", "--verify-exit", "5", "--out", str(out)])
+
+    assert "no verdict: `crapkit coverage` exited 5 (lane 'py' failed:" in out.read_text(encoding="utf-8")
+
+
+def test_the_readme_says_verify_is_skipped_when_coverage_fails():
+    section = _readme_section()
+
+    assert "no verdict" in section
+    assert "verify did not run" in section
+
+
+# --- the comment names the finding (spec item 10, comment side) ---------------
+#
+# On exit 6 the comment read "1 gate violation" over two identical-looking rows,
+# the ratchet-marked legacy_router and the pull request's own route, while the
+# verify payload already carried the path, function, ccn, cov and remedy; on
+# exit 9 the ceiling and the uncovered lines were only in the job log.
+
+def _failing_verify(**over) -> dict:
+    base = {"ok": False, "run_id": 3, "baseline_run": 1, "changed_files": 1,
+            "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
+            "diff_uncovered": [], "diff_uncovered_count": 0, "diff_uncovered_max": None}
+    return {**base, **over}
+
+
+def _violation() -> dict:
+    return {"path": "app/calc.py", "start": 34, "long_name": "route( a , b , c , d )",
+            "ccn": 8, "cov": 0.1, "crap": 54.656, "remedy": "decompose"}
+
+
+def test_the_verdict_names_the_rule_each_exit_code_stands_for():
+    line = _builder().verdict_line
+
+    assert "exit 6: complexity gate" in line(_failing_verify(gate_violations=[_violation()]), 6)
+    assert "exit 7: ratchet regressions" in line(_failing_verify(), 7)
+    assert "exit 8: new test failures" in line(_failing_verify(), 8)
+    assert "exit 9: diff-coverage ceiling 3" in line(_failing_verify(diff_uncovered_max=3), 9)
+
+
+def test_the_verdict_prints_one_bullet_per_gate_violation():
+    line = _builder().verdict_line(_failing_verify(gate_violations=[_violation()]), 6)
+
+    assert "- gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 10%, crap 54.7 -> decompose" in line
+
+
+def test_the_verdict_prints_one_bullet_per_ratchet_regression():
+    verify = _failing_verify(ratchet_regressions=[
+        {"path": "app/calc.py", "long_name": "legacy_router( a , b , c , d , e )",
+         "recorded": 72.0, "fresh_crap": 80.5}])
+
+    line = _builder().verdict_line(verify, 7)
+
+    assert "- ratchet: `app/calc.py` `legacy_router( a , b , c , d , e )` 72.0 -> 80.5 (recorded -> fresh)" in line
+
+
+def test_the_verdict_prints_one_bullet_per_new_test_failure():
+    line = _builder().verdict_line(_failing_verify(new_failures=["tests/test_calc.py::test_route"]), 8)
+
+    assert "- new test failure: `tests/test_calc.py::test_route`" in line
+
+
+def test_the_verdict_lists_the_first_twenty_uncovered_changed_lines_grouped_per_file():
+    uncovered = [{"path": "a.py", "line": n} for n in range(1, 16)] + \
+                [{"path": "b.py", "line": n} for n in range(1, 11)]
+    verify = _failing_verify(diff_uncovered=uncovered, diff_uncovered_count=25, diff_uncovered_max=3)
+
+    line = _builder().verdict_line(verify, 9)
+
+    assert "- uncovered lines in `a.py`: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15" in line
+    assert "- uncovered lines in `b.py`: 1, 2, 3, 4, 5" in line
+    assert "- uncovered lines in `b.py`: 1, 2, 3, 4, 5, 6" not in line
+    assert "- and 5 more uncovered changed lines" in line
+
+
+def test_the_counts_line_stays_verbatim_below_the_bullets():
+    verify = _failing_verify(gate_violations=[_violation()],
+                             diff_uncovered=[{"path": "app/calc.py", "line": 35}], diff_uncovered_count=1)
+
+    lines = _builder().verdict_line(verify, 6).splitlines()
+
+    assert lines[0] == "**verify failed, exit 6: complexity gate.**"
+    assert lines[-1] == ("Run 3 against baseline 1, 1 changed file: 1 gate violation, "
+                         "0 ratchet regressions, 0 new test failures, 1 uncovered changed line.")
+    assert [ln for ln in lines if ln.startswith("- ")] == [
+        "- gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 10%, crap 54.7 -> decompose",
+        "- uncovered lines in `app/calc.py`: 35"]
+
+
+def test_a_gate_violation_with_no_coverage_prints_a_dash():
+    """An untested function's cov is null in the payload."""
+    line = _builder().verdict_line(_failing_verify(gate_violations=[{**_violation(), "cov": None}]), 6)
+
+    assert "cov -," in line
+
+
+def test_a_marked_row_is_labelled_accepted_debt():
+    marked = {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )",
+              "ccn": 8, "risk": 4.0, "remedy": "decompose", "ratchet_mark": 72.0}
+    fresh = {**marked, "start": 34, "function": "route( a , b , c , d )", "ratchet_mark": None}
+
+    text = _builder().table([marked, fresh])
+
+    assert "| `legacy_router( a , b , c , d , e )` | 8 | 4.0 | decompose (accepted debt) |" in text
+    assert "| `route( a , b , c , d )` | 8 | 4.0 | decompose |" in text
+
+
+def test_a_row_without_the_mark_field_renders_as_before():
+    """A 0.4.x worklist payload carries no ratchet_mark."""
+    text = _builder().table(_worklist()["active"][:1])
+
+    assert "accepted debt" not in text
+
+
+def test_rows_named_by_a_finding_come_first_and_survive_the_cap():
+    worklist = {"active": [
+        {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )"},
+        {"path": "app/calc.py", "start": 34, "function": "route( a , b , c , d )"}]}
+    named = {("app/calc.py", "route( a , b , c , d )")}
+
+    picked = _builder().rows(worklist, ["app/calc.py"], 1, named)
+
+    assert [row["function"] for row in picked] == ["route( a , b , c , d )"]
+
+
+def test_the_findings_name_the_rows_the_table_lists_first():
+    verify = _failing_verify(
+        gate_violations=[_violation()],
+        ratchet_regressions=[{"path": "app/calc.py", "long_name": "legacy_router( a , b , c , d , e )",
+                              "recorded": 72.0, "fresh_crap": 80.5}],
+        overridden=[{"path": "app/other.py", "long_name": "f( )"}])
+
+    assert _builder().named_by_findings(verify) == {
+        ("app/calc.py", "route( a , b , c , d )"),
+        ("app/calc.py", "legacy_router( a , b , c , d , e )"),
+        ("app/other.py", "f( )")}
+    assert _builder().named_by_findings(None) == set()
+
+
+FIXTURES = ROOT / "tests" / "fixtures" / "action_comment"
+
+
+def test_the_readme_comment_is_the_render_of_the_recorded_payloads(tmp_path):
+    """comment.py promises the README fence is the byte-identical render of
+    three saved payloads; the payloads live beside this test, so the fence is
+    regenerated from a failing example and not written by hand."""
+    out = tmp_path / "comment.md"
+    _builder().main(["--coverage", str(FIXTURES / "coverage.json"), "--coverage-exit", "0",
+                     "--verify", str(FIXTURES / "verify.json"), "--verify-exit", "6",
+                     "--worklist", str(FIXTURES / "worklist.json"),
+                     "--changed", str(FIXTURES / "changed.txt"), "--top", "5", "--out", str(out)])
+    fence = re.search(r"```markdown\n(<!-- crapkit-action -->\n.*?)```", _readme_section(), re.S)
+
+    assert fence, "the README section lost its rendered comment"
+    assert fence.group(1) == out.read_text(encoding="utf-8")
+
+
+# --- the scored line quotes the ceilings and a lane failure (spec item 11) -----
+
+def _coverage(**over) -> dict:
+    base = {"functions": 12, "files": 3, "over_target": 2, "crap_load": 45.2, "grade": "B",
+            "lane_failures": {}}
+    return {**base, **over}
+
+
+def test_the_scored_line_quotes_the_ceiling_the_count_is_judged_against():
+    line = _builder().scored_line
+
+    assert "2 over ceiling 6," in line(_coverage(ceilings={"default": 6}))
+    assert "2 over their ceilings (6; reports 12, util 4)," in line(
+        _coverage(ceilings={"default": 6, "reports": 12, "util": 4}))
+
+
+def test_a_payload_without_ceilings_names_no_number():
+    """A 0.4.x `coverage --json` carries `over_target` and no `ceilings`."""
+    line = _builder().scored_line(_coverage())
+
+    assert "2 over the ceiling," in line
+    assert "target" not in line
+
+
+def test_the_scored_line_quotes_the_first_line_of_a_lane_failure():
+    coverage = _coverage(lane_failures={"js": "lane 'js' wrote no artifact on its last attempt\n  full log: x"})
+
+    line = _builder().scored_line(coverage)
+
+    assert line.endswith("grade B; lane 'js' failed: lane 'js' wrote no artifact on its last attempt.")
+    assert "full log" not in line
+
+
+def test_the_scored_line_quotes_the_error_message_when_coverage_died_under_json():
+    """0.5.0's --json prints one error object on stdout when a crapkit error
+    escapes, so the sentence that names the fix reaches the comment."""
+    coverage = {"error": {"exit": 5, "kind": "tool", "message": "lane 'py' cannot import pytest-cov; pip install pytest-cov\n"},
+                "schema": 1}
+
+    line = _builder().scored_line(coverage)
+
+    assert line == "`crapkit coverage` exited 5: lane 'py' cannot import pytest-cov; pip install pytest-cov."
+
+
+def test_a_verify_error_object_is_quoted_and_never_counted():
+    """0.5.0's `verify --json` prints one error object when a crapkit error
+    escapes (a missing baseline commit, exit 4). Read as a verdict it would
+    count nothing over "Run None against baseline None"."""
+    message = ("baseline commit a74260f321f is not an ancestor of HEAD in this shallow clone, "
+               "which does not hold it; set fetch-depth: 0 on the checkout or run git fetch --unshallow")
+    verify = {"error": {"exit": 4, "kind": "git", "message": message + "\n"}, "schema": 1}
+
+    line = _builder().verdict_line(verify, 4)
+
+    assert line == f"**`crapkit verify` exited 4 and wrote no verdict: {message}.**"
 
 
 # --- the pin the README hands the consumer ------------------------------------

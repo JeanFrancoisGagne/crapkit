@@ -1,0 +1,82 @@
+{
+ "baseline_commit": "33d7b33ec8084d6e7257b04e5fe5a85733d592e0",
+ "baseline_run": 1,
+ "changed_files": 1,
+ "commit": "cade9528c16de7af511b1883c84877db0c45876e",
+ "committed_findings": 1,
+ "diff_uncovered": [
+  {
+   "line": 35,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 36,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 37,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 38,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 39,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 40,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 41,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 42,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 43,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 44,
+   "path": "app/calc.py"
+  },
+  {
+   "line": 45,
+   "path": "app/calc.py"
+  }
+ ],
+ "diff_uncovered_count": 11,
+ "diff_uncovered_max": 3,
+ "dirty_failures": [],
+ "dirty_findings": 0,
+ "gate_violations": [
+  {
+   "ccn": 8,
+   "cov": 0.0,
+   "crap": 72.0,
+   "dirty": false,
+   "key_name": "route( a , b , c , d )",
+   "long_name": "route( a , b , c , d )",
+   "path": "app/calc.py",
+   "remedy": "decompose",
+   "start": 34
+  }
+ ],
+ "new_failures": [],
+ "ok": false,
+ "overridden": [],
+ "ratchet_changes": null,
+ "ratchet_regressions": [],
+ "ratchet_sha256": "49c55301e67326b1f961d011073011dcc3600c6117b9be767aaf8ad2e6f1f767",
+ "run_id": 3,
+ "schema": 1,
+ "tool_versions": {
+  "crapkit": "0.4.15",
+  "lizard": "1.24.0"
+ }
+}

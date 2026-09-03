@@ -1,0 +1,51 @@
+{
+ "active": [
+  {
+   "authors": 2,
+   "ccn": 8,
+   "ccn_std": 8,
+   "commits": 2,
+   "cov": 1.0,
+   "crap": 8.0,
+   "end": 31,
+   "flag": "measured",
+   "function": "legacy_router( a , b , c , d , e )",
+   "nloc": 13,
+   "path": "app/calc.py",
+   "ratchet_mark": 72.0,
+   "remedy": "decompose",
+   "risk": 4.0,
+   "scope": "app",
+   "start": 19,
+   "weight": 0.5
+  },
+  {
+   "authors": 2,
+   "ccn": 8,
+   "ccn_std": 8,
+   "commits": 2,
+   "cov": 0.0,
+   "crap": 72.0,
+   "end": 45,
+   "flag": "measured",
+   "function": "route( a , b , c , d )",
+   "nloc": 12,
+   "path": "app/calc.py",
+   "ratchet_mark": null,
+   "remedy": "decompose",
+   "risk": 4.0,
+   "scope": "app",
+   "start": 34,
+   "weight": 0.5
+  }
+ ],
+ "active_total": 2,
+ "churn_window_months": 12,
+ "commit": "cade9528c16de7af511b1883c84877db0c45876e",
+ "dormant_count": 0,
+ "dormant_top": [],
+ "floor": 5,
+ "run_id": 2,
+ "schema": 1,
+ "stale": false
+}

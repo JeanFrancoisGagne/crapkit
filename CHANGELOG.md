@@ -4,6 +4,70 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### The Action says why the base run was not made, and `gate: "true"` fails a pull request that judged nothing
+
+On `actions/checkout`'s default depth-1 clone the Action's base step made no run, `verify`
+judged the checkout against its own run (an empty diff), the comment said `verify passed`,
+and `gate: "true"` exited 0 on a pull request that exits 6 at full depth. The base step now
+writes the reason to `crapkit-base.reason` on every failure path: `shallow clone does not
+hold the fork point of <sha>; set fetch-depth: 0 on the checkout`, `no usable crapkit.toml
+at the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the lane's
+first error line. The comment renders `**verify judged no changed function:** the base run
+was not made (<reason>)` in place of `verify passed`, with `no base commit` as the reason on
+a `push` event and under `delta: "false"`. With `gate: "true"` the exit step exits 1 when the
+base run was attempted on a pull request and not made, printing the reason; a `push` and
+`delta: "false"` never attempt it and keep `verify`'s own code. The renderer stays git-free:
+the sha and the reason reach `tools/action/comment.py` as `--base-sha` and `--base-reason`
+files. Moved contracts: the README's `gate` and `delta` input rows, and the "What the
+verdict line covers" passage that said none of the three failures fails the job.
+
+### The Action does not ask verify for a verdict over a failed coverage
+
+The verdict step ran `crapkit verify --json --reuse-artifacts` whatever `crapkit coverage`
+had exited. On a runner that keeps its workspace between jobs (`clean: false`), a lane that
+stopped writing its artifact was refused by `coverage` (exit 5) and then `verify` read the
+artifact that lane had left from an earlier run, passed over it, and `runs list` showed
+that run as the trusted baseline. The checkout step now records coverage's exit, the verdict
+step reads it first and does not call `verify` when it is non-zero, and the comment says
+`` **no verdict: `crapkit coverage` exited 5 (lane 'py' failed: <first line of the lane
+failure>); verify did not run.** ``, quoting the error object's message when `coverage --json`
+died before a summary, or pointing at the job log when every lane failed and nothing was
+printed. `gate: "true"` then exits with coverage's code. The renderer takes the code as
+`--coverage-exit`.
+
+### The pull-request comment names the function and the rule that failed the check
+
+On exit 6 the comment read `1 gate violation, 0 ratchet regressions, ...` over a table in
+which the pull request's own untested `route()` and an untouched ratchet-marked
+`legacy_router()` were two identical rows, and on exit 9 the ceiling and the uncovered lines
+were only in the job log. The verdict now opens with the rule the exit code stands for,
+`**verify failed, exit 6: complexity gate.**` (7 `ratchet regressions`, 8 `new test failures`,
+9 `diff-coverage ceiling 3`, the ceiling read from the receipt's `diff_uncovered_max`), then
+one bullet per finding: `` - gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 0%,
+crap 72.0 -> decompose ``, `` - ratchet: `app/calc.py` `legacy_router( ... )` 72.0 -> 80.5
+(recorded -> fresh) ``, `` - new test failure: `tests/test_calc.py::test_route` ``, and the first
+twenty uncovered changed lines as `` - uncovered lines in `app/calc.py`: 35, 36, ... `` with one
+bullet per file and `- and N more uncovered changed lines` for the rest. The counts line
+closes the block unchanged. In the table, a row whose function the committed ratchet carries
+a mark for (the worklist row's `ratchet_mark`) reads `decompose (accepted debt)`, and the
+rows a finding names come first, ahead of the `top` cap. Moved contract: the README's
+rendered comment is now the byte-for-byte render of the payloads under
+`tests/fixtures/action_comment/` (a failing example), pinned by the unit suite.
+
+### The comment's scored line names the ceiling, a failed lane's first line, or the error
+
+The first line of the pull-request comment read `153 over target` with no number, while the
+scopes carried ceilings 4, 6 and 12, and a `coverage --json` that died before printing a
+summary left the comment with `wrote no run summary` and the sentence naming the fix in the
+job log. The line now reads `2 over ceiling 6` or `2 over their ceilings (6; reports 12,
+util 4)` from the summary's `ceilings`, appends `; lane 'js' failed: <first line>` for each
+entry of `lane_failures`, and, when the payload is the one-object error `--json` prints on
+a crapkit error, reads `` `crapkit coverage` exited 5: <message> ``. A 0.4.x payload without
+`ceilings` reads `over the ceiling`. The verdict line reads the same error object from
+`verify --json` (a missing baseline commit, exit 4) as `` **`crapkit verify` exited 4 and
+wrote no verdict: <message>.** `` instead of counting it as a verdict with no findings.
+Moved contract: the README's rendered comment is regenerated with the new first line.
+
 ### The MCP server survives a bad call
 
 A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.

@@ -515,33 +515,55 @@ One comment per pull request, edited in place on every push. A hidden
 carries one comment and not fifteen. On a `push` event there is no pull request to carry
 it, and the same text goes to the job log instead.
 
-Rendered against this repository's own store, with a base commit fifteen back standing in
-for a pull request:
+Rendered from three saved payloads: a pull request that adds an untested `route()` (ccn 8)
+beside a ratchet-marked `legacy_router()`, in a repository whose `diff_uncovered_max` is 3.
+The payloads are under `tests/fixtures/action_comment/`, and the unit suite pins this block
+to their render:
 
 ```markdown
 <!-- crapkit-action -->
 
 ## crapkit
 
-1333 functions in 61 files, 0 over target, CRAP load 3713.89, grade A+.
+4 functions in 2 files, 2 over ceiling 6, CRAP load 149.59, grade F.
 
-**verify passed.** Run 2 against baseline 1, 7 changed files.
+**verify failed, exit 6: complexity gate.**
 
-### Worklist: 39 changed files
+- gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 0%, crap 72.0 -> decompose
+- uncovered lines in `app/calc.py`: 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45
+
+Run 3 against baseline 1, 1 changed file: 1 gate violation, 0 ratchet regressions, 0 new test failures, 11 uncovered changed lines.
+
+### Worklist: 1 changed file
 
 | File | Function | ccn | risk | remedy |
 |---|---|---:|---:|---|
-| `src/crapkit/cli/admin.py:1026` | `_recorded_roots( recorded )` | 6 | 10.9908 | ok |
-| `src/crapkit/lanes.py:646` | `build_retest_command( template : str , tests : set [ str ] )` | 6 | 10.8234 | ok |
-| `src/crapkit/cli/admin.py:80` | `_next_step( scopes : dict , lanes : tuple )` | 5 | 9.159 | ok |
-| `src/crapkit/cli/admin.py:239` | `_pytest_cov_probe( command : str )` | 5 | 9.159 | ok |
-| `src/crapkit/cli/admin.py:505` | `_segment_problems( name : str , cwd : Path , tokens : list [ str ] )` | 5 | 9.159 | ok |
+| `app/calc.py:34` | `route( a , b , c , d )` | 8 | 4.0 | decompose |
+| `app/calc.py:19` | `legacy_router( a , b , c , d , e )` | 8 | 4.0 | decompose (accepted debt) |
 ```
 
+The first line is the run `crapkit coverage` wrote: functions and files, how many sit over
+the ceiling (`over ceiling 6`, or `over their ceilings (6; reports 12, util 4)` when scopes
+set their own), CRAP load and grade, with a failed lane's first error line appended as
+`; lane 'js' failed: ...`. When `coverage --json` died before a summary, the line quotes the
+error object it printed instead: `` `crapkit coverage` exited 5: lane 'py' cannot import
+pytest-cov; pip install pytest-cov. ``
+
+The verdict opens with the exit code and the rule it stands for (`complexity gate`,
+`ratchet regressions`, `new test failures`, `diff-coverage ceiling N`), then one bullet per
+finding: each gate violation with its function, ccn, coverage, CRAP and remedy; each
+ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
+uncovered changed lines, one bullet per file, with a count of the rest. The counts line
+closes it. A verify that passed is one line: `**verify passed.** Run 2 against baseline 1,
+7 changed files.`
+
 The rows are the ranked worklist for the files the pull request changed, worst first,
-`top` of them. `risk` is ccn times churn weight, the number `crapkit worklist` ranks on,
-and `remedy` is the run's own verdict for that function: `decompose`, `add-tests` or `ok`.
-A pull request that touches no ranked function gets the heading and no table.
+`top` of them, with the rows a finding names listed first. `risk` is ccn times churn
+weight, the number `crapkit worklist` ranks on, and `remedy` is the run's own verdict for
+that function: `decompose`, `add-tests` or `ok`. `(accepted debt)` marks a function the
+committed ratchet carries a mark for, so an untouched `legacy_router` does not read like
+the pull request's own new function. A pull request that touches no ranked function gets
+the heading and no table.
 
 The two file counts describe the same diff, counted twice. `39 changed files` is
 `git diff --name-only base.sha...HEAD`, the branch's own commits, and it is what the
@@ -553,8 +575,8 @@ behind the checkout to measure from.
 
 | Input | Default | What it does |
 |---|---|---|
-| `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. Anything else exits 0 and the comment is the whole output |
-| `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone |
+| `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. On a pull request with `delta` on it also exits 1 when the base run was not made, because a verdict with no base run judged no changed function. Anything else exits 0 and the comment is the whole output |
+| `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone, and the verdict then judges no changed function |
 | `top` | `"5"` | worklist rows rendered in the table |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
 
@@ -579,13 +601,26 @@ The base run happens in a detached worktree under `RUNNER_TEMP`, and its store i
 over the checkout's so both runs sit in one place. The cost is **two lane runs on a pull
 request**: your suite runs once at the fork point and once on the checkout. Set `delta:
 "false"` to skip the base run, and the verdict falls back to the checkout against its own
-run, which reports the tree's own health and judges no changed function.
+run, which reports the tree's own health and judges no changed function. The comment says
+so in place of `verify passed`:
 
-Three things leave the base run unmade, and none of them fails the job: a shallow clone
-that does not hold the fork point, a fork point older than your `crapkit.toml`, and a
-lane that will not run against that tree. The step logs `crapkit base scoring exited N`
-and the verdict falls back the same way `delta: "false"` does. A `push` event never makes
-one, because there is no base commit and no pull request to comment on.
+```markdown
+**verify judged no changed function:** the base run was not made (no base commit). Run 2 against baseline 2, 0 changed files.
+```
+
+Three things leave the base run unmade: a shallow clone that does not hold the fork
+point, a fork point older than your `crapkit.toml`, and a lane that will not run against
+that tree. The step logs `crapkit base scoring exited N` and writes the reason to
+`crapkit-base.reason` in the words the comment then quotes, `shallow clone does not hold
+the fork point of <sha>; set fetch-depth: 0 on the checkout`, `no usable crapkit.toml at
+the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the lane's
+first error line. The verdict falls back the same way `delta: "false"` does, and the
+ratchet still runs, so exit 7 there is a finding. What differs is the job's status. With
+`gate: "true"` on a pull request whose base run was attempted and not made, the exit step
+exits 1 and prints the reason, because `actions/checkout`'s default depth-1 clone would
+otherwise turn every pull request into a green check that judged nothing. A `push` event
+and `delta: "false"` never attempt the base run, so they keep verify's own code; a `push`
+has no base commit and no pull request to comment on.
 
 One requirement the base run adds: the lane has to measure the tree it runs in. A lane
 that reaches an installed copy of your package instead of the checkout will measure the
@@ -597,6 +632,21 @@ worktree is the quiet one. Point the lane at the tree, or set `delta: "false"`.
 `--reuse-artifacts` is what keeps each of those runs to one pass of your suite. `coverage`
 ran the lanes moments earlier on that tree, and verify parses those artifacts rather than
 running the whole suite a second time for the same numbers.
+
+Which is why `crapkit coverage` has to exit 0 for there to be a verdict. When it exits
+anything else (a lane that failed, an artifact it refused), the action does not run
+`verify`: on a runner that keeps its workspace between jobs (`clean: false`), a
+`verify --reuse-artifacts` over a failed measurement read the artifact the dead lane had
+left from an earlier run, passed over it, and made that run the trusted baseline. The
+comment then carries coverage's failure in place of the verdict:
+
+```markdown
+**no verdict: `crapkit coverage` exited 5 (lane 'py' failed: lane 'py' wrote no artifact on its last attempt; the .crapkit/cov/py.json on disk predates it); verify did not run.**
+```
+
+The parenthesis is the first line of the lane failure the summary carries. When every
+lane failed, `coverage` prints no summary at all and the lane errors are only in the job
+log, and the line says so. With `gate: "true"` the job exits with coverage's code.
 
 The other gate that judges a delta is the portable baseline in [Route 4](#route-4-ci):
 commit `crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv

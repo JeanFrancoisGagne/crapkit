@@ -9,7 +9,10 @@ branding:
 inputs:
   gate:
     description: >-
-      "true" exits with crapkit verify's own code, so a finding fails the check.
+      "true" exits with crapkit verify's own code, so a finding fails the check;
+      on a pull request with delta "true" it also exits 1 when the base run was
+      not made (a shallow clone, no crapkit.toml at the fork point, a lane that
+      failed there), because a verdict with no base judged no changed function.
       Anything else exits 0 and the comment is the whole output.
     required: false
     default: "false"
@@ -17,7 +20,9 @@ inputs:
     description: >-
       "true", the default, scores the pull request's base commit first so the
       verdict covers the commits the pull request adds. It costs a second lane
-      run. Anything else, and on a push event, scores the checkout alone.
+      run. Anything else, and on a push event, scores the checkout alone: the
+      ratchet still runs, the gate judges no changed function, and the comment
+      says so.
     required: false
     default: "true"
   top:
@@ -69,7 +74,10 @@ runs:
     # Every failure here is the same failure: no base run. A shallow clone
     # without the fork point, a fork point that predates crapkit.toml, a lane
     # that will not run against that tree. None of them stops the job, and the
-    # verdict below falls back to judging the checkout against its own run.
+    # verdict below falls back to judging the checkout against its own run,
+    # which holds no diff and so judges no changed function. The reason is
+    # written to crapkit-base.reason: the comment quotes it in place of
+    # "verify passed", and with gate "true" the exit step fails the check on it.
     - name: score the base commit
       if: ${{ github.event_name == 'pull_request' && inputs.delta == 'true' }}
       shell: bash
@@ -78,18 +86,34 @@ runs:
       run: |
         code=0
         base="$RUNNER_TEMP/crapkit-base"
-        rm -rf "$base"
+        log="$RUNNER_TEMP/crapkit-base.log"
+        rm -rf "$base" "$RUNNER_TEMP/crapkit-base.reason"
+        refuse() { echo "$1" > "$RUNNER_TEMP/crapkit-base.reason"; echo "no base run: $1"; }
         git worktree prune
         fork="$(git merge-base "$BASE_SHA" HEAD)" || code=$?
-        if [ "$code" = 0 ]; then
-          git worktree add --detach "$base" "$fork" || code=$?
+        if [ "$code" != 0 ] && [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+          refuse "shallow clone does not hold the fork point of $BASE_SHA; set fetch-depth: 0 on the checkout"
+        elif [ "$code" != 0 ]; then
+          refuse "git merge-base $BASE_SHA HEAD exited $code"
         fi
         if [ "$code" = 0 ]; then
-          crapkit coverage --repo "$base" --json > "$RUNNER_TEMP/crapkit-base.json" || code=$?
+          git worktree add --detach "$base" "$fork" || code=$?
+          [ "$code" = 0 ] || refuse "git worktree add at the fork point $fork exited $code"
+        fi
+        if [ "$code" = 0 ]; then
+          crapkit coverage --repo "$base" --json > "$RUNNER_TEMP/crapkit-base.json" 2> "$log" || code=$?
+          cat "$log"
+          first="$(head -n 1 "$log")"
+          if [ "$code" = 3 ]; then
+            refuse "no usable crapkit.toml at the fork point $fork: $first"
+          elif [ "$code" != 0 ]; then
+            refuse "lane failed at the fork point $fork: $first"
+          fi
         fi
         if [ "$code" = 0 ]; then
           mkdir -p .crapkit
           cp "$base/.crapkit/crap.sqlite" .crapkit/crap.sqlite || code=$?
+          [ "$code" = 0 ] || refuse "copying the base run's store exited $code"
         fi
         if [ "$code" = 0 ]; then
           echo "$fork" > "$RUNNER_TEMP/crapkit-base.sha"
@@ -101,11 +125,19 @@ runs:
       run: |
         code=0
         crapkit coverage --json > "$RUNNER_TEMP/crapkit-coverage.json" || code=$?
+        echo "$code" > "$RUNNER_TEMP/crapkit-coverage.exit"
         echo "crapkit coverage exited $code"
 
     # --reuse-artifacts parses the lane artifacts the step above just wrote from
     # this same tree, instead of running the whole suite a second time for the
     # same numbers.
+    #
+    # Which is why coverage's exit is read first. When it is not 0 the lanes
+    # did not write what verify would parse, and on a runner that keeps its
+    # workspace (`clean: false`) --reuse-artifacts would read the artifact the
+    # dead lane left from an earlier run, pass over it, and make that run the
+    # trusted baseline. So there is no verdict: coverage's code stands in for
+    # verify's, the comment says which lane failed, and verify does not run.
     #
     # `--base SHA` moves the diff basis to merge-base(SHA, HEAD) and takes the
     # newest trusted run at or behind that fork as the baseline, which is the
@@ -116,17 +148,24 @@ runs:
       shell: bash
       run: |
         code=0
+        covered="$(cat "$RUNNER_TEMP/crapkit-coverage.exit")"
         sha="$RUNNER_TEMP/crapkit-base.sha"
         out="$RUNNER_TEMP/crapkit-verify.json"
-        if [ -s "$sha" ]; then
+        : > "$out"
+        if [ "$covered" != 0 ]; then
+          code="$covered"
+          echo "crapkit coverage exited $covered: no verdict, verify does not run over a failed measurement"
+        elif [ -s "$sha" ]; then
           echo "the verdict covers the diff from $(cat "$sha")"
           crapkit verify --json --reuse-artifacts --base "$(cat "$sha")" > "$out" || code=$?
+          echo "crapkit verify exited $code"
         else
-          echo "no run at the fork point: the verdict covers this checkout alone"
+          why="$(cat "$RUNNER_TEMP/crapkit-base.reason" 2>/dev/null || echo "no base commit")"
+          echo "no run at the fork point ($why): the verdict covers this checkout alone"
           crapkit verify --json --reuse-artifacts > "$out" || code=$?
+          echo "crapkit verify exited $code"
         fi
         echo "$code" > "$RUNNER_TEMP/crapkit-verify.exit"
-        echo "crapkit verify exited $code"
 
     - name: the ranked worklist
       shell: bash
@@ -161,8 +200,11 @@ runs:
       run: |
         python "$GITHUB_ACTION_PATH/tools/action/comment.py" \
           --coverage "$RUNNER_TEMP/crapkit-coverage.json" \
+          --coverage-exit "$(cat "$RUNNER_TEMP/crapkit-coverage.exit")" \
           --verify "$RUNNER_TEMP/crapkit-verify.json" \
           --verify-exit "$(cat "$RUNNER_TEMP/crapkit-verify.exit")" \
+          --base-sha "$RUNNER_TEMP/crapkit-base.sha" \
+          --base-reason "$RUNNER_TEMP/crapkit-base.reason" \
           --worklist "$RUNNER_TEMP/crapkit-worklist.json" \
           --changed "$RUNNER_TEMP/crapkit-changed.txt" \
           --top "$TOP" \
@@ -214,14 +256,28 @@ runs:
     # `gate: true` is the only thing that can fail this action. Adoption starts
     # advisory: the comment lands, the check stays green, and the team turns the
     # gate on when it has decided which findings should stop a merge.
+    #
+    # Two ways it fails. verify's own code, which is a finding. And exit 1 when
+    # the base step ran on this pull request and made no run: verify then
+    # judged the checkout against its own run, an empty diff, and its 0 is a
+    # judgement of nothing, not a pass. A push event and delta "false" never
+    # attempt the base run, so they keep verify's code and the comment says
+    # what was judged.
     - name: the exit code
       shell: bash
       env:
         GATE: ${{ inputs.gate }}
+        ATTEMPTED: ${{ github.event_name == 'pull_request' && inputs.delta == 'true' }}
       run: |
         code="$(cat "$RUNNER_TEMP/crapkit-verify.exit")"
-        if [ "$GATE" = "true" ]; then
-          echo "gate is on: exiting with verify's code $code"
-          exit "$code"
+        if [ "$GATE" != "true" ]; then
+          echo "gate is off: verify's code $code is in the comment, this check stays green"
+          exit 0
         fi
-        echo "gate is off: verify's code $code is in the comment, this check stays green"
+        if [ "$ATTEMPTED" = "true" ] && [ ! -s "$RUNNER_TEMP/crapkit-base.sha" ]; then
+          why="$(cat "$RUNNER_TEMP/crapkit-base.reason" 2>/dev/null || echo "no reason recorded")"
+          echo "gate is on and the base run was not made ($why): verify judged no changed function, so this check fails"
+          exit 1
+        fi
+        echo "gate is on: exiting with verify's code $code"
+        exit "$code"
