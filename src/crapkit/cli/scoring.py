@@ -717,12 +717,6 @@ def _report_gate(verdict: _GateVerdict, as_json: bool) -> int:
     return 6
 
 
-def _rescore_gate(root: Path, cfg, overlay, ceilings: dict[str, int]) -> int:
-    """The text form's verdict in one call: judge, then report. `cmd_rescore`
-    judges before it prints so the JSON payload can carry the verdict too."""
-    return _report_gate(_gate_verdict(root, cfg, overlay, ceilings), as_json=False)
-
-
 def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
     """The store and the newest scored run a rescore overlays on, or the
     refusal naming the command that makes one."""

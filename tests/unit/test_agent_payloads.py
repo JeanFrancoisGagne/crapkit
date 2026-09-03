@@ -8,6 +8,7 @@ parses can be argued about without a repo, a store or a lane.
 from types import SimpleNamespace
 
 import pytest
+from crapkit.config import Config
 from crapkit.churn import FileChurn
 from crapkit.cli import (_actionable, _claims_to_release, _matching_rows, _name_matches,
                          _next_reasons, _policy_findings, _uncovered_fields, _worklist_payload)
@@ -70,7 +71,7 @@ class _StubStore:
         return 0
 
 
-CFG = SimpleNamespace(worklist_floor=5, churn_window_months=6, target=6, scope_targets={})
+CFG = Config(worklist_floor=5, churn_window_months=6, target=6)
 ADMISSION = admission({"core/alpha.py": FileChurn(commits=3, authors=1, weight=1.0)},
                       CFG.worklist_floor)
 

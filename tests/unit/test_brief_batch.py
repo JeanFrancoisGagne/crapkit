@@ -7,9 +7,9 @@ census of the calls a two-packet batch actually made, so a regression that
 re-reads per packet fails loudly rather than getting slower quietly.
 """
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from crapkit.config import Config, Scope
 from crapkit.cli import queue
 from crapkit.score import ScoredRow
 from crapkit.uncovered import MissingLines
@@ -27,14 +27,12 @@ ALPHA = row("alpha( a , b )")
 HELPER = row("helper( a )", start=22, end=25, ccn=2, remedy="ok")
 BETA = row("beta( a )", path="core/beta.py", ccn=7)
 
-CFG = SimpleNamespace(
+CFG = Config(
     churn_window_months=12, worklist_floor=1, target=6,
-    scope_targets={"core": 6},
     # paths and languages because the packet asks universe who owns the path,
     # with the same extension-aware matchers that assigned row.scope
-    scopes=(SimpleNamespace(name="core", paths=("core",), languages=("python",)),),
-    scope_paths={"core": ("core",)}, lanes=(), scoped_tests=(),
-    diff_uncovered_max=None, ratchet_file="crapkit-ratchet.tsv")
+    scopes=(Scope(name="core", paths=("core",), languages=("python",)),),
+    lanes=(), scoped_tests=(), diff_uncovered_max=None, ratchet_file="crapkit-ratchet.tsv")
 
 
 class _Store:

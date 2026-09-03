@@ -9,6 +9,7 @@ digest and trend output across a prune.
 import sqlite3
 
 import pytest
+from crapkit.config import Config
 from crapkit.digest import build_digest, latest_comparable_pair, totals
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore, prune_keep_set, trusted_runs
@@ -36,7 +37,7 @@ def store_with_history(dirpath, rows_per_run: int = 3) -> SnapshotStore:
 def digest_lines(store: SnapshotStore) -> list[str]:
     prev, cur = latest_comparable_pair(trusted_runs(store))
     return build_digest(store.read_scored(prev["id"]), store.read_scored(cur["id"]),
-                        target=6).lines
+                        ceiling_of=Config(target=6).ceiling_of).lines
 
 
 def trend_totals(store: SnapshotStore) -> dict:

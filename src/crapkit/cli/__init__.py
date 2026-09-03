@@ -268,7 +268,6 @@ _OWNER = {
     "_report_worklist": "reports",
     "_require_ancestor": "verifying",
     "_rescore_analyze": "scoring",
-    "_rescore_gate": "scoring",
     "_rescore_json": "scoring",
     "_rescore_overlay": "scoring",
     "_rescored_records": "scoring",

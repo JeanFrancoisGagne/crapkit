@@ -28,16 +28,21 @@ class Digest(NamedTuple):
 
 
 def _ceiling_rule(target: int, scope_targets: dict[str, int] | None) -> _CeilingOf:
-    """The per-scope ceiling as Config.ceiling_of spells it, rebuilt from the
-    pair this module is handed: a scope's own target, else the repo's. Every
-    count below reads the rule through this one function, so the digest and
-    the trend judge a row the same way."""
+    """The pair form of the ceiling rule, for the pure callers that hold no
+    Config and hand `totals` a target and a scope map (score, verify, ratchet,
+    the coverage summary's per-scope block). A command that holds a Config
+    passes `Config.ceiling_of` itself, as `build_digest` takes it; the two
+    spell the same rule, a scope's own target, else the repo's."""
     own = scope_targets or {}
     return lambda scope: own.get(scope, target)
 
 
 def _over_count(rows, ceiling_of: _CeilingOf) -> int:
     return sum(1 for r in rows if r.crap > ceiling_of(r.scope))
+
+
+def _totals_by(rows: list[ScoredRow], ceiling_of: _CeilingOf) -> Totals:
+    return totals_from_counts(len(rows), _over_count(rows, ceiling_of), sum(r.crap for r in rows))
 
 
 def totals_from_counts(functions: int, over_target: int, load: float) -> Totals:
@@ -55,8 +60,7 @@ def totals_from_counts(functions: int, over_target: int, load: float) -> Totals:
 
 def totals(rows: list[ScoredRow], *, target: int,
            scope_targets: dict[str, int] | None = None) -> Totals:
-    return totals_from_counts(len(rows), _over_count(rows, _ceiling_rule(target, scope_targets)),
-                              sum(r.crap for r in rows))
+    return _totals_by(rows, _ceiling_rule(target, scope_targets))
 
 
 def scope_totals(rows: list[ScoredRow], *, target: int,
@@ -191,14 +195,13 @@ def _improvement_lines(improvements: list[_Delta], top: int) -> list[str]:
             for delta, row in sorted(improvements, key=lambda x: x[0])[:top]]
 
 
-def build_digest(prev: list[ScoredRow], cur: list[ScoredRow], *, target: int,
-                 scope_targets: dict[str, int] | None = None, top: int = 5) -> Digest:
-    """`scope_targets` is what makes this agree with `trend`: both count a row
-    against its own scope's ceiling, and a new function under that ceiling is
-    not news even when it sits over the repo's."""
-    t_prev = totals(prev, target=target, scope_targets=scope_targets)
-    t_cur = totals(cur, target=target, scope_targets=scope_targets)
-    changed = _changes_between(prev, cur, _ceiling_rule(target, scope_targets))
+def build_digest(prev: list[ScoredRow], cur: list[ScoredRow], *,
+                 ceiling_of: _CeilingOf, top: int = 5) -> Digest:
+    """`ceiling_of` is `Config.ceiling_of`, the same rule `trend` counts by:
+    a row is judged against its own scope's ceiling, so a new function under
+    that ceiling is not news even when it sits over the repo's."""
+    t_prev, t_cur = _totals_by(prev, ceiling_of), _totals_by(cur, ceiling_of)
+    changed = _changes_between(prev, cur, ceiling_of)
     if t_prev == t_cur and changed.nothing_moved():
         return Digest(quiet=True, lines=[])
     return Digest(quiet=False, lines=[

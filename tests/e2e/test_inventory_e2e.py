@@ -6,6 +6,7 @@ git repo per test, so the tree is committed (reviewable, stable) while each test
 still gets an isolated repository.
 """
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -427,6 +428,31 @@ def test_digest_silent_when_unchanged_and_speaks_on_regression(mini_repo: Path):
     runs = json.loads(trend.stdout)["runs"]
     assert len(runs) == 3
     assert runs[-1]["over_target"] == runs[0]["over_target"] + 1
+
+
+def test_digest_and_trend_agree_on_a_scope_with_its_own_ceiling(mini_repo: Path):
+    """With src's ceiling raised to 200, `tangled` (ccn 8 at cov 0, crap 72)
+    is over the repo's 6 and under its scope's own, so neither `digest` nor
+    `trend` may book it as new debt. The two used to disagree on this pair:
+    digest counted every row against the repo ceiling, trend per scope."""
+    cfg = mini_repo / "crapkit.toml"
+    cfg.write_text(cfg.read_text(encoding="utf-8").replace(
+        'name = "src"\n', 'name = "src"\ntarget = 200\n', 1), encoding="utf-8")
+    assert run_cli(mini_repo, "coverage", "--json").returncode == 0
+    _stage(mini_repo, "src/extra.ts", HIGH_CC_FN)
+    assert run_cli(mini_repo, "coverage", "--json", "--reuse-artifacts").returncode == 0
+
+    digest = run_cli(mini_repo, "digest")
+    trend = run_cli(mini_repo, "trend", "--json")
+
+    assert digest.returncode == 0 and trend.returncode == 0, (digest.stderr, trend.stderr)
+    runs = json.loads(trend.stdout)["runs"]
+    assert runs[-1]["over_target"] == runs[-2]["over_target"], runs
+    counted = re.search(r"over \w+ (\d+) -> (\d+)", digest.stdout)
+    assert counted, digest.stdout
+    assert [int(n) for n in counted.groups()] == [runs[-2]["over_target"], runs[-1]["over_target"]], \
+        f"digest: {digest.stdout!r}; trend: {[r['over_target'] for r in runs]}"
+    assert "over ceiling" in digest.stdout, digest.stdout
 
 
 def test_rerunning_verify_on_a_still_broken_tree_stays_failed(mini_repo: Path):

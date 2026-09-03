@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.JeanFrancoisGagne/crapkit",
   "title": "crapkit",
-  "description": "Nine read-only tools over per-function CRAP scores: complexity times uncovered risk, churn-ranked.",
+  "description": "Ten read-only tools over per-function CRAP scores: complexity times uncovered risk, churn-ranked.",
   "version": "0.4.15",
   "packages": [
     {

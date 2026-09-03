@@ -77,7 +77,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
     # read_crap, not read_scored: build_digest names four of a ScoredRow's
     # sixteen fields, and a digest carries two whole runs at once
     d = build_digest(store.read_crap(prev["id"]), store.read_crap(cur["id"]),
-                     target=cfg.target, scope_targets=cfg.scope_targets)
+                     ceiling_of=cfg.ceiling_of)
     if d.quiet:
         return 0  # an unchanged week says nothing
     for line in d.lines:

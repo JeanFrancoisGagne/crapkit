@@ -152,10 +152,14 @@ be every file. Repositories with two or more commit times are unchanged.
 
 ### One ceiling rule, and a coverage summary that says what shape the run is
 
-`Config.ceiling_of(scope)` is the one spelling of "a scope's own `target`, else the repo's";
-`digest` now takes the per-scope ceilings like `trend` does, so the two agree on the same run
-pair (on a repo with scopes at 6, 12 and 4, `digest` said `over target 154 -> 153` while
-`trend` said 153 -> 152), and its lines read `over ceiling 1 -> 2` and `new over ceiling: ...`.
+`Config.ceiling_of(scope)` is the one spelling of "a scope's own `target`, else the repo's"
+for every command that holds a Config (`next-item`, `brief`'s packet, the hook's file ceilings,
+the coverage summary, `digest`); the pure modules (score, verify, ratchet, packet, sarif,
+worklist, store) keep taking the `(target, scope_targets)` pair. `digest` now counts each row against its
+scope's ceiling like `trend` does, so the two agree on the same run pair: on the mini fixture
+with `src` at 200 and `tangled` (crap 72) added under it, `digest` said `over target 0 -> 1`
+and `new over target: src/extra.ts tangled` while `trend --json` read `[0, 0]`; it now says
+`over ceiling 0 -> 0`. Its lines read `over ceiling A -> B` and `new over ceiling: ...`.
 The coverage summary carries the run's shape on every path: `--json` gains `kind` (`coverage`
 or `partial`), `unmeasured_scopes` and `ceilings` (`{"default": 6, "reports": 12}`) beside
 `lane_failures`, and `over_target` and `grade` are counted over the measured scopes only, so a
@@ -169,7 +173,8 @@ help now names. The `report` page collects its worklist through the same shaping
 --json` prints, so its rows carry `ratchet_mark`. Moved contracts: the coverage line in
 tests/unit/test_cli_scoring_inproc.py and the docs regex in
 tests/unit/test_docs_claims_contract.py; `new over target` in tests/e2e/test_inventory_e2e.py
-and tests/unit/test_store_prune.py; every pasted summary line in README.md, docs/lanes.md and
+and tests/unit/test_store_prune.py; `build_digest` takes `ceiling_of` (tests/unit/test_digest.py,
+tests/unit/test_narrow_reads.py); every pasted summary line in README.md, docs/lanes.md and
 docs/ratchet.md.
 
 ### `--json` prints one error object when a command dies
@@ -191,8 +196,8 @@ breach is unchanged. The text form prints `gate: 2 changed function(s) judged, 0
 6` when the gate passes, so the exit code is no longer the only signal. A tenth MCP tool,
 `gate`, maps `path` to `rescore PATH --gate --json` with the same read-only annotations; a
 breach comes back as a result with `gate.ok` false and `structuredContent`, while exits 3, 4
-and 5 stay tool errors. The server's instructions, AGENTS.md and both MCP tables count ten
-tools.
+and 5 stay tool errors. The server's instructions, AGENTS.md, both MCP tables and the registry
+manifest (`server.json`) count ten tools.
 
 ## 0.4.15 — 2026-09-02
 

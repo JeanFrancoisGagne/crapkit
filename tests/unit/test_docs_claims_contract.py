@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.config import Config
 from crapkit.churn import parse_git_log
 from crapkit.cli import build_parser
 from crapkit.scaffold import detect_lanes, gitignore_entries, live_lanes, starter_toml
@@ -613,8 +614,7 @@ def test_est_splits_in_the_tool_matches_the_formula_both_pages_print():
 
 
 def _payload_splits(ccn: int) -> int:
-    from types import SimpleNamespace
-
+    
     from crapkit.cli import _next_item_payload
     from crapkit.score import ScoredRow
     from crapkit.uncovered import MissingLines
@@ -623,7 +623,7 @@ def _payload_splits(ccn: int) -> int:
     row = ScoredRow("calc", "calc/grade.py", "f( )", 1, 9, ccn, ccn, ccn, 8, 0, 1,
                     0.0, "measured", float(ccn), "decompose")
     payload = _next_item_payload(row, admission({}, 5),
-                                 SimpleNamespace(target=6, scope_targets={}),
+                                 Config(target=6),
                                  MissingLines({}, "no lanes here"))
     return payload["est_splits"]
 

@@ -1,5 +1,6 @@
 """Digest seam: two scored row sets in, totals + delta out; silence when unchanged. Pure."""
 from crapkit.digest import build_digest, totals
+from crapkit.config import Config, load_config_text
 from crapkit.score import ScoredRow
 
 
@@ -10,6 +11,7 @@ def scored(path, name, ccn, cov, scope="src"):
 
 
 BASE = [scored("src/a.ts", "f( )", 9, 0.5), scored("src/b.ts", "g( )", 3, 1.0)]
+FLAT = Config(target=6).ceiling_of  # every scope judged at the repo ceiling
 
 
 def test_totals_carry_the_five_numbers():
@@ -21,14 +23,14 @@ def test_totals_carry_the_five_numbers():
 
 
 def test_unchanged_runs_digest_to_silence():
-    d = build_digest(BASE, BASE, target=6)
+    d = build_digest(BASE, BASE, ceiling_of=FLAT)
     assert d.quiet is True
     assert d.lines == []
 
 
 def test_regression_produces_lines_and_names_the_function():
     worse = [scored("src/a.ts", "f( )", 9, 0.0), BASE[1]]
-    d = build_digest(BASE, worse, target=6)
+    d = build_digest(BASE, worse, ceiling_of=FLAT)
     assert d.quiet is False
     text = "\n".join(d.lines)
     assert "f( )" in text and "src/a.ts" in text
@@ -36,14 +38,14 @@ def test_regression_produces_lines_and_names_the_function():
 
 def test_improvement_also_speaks_but_marked_as_improvement():
     better = [scored("src/a.ts", "f( )", 9, 1.0), BASE[1]]
-    d = build_digest(BASE, better, target=6)
+    d = build_digest(BASE, better, ceiling_of=FLAT)
     assert d.quiet is False
     assert any("improved" in line for line in d.lines)
 
 
 def test_new_over_target_function_is_named():
     grown = BASE + [scored("src/new.ts", "n( )", 12, 0.0)]
-    d = build_digest(BASE, grown, target=6)
+    d = build_digest(BASE, grown, ceiling_of=FLAT)
     assert d.quiet is False
     assert any("n( )" in line for line in d.lines)
 
@@ -106,10 +108,32 @@ def reports_row(cov: float):
     return scored("reports/r.ts", "r( )", 9, cov, scope="reports")
 
 
+REPORTS_AT_12 = """
+[crapkit]
+target = 6
+
+[[scope]]
+name = "src"
+paths = ["src"]
+languages = ["typescript"]
+
+[[scope]]
+name = "reports"
+paths = ["reports"]
+languages = ["typescript"]
+target = 12
+
+[exclude]
+globs = ["**/node_modules/**"]
+"""
+
+SCOPED = load_config_text(REPORTS_AT_12).ceiling_of  # reports at 12, everything else at 6
+
+
 def test_the_digest_counts_over_ceiling_per_scope_like_trend_does():
     grown = BASE + [reports_row(0.7)]
 
-    d = build_digest(BASE, grown, target=6, scope_targets={"reports": 12})
+    d = build_digest(BASE, grown, ceiling_of=SCOPED)
 
     assert d.lines[0].endswith("over ceiling 1 -> 1; functions 2 -> 3"), d.lines
     assert not any("r( )" in line for line in d.lines), \
@@ -117,7 +141,7 @@ def test_the_digest_counts_over_ceiling_per_scope_like_trend_does():
 
 
 def test_without_scope_ceilings_the_same_function_is_new_debt():
-    d = build_digest(BASE, BASE + [reports_row(0.7)], target=6)
+    d = build_digest(BASE, BASE + [reports_row(0.7)], ceiling_of=FLAT)
 
     assert "over ceiling 1 -> 2" in d.lines[0], d.lines
     assert any(line.startswith("new over ceiling: reports/r.ts r( )") for line in d.lines), d.lines
@@ -129,9 +153,24 @@ def test_an_improvement_is_judged_against_the_scopes_own_ceiling():
     improved too, and is still over. Only the over-count differs."""
     before, after = BASE + [reports_row(0.5)], BASE + [reports_row(0.7)]
 
-    scoped = build_digest(before, after, target=6, scope_targets={"reports": 12})
-    flat = build_digest(before, after, target=6)
+    scoped = build_digest(before, after, ceiling_of=SCOPED)
+    flat = build_digest(before, after, ceiling_of=FLAT)
 
     assert any("improved" in line and "r( )" in line for line in scoped.lines), scoped.lines
     assert any("improved" in line and "r( )" in line for line in flat.lines), flat.lines
     assert "over ceiling 2 -> 1" in scoped.lines[0] and "over ceiling 2 -> 2" in flat.lines[0]
+
+
+
+def test_the_digest_reads_the_ceiling_through_the_config_accessor():
+    """cmd_digest hands build_digest `Config.ceiling_of`, the one spelling of
+    "a scope's own target, else the repo's": reports at 12, everything else at 6."""
+    from crapkit.config import load_config_text
+
+    cfg = load_config_text(REPORTS_AT_12)
+
+    d = build_digest(BASE, BASE + [reports_row(0.7)], ceiling_of=cfg.ceiling_of)
+
+    assert d.lines[0].endswith("over ceiling 1 -> 1; functions 2 -> 3"), d.lines
+    assert not any("r( )" in line for line in d.lines), \
+        "a function under its own scope's ceiling is not new debt"

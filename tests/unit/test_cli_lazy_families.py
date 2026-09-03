@@ -101,7 +101,9 @@ def test_the_help_text_still_names_every_subcommand():
 # Every name `dir(crapkit.cli)` answered for at 6120197, before the re-export went
 # lazy. Dozens of tests and the console script reach crapkit.cli by name; the
 # families are attributes too, because __init__ used to import all nine modules.
-# A name that leaves this module is a break for someone, so the list only grows.
+# A name that leaves this module is a break for someone, so a name leaves the list
+# only when the commit that deletes it says so (0.5.0 dropped `_rescore_gate`, a
+# wrapper with no caller once cmd_rescore judged before printing).
 BASELINE_SURFACE = """
     SCHEMA_VERSION _AMBIGUOUS_TEST _Corpus _SCRIPT_SUFFIXES _VersionAction _actionable
     _analysis_tools _analysis_workers _analyzed_corpus _apply_verify_override _at_level
@@ -131,7 +133,7 @@ BASELINE_SURFACE = """
     _print_rescore_table _print_trend _print_uncovered _print_verify_findings _progress
     _prune_renames _pruned _pushdown_floor _range_lines _rankable _ratchet_entries _ratchet_mark
     _ratchet_merge _ratchet_move _ratchet_report _ratchet_sha256 _records_by_scope _release_claims
-    _release_target _report_verify _require_ancestor _rescore_analyze _rescore_gate _rescore_json
+    _release_target _report_verify _require_ancestor _rescore_analyze _rescore_json
     _rescore_overlay _rescored_records _resolve_batches _resolve_top _route_unowned _row_marker
     _run_kind _run_lanes _run_line _run_one_lane _runs_list _runs_prune _scope_rollup_from_agg
     _scoped_command _scored_run _scored_store _select_lanes _send_digest_alert _settle_verify

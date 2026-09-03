@@ -145,3 +145,17 @@ def test_the_readme_is_read_once_for_the_whole_module(monkeypatch):
 
     assert reads == ["README.md"]
     documented.cache_clear()
+
+
+# --- help lines 0.5.0 moved ---------------------------------------------------
+
+def test_the_lane_help_names_the_command_that_completes_a_partial_run():
+    """A `--lane` run is partial and never a baseline; the help names what to
+    run next, the same line the coverage summary ends with."""
+    assert "--reuse-unchanged" in flag_help("coverage", "--lane")
+
+
+def test_the_mutate_files_help_says_a_file_outside_the_corpus_is_skipped():
+    """README's `mutate` row says both file lists pass through the scored
+    corpus first; the flag's own help says the same."""
+    assert "outside the scored corpus" in flag_help("mutate", "--files")
