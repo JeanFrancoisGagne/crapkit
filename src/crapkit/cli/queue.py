@@ -770,7 +770,7 @@ def _print_brief_context(out: dict) -> None:
     totals = out["file_totals"]
     lane = out["lane"]
     print(f"  file: {totals['functions']} function(s), {totals['over_target']} over "
-          f"target, crap load {totals['crap_load']}")
+          f"ceiling, crap load {totals['crap_load']}")
     print(f"  gate ceiling {out['gate_rule']['ceiling']}  "
           f"lane {lane['name'] if lane else 'none'}  ->  {out['commands']['gate']}")
 

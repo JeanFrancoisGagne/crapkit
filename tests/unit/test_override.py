@@ -81,6 +81,26 @@ def test_hook_override_never_raises_an_existing_mark(tmp_path):
     assert entries[("src/a.ts", "f( )")].crap == 12.0, "the prior tighter mark must survive"
 
 
+def test_an_override_reads_a_marks_file_that_starts_with_a_bom(tmp_path):
+    """PowerShell 5.1 writes a BOM in front of a file it saves as UTF-8; every
+    other reader of the marks file tolerates it, and the override's own read
+    raised ValueError on the header line after verify had already passed."""
+    import codecs
+
+    store = SnapshotStore(tmp_path / "db.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+    (tmp_path / "ratchet.tsv").write_bytes(codecs.BOM_UTF8 + b"src/a.ts\tf( )\t12.0\n")
+    alert_cmd, _ = ok_alert(tmp_path)
+
+    record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                    alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
+                    raise_marks=False)
+
+    entries = {(e.path, e.long_name): e for e in
+               load_ratchet((tmp_path / "ratchet.tsv").read_bytes().decode("utf-8-sig"))}
+    assert entries[("src/a.ts", "f( )")].crap == 12.0, "the prior mark survives the BOM"
+
+
 def test_hook_override_still_records_a_mark_for_a_new_function(tmp_path):
     store = SnapshotStore(tmp_path / "db.sqlite")
     run_id = store.write_run(commit="c", tool_versions={}, rows=[])

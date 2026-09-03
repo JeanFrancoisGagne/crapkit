@@ -78,7 +78,9 @@ def _grant_ratchet_debt(ratchet_path: Path, violations: list[GateViolation], *,
 
 def _marks_by_key(ratchet_path: Path) -> dict[tuple[str, str], RatchetEntry]:
     """Prior marks by (path, key name); an absent ratchet file is simply no marks."""
-    existing = load_ratchet(ratchet_path.read_text(encoding="utf-8")) if ratchet_path.is_file() else []
+    # utf-8-sig: a marks file PowerShell 5.1 saved carries a BOM, and the other
+    # readers of it already tolerate one.
+    existing = load_ratchet(ratchet_path.read_bytes().decode("utf-8-sig")) if ratchet_path.is_file() else []
     return {(e.path, e.long_name): e for e in existing}
 
 
