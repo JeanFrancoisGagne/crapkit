@@ -491,6 +491,139 @@ def test_the_request_body_is_json_so_no_shell_quotes_the_comment(tmp_path):
     assert json.loads(body.read_text(encoding="utf-8"))["body"] == out.read_text(encoding="utf-8")
 
 
+# --- a verdict with no base run is not a pass (spec item 4, decision 7) --------
+#
+# On a depth-1 clone the base step made no run, verify judged the checkout against
+# its own run (an empty diff), and the comment said "verify passed" over a pull
+# request that exits 6 at full depth. The base step now records why, the comment
+# says what was judged, and gate: true fails the check when the base run was
+# attempted and failed.
+
+def test_the_base_step_records_a_reason_on_every_failure_path():
+    """A shallow clone, a fork point older than crapkit.toml, a lane that fails
+    there: each used to leave `crapkit base scoring exited N` in the log and
+    nothing the comment could quote."""
+    body = _step_named("score the base commit")["run"]
+
+    assert "crapkit-base.reason" in body
+    assert "is-shallow-repository" in body, "a depth-1 clone must be told apart from a rewrite"
+    assert "shallow clone" in body and "fetch-depth: 0" in body
+    assert "crapkit.toml at the fork point" in body
+    assert "lane failed at the fork point" in body
+
+
+def test_the_exit_step_fails_only_a_pull_request_whose_base_run_was_attempted_and_failed():
+    """With `gate: true`, exit 1 when the base step ran on a pull request and
+    made no run; a push or `delta: "false"` keeps verify's own code, because
+    those are documented opt-ins and the comment renders the honest line."""
+    step = _step_named("the exit code")
+    env = " ".join(str(v) for v in step.get("env", {}).values())
+
+    assert "pull_request" in env and "inputs.delta" in env, (
+        "the step must know whether the base run was attempted")
+    assert "crapkit-base.sha" in step["run"], "an attempted base run leaves its sha behind"
+    assert re.search(r"(?<![\w.-])exit 1\b", step["run"])
+
+
+def test_the_comment_step_hands_the_builder_the_base_files():
+    """The renderer stays git-free: the sha and the reason reach it as files
+    the base step wrote, the way the three payloads do."""
+    body = _step_named("build the comment")["run"]
+    line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
+
+    assert "--base-sha" in line and "--base-reason" in line
+    args = _builder()._parse(["--out", "x", "--base-sha", "s", "--base-reason", "r"])
+    assert (args.base_sha, args.base_reason) == ("s", "r")
+
+
+def _passing_verify() -> dict:
+    return {"ok": True, "run_id": 3, "baseline_run": 3, "changed_files": 0,
+            "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
+            "diff_uncovered_count": 0}
+
+
+def test_a_passing_verdict_with_no_base_run_says_it_judged_no_changed_function():
+    reason = "shallow clone does not hold the fork point of abc123; set fetch-depth: 0 on the checkout"
+
+    line = _builder().verdict_line(_passing_verify(), 0, base_reason=reason)
+
+    assert "verify judged no changed function" in line
+    assert f"the base run was not made ({reason})" in line
+    assert "verify passed" not in line
+
+
+def test_a_passing_verdict_with_a_base_run_still_passes():
+    line = _builder().verdict_line(_passing_verify(), 0, base_reason=None)
+
+    assert line.startswith("**verify passed.**")
+
+
+def test_a_failed_verdict_keeps_its_findings_whatever_the_base_reason():
+    """The ratchet runs without a base, so exit 7 there is a finding and not a
+    judgement of nothing."""
+    verify = {**_passing_verify(), "ok": False, "ratchet_regressions": [
+        {"path": "app/calc.py", "long_name": "f( )", "recorded": 10.0, "fresh_crap": 20.0}]}
+
+    line = _builder().verdict_line(verify, 7, base_reason="no base commit")
+
+    assert "verify failed" in line
+    assert "judged no changed function" not in line
+
+
+def _render(tmp_path, verify: dict, **files) -> str:
+    """main() over a verify payload and the base files the action leaves;
+    `sha=None` leaves that flag off, `sha=""` names a missing file."""
+    import json
+
+    payload = tmp_path / "verify.json"
+    payload.write_text(json.dumps(verify), encoding="utf-8")
+    argv = ["--verify", str(payload), "--out", str(tmp_path / "c.md")]
+    for flag, text in files.items():
+        path = tmp_path / f"base.{flag}"
+        if text:
+            path.write_text(text, encoding="utf-8")
+        argv += [f"--base-{flag}", str(path)]
+    _builder().main(argv)
+    return (tmp_path / "c.md").read_text(encoding="utf-8")
+
+
+def test_main_reads_the_reason_the_base_step_wrote(tmp_path):
+    text = _render(tmp_path, _passing_verify(), sha="", reason="lane failed at the fork point 1234abc: crapkit: lane 'py' FAILED: exited 1")
+
+    assert "the base run was not made (lane failed at the fork point 1234abc: crapkit: lane 'py' FAILED: exited 1)" in text
+
+
+def test_a_push_event_leaves_no_base_files_and_the_comment_says_no_base_commit(tmp_path):
+    """The base step is skipped on a push and under delta: "false", so neither
+    file exists; the honest line still names why nothing was judged."""
+    text = _render(tmp_path, _passing_verify(), sha="", reason="")
+
+    assert "the base run was not made (no base commit)" in text
+
+
+def test_a_base_sha_on_disk_keeps_the_pass(tmp_path):
+    text = _render(tmp_path, _passing_verify(), sha="1234abc" + chr(10), reason="")
+
+    assert "**verify passed.**" in text
+
+
+def test_a_render_without_the_base_flags_keeps_the_pass(tmp_path):
+    """Three saved payloads and no base files is the README's own render route."""
+    text = _render(tmp_path, _passing_verify())
+
+    assert "**verify passed.**" in text
+
+
+def test_the_readme_gate_row_names_the_base_run_precondition():
+    """`gate: "true"` now fails a pull request whose base run was attempted and
+    not made; a consumer reading the inputs table learns it there."""
+    section = _readme_section()
+    gate_row = next(ln for ln in section.splitlines() if ln.startswith("| `gate` |"))
+
+    assert "base run" in gate_row
+    assert "judged no changed function" in section
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

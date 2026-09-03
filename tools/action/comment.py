@@ -25,6 +25,18 @@ MARKER = "<!-- crapkit-action -->"
 _HEADER = "| File | Function | ccn | risk | remedy |\n|---|---|---:|---:|---|"
 
 
+def _read_text(path: str | None) -> str:
+    """A file the action left behind, or "" when it did not: a step that
+    failed leaves an empty redirect target, a step that was skipped leaves no
+    file at all, and the comment reads both as "nothing here"."""
+    if not path:
+        return ""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def _read_json(path: str | None) -> dict | None:
     """A payload, or None when the command that writes it did not.
 
@@ -32,27 +44,29 @@ def _read_json(path: str | None) -> dict | None:
     on stderr, leaving an empty redirect target. The comment says so; it does
     not crash on it.
     """
-    if not path:
-        return None
     try:
-        text = Path(path).read_text(encoding="utf-8")
-    except OSError:
-        return None
-    try:
-        return json.loads(text)
+        return json.loads(_read_text(path))
     except ValueError:
         return None
 
 
 def _read_lines(path: str | None) -> list[str]:
     """The changed-file list, empty when there is none."""
-    if not path:
-        return []
-    try:
-        text = Path(path).read_text(encoding="utf-8")
-    except OSError:
-        return []
+    text = _read_text(path)
     return [line.strip().replace("\\", "/") for line in text.splitlines() if line.strip()]
+
+
+def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
+    """Why the base run was not made, or None when it was.
+
+    The base step leaves crapkit-base.sha when it made a run and
+    crapkit-base.reason when it did not; a push event and `delta: "false"`
+    skip the step and leave neither, which is `no base commit`. A render with
+    no --base-sha at all (the README's saved-payload route) is not asked.
+    """
+    if not sha_path or _read_text(sha_path).strip():
+        return None
+    return _read_text(reason_path).strip() or "no base commit"
 
 
 def _plural(count: int, noun: str) -> str:
@@ -83,18 +97,24 @@ def _against(verify: dict) -> str:
             f"{_plural(verify.get('changed_files', 0), 'changed file')}")
 
 
-def verdict_line(verify: dict | None, exit_code: int) -> str:
+def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = None) -> str:
     """One line for the whole verdict, the exit code included.
 
     verify reports the first of 6, 7, 8, 9 that fires, so the code says which
-    rule refused the tree and the counts say what it found.
+    rule refused the tree and the counts say what it found. A pass with no base
+    run behind it is a judgement of nothing: the diff was empty, the gate
+    judged no changed function, and the line says so instead of "passed". A
+    failure is a failure either way, since the ratchet runs without a base.
     """
     if verify is None:
         return (f"**`crapkit verify` exited {exit_code} and wrote no verdict.** "
                 f"Read the job log: this is tooling, not a score.")
-    if verify.get("ok"):
-        return f"**verify passed.** {_against(verify)}."
-    return f"**verify failed, exit {exit_code}.** {_against(verify)}: {_findings(verify)}."
+    if not verify.get("ok"):
+        return f"**verify failed, exit {exit_code}.** {_against(verify)}: {_findings(verify)}."
+    if base_reason is not None:
+        return (f"**verify judged no changed function:** the base run was not made "
+                f"({base_reason}). {_against(verify)}.")
+    return f"**verify passed.** {_against(verify)}."
 
 
 def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
@@ -134,13 +154,14 @@ def _scope_line(changed: list[str], entries: list[dict]) -> str:
     return f"### Worklist: the whole repository, top {len(entries)}"
 
 
-def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int) -> str:
+def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,
+         base_reason: str | None = None) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
     it and the next run still edits this comment instead of adding one."""
     entries = rows(worklist, changed, top)
     return "\n".join([MARKER, "", "## crapkit", "",
                       scored_line(coverage), "",
-                      verdict_line(verify, exit_code), "",
+                      verdict_line(verify, exit_code, base_reason), "",
                       _scope_line(changed, entries), "",
                       table(entries), ""])
 
@@ -150,6 +171,9 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--coverage", help="crapkit coverage --json output")
     parser.add_argument("--verify", help="crapkit verify --json output")
     parser.add_argument("--verify-exit", type=int, default=0, help="verify's exit code")
+    parser.add_argument("--base-sha", help="file holding the fork point the base run was made at; "
+                        "empty or missing when it was not")
+    parser.add_argument("--base-reason", help="file holding why the base run was not made")
     parser.add_argument("--worklist", help="crapkit worklist --json output")
     parser.add_argument("--changed", help="file holding one changed path per line")
     parser.add_argument("--top", type=int, default=5, help="rows to render (default 5)")
@@ -161,7 +185,8 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
-                _read_json(args.worklist), _read_lines(args.changed), args.top)
+                _read_json(args.worklist), _read_lines(args.changed), args.top,
+                _base_reason(args.base_sha, args.base_reason))
     Path(args.out).write_text(text, encoding="utf-8", newline="\n")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps({"body": text}),

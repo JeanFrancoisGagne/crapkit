@@ -553,8 +553,8 @@ behind the checkout to measure from.
 
 | Input | Default | What it does |
 |---|---|---|
-| `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. Anything else exits 0 and the comment is the whole output |
-| `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone |
+| `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. On a pull request with `delta` on it also exits 1 when the base run was not made, because a verdict with no base run judged no changed function. Anything else exits 0 and the comment is the whole output |
+| `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone, and the verdict then judges no changed function |
 | `top` | `"5"` | worklist rows rendered in the table |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
 
@@ -579,13 +579,26 @@ The base run happens in a detached worktree under `RUNNER_TEMP`, and its store i
 over the checkout's so both runs sit in one place. The cost is **two lane runs on a pull
 request**: your suite runs once at the fork point and once on the checkout. Set `delta:
 "false"` to skip the base run, and the verdict falls back to the checkout against its own
-run, which reports the tree's own health and judges no changed function.
+run, which reports the tree's own health and judges no changed function. The comment says
+so in place of `verify passed`:
 
-Three things leave the base run unmade, and none of them fails the job: a shallow clone
-that does not hold the fork point, a fork point older than your `crapkit.toml`, and a
-lane that will not run against that tree. The step logs `crapkit base scoring exited N`
-and the verdict falls back the same way `delta: "false"` does. A `push` event never makes
-one, because there is no base commit and no pull request to comment on.
+```markdown
+**verify judged no changed function:** the base run was not made (no base commit). Run 2 against baseline 2, 0 changed files.
+```
+
+Three things leave the base run unmade: a shallow clone that does not hold the fork
+point, a fork point older than your `crapkit.toml`, and a lane that will not run against
+that tree. The step logs `crapkit base scoring exited N` and writes the reason to
+`crapkit-base.reason` in the words the comment then quotes, `shallow clone does not hold
+the fork point of <sha>; set fetch-depth: 0 on the checkout`, `no usable crapkit.toml at
+the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the lane's
+first error line. The verdict falls back the same way `delta: "false"` does, and the
+ratchet still runs, so exit 7 there is a finding. What differs is the job's status. With
+`gate: "true"` on a pull request whose base run was attempted and not made, the exit step
+exits 1 and prints the reason, because `actions/checkout`'s default depth-1 clone would
+otherwise turn every pull request into a green check that judged nothing. A `push` event
+and `delta: "false"` never attempt the base run, so they keep verify's own code; a `push`
+has no base commit and no pull request to comment on.
 
 One requirement the base run adds: the lane has to measure the tree it runs in. A lane
 that reaches an installed copy of your package instead of the checkout will measure the

@@ -4,6 +4,23 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### The Action says why the base run was not made, and `gate: "true"` fails a pull request that judged nothing
+
+On `actions/checkout`'s default depth-1 clone the Action's base step made no run, `verify`
+judged the checkout against its own run (an empty diff), the comment said `verify passed`,
+and `gate: "true"` exited 0 on a pull request that exits 6 at full depth. The base step now
+writes the reason to `crapkit-base.reason` on every failure path: `shallow clone does not
+hold the fork point of <sha>; set fetch-depth: 0 on the checkout`, `no usable crapkit.toml
+at the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the lane's
+first error line. The comment renders `**verify judged no changed function:** the base run
+was not made (<reason>)` in place of `verify passed`, with `no base commit` as the reason on
+a `push` event and under `delta: "false"`. With `gate: "true"` the exit step exits 1 when the
+base run was attempted on a pull request and not made, printing the reason; a `push` and
+`delta: "false"` never attempt it and keep `verify`'s own code. The renderer stays git-free:
+the sha and the reason reach `tools/action/comment.py` as `--base-sha` and `--base-reason`
+files. Moved contracts: the README's `gate` and `delta` input rows, and the "What the
+verdict line covers" passage that said none of the three failures fails the job.
+
 ### The MCP server survives a bad call
 
 A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.
