@@ -280,7 +280,7 @@ py.json
 | `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
 | `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
 | `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. | |
-| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took. Drives `--reuse-unchanged` and `doctor --tune`. | |
+| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
 | `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
@@ -760,6 +760,17 @@ crapkit: lane 'py': positional argument 'pylib/unit' narrows a full-suite covera
 When the refused token really was a value, the attached form is the one-edit fix: dropping
 it breaks the command, because the flag then eats whatever comes next.
 
+Positionals that together name every configured `testpaths` entry are not narrowing either.
+`python -m pytest tests --cov=app` beside a `pyproject.toml` whose `[tool.pytest.ini_options]`
+says `testpaths = ["tests"]` collects exactly what a bare `pytest` collects there, so it
+loads. The entries are read from the file pytest would pick where the lane runs (`cwd` when
+the lane sets one), in pytest's order: `pytest.ini` and `.pytest.ini` decide when present,
+even empty; `pyproject.toml`, `tox.ini` and `setup.cfg` decide when they hold a pytest
+section. `tests/`, `./tests` and `tests` are one entry. One entry of several is still
+narrowing: `pytest tests` under `testpaths = ["tests", "integration"]` runs half of what a
+bare `pytest` runs and is refused, and so is `tests/unit` under `testpaths = ["tests"]`. A
+lane without a positional reads none of those files.
+
 ### Test attribution for `explain --tests`
 
 `crapkit explain FILE NAME --tests` lists the tests that covered a function, from coverage.py
@@ -912,12 +923,14 @@ container_ok = true
 Rerunning a suite crapkit already read is the slowest thing it does. Two flags skip it.
 
 Every artifact crapkit reads is stamped in `.crapkit/artifacts.json` with the commit it was
-built at, the lane that built it, and how long the lane took.
+built at, the lane that built it, and how long the lane took. A lane that ran and left its
+artifact unwritten stamps the file's modification time instead, under `refused_mtime_ns`,
+which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-behind-is-refused).
 
 | Flag | Behavior |
 |---|---|
-| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk. Warns per lane when files under that lane's scopes changed since the stamp. |
-| `--reuse-unchanged` | Rerun only the lanes whose scopes moved. A lane is reused when its stamp commit is an ancestor of HEAD **and** nothing under its scope paths changed since, working-tree edits included. |
+| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
+| `--reuse-unchanged` | Rerun only the lanes whose scopes moved. A lane is reused when its stamp commit is an ancestor of HEAD **and** nothing under its scope paths changed since, working-tree edits included. A lane whose last attempt failed to write its artifact reruns whatever the stamp commit says. |
 
 **Passing both makes `--reuse-artifacts` win.** It is checked first, so nothing reruns
 whatever changed, and the `artifact still matches its scopes; reusing without rerun` line
@@ -938,6 +951,40 @@ only the second actually ran the suite.
 A stale artifact also silences the dark-line fields. `next-item` and `brief` then emit
 `uncovered_lines: null` with a note naming the lane to rerun, rather than an empty list a
 caller would read as "nothing left to cover".
+
+### The artifact a failed attempt left behind is refused
+
+`coverage` refuses a lane that ran and did not rewrite its artifact ([the artifact has to
+be the one this run wrote](#the-artifact-has-to-be-the-one-this-run-wrote)). Until 0.5.0
+that refusal ended with the run: the file stayed on disk, the next `coverage
+--reuse-artifacts` parsed it, and `verify --reuse-artifacts` passed over it and wrote
+itself in as the trusted baseline. The failed attempt now records the file's modification
+time in the stamp, and reuse refuses the file while that time still matches:
+
+```
+$ crapkit coverage --reuse-artifacts
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact on its last attempt — the .crapkit/cov/py.json on disk predates it and is the previous run's, which --reuse-artifacts will not score; full log: /repo/.crapkit/lane-py.log; last output: ...
+crapkit: every lane failed (1 of 1); the errors are above
+EXIT=5
+```
+
+Same exit 5 as the run that failed, same log path. With other lanes measured the run is
+`partial` and `verify` refuses to conclude, exactly as for any failed lane. Two things
+clear it: a real run that writes the artifact, or a rewrite of the file by hand. A
+coverage JSON combined from a killed run's shards is newer than the refused one, so the
+[shard recipe](#a-killed-run-leaves-its-coverage-shards-behind) still ends in a
+`--reuse-artifacts` run that scores. A file that is gone is the missing-artifact refusal,
+as before.
+
+The refusal is keyed on the attempt, not on the failure. A lane refused before it ran, such
+as the python lane under the [container guard](#containers), records nothing, and
+`--reuse-artifacts` stays the way through that guard. A lane that failed after rewriting
+its artifact (a junit that says the run did not finish, an artifact from another tree)
+records nothing either: that file is this run's, and reuse judges it on its own terms.
+
+`--reuse-unchanged` reads the same stamp, so a lane whose last attempt wrote nothing reruns
+even when nothing under its scopes moved: the stamp commit alone said the scopes were
+unchanged, which was true, and the lane had still not measured them.
 
 ---
 
@@ -1130,7 +1177,9 @@ The refusal is about a run crapkit watched. `--reuse-artifacts` is you saying ru
 and read what is on disk, and what is on disk can be a salvage: a coverage JSON combined
 by hand out of a killed run's `.coverage.*` shards, with that run's empty or missing junit
 still sitting beside it. So there the same two refusals are one line on stderr, and the
-lane scores off the coverage JSON:
+lane scores off the coverage JSON. (The one refusal reuse does keep is the [artifact a
+failed attempt left behind](#the-artifact-a-failed-attempt-left-behind-is-refused), and a
+salvage is newer than that file by construction.)
 
 ```
 $ crapkit coverage --reuse-artifacts
@@ -1227,8 +1276,11 @@ artifact path leads and the leftover follows it: `produced no artifact at
 The check is the modification time, not the bytes: a runner that rewrites a byte-identical
 report still bumps it, so an unchanged rerun stays green. `results_artifact` is held to the
 same rule, so a killed suite's junit cannot feed the test-count and no-new-failures checks
-last run's numbers. `--reuse-artifacts` is untouched — there the operator is saying read
-what is on disk, and the staleness warning is what that path already prints.
+last run's numbers. `--reuse-artifacts` reads the same refusal back: the failed attempt
+stamps the modification time of the file it left, and [reuse refuses that
+file](#the-artifact-a-failed-attempt-left-behind-is-refused) until something rewrites it.
+Until 0.5.0 reuse was untouched by this rule, and a dead lane's old artifact was one
+`--reuse-artifacts` away from being scored.
 
 ### The failure message names its own log
 

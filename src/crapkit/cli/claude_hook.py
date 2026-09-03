@@ -285,7 +285,7 @@ def _config(root: Path):
     module scope imports the snapshot store this hook must never open."""
     from ..config import load_config_text
 
-    return load_config_text((root / "crapkit.toml").read_text(encoding="utf-8"))
+    return load_config_text((root / "crapkit.toml").read_text(encoding="utf-8"), root=root)
 
 
 def _scoped(cfg, rel: str) -> dict | None:

@@ -142,13 +142,15 @@ def _progress(message: str) -> None:
 
 
 def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git):
-    """One lane's outcome or its error text; a failed lane never sinks the run."""
+    """One lane's outcome or the error that failed it; a failed lane never sinks
+    the run. The error object, not its text: a refusal carries the modification
+    times of the files the attempt left unwritten, which the fold persists."""
     from ..lanes import run_lane
 
     try:
         return run_lane(root, lane, reuse_artifact=reuse, scope_paths=scope_paths, git=git), ""
     except ToolError as exc:
-        return None, str(exc)
+        return None, exc
 
 
 def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git):
@@ -170,7 +172,7 @@ def _execute_parallel(root: Path, ordered, reuse: dict, scope_paths, git, max_pa
 
 
 def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int) -> dict:
-    """lane -> (outcome, error text), keyed by the Lane itself rather than its
+    """lane -> (outcome, error), keyed by the Lane itself rather than its
     name, which the config does not force to be unique. Serial below 2, which is
     the default: same thread, same order, none of the started/finished chatter."""
     if max_parallel < 2:
@@ -178,28 +180,7 @@ def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_paral
     return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel)
 
 
-def _collect_lanes(root: Path, lanes, outcomes: dict):
-    """Fold the outcomes back together in DECLARATION order, whatever order they
-    finished in, and persist every stamp in one write."""
-    from ..lanes import write_stamps
-
-    coverage_by_path: dict[str, list] = {}
-    provenance: dict[str, dict] = {}
-    lane_errors: dict[str, str] = {}
-    stamps: dict[str, dict] = {}
-    succeeded = []
-    for lane in lanes:
-        outcome, error = outcomes[lane]
-        if error:
-            lane_errors[lane.name] = error
-            print(f"crapkit: lane {lane.name!r} FAILED: {error}", file=sys.stderr)
-            continue
-        for path, fns in outcome.coverage.items():
-            coverage_by_path.setdefault(path, []).extend(fns)
-        provenance[lane.name] = outcome.provenance
-        stamps[lane.artifact] = outcome.stamp
-        succeeded.append(lane)
-    write_stamps(root, stamps)
+def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
     # `lane_errors` and not `lanes`: a cc-only repo declares no lanes, so nothing
     # succeeded and nothing failed either, and that run is still a scored run.
     if lane_errors and not succeeded:
@@ -210,6 +191,34 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
         # a name would collapse to one key.
         failed = len(lanes) - len(succeeded)
         raise ToolError(f"every lane failed ({failed} of {len(lanes)}); the errors are above")
+
+
+def _collect_lanes(root: Path, lanes, outcomes: dict):
+    """Fold the outcomes back together in DECLARATION order, whatever order they
+    finished in, and persist every stamp in one write: the fresh stamps of the
+    lanes that succeeded, and the refusal each failed lane's error carries for
+    the artifact its attempt left unwritten."""
+    from ..lanes import refusal_stamp, write_stamps
+
+    coverage_by_path: dict[str, list] = {}
+    provenance: dict[str, dict] = {}
+    lane_errors: dict[str, str] = {}
+    stamps: dict[str, dict] = {}
+    succeeded = []
+    for lane in lanes:
+        outcome, error = outcomes[lane]
+        if error:
+            lane_errors[lane.name] = str(error)
+            print(f"crapkit: lane {lane.name!r} FAILED: {error}", file=sys.stderr)
+            stamps.update(refusal_stamp(root, lane, error))
+            continue
+        for path, fns in outcome.coverage.items():
+            coverage_by_path.setdefault(path, []).extend(fns)
+        provenance[lane.name] = outcome.provenance
+        stamps[lane.artifact] = outcome.stamp
+        succeeded.append(lane)
+    write_stamps(root, stamps)
+    _refuse_all_failed(lanes, lane_errors, succeeded)
     return coverage_by_path, provenance, lane_errors, succeeded
 
 

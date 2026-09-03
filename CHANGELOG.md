@@ -90,6 +90,31 @@ line under a two-line comment instead of a 405-character line. A hand-written ro
 such as `dist/**` still matches the root and nothing below it. A committed config carrying
 only `**/dist/**`, `**/conftest.py` or `**/*.test.*` now also excludes the root copy: run
 `crapkit doctor` after upgrading and read the per-scope file counts.
+### A failed lane's old artifact is refused on reuse
+A lane that ran and did not rewrite its artifact was refused by `coverage` (exit 5) and then
+scored by the next `coverage --reuse-artifacts` and passed by `verify --reuse-artifacts`,
+which wrote the dead lane's old numbers in as the trusted baseline. The failed attempt now
+records the modification time of the file it left behind in `.crapkit/artifacts.json`, and
+reuse refuses the file while that time still matches: `lane 'py' wrote no artifact on its
+last attempt — the .crapkit/cov/py.json on disk predates it and is the previous run's, which
+--reuse-artifacts will not score`, exit 5 for `coverage` and `verify cannot conclude with
+failed lanes` for `verify`. A real run or a rewrite of the file clears it, so a coverage JSON
+combined by hand from a killed run's shards still reuses. A lane refused before it ran (the
+container guard) records nothing, and `--reuse-unchanged` reruns a lane whose last attempt
+wrote nothing instead of trusting its stamp commit. The 0.4.12 entry's "`--reuse-artifacts`
+is untouched" no longer holds; see it below.
+
+### The full-suite guard knows pytest's `testpaths`
+`python -m pytest tests --cov=app` beside `testpaths = ["tests"]` collects the whole suite,
+and the guard refused it (`positional argument 'tests' narrows a full-suite coverage run`,
+exit 3) from every command that loads the configuration, and the advisory hook stayed silent
+in that repo. The loader now takes the repository root, reads `testpaths` from the file
+pytest would pick where the lane runs (`pytest.ini` and `.pytest.ini` decide when present,
+even empty; `pyproject.toml`, `tox.ini` and `setup.cfg` when they hold a pytest section) and
+accepts the positionals when together they name every configured entry. One entry of
+several, or a positional the testpaths do not name, is refused as before, and a lane
+without a positional reads no file. `doctor`, `coverage`, `digest`, `ratchet seed` and the
+hook all load such a lane.
 
 ## 0.4.15 — 2026-09-02
 
@@ -152,7 +177,8 @@ artifact at .crapkit/cov/py.json, and the .crapkit/cov/junit.xml on disk is the 
 run's`. `results_artifact` is held to
 the same rule, so a killed suite's junit cannot feed the test-count and no-new-failures
 checks last run's numbers. The check is the mtime and not the bytes, so a runner that
-rewrites an identical report stays green, and `--reuse-artifacts` is untouched.
+rewrites an identical report stays green. `--reuse-artifacts` was left untouched by this
+release; 0.5.0 makes it refuse the same leftover.
 
 ### `mutate` refuses to score a suite that never ran
 `crapkit mutate` read any nonzero exit from `mutation_command` as a killed mutant, so a
