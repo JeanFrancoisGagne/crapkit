@@ -794,18 +794,25 @@ def _runner_report(word: str) -> tuple[str, str, str] | None:
     return (parts[0], parts[1], parts[2]) if len(parts) == 3 else None
 
 
-def _same_file(a: str, b: str) -> bool:
+def _same_environment(a: str, b: str) -> bool:
+    """Do two interpreter paths name one environment? Judged on the directory
+    each executable sits in, never on the binary: on POSIX `python -m venv`
+    symlinks bin/python to the base interpreter, so samefile on the two
+    executables read a venv and its base as one python while a package
+    installed in one stayed invisible to the other. `python` and `python3.12`
+    beside each other in one bin are one install, symlink or not."""
+    dir_a, dir_b = os.path.dirname(os.path.abspath(a)), os.path.dirname(os.path.abspath(b))
     try:
-        return os.path.samefile(a, b)
+        return os.path.samefile(dir_a, dir_b)
     except OSError:
-        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+        return os.path.normcase(dir_a) == os.path.normcase(dir_b)
 
 
 def _foreign_interpreter(name: str, executable: str) -> list[Finding]:
     """WARN when the lane's python is not the one running this doctor. A
     package installed in one is invisible to the other, which is how a lane
     ran the system python while the repo's venv held pytest-cov."""
-    if _same_file(executable, sys.executable):
+    if _same_environment(executable, sys.executable):
         return []
     return [Finding("WARN", f"lane {name!r} runs {executable}, not the python running this "
                             f"doctor ({sys.executable}); a package installed in one is not "

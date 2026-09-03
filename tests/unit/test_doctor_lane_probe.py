@@ -7,7 +7,9 @@ when that interpreter is not the one running doctor, and FAILs a `{files}`
 template on a scope that holds no test file, which is the template that hands
 the runner a source path and collects nothing.
 """
+import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -171,6 +173,41 @@ def test_the_real_probe_answers_for_this_interpreter():
     assert report is not None
     assert report[0].lower() == sys.executable.lower()
     assert report[1] == pytest.__version__
+
+
+def _linked(base: Path, target: Path) -> str:
+    """A second name for the same file: what a venv's bin/python is to the base
+    interpreter on POSIX, without needing a symlink privilege here."""
+    base.parent.mkdir(parents=True, exist_ok=True)
+    os.link(target, base)
+    return str(base)
+
+
+def test_a_venv_whose_python_links_to_the_doctors_binary_is_another_environment(monkeypatch, tmp_path):
+    """On POSIX `python -m venv` symlinks bin/python to the base interpreter,
+    so the two executables are one file and two environments: a package
+    installed in the venv is invisible to the base python."""
+    base = tmp_path / "base" / "python"
+    base.parent.mkdir()
+    base.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(base))
+    venv_python = _linked(tmp_path / "venv" / "bin" / "python", base)
+
+    findings = admin._foreign_interpreter("py", venv_python)
+
+    assert [f.level for f in findings] == ["WARN"], findings
+    assert findings[0].text.startswith(f"lane 'py' runs {venv_python}, not the python running this doctor")
+
+
+def test_a_second_name_beside_the_doctors_binary_is_the_same_environment(monkeypatch, tmp_path):
+    """`python3.12` next to `python` in one bin is one install, link or not."""
+    base = tmp_path / "base" / "python"
+    base.parent.mkdir()
+    base.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(base))
+    sibling = _linked(tmp_path / "base" / "python3.12", base)
+
+    assert admin._foreign_interpreter("py", sibling) == []
 
 
 def test_a_lane_with_a_problem_of_its_own_is_not_probed_twice(monkeypatch, tmp_path):
