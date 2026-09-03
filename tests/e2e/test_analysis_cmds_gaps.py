@@ -61,9 +61,12 @@ FACTORY = (
 
 RATE_BEFORE = "def rate(x):\n    return x\n"
 RATE_AFTER = "def rate(x):\n    if x > 10:\n        return 10\n    return x\n"
-# The suite for the mutate repo: a script, so the repo root lands on sys.path.
-RATE_CHECK = "import calc\n\nassert calc.rate(11) == 10\n"
-NOOP_TS = 'export const NAME = "noop";\n'
+# The suite for the mutate repo: a script run from the root, importing from src/.
+RATE_CHECK = "import sys\nsys.path.insert(0, 'src')\nimport calc\n\nassert calc.rate(11) == 10\n"
+# Operator-free, and in the corpus: from 0.5.0 mutate places mutants only in
+# files scoring would score, so a file no scope claims is named as outside the
+# corpus rather than read for operators.
+NOOP_PY = 'NAME = "noop"\n'
 
 
 def write(path: Path, text: str) -> None:
@@ -92,7 +95,7 @@ def mutate_toml() -> str:
     command = f'"{sys.executable}" -B check.py'
     return (
         f"[crapkit]\ntarget = 6\nmutation_command = '{command}'\n\n"
-        '[[scope]]\nname = "py"\npaths = ["."]\nlanguages = ["python"]\n'
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
     )
 
 
@@ -169,15 +172,15 @@ def clone_repo(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def diff_repo(tmp_path: Path) -> Path:
-    """calc.py is committed flat, then grows a guard in the working tree only."""
+    """src/calc.py is committed flat, then grows a guard in the working tree only."""
     repo = tmp_path / "diffed"
     write(repo / "crapkit.toml", mutate_toml())
-    write(repo / "calc.py", RATE_BEFORE)
+    write(repo / "src" / "calc.py", RATE_BEFORE)
     write(repo / "check.py", RATE_CHECK)
-    write(repo / "noop.ts", NOOP_TS)
+    write(repo / "src" / "noop.py", NOOP_PY)
     git(repo, "init", "-q", "-b", "main")
     commit_all(repo, "init")
-    write(repo / "calc.py", RATE_AFTER)
+    write(repo / "src" / "calc.py", RATE_AFTER)
     return repo
 
 
@@ -346,27 +349,30 @@ def test_runs_without_an_action_still_lists(tmp_path: Path):
 
 
 def test_mutate_scopes_to_the_working_tree_diff_and_caps_the_list(diff_repo: Path):
-    before = (diff_repo / "calc.py").read_bytes()
+    before = (diff_repo / "src" / "calc.py").read_bytes()
     res = run_cli(diff_repo, "mutate", "--max-mutants", "1")
     assert res.returncode == 0, res.stdout + res.stderr
     assert "capping at 1 of 2 mutants" in res.stderr, "the guard line yields > -> >= and > -> <="
     header, survivor = res.stdout.splitlines()
     assert header == "mutation: 0/1 killed (0%)"
-    assert survivor.strip().startswith("SURVIVED  calc.py:2  [> -> >=]")
-    assert (diff_repo / "calc.py").read_bytes() == before, "the original always comes back"
+    assert survivor.strip().startswith("SURVIVED  src/calc.py:2  [> -> >=]")
+    assert (diff_repo / "src" / "calc.py").read_bytes() == before, "the original always comes back"
 
 
 def test_mutate_reports_nothing_to_mutate_for_absent_and_operator_free_files(diff_repo: Path):
-    res = run_cli(diff_repo, "mutate", "--files", "ghost.py", "noop.ts")
+    """Both files sit where the scope claims them, so the corpus cut keeps them:
+    an absent file and an operator-free one grow nothing, and the run says
+    `0/0` rather than naming a file outside the corpus."""
+    res = run_cli(diff_repo, "mutate", "--files", "src/ghost.py", "src/noop.py")
     assert res.returncode == 0, res.stdout + res.stderr
     assert res.stdout.strip() == "mutation: 0/0 killed (n/a)"
 
 
 def test_mutate_json_stays_well_formed_with_zero_mutants(diff_repo: Path):
-    res = run_cli(diff_repo, "mutate", "--files", "noop.ts", "--json")
+    res = run_cli(diff_repo, "mutate", "--files", "src/noop.py", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
     assert json.loads(res.stdout) == {"mutants": 0, "killed": 0, "survived": 0,
-                                      "survivors": [], "schema": 1}
+                                      "survivors": [], "outside_corpus": [], "schema": 1}
 
 
 def test_snapshot_mtimes_keeps_present_files_and_drops_missing_ones(tmp_path: Path):

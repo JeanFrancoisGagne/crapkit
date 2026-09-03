@@ -1,5 +1,9 @@
 """Line-based mutant generation. Pure: text + changed lines in, mutants out.
 
+Corpus-scoped too: `partition_by_corpus` puts the diff's file list through
+the predicate scoring uses before a mutant is placed, so a test file never
+grows one.
+
 Diff-scoped by design: mutating a whole repo is a research project, mutating
 the lines a change touched is a review step. Operators flip comparisons,
 boolean connectives, and boolean literals — the mutants that catch a test
@@ -17,6 +21,7 @@ import re
 from typing import NamedTuple
 
 from .errors import ToolError
+from .universe import assign_files
 
 
 class Mutant(NamedTuple):
@@ -67,6 +72,27 @@ UNMUTABLE = {
                   "comparisons ('-eq', '-gt', '-lt') are no part of crapkit's operator "
                   "table; '-and'/'-or' are its boolean connectives and are not either",
 }
+
+# Why a path in the diff grew no mutants, said beside the refusal reasons above
+# because it is the same kind of sentence: a measurement crapkit declined.
+OUTSIDE_CORPUS = "outside the scored corpus (scopes, excludes, test files)"
+
+
+def partition_by_corpus(targets: dict, cfg, *, size_of=None) -> tuple[dict, list[str]]:
+    """The targets scoring would score, and the paths it would not.
+
+    One predicate, `universe.assign_files`, the call `coverage` makes over
+    `git ls-files`: scopes by path and language, the exclude globs, the byte
+    ceiling, the test-file cut. A mutant in a test measures nothing (on one
+    review run 6 of 9 mutants landed in tests/test_tax.py and the survivor was
+    an assertion), so a test file in the diff, or named by `--files`, comes back
+    in the outside list instead of growing mutants. Kept targets keep the
+    caller's order; the outside list is sorted. `size_of` is injected the way
+    `scan_files` takes it, so this stays pure.
+    """
+    admitted = set().union(*assign_files(sorted(targets), cfg, size_of=size_of).values())
+    kept = {rel: lines for rel, lines in targets.items() if rel in admitted}
+    return kept, sorted(set(targets) - admitted)
 
 
 def mutation_language(rel_path: str) -> str:

@@ -12,8 +12,8 @@ from ..churn_log import log_lines
 from ..errors import ConfigError, CrapkitError
 from ..gitio import ls_files
 from ..invocation import _self
-from ._shared import (_load_repo_config, _load_sources, _open_store, _positive_top,
-                      _print_json, _repo_relative)
+from ._shared import (_file_sizer, _load_repo_config, _load_sources, _open_store,
+                      _positive_top, _print_json, _repo_relative)
 
 
 def _at_default_thresholds(args: argparse.Namespace) -> bool:
@@ -81,6 +81,23 @@ def _mutation_targets(root: Path, files: list | None) -> dict:
     return targets
 
 
+def _corpus_targets(root: Path, cfg, targets: dict) -> tuple[dict, list[str]]:
+    """The targets scoring would score, each dropped path named on stderr.
+
+    `mutate` never mutates a test: the diff's files, and the ones `--files`
+    names, pass through the predicate `coverage` scores with before a mutant is
+    placed, or a survivor in an assertion reads as a hole in the suite. Each
+    drop is said, for the reason `_file_mutants` says its refusal: a score built
+    on fewer files than the diff holds must say so.
+    """
+    from ..mutate import OUTSIDE_CORPUS, partition_by_corpus
+
+    kept, outside = partition_by_corpus(targets, cfg, size_of=_file_sizer(root))
+    for rel in outside:
+        print(f"crapkit: not mutating {rel}: {OUTSIDE_CORPUS}", file=sys.stderr)
+    return kept, outside
+
+
 def _file_mutants(root: Path, rel: str, lines) -> list:
     """One file's mutants: none when it is gone, none when crapkit refuses its
     language. A refusal is printed with the file named — mutate is diff-scoped,
@@ -112,16 +129,31 @@ def _collect_mutants(root: Path, targets: dict, max_mutants: int) -> list:
     return out
 
 
-def _print_mutation(as_json: bool, survivors: list, total: int) -> None:
+def _mutation_payload(survivors: list, total: int, outside: list[str]) -> dict:
+    return {"mutants": total, "killed": total - len(survivors), "survived": len(survivors),
+            "survivors": [m._asdict() for m in survivors], "outside_corpus": outside}
+
+
+def _print_mutation_text(survivors: list, total: int) -> None:
     killed = total - len(survivors)
-    if as_json:
-        _print_json({"mutants": total, "killed": killed, "survived": len(survivors),
-                          "survivors": [m._asdict() for m in survivors]})
-        return
     rate = f"{killed / total:.0%}" if total else "n/a"
     print(f"mutation: {killed}/{total} killed ({rate})")
     for m in survivors:
         print(f"  SURVIVED  {m.path}:{m.line}  [{m.op}]  {m.mutated.strip()}")
+
+
+def _print_mutation(as_json: bool, survivors: list, total: int, outside: list[str]) -> None:
+    """A zero-mutant run whose files the corpus cut dropped says so on stdout:
+    `0/0 killed` over a diff that held a test file read as a suite with nothing
+    to prove, when it was a diff with nothing crapkit would mutate."""
+    from ..mutate import OUTSIDE_CORPUS
+
+    if as_json:
+        _print_json(_mutation_payload(survivors, total, outside))
+    elif outside and not total:
+        print(f"mutation: nothing to mutate; {OUTSIDE_CORPUS}: {', '.join(outside)}")
+    else:
+        _print_mutation_text(survivors, total)
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
@@ -164,10 +196,11 @@ def cmd_mutate(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     if not cfg.mutation_command:
         raise ConfigError("mutate needs [crapkit] mutation_command — the suite run once per mutant")
-    mutants = _collect_mutants(root, _mutation_targets(root, args.files), args.max_mutants)
+    targets, outside = _corpus_targets(root, cfg, _mutation_targets(root, args.files))
+    mutants = _collect_mutants(root, targets, args.max_mutants)
     verdicts = run_mutants(root, cfg, mutants, reporter(len(mutants), sys.stderr))
     survivors = [m for m, killed in zip(mutants, verdicts) if not killed]
-    _print_mutation(args.json, survivors, len(mutants))
+    _print_mutation(args.json, survivors, len(mutants), outside)
     return 0
 
 
