@@ -75,7 +75,7 @@ UNMUTABLE = {
 
 # Why a path in the diff grew no mutants, said beside the refusal reasons above
 # because it is the same kind of sentence: a measurement crapkit declined.
-OUTSIDE_CORPUS = "outside the scored corpus (scopes, excludes, test files)"
+OUTSIDE_CORPUS = "outside the scored corpus (scopes, excludes, test files, max_file_bytes)"
 
 
 def partition_by_corpus(targets: dict, cfg, *, size_of=None) -> tuple[dict, list[str]]:
