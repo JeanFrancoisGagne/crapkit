@@ -6,7 +6,7 @@ The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/202
 
 ### The MCP server survives a bad call
 
-A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.
+A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.
 
 ### explain and doctor answer JSON over MCP
 
@@ -14,7 +14,7 @@ Both tools shell to their `--json` form, so all nine tools return one shape and 
 
 ### worklist and next_item take a scope over MCP
 
-Both tools accept `scope`, an array of declared scope names, one `--scope` each, so a large repository is partitioned before `top` applies. An undeclared name answers the CLI's exit-3 sentence naming the declared scopes as a tool error.
+Both tools accept `scope`, an array of declared scope names, one `--scope` each, so a large repository is partitioned before `top` applies; the CLI's answer to the flags comes back as the tool's result.
 
 ## 0.4.15 — 2026-09-02
 

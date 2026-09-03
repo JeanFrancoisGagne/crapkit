@@ -64,26 +64,29 @@ def test_initialize_list_and_call(repo: Path):
 
 
 def test_a_bad_call_is_a_tool_error_and_the_server_keeps_answering(repo: Path):
-    """Four mistakes a coding agent makes, then a good call. Each mistake is a
+    """Five mistakes a coding agent makes, then a good call. Each mistake is a
     tool result in the tool's words (ADR 0001); the good call still answers."""
     replies = _serve(repo, [
         _rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}}),
         _call(2, "brief", {"path": "pylib/mod.py"}),
         _call(3, "worklist", {"bogus": 1}),
         _call(4, "worklist", {"top": "three"}),
-        _rpc(5, "ping"),
-        _call(6, "doctor"),
+        _call(5, "brief", {"path": None, "name": "guarded"}),
+        _rpc(6, "ping"),
+        _call(7, "doctor"),
     ])
 
-    assert set(replies) == {1, 2, 3, 4, 5, 6}, "no mistake ends the session"
-    texts = {i: replies[i]["result"]["content"][0]["text"] for i in (2, 3, 4)}
-    assert all(replies[i]["result"]["isError"] is True for i in (2, 3, 4)), texts
+    assert set(replies) == {1, 2, 3, 4, 5, 6, 7}, "no mistake ends the session"
+    texts = {i: replies[i]["result"]["content"][0]["text"] for i in (2, 3, 4, 5)}
+    assert all(replies[i]["result"]["isError"] is True for i in (2, 3, 4, 5)), texts
     assert texts[2] == "brief needs name (see inputSchema.required)"
     assert texts[3] == "worklist does not take 'bogus'; accepted: repo, top, scope"
     assert texts[4] == 'top must be an integer (got "three")'
     assert "usage:" not in texts[4], "the refusal speaks the tool's vocabulary, not argparse's"
-    assert replies[5]["result"] == {}
-    assert replies[6]["result"]["isError"] is False
+    assert texts[5] == "brief needs path (see inputSchema.required)", \
+        "a positional sent as null is refused by the table, not answered by a spawned CLI"
+    assert replies[6]["result"] == {}
+    assert replies[7]["result"]["isError"] is False
 
 
 def test_tools_list_names_the_required_arguments(repo: Path):
@@ -111,9 +114,13 @@ def test_explain_answers_structured_json_and_history_reaches_the_cli(inventoried
 
 
 def test_worklist_and_next_item_take_a_scope_array(inventoried_repo: Path):
+    """The fixture declares two scopes, src and py; only py admits a row on an
+    inventory-only run. next_item has no scored run to hand out, so its answer
+    is the CLI's own refusal: proof the scope array cleared the table."""
     replies = _serve(inventoried_repo, [
         _call(1, "worklist", {"scope": ["py"]}),
         _call(2, "worklist", {"scope": ["src"]}),
+        _call(3, "next_item", {"scope": ["py"]}),
     ])
 
     py = replies[1]["result"]
@@ -121,4 +128,8 @@ def test_worklist_and_next_item_take_a_scope_array(inventoried_repo: Path):
     assert py["structuredContent"]["active"], "the py scope holds the fixture's one admitted row"
     assert {r["scope"] for r in py["structuredContent"]["active"]} == {"py"}
     src = replies[2]["result"]["structuredContent"]
-    assert all(r["scope"] == "src" for r in src["active"]), src["active"]
+    assert src["active"] == [], "the src scope admits no row on an inventory-only run"
+    nxt = replies[3]["result"]
+    assert nxt["isError"] is True, nxt
+    assert nxt["content"][0]["text"].startswith("crapkit: no scored run"), \
+        "the scope array reached the CLI, which wants a scored run before it hands out a packet"

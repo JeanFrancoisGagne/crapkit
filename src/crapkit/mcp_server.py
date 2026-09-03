@@ -33,8 +33,7 @@ _NAME_DESCRIPTION = ("the bare identifier (classify, or route for a Rust "
 # per element, exact names as declared in crapkit.toml.
 _SCOPE = {"type": "array", "items": {"type": "string"},
           "description": "restrict the ranking to these declared scopes (exact names from "
-                         "crapkit.toml, one --scope each); an undeclared name is a tool error "
-                         "naming the declared scopes"}
+                         "crapkit.toml, one --scope each)"}
 
 TOOLS: tuple[dict, ...] = (
     {"name": "next_item", "argv": ["next-item"], "json_flag": False, "positional": (),
@@ -206,8 +205,10 @@ _TYPE_NAMES = {"string": "a string", "integer": "an integer", "number": "a numbe
 
 
 def _missing_positional(tool: dict, arguments: dict) -> str | None:
+    """A positional left out or sent as null: the served schema declares it a
+    required string, so either is refused here and never reaches argv."""
     for key in tool["positional"]:
-        if key not in arguments:
+        if arguments.get(key) is None:
             return f"{tool['name']} needs {key} (see inputSchema.required)"
     return None
 

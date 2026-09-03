@@ -71,21 +71,30 @@ def test_a_missing_positional_is_a_tool_error_and_the_next_request_is_answered(m
     assert replies[3]["result"]["tools"], "the request after the refusal is answered"
 
 
-def test_params_null_and_arguments_null_are_refusals_not_crashes(monkeypatch, tmp_path):
+def test_params_null_arguments_null_and_a_null_positional_are_refusals(monkeypatch,
+                                                                         tmp_path):
+    """Three shapes of null, none of them a crash and none of them a spawn. The
+    served schema says a positional is a required string, so a positional sent
+    as null is the same refusal as one left out."""
     _no_cli(monkeypatch)
     replies = _serve(monkeypatch, tmp_path, [
         json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": None}),
         json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                     "params": {"name": "brief", "arguments": None}}),
         _rpc(3, "ping"),
+        _call(4, "brief", {"path": None, "name": "f"}),
     ])
 
-    assert set(replies) == {1, 2, 3}
+    assert set(replies) == {1, 2, 3, 4}
     assert replies[1]["result"]["isError"] is True
     assert "unknown tool ''" in replies[1]["result"]["content"][0]["text"]
     assert replies[2]["result"]["content"][0]["text"] == \
         "brief needs path (see inputSchema.required)"
     assert replies[3]["result"] == {}
+    null_positional = replies[4]["result"]
+    assert null_positional["isError"] is True, null_positional
+    assert null_positional["content"][0]["text"] == \
+        "brief needs path (see inputSchema.required)"
 
 
 def test_an_undeclared_key_names_the_accepted_ones(monkeypatch, tmp_path):
