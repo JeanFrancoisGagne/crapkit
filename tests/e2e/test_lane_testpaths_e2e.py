@@ -9,6 +9,7 @@ The CLI reaches the guard through `cli/_shared.py:_load_repo_config`, which
 hands the loader the root it found (`load_config_text(text, root=root)`); the
 loader then reads pytest's own configuration where the lane runs.
 """
+import json
 import subprocess
 from pathlib import Path
 
@@ -83,3 +84,17 @@ def test_the_same_positional_is_refused_when_no_testpaths_names_it(repo: Path):
 
     assert res.returncode == 3, res.stderr
     assert NARROWS in res.stderr, res.stderr
+
+
+def test_the_advisory_hook_reads_the_same_testpaths(repo: Path, tmp_path: Path):
+    """`claude-hook` parses crapkit.toml on its own, without `_shared`; the lane
+    guard it runs has to read pytest's testpaths from the same root."""
+    payload = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Edit",
+                          "cwd": str(repo),
+                          "tool_input": {"file_path": str(repo / "pylib" / "mod.py")}})
+
+    res = run_cli(tmp_path, "claude-hook", "--protocol", "1", stdin=payload,
+                  encoding="utf-8", errors="replace")
+
+    assert NARROWS not in res.stderr, res.stderr
+    assert res.returncode != 3, res.stderr
