@@ -782,7 +782,7 @@ def _print_brief(as_json: bool, out: dict) -> None:
     s = out["scored"]
     print(f"{out['path']}:{s['start']}  {out['function']}")
     print(f"  ccn {s['ccn']} (cognitive {s['cognitive']})  cov {s['cov']:.0%}  "
-          f"crap {s['crap']:.1f} vs target {out['target']}  -> {s['remedy']}")
+          f"crap {s['crap']:.1f} vs ceiling {out['target']}  -> {s['remedy']}")
     print(f"  mark {_mark_text(out['ratchet_mark'])}  churn {_churn_text(out['churn'])}")
     print(f"  uncovered lines: {_brief_lines_text(out)}")
     _print_brief_neighbours(out)
