@@ -17,6 +17,8 @@ import pytest
 
 from conftest import cli_runner
 
+from crapkit.ratchet import metric_version
+
 PY = sys.executable
 GEN = "gen_cov.py"
 
@@ -315,8 +317,13 @@ def test_the_verdict_names_the_tools_that_produced_it(receipt_repo: Path):
 
 
 def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Path):
+    """A green verify never creates the marks file (0.5.0), so the file the
+    second run hashes is the one `ratchet seed` wrote, stamp included."""
     first = run_cli(receipt_repo, "verify", "--json")
     assert json.loads(first.stdout)["ratchet_sha256"] is None, "no ratchet file existed yet"
+    assert not (receipt_repo / "crapkit-ratchet.tsv").exists(), \
+        "a green verify created a marks file holding zero marks"
+    assert run_cli(receipt_repo, "ratchet", "seed").returncode == 0
 
     second = run_cli(receipt_repo, "verify", "--json")
 
@@ -325,3 +332,37 @@ def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Pat
     assert ratchet.splitlines()[0].startswith(b"# crapkit-analysis=")
     assert ratchet.endswith(b"path\tlong_name\tcrap\n")
     assert json.loads(second.stdout)["ratchet_sha256"] == hashlib.sha256(ratchet).hexdigest()
+    assert json.loads(second.stdout)["ratchet_changes"] is None, "nothing to move, nothing written"
+
+
+def mark(repo: Path, crap: float) -> None:
+    """One mark on `alpha`, stamped with the running metric the way `ratchet
+    seed` writes it, so the stamp guard has nothing to say."""
+    write(repo, "crapkit-ratchet.tsv",
+          f"# {metric_version()}\npath\tlong_name\tcrap\nsrc/mod.py\talpha( n )\t{crap:.4f}\n")
+
+
+def test_a_refused_override_says_why_through_the_process_seam(receipt_repo: Path):
+    """The refusal as CI reads it off a spawned `python -m crapkit`: exit 7 for
+    the regression, one stderr line naming it and the escape, stdout untouched."""
+    mark(receipt_repo, 0.1)
+
+    res = run_cli(receipt_repo, "verify", "--override", "hotfix")
+
+    assert res.returncode == 7, res.stdout + res.stderr
+    assert ("override refused: 1 ratchet regression (src/mod.py alpha( n ) 0.1 -> 2.0) "
+            "never qualifies for an override; raise the mark by hand and commit it") in res.stderr, \
+        res.stderr
+    assert "OVERRIDDEN" not in res.stdout and "override refused" not in res.stdout, res.stdout
+
+
+def test_the_ok_line_names_the_dropped_mark_and_the_file_to_stage(receipt_repo: Path):
+    """`alpha` scores 2.0 under a ceiling of 6, so a mark at 9.0 has no reason
+    to stay: the green run drops it and the OK line says which file to stage."""
+    mark(receipt_repo, 9.0)
+
+    res = run_cli(receipt_repo, "verify")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv" in res.stdout, res.stdout
+    assert "alpha" not in (receipt_repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")

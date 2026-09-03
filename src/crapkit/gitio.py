@@ -236,6 +236,14 @@ def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
     return res.returncode == 0
 
 
+def is_shallow(root: Path) -> bool:
+    """True when this checkout is a depth-limited clone: one that does not hold
+    every commit its history names. The ancestor check reads it to blame the
+    right thing, since a commit a shallow clone never fetched is not one a
+    rebase rewrote. `rev-parse` answers with the word `true` or `false`."""
+    return _git(root, "rev-parse", "--is-shallow-repository").strip() == "true"
+
+
 def _batch_stream(root: Path, requests: bytes) -> bytes:
     try:
         res = subprocess.run(["git", "cat-file", "--batch"], cwd=root,
@@ -636,6 +644,7 @@ class GitFacts:
         self._status: tuple[str, ...] | None = None
         self._diffs: dict[str, tuple[str, ...]] = {}
         self._ancestry: dict[tuple[str, str], bool] = {}
+        self._shallow: bool | None = None
 
     def head_commit(self) -> str:
         with self._lock:
@@ -664,3 +673,10 @@ class GitFacts:
             if key not in self._ancestry:
                 self._ancestry[key] = is_ancestor(self.root, commit, other)
             return self._ancestry[key]
+
+    def is_shallow(self) -> bool:
+        """Asked once: a clone does not deepen under a running command."""
+        with self._lock:
+            if self._shallow is None:
+                self._shallow = is_shallow(self.root)
+            return self._shallow

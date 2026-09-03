@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
@@ -19,6 +20,9 @@ from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _repo_out_path, _repo_relative, _write_tsv)
 from .scoring import _scored_run
+
+if TYPE_CHECKING:
+    from ..ratchet import RatchetDelta, RatchetEntry
 
 
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
@@ -115,12 +119,21 @@ def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) ->
 
 
 def _require_ancestor(git, commit: str) -> None:
+    """Exit 4 when the baseline's commit is not behind HEAD, blaming the right
+    thing: a shallow clone never fetched the commit, and the fix is a deeper
+    fetch, not the fresh baseline the rewrite message asks for."""
     from ..errors import GitError
 
-    if not git.is_ancestor(commit):
+    if git.is_ancestor(commit):
+        return
+    if git.is_shallow():
         raise GitError(
-            f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-            f"(rebase or amend rewrote history) — run `{_self()} coverage` for a fresh baseline")
+            f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
+            "which does not hold it; set fetch-depth: 0 on the checkout or run "
+            "git fetch --unshallow")
+    raise GitError(
+        f"baseline commit {commit[:11]} is not an ancestor of HEAD "
+        f"(rebase or amend rewrote history) — run `{_self()} coverage` for a fresh baseline")
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -234,12 +247,65 @@ def _guard_ratchet_stamp(ratchet_path: Path, name: str) -> None:
         raise ConfigError(conflict)
 
 
+def _override_applies(verdict, reason: str | None) -> bool:
+    """--override grants pure gate violations: a reason, a failed verdict, gate
+    violations, and neither of the two findings that never qualify."""
+    return bool(reason) and not verdict.ok and bool(verdict.gate_violations) \
+        and not (verdict.ratchet_regressions or verdict.new_failures)
+
+
+def _refused_cause(count: int, noun: str, first: str) -> str:
+    """`1 ratchet regression (app/m.py pick( a ) 10.75 -> 20.0)`: the count, and
+    the first one named so the line stands on its own in a CI log."""
+    return f"{count} {noun}{'' if count == 1 else 's'} ({first})"
+
+
+def _override_refusal(verdict) -> str | None:
+    """Why a refused --override did not apply, or None when nothing disqualified it.
+
+    Both causes on one line, each with its own escape: a run holding a
+    regression and a new failure is refused once, not twice. The escape for a
+    regression is the only one there is; verify never raises a mark, and the
+    override path cannot reach a marked function without also seeing its
+    regression (docs/ratchet.md, Overrides and the audit trail).
+    """
+    causes, escapes = [], []
+    if verdict.ratchet_regressions:
+        r = verdict.ratchet_regressions[0]
+        causes.append(_refused_cause(len(verdict.ratchet_regressions), "ratchet regression",
+                                     f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}"))
+        escapes.append("raise the mark by hand and commit it")
+    if verdict.new_failures:
+        causes.append(_refused_cause(len(verdict.new_failures), "new test failure",
+                                     verdict.new_failures[0]))
+        escapes.append("fix the failing test first")
+    if not causes:
+        return None
+    count = len(verdict.ratchet_regressions) + len(verdict.new_failures)
+    verb = "qualifies" if count == 1 else "qualify"
+    return (f"override refused: {' and '.join(causes)} never {verb} for an override; "
+            f"{'; '.join(escapes)}")
+
+
+def _refuse_override(verdict, reason: str | None) -> None:
+    """One stderr line when a reason was given and something disqualified it.
+
+    stderr, because `--json` prints one object on stdout. Printed after the
+    verdict's own lines, so a terminal reads the findings first and then why
+    the override did not take. A passing run (an override that applied
+    included), or a run with no reason, prints nothing: nothing was refused.
+    """
+    refusal = _override_refusal(verdict) if reason and not verdict.ok else None
+    if refusal:
+        print(refusal, file=sys.stderr)
+
+
 def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, verdict, reason):
-    """Grant --override for pure gate violations; regressions and new failures never qualify."""
+    """Grant --override for pure gate violations; regressions and new failures
+    never qualify (`_refuse_override` says so once the verdict is printed)."""
     from ..override import record_override
 
-    if verdict.ok or not reason or not verdict.gate_violations \
-            or verdict.ratchet_regressions or verdict.new_failures:
+    if not _override_applies(verdict, reason):
         return verdict, []
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=verdict.gate_violations,
@@ -299,23 +365,48 @@ def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
     return frozenset((r.path, r.long_name) for r in refusals)
 
 
+def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
+                            updated: list[RatchetEntry]) -> RatchetDelta | None:
+    """Rewrite the marks file only when its text would change, and never create
+    one to hold zero marks. Returns what the write did, or None when the file
+    was left alone.
+
+    A clean checkout used to end every green verify with an untracked marks
+    file holding a stamp, a header and no rows, and a repo with marks got a
+    byte-identical rewrite whose mtime alone made it look touched. The tighten
+    can only drop or lower marks, so a marks file that does not exist has
+    nothing to write, and a text that matches the disk has nothing to say.
+    """
+    from ..ratchet import dump_ratchet, ratchet_delta
+
+    if not ratchet_path.is_file():
+        return None
+    text = dump_ratchet(updated)
+    if ratchet_path.read_text(encoding="utf-8") == text:
+        return None
+    ratchet_path.write_text(text, encoding="utf-8", newline="\n")
+    return ratchet_delta(prior, updated)
+
+
 def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
-                   ratchet_path: Path, ratchet, scored, cfg, *, args, commit: str) -> None:
+                   ratchet_path: Path, ratchet, scored, cfg, *, args,
+                   commit: str) -> RatchetDelta | None:
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
+    Returns the tighten's counts, or None when the tighten wrote nothing.
 
     `--no-tighten` is the blunt escape: the verdict still stands, the marks file
     is simply not rewritten.
     """
-    from ..ratchet import dump_ratchet, update_ratchet
+    from ..ratchet import update_ratchet
     from ..verify import dirty_counts
 
     store.set_verdict_ok(run_id, verdict.ok, findings=sum(dirty_counts(verdict)))
     if not verdict.ok or overridden or args.no_tighten:
-        return
+        return None
     hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
     updated = update_ratchet(ratchet, scored, target=cfg.target,
                              scope_targets=cfg.scope_targets, hold=hold)
-    ratchet_path.write_text(dump_ratchet(updated), encoding="utf-8", newline="\n")
+    return _write_marks_if_changed(ratchet_path, ratchet, updated)
 
 
 def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
@@ -392,7 +483,9 @@ def _verify_attribution(verdict) -> dict:
 
 
 def _verify_result(verdict, overridden, run_id: int, baseline: dict, commit: str, ranges,
-                   uncovered: list) -> dict:
+                   uncovered: list, diff_uncovered_max: int | None) -> dict:
+    """`diff_uncovered_max` travels with the count it judges: a reader of exit 9
+    (the Action's comment) can say which ceiling the lines went over."""
     return {
         "ok": verdict.ok,
         "run_id": run_id,
@@ -406,6 +499,7 @@ def _verify_result(verdict, overridden, run_id: int, baseline: dict, commit: str
         "overridden": [v._asdict() for v in overridden],
         "diff_uncovered_count": len(uncovered),
         "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
+        "diff_uncovered_max": diff_uncovered_max,
         **_verify_attribution(verdict),
     }
 
@@ -418,13 +512,45 @@ def _warn_diff_uncovered(uncovered: list) -> None:
         print(f"  uncovered {path}:{line}", file=sys.stderr)
 
 
-def _report_verify(as_json: bool, out: dict, verdict, overridden) -> None:
+def _receipt(tool_versions: dict, ratchet_sha256: str | None,
+             changes: RatchetDelta | None) -> dict:
+    """What produced the verdict and what the run did to the marks file: the
+    tool versions, the marks as read (hashed before any tighten, so the receipt
+    names the input), and the tighten's counts, null when this run's tighten
+    wrote nothing (a failed run, --no-tighten, nothing to move). An override's
+    grant is its own write and is listed under `overridden`, not counted here."""
+    return {"tool_versions": tool_versions, "ratchet_sha256": ratchet_sha256,
+            "ratchet_changes": None if changes is None else changes._asdict()}
+
+
+def _marks_moved(changes: dict) -> str:
+    """`6 dropped, 1 tightened`, or `restamped` for the one rewrite that moves
+    no mark: a file written before stamping gains its stamp line."""
+    if changes["dropped"] or changes["tightened"]:
+        return f"{changes['dropped']} dropped, {changes['tightened']} tightened"
+    return "restamped"
+
+
+def _ratchet_suffix(changes: dict | None, overridden: list, ratchet_file: str) -> str:
+    """The OK line's tail when the run wrote the marks file, by a tighten or by
+    an override's grant. The `git add` is the point: a dirty marks file after
+    a green run was a surprise before."""
+    if overridden:
+        plural = "" if len(overridden) == 1 else "s"
+        return f" ratchet: {len(overridden)} mark{plural} granted -> git add {ratchet_file}"
+    if changes is None:
+        return ""
+    return f" ratchet: {_marks_moved(changes)} -> git add {ratchet_file}"
+
+
+def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: str) -> None:
     if as_json:
         _print_json(out)
         return
     state = "OK" if verdict.ok else "FAILED"
     print(f"verify {state} @ {out['commit'][:11]} vs baseline {out['baseline_commit'][:11]} "
-          f"({out['changed_files']} changed files)")
+          f"({out['changed_files']} changed files)"
+          f"{_ratchet_suffix(out['ratchet_changes'], overridden, ratchet_file)}")
     _print_verify_findings(verdict, overridden)
     _print_finding_split(verdict)
 
@@ -478,7 +604,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     ranges = changed_ranges(diff_since(root, basis))
     ratchet_path = root / cfg.ratchet_file
     ratchet = _load_ratchet_or_die(ratchet_path, cfg.ratchet_file)
-    receipt = {"tool_versions": tool_versions, "ratchet_sha256": _ratchet_sha256(ratchet_path)}
+    ratchet_sha256 = _ratchet_sha256(ratchet_path)
 
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
@@ -496,15 +622,17 @@ def cmd_verify(args: argparse.Namespace) -> int:
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=provenance, kind="verify")
     verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override)
-    _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored, cfg,
-                   args=args, commit=commit)
+    changes = _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored,
+                             cfg, args=args, commit=commit)
     _release_claims(store, git, cfg, scored)
     _emit_verify_findings(root, args, verdict, uncovered)
 
     _report_verify(args.json,
-                   {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges, uncovered),
-                    **receipt},
-                   verdict, overridden)
+                   {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges,
+                                     uncovered, cfg.diff_uncovered_max),
+                    **_receipt(tool_versions, ratchet_sha256, changes)},
+                   verdict, overridden, cfg.ratchet_file)
+    _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict, breach)
 
 

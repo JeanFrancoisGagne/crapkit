@@ -714,12 +714,14 @@ $ crapkit verify --json
   "committed_findings": 1,
   "diff_uncovered": [],
   "diff_uncovered_count": 0,
+  "diff_uncovered_max": null,
   "dirty_failures": [],
   "dirty_findings": 0,
   "gate_violations": [],
   "new_failures": [],
   "ok": false,
   "overridden": [],
+  "ratchet_changes": null,
   "ratchet_regressions": [
     {
       "dirty": false,
@@ -754,6 +756,7 @@ $ crapkit verify --json
 | `ratchet_regressions` | `{path, long_name, recorded, fresh_crap, dirty}` | 7 |
 | `new_failures` | array of `classname::name` test ids | 8 |
 | `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
+| `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
 | `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
@@ -810,6 +813,7 @@ reasonably look at `committed_findings` alone.
 |---|---|
 | `tool_versions` | `{"crapkit": ..., "lizard": ...}`. The metric identity behind the numbers. |
 | `ratchet_sha256` | Digest of the ratchet file as read. **`null` when the repo has no ratchet file.** Pin it to prove which marks a verdict was measured against. |
+| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is listed under `overridden`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
 
 ---
 
