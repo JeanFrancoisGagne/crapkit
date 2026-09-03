@@ -646,7 +646,10 @@ uncomment later.
 `init` does not probe a managed lane for `pytest-cov`. `uv run` and its siblings create or
 sync the project environment before running anything, and `init` has no business
 provisioning one to ask a question about it. If the plugin is missing, the lane says so on
-its first run — with the log path.
+its first run — with the log path. `doctor` holds to the same rule and says so: where a
+python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y)`, a
+managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
+doctor did not ask never reads as one it found healthy.
 
 It does check that the manager itself is installed here, because the lockfile is the
 repo's property and the PATH is the machine's. A `uv.lock` a teammate committed on a

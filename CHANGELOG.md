@@ -20,8 +20,10 @@ lane was written. `doctor` re-runs `init`'s first-run note for every coverage.py
 lane whose python cannot import pytest-cov now fails doctor with the same sentence instead
 of the first `crapkit coverage`; a healthy lane prints
 `ok lane 'py': python -> <path> (pytest X, pytest-cov Y)`, with a WARN when that python is
-not the one running doctor; and a `{files}` template on a scope that holds no test file
-fails, naming the whole-suite form as the fix.
+not the one running doctor; a lane an environment manager heads (`uv run python -m pytest
+--cov`) prints a `note` that its interpreter and pytest-cov were not probed, so a lane doctor
+did not ask never reads as one it found healthy; and a `{files}` template on a scope that
+holds no test file fails, naming the whole-suite form as the fix.
 
 ### One exclude glob reaches the repo root and every nested copy
 A leading `**/` in an `[exclude]` glob matches zero or more directories, so `**/dist/**`

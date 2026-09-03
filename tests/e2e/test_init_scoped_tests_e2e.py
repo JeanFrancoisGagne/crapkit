@@ -169,6 +169,81 @@ def test_doctor_fails_with_inits_own_sentence_when_pytest_cov_cannot_import(tmp_
     assert "no problems found" not in res.stdout
 
 
+def _relaunch_lane(repo: Path, launcher: str) -> None:
+    """Rewrite the head of the lane command init wrote to `launcher`."""
+    config = _config(repo)
+    (line,) = [ln for ln in config.splitlines() if ln.startswith("command = ")]
+    head = re.match(rf'command = "{_LAUNCHER} ', line)
+    assert head, line
+    (repo / "crapkit.toml").write_text(
+        config.replace(line, f'command = "{launcher} ' + line[head.end():]), encoding="utf-8")
+
+
+def _manager_shim(tmp_path: Path, name: str) -> dict:
+    """A `uv` on PATH that answers --version and nothing else, which is all
+    doctor asks of a manager: the lane's own head must resolve and start."""
+    shim_dir = tmp_path / "manager-shim"
+    shim_dir.mkdir()
+    if os.name == "nt":
+        (shim_dir / f"{name}.cmd").write_text(f"@echo {name} 0.0.0 (shim)\r\n", encoding="ascii")
+    else:
+        shim = shim_dir / name
+        shim.write_text(f"#!/bin/sh\necho '{name} 0.0.0 (shim)'\n", encoding="ascii")
+        shim.chmod(0o755)
+    return {"PATH": os.pathsep.join((str(shim_dir), os.environ.get("PATH", "")))}
+
+
+def test_doctor_notes_a_manager_headed_lane_it_does_not_probe(tmp_path: Path):
+    """With uv on PATH, a `uv run python -m pytest --cov` lane passed every
+    lane check and then printed nothing: neither the resolved interpreter nor
+    a word about why, so "not probed" read the same as "probed and healthy"."""
+    repo = _layout_repo(tmp_path)
+    assert run_cli(repo, "init").returncode == 0
+    _relaunch_lane(repo, "uv run python")
+
+    res = run_cli(repo, "doctor", env_extra=_manager_shim(tmp_path, "uv"))
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    (line,) = [ln for ln in res.stdout.splitlines() if "lane 'py'" in ln]
+    assert line.startswith("note lane 'py' runs pytest through `uv`"), line
+    assert "not probed" in line
+    assert "no problems found" in res.stdout
+
+
+def _venv_python(tmp_path: Path) -> Path:
+    """Another python than the one running the suite, seeing the same
+    site-packages, so pytest and pytest-cov import from it too."""
+    import subprocess as sp
+    import sys
+
+    venv = tmp_path / "venv"
+    sp.run([sys.executable, "-m", "venv", "--system-site-packages", "--without-pip", str(venv)],
+           check=True, capture_output=True)
+    return venv / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+
+
+def test_doctor_warns_when_the_lane_runs_another_python_than_doctor(tmp_path: Path):
+    """A package installed in one python is invisible to the other, which is
+    how a lane ran the system python while the repo's venv held pytest-cov."""
+    import subprocess as sp
+
+    repo = _layout_repo(tmp_path)
+    assert run_cli(repo, "init").returncode == 0
+    venv_python = _venv_python(tmp_path)
+    _relaunch_lane(repo, venv_python.as_posix())
+    resolved = sp.run([str(venv_python), "-c", "import sys; print(sys.executable)"],
+                      check=True, capture_output=True, text=True).stdout.strip()
+
+    res = run_cli(repo, "doctor")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    (ok,) = [ln for ln in res.stdout.splitlines() if ln.startswith("ok   lane 'py'")]
+    assert f"-> {resolved} (pytest " in ok, ok
+    (warn,) = [ln for ln in res.stdout.splitlines() if ln.startswith("WARN lane 'py'")]
+    assert warn.startswith(f"WARN lane 'py' runs {resolved}, not the python running this doctor"), warn
+    assert "no problems found" in res.stdout
+
+
 # --- the js form is keyed by the runner, not the language ---------------------
 
 def _js_repo(tmp_path: Path, package: dict, extra: dict | None = None) -> Path:

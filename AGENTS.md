@@ -194,7 +194,8 @@ on a repo whose lockfile pins uv what you uncomment reads `uv run python -m pyte
 and binds to the environment the repo pins:
 
     [crapkit.scoped_tests]
-    calc = "python -m pytest {files} -q -p no:cacheprovider"
+    # calc: no test file under calc/, so the whole suite runs, from tests/
+    calc = "python -m pytest tests -q -p no:cacheprovider"
 
 - Key is the `name` of a `[[scope]]`. Value is a shell command.
 - crapkit routes each file you name to the scope whose `paths` entry matches deepest,

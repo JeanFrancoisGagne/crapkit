@@ -812,16 +812,45 @@ def _foreign_interpreter(name: str, executable: str) -> list[Finding]:
                             "seen by the other")]
 
 
-def _lane_probe_findings(lane) -> list[Finding]:
-    """init's first-run note as a FAIL, or the interpreter and plugin versions
-    a healthy lane resolves to, plus a WARN when that interpreter is foreign."""
+def _pytest_head(command: str) -> str:
+    """The word in front of pytest: the manager or tool the lane runs pytest
+    through when no python does. A lane that chains steps runs pytest after
+    `&&`, so this is the segment's head, not the command's first word; the
+    first word only when no segment names pytest at all."""
+    segment = _pytest_segment(command)
+    return segment[0] if segment else _first_word(command)
+
+
+def _unprobed_lane_note(lane) -> Finding:
+    """A lane no python heads names nothing doctor can ask: `uv run` and its
+    siblings provision the environment they run in, and asking one would
+    provision it to answer. Said out loud, because a lane that printed nothing
+    read the same as one probed and found healthy."""
+    return Finding("note", f"lane {lane.name!r} runs pytest through `{_pytest_head(lane.command)}`, "
+                           "which is not a python doctor can ask: interpreter and pytest-cov not "
+                           f"probed, the first `{_self()} coverage` will say whether the plugin imports")
+
+
+def _first_run_failure(lane) -> list[Finding]:
+    """init's first-run note as a FAIL, or nothing when a stub interpreter
+    answered neither the version probe nor the import probe."""
     note = _lane_first_run_note(lane)
-    if note:
-        return [Finding("FAIL", note.removeprefix("note: "))]
+    return [Finding("FAIL", note.removeprefix("note: "))] if note else []
+
+
+def _lane_probe_findings(lane) -> list[Finding]:
+    """The interpreter and plugin versions a healthy lane resolves to, plus a
+    WARN when that interpreter is foreign; init's first-run note as a FAIL when
+    the interpreter cannot say; a note when no python heads the lane. The
+    version report goes first: it imports pytest_cov on its way, so it answers
+    the first-run question too, and a healthy lane costs one interpreter start
+    instead of two."""
     word = _probe_interpreter(lane.command)
-    report = _runner_report(word) if word else None
+    if word is None:
+        return [_unprobed_lane_note(lane)]
+    report = _runner_report(word)
     if report is None:
-        return []
+        return _first_run_failure(lane)
     executable, pytest_version, cov_version = report
     resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} "
                              f"(pytest {pytest_version}, pytest-cov {cov_version})")
@@ -831,9 +860,9 @@ def _lane_probe_findings(lane) -> list[Finding]:
 def _doctor_lane_probes(lanes) -> list[Finding]:
     """init's first-run lane note, asked again of every coverage.py lane that
     runs `pytest --cov`, so a lane whose python cannot import pytest-cov fails
-    doctor instead of the first `crapkit coverage`. Only those lanes: a
-    manager-headed one names no python to ask, and an istanbul lane has no
-    plugin to import."""
+    doctor instead of the first `crapkit coverage`. Only those lanes: an
+    istanbul lane has no plugin to import. A manager-headed one names no
+    python to ask and gets a note saying so."""
     return [finding for lane in _probed_lanes(lanes) for finding in _lane_probe_findings(lane)]
 
 

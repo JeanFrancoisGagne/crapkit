@@ -72,7 +72,9 @@ directory unless pytest's `testpaths` already collects it), a workspace's own
 files prove the command and commented everywhere else, so uncommenting is usually the
 whole job. `doctor` then repeats `init`'s lane probe: it names the interpreter and the
 pytest and pytest-cov versions each coverage.py lane resolves to, fails a lane whose python
-cannot import pytest-cov, and fails a `{files}` template on a scope holding no test file.
+cannot import pytest-cov, prints a `note` for a lane an environment manager heads (`uv run
+python -m pytest`), which it does not probe, and fails a `{files}` template on a scope
+holding no test file.
 
 Every python line it wrote names one launcher, the lockfile's where the repo has one:
 `uv run python -m pytest ...` on a `uv.lock` repo, in the lane command, in the entries
