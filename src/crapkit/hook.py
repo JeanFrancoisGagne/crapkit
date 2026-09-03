@@ -94,12 +94,11 @@ def staged_records(blobs: dict[str, bytes]) -> dict[str, list]:
 
 
 def file_ceilings(cfg, in_scope, checked_files) -> dict[str, int]:
-    """The ccn ceiling each file is judged against: its scope's target, else the
-    repo's. `rescore --gate` decides on this same map, so a mid-session verdict
-    and the commit's cannot disagree."""
-    ceilings = cfg.scope_targets
+    """The ccn ceiling each file is judged against: its scope's, read through
+    `Config.ceiling_of`. `rescore --gate` decides on this same map, so a
+    mid-session verdict and the commit's cannot disagree."""
     scope_of = {f: scope for scope, files in in_scope.items() for f in files}
-    return {rel: ceilings.get(scope_of.get(rel, ""), cfg.target) for rel in checked_files}
+    return {rel: cfg.ceiling_of(scope_of.get(rel, "")) for rel in checked_files}
 
 
 def _file_violations(rel: str, records: list, ranges, ceiling: int) -> list[Violation]:

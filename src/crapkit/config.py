@@ -530,6 +530,20 @@ class Config(NamedTuple):
         """Every scope's effective ceiling: its own target or the repo default."""
         return {s.name: (s.target if s.target is not None else self.target) for s in self.scopes}
 
+    def ceiling_of(self, scope: str) -> int:
+        """The ceiling one scope's functions are judged against: the scope's own
+        `target` when it sets one, else the repo's. The one spelling of that
+        rule for every command holding a Config; a scope nothing declared is
+        judged at the repo ceiling."""
+        return self.scope_targets.get(scope, self.target)
+
+    @property
+    def ceilings(self) -> dict[str, int]:
+        """The ceilings in force, as a summary labels them: `default` and only
+        the scopes whose own target differs from it."""
+        own = {name: c for name, c in self.scope_targets.items() if c != self.target}
+        return {"default": self.target, **own}
+
     @property
     def coverage_optional_scopes(self) -> frozenset[str]:
         """The scopes scored cc-only: no coverage join, and no lane required."""

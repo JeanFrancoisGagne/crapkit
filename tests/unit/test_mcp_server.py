@@ -236,3 +236,110 @@ def test_the_agents_guide_no_longer_pins_the_stale_protocol_revision():
 
     assert "reports protocol `2024-11-05`" not in section
     assert "2025-06-18" in section, "the guide names the newest revision the server speaks"
+
+
+# --- the tenth tool: gate (0.5.0) ---------------------------------------------
+#
+# After an edit no MCP tool answered "does my change clear the ceiling": brief
+# only returned the shell string `crapkit rescore PATH --gate`. `gate` maps to
+# `rescore PATH --gate --json`; exit 6 is a verdict, not a failure, so it comes
+# back as a result whose `gate.ok` is false, while 3, 4 and 5 stay tool errors.
+
+def _cli_answers(monkeypatch, returncode: int, stdout: str, stderr: str = "") -> list:
+    """The CLI the server would spawn, answered without a process; every argv
+    the server built is kept for the assertions."""
+    import subprocess
+
+    calls: list = []
+
+    def _run(argv, **_kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, returncode, stdout, stderr)
+
+    monkeypatch.setattr(mcp_server.subprocess, "run", _run)
+    return calls
+
+
+def test_gate_is_listed_with_a_required_path_and_the_read_only_annotations():
+    (gate,) = [t for t in tool_listing() if t["name"] == "gate"]
+
+    assert gate["inputSchema"]["required"] == ["path"]
+    assert gate["annotations"]["readOnlyHint"] is True
+    assert "rescore" in gate["description"] and "ceiling" in gate["description"]
+
+
+def test_gate_maps_to_rescore_path_gate_json():
+    tool = next(t for t in TOOLS if t["name"] == "gate")
+
+    assert build_argv(tool, {"path": "src/a.py"}) == ["rescore", "--gate", "src/a.py", "--json"]
+
+
+def test_a_breach_is_a_result_with_ok_false_not_a_tool_error(monkeypatch, tmp_path):
+    verdict = json.dumps({"baseline_run": 1, "functions": [],
+                          "gate": {"ok": False, "judged": 1, "breaches": [{"path": "src/a.py"}]},
+                          "schema": 1})
+    calls = _cli_answers(monkeypatch, 6, verdict, "  GATE  crap 8.0 ...")
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {"path": "src/a.py"})])
+
+    call = replies[1]["result"]
+    assert call["isError"] is False, call
+    assert call["structuredContent"]["gate"]["ok"] is False
+    assert call["structuredContent"]["gate"]["breaches"] == [{"path": "src/a.py"}]
+    assert calls[0][3:7] == ["rescore", "--gate", "src/a.py", "--json"], calls
+
+
+def test_a_clean_edit_is_a_result_with_ok_true(monkeypatch, tmp_path):
+    _cli_answers(monkeypatch, 0, json.dumps({"gate": {"ok": True, "judged": 1, "breaches": []},
+                                             "schema": 1}))
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {"path": "src/a.py"})])
+
+    call = replies[1]["result"]
+    assert call["isError"] is False and call["structuredContent"]["gate"]["ok"] is True
+
+
+@pytest.mark.parametrize("exit_code, line", [
+    (1, "crapkit: no scored run in /repo - run `crapkit coverage` first"),
+    (3, "crapkit: no crapkit.toml at /repo"),
+    (4, "crapkit: git failed"),
+    (5, "crapkit: lizard is not installed"),
+])
+def test_the_other_exits_stay_tool_errors(monkeypatch, tmp_path, exit_code, line):
+    _cli_answers(monkeypatch, exit_code, "", line)
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {"path": "src/a.py"})])
+
+    call = replies[1]["result"]
+    assert call["isError"] is True, call
+    assert call["content"][0]["text"] == line
+    assert "structuredContent" not in call
+
+
+def test_exit_six_is_a_verdict_only_for_the_gate_tool(monkeypatch, tmp_path):
+    """No other tool exits 6; if one ever did, that is still a failure."""
+    _cli_answers(monkeypatch, 6, json.dumps({"runs": [], "schema": 1}))
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "runs", {})])
+
+    assert replies[1]["result"]["isError"] is True
+
+
+def test_gate_needs_a_path_and_takes_nothing_else(monkeypatch, tmp_path):
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {}),
+                                             _call(2, "gate", {"path": "a.py", "top": 3})])
+
+    assert replies[1]["result"]["content"][0]["text"] == "gate needs path (see inputSchema.required)"
+    assert replies[2]["result"]["content"][0]["text"] == \
+        "gate does not take 'top'; accepted: repo, path"
+
+
+def test_the_instructions_count_ten_tools_and_name_the_gate():
+    assert "ten tools" in mcp_server._INSTRUCTIONS and "nine" not in mcp_server._INSTRUCTIONS
+    assert "gate" in mcp_server._INSTRUCTIONS
+
+
+@pytest.mark.parametrize("page", sorted(_MCP_SECTION))
+def test_both_pages_list_the_gate_tool_beside_the_other_nine(page):
+    section = _mcp_section(page)
+
+    gate = _row(section, "`gate`")
+    assert "`path`" in gate and "rescore" in gate and "`ok`" in gate, gate
+    assert "nine" not in section.lower(), f"{page} still counts nine tools"

@@ -10,6 +10,7 @@ Every seam here is pure or a tmp SQLite file, so the resolution rules can be
 argued about without a repo, a lane or a git history.
 """
 import pytest
+from crapkit.config import Config
 from crapkit import packet
 from crapkit.cli import _claims_to_release, _next_item_payload, _pick_function
 from crapkit.errors import CrapkitError
@@ -105,13 +106,12 @@ def test_a_name_that_merely_contains_a_hash_is_not_a_handle():
 # --- the handle rides in the payloads ----------------------------------------
 
 def test_the_next_item_payload_carries_the_handle_it_was_given():
-    from types import SimpleNamespace
-
+    
     from crapkit.uncovered import MissingLines
     from crapkit.worklist import admission
 
     payload = _next_item_payload(anon(41), admission({}, 5),
-                                 SimpleNamespace(target=6, scope_targets={}),
+                                 Config(target=6),
                                  MissingLines({}, "no lanes here"), "(anonymous)#2")
 
     assert payload["handle"] == "(anonymous)#2"
@@ -185,14 +185,13 @@ def test_a_named_claim_still_releases_by_either_name_form():
 def test_the_budget_helper_is_what_next_item_publishes():
     """next-item owned the two estimates and brief did not, so a session that
     opened on a packet re-derived numbers the queue had already computed."""
-    from types import SimpleNamespace
-
+    
     from crapkit.uncovered import MissingLines
     from crapkit.worklist import admission
 
     row = anon(9, ccn=13, cov=0.25)
     payload = _next_item_payload(row, admission({}, 5),
-                                 SimpleNamespace(target=6, scope_targets={}),
+                                 Config(target=6),
                                  MissingLines({}, "no lanes here"), "(anonymous)#1")
     shared = packet.budget(row, 6)
 

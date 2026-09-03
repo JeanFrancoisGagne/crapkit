@@ -231,9 +231,11 @@ command writes the artifact by hand:
 
 ```
 $ crapkit coverage        # artifact holds path, statementMap and s
-run 1 @ 6f736a5b12a: 2 functions scored — 0 measured / 2 untested / 0 no-lane / 0 cc-only, 2 over target 6, CRAP load 32.0, grade F
+run 1 @ 6f736a5b12a: 2 functions scored: 2 untested, 2 over ceiling 6, CRAP load 32.0, grade F
+-> next: crapkit worklist
 $ crapkit coverage        # same file plus fnMap, f, branchMap and b
-run 2 @ 6f736a5b12a: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 7.39, grade A+
+run 2 @ 6f736a5b12a: 2 functions scored: 2 measured, 0 over ceiling 6, CRAP load 7.39, grade A+
+-> next: crapkit worklist
 ```
 
 Both exit 0. That is the [wrong `path_prefix`](#running-from-a-subdirectory) failure from the
@@ -340,7 +342,7 @@ parser name are unrelated: v8's raw counters are remapped to the istanbul JSON s
 | `@vitest/coverage-istanbul` | `coverage.provider = "istanbul"` in the vitest config |
 
 Both were run against the same repo through the same crapkit lane and produced the same
-scores (`4 measured / 0 untested, 0 over target 6, CRAP load 12.0, grade A+`). Pick on your
+scores (`4 measured, 0 over ceiling 6, CRAP load 12.0, grade A+`). Pick on your
 project's grounds, not on crapkit's.
 
 The provider version must match your vitest **major**, or npm refuses the install
@@ -463,7 +465,8 @@ your jest config overrides the default list. Both forms score identically:
 
 ```
 $ crapkit coverage
-run 1 @ 70ac5e065df: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 8.12, grade F
+run 1 @ 70ac5e065df: 1 functions scored: 1 measured, 1 over ceiling 6, CRAP load 8.12, grade F
+-> next: crapkit worklist
 ```
 
 The junit half is a separate package: `npm i -D jest-junit` first, or jest exits on a
@@ -823,8 +826,8 @@ Getting `path_prefix` wrong is silent and expensive. The same tree, same suite, 
 removed:
 
 ```
-with    path_prefix: 1 functions scored — 1 measured / 0 untested / ..., CRAP load 10.75
-without path_prefix: 1 functions scored — 0 measured / 1 untested / ..., CRAP load 20.0
+with    path_prefix: 1 functions scored: 1 measured, ..., CRAP load 10.75
+without path_prefix: 1 functions scored: 1 untested, ..., CRAP load 20.0
 ```
 
 The lane ran and passed both times. Without the prefix, no artifact path matched any scoped
@@ -840,7 +843,8 @@ mode and no config key for it: point crapkit at the package.
 
 ```
 $ crapkit coverage --repo packages/api
-run 1 @ 387e938f537: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 13.12, grade F
+run 1 @ 387e938f537: 1 functions scored: 1 measured, 1 over ceiling 6, CRAP load 13.12, grade F
+-> next: crapkit worklist
 $ crapkit worklist --repo packages/api
 worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
   risk     10.5  ccn   7  crap    13.1  cov  50%    6c/1a  calc/grade.py:1  classify( score , attempts , late , bonus )
@@ -939,10 +943,10 @@ never prints. Live, on a tree with an edited source file:
 ```
 $ crapkit coverage --reuse-artifacts --reuse-unchanged
 crapkit: lane 'py' artifact was built at 525a3276065; 2 file(s) in its scopes changed since (their coverage is stale)
-run 9 @ 525a3276065: 5 functions scored — 4 measured / 1 untested / 0 no-lane / 0 cc-only, ...
+run 9 @ 525a3276065: 5 functions scored: 4 measured / 1 untested, ...
 
 $ crapkit coverage --reuse-unchanged
-run 10 @ 525a3276065: 5 functions scored — 5 measured / 0 untested / 0 no-lane / 0 cc-only, ...
+run 10 @ 525a3276065: 5 functions scored: 5 measured, ...
 ```
 
 The new function reads `untested` in the first run and `measured` in the second, because
@@ -1184,7 +1188,7 @@ salvage is newer than that file by construction.)
 ```
 $ crapkit coverage --reuse-artifacts
 crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: junit report contains zero testcases — the suite crashed before collecting, not a pass; the crashed-worker and no-new-failures checks cannot run for this lane
-run 11 @ 525a3276065: 5 functions scored — 5 measured / 0 untested / 0 no-lane / 0 cc-only, ...
+run 11 @ 525a3276065: 5 functions scored: 5 measured, ...
 ```
 
 The lane records no test counts, which is the same no-counts path a lane with no
@@ -1201,7 +1205,8 @@ against the last trusted run's and warns past a **10%** drop:
 ```
 $ crapkit coverage
 crapkit: lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 — check the runner's log for a worker that died without reporting it
-run 2 @ df858be0149: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 0 over target 6, CRAP load 2.0, grade A+
+run 2 @ df858be0149: 1 functions scored: 1 measured, 0 over ceiling 6, CRAP load 2.0, grade A+
+-> next: crapkit worklist
 ```
 
 A warning, never a failure: deleting a test file is a legitimate way to get there. `verify`
@@ -1230,10 +1235,15 @@ A lane failure is recorded, not fatal. The run still happens:
 ```
 $ crapkit coverage
 crapkit: lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); full log: /repo/.crapkit/lane-scripts.log
-run 3 @ 393b8dad2a1: 2 functions scored — 1 measured / 0 untested / 1 no-lane / 0 cc-only, 2 over target 6, CRAP load 56.83, grade F
+partial run (lane py; lane scripts failed; scripts unmeasured; not a baseline)
+run 3 @ 393b8dad2a1: 2 functions scored: 1 measured / 1 no-lane, 1 over ceiling 6, CRAP load 56.83, grade F
+  lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); full log: /repo/.crapkit/lane-scripts.log
+-> rerun changed lanes: crapkit coverage --reuse-unchanged
 ```
 
-Exit 5. Four consequences:
+Exit 5. The summary opens by saying the run is partial, counts `over` and the grade over
+the measured scopes only (the failed lane's function is `scripts`' debt under
+`by_scope`, not this run's grade), and ends with the lanes to rerun. Four consequences:
 
 1. **The failed lane's scopes fall back to `no-lane`, not `untested`.** The distinction is
    the point: `untested` means a working lane had nothing to say about this function,

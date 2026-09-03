@@ -471,3 +471,45 @@ def test_a_root_scope_is_left_the_way_it_was_written(written: str):
     normalizing it into something else here would change that answer without
     making the scope work, and crapkit's own mutate fixtures declare it."""
     assert _one_scope(written).paths == (".",)
+
+
+# --- the per-scope ceiling, read one way (0.5.0) -------------------------------
+#
+# Five call sites spelled `scope_targets.get(scope, target)` five ways, and
+# `digest` spelled it a sixth (no scope at all), so digest and trend disagreed
+# on the same run pair. One accessor now, and one label for the summaries.
+
+SCOPED = MINIMAL.replace('paths = ["scripts"]\nlanguages = ["python"]',
+                         'paths = ["scripts"]\nlanguages = ["python"]\ntarget = 4')
+
+
+def test_ceiling_of_is_the_scopes_own_target_or_the_repos():
+    cfg = load_config_text(SCOPED)
+
+    assert cfg.ceiling_of("py") == 4
+    assert cfg.ceiling_of("src") == 6
+    assert cfg.ceiling_of("never-declared") == 6, "an unknown scope is judged at the repo ceiling"
+
+
+def test_ceilings_label_the_default_and_only_the_scopes_that_differ():
+    assert load_config_text(SCOPED).ceilings == {"default": 6, "py": 4}
+    assert load_config_text(MINIMAL).ceilings == {"default": 6}
+
+
+# --- one spelling of the rule (0.5.0) ------------------------------------------
+#
+# Five call sites spelled `scope_targets.get(scope, target)` on their own, and
+# digest and trend disagreed on the same run pair. Every module that holds a
+# Config reads the ceiling through the accessor; the pure scoring modules
+# (score, verify, ratchet, packet, sarif, worklist, store) take the pair.
+
+_SRC = Path(__file__).resolve().parent.parent.parent / "src" / "crapkit"
+
+
+def test_every_command_reads_the_ceiling_through_the_accessor():
+    holders = sorted((_SRC / "cli").glob("*.py")) + [_SRC / "hook.py", _SRC / "mcp_server.py"]
+
+    spelled = [p.relative_to(_SRC).as_posix() for p in holders
+               if "scope_targets.get(" in p.read_text(encoding="utf-8")]
+
+    assert spelled == [], "read the ceiling through Config.ceiling_of"

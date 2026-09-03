@@ -550,7 +550,7 @@ overrides it per call. `initialize` negotiates the protocol revision (a client's
 `2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
 `2025-06-18`) and reports server name `crapkit`.
 
-Nine tools, every one the CLI command's `--json` form:
+Ten tools, every one the CLI command's `--json` form:
 
 | Tool | Arguments | Returns |
 |---|---|---|
@@ -563,6 +563,7 @@ Nine tools, every one the CLI command's `--json` form:
 | `explain` | `path`, `name`, `history` (bool: adds `commits`), `tests` (bool: adds `tests`) | JSON |
 | `doctor` | none | JSON (the `doctor --json` report) |
 | `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `worklist`) | JSON text |
+| `gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate; `ok` false on a breach (exit 6), answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
@@ -571,7 +572,9 @@ key or a wrong type answers a tool result with `isError` true, in the tool's wor
 under `docs/adr/` says why. `ping` answers `{}`. An exception escaping the server answers
 `-32603` and the loop continues. `structuredContent` rides beside the text whenever the
 CLI exited 0; a `doctor` that finds a FAIL exits 1 and answers its JSON text with
-`isError: true` and no `structuredContent`.
+`isError: true` and no `structuredContent`. `gate` is the one tool whose non-zero exit is
+an answer: exit 6 (a breach) comes back with `isError: false`, `structuredContent` and
+`gate.ok` false; exits 3, 4 and 5 stay tool errors, as does 1 (no scored run yet).
 
 The server is read-only. Every tool shells to a read command, so nothing it exposes
 writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`,

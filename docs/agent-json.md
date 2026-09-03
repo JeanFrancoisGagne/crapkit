@@ -26,7 +26,8 @@ Two more house rules that hold across every payload:
 - **Keys are sorted** and there are no timestamps in scored rows, so the same tree and the
   same artifacts produce byte-identical JSON.
 - **stdout carries exactly one JSON object.** Warnings, progress, lane chatter and gate
-  findings all go to stderr, so `crapkit ... --json 2>/dev/null` is always parseable.
+  findings all go to stderr, so `crapkit ... --json 2>/dev/null` is always parseable. A
+  command that dies prints one object too: see [Errors](#errors).
 
 `next-item` is the exception to the flag: it has no `--json` because it only ever emits JSON.
 
@@ -839,12 +840,14 @@ $ crapkit coverage --json
   "by_scope": {"calc": {"crap_load": 124.07, "functions": 3, "grade": "F", "over_target": 2}},
   "cache_hits": 2,
   "cc_only": 0,
+  "ceilings": {"default": 6},
   "commit": "9a1d11895c5ff5b791b497a13294494fdab949ce",
   "crap_load": 124.07,
   "db": "/repo/.crapkit/crap.sqlite",
   "files": 2,
   "functions": 3,
   "grade": "F",
+  "kind": "coverage",
   "lane_failures": {},
   "lanes": {
     "py": {
@@ -860,6 +863,7 @@ $ crapkit coverage --json
   "run_id": 2,
   "schema": 1,
   "skipped_max_bytes": 0,
+  "unmeasured_scopes": [],
   "untested": 1
 }
 ```
@@ -871,15 +875,32 @@ $ crapkit coverage --json
 | `cache_hits` | Files served from the content-hash analysis cache. |
 | `skipped_max_bytes` | Files dropped by `[exclude] max_file_bytes`. |
 | `measured`, `untested`, `no_lane`, `cc_only` | The four flags, counted. They sum to `functions`. |
-| `over_target` | Functions whose `crap` exceeds their scope ceiling. |
+| `over_target` | Functions whose `crap` exceeds their scope ceiling, counted over the measured scopes: on a `partial` run the scopes in `unmeasured_scopes` are left out, since a skipped lane's functions score at cov 0 and would read as this run's debt. On a full run that is every function. The key keeps its name; the ceiling is what the config's `target` sets. |
 | `crap_load` | Sum of every function's CRAP, rounded to 2dp. |
-| `grade` | The letter for over-target density. `A+` only at exactly zero. |
+| `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
 | `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. |
-| `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed. |
+| `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed, and then the payload is the [error object](#errors). |
+| `kind` | `coverage` for a full run, `partial` when a lane was skipped (`--lane`) or failed: the word `runs` lists it under. A partial run is never a baseline. |
+| `unmeasured_scopes` | Scopes a declared lane measures that no succeeding lane reached this run, in declaration order; `[]` on a full run. A scope no lane declares at all is not listed: that is a configuration `doctor` names, not this run's shape. |
+| `ceilings` | The ceilings in force: `default` (the `[crapkit] target`) and every scope whose own `target` differs from it, `{"default": 6, "reports": 12}`. Scopes at the default are not listed. |
 
 `inventory --json` is the same run summary minus everything coverage adds: `run_id`,
 `commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `db`.
+
+The plain form prints the same run on one line, zero buckets dropped and the ceiling
+labelled, then the command to run next:
+
+```
+run 2 @ 9a1d11895c5: 3 functions scored: 2 measured / 1 untested, 2 over ceiling 6, CRAP load 124.07, grade F
+-> next: crapkit worklist
+```
+
+With a scope at its own ceiling the label reads `over their ceilings (6; reports 12)`. A
+partial run opens with `partial run (lane py; web unmeasured; not a baseline)`, a failed
+lane named in it as `lane ui failed` and listed after the line as `  lane 'ui' FAILED: ...`,
+counts `over` and the grade over the measured scopes only, and ends with `-> rerun changed
+lanes: crapkit coverage --reuse-unchanged`.
 
 ---
 
@@ -1055,7 +1076,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `runs prune --json` | `{"pruned_runs": 6, "kept_runs": 4, "freed_bytes": 0}`. |
 | `trend --json` | `{"runs": [{run_id, commit, created_at, functions, over_target, crap_load, avg, by_scope}], "target": 6}`, trusted runs only. Reads and fills the `run_rollup` cache; see below. |
 | `overrides --json` | `{"overrides": [{run_id, commit, created_at, path, function, crap, reason}]}`. |
-| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. |
+| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark covers, `ok` is `breaches == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
 | `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. A pair whose two spans nest in one file is dropped, not ranked: a factory and the closure defined inside it score 1.0 by construction and cannot be deduplicated. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
 | `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
 | `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. With `mutation_workers > 1` the worker worktrees are kept under `.crapkit/mutate-pool/`; `crapkit mutate --drop-pool` removes them and exits. |
@@ -1104,6 +1125,29 @@ every pair naming that file. Unreadable or unkeyable content reads as cold, neve
 The paths are decoded. git spells a non-ASCII name in a log with C-style escapes, and since
 0.4.5 all three readers undo that before joining, so a pair names the file `git ls-files`
 names rather than a spelling that joins to nothing.
+
+---
+
+## Errors
+
+Under `--json`, a command that dies still prints one object on stdout, so a wrapper reads
+the sentence that names the fix instead of an empty stream:
+
+```json
+{"error": {"exit": 5, "kind": "tool", "message": "every lane failed (2 of 2); the errors are above"}, "schema": 1}
+```
+
+| `exit` | `kind` | Raised when |
+|---|---|---|
+| 1 | `state` | The store or the tree lacks what the command needs: no run, no scored run, no function matching the name, no open claim. |
+| 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too. |
+| 4 | `git` | A git command failed or a commit is missing: a baseline that is not an ancestor, a shallow clone. |
+| 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. |
+
+`message` is the stderr line without its `crapkit: ` prefix; that line and the exit code
+are unchanged. Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --gate`'s 6
+print their own payloads, with the verdict inside. Without `--json`, stdout stays empty
+on an error.
 
 ---
 
@@ -1276,13 +1320,19 @@ can serve several checkouts.
 | `explain` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
 | `doctor` | | JSON text (the `doctor --json` report) |
 | `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `worklist`) | JSON text |
+| `gate` | `path` (repo-relative source file) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate (`ok`, `judged`, `ceilings`, `breaches`, `untracked`); a breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
 whenever the call exited 0. `isError` is true whenever the underlying CLI call exited
 non-zero, and then the text is what the CLI printed: for `doctor` that is still the JSON
 report (it exits 1 on any FAIL, so a failing `doctor` answers JSON text with `isError: true`
-and no `structuredContent`); for the other tools it is the stderr line. `isError` is also
+and no `structuredContent`); for the other `--json` tools it is the [error object](#errors)
+the CLI prints, `{"error": {"exit", "kind", "message"}, "schema": 1}`, whose `message` is
+the stderr line; `next_item`, which has no `--json` flag, answers the stderr line itself.
+`gate` is the one exception to the exit rule: its exit 6 is the verdict, so a breach answers
+`isError: false` with `structuredContent` attached and `gate.ok` false, while exits 3, 4 and 5
+(and 1, no scored run yet) stay tool errors. `isError` is also
 true in the cases where no CLI call runs at all: the missing-config result above, an
 unknown tool name, and an argument the tool's own table refuses.
 

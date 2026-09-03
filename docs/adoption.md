@@ -250,7 +250,7 @@ adapter beyond it exists yet.
 | Harness | What it gets |
 |---|---|
 | Claude Code | the plugin: three skills, the MCP server, the advisory hook |
-| any MCP client (Codex, Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: nine read-only tools, no skills, no hook |
+| any MCP client (Codex, Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: ten read-only tools, no skills, no hook |
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
 
 A runtime with a skills directory but no marketplace can copy `plugin/skills/*` into it and

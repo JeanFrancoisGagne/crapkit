@@ -298,6 +298,34 @@ def _run_kind(lanes, cfg, failures) -> str:
     return "coverage" if full else "partial"
 
 
+class _RunShape(NamedTuple):
+    """What the summary says about the run's own shape, on every path: the
+    kind `runs list` files it under, the lanes that ran and failed, and the
+    scopes a declared lane measures that no succeeding lane reached."""
+    kind: str
+    ran: list[str]
+    failed: list[str]
+    unmeasured: list[str]
+
+
+def _measured_scopes(provenance: dict) -> set[str]:
+    """The scopes the lanes that succeeded this run cover."""
+    return {s for prov in provenance.values() for s in prov.get("scopes", ())}
+
+
+def _unmeasured_scopes(cfg, provenance: dict) -> list[str]:
+    """Scopes a declared lane measures that this run did not, in declaration
+    order. A scope no lane declares is `no-lane` on every run and is not
+    listed: it is a configuration `doctor` names, not this run's shape."""
+    declared = {s for lane in cfg.lanes for s in lane.scopes} - _measured_scopes(provenance)
+    return [s.name for s in cfg.scopes if s.name in declared]
+
+
+def _run_shape(lanes, cfg, run: _ScoredRun) -> _RunShape:
+    return _RunShape(_run_kind(lanes, cfg, run.lane_errors), list(run.provenance),
+                     list(run.lane_errors), _unmeasured_scopes(cfg, run.provenance))
+
+
 def _refuse_empty_lane_run(cfg, requested) -> None:
     """Refuse a run that selected no lane, unless running with none is right.
 
@@ -345,34 +373,94 @@ def _by_scope(scored, cfg) -> dict[str, dict]:
                                      scope_targets=cfg.scope_targets))
 
 
-def _coverage_summary(run_id, commit, scored, cfg, provenance, failures, corpus, cache_hits, db_path):
+def _judged_rows(scored, unmeasured: list[str]) -> list:
+    """The rows the run's over-ceiling count and grade are taken over: every
+    scope but the ones no lane measured this run. A skipped lane's functions
+    score at cov 0 and read as debt; they are the scope's to report under
+    `by_scope`, not this run's grade. On a full run this is every row."""
+    left_out = set(unmeasured)
+    return [r for r in scored if r.scope not in left_out]
+
+
+def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_path) -> dict:
     from ..score import grade
 
-    flags = _flag_counts(scored)
-    over = sum(1 for r in scored if r.crap > cfg.scope_targets.get(r.scope, cfg.target))
+    flags = _flag_counts(run.scored)
+    judged = _judged_rows(run.scored, shape.unmeasured)
+    over = sum(1 for r in judged if r.crap > cfg.ceiling_of(r.scope))
     return {
-        "run_id": run_id, "commit": commit, "files": corpus.files, "functions": len(scored),
-        "cache_hits": cache_hits, "measured": flags["measured"], "untested": flags["untested"],
+        "run_id": run_id, "commit": run.commit, "files": run.corpus.files,
+        "functions": len(run.scored), "cache_hits": run.cache_hits,
+        "measured": flags["measured"], "untested": flags["untested"],
         "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
-        "skipped_max_bytes": corpus.skipped_max_bytes,
-        "over_target": over, "grade": grade(over, len(scored)),
-        "by_scope": _by_scope(scored, cfg),
-        "crap_load": round(sum(r.crap for r in scored), 2), "lanes": provenance,
-        "lane_failures": failures, "db": str(db_path),
+        "skipped_max_bytes": run.corpus.skipped_max_bytes,
+        "over_target": over, "grade": grade(over, len(judged)),
+        "by_scope": _by_scope(run.scored, cfg),
+        "crap_load": round(sum(r.crap for r in run.scored), 2), "lanes": run.provenance,
+        "lane_failures": run.lane_errors, "db": str(db_path),
+        "kind": shape.kind, "unmeasured_scopes": shape.unmeasured, "ceilings": cfg.ceilings,
     }
 
 
-def _print_coverage(as_json: bool, summary: dict, cfg, failures: dict) -> None:
+def _lanes_word(names: list[str]) -> str:
+    plural = "s" if len(names) > 1 else ""
+    return f"lane{plural} {', '.join(names)}"
+
+
+def _partial_opening(shape: _RunShape) -> str:
+    """The first line of a partial run's text, so a `--lane` run is never
+    mistaken for a baseline: what ran, what failed, what went unmeasured."""
+    parts = [_lanes_word(shape.ran)]
+    if shape.failed:
+        parts.append(f"{_lanes_word(shape.failed)} failed")
+    if shape.unmeasured:
+        parts.append(f"{', '.join(shape.unmeasured)} unmeasured")
+    return f"partial run ({'; '.join(parts)}; not a baseline)"
+
+
+def _bucket_text(summary: dict) -> str:
+    """The four flags counted, zero buckets dropped: `2 measured / 1 no-lane`."""
+    buckets = [(summary["measured"], "measured"), (summary["untested"], "untested"),
+               (summary["no_lane"], "no-lane"), (summary["cc_only"], "cc-only")]
+    return " / ".join(f"{n} {word}" for n, word in buckets if n)
+
+
+def _ceiling_label(ceilings: dict[str, int]) -> str:
+    """`ceiling 6`, or `their ceilings (6; reports 12, util 4)` when a scope
+    sets its own."""
+    own = ", ".join(f"{scope} {c}" for scope, c in ceilings.items() if scope != "default")
+    if not own:
+        return f"ceiling {ceilings['default']}"
+    return f"their ceilings ({ceilings['default']}; {own})"
+
+
+def _summary_line(summary: dict) -> str:
+    buckets = _bucket_text(summary)
+    counted = f": {buckets}" if buckets else ""
+    return (f"run {summary['run_id']} @ {summary['commit'][:11]}: "
+            f"{summary['functions']} functions scored{counted}, "
+            f"{summary['over_target']} over {_ceiling_label(summary['ceilings'])}, "
+            f"CRAP load {summary['crap_load']}, grade {summary['grade']}")
+
+
+def _next_command(kind: str) -> str:
+    """What to run next: the ranking after a trusted run, the lanes a partial
+    run skipped after a partial one."""
+    if kind == "partial":
+        return f"-> rerun changed lanes: {_self()} coverage --reuse-unchanged"
+    return f"-> next: {_self()} worklist"
+
+
+def _print_coverage(as_json: bool, summary: dict, shape: _RunShape) -> None:
     if as_json:
         _print_json(summary)
         return
-    print(f"run {summary['run_id']} @ {summary['commit'][:11]}: {summary['functions']} functions scored — "
-          f"{summary['measured']} measured / {summary['untested']} untested / "
-          f"{summary['no_lane']} no-lane / {summary['cc_only']} cc-only, "
-          f"{summary['over_target']} over target {cfg.target}, CRAP load {summary['crap_load']}, "
-          f"grade {summary['grade']}")
-    for name, err in failures.items():
+    if shape.kind == "partial":
+        print(_partial_opening(shape))
+    print(_summary_line(summary))
+    for name, err in summary["lane_failures"].items():
         print(f"  lane {name!r} FAILED: {err}")
+    print(_next_command(shape.kind))
 
 
 def _warn_suite_drop(store: SnapshotStore, provenance: dict) -> None:
@@ -405,16 +493,14 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
     _warn_suite_drop(store, run.provenance)
+    shape = _run_shape(lanes, cfg, run)
     run_id = store.write_run(commit=run.commit, tool_versions=run.tool_versions, rows=run.scored,
-                             lanes=run.provenance,
-                             kind=_run_kind(lanes, cfg, run.lane_errors))
+                             lanes=run.provenance, kind=shape.kind)
     if args.export:
         _export_scored(root, args.export, run.scored)
     _emit_coverage_findings(root, args, run.scored, cfg)
 
-    summary = _coverage_summary(run_id, run.commit, run.scored, cfg, run.provenance,
-                                run.lane_errors, run.corpus, run.cache_hits, db_path)
-    _print_coverage(args.json, summary, cfg, run.lane_errors)
+    _print_coverage(args.json, _coverage_summary(run_id, run, cfg, shape, db_path), shape)
     return 5 if run.lane_errors else 0
 
 
@@ -484,8 +570,10 @@ def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list,
                                   cc_only_scopes=cfg.coverage_optional_scopes)
 
 
-def _rescore_json(overlay, latest: dict) -> None:
-    _print_json({
+def _rescore_json(overlay, latest: dict, gate: dict | None = None) -> None:
+    """The functions, and under --gate the verdict beside them: one object,
+    so an agent reading the payload never has to read stderr for the finding."""
+    payload = {
         "baseline_run": latest["id"], "baseline_commit": latest["commit"],
         "functions": [{
             "scope": r.scope, "path": r.path, "function": r.long_name, "start": r.start,
@@ -493,7 +581,10 @@ def _rescore_json(overlay, latest: dict) -> None:
             "remedy": r.remedy, "stale_coverage": True,
         } for r in overlay],
         "note": "coverage is the baseline run's; complexity is the working tree's. Run verify for the real verdict.",
-    })
+    }
+    if gate is not None:
+        payload["gate"] = gate
+    _print_json(payload)
 
 
 def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) -> list:
@@ -565,28 +656,70 @@ def _warn_untracked(untracked: set[str]) -> None:
               file=sys.stderr)
 
 
-def _rescore_gate(root: Path, cfg, overlay, ceilings: dict[str, int]) -> int:
-    """The commit's verdict, hours before the commit. Reported on stderr so
-    `--json` stdout stays one parseable object."""
+class _GateVerdict(NamedTuple):
+    """The commit's verdict, hours before the commit: what was judged, against
+    which ceiling per file, and the breaches no ratchet mark covers."""
+    judged: int
+    ceilings: dict[str, int]
+    breaches: list
+    untracked: list[str]
+
+    @property
+    def ok(self) -> bool:
+        return not self.breaches
+
+
+def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int]) -> _GateVerdict:
     from ..keys import key_names
 
     untracked = _untracked_of(root, overlay)
-    _warn_untracked(untracked)
     candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
     breaches = _unmarked_breaches(touched, _ratchet_entries(root, cfg) or [])
-    if not breaches:
+    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked))
+
+
+def _breach_json(v, ceilings: dict[str, int]) -> dict:
+    return {"path": v.path, "function": v.long_name, "start": v.start, "ccn": v.ccn,
+            "cov": v.cov, "crap": v.crap, "remedy": v.remedy, "key_name": v.key_name,
+            "ceiling": ceilings[v.path]}
+
+
+def _gate_json(verdict: _GateVerdict) -> dict:
+    """The `gate` block of `rescore --gate --json`: the fields a wrapper needs
+    to say which function, which rule, and whether the tree clears the gate."""
+    return {"ok": verdict.ok, "judged": verdict.judged, "ceilings": verdict.ceilings,
+            "breaches": [_breach_json(v, verdict.ceilings) for v in verdict.breaches],
+            "untracked": verdict.untracked}
+
+
+def _gate_ceiling_label(ceilings: dict[str, int]) -> str:
+    """`ceiling 6` when every rescored file is judged at one number, else
+    `their ceilings` (the per-file map is in the JSON)."""
+    distinct = sorted(set(ceilings.values()))
+    return f"ceiling {distinct[0]}" if len(distinct) == 1 else "their ceilings"
+
+
+def _report_gate(verdict: _GateVerdict, as_json: bool) -> int:
+    """The verdict on stderr when it fails, so `--json` stdout stays one
+    parseable object; one stdout line when it passes, so the exit code is
+    not the only signal."""
+    _warn_untracked(set(verdict.untracked))
+    if verdict.ok:
+        if not as_json:
+            print(f"gate: {verdict.judged} changed function(s) judged, "
+                  f"0 over {_gate_ceiling_label(verdict.ceilings)}")
         return 0
-    print(f"crapkit gate: {len(breaches)} rescored function(s) over their scope ceiling:",
+    print(f"crapkit gate: {len(verdict.breaches)} rescored function(s) over their scope ceiling:",
           file=sys.stderr)
-    for v in breaches:
+    for v in verdict.breaches:
         print(_gate_line(v), file=sys.stderr)
     return 6
 
 
-def cmd_rescore(args: argparse.Namespace) -> int:
-    root = Path(args.repo).resolve()
-    cfg = _load_repo_config(root)
+def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
+    """The store and the newest scored run a rescore overlays on, or the
+    refusal naming the command that makes one."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
         raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
@@ -594,14 +727,22 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     latest = _latest_scored(store)
     if latest is None:
         raise CrapkitError(f"no scored run in {root} — run `{_self()} coverage` first")
+    return store, latest
+
+
+def cmd_rescore(args: argparse.Namespace) -> int:
+    root = Path(args.repo).resolve()
+    cfg = _load_repo_config(root)
+    store, latest = _rescore_baseline(root)
 
     rows, flat, ceilings = _rescore_analyze(root, cfg, args.files)
     overlay = _rescore_overlay(store, latest, rows, flat, cfg)
+    verdict = _gate_verdict(root, cfg, overlay, ceilings) if args.gate else None
     if args.json:
-        _rescore_json(overlay, latest)
+        _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict))
     else:
         _print_rescore_table(overlay, latest)
-    return _rescore_gate(root, cfg, overlay, ceilings) if args.gate else 0
+    return 0 if verdict is None else _report_gate(verdict, args.json)
 
 
 def _print_rescore_table(overlay, latest: dict) -> None:

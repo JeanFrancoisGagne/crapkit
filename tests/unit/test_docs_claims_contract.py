@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.config import Config
 from crapkit.churn import parse_git_log
 from crapkit.cli import build_parser
 from crapkit.scaffold import detect_lanes, gitignore_entries, live_lanes, starter_toml
@@ -26,9 +27,12 @@ JS_SCOPES = {"src": ("typescript",)}
 # vitest in devDependencies is what makes it "a vitest repo".
 TS_PACKAGE = json.dumps({"scripts": {"test": "vitest run"},
                          "devDependencies": {"vitest": "^2.0.0"}})
+# `N functions scored: 2 measured / 1 no-lane, 1 over ceiling 6, CRAP load 3.0, grade F`,
+# zero buckets dropped, the ceiling labelled one way or the other.
 _SUMMARY = re.compile(
-    r"(\d+) functions scored — (\d+) measured / (\d+) untested / (\d+) no-lane"
-    r" / (\d+) cc-only, (\d+) over target \d+, CRAP load [\d.]+, grade (\S+)")
+    r"(\d+) functions scored(?:: ([^,]+))?, (\d+) over (?:ceiling \d+|their ceilings \([^)]*\)),"
+    r" CRAP load [\d.]+, grade (\S+)")
+_BUCKET = re.compile(r"(\d+) (measured|untested|no-lane|cc-only)")
 
 
 @lru_cache(maxsize=None)
@@ -265,12 +269,21 @@ def _git_log(stamps: list[int]) -> str:
 @pytest.mark.parametrize("page", ["README.md", "AGENTS.md", "docs/lanes.md",
                                   "docs/ratchet.md", "docs/agent-json.md"])
 def test_every_coverage_summary_in_the_docs_adds_up(page: str):
-    """A pasted summary line is arithmetic: the four flags sum to the corpus and
-    the letter follows from the over-target share. A hand-edited number breaks one."""
-    for total, measured, untested, no_lane, cc_only, over, letter in _SUMMARY.findall(_doc(page)):
-        counted = int(measured) + int(untested) + int(no_lane) + int(cc_only)
-        assert counted == int(total), f"{page}: flags sum to {counted}, not {total}"
-        assert grade(int(over), int(total)) == letter, f"{page}: {over}/{total} is not {letter}"
+    """A pasted summary line is arithmetic: the printed buckets sum to the corpus and
+    the letter follows from the over-ceiling share of the judged functions, which on
+    a partial run leaves the unmeasured scopes' no-lane rows out. A hand-edited
+    number breaks one."""
+    lines = _doc(page).splitlines()
+    for n, line in enumerate(lines):
+        m = _SUMMARY.search(line)
+        if not m:
+            continue
+        total, buckets, over, letter = m.groups()
+        counts = {word: int(k) for k, word in _BUCKET.findall(buckets or "")}
+        assert sum(counts.values()) == int(total), f"{page}: buckets sum to {counts}, not {total}"
+        partial = n > 0 and lines[n - 1].startswith("partial run (")
+        judged = int(total) - (counts.get("no-lane", 0) if partial else 0)
+        assert grade(int(over), judged) == letter, f"{page}: {over}/{judged} is not {letter}"
 
 
 # --- the gate a reader installs from Route 2 ---------------------------------
@@ -601,8 +614,7 @@ def test_est_splits_in_the_tool_matches_the_formula_both_pages_print():
 
 
 def _payload_splits(ccn: int) -> int:
-    from types import SimpleNamespace
-
+    
     from crapkit.cli import _next_item_payload
     from crapkit.score import ScoredRow
     from crapkit.uncovered import MissingLines
@@ -611,7 +623,7 @@ def _payload_splits(ccn: int) -> int:
     row = ScoredRow("calc", "calc/grade.py", "f( )", 1, 9, ccn, ccn, ccn, 8, 0, 1,
                     0.0, "measured", float(ccn), "decompose")
     payload = _next_item_payload(row, admission({}, 5),
-                                 SimpleNamespace(target=6, scope_targets={}),
+                                 Config(target=6),
                                  MissingLines({}, "no lanes here"))
     return payload["est_splits"]
 

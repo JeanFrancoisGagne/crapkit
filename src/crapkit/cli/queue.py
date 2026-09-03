@@ -273,7 +273,7 @@ def _uncovered_fields(uncovered, row) -> dict:
 
 def _next_item_payload(top, adm, cfg, uncovered, handle: str | None = None) -> dict:
     c = adm.of(top.path)
-    ceiling = cfg.scope_targets.get(top.scope, cfg.target)
+    ceiling = cfg.ceiling_of(top.scope)
     return {
         "scope": top.scope, "path": top.path, "function": top.long_name,
         # the name form that survives the session's own edit: a start line moves,
@@ -643,7 +643,7 @@ def _brief_versions() -> dict:
 
 
 def _row_ceiling(cfg, row) -> int:
-    return cfg.scope_targets.get(row.scope, cfg.target)
+    return cfg.ceiling_of(row.scope)
 
 
 def _packet_scope(cfg, row) -> str:

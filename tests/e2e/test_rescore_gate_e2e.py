@@ -258,3 +258,50 @@ def test_an_untracked_file_is_gated_not_silently_passed(tmp_path: Path):
     assert "untracked" in res.stderr
     gate = [ln for ln in res.stderr.splitlines() if "GATE" in ln]
     assert len(gate) == 1 and "fresh( n )" in gate[0], res.stderr
+
+
+# --- the verdict travels in the payload and on the passing line (0.5.0) -------
+
+def test_the_json_payload_carries_the_verdict_the_exit_code_says(breached: Path):
+    res = run_cli(breached, "rescore", "--gate", "--json", "src/mod.py")
+
+    assert res.returncode == 6, res.stdout + res.stderr
+    gate = json.loads(res.stdout)["gate"]
+    assert gate["ok"] is False and gate["judged"] == 1, gate
+    assert gate["ceilings"] == {"src/mod.py": 6}
+    (breach,) = gate["breaches"]
+    assert (breach["function"], breach["ccn"], breach["ceiling"]) == ("alpha( n )", 8, 6)
+    assert breach["remedy"] == "decompose" and breach["key_name"] == "alpha( n )"
+    assert "GATE" in res.stderr, "the stderr lines stay for a reader"
+
+
+def test_the_text_form_prints_the_gate_line_when_it_passes(tmp_path: Path):
+    repo = breached_repo(tmp_path, "passing")
+    write(repo, "src/mod.py", clean_src("alpha").replace("n + 1", "n + 2"))
+
+    res = run_cli(repo, "rescore", "--gate", "src/mod.py")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout.rstrip().endswith("gate: 1 changed function(s) judged, 0 over ceiling 6"), \
+        res.stdout
+    assert res.stderr == ""
+
+
+def test_the_gate_line_and_the_payload_name_the_scopes_own_ceiling(tmp_path: Path):
+    repo = breached_repo(tmp_path, "tolerant-json", scope_target="target = 10\n")
+
+    text = run_cli(repo, "rescore", "--gate", "src/mod.py")
+    as_json = run_cli(repo, "rescore", "--gate", "--json", "src/mod.py")
+
+    assert text.returncode == 0 and text.stdout.rstrip().endswith(
+        "gate: 1 changed function(s) judged, 0 over ceiling 10"), text.stdout
+    gate = json.loads(as_json.stdout)["gate"]
+    assert gate == {"ok": True, "judged": 1, "ceilings": {"src/mod.py": 10}, "breaches": [],
+                    "untracked": []}
+
+
+def test_a_breach_prints_no_passing_line(breached: Path):
+    res = run_cli(breached, "rescore", "--gate", "src/mod.py")
+
+    assert res.returncode == 6
+    assert "gate:" not in res.stdout, "the verdict on a breach is the stderr GATE block"

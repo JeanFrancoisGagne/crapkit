@@ -9,6 +9,7 @@ digest and trend output across a prune.
 import sqlite3
 
 import pytest
+from crapkit.config import Config
 from crapkit.digest import build_digest, latest_comparable_pair, totals
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore, prune_keep_set, trusted_runs
@@ -36,7 +37,7 @@ def store_with_history(dirpath, rows_per_run: int = 3) -> SnapshotStore:
 def digest_lines(store: SnapshotStore) -> list[str]:
     prev, cur = latest_comparable_pair(trusted_runs(store))
     return build_digest(store.read_scored(prev["id"]), store.read_scored(cur["id"]),
-                        target=6).lines
+                        ceiling_of=Config(target=6).ceiling_of).lines
 
 
 def trend_totals(store: SnapshotStore) -> dict:
@@ -77,8 +78,8 @@ def test_a_run_row_that_outlives_its_rows_is_the_false_alarm_prune_avoids(tmp_pa
 
     loud = digest_lines(SnapshotStore(tmp_path / "crap.sqlite"))
     assert "functions 0 -> 3" in loud[0], loud
-    assert sum(1 for line in loud if line.startswith("new over target")) == 3
-    assert not any(line.startswith("new over target") for line in quiet), \
+    assert sum(1 for line in loud if line.startswith("new over ceiling")) == 3
+    assert not any(line.startswith("new over ceiling") for line in quiet), \
         "before the damage those three functions were known, not new"
 
 

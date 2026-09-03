@@ -57,3 +57,11 @@ def test_the_description_reads_as_one_plain_sentence():
 
     assert description.strip() == description and len(description) <= 100, "the registry refuses over 100 chars"
     assert re.match(r"^[A-Z]", description) and description.endswith(".")
+
+
+def test_the_description_counts_the_tenth_tool():
+    """0.5.0 added `gate`. The registry republishes this sentence after PyPI,
+    so it moves with the count in `_INSTRUCTIONS`, AGENTS.md and the MCP tables."""
+    description = _manifest()["description"]
+
+    assert description.startswith("Ten read-only tools"), description

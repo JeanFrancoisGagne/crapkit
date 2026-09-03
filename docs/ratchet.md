@@ -149,7 +149,8 @@ accepted debt, so from then on the gate judges your edit instead of the repo's h
 
 ```
 $ crapkit coverage
-run 1 @ 549e0ccdcdf: 3 functions scored — 2 measured / 1 untested / 0 no-lane / 0 cc-only, 2 over target 6, CRAP load 124.07, grade F
+run 1 @ 549e0ccdcdf: 3 functions scored: 2 measured / 1 untested, 2 over ceiling 6, CRAP load 124.07, grade F
+-> next: crapkit worklist
 
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 2, tightened 0 — 2 mark(s) vs run 1 (549e0ccdcdf)

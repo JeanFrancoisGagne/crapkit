@@ -6,6 +6,7 @@ in Python to answer a question about a few thousand directories. Both are the
 same waste, and both are fixed the same way: the projection and the grouping go
 into the query, and the answer above has to come out unchanged.
 """
+from crapkit.config import Config
 from crapkit.digest import build_digest
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -13,6 +14,7 @@ from crapkit.store import SnapshotStore
 SCOPES = ("api", "ui")
 FLAGS = ("measured", "untested", "no-lane", "cc-only")
 REMEDIES = ("ok", "add-tests", "decompose")
+FLAT = Config(target=6).ceiling_of  # every scope judged at the repo ceiling
 
 
 def scored(n: int, bump: float = 0.0) -> list:
@@ -72,8 +74,8 @@ def test_the_digest_lines_are_identical_from_the_narrow_rows(tmp_path):
     prev, cur = scored(60), scored(60, bump=3.0)
     store, (a, b) = seeded(tmp_path, prev, cur)
 
-    wide = build_digest(store.read_scored(a), store.read_scored(b), target=6)
-    narrow = build_digest(store.read_crap(a), store.read_crap(b), target=6)
+    wide = build_digest(store.read_scored(a), store.read_scored(b), ceiling_of=FLAT)
+    narrow = build_digest(store.read_crap(a), store.read_crap(b), ceiling_of=FLAT)
 
     assert narrow.lines, "the fixture has to move something or this proves nothing"
     assert narrow == wide
@@ -83,7 +85,7 @@ def test_an_unchanged_pair_still_digests_to_silence(tmp_path):
     rows = scored(40)
     store, (a, b) = seeded(tmp_path, rows, rows)
 
-    assert build_digest(store.read_crap(a), store.read_crap(b), target=6).quiet
+    assert build_digest(store.read_crap(a), store.read_crap(b), ceiling_of=FLAT).quiet
 
 
 def test_the_digest_read_skips_the_rows_no_run_scored(tmp_path):

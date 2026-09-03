@@ -391,7 +391,10 @@ def test_the_last_lane_failing_leaves_nothing_to_score(tmp_path: Path):
     res = run_cli(repo, "coverage", "--json")
     assert res.returncode == 5, res.stdout + res.stderr
     assert "every lane failed" in res.stderr
-    assert res.stdout.strip() == "", "no lane survived, so no run summary is printed"
+    payload = json.loads(res.stdout)
+    assert "run_id" not in payload, "no lane survived, so no run summary is printed"
+    assert payload["error"] == {"exit": 5, "kind": "tool",
+                                "message": "every lane failed (1 of 1); the errors are above"},         "what stdout carries instead is the one error object a wrapper can quote"
 
 
 @pytest.fixture()
