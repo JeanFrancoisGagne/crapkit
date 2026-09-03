@@ -903,6 +903,19 @@ def test_the_scored_line_quotes_the_error_message_when_coverage_died_under_json(
     assert line == "`crapkit coverage` exited 5: lane 'py' cannot import pytest-cov; pip install pytest-cov."
 
 
+def test_a_verify_error_object_is_quoted_and_never_counted():
+    """0.5.0's `verify --json` prints one error object when a crapkit error
+    escapes (a missing baseline commit, exit 4). Read as a verdict it would
+    count nothing over "Run None against baseline None"."""
+    message = ("baseline commit a74260f321f is not an ancestor of HEAD in this shallow clone, "
+               "which does not hold it; set fetch-depth: 0 on the checkout or run git fetch --unshallow")
+    verify = {"error": {"exit": 4, "kind": "git", "message": message + "\n"}, "schema": 1}
+
+    line = _builder().verdict_line(verify, 4)
+
+    assert line == f"**`crapkit verify` exited 4 and wrote no verdict: {message}.**"
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

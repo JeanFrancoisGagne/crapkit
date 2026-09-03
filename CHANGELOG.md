@@ -63,8 +63,10 @@ job log. The line now reads `2 over ceiling 6` or `2 over their ceilings (6; rep
 util 4)` from the summary's `ceilings`, appends `; lane 'js' failed: <first line>` for each
 entry of `lane_failures`, and, when the payload is the one-object error `--json` prints on
 a crapkit error, reads `` `crapkit coverage` exited 5: <message> ``. A 0.4.x payload without
-`ceilings` reads `over the ceiling`. Moved contract: the README's rendered comment is
-regenerated with the new first line.
+`ceilings` reads `over the ceiling`. The verdict line reads the same error object from
+`verify --json` (a missing baseline commit, exit 4) as `` **`crapkit verify` exited 4 and
+wrote no verdict: <message>.** `` instead of counting it as a verdict with no findings.
+Moved contract: the README's rendered comment is regenerated with the new first line.
 
 ### The MCP server survives a bad call
 

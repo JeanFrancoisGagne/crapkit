@@ -240,6 +240,9 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
     if verify is None:
         return (f"**`crapkit verify` exited {exit_code} and wrote no verdict.** "
                 f"Read the job log: this is tooling, not a score.")
+    if verify.get("error"):
+        return (f"**`crapkit verify` exited {exit_code} and wrote no verdict: "
+                f"{_first_line(verify['error'].get('message'))}.**")
     if not verify.get("ok"):
         return _failed(verify, exit_code)
     if base_reason is not None:
