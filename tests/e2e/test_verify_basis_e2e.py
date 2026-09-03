@@ -315,8 +315,13 @@ def test_the_verdict_names_the_tools_that_produced_it(receipt_repo: Path):
 
 
 def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Path):
+    """A green verify never creates the marks file (0.5.0), so the file the
+    second run hashes is the one `ratchet seed` wrote, stamp included."""
     first = run_cli(receipt_repo, "verify", "--json")
     assert json.loads(first.stdout)["ratchet_sha256"] is None, "no ratchet file existed yet"
+    assert not (receipt_repo / "crapkit-ratchet.tsv").exists(), \
+        "a green verify created a marks file holding zero marks"
+    assert run_cli(receipt_repo, "ratchet", "seed").returncode == 0
 
     second = run_cli(receipt_repo, "verify", "--json")
 
@@ -325,3 +330,4 @@ def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Pat
     assert ratchet.splitlines()[0].startswith(b"# crapkit-analysis=")
     assert ratchet.endswith(b"path\tlong_name\tcrap\n")
     assert json.loads(second.stdout)["ratchet_sha256"] == hashlib.sha256(ratchet).hexdigest()
+    assert json.loads(second.stdout)["ratchet_changes"] is None, "nothing to move, nothing written"

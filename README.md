@@ -405,10 +405,12 @@ git, and a shallow clone does not have that commit:
 
 ```
 $ crapkit verify --baseline-tsv crapkit-baseline.tsv
-crapkit: baseline commit a74260f321f is not an ancestor of HEAD (rebase or amend rewrote history) — run `crapkit coverage` for a fresh baseline
+crapkit: baseline commit a74260f321f is not an ancestor of HEAD in this shallow clone, which does not hold it; set fetch-depth: 0 on the checkout or run git fetch --unshallow
 ```
 
 That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at full depth.
+On a full clone the same exit blames what it used to, a rebase or an amend that rewrote
+history, and asks for a fresh baseline instead.
 Set `fetch-depth: 0` on the checkout step, which is what crapkit's own
 [.github/workflows/ci.yml](https://github.com/JeanFrancoisGagne/crapkit/blob/main/.github/workflows/ci.yml) does.
 

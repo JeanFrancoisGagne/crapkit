@@ -172,6 +172,27 @@ def test_a_baseline_commit_history_rewrote_away_is_refused(baselined, capsys):
 
     assert code == 4
     assert "is not an ancestor of HEAD" in err, err
+    assert "rewrote history" in err and "shallow" not in err, err
+
+
+def test_a_shallow_clone_missing_the_baseline_commit_is_named_as_such(baselined, capsys, tmp_path):
+    """actions/checkout clones one commit by default. The commit the portable
+    baseline names is not in that clone at all, and blaming a rewrite sent the
+    platform engineer after a fresh baseline when the fix was a deeper fetch.
+    Same exit 4; a different sentence."""
+    run(["verify", "--reuse-artifacts", "--emit-baseline", "crapkit-baseline.tsv"],
+        baselined, capsys)
+    commit_all(baselined, "carry the baseline")
+    clone = tmp_path / "shallow"
+    git(baselined, "clone", "-q", "--depth", "1", "--no-local", str(baselined), str(clone))
+
+    code, _, err = run(["verify", "--reuse-artifacts", "--baseline-tsv", "crapkit-baseline.tsv"],
+                       clone, capsys)
+
+    assert code == 4
+    assert ("is not an ancestor of HEAD in this shallow clone, which does not hold it; "
+            "set fetch-depth: 0 on the checkout or run git fetch --unshallow") in err, err
+    assert "rewrote history" not in err
 
 
 # --- the portable baseline file -----------------------------------------------
@@ -262,6 +283,20 @@ def test_the_json_verdict_carries_the_receipt_that_dates_it(baselined, capsys):
     assert len(payload["ratchet_sha256"]) == 64
     assert payload["committed_findings"] == 0 and payload["dirty_findings"] == 0
     assert payload["diff_uncovered_count"] == 0
+
+
+def test_the_json_verdict_carries_the_diff_coverage_ceiling(baselined, capsys):
+    """The count alone cannot say whether exit 9 is near: the ceiling it is
+    judged against travels with it, null when the repo set none (warn only)."""
+    _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+    assert json.loads(out)["diff_uncovered_max"] is None
+
+    text = (baselined / "crapkit.toml").read_text(encoding="utf-8")
+    (baselined / "crapkit.toml").write_text(
+        text.replace("target = 6", "target = 6\ndiff_uncovered_max = 1"), encoding="utf-8")
+
+    _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+    assert json.loads(out)["diff_uncovered_max"] == 1
 
 
 def test_a_function_this_tree_pushed_over_the_ceiling_fails_the_verdict(baselined, capsys):
@@ -762,3 +797,146 @@ def test_the_receipt_says_an_exported_variable_is_cleared_where_it_was_set(capsy
     verifying._print_clear_the_reason()
 
     assert "clear it where it was set" in capsys.readouterr().out
+
+
+# --- verify says what it did: the refused override and the marks file --------
+#
+# 0.5.0 item 3. A refused --override used to be exit 6 with no line naming why,
+# and a green run rewrote the marks file on every pass, creating one to hold
+# zero marks in a clean checkout and leaving a dirty one with nothing on the OK
+# line to say what moved.
+
+REFUSED_REGRESSION = ("override refused: 1 ratchet regression (src/app.ts plain ( x ) "
+                      "0.1 -> 2.5) never qualifies for an override; "
+                      "raise the mark by hand and commit it")
+REFUSED_FAILURE = ("override refused: 1 new test failure (src/app.test.ts::renders) "
+                   "never qualifies for an override; fix the failing test first")
+
+
+def test_a_refused_override_says_why_on_stderr(baselined, capsys):
+    """stderr, not stdout: `--json` prints one object, and the findings the run
+    always printed stay where they were."""
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 0.1))
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--override", "please"],
+                         _knotty(baselined), capsys)
+
+    assert code == 6
+    assert REFUSED_REGRESSION in err, err
+    assert "override refused" not in out and "OVERRIDDEN" not in out, out
+
+
+def test_a_refused_override_under_json_keeps_stdout_one_object(baselined, capsys):
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 0.1))
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--override", "please", "--json"],
+                         _knotty(baselined), capsys)
+
+    assert code == 6
+    assert json.loads(out)["overridden"] == []
+    assert REFUSED_REGRESSION in err, err
+
+
+def test_a_new_failure_refuses_the_override_and_names_the_test(baselined, capsys):
+    _junit(baselined, failing=True)
+    _results_artifact(baselined)
+
+    code, _, err = run(["verify", "--reuse-artifacts", "--override", "please"],
+                       _knotty(baselined), capsys)
+
+    assert code == 6
+    assert REFUSED_FAILURE in err, err
+
+
+def test_both_refusal_causes_share_one_line(baselined, capsys):
+    """One line, both causes: a run holding a regression and a new failure is
+    refused once, and each cause names its own escape."""
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 0.1))
+    _junit(baselined, failing=True)
+    _results_artifact(baselined)
+
+    code, _, err = run(["verify", "--reuse-artifacts", "--override", "please"],
+                       _knotty(baselined), capsys)
+
+    assert code == 6
+    assert ("override refused: 1 ratchet regression (src/app.ts plain ( x ) 0.1 -> 2.5) "
+            "and 1 new test failure (src/app.test.ts::renders) never qualify for an "
+            "override; raise the mark by hand and commit it; fix the failing test first") in err, err
+    assert err.count("override refused") == 1
+
+
+def test_an_override_on_a_passing_run_says_nothing(baselined, capsys):
+    """Nothing was refused, so there is nothing to say."""
+    code, _, err = run(["verify", "--reuse-artifacts", "--override", "please"],
+                       baselined, capsys)
+
+    assert (code, err) == (0, "")
+
+
+@pytest.fixture()
+def marked_debt(repo, capsys):
+    """A baseline whose committed tree holds `knotty` (ccn 8, half covered, CRAP
+    16): a marked function still over the ceiling, so a mark on it has room to
+    tighten while a mark on `plain` (CRAP 2.5) has only room to drop."""
+    add_knotty(repo)
+    commit_all(repo, "add knotty")
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo
+
+
+def test_a_green_run_that_moved_marks_says_so_and_asks_for_git_add(marked_debt, capsys):
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 100.0),
+                ("src/app.ts", "plain ( x )", 9.0))
+
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert (code, err) == (0, "")
+    assert (f"verify OK @ {head(marked_debt)[:11]} vs baseline {head(marked_debt)[:11]} "
+            f"(0 changed files) ratchet: 1 dropped, 1 tightened -> git add {MARKS}") in out, out
+    text = (marked_debt / MARKS).read_text(encoding="utf-8")
+    assert "knotty ( n )\t16.0000" in text and "plain" not in text, text
+
+
+def test_the_json_receipt_counts_what_the_tighten_did(marked_debt, capsys):
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 100.0),
+                ("src/app.ts", "plain ( x )", 9.0))
+
+    _, out, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+
+    assert json.loads(out)["ratchet_changes"] == {"dropped": 1, "tightened": 1}
+
+
+def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_debt, capsys):
+    """Written only when its text would change: a mark already at its measured
+    value is not a tighten, and rewriting the file dirtied a clean checkout with
+    a diff of nothing."""
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0))
+    before = (marked_debt / MARKS).stat().st_mtime_ns
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+
+    assert (code, err) == (0, "")
+    assert (marked_debt / MARKS).stat().st_mtime_ns == before, "the file was rewritten"
+    assert json.loads(out)["ratchet_changes"] is None
+
+
+def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, capsys):
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0))
+
+    _, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert "ratchet:" not in out and "git add" not in out, out
+
+
+def test_a_green_run_never_creates_a_marks_file_to_hold_zero_marks(baselined, capsys):
+    """A clean CI checkout used to end with an untracked marks file holding a
+    stamp, a header and no rows."""
+    assert not (baselined / MARKS).exists()
+
+    code, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert code == 0
+    assert not (baselined / MARKS).exists(), "verify created a marks file with no marks in it"
+    assert "ratchet:" not in out, out

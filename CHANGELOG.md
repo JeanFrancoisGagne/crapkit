@@ -4,6 +4,39 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### verify says why it refused an override
+
+`verify --override` on a run holding a ratchet regression or a new test failure used to
+exit 6 with no line about the override at all: no OVERRIDDEN, no refusal, an empty
+`crapkit overrides`. It now prints one stderr line naming the cause and the escape,
+`override refused: 1 ratchet regression (app/m.py pick( a ) 240.0 -> 380.0) never qualifies
+for an override; raise the mark by hand and commit it`, both causes on the one line when a
+run holds both. The exit code is unchanged and `--json` stdout stays one object.
+docs/ratchet.md states the rule: a mark never rises through `verify`.
+
+### verify says what it did to the marks file, and touches it only when something moved
+
+A green run rewrote `crapkit-ratchet.tsv` on every pass, so a clean checkout ended with an
+untracked marks file holding a stamp, a header and no rows, and a repo with marks got a
+dirty file with nothing on the OK line to say why. The file is now written only when its
+text would change and never created to hold zero marks. When it is written, the OK line
+ends with `ratchet: 6 dropped, 1 tightened -> git add crapkit-ratchet.tsv`, and the JSON
+receipt carries the same counts as `ratchet_changes` (`null` when the file was left alone).
+
+### A shallow clone is named when the baseline commit is missing
+
+`verify` on a depth-1 checkout said `is not an ancestor of HEAD (rebase or amend rewrote
+history)` and sent the reader after a fresh baseline when nothing was rewritten. When
+`git rev-parse --is-shallow-repository` answers true the line now reads `baseline commit
+a74260f321f is not an ancestor of HEAD in this shallow clone, which does not hold it; set
+fetch-depth: 0 on the checkout or run git fetch --unshallow`. Exit 4 and the rewrite message
+on a full clone are unchanged; the README transcript shows the new line.
+
+### The verify receipt carries the diff-coverage ceiling
+
+`verify --json` adds `diff_uncovered_max`, the configured ceiling `diff_uncovered_count` is
+judged against, `null` when the repo set none. Additive; `schema` stays 1.
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

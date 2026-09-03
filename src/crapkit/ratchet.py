@@ -319,3 +319,25 @@ def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target:
             continue  # fixed for real: below the scope's ceiling needs no mark
         updated.append(RatchetEntry(entry.path, entry.long_name, min(entry.crap, round(row.crap, 4))))
     return sorted(updated, key=lambda e: (e.path, e.long_name))
+
+
+class RatchetDelta(NamedTuple):
+    """What one update did to the marks: how many left the file, how many fell."""
+    dropped: int
+    tightened: int
+
+
+def _mark_move(entry: RatchetEntry, fresh: float | None) -> str:
+    """One mark's move under an update: dropped, tightened or kept."""
+    if fresh is None:
+        return "dropped"
+    return "tightened" if fresh < entry.crap else "kept"
+
+
+def ratchet_delta(prior: list[RatchetEntry], updated: list[RatchetEntry]) -> RatchetDelta:
+    """The two counts a green verify reports. A mark never rises and an update
+    adds none, so dropped plus tightened is the whole difference between the
+    two lists; a mark that kept its value counts as neither."""
+    after = {(e.path, e.long_name): e.crap for e in updated}
+    moves = [_mark_move(e, after.get((e.path, e.long_name))) for e in prior]
+    return RatchetDelta(moves.count("dropped"), moves.count("tightened"))

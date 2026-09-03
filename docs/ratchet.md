@@ -511,6 +511,20 @@ A clean pass tightens it automatically. After a green `verify`:
 - A marked function absent from the run keeps its mark untouched. Absence is not proof the
   code is gone; that is what `prune` is for.
 
+The marks file is written only when its text would change, and never created to hold zero
+marks: a clean checkout with no marks file stays clean, and a file whose marks all held
+stays byte-identical. When the run did rewrite it, the OK line says what moved and what to
+do about it:
+
+```
+$ crapkit verify
+verify OK @ 8c780bb18da vs baseline 8c780bb18da (3 changed files) ratchet: 6 dropped, 1 tightened -> git add crapkit-ratchet.tsv
+```
+
+`dropped` counts marks whose function is now at or under its ceiling; `tightened` counts
+marks that fell. The JSON receipt carries the same two numbers as `ratchet_changes`, `null`
+when the file was left alone ([agent-json.md](agent-json.md#verify)).
+
 A run that passed **because of an `--override`** does not tighten anything. The override
 already wrote the debt it granted, and letting the same run also rewrite every other mark
 would mix a granted exemption into a routine tightening.
@@ -605,6 +619,30 @@ EXIT=0
 $ crapkit overrides
 run  10 @ 8c780bb18da 2026-08-23T01:36:42Z  crap 56.0  app/m.py  route( a , b , c , d )  (shipping the hotfix, ticket 412)
 ```
+
+An override grants gate violations and nothing else. A ratchet regression or a new test
+failure in the same run refuses it, and the refusal is one stderr line naming the cause and
+the escape; the exit code stays the verdict's:
+
+```
+$ crapkit verify --override "hotfix INV-412 ships tonight; decompose next sprint"
+verify FAILED @ 8c780bb18da vs baseline 8c780bb18da (1 changed files)
+  GATE  crap    380.0  ccn  19 cov 0%  app/billing/invoice.py:88  check_band( r , t )  -> decompose
+  RATCHET  app/billing/invoice.py  check_band( r , t ): 240.0 -> 380.0
+  findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
+override refused: 1 ratchet regression (app/billing/invoice.py check_band( r , t ) 240.0 -> 380.0) never qualifies for an override; raise the mark by hand and commit it
+EXIT=6
+```
+
+The rule, stated once: **a mark never rises through `verify`.** A marked function the edit
+pushed past its mark carries a gate violation and a regression in one payload
+([agent-json.md](agent-json.md#verify)), so the override path never reaches it, and the only
+way to accept that debt is to raise the mark in `crapkit-ratchet.tsv` by hand and commit the
+change where a reviewer sees it. A new test failure is refused from the other side: the
+override records debt in the marks file, and a failing test is not debt a mark can carry;
+fix the test first. A run holding both causes is refused once, both on the line. A refused
+override writes no alert line, no store row and no mark. Under `--json` the line is on
+stderr and stdout stays one object.
 
 The pre-commit hook takes the same path through `CRAPKIT_OVERRIDE_REASON`:
 
