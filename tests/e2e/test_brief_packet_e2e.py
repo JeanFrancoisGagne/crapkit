@@ -298,7 +298,7 @@ def test_the_text_brief_keeps_its_lines_and_appends_the_new_ones(repo: Path):
     assert lines[0] == "core/alpha.py:1  alpha( a , b )"
     assert "uncovered lines: 4, 6" in res.stdout
     assert "gate ceiling 6  lane py" in res.stdout
-    assert "1 function(s), 1 over target, crap load 72.0" in res.stdout
+    assert "1 function(s), 1 over ceiling, crap load 72.0" in res.stdout
 
 
 # --- the start line as a name ----------------------------------------------------
