@@ -27,6 +27,11 @@ Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
 deepen nesting (a structure inside a ternary arm is rare enough to accept).
 
+The deepest the per-function stack gets is recorded too, as
+`cognitive_nesting`. analyze.py reads it as the `nesting` column of a Python
+row, because lizard's ND extension counts structures there rather than depth:
+a flat function of seven `if`s read 7. Brace languages keep lizard's column.
+
 Where this extension sits in lizard's chain is load-bearing and differs by
 reader: the python rules read whitespace tokens that lizard's own
 `preprocessing` strips, while SwiftReader and KotlinReader drain the stream
@@ -97,10 +102,10 @@ _SHELL_BLOCK = None
 
 
 class _FnState:
-    __slots__ = ("total", "stack", "brace_depth", "line_indent", "at_line_start",
-                 "pending", "else_pending", "question_pending", "bool_op", "name",
-                 "recursed", "body_started", "prev", "label_check", "c_family",
-                 "match_kw", "is_shell")
+    __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
+                 "at_line_start", "pending", "else_pending", "question_pending",
+                 "bool_op", "name", "recursed", "body_started", "prev",
+                 "label_check", "c_family", "match_kw", "is_shell")
 
     def __init__(self, name: str, c_family: bool = False, match_kw: bool = False,
                  is_shell: bool = False):
@@ -109,6 +114,7 @@ class _FnState:
         self.is_shell = is_shell
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
+        self.max_depth = 0       # the deepest the stack has been
         self.brace_depth = 0
         self.line_indent = 0
         self.at_line_start = True
@@ -126,7 +132,8 @@ class _FnState:
 class LizardExtension:
     """One instance per analysis pass; state is per lizard FunctionInfo."""
 
-    FUNCTION_INFO = {"cognitive_complexity": {"caption": " Cog "}}
+    FUNCTION_INFO = {"cognitive_complexity": {"caption": " Cog "},
+                     "cognitive_nesting": {"caption": " Nest "}}
 
     def __call__(self, tokens, reader):
         # Keyed on the FunctionInfo itself, never on id(fn): the map would hold no
@@ -147,6 +154,7 @@ class LizardExtension:
                                               match_kw, is_shell)
             _step(state, token, is_python)
             fn.cognitive_complexity = state.total
+            fn.cognitive_nesting = state.max_depth
             yield token
 
 
@@ -229,6 +237,13 @@ def _nesting(state: _FnState, is_python: bool) -> int:
     return len(state.stack)
 
 
+def _push(state: _FnState, entry) -> None:
+    """One more open block. Every push passes through here, so the deepest the
+    stack gets is measured once, in one place."""
+    state.stack.append(entry)
+    state.max_depth = max(state.max_depth, len(state.stack))
+
+
 def _consume(state: _FnState, token: str, is_python: bool) -> None:
     if token in _RUN_RESETS:
         state.bool_op = None
@@ -252,7 +267,7 @@ def _brace(state: _FnState, token: str) -> None:
 
 def _open_brace(state: _FnState) -> None:
     if state.pending:
-        state.stack.append(state.brace_depth)
+        _push(state, state.brace_depth)
         state.pending = False
     state.brace_depth += 1
 
@@ -328,7 +343,7 @@ def _shell_keywords(state: _FnState, token: str, is_python: bool) -> None:
         state.total += 1
     elif token in _SHELL_COUNTING:
         state.total += 1 + _nesting(state, is_python)
-        state.stack.append(_SHELL_BLOCK)
+        _push(state, _SHELL_BLOCK)
     elif token not in _SHELL_BODY_WORDS:
         _jumps_and_recursion(state, token, is_python)
 
@@ -408,6 +423,6 @@ def _structure(state: _FnState, token: str, is_python: bool) -> None:
 
 def _push_structure(state: _FnState, is_python: bool) -> None:
     if is_python:
-        state.stack.append(state.line_indent)
+        _push(state, state.line_indent)
     else:
         state.pending = True

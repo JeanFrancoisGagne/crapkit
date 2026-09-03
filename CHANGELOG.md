@@ -4,6 +4,10 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### A Python row's `nesting` is a depth
+
+`nesting` on a Python function is how deep its blocks go, read off crapkit's own cognitive pass, which keeps a per-function stack of open blocks: a flat function of seven `if`s reads 1 and a three-deep one reads 3. Until now the column read lizard's ND extension, which counts nesting structures for Python rather than depth, so the flat function read 7 and looked seven levels deep next to the same number for a function that was. Brace languages keep lizard's column. The analysis version moves to 9, so the first `inventory` or `coverage` after upgrading runs the analysis cache cold and re-measures the corpus once; the `nesting` row of `docs/agent-json.md` names the source per language. (#64)
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

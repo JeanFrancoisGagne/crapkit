@@ -104,7 +104,7 @@ $ crapkit next-item
 | `ccn_std` | int | Standard cyclomatic complexity. |
 | `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
 | `nloc` | int | Non-comment lines of code. |
-| `nesting` | int | Maximum nesting depth. |
+| `nesting` | int | Maximum nesting depth. A Python row reads it off crapkit's cognitive pass, the deepest block the function opens: a flat function of seven `if`s reads 1, a three-deep one reads 3. Every other language keeps lizard's ND column. |
 | `cov` | float | Branch coverage in the span, 0.0 to 1.0. |
 | `flag` | string | `measured`, `untested`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). |
 | `crap` | float | The score. |
