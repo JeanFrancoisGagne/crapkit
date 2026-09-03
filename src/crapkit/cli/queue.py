@@ -17,8 +17,8 @@ from ..invocation import _self
 from ..keys import key_names, key_of, split_ordinal
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
-from ..worklist import Worklist
-from ..worklist import NO_RATCHET, RatchetMarks, admission, build_worklist, sql_floor
+from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
+                        sql_floor)
 from ._shared import (_latest_scored, _load_repo_config, _load_sources, _open_store,
                       _positive_top, _print_json, _ratchet_entries, _scope_names)
 
@@ -976,7 +976,7 @@ def cmd_worklist(args: argparse.Namespace) -> int:
     return 0
 
 
-def _worklist_for(root: Path, cfg, store, latest: dict, *, top: int, scopes: list) -> "Worklist":
+def _worklist_for(root: Path, cfg, store, latest: dict, *, top: int, scopes: list) -> Worklist:
     """The ranked queue off one run, shaped once for the command and the report:
     the rows, the churn window, the run's verdicts and the committed marks."""
     run_id = latest["id"]
@@ -1001,9 +1001,9 @@ def _worklist_ratchet(root: Path, cfg, store, run_id: int) -> RatchetMarks:
     return RatchetMarks(marks, store.twin_key_names(run_id))
 
 
-def _worklist_marks(store, cfg, run_id: int, scopes: list) -> dict:
-    """The run's verdict per function: what the floor may not hide, and what
-    each ranked row is.
+def _worklist_marks(store, cfg, run_id: int, scopes: list) -> Marks:
+    """The run's verdict per function and score per row: what the floor may
+    not hide, what each ranked row is, and the number it prints.
 
     Empty on an inventory-only run, which scored no remedy: a run with no
     verdict has no debt to protect from the floor and nothing to say about a

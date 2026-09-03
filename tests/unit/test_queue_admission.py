@@ -10,7 +10,7 @@ import pytest
 from crapkit.churn import FileChurn
 from crapkit.cli import _no_lane_gap, _rankable, _skip_reason
 from crapkit.score import ScoredRow, crap
-from crapkit.worklist import HOT_MIN_CCN, admission, over_target_floor, sql_floor
+from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, sql_floor
 
 
 def scored(path="util/stats.py", ccn=4, remedy="add-tests", flag="untested",
@@ -78,8 +78,8 @@ def inventory_row(path="util/stats.py", name="dark( a , b , c )", ccn=4):
     return InventoryRow("util", path, name, 1, 9, ccn, ccn, ccn, 8, 3, 2)
 
 
-DEBT = {("util/stats.py", "dark( a , b , c )"): ("untested", "add-tests")}
-DONE = {("util/stats.py", "dark( a , b , c )"): ("measured", "ok")}
+DEBT = Marks({("util/stats.py", "dark( a , b , c )"): ("untested", "add-tests")}, {})
+DONE = Marks({("util/stats.py", "dark( a , b , c )"): ("measured", "ok")}, {})
 
 
 def test_the_worklist_takes_the_sub_floor_debt_next_item_hands_out():

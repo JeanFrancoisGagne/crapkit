@@ -115,6 +115,18 @@ def test_the_written_page_carries_the_run_it_was_built_from(scored_repo: Path):
     assert "crapkit explain src/app.ts" in page
 
 
+def test_the_written_page_shows_each_rows_crap_and_coverage(scored_repo: Path):
+    """The renderer's unit tests run on a recorded payload; only a live run
+    shows the numbers reach the page. `pick` is ccn 7 with one of its two
+    branches taken: 7^2 * (1 - 0.5)^3 + 7 = 13.125."""
+    done = run_cli(scored_repo, "report", "--out", "page.html")
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    page = (scored_repo / "page.html").read_text(encoding="utf-8")
+    assert "<th>CRAP</th>" in page and "<th>Cov</th>" in page
+    assert '<td class="mono">13.1</td><td class="mono">50%</td>' in page
+
+
 def test_the_written_page_reaches_no_network(scored_repo: Path):
     run_cli(scored_repo, "report")
     page = (scored_repo / ".crapkit" / "report.html").read_text(encoding="utf-8")

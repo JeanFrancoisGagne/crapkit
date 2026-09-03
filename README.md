@@ -912,8 +912,8 @@ Columns: `risk`, `ccn`, the function's `crap` and `cov` off the ranked run (`-` 
 inventory-only run), `<commits>c/<authors>a` in the churn window, `path:line`, the
 function's long name, then a marker on rows the burn-down queue will not hand out (`ok`,
 `no-lane`). The header counts the active rows against their total, so `50 of 3980 active
-(worklist_top 50)` says what the cap hid. `--json` also carries `ccn_std`, `weight` and
-`ratchet_mark`.
+(worklist_top 50)` says what the cap hid, and reads `(--top N)` when the flag set the cap.
+`--json` also carries `ccn_std`, `weight` and `ratchet_mark`.
 
 **`worklist` is the risk map, not a to-do list.** It ranks finished rows too, so it does
 not empty when the burn-down does. `next-item` is the other view of that run: it drops the

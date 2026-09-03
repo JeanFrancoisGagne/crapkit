@@ -4,9 +4,12 @@ A four-function repo across two scopes, scored by a stub coverage.py artifact so
 the lane is hermetic and every CRAP value in the assertions is hand-computable:
 crap = ccn^2 * (1 - cov)^3 + ccn, and the plan file decides cov.
 """
+import itertools
 import json
+import os
 import sqlite3
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -91,14 +94,23 @@ def _source(name: str, ifs: int) -> str:
     return f"def {name}(a, b):\n    r = 0\n{body}    return r\n"
 
 
-def _git(repo: Path, *args: str) -> None:
+def _git(repo: Path, *args: str, env: dict | None = None) -> None:
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
-                   cwd=repo, check=True, capture_output=True)
+                   cwd=repo, check=True, capture_output=True, env=env)
+
+
+# One timestamp per commit, a minute apart, starting a day back so the churn
+# window holds them all. Six commits inside one wall-clock second are a
+# one-timestamp log, which churn._twr weighs 1.0 apiece, and the batch order
+# then follows those weights instead of the path order the tests pin.
+_CLOCK = itertools.count(int(time.time()) - 86400, 60)
 
 
 def _commit(repo: Path, message: str) -> None:
     _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", message)
+    when = f"@{next(_CLOCK)} +0000"
+    _git(repo, "commit", "-q", "-m", message,
+         env={**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when})
 
 
 @pytest.fixture()
@@ -578,10 +590,10 @@ def test_twins_carry_their_own_marks_and_never_each_others(repo: Path):
     scored(repo)
     seed(repo)
 
-    marks = {e["start"]: e["ratchet_mark"] for e in worklist(repo)["active"]
-             if e["path"] == "core/twins.py"}
+    twins = {e["start"]: e for e in worklist(repo)["active"] if e["path"] == "core/twins.py"}
 
-    assert marks == {1: 56.0, 18: 72.0}, marks
+    assert {s: e["ratchet_mark"] for s, e in twins.items()} == {1: 56.0, 18: 72.0}, twins
+    assert {s: e["crap"] for s, e in twins.items()} == {1: 56.0, 18: 72.0},         "each twin prints its own score, never the worse sibling's"
 
 
 # --- a one-commit repository ---------------------------------------------------

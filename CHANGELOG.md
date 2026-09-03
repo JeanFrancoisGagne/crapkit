@@ -9,13 +9,14 @@ The ranking view of a CRAP scorer printed risk, ccn, the standard-only ccn, chur
 recency weight, and never the score; the HTML report sent its reader to `crapkit explain`
 per row. A row now reads `risk 14.0  ccn 14  crap 38.5  cov 50%  1c/1a  calc/grade.py:7
 classify( ... )`: `(N std)` and `w 0.00` leave the text, and `--json` keeps `ccn_std` and
-`weight` beside the new `crap` and `cov`, both `null` on an inventory-only run. The header
-counts the active rows against their total, `50 of 3980 active (worklist_top 50)`, and
-`--json` carries `active_total`, so a capped list never reads as the whole repo. The report
-page renders CRAP and Cov columns and drops the footer sentence that claimed no payload
-carried them. The demo recording is re-rendered, and the demo generator now folds the
-interpreter path `python -m crapkit` prints in its next steps back to `crapkit` instead of
-refusing the frame.
+`weight` beside the new `crap` and `cov`, both `null` on an inventory-only run and each
+row's own where two functions share a name in one file. The header counts the active rows
+against their total, `50 of 3980 active (worklist_top 50)`, or `(--top N)` when the flag
+set the cap, and `--json` carries `active_total`, so a capped list never reads as the whole
+repo. The report page renders CRAP and Cov columns and drops the footer sentence that
+claimed no payload carried them. The demo recording is re-rendered, and the demo generator
+now folds the interpreter path `python -m crapkit` prints in its next steps back to
+`crapkit` instead of refusing the frame.
 
 ### An unknown `--scope` is a configuration error
 `worklist --scope frontend` on a repo whose scopes are `api` and `web` printed `0 active,
@@ -28,8 +29,7 @@ store is opened, the same class the loader raises for a lane naming an undeclare
 Every `worklist --json` row carries `ratchet_mark`: the committed mark's value, or `null`
 when the function carries no mark or the repo has no marks file. The mark is read under
 the function's own ratchet key, counted over the whole run, so the second of two `f( )`
-in one file reports the mark on `f( )#2` and never its twin's. The report page's payload
-carries the field too.
+in one file reports the mark on `f( )#2` and never its twin's.
 
 ### A one-commit repository ranks by complexity
 Every row on a fresh repo read `risk 0.0` with `weight 0.0` and `commits 1`, because a

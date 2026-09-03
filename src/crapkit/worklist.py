@@ -121,6 +121,33 @@ class WorklistEntry(NamedTuple):
     ratchet_mark: float | None = None
 
 
+_NO_VERDICT = (None, None)
+_NO_SCORE = (None, None)
+
+
+class Marks(NamedTuple):
+    """The verdict half of a scored run, as `SnapshotStore.read_marks` answers it.
+
+    `verdicts` is (flag, remedy) by (path, long_name), the worst twin standing
+    for the pair, the rule the ratchet and the verdict use, so a finished
+    sibling can never hide the pair from admission. `scores` is (crap, cov) by
+    (path, long_name, start), each row's own: under the shared verdict a
+    twin's row prints its own score, never its sibling's. Both empty on an
+    inventory-only run, which scored nothing.
+    """
+    verdicts: Mapping[tuple[str, str], tuple]
+    scores: Mapping[tuple[str, str, int], tuple]
+
+    def verdict(self, r: InventoryRow) -> tuple:
+        return self.verdicts.get((r.path, r.long_name), _NO_VERDICT)
+
+    def score(self, r: InventoryRow) -> tuple:
+        return self.scores.get((r.path, r.long_name, r.start), _NO_SCORE)
+
+
+NO_MARKS = Marks(MappingProxyType({}), MappingProxyType({}))
+
+
 class RatchetMarks(NamedTuple):
     """The committed marks, and the way a run's rows find theirs.
 
@@ -148,10 +175,11 @@ class Worklist(NamedTuple):
     active_total: int  # admitted active rows before the cap: what `top` hid
 
 
-def _entry(r: InventoryRow, churn: FileChurn, mark: tuple, ratchet: RatchetMarks) -> WorklistEntry:
+def _entry(r: InventoryRow, churn: FileChurn, marks: Marks, ratchet: RatchetMarks) -> WorklistEntry:
     return WorklistEntry(r.scope, r.path, r.long_name, r.start, r.end,
                          r.ccn, r.ccn_std, r.nloc, churn.commits, churn.authors,
-                         churn.weight, round(r.ccn * churn.weight, 4), *mark, ratchet.of(r))
+                         churn.weight, round(r.ccn * churn.weight, 4),
+                         *marks.verdict(r), *marks.score(r), ratchet.of(r))
 
 
 def _rank_key(e: WorklistEntry):
@@ -196,37 +224,34 @@ def closable_claims(claims: list[dict], scored: list, *, target: int,
                   if (c["path"], c["long_name"]) in done or c["commit"] in stale_commits)
 
 
-_NO_MARK = (None, None, None, None)
-
-
 def build_worklist(
     rows: list[InventoryRow],
     churn: dict[str, FileChurn],
     *,
     floor: int,
     top: int,
-    marks: Mapping[tuple[str, str], tuple] = MappingProxyType({}),
+    marks: Marks = NO_MARKS,
     ratchet: RatchetMarks = NO_RATCHET,
 ) -> Worklist:
     """The risk map: every admitted function, ranked, whatever its score.
 
-    `marks` is (flag, remedy, crap, cov) per function the same run scored —
-    `SnapshotStore.read_marks`. Inventory rows carry no coverage, so the ceiling
-    half of the admission cannot be decided from `rows` alone, and an
-    inventory-only run passes nothing here. The marks ride onto the entries as
-    well: this list ranks rows the burn-down queue declines, and a row that says
-    nothing about which it is sends an agent to work a wiring gap. `ratchet` is
-    the committed marks file, so a row can say it is accepted debt.
+    `marks` is the verdict per function and the score per row the same run
+    scored — `SnapshotStore.read_marks`. Inventory rows carry no coverage, so
+    the ceiling half of the admission cannot be decided from `rows` alone, and
+    an inventory-only run passes nothing here. The marks ride onto the entries
+    as well: this list ranks rows the burn-down queue declines, and a row that
+    says nothing about which it is sends an agent to work a wiring gap.
+    `ratchet` is the committed marks file, so a row can say it is accepted debt.
     """
     if top < 1:
         raise ValueError(f"worklist top must be >= 1, got {top}")
     adm = admission(churn, floor)
     active, dormant = [], []
     for r in rows:
-        c, mark = adm.of(r.path), marks.get((r.path, r.long_name), _NO_MARK)
-        if not adm.admits(r.path, r.ccn, over_target=mark[1] not in (None, "ok")):
+        c, remedy = adm.of(r.path), marks.verdict(r)[1]
+        if not adm.admits(r.path, r.ccn, over_target=remedy not in (None, "ok")):
             continue
-        (active if c.commits > 0 else dormant).append(_entry(r, c, mark, ratchet))
+        (active if c.commits > 0 else dormant).append(_entry(r, c, marks, ratchet))
     active.sort(key=_rank_key)
     dormant.sort(key=_rank_key)
     return Worklist(active=active[:top], dormant=dormant, active_total=len(active))

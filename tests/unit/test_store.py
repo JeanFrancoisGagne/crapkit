@@ -250,8 +250,8 @@ def debt_rows():
             row("util/d.py", "tiny( x )", 2, 6.0, "add-tests", scope="util")]
 
 
-def debt(marks: dict) -> set:
-    return {key for key, (_, remedy, *_) in marks.items() if remedy != "ok"}
+def debt(marks) -> set:
+    return {key for key, (_, remedy) in marks.verdicts.items() if remedy != "ok"}
 
 
 def test_read_marks_carries_the_flag_and_the_remedy_of_every_scored_row(tmp_path):
@@ -260,8 +260,8 @@ def test_read_marks_carries_the_flag_and_the_remedy_of_every_scored_row(tmp_path
 
     marks = store.read_marks(run_id)
 
-    assert marks[("src/b.ts", "dark( x )")][:2] == ("untested", "add-tests")
-    assert marks[("src/c.ts", "fine( x )")][:2] == ("measured", "ok")
+    assert marks.verdicts[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
+    assert marks.verdicts[("src/c.ts", "fine( x )")] == ("measured", "ok")
     assert debt(marks) == {("src/a.ts", "big( x )"), ("src/b.ts", "dark( x )"),
                            ("util/d.py", "tiny( x )")}
 
@@ -301,14 +301,16 @@ def test_read_marks_reports_the_worst_of_two_twins(tmp_path):
     run_id = store.write_run(commit="abc", tool_versions={},
                              rows=[twin(1, 56.0, "decompose"), twin(20, 5.0, "ok")])
 
-    assert store.read_marks(run_id)[("src/t.ts", "twin( x )")][:2] == ("measured", "decompose")
+    assert store.read_marks(run_id).verdicts[("src/t.ts", "twin( x )")] == ("measured", "decompose")
 
 
 def test_an_inventory_run_has_no_verdict_to_report(tmp_path):
     store = SnapshotStore(tmp_path / "crap.sqlite")
     run_id = store.write_run(commit="abc", tool_versions={}, rows=rows())
 
-    assert store.read_marks(run_id) == {}, "no remedy column, no verdict"
+    marks = store.read_marks(run_id)
+
+    assert (marks.verdicts, marks.scores) == ({}, {}), "no remedy column, no verdict"
 
 
 def test_read_marks_carries_the_score_and_the_coverage_beside_the_verdict(tmp_path):
@@ -319,11 +321,15 @@ def test_read_marks_carries_the_score_and_the_coverage_beside_the_verdict(tmp_pa
 
     marks = store.read_marks(run_id)
 
-    assert marks[("src/b.ts", "dark( x )")] == ("untested", "add-tests", 20.0, 0.0)
-    assert marks[("src/c.ts", "fine( x )")] == ("measured", "ok", 5.0, 0.0)
+    assert marks.verdicts[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
+    assert marks.scores[("src/b.ts", "dark( x )", 1)] == (20.0, 0.0)
+    assert marks.scores[("src/c.ts", "fine( x )", 1)] == (5.0, 0.0)
 
 
-def test_read_marks_keeps_the_worst_twins_score(tmp_path):
+def test_read_marks_keeps_each_twins_own_score(tmp_path):
+    """The verdict collapses to the worst twin so admission can protect the
+    pair; the score does not, or the finished twin's row prints its sibling's
+    CRAP as its own."""
     from crapkit.score import ScoredRow
 
     def twin(start, crap, remedy):
@@ -334,7 +340,10 @@ def test_read_marks_keeps_the_worst_twins_score(tmp_path):
     run_id = store.write_run(commit="abc", tool_versions={},
                              rows=[twin(1, 56.0, "decompose"), twin(20, 5.0, "ok")])
 
-    assert store.read_marks(run_id)[("src/t.ts", "twin( x )")][2] == 56.0
+    scores = store.read_marks(run_id).scores
+
+    assert scores[("src/t.ts", "twin( x )", 1)] == (56.0, 0.0)
+    assert scores[("src/t.ts", "twin( x )", 20)] == (5.0, 0.0)
 
 
 # --- the twin keys a cut read cannot count ------------------------------------

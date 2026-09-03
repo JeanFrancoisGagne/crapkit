@@ -12,7 +12,7 @@ from crapkit.cli.queue import _worklist_run
 from crapkit.errors import CrapkitError
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
-from crapkit.worklist import build_worklist
+from crapkit.worklist import Marks, build_worklist
 
 
 def row(path="src/a.ts", name="f( )", ccn=9, scope="src"):
@@ -145,11 +145,26 @@ def test_a_store_with_only_a_hook_run_names_the_command_to_run(tmp_path):
 # --- the number on the row ---------------------------------------------------
 
 def test_entries_carry_the_runs_score_and_coverage_off_the_marks():
-    marks = {("src/a.ts", "f( )"): ("measured", "decompose", 45.0, 0.5)}
+    marks = Marks({("src/a.ts", "f( )"): ("measured", "decompose")},
+                  {("src/a.ts", "f( )", 1): (45.0, 0.5)})
 
     wl = build_worklist([row()], CHURN, floor=5, top=50, marks=marks)
 
+    assert (wl.active[0].flag, wl.active[0].remedy) == ("measured", "decompose")
     assert (wl.active[0].crap, wl.active[0].cov) == (45.0, 0.5)
+
+
+def test_twins_carry_their_own_score_beside_the_shared_verdict():
+    """The verdict is the worst twin's, so a finished sibling never marks the
+    pair done; the score is each row's own, or twin #1 prints twin #2's CRAP."""
+    first = InventoryRow("src", "src/a.ts", "f( )", 1, 9, 7, 7, 7, 8, 1, 2)
+    second = InventoryRow("src", "src/a.ts", "f( )", 20, 28, 8, 8, 8, 8, 1, 2)
+    marks = Marks({("src/a.ts", "f( )"): ("measured", "decompose")},
+                  {("src/a.ts", "f( )", 1): (56.0, 0.0), ("src/a.ts", "f( )", 20): (72.0, 0.0)})
+
+    wl = build_worklist([first, second], CHURN, floor=5, top=50, marks=marks)
+
+    assert {e.start: (e.crap, e.remedy) for e in wl.active} ==         {1: (56.0, "decompose"), 20: (72.0, "decompose")}
 
 
 def test_an_inventory_only_run_leaves_the_score_and_the_coverage_none():

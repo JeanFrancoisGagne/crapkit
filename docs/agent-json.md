@@ -633,7 +633,7 @@ $ crapkit worklist --json
 | `floor` | int | The effective `worklist_floor`, echoed so a caller need not read the config. |
 | `churn_window_months` | int | Same. |
 | `active` | array | The queue: files with churn in the window, ranked, capped at `--top` or `worklist_top`. |
-| `active_total` | int | Active rows admitted before the cap: what `--top` or `worklist_top` hid. The plain header prints it as `50 of 3980 active (worklist_top 50)`. Not the over-ceiling count `trend` and the coverage summary carry: a row is active for its churn, whatever its score. |
+| `active_total` | int | Active rows admitted before the cap: what `--top` or `worklist_top` hid. The plain header prints it as `50 of 3980 active (worklist_top 50)`, or `(--top N)` when the flag set the cap. Not the over-ceiling count `trend` and the coverage summary carry: a row is active for its churn, whatever its score. |
 | `dormant_count` | int | How many ranked entries have zero churn in the window. |
 | `dormant_top` | array | The first 10 dormant entries, same shape. Sleeping hazards, recorded without clogging the queue. |
 | `batches` | array | Only with `--batches N`. |
