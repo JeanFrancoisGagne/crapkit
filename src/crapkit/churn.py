@@ -56,10 +56,21 @@ def _unquote_git_path(line: str) -> str:
 
 
 def _twr(ts: int, oldest: int, newest: int) -> float:
+    """Time-weighted recency: a logistic over the commit's position in the log,
+    0.5 at the newest commit and near nothing at the oldest.
+
+    One timestamp is no range. The newest and oldest commit coincide, and a
+    span clamped to one second weighed every commit at 1/(1+e^12), which
+    rounds to nothing: every row on a one-commit repo read `risk 0.0`, and an
+    agent read ccn 10 at risk 0.0 as no risk. With nothing to weight against a
+    commit counts once, the degrade an untimestamped log already gets, so the
+    ranking is ccn times one until the history grows.
+    """
     import math
 
-    span = max(newest - oldest, 1)
-    t_norm = (ts - oldest) / span
+    if newest == oldest:
+        return 1.0
+    t_norm = (ts - oldest) / (newest - oldest)
     return 1.0 / (1.0 + math.exp(-12.0 * t_norm + 12.0))
 
 

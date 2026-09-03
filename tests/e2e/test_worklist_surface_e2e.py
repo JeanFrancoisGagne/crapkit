@@ -59,12 +59,17 @@ name = "extra"
 paths = ["extra"]
 languages = ["python"]
 
+[[scope]]
+name = "empty"
+paths = ["empty"]
+languages = ["python"]
+
 [[lane]]
 name = "py"
 command = "python make_cov.py"
 artifact = "cov.json"
 parser = "coveragepy"
-scopes = ["core", "extra"]
+scopes = ["core", "extra", "empty"]
 full_suite = false
 """
 
@@ -141,9 +146,19 @@ def test_worklist_scope_flag_cuts_to_the_named_scopes(repo: Path):
         ["core/alpha.py", "core/beta.py", "extra/delta.py", "extra/gamma.py"]
 
 
-def test_worklist_scope_nobody_declared_is_empty_not_everything(repo: Path):
+def test_worklist_scope_holding_nothing_is_empty_not_everything(repo: Path):
     scored(repo)
-    assert worklist(repo, "--scope", "nope")["active"] == []
+    assert worklist(repo, "--scope", "empty")["active"] == []
+
+
+def test_worklist_scope_nobody_declared_is_a_configuration_error(repo: Path):
+    """An empty ranking at exit 0 is what CI reads as a clean pass."""
+    scored(repo)
+    res = run_cli(repo, "worklist", "--scope", "nope", "--json")
+
+    assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
+    assert "no scope named 'nope'" in res.stderr and "core, extra, empty" in res.stderr
+    assert res.stdout == ""
 
 
 def test_next_item_scope_flag_picks_the_top_of_that_scope(repo: Path):
@@ -164,9 +179,20 @@ def test_next_item_below_floor_count_follows_the_scope_cut(repo: Path):
     # every function is ccn >= 5, so nothing sits below the floor in any scope;
     # a repo-wide count leaking into a scoped queue would say otherwise
     scored(repo)
-    out = next_item(repo, "--scope", "nope")
+    out = next_item(repo, "--scope", "empty")
     assert out["empty"] is True
     assert out["reasons"]["below_floor"] == 0
+
+
+def test_next_item_scope_nobody_declared_is_a_configuration_error(repo: Path):
+    """A typo and a declared scope with nothing queued used to produce the same
+    payload: `empty: true`, every reason 0, exit 0."""
+    scored(repo)
+    res = run_cli(repo, "next-item", "--scope", "biling")
+
+    assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
+    assert "no scope named 'biling'" in res.stderr and "core, extra, empty" in res.stderr
+    assert res.stdout == ""
 
 
 def test_a_store_nobody_claimed_in_answers_exactly_as_before(repo: Path):
@@ -471,3 +497,103 @@ def test_worklist_with_no_runs_names_coverage_first(repo: Path):
     assert res.returncode == 1
     out = res.stdout + res.stderr
     assert "crapkit coverage" in out
+
+
+# --- the number on the row ---------------------------------------------------
+
+def worklist_lines(repo: Path, *args: str) -> tuple[str, list[str]]:
+    res = run_cli(repo, "worklist", *args)
+    assert res.returncode == 0, res.stdout + res.stderr
+    lines = res.stdout.splitlines()
+    return lines[0], [ln for ln in lines[1:] if ln.startswith("  risk")]
+
+
+def test_every_worklist_row_carries_the_crap_score_and_the_coverage(repo: Path):
+    """The ranking view of a CRAP scorer printed risk, ccn and churn and never
+    the score; a reader had to run `explain` per row to see it."""
+    scored(repo)
+    by_path = {e["path"]: e for e in worklist(repo)["active"]}
+
+    assert (by_path["core/alpha.py"]["crap"], by_path["core/alpha.py"]["cov"]) == (72.0, 0.0)
+    assert (by_path["extra/delta.py"]["crap"], by_path["extra/delta.py"]["cov"]) == (30.0, 0.0)
+
+
+def test_the_printed_row_shows_the_score_and_the_coverage(repo: Path):
+    scored(repo)
+    _, rows = worklist_lines(repo)
+
+    assert "crap    72.0  cov   0%" in rows[0], rows[0]
+    assert " std)" not in rows[0] and " w " not in rows[0], "JSON keeps ccn_std and weight"
+    assert rows[0].endswith("core/alpha.py:1  alpha( a , b )"), rows[0]
+
+
+def test_the_header_says_how_many_active_rows_the_cap_hid(repo: Path):
+    """`50 active` on a repo with 3,980 admitted rows read as 50 in total."""
+    scored(repo)
+    header, rows = worklist_lines(repo, "--top", "1")
+
+    assert header.endswith(" 1 of 4 active (--top 1), 0 dormant"), header
+    assert len(rows) == 1
+    header, _ = worklist_lines(repo)
+    assert header.endswith(" 4 of 4 active (worklist_top 50), 0 dormant"), header
+
+
+def test_the_json_carries_the_active_total_beside_the_capped_list(repo: Path):
+    scored(repo)
+    out = worklist(repo, "--top", "1")
+
+    assert out["active_total"] == 4 and len(out["active"]) == 1
+    assert out["dormant_count"] == 0
+
+
+# --- the committed mark on the row --------------------------------------------
+
+def seed(repo: Path) -> None:
+    res = run_cli(repo, "ratchet", "seed")
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
+def test_every_row_carries_its_ratchet_mark_once_the_repo_signs_for_one(repo: Path):
+    """An untouched marked function and the PR's own new function looked the
+    same in the comment's table; the row now says which is accepted debt."""
+    scored(repo)
+    assert {e["ratchet_mark"] for e in worklist(repo)["active"]} == {None}, "no marks file yet"
+
+    seed(repo)
+
+    by_path = {e["path"]: e["ratchet_mark"] for e in worklist(repo)["active"]}
+    assert by_path == {"core/alpha.py": 72.0, "core/beta.py": 56.0,
+                       "extra/gamma.py": 42.0, "extra/delta.py": 30.0}
+
+
+def _twins(ifs_first: int, ifs_second: int) -> str:
+    """Two functions named `twin` in one file: the ratchet keys the second one
+    `twin( a )#2`, and the first keeps the bare name."""
+    return _source("twin", ifs_first) + "\n\n" + _source("twin", ifs_second)
+
+
+def test_twins_carry_their_own_marks_and_never_each_others(repo: Path):
+    (repo / "core" / "twins.py").write_text(_twins(6, 7), encoding="utf-8")
+    _commit(repo, "twins")
+    scored(repo)
+    seed(repo)
+
+    marks = {e["start"]: e["ratchet_mark"] for e in worklist(repo)["active"]
+             if e["path"] == "core/twins.py"}
+
+    assert marks == {1: 56.0, 18: 72.0}, marks
+
+
+# --- a one-commit repository ---------------------------------------------------
+
+def test_a_one_commit_repo_ranks_by_complexity_instead_of_risk_zero(repo: Path):
+    """Every row read `risk 0.0` with `weight 0.0` and `commits 1`, and the
+    tool promises a queue ordered by ccn times recency-weighted churn, so an
+    agent read ccn 8 at risk 0.0 as no risk."""
+    scored(repo)
+    active = worklist(repo)["active"]
+
+    assert [e["risk"] for e in active] == [8.0, 7.0, 6.0, 5.0]
+    assert {e["weight"] for e in active} == {1.0}
+    _, rows = worklist_lines(repo)
+    assert rows[0].startswith("  risk      8.0  ccn   8"), rows[0]

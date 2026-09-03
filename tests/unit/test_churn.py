@@ -57,3 +57,28 @@ def test_timestamped_log_weights_recent_commits_heavier():
 def test_untimestamped_log_falls_back_to_commit_count_weight():
     churn = parse_git_log("\x01a\nsrc/a.ts\n\n\x01b\nsrc/a.ts\n")
     assert churn["src/a.ts"].weight == 2.0
+
+
+def test_a_one_commit_log_weights_its_commit_in_full():
+    """Every row on a fresh repo read `risk 0.0`, `weight 0.0`, `commits 1`: a
+    commit at the start of a span clamped to one second weighs 1/(1+e^12),
+    which rounds to nothing. With no range to weight against, a commit counts
+    once, the same degrade an untimestamped log gets."""
+    churn = parse_git_log("\x01alice\x021000000000\nsrc/a.ts\nsrc/b.ts\n")
+
+    assert churn["src/a.ts"].weight == 1.0
+    assert churn["src/b.ts"].weight == 1.0
+
+
+def test_commits_sharing_one_timestamp_count_once_each():
+    churn = parse_git_log("\x01a\x021000000000\nsrc/a.ts\n\n\x01b\x021000000000\nsrc/a.ts\n")
+
+    assert churn["src/a.ts"].weight == 2.0
+
+
+def test_two_commit_times_still_weight_by_position_in_the_log():
+    """Nothing changes once the log has a range: the newest commit weighs 0.5
+    and the oldest rounds to nothing."""
+    churn = parse_git_log("\x01a\x021000000000\nsrc/old.ts\n\n\x01a\x022000000000\nsrc/new.ts\n")
+
+    assert (churn["src/new.ts"].weight, churn["src/old.ts"].weight) == (0.5, 0.0)

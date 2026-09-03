@@ -35,6 +35,36 @@ def _positive_top(command: str, top: int) -> int:
     return top
 
 
+def _scope_names(cfg, requested: list[str] | None) -> list[str]:
+    """`--scope NAME` names a declared scope, or it is a configuration error.
+
+    The scope clause is an exact match on the identity table, so a name no
+    `[[scope]]` declares cuts the read to nothing: `worklist --scope frontend`
+    on a repo whose scopes are `api` and `web` printed `0 active, 0 dormant`
+    at exit 0, which a CI step reads as a clean pass, and `next-item --scope
+    biling` answered `empty: true` with every reason at 0, the payload an
+    agent reads as a finished scope. A typo and a declared scope with nothing
+    queued produced one payload. Exit 3 is the loader's own class, the one
+    `lane ... references undeclared scope(s)` already raises for the same
+    mistake made in crapkit.toml.
+    """
+    names = list(requested or [])
+    declared = _declared_scopes(cfg)
+    unknown = [name for name in names if name not in declared]
+    if unknown:
+        raise ConfigError(_unknown_scope_message(unknown, declared))
+    return names
+
+
+def _declared_scopes(cfg) -> list[str]:
+    return [s.name for s in cfg.scopes]
+
+
+def _unknown_scope_message(unknown: list[str], declared: list[str]) -> str:
+    named = ", ".join(repr(name) for name in unknown)
+    return f"no scope named {named}; declared: {', '.join(declared)}"
+
+
 def _repo_relative(raw: str, root: Path = Path(".")) -> str:
     r"""One spelling for a file argument, whatever the shell handed in.
 

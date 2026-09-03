@@ -150,7 +150,7 @@ def test_the_long_name_picks_one_of_two_functions_sharing_an_identifier():
 
 # --- worklist: batches are an added field ------------------------------------
 
-WL = Worklist([entry()], [entry("core/dormant.py")])
+WL = Worklist([entry()], [entry("core/dormant.py")], 1)
 LATEST = {"id": 4, "commit": "abc123def456"}
 
 
@@ -177,6 +177,43 @@ def test_asking_for_batches_changes_nothing_else_in_the_payload():
     batched = payload([Batch(["core/alpha.py"], [entry()])])
 
     assert {k: v for k, v in batched.items() if k != "batches"} == plain
+
+
+def scored_entry() -> WorklistEntry:
+    return WorklistEntry("core", "core/alpha.py", "alpha( a , b )", 1, 20, 8, 8, 18, 3, 1, 1.0,
+                         8.0, "measured", "decompose", 64.0, 0.0)
+
+
+def test_the_payload_counts_the_active_rows_before_the_cap():
+    """`50 active` on a 4,000-function repo read as 50 in total. The total is
+    its own key, distinct from the over-ceiling count `trend` carries."""
+    out = _worklist_payload(Worklist([entry()], [], 3980), LATEST,
+                            SimpleNamespace(worklist_floor=5, churn_window_months=6), False, None)
+
+    assert out["active_total"] == 3980 and len(out["active"]) == 1
+
+
+def test_every_entry_carries_the_score_and_the_coverage():
+    out = _worklist_payload(Worklist([scored_entry()], [], 1), LATEST,
+                            SimpleNamespace(worklist_floor=5, churn_window_months=6), False, None)
+
+    entry_out = out["active"][0]
+    assert (entry_out["crap"], entry_out["cov"]) == (64.0, 0.0)
+    assert (entry_out["ccn_std"], entry_out["weight"]) == (8, 1.0), "JSON keeps both"
+
+
+def test_an_inventory_only_entry_carries_null_score_and_coverage():
+    entry_out = payload(None)["active"][0]
+
+    assert (entry_out["crap"], entry_out["cov"]) == (None, None)
+
+
+def test_every_entry_carries_its_ratchet_mark_or_null():
+    marked = scored_entry()._replace(ratchet_mark=64.0)
+    out = _worklist_payload(Worklist([marked, entry()], [], 2), LATEST,
+                            SimpleNamespace(worklist_floor=5, churn_window_months=6), False, None)
+
+    assert [e["ratchet_mark"] for e in out["active"]] == [64.0, None]
 
 
 # --- ratchet policy: absent is not clean -------------------------------------

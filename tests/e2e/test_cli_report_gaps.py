@@ -283,7 +283,7 @@ def test_worklist_prints_the_plain_table(inventoried_repo: Path):
     lines = plain.stdout.splitlines()
     assert lines[0].startswith(f"worklist @ {head(inventoried_repo)[:11]}")
     assert "floor ccn>=1, churn 12mo" in lines[0]
-    assert "2 active, 0 dormant" in lines[0]
+    assert "2 of 2 active (worklist_top 50), 0 dormant" in lines[0]
     assert len(lines) == 3
     for line, entry in zip(lines[1:], active):
         assert f"ccn {entry['ccn']:>3}" in line

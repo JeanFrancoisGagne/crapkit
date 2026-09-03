@@ -4,6 +4,41 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### Every worklist row carries its CRAP score and coverage
+The ranking view of a CRAP scorer printed risk, ccn, the standard-only ccn, churn and the
+recency weight, and never the score; the HTML report sent its reader to `crapkit explain`
+per row. A row now reads `risk 14.0  ccn 14  crap 38.5  cov 50%  1c/1a  calc/grade.py:7
+classify( ... )`: `(N std)` and `w 0.00` leave the text, and `--json` keeps `ccn_std` and
+`weight` beside the new `crap` and `cov`, both `null` on an inventory-only run. The header
+counts the active rows against their total, `50 of 3980 active (worklist_top 50)`, and
+`--json` carries `active_total`, so a capped list never reads as the whole repo. The report
+page renders CRAP and Cov columns and drops the footer sentence that claimed no payload
+carried them. The demo recording is re-rendered, and the demo generator now folds the
+interpreter path `python -m crapkit` prints in its next steps back to `crapkit` instead of
+refusing the frame.
+
+### An unknown `--scope` is a configuration error
+`worklist --scope frontend` on a repo whose scopes are `api` and `web` printed `0 active,
+0 dormant` at exit 0, which a CI step reads as a clean pass, and `next-item --scope biling`
+answered `empty: true` with every reason at 0, the payload an agent reads as a finished
+scope. Both now exit 3 with `no scope named 'frontend'; declared: api, web` before the
+store is opened, the same class the loader raises for a lane naming an undeclared scope.
+
+### Worklist rows say which functions are accepted debt
+Every `worklist --json` row carries `ratchet_mark`: the committed mark's value, or `null`
+when the function carries no mark or the repo has no marks file. The mark is read under
+the function's own ratchet key, counted over the whole run, so the second of two `f( )`
+in one file reports the mark on `f( )#2` and never its twin's. The report page's payload
+carries the field too.
+
+### A one-commit repository ranks by complexity
+Every row on a fresh repo read `risk 0.0` with `weight 0.0` and `commits 1`, because a
+log with one timestamp has no range to weight against and the recency logistic rounded
+every commit to nothing. A commit in such a log now counts once, the same degrade an
+untimestamped log already got, so the first worklist ranks by ccn times one; the hot
+promotion is off when every file weighs the same, since a top 10% of equal weights would
+be every file. Repositories with two or more commit times are unchanged.
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

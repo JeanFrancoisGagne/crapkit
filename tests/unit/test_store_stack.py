@@ -205,7 +205,7 @@ def test_the_reads_still_hand_back_the_strings(tmp_path):
     assert store.read_scored(run_id) == export_order(rows)
     assert store.read_rows(run_id) == export_order(inventory_of(rows))
     marks = store.read_marks(run_id)
-    assert set(marks.values()) <= {(f, r) for f in FLAGS for r in REMEDIES}
+    assert {verdict[:2] for verdict in marks.values()} <= {(f, r) for f in FLAGS for r in REMEDIES}
     assert {h["flag"] for h in store.function_history("src/m1.py", "f1( a )")} <= set(FLAGS)
 
 
@@ -219,7 +219,7 @@ def test_a_flag_outside_the_seeded_domain_round_trips(tmp_path):
 
     assert store.read_scored(run_id) == [odd]
     assert store.read_marks(run_id) == {("src/m9.py", "g( )"): ("brand-new-flag",
-                                                               "brand-new-remedy")}
+                                                               "brand-new-remedy", 3.5, 0.5)}
 
 
 def test_an_inventory_run_still_stores_no_verdict(tmp_path):

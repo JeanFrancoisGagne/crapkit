@@ -678,13 +678,16 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 <p>One run, and since 0.4.5 that is enforced rather than assumed: both views ask the same question the baseline rule answers (<a href="#baseline">§09</a>) and get the newest trusted run. They could pick differently before, so a worklist could rank one snapshot while <code>next-item</code> dealt work from another, and the two disagreed about what was left.</p>
 
 <h3>Reading a worklist row</h3>
-<pre><code>risk      5.4  ccn   6 (  6 std)    5c/1a w   0.90  src/crapkit/cli/reports.py:62  cmd_digest( args )
+<pre><code>risk      5.6  ccn   5  crap     5.1  cov  83%   35c/2a  src/crapkit/cli/admin.py:166  _package_json( root : Path )  ok
 
-  risk 5.4 .......... ccn x churn weight - what ranks this map
-  ccn 6 (6 std) ..... min(standard, modified) ccn, standard in parentheses
-  5c/1a w 0.90 ...... 5 commits, 1 author in the window, recency weight 0.90
-  path:62 ........... file and the line the function opens on
-  cmd_digest( args )  the long name - paste it straight into `crapkit brief`</code></pre>
+  risk 5.6 ................ ccn x churn weight - what ranks this map
+  ccn 5 ................... min(standard, modified) ccn - what the gate judges
+  crap 5.1  cov 83% ....... the score and the coverage behind it; `-` on an inventory-only run
+  35c/2a .................. 35 commits, 2 authors in the window
+  path:166 ................ file and the line the function opens on
+  _package_json( root : Path )  the long name - paste it straight into `crapkit brief`
+  ok ...................... at or under its ceiling; `no-lane` marks a scope no lane measures</code></pre>
+<p><code>--json</code> carries the same row plus <code>ccn_std</code>, the recency <code>weight</code> the risk is made of, and <code>ratchet_mark</code>, the committed mark on the function or <code>null</code>. The header counts the active rows against their total, <code>50 of 3980 active (worklist_top 50)</code>, so a capped list never reads as the whole repo.</p>
 <p>The weight favors recent activity: five commits last month outrank one commit each of five months. A function over its ceiling is admitted whatever its ccn, so the admission floor (<code>worklist_floor</code>, default ccn 5) trims the list without ever hiding debt. Hot-but-simple code appears too, which is the map doing its job; the <code>ok</code> marker says no action is owed.</p>
 
 <h3>The termination rule</h3>
@@ -907,11 +910,11 @@ $ crapkit inventory                    # complexity alone, no lanes needed
 run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
 
 $ crapkit worklist
-worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) — 4 active, 0 dormant
-  risk      0.0  ccn   7 (  7 std)    1c/1a w   0.00  api/grade.py:1  grade( n , total )
-  risk      0.0  ccn   6 (  6 std)    1c/1a w   0.00  ui/panel.ts:1  label ( kind , hot )
-  risk      0.0  ccn   5 (  5 std)    1c/1a w   0.00  infra/main.rs:1  route kind : u8
-  risk      0.0  ccn   5 (  5 std)    1c/1a w   0.00  ops/deploy.sh:1  release()</code></pre>
+worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) — 4 of 4 active (worklist_top 50), 0 dormant
+  risk      7.0  ccn   7  crap       -  cov    -    1c/1a  api/grade.py:1  grade( n , total )
+  risk      6.0  ccn   6  crap       -  cov    -    1c/1a  ui/panel.ts:1  label ( kind , hot )
+  risk      5.0  ccn   5  crap       -  cov    -    1c/1a  infra/main.rs:1  route kind : u8
+  risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()</code></pre>
 <p>Read those two FAILs as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
 <p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
 
@@ -929,7 +932,7 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <p>One self-contained page, three sections, rendered from the same payloads the JSON commands print. It cannot rank a different function first than <code>worklist</code> just did.</p>
 <ul>
   <li><strong>Grades by scope</strong> at the top: functions, over-target count, CRAP load, and a colored grade chip per scope. This is the slide.</li>
-  <li><strong>The worklist</strong>, ranked, at <code>worklist_top</code> rows (default 50). Each row prints the <code>crapkit explain PATH NAME</code> call that opens it, because no repo-wide payload carries per-function CRAP and the page refuses to invent one.</li>
+  <li><strong>The worklist</strong>, ranked, at <code>worklist_top</code> rows (default 50), each row with its CRAP and coverage off the ranked run. Each row also prints the <code>crapkit explain PATH NAME</code> call that opens it: dark lines, history and the mark stay one command away.</li>
   <li><strong>The trend</strong>: CRAP load per scored run as one polyline, down is better, plus the numbers underneath.</li>
 </ul>
 <p>A banner across the top names every lane whose artifact no longer describes the tree. Read the banner before you read the grades.</p>

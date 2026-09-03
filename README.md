@@ -62,12 +62,14 @@ $ crapkit coverage
 run 1 @ fae4db93108: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 41.0, grade F
 
 $ crapkit worklist
-worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
-  risk      0.0  ccn  14 ( 14 std)    1c/1a w   0.00  calc/grade.py:7  classify( score , attempts , late , bonus )
+worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+  risk     14.0  ccn  14  crap    38.5  cov  50%    1c/1a  calc/grade.py:7  classify( score , attempts , late , bonus )
 ```
 
-`risk 0.0` is what a one-commit repo scores, because churn needs a spread of commits to
-rank and ccn order stands in until then ([Risk](#risk-what-ranks-the-worklist)).
+`risk 14.0` is ccn times a churn weight of one: a one-commit repo has no spread of commits
+to weight, so each commit counts once and the ranking is complexity order until the
+history grows ([Risk](#risk-what-ranks-the-worklist)). `crap 38.5` and `cov 50%` are the
+score and the coverage behind it.
 
 `ratchet seed` signs today's debt at today's score. From then on marks only ever fall, so
 the repo can get better and never worse while you burn it down.
@@ -612,8 +614,8 @@ root from the file named in the hook payload it reads.
 
 ```
 $ crapkit worklist --repo /path/to/repo --scope util --top 1
-worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
-  risk      5.4  ccn   5 (  5 std)    5c/1a w   1.08  util/stats.py:1  bucket( value , low , high )
+worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) — 1 of 3 active (--top 1), 0 dormant
+  risk      5.4  ccn   5  crap    30.0  cov   0%    5c/1a  util/stats.py:1  bucket( value , low , high )
 ```
 
 Before it, argparse reads the path as the subcommand name and exits 2 without ever
@@ -633,8 +635,8 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `inventory [--db PATH] [--export PATH] [--json]` | One lizard pass over every in-scope file into a SQLite snapshot run, cached by content hash. `--db` is the only way to point crapkit at a store outside `.crapkit/`, and only this command accepts it. |
 | `coverage [--lane NAME] [--reuse-artifacts] [--reuse-unchanged] [--export PATH] [--sarif PATH] [--github] [--json]` | Runs the lanes, joins branch coverage onto a fresh inventory, writes a scored run. A failed lane is recorded, not fatal: its scopes fall back to `no-lane` and the run is typed `partial`, so it can never serve as a baseline. See [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md). |
 | `verify [--baseline ID \| --base REF \| --baseline-tsv PATH] [--emit-baseline PATH] [--override REASON] [--reuse-artifacts] [--reuse-unchanged] [--no-tighten] [--sarif PATH] [--github] [--json]` | The full verdict against the trusted baseline: gate on touched functions, ratchet, no new test failures, optional diff-coverage ceiling. The three baseline selectors are mutually exclusive; `--baseline ID` also bypasses the taint rule ([The trusted baseline](#the-trusted-baseline)), and `--baseline-tsv` reads a commit-stamped file so a fresh clone verifies with no store. `--no-tighten` passes the verdict without rewriting the ratchet. Findings a dirty tree produced are tagged `dirty` and counted apart. It reads each istanbul artifact once for coverage, dead lines and its digest, and skips the artifact walk on an empty diff; skipping the whole run on an unchanged tree was measured and rejected, because a key made of HEAD plus the dirty names cannot see a second edit to a file that was already dirty. |
-| `worklist [--top N] [--scope NAME] [--batches N] [--json]` | The risk map: every admitted function ranked by `ccn * churn weight`, floored by `worklist_floor`, with hot simple code and anything over its ceiling admitted past that floor. It ranks finished rows and `no-lane` rows too, marked `ok` and `no-lane`, so it never empties; `next-item` carries the stop condition. `--scope NAME` (repeatable) is exact, not a substring. `--batches N` **adds** a `batches[]` view cutting the active list into at most N file-disjoint batches with co-changing files kept together, off the same cached pairs `coupling` reads; the normal keys stay. |
-| `next-item [--top N] [--exclude FRAG] [--scope NAME] [--claim]` | The actionable queue as JSON, with churn, budget estimates and uncovered lines. Same run and same admission floor as `worklist`, a different view of it: `no-lane` rows are skipped and counted in `skipped_no_lane`, and what is left is ranked by `crap` descending rather than by risk, so the item it hands out is often not the worklist's first row. `--exclude FRAG` (repeatable) skips items whose path or function name contains FRAG; `--scope NAME` (repeatable) is exact, not a substring. `--claim` holds what it hands out so a second session skips it. `stale` is true when the ranked run's commit is not HEAD, the same field `worklist` carries. Every item carries a `handle`: the bare identifier, or `(anonymous)#N` for a function with no name, which is the name form that survives the edit the item asks for. |
+| `worklist [--top N] [--scope NAME] [--batches N] [--json]` | The risk map: every admitted function ranked by `ccn * churn weight`, floored by `worklist_floor`, with hot simple code and anything over its ceiling admitted past that floor. It ranks finished rows and `no-lane` rows too, marked `ok` and `no-lane`, so it never empties; `next-item` carries the stop condition. Every row carries the function's `crap` and `cov` off the ranked run and its `ratchet_mark` when the committed marks file signs for it, and the header counts the active rows the cap hid: `50 of 3980 active (worklist_top 50)`. `--scope NAME` (repeatable) is exact, not a substring; a name no `[[scope]]` declares is a configuration error, exit 3, naming the declared scopes. `--batches N` **adds** a `batches[]` view cutting the active list into at most N file-disjoint batches with co-changing files kept together, off the same cached pairs `coupling` reads; the normal keys stay. |
+| `next-item [--top N] [--exclude FRAG] [--scope NAME] [--claim]` | The actionable queue as JSON, with churn, budget estimates and uncovered lines. Same run and same admission floor as `worklist`, a different view of it: `no-lane` rows are skipped and counted in `skipped_no_lane`, and what is left is ranked by `crap` descending rather than by risk, so the item it hands out is often not the worklist's first row. `--exclude FRAG` (repeatable) skips items whose path or function name contains FRAG; `--scope NAME` (repeatable) is exact, not a substring, and a name no `[[scope]]` declares is a configuration error, exit 3, naming the declared scopes. `--claim` holds what it hands out so a second session skips it. `stale` is true when the ranked run's commit is not HEAD, the same field `worklist` carries. Every item carries a `handle`: the bare identifier, or `(anonymous)#N` for a function with no name, which is the name form that survives the edit the item asks for. |
 | `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. |
 | `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, `(anonymous)#N` for a function printed `(anonymous)` counting the file's anonymous functions from the top, or `NAME#2` for the second of several functions a file gives one name to. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store and one duplication pass over the snapshot for the whole batch (batch of 5: 11.8 s to 5.2 s, output byte-identical to five separate calls). |
 | `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. It also takes the function's start line, the form `brief` takes, which is how you open one printed `(anonymous)`. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
@@ -644,7 +646,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `overrides [--json]` | The override audit trail: who granted what, when, and why. |
 | `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. It reads a per-run rollup table rather than rescanning every scored row, and fills that table for any run missing one, so it writes to the store (best effort: a read-only `.crapkit/` costs the speed, not the command). |
 | `digest [--alert]` | The delta between the two newest runs with identical lane sets. Silent when nothing changed. `--alert` pipes the body to `alert_command` on stdin. Plain lines, never JSON. |
-| `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Per-function CRAP and coverage are absent because no repo-wide payload carries them; each row prints the `crapkit explain` call that does. It reads the same per-run rollups `trend` does, and writes them on the same terms. |
+| `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Every row carries the function's CRAP and coverage, and prints the `crapkit explain` call for the rest: dark lines, history, the mark. It reads the same per-run rollups `trend` does, and writes them on the same terms. |
 | `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. `--top` truncates the list. A function and a function nested inside it never pair: their spans nest, they score 1.0 by construction, and nobody can deduplicate a factory from its own closure. |
 | `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. The ranked pairs are cached in `.crapkit/coupling-cache-v1.json`, keyed on HEAD, the churn window, today's UTC date, the path format and a digest of the tracked set, and shared with `brief` and `worklist --batches` (warm: 1.05 s to 0.11 s on a 72k-commit repo). The date is part of that key, so the first run after midnight UTC rebuilds the pairs on an unchanged HEAD. `--top` reads the cache, because it truncates that same order; `--min-support` or `--min-confidence` off their defaults ask a wider question than the file answers, so they bypass it and recompute. |
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. With `mutation_workers > 1` the worker worktrees are kept at `.crapkit/mutate-pool/` and re-prepared per run (30.6 s to build four on a 31,459-file repo, 0.46 s to re-prepare them); `--drop-pool` removes them and exits. |
@@ -692,16 +694,17 @@ outrank fifty from two years ago. The window anchors on the newest commit, never
 wall clock, so a fixed tree ranks identically forever.
 
 Age is not the input, position in the log is. A log whose commits all share one timestamp
-reads 0.0 everywhere, which is why a one-commit repo shows `risk 0.0` on every row and
-falls back to ccn order. Commits minutes apart already rank. This repo was eight commits
-old, all made the same day:
+has no range to weight against, so each commit counts once: a one-commit repo weighs every
+file 1.0, ranks by ccn, and promotes nothing under the floor, because a top 10% of equal
+weights would be every file. Commits minutes apart already rank. This repo was eight
+commits old, all made the same day:
 
 ```
 $ crapkit worklist --scope util
-worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) — 3 active, 0 dormant
-  risk      5.4  ccn   5 (  5 std)    5c/1a w   1.08  util/stats.py:1  bucket( value , low , high )
-  risk      4.5  ccn   9 (  9 std)    1c/1a w   0.50  util/curve.py:1  curve( scores , mode , floor , ceiling , skip_none )
-  risk      4.3  ccn   4 (  4 std)    5c/1a w   1.08  util/stats.py:13  spread( values , cap )  ok
+worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) — 3 of 3 active (worklist_top 50), 0 dormant
+  risk      5.4  ccn   5  crap    30.0  cov   0%    5c/1a  util/stats.py:1  bucket( value , low , high )
+  risk      4.5  ccn   9  crap    90.0  cov   0%    1c/1a  util/curve.py:1  curve( scores , mode , floor , ceiling , skip_none )
+  risk      4.3  ccn   4  crap     4.2  cov  75%    5c/1a  util/stats.py:13  spread( values , cap )  ok
 ```
 
 `bucket` at ccn 5 outranks `curve` at ccn 9 because five commits touched it and one
@@ -901,13 +904,16 @@ $ crapkit coverage
 run 1 @ fae4db93108: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 41.0, grade F
 
 $ crapkit worklist
-worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
-  risk      0.0  ccn  14 ( 14 std)    1c/1a w   0.00  calc/grade.py:7  classify( score , attempts , late , bonus )
+worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+  risk     14.0  ccn  14  crap    38.5  cov  50%    1c/1a  calc/grade.py:7  classify( score , attempts , late , bonus )
 ```
 
-Columns: `risk`, `ccn` with the standard-only ccn in parentheses,
-`<commits>c/<authors>a` in the churn window with `w<weight>`, `path:line`, the function's
-long name, then a marker on rows the burn-down queue will not hand out (`ok`, `no-lane`).
+Columns: `risk`, `ccn`, the function's `crap` and `cov` off the ranked run (`-` on an
+inventory-only run), `<commits>c/<authors>a` in the churn window, `path:line`, the
+function's long name, then a marker on rows the burn-down queue will not hand out (`ok`,
+`no-lane`). The header counts the active rows against their total, so `50 of 3980 active
+(worklist_top 50)` says what the cap hid. `--json` also carries `ccn_std`, `weight` and
+`ratchet_mark`.
 
 **`worklist` is the risk map, not a to-do list.** It ranks finished rows too, so it does
 not empty when the burn-down does. `next-item` is the other view of that run: it drops the
@@ -1038,8 +1044,8 @@ $ crapkit coverage
 run 1 @ 8bfbe613fcd: 2 functions scored — 2 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 56.68, grade F
 
 $ crapkit worklist
-worklist @ 8bfbe613fcd (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
-  risk      0.0  ccn  15 ( 15 std)    1c/1a w   0.00  src/grade.ts:8  classify ( row Row )
+worklist @ 8bfbe613fcd (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+  risk     15.0  ccn  15  crap    52.4  cov  45%    1c/1a  src/grade.ts:8  classify ( row Row )
 ```
 
 `classify` is ccn 15 against a ceiling of 6: one function holding the late-and-retry
