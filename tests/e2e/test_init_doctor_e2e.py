@@ -577,7 +577,7 @@ def test_the_commented_lane_template_names_the_python_the_lockfile_pins(
     text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
 
     assert '# command = "uv run python -m pytest --cov' in text
-    assert '# pylib = "uv run python -m pytest {files}' in text, \
+    assert '# pylib = "uv run python -m pytest -q' in text, \
         "the commented scoped-tests entry reads the same launcher"
 
 

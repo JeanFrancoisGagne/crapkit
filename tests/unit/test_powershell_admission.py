@@ -278,10 +278,12 @@ def _documented_pester_globs() -> tuple[str, ...]:
 
 
 def test_the_documented_pester_glob_reaches_a_root_level_test_file():
-    """`**/*.Tests.ps1` alone needs a directory in front of the file name, so a
-    repo-root `Deploy.Tests.ps1` stayed in the corpus and came back from doctor
-    as a tracked file no scope claims — pointing at the page that gave the glob.
-    PowerShell repos keep scripts at the root more than most."""
+    """A leading `**/` matches zero or more directories, so the page's one glob
+    reaches a repo-root `Deploy.Tests.ps1` and `scripts/Deploy.Tests.ps1` alike.
+    Under fnmatch alone it needed a directory in front of the file name, and a
+    root-level test file came back from doctor as a tracked file no scope
+    claims. PowerShell repos keep scripts at the root more than most, so this
+    pins that the page gives the one-glob form."""
     from crapkit.universe import exclude_matcher, excluded
 
     match = exclude_matcher(_documented_pester_globs())

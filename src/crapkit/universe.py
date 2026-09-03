@@ -51,6 +51,17 @@ _DOT_DIR = re.compile(r"(^|/)\.[^/]+/")
 _NEVER = re.compile(r"(?!x)x").match  # an empty glob list must exclude NOTHING
 
 
+def _glob_regex(glob: str) -> str:
+    """One glob as a regex. A leading `**/` is zero or more directories, so
+    `**/dist/**` reaches a repo-root dist/ as well as web/dist/. fnmatch alone
+    reads `**` as `*` and demands a directory in front, which is why 0.4.12
+    wrote every default glob twice. The rest of the glob is fnmatch as written,
+    so a hand-written root form (`dist/**`) keeps matching what it matched."""
+    if glob.startswith("**/"):
+        return r"(?:.*/)?" + fnmatch.translate(glob[3:])
+    return fnmatch.translate(glob)
+
+
 def exclude_matcher(globs: tuple[str, ...]) -> Callable[[str], re.Match[str] | None]:
     """The exclude globs as ONE compiled alternation, matched against a lowered path.
 
@@ -61,7 +72,7 @@ def exclude_matcher(globs: tuple[str, ...]) -> Callable[[str], re.Match[str] | N
     """
     if not globs:
         return _NEVER
-    return re.compile("|".join(fnmatch.translate(g.lower()) for g in globs)).match
+    return re.compile("|".join(_glob_regex(g.lower()) for g in globs)).match
 
 
 def excluded(path: str, match_glob: Callable[[str], re.Match[str] | None]) -> bool:
@@ -117,6 +128,34 @@ def path_matchers(scope_paths: dict[str, tuple[str, ...]]) -> tuple[ScopeMatch, 
     """
     return _ordered(ScopeMatch(name, p.rstrip("/"), p.rstrip("/") + "/", ANY_EXTENSION)
                     for name, paths in scope_paths.items() for p in paths)
+
+
+# What a tracked file has to look like to count as a test when init and doctor
+# ask whether a scope holds one: under a test directory, or named the way the
+# runner conventions name a test (test_x.py, x_test.py, x.test.ts, x.spec.ts,
+# and Go's x_test.go). A conftest.py configures tests and is none.
+_TEST_NAME = re.compile(
+    r"(^|/)(test_[^/]*\.py|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.[^/]+)$", re.IGNORECASE)
+
+
+def is_test_file(path: str) -> bool:
+    """Is this tracked path a test, by directory or by name?"""
+    return bool(_TEST_DIR.search(path) or _TEST_NAME.search(path))
+
+
+def scopes_with_tests(files, scope_paths: dict[str, tuple[str, ...]]) -> frozenset[str]:
+    """The scopes whose declared paths hold at least one test file.
+
+    Read with the extension arm open, the way lane staleness and `test-scoped`
+    read ownership: a test is claimed by its path, whatever its language. Both
+    `init` (which scoped-test form to write) and `doctor` (whether a {files}
+    template can collect anything) ask here, so the two cannot disagree about
+    one scope.
+    """
+    matchers = path_matchers(scope_paths)
+    paths = [raw.replace("\\", "/") for raw in files]
+    owners = (owning_scope(path, matchers) for path in paths if is_test_file(path))
+    return frozenset(owner for owner in owners if owner is not None)
 
 
 def owning_scope(path: str, matchers: tuple[ScopeMatch, ...]) -> str | None:

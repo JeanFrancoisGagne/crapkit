@@ -851,7 +851,26 @@ paths = ["calc"]
 languages = ["python"]
 
 [exclude]
-globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "node_modules/**", "dist/**", "build/**", "vendor/**", "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
+# A leading **/ matches zero or more directories, so each glob below reaches the
+# repo root and every nested copy. Test directories leave the corpus on their own.
+globs = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/vendor/**",
+  "**/generated/**",
+  "**/__generated__/**",
+  "**/*.generated.*",
+  "**/*.test.*",
+  "**/*.spec.*",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/conftest.py",
+  "**/*_test.go",
+  "**/*.config.ts",
+  "**/*.config.js",
+  "**/*.config.mts",
+]
 
 [[lane]]
 name = "py"
@@ -871,9 +890,12 @@ scopes = ["calc"]
 # scopes = ["<your-scope>"]
 
 # `crapkit test-scoped FILES` runs one command per scope, with {files}
-# replaced by that scope's files, each quoted.
+# replaced by that scope's files, each quoted; a template with no {files}
+# runs as written, which is how a scope whose tests live elsewhere runs them.
 [crapkit.scoped_tests]
-calc = "python -m pytest {files} -q -p no:cacheprovider"
+# calc: no test file under calc/, so the whole suite runs, from tests/
+calc = "python -m pytest tests -q -p no:cacheprovider"
+
 ```
 
 The last block is the one an agent loop needs. `crapkit test-scoped` exits 3 for a file
@@ -889,6 +911,7 @@ ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
+ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0)
 ok   lizard 1.24.0
 doctor: no problems found
 ```

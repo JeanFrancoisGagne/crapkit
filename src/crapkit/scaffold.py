@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 from typing import NamedTuple
 
-from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, excluded
+from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
+                       scopes_with_tests)
 
 _EXT_LANGUAGE = {ext: lang for lang, exts in LANGUAGE_EXTENSIONS.items() for ext in exts}
 
@@ -26,14 +27,16 @@ def cc_only_scope(languages: tuple[str, ...]) -> bool:
     return not any(lang in COVERABLE_LANGUAGES for lang in languages)
 
 DEFAULT_EXCLUDES = (
+    # A leading `**/` matches zero or more directories (universe._glob_regex),
+    # so each glob reaches the repo root and every nested copy at once. 0.4.12
+    # wrote every glob twice, root form beside nested form, because fnmatch
+    # demanded a directory in front of `vendor`; the prefix rule replaced that.
     "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
+    # Generated trees. A monorepo lead's first next-item was a generated client
+    # at crap 90, and ratchet seed signed for it, because nothing here spelled
+    # `generated`.
+    "**/generated/**", "**/__generated__/**", "**/*.generated.*",
     "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py",
-    # The same globs anchored at the root. `**/vendor/**` needs a directory
-    # before `vendor`, so it never reached a repo-root vendor/: init made that
-    # tree a scope, no lane measured it, and doctor FAILed the config init had
-    # just written. A root conftest.py went unclaimed for the same reason.
-    "node_modules/**", "dist/**", "build/**", "vendor/**",
-    "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go",
     # Go puts its tests beside the source, so the test-directory rule never
     # fires on them and every _test.go file would score as production code
     "**/*_test.go",
@@ -43,9 +46,7 @@ DEFAULT_EXCLUDES = (
     # Shell has no `_test.sh` convention to claim — `deploy_test.sh` is
     # production code in plenty of repos — and the two dotted spellings a shell
     # suite does use are already covered by `**/*.test.*` and `**/*.spec.*`.
-    # runner config files the docs themselves tell users to create; globs are
-    # whole-path, so the root form and the nested form are both required
-    "*.config.ts", "*.config.js", "*.config.mts",
+    # runner config files the docs themselves tell users to create
     "**/*.config.ts", "**/*.config.js", "**/*.config.mts",
 )
 
@@ -449,8 +450,19 @@ def _scope_stanza(name: str, languages: tuple[str, ...]) -> list[str]:
             f"languages = [{_quoted(languages)}]", *optional, ""]
 
 
+# What a reader editing the list needs to know before they add to it: why one
+# form per pattern is enough, and why no glob for tests/ appears below.
+_EXCLUDE_INTRO = (
+    "# A leading **/ matches zero or more directories, so each glob below reaches the",
+    "# repo root and every nested copy. Test directories leave the corpus on their own.",
+)
+
+
 def _exclude_stanza() -> list[str]:
-    return ["[exclude]", f"globs = [{_quoted(DEFAULT_EXCLUDES)}]", ""]
+    """One glob per line. The 0.4.x form was a 405-character line carrying every
+    pattern twice, which nobody could read, let alone edit."""
+    globs = [f'  "{glob}",' for glob in DEFAULT_EXCLUDES]
+    return ["[exclude]", *_EXCLUDE_INTRO, "globs = [", *globs, "]", ""]
 
 
 def _lane_env(env: tuple[tuple[str, str], ...]) -> list[str]:
@@ -580,17 +592,37 @@ _TEMPLATES = {
 
 
 # `crapkit test-scoped FILES` runs one of these per scope. A scope with no
-# template exits 3, so the stub is written for every scope init found; the value
-# is the runner that scope's language usually uses, and the whole block stays
-# commented because only the repo knows whether that command is the right one.
-_SCOPED_TEST_COMMANDS = {
-    "python": "{python} -m pytest {files} -q -p no:cacheprovider",
-    "javascript": "npx vitest run {files}",
-    "tsx": "npx vitest run {files}",
-    "typescript": "npx vitest run {files}",
-}
+# template exits 3, so an entry is written for every scope init found: live
+# where the repo's own files prove the command, commented where only the repo
+# knows. The form follows where the tests live and which runner package.json
+# names, never the language alone. The 0.4.x `{files}` template handed pytest a
+# source file to collect from on the ordinary pkg/ + tests/ layout and exited
+# 5, and a jest workspace was handed a vitest command.
+_PYTEST_FILES = "{python} -m pytest {files} -q -p no:cacheprovider"
+_PYTEST_SUITE = "{python} -m pytest {positional}-q -p no:cacheprovider"
+_JS_RELATED = {"jest": "npx jest --findRelatedTests {files}",
+               "vitest": "npx vitest related --run {files}"}
+_NPM_WORKSPACE = "npm run {script} -w {directory}"
 _SCOPED_TEST_PLACEHOLDER = "<your test command> {files}"
 _DEFAULT_PYTHON = "python"
+
+
+class ScopedEntry(NamedTuple):
+    """One [crapkit.scoped_tests] line, the comment line that goes above it,
+    and whether init writes it live."""
+    command: str
+    why: str
+    live: bool
+
+
+class _ScopedFacts(NamedTuple):
+    """What the repo's files say about its tests, read once for every scope."""
+    launcher: str
+    confirmed: frozenset[str]  # languages whose runner a detected lane proves
+    tested: frozenset[str]     # scopes whose own paths hold a test file
+    test_dir: str              # the one test directory outside every scope, or ""
+    covered: bool              # does pytest's testpaths already collect test_dir?
+    packages: dict[str, str]   # package.json texts by directory, "" for the root
 
 
 # The shape that marks a detected lane as the pytest lane, read in one place:
@@ -628,65 +660,152 @@ def python_launcher(lanes: tuple[LaneSpec, ...], fallback: str = _DEFAULT_PYTHON
     return fallback if launcher is None else launcher
 
 
-def _scoped_test_command(languages: tuple[str, ...], launcher: str) -> str:
-    for language in languages:
-        if language in _SCOPED_TEST_COMMANDS:
-            return _SCOPED_TEST_COMMANDS[language].replace("{python}", launcher)
-    return _SCOPED_TEST_PLACEHOLDER
-
-
-def _runner_confirmed(languages: tuple[str, ...], confirmed: frozenset[str]) -> bool:
-    return any(lang in confirmed and lang in _SCOPED_TEST_COMMANDS for lang in languages)
-
-
 def _confirmed_languages(lanes: tuple[LaneSpec, ...]) -> frozenset[str]:
     """Languages whose scoped command a detected lane already proves.
 
     Only pytest: the presence signal that wrote the py coverage lane makes
-    `python -m pytest {files}` known-good. The js runners stay unconfirmed on
-    purpose — which vitest or jest config a file-scoped run needs is exactly
-    what presence detection cannot see."""
+    `python -m pytest` known-good. The js runners stay unconfirmed on purpose,
+    because which vitest or jest config a file-scoped run needs is exactly
+    what presence detection cannot see; a workspace's own test script is the
+    one js form the repo itself vouches for, and `_js_entry` writes it live."""
     return frozenset({"python"} if _pytest_lane_launcher(lanes) is not None else ())
 
 
-def _scoped_entry_lines(scopes: dict[str, tuple[str, ...]], live: bool,
-                        launcher: str) -> list[str]:
-    prefix = "" if live else "# "
-    return [f'{prefix}{name} = "{_scoped_test_command(languages, launcher)}"'
-            for name, languages in scopes.items()]
+def _test_top(raw: str) -> str:
+    """The top-level directory of a tracked test file, "" for anything else."""
+    path = raw.replace("\\", "/")
+    top, sep, _ = path.partition("/")
+    return top if sep and is_test_file(path) else ""
 
 
-def _scoped_tests_stub(scopes: dict[str, tuple[str, ...]],
-                       confirmed: frozenset[str] = frozenset(),
-                       launcher: str = _DEFAULT_PYTHON) -> list[str]:
-    """The [crapkit.scoped_tests] block: live entries for scopes whose runner a
-    detected lane proves, commented templates for the rest.
+def _repo_test_dir(tracked, scopes: dict[str, tuple[str, ...]]) -> str:
+    """The one top-level directory outside every scope that holds test files,
+    or "" when there is none or more than one to name. Naming one of two would
+    run half the suite and call it whole."""
+    tops = {top for top in map(_test_top, tracked) if top and top not in scopes}
+    return next(iter(tops)) if len(tops) == 1 else ""
+
+
+def _covered_by_testpaths(test_dir: str, testpaths: tuple[str, ...]) -> bool:
+    """Does a bare `pytest` already collect test_dir, because testpaths names
+    it or a directory under it? Then a positional would only repeat the config,
+    and the full-suite guard reads a repeated positional as narrowing."""
+    cleaned = [path.replace("\\", "/").strip("./") for path in testpaths]
+    return bool(test_dir) and any(p == test_dir or p.startswith(test_dir + "/") for p in cleaned)
+
+
+def _suite_why(name: str, facts: _ScopedFacts) -> str:
+    where = f"no test file under {name}/, so the whole suite runs"
+    if not facts.test_dir:
+        return where
+    if facts.covered:
+        return f"{where}; pytest's testpaths already collects {facts.test_dir}/"
+    return f"{where}, from {facts.test_dir}/"
+
+
+def _python_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
+    """`{files}` where the scope holds its own tests; the whole-suite form
+    everywhere else, naming the repo's test directory unless testpaths already
+    collects it. `_scoped_command` runs a template with no {files} verbatim."""
+    live = "python" in facts.confirmed
+    if name in facts.tested:
+        return ScopedEntry(_PYTEST_FILES.replace("{python}", facts.launcher),
+                           f"{name}/ holds its own tests, so {{files}} narrows the run "
+                           "to the files named", live)
+    positional = f"{facts.test_dir} " if facts.test_dir and not facts.covered else ""
+    command = _PYTEST_SUITE.replace("{python}", facts.launcher).replace("{positional}", positional)
+    return ScopedEntry(command, _suite_why(name, facts), live)
+
+
+def _workspace_script(packages: dict[str, str], directory: str) -> str | None:
+    return _npm_test_script(_load_json(packages.get(directory, "")).get("scripts", {}))
+
+
+def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
+    """A workspace runs its own test script from the root; a root scope gets
+    the related-tests mode of the runner package.json names; nothing named
+    gets the placeholder. Keyed by runner, never by language: jest exits on
+    vitest's flags and vitest on jest's."""
+    script = _workspace_script(facts.packages, name)
+    if script:
+        return ScopedEntry(_NPM_WORKSPACE.format(script=script, directory=name),
+                           f"{name}/ is an npm workspace with its own {script} script, "
+                           "run from the root with -w", True)
+    runner = _js_runner(_load_json(facts.packages.get("", "")).get("devDependencies", {}))
+    if runner:
+        return ScopedEntry(_JS_RELATED[runner], f"{runner}'s related-tests mode, keyed by "
+                           "the runner package.json names", False)
+    return ScopedEntry(_SCOPED_TEST_PLACEHOLDER,
+                       "package.json names no single runner; replace the placeholder", False)
+
+
+def _scoped_entry(name: str, languages: tuple[str, ...], facts: _ScopedFacts) -> ScopedEntry:
+    """The entry for one scope, from its languages and the repo's facts."""
+    if "python" in languages:
+        return _python_entry(name, facts)
+    if any(lang in _JS_LANGUAGES for lang in languages):
+        return _js_entry(name, facts)
+    return ScopedEntry(_SCOPED_TEST_PLACEHOLDER,
+                       f"no runner known for {', '.join(languages)}; replace the placeholder",
+                       False)
+
+
+def _scoped_lines(scopes: dict[str, tuple[str, ...]],
+                  facts: _ScopedFacts) -> tuple[list[str], list[str]]:
+    """Live entry lines and commented entry lines, each under the one comment
+    line that names the form chosen and why."""
+    live: list[str] = []
+    rest: list[str] = []
+    for name, languages in scopes.items():
+        entry = _scoped_entry(name, languages, facts)
+        target = live if entry.live else rest
+        prefix = "" if entry.live else "# "
+        target += [f"# {name}: {entry.why}", f'{prefix}{name} = "{entry.command}"']
+    return live, rest
+
+
+def _scoped_facts(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...],
+                  launcher: str, testpaths: tuple[str, ...], tracked,
+                  package_json: str | dict[str, str]) -> _ScopedFacts:
+    test_dir = _repo_test_dir(tracked, scopes)
+    return _ScopedFacts(launcher, _confirmed_languages(lanes),
+                        scopes_with_tests(tracked, {name: (name,) for name in scopes}),
+                        test_dir, _covered_by_testpaths(test_dir, testpaths),
+                        _packages(package_json))
+
+
+def _scoped_tests_stub(scopes: dict[str, tuple[str, ...]], facts: _ScopedFacts) -> list[str]:
+    """The [crapkit.scoped_tests] block: live entries where the repo's own files
+    prove the command, commented templates for the rest.
 
     A confirmed runner written commented would hand doctor a warning about a
     gap init could have closed. Every commented line still uncomments as
     written: a stub a reader has to rewrite before it parses is no better than
     the nothing that used to be here.
     """
-    live = {n: l for n, l in scopes.items() if _runner_confirmed(l, confirmed)}
-    rest = {n: l for n, l in scopes.items() if n not in live}
+    live, rest = _scoped_lines(scopes, facts)
     intro = ["# `crapkit test-scoped FILES` runs one command per scope, with {files}",
-             "# replaced by that scope's files, each quoted."]
-    return (intro + _live_block(live, launcher)
-            + _commented_block(rest, bool(live), launcher) + [""])
+             "# replaced by that scope's files, each quoted; a template with no {files}",
+             "# runs as written, which is how a scope whose tests live elsewhere runs them."]
+    return intro + _live_block(live) + _commented_block(rest, bool(live)) + [""]
 
 
-def _live_block(live: dict[str, tuple[str, ...]], launcher: str) -> list[str]:
-    if not live:
-        return []
-    return ["[crapkit.scoped_tests]"] + _scoped_entry_lines(live, True, launcher)
+def _live_block(live: list[str]) -> list[str]:
+    return ["[crapkit.scoped_tests]"] + live if live else []
 
 
-def _commented_block(rest: dict[str, tuple[str, ...]], has_live: bool,
-                     launcher: str) -> list[str]:
+def _commented_block(rest: list[str], has_live: bool) -> list[str]:
     if not rest:
         return []
     header = ["# Uncomment what fits:"] + ([] if has_live else ["# [crapkit.scoped_tests]"])
-    return header + _scoped_entry_lines(rest, False, launcher)
+    return header + rest
+
+
+def runner_workspaces(package_json: str | dict[str, str]) -> list[tuple[str, str]]:
+    """Every workspace directory whose package.json names one runner, paired
+    with that runner, for init's summary to name when it could not pick a lane
+    among them."""
+    return _runner_workspaces(_packages(package_json))
 
 
 def _template_stanza(parser: str, launcher: str) -> list[str]:
@@ -718,7 +837,8 @@ def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
 
 def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = (),
                  *, interpreter: str = _DEFAULT_PYTHON,
-                 testpaths: tuple[str, ...] = ()) -> str:
+                 testpaths: tuple[str, ...] = (), tracked=(),
+                 package_json: str | dict[str, str] = "") -> str:
     """The starter crapkit.toml. `interpreter` is the python a committed config
     on this repo can call, the lockfile's manager prefix included; every python
     line the file holds names it, commented templates as much as live lanes.
@@ -726,6 +846,11 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     `testpaths` is what the repo's pytest config collects. More than one of them
     and the file also carries the fallback for a suite that cannot collect them
     together, commented out: one lane per testpath at `full_suite = false`.
+
+    `tracked` is the repo's tracked file list and `package_json` the texts
+    `detect_lanes` read; together they decide which scoped-test form each scope
+    gets. A caller passing neither gets the whole-suite form for python and
+    the placeholder for js, the two forms that cannot collect nothing.
     """
     lines = ["[crapkit]", "target = 6", ""]
     for name, languages in scopes.items():
@@ -734,8 +859,9 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     live, covered = _live_lanes(lanes, scopes)
     live += _testpath_lane_stubs(lanes, scopes, testpaths)
     launcher = python_launcher(lanes, interpreter)
+    facts = _scoped_facts(scopes, lanes, launcher, testpaths, tracked, package_json)
     return "\n".join(lines + live + _template_lines(covered, scopes, launcher)
-                     + _scoped_tests_stub(scopes, _confirmed_languages(lanes), launcher))
+                     + _scoped_tests_stub(scopes, facts))
 
 
 _STORE_IGNORE = ".crapkit/"

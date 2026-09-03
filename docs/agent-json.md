@@ -914,8 +914,9 @@ $ crapkit doctor --json
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
 | `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. |
 
-`note`-level findings (a file over `max_file_bytes`, no lanes declared) appear in the plain
-output only. They are neither problems nor warnings.
+`note`-level findings (a file over `max_file_bytes`, no lanes declared, a coverage.py lane
+an environment manager heads and doctor therefore did not probe) appear in the plain output
+only. They are neither problems nor warnings.
 
 The `results_artifact` warning is new in 0.4.5 (#26), and it names the two checks the lane
 loses rather than the key alone. A repo whose one lane declares neither the artifact nor a

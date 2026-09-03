@@ -41,7 +41,7 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 | `worklist_top` | int >= 1 | `50` | Cap on the worklist active list. `worklist --top N` overrides it per call. |
 | `ratchet_file` | string | `"crapkit-ratchet.tsv"` | The committed marks file, repo-relative. |
 | `alert_command` | string | `""` | A shell command that receives a digest or override body on **stdin**. `digest --alert` uses it, and an override refuses to grant without it. Never interpolated into the shell string. |
-| `scoped_tests` | table | none | Written as its own table, `[crapkit.scoped_tests]`, mapping scope name to a command template. `test-scoped` fills `{files}` with the quoted file list; a template with no `{files}` runs as written, which is how a scope runs its whole suite when its tests live outside its own `paths`. It is also step 4 of the burn-down loop and `brief`'s `commands.scoped_tests`, so **doctor warns** about a scope a lane measures with no template behind it: `null` there leaves a session with nothing to run between the gate and verify. |
+| `scoped_tests` | table | none | Written as its own table, `[crapkit.scoped_tests]`, mapping scope name to a command template. `test-scoped` fills `{files}` with the quoted file list; a template with no `{files}` runs as written, which is how a scope runs its whole suite when its tests live outside its own `paths`. `init` picks the form per scope from the tracked files: `{files}` only where the scope's own paths hold a test file; the whole-suite form otherwise, naming the repo's test directory unless pytest's `testpaths` already collects it; `npm run test -w <dir>` for an npm workspace with a test script; and the runner's related-tests mode (`npx vitest related --run {files}`, `npx jest --findRelatedTests {files}`) for a root JavaScript scope, keyed by what package.json names. One comment line above each entry says which form it chose. It is also step 4 of the burn-down loop and `brief`'s `commands.scoped_tests`, so **doctor warns** about a scope a lane measures with no template behind it (`null` there leaves a session with nothing to run between the gate and verify) and **doctor fails** a `{files}` template on a scope that holds no test file, since that template hands the runner a source path and collects nothing. |
 | `notes` | array of string | `[]` | House rules for this repo, in the config rather than in a file an agent has to find. `brief` carries them into the packet as `notes`, repo-wide lines first, then the scope's own. crapkit never parses them. |
 | `mutation_command` | string | `""` | The suite run once per mutant. A nonzero exit means the mutant was killed, so the command is also run **once against the unmutated tree** before the first mutant and must exit 0 there: without that baseline a command that cannot start here killed every mutant and scored 100%. `mutate` refuses to run without it. Shell and PowerShell files in the diff are skipped and named on stderr: `<` and `>` are redirections in both, so their mutants would be noise. So is every file outside the scored corpus (a test file, an excluded path, a file over `max_file_bytes`, a file no scope claims): `mutate` never mutates a test, and a diff with nothing left says `nothing to mutate` at exit 0 without running the command. |
 | `mutation_timeout_seconds` | int >= 1 | `300` | Per-mutant timeout. Expiry counts as killed, and the kill takes the suite's whole process tree, so a looping mutant does not outlive the run that gave up on it. At the default cap of 100 mutants this bounds one `mutate` run at over 8 hours, so lower it for a slow suite. |
@@ -122,13 +122,12 @@ naming scripts that way. One line does it:
 
 ```toml
 [exclude]
-globs = ["*.Tests.ps1", "**/*.Tests.ps1"]
+globs = ["**/*.Tests.ps1"]
 ```
 
-Both forms, because [globs are whole-path](#exclude): `**/*.Tests.ps1` needs at least one
-directory in front of the file name, so a repo-root `Deploy.Tests.ps1` stays in the corpus
-and comes back from `doctor` as a tracked file no scope claims. PowerShell repos keep
-scripts at the root more often than most, which is why the bare form leads.
+One form is enough: a leading `**/` [matches zero or more directories](#exclude), so the
+glob reaches a repo-root `Deploy.Tests.ps1` as well as `scripts/Deploy.Tests.ps1`.
+PowerShell repos keep scripts at the root more often than most, which is why that matters.
 
 **`cpp` is the whole C family, C included.** There is no separate `c` label. lizard resolves
 all six suffixes to one reader, so two labels could never measure differently, and `.h` is
@@ -250,7 +249,7 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `globs` | array of string | `[]` | Paths matching any glob leave the corpus. Each glob must match the **whole** repo-relative path, case-insensitively. |
+| `globs` | array of string | `[]` | Paths matching any glob leave the corpus. Each glob matches the **whole** repo-relative path, case-insensitively, and a leading `**/` matches zero or more directories, so one glob covers the repo root and every nested copy. |
 | `max_file_bytes` | int >= 0 | absent (no limit) | Files larger than this leave the corpus entirely, minified blobs included. `doctor` reports each one as a `note`, never a FAIL, and the count surfaces as `skipped_max_bytes` in `inventory --json` and `coverage --json`. |
 
 Test directories are excluded **unconditionally**, before `globs` is consulted: any path
@@ -263,28 +262,49 @@ opens on a dot leaves the corpus before `globs` is read, `.github/workflows/gen.
 there had nothing that could own it and came back from `doctor` as a tracked file matching
 a scope language with no scope path. A dot *file* is not a dot directory and stays in.
 
-Globs are whole-path, so `**/dist/**` requires at least one directory *before* `dist`: it
-matches `web/dist/bundle.js` and not a repo-root `dist/bundle.js`. Write the root form
-beside the nested one for anything you want gone in both places:
+A leading `**/` matches zero or more directories, so `**/dist/**` matches a repo-root
+`dist/bundle.js` and `web/dist/bundle.js` alike, and never `src/distro/x.py`. Write each
+pattern once; a root form such as `dist/**` is still read the way fnmatch reads it (the
+root only), so a hand-written one keeps matching what it matched.
 
-```toml
-globs = ["**/dist/**", "dist/**"]
-```
-
-`init` ships both forms for the four generated trees and for the test-file spellings, so a
-tracked `vendor/` or `dist/` at the repo root no longer becomes a scope of its own, which is
-what it did before, and then either failed `doctor` as a scope no lane measures or joined
-the js lane in a repo that had one, scoring vendored code as the team's own debt.
-`crapkit init` writes this default set:
+`crapkit init` writes this default set, one glob per line:
 
 ```toml
 [exclude]
-globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "node_modules/**", "dist/**", "build/**", "vendor/**", "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
+# A leading **/ matches zero or more directories, so each glob below reaches the
+# repo root and every nested copy. Test directories leave the corpus on their own.
+globs = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/vendor/**",
+  "**/generated/**",
+  "**/__generated__/**",
+  "**/*.generated.*",
+  "**/*.test.*",
+  "**/*.spec.*",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/conftest.py",
+  "**/*_test.go",
+  "**/*.config.ts",
+  "**/*.config.js",
+  "**/*.config.mts",
+]
 ```
 
-The six `*.config.*` entries keep runner config files (`vitest.config.ts` and friends) out
-of the unclaimed-file doctor check; globs are whole-path, so the bare form matches the repo
-root and the `**/` form matches nested copies.
+The three `generated` entries keep generated clients and schemas out of the queue: a
+generated tree scores like anyone else's debt, and on one monorepo a generated client at
+CRAP 90 was the first `next-item`. The three `*.config.*` entries keep runner config files
+(`vitest.config.ts` and friends) out of the unclaimed-file doctor check. `hook-precommit`
+and `claude-hook` apply the same globs the scored corpus does, so a file the list excludes
+is gated by neither.
+
+**If your committed config carries only the nested form, its next scan moves files.**
+Before 0.5.0 `**/dist/**` left a repo-root `dist/` in the corpus; it now excludes it, and
+the same goes for a root `conftest.py` under `**/conftest.py` or a root `*.test.*` file
+under `**/*.test.*`. Ratchet marks on a function that leaves the corpus are held, not
+dropped. Run `crapkit doctor` after upgrading and read the per-scope file counts.
 
 ```
 $ crapkit doctor

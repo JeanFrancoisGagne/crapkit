@@ -302,13 +302,14 @@ def test_routed_lanes_add_nothing_to_gitignore_beyond_the_store():
 def test_init_writes_live_entries_for_the_runner_it_detected():
     """AGENTS.md's loop step 5 is `crapkit test-scoped FILES`, which needs one
     template per scope. The pytest lane's presence signal makes the python
-    command known-good, so it lands live; the js runner stays a commented
-    template because presence cannot pick the right vitest config."""
+    command known-good, so it lands live, in the whole-suite form since no
+    tracked file list says the scope holds its own tests; with no package.json
+    naming a runner the js entry is the commented placeholder."""
     text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), ""))
 
     assert "[crapkit.scoped_tests]" in text
-    assert 'pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text
-    assert '# src = "npx vitest run {files}"' in text
+    assert 'pylib = "python -m pytest -q -p no:cacheprovider"' in text
+    assert '# src = "<your test command> {files}"' in text
 
 
 def test_the_stub_stays_commented_so_no_scope_gets_a_command_it_cannot_run():
@@ -327,8 +328,8 @@ def test_the_stub_uncomments_into_a_config_crapkit_reads_back():
     cfg = load_config_text(text + "\n" + live)
 
     assert dict(cfg.scoped_tests) == {
-        "pylib": "python -m pytest {files} -q -p no:cacheprovider",
-        "src": "npx vitest run {files}"}
+        "pylib": "python -m pytest -q -p no:cacheprovider",
+        "src": "<your test command> {files}"}
 
 
 def test_a_scope_in_a_language_with_no_known_runner_gets_a_placeholder():
@@ -339,12 +340,12 @@ def test_a_scope_in_a_language_with_no_known_runner_gets_a_placeholder():
 
 def test_a_detected_pytest_lane_activates_the_python_scoped_tests_entry():
     """The presence signal that wrote the py coverage lane is the same signal
-    that makes `python -m pytest {files}` known-good, so init writes it live:
+    that makes `python -m pytest` known-good, so init writes it live:
     a fresh repo then has no scoped-tests gap for doctor to warn about."""
     lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
     cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
 
-    assert dict(cfg.scoped_tests)["src"] == "python -m pytest {files} -q -p no:cacheprovider"
+    assert dict(cfg.scoped_tests)["src"] == "python -m pytest -q -p no:cacheprovider"
 
 
 def test_an_undetected_runner_keeps_its_scoped_tests_entry_commented():
@@ -354,7 +355,7 @@ def test_an_undetected_runner_keeps_its_scoped_tests_entry_commented():
 
     assert "src" in dict(cfg.scoped_tests)
     assert "ui" not in dict(cfg.scoped_tests)
-    assert '# ui = "npx vitest run {files}"' in text
+    assert '# ui = "<your test command> {files}"' in text
 
 
 # --- the environment the scaffolded lane binds to -----------------------------
@@ -404,7 +405,7 @@ def test_the_scoped_tests_entry_runs_the_same_python_the_lane_does():
     cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
 
     assert dict(cfg.scoped_tests)["src"] == (
-        "uv run python -m pytest {files} -q -p no:cacheprovider")
+        "uv run python -m pytest -q -p no:cacheprovider")
 
 
 def test_the_launcher_is_read_back_off_the_lane_rather_than_guessed():
@@ -450,7 +451,7 @@ def test_the_commented_lane_template_carries_the_managers_python_too():
             '--cov-report=json:.crapkit/cov/py.json '
             '--junitxml=.crapkit/cov/junit-py.xml '
             '--continue-on-collection-errors"') in text
-    assert '# pylib = "uv run python -m pytest {files} -q -p no:cacheprovider"' in text, \
+    assert '# pylib = "uv run python -m pytest -q -p no:cacheprovider"' in text, \
         "one launcher for every python line the file holds"
     assert '# command = "npx vitest run --coverage' in text, "the js template is untouched"
 
@@ -459,7 +460,7 @@ def test_with_no_lockfile_the_commented_template_keeps_the_bare_name():
     text = starter_toml({"pylib": ("python",)})
 
     assert '# command = "python -m pytest --cov --cov-branch' in text
-    assert '# pylib = "python -m pytest {files} -q -p no:cacheprovider"' in text
+    assert '# pylib = "python -m pytest -q -p no:cacheprovider"' in text
 
 
 # --- a red test must still leave a coverage report ----------------------------
@@ -490,10 +491,11 @@ def test_jest_never_gets_the_flag_vitest_spells_it_with():
 
 # --- the excludes reach the repo root -----------------------------------------
 #
-# Globs are whole-path, so `**/vendor/**` needs a directory before `vendor` and
-# never matched a repo-root vendor/. init turned that tree into a scope no lane
-# measured and doctor FAILed it; the root conftest.py init left unscoped was the
-# same glob missing the same file.
+# A leading `**/` matches zero or more directories, so `**/vendor/**` reaches a
+# repo-root vendor/ as well as a nested one. Under fnmatch alone it needed a
+# directory before `vendor`: init turned a root vendor/ into a scope no lane
+# measured, doctor FAILed it, and 0.4.12 wrote every glob twice to get around
+# it. The doubled list is gone; the prefix alone does the work.
 
 def _default_match():
     from crapkit.universe import exclude_matcher
@@ -528,6 +530,37 @@ def test_the_default_excludes_still_leave_source_in_the_corpus():
 
 def test_a_repo_root_vendor_tree_is_never_sniffed_as_a_scope():
     assert sniff_scopes(["vendor/lib.js", "web/app.ts"]) == {"web": ("typescript",)}
+
+
+def test_every_default_glob_is_written_once_and_opens_with_the_prefix():
+    """No root duplicates: the prefix reaches the root on its own, and a reader
+    editing the list should meet each pattern one time."""
+    assert len(DEFAULT_EXCLUDES) == len(set(DEFAULT_EXCLUDES))
+    assert all(glob.startswith("**/") for glob in DEFAULT_EXCLUDES), DEFAULT_EXCLUDES
+
+
+def test_generated_trees_leave_the_corpus_by_default():
+    """A monorepo lead's first next-item was a generated client at crap 90,
+    because none of the defaults spelled `generated`."""
+    from crapkit.universe import excluded
+
+    match = _default_match()
+
+    assert excluded("api/src/generated/client.ts", match)
+    assert excluded("generated/client.ts", match)
+    assert excluded("web/__generated__/graphql.ts", match)
+    assert excluded("api/client.generated.ts", match)
+    assert sniff_scopes(["generated/client.ts", "web/app.ts"]) == {"web": ("typescript",)}
+
+
+def test_init_writes_the_excludes_one_glob_per_line():
+    text = starter_toml({"calc": ("python",)})
+    block = text.split("[exclude]", 1)[1].split("\n[", 1)[0]
+
+    quoted = [ln.strip() for ln in block.splitlines() if ln.strip().startswith('"')]
+    assert len(quoted) == len(DEFAULT_EXCLUDES), block
+    assert all(ln.count('"') == 2 for ln in quoted), "one glob per line"
+    assert load_config_text(text).exclude_globs == DEFAULT_EXCLUDES
 
 
 # --- a monorepo names its runner in the workspace that owns the tests ---------

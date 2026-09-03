@@ -64,9 +64,17 @@ goes to zero for you and the next session sees the rows again.
 ## `scoped_tests` belongs between doctor and coverage
 
 The quickstarts run `crapkit init`, then `crapkit doctor`, then `crapkit coverage`. Fill in
-the `[crapkit.scoped_tests]` table between the last two. `init` already wrote a line per
-scope, live where a detected lane proves the runner and commented everywhere else, so
-uncommenting is usually the whole job.
+the `[crapkit.scoped_tests]` table between the last two. `init` already wrote an entry per
+scope, each under one comment line naming the form it chose: `{files}` where the scope's
+own paths hold a test file, the whole-suite form where they do not (naming the repo's test
+directory unless pytest's `testpaths` already collects it), a workspace's own
+`npm run test -w <dir>`, or the runner's related-tests mode. Live where the repo's own
+files prove the command and commented everywhere else, so uncommenting is usually the
+whole job. `doctor` then repeats `init`'s lane probe: it names the interpreter and the
+pytest and pytest-cov versions each coverage.py lane resolves to, fails a lane whose python
+cannot import pytest-cov, prints a `note` for a lane an environment manager heads (`uv run
+python -m pytest`), which it does not probe, and fails a `{files}` template on a scope
+holding no test file.
 
 Every python line it wrote names one launcher, the lockfile's where the repo has one:
 `uv run python -m pytest ...` on a `uv.lock` repo, in the lane command, in the entries
@@ -81,11 +89,13 @@ exist for any agent that ever works this repo.
 
 ## The two-templated-scopes trap
 
-Uncommenting every template is what springs it. A test file that lives outside every scope's
-`paths` routes to the single scope that declares a template. With two templated scopes there
-is no single owner, and `crapkit test-scoped tests/test_stats.py` exits 3. Naming a source
-file instead routes fine and then hands the runner a source path to collect tests from: no
-tests ran, runner exit 5, crapkit exit 1.
+A `{files}` template on a scope whose tests live outside its `paths` is what springs it.
+`init` no longer writes one there and `doctor` fails one it finds, but a hand-written
+config can still carry it. A test file that lives outside every scope's `paths` routes to
+the single scope that declares a template. With two templated scopes there is no single
+owner, and `crapkit test-scoped tests/test_stats.py` exits 3. Naming a source file instead
+routes fine and then hands the runner a source path to collect tests from: no tests ran,
+runner exit 5, crapkit exit 1.
 
 The way out is the whole-suite form. A template with no `{files}` placeholder runs exactly
 as written, so the scope runs its own suite whichever of its files you name:

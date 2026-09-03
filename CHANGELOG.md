@@ -57,6 +57,39 @@ on a full clone are unchanged; the README transcript shows the new line.
 
 `verify --json` adds `diff_uncovered_max`, the configured ceiling `diff_uncovered_count` is
 judged against, `null` when the repo set none. Additive; `schema` stays 1.
+### `init` writes a scoped-test command that collects a test, and `doctor` repeats its lane probe
+A python scope whose own paths hold no test file gets the whole-suite form,
+`python -m pytest tests -q -p no:cacheprovider`, naming the repo's test directory unless
+pytest's `testpaths` already collects it, in which case the positional is omitted;
+`{files}` stays only where the tests live under the scope's paths. Before, every python
+scope got `{files}`, and on the ordinary pkg/ + tests/ layout `crapkit test-scoped pkg/x.py`
+handed pytest a source file to collect from and exited 5. An npm workspace scope with a
+test script gets `npm run test -w <dir>`, written live; a root JavaScript scope gets the
+runner's related-tests mode keyed by what package.json names (`npx vitest related --run
+{files}`, `npx jest --findRelatedTests {files}`) instead of a vitest command for every
+language, and the placeholder when nothing names a runner; one comment line above each
+entry names the form chosen. `init` also says when two workspaces name a runner and no js
+lane was written. `doctor` re-runs `init`'s first-run note for every coverage.py lane, so a
+lane whose python cannot import pytest-cov now fails doctor with the same sentence instead
+of the first `crapkit coverage`; a healthy lane prints
+`ok lane 'py': python -> <path> (pytest X, pytest-cov Y)`, with a WARN when that python is
+not the one running doctor; a lane an environment manager heads (`uv run python -m pytest
+--cov`) prints a `note` that its interpreter and pytest-cov were not probed, so a lane doctor
+did not ask never reads as one it found healthy; and a `{files}` template on a scope that
+holds no test file fails, naming the whole-suite form as the fix.
+
+### One exclude glob reaches the repo root and every nested copy
+A leading `**/` in an `[exclude]` glob matches zero or more directories, so `**/dist/**`
+excludes a repo-root `dist/` as well as `web/dist/`, and `src/distro/` stays in. Under
+fnmatch alone the prefix demanded a directory in front, which is why 0.4.12's "`init` and
+`doctor` agree about the root and the dot-directories" wrote the root form beside every
+nested form; that rationale is reversed here and the duplicates are gone. The default set
+gains `**/generated/**`, `**/__generated__/**` and `**/*.generated.*`, so a generated
+client is never the first `next-item`, and `crapkit init` writes the list one glob per
+line under a two-line comment instead of a 405-character line. A hand-written root form
+such as `dist/**` still matches the root and nothing below it. A committed config carrying
+only `**/dist/**`, `**/conftest.py` or `**/*.test.*` now also excludes the root copy: run
+`crapkit doctor` after upgrading and read the per-scope file counts.
 
 ## 0.4.15 — 2026-09-02
 

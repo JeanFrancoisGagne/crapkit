@@ -185,14 +185,17 @@ is no step 4 to run: go to step 5. `crapkit doctor` warns about every scope a la
 measures with no template behind it, which is the gap to close.
 
 This needs one template per scope in crapkit.toml. `crapkit init` writes the block at the
-end of the file, one line per scope it found: live for a scope whose runner a detected
-lane already proves, commented for the rest, so uncommenting is usually the whole job.
+end of the file, one entry per scope it found under a comment line naming the form it
+chose (`{files}` only where the scope's own paths hold a test file, the whole-suite form
+otherwise): live for a scope whose runner a detected lane already proves, commented for
+the rest, so uncommenting is usually the whole job.
 Every python line it writes names one launcher, the commented lane template included, so
 on a repo whose lockfile pins uv what you uncomment reads `uv run python -m pytest ...`
 and binds to the environment the repo pins:
 
     [crapkit.scoped_tests]
-    calc = "python -m pytest {files} -q -p no:cacheprovider"
+    # calc: no test file under calc/, so the whole suite runs, from tests/
+    calc = "python -m pytest tests -q -p no:cacheprovider"
 
 - Key is the `name` of a `[[scope]]`. Value is a shell command.
 - crapkit routes each file you name to the scope whose `paths` entry matches deepest,

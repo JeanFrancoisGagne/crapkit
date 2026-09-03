@@ -36,6 +36,7 @@ ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
+ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0)
 ok   lizard 1.24.0
 doctor: no problems found
 ```
@@ -371,10 +372,10 @@ export default {
 };
 ```
 
-`crapkit init` excludes `*.config.ts` (and `.js`/`.mts`, at any depth) from scoring by
-default, so this file never trips doctor's unclaimed-file check. If you wrote your
-`[exclude]` list by hand, add `"*.config.ts"`. Globs are whole-path, so the bare form matches
-the repo root and `**/*.config.ts` matches nested copies.
+`crapkit init` excludes `**/*.config.ts` (and `.js`/`.mts`) from scoring by default, so
+this file never trips doctor's unclaimed-file check. If you wrote your `[exclude]` list by
+hand, add `"**/*.config.ts"`: a leading `**/` matches zero or more directories, so that one
+glob reaches the repo root and every nested copy.
 
 ### `reportOnFailure`
 
@@ -645,7 +646,10 @@ uncomment later.
 `init` does not probe a managed lane for `pytest-cov`. `uv run` and its siblings create or
 sync the project environment before running anything, and `init` has no business
 provisioning one to ask a question about it. If the plugin is missing, the lane says so on
-its first run — with the log path.
+its first run — with the log path. `doctor` holds to the same rule and says so: where a
+python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y)`, a
+managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
+doctor did not ask never reads as one it found healthy.
 
 It does check that the manager itself is installed here, because the lockfile is the
 repo's property and the PATH is the machine's. A `uv.lock` a teammate committed on a

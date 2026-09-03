@@ -154,10 +154,17 @@ def test_the_python_quickstart_prints_the_gitignore_line_init_writes():
     assert f"added to .gitignore: {', '.join(entries)}" in _doc("README.md")
 
 
+# The quickstart runs init on tools/demo/fixture: calc/ beside tests/, and a
+# pyproject naming no testpaths, so the scoped-tests entry is the whole-suite
+# form naming tests/. The README block has to be that repo's, not a bare call's.
+DEMO_FILES = ("calc/__init__.py", "calc/grade.py", "calc/parse.py", "calc/report.py",
+              "pyproject.toml", "tests/test_parse.py", "tests/test_report.py")
+
+
 def test_the_python_quickstart_prints_the_config_init_writes():
     """Including the commented lane template, which is what the prose above the
     block promises init leaves behind."""
-    assert starter_toml(PY_SCOPES, _py_lanes()) in _doc("README.md")
+    assert starter_toml(PY_SCOPES, _py_lanes(), tracked=DEMO_FILES) in _doc("README.md")
 
 
 def test_the_typescript_quickstart_prints_the_gitignore_line_init_writes():
