@@ -51,6 +51,17 @@ _DOT_DIR = re.compile(r"(^|/)\.[^/]+/")
 _NEVER = re.compile(r"(?!x)x").match  # an empty glob list must exclude NOTHING
 
 
+def _glob_regex(glob: str) -> str:
+    """One glob as a regex. A leading `**/` is zero or more directories, so
+    `**/dist/**` reaches a repo-root dist/ as well as web/dist/. fnmatch alone
+    reads `**` as `*` and demands a directory in front, which is why 0.4.12
+    wrote every default glob twice. The rest of the glob is fnmatch as written,
+    so a hand-written root form (`dist/**`) keeps matching what it matched."""
+    if glob.startswith("**/"):
+        return r"(?:.*/)?" + fnmatch.translate(glob[3:])
+    return fnmatch.translate(glob)
+
+
 def exclude_matcher(globs: tuple[str, ...]) -> Callable[[str], re.Match[str] | None]:
     """The exclude globs as ONE compiled alternation, matched against a lowered path.
 
@@ -61,7 +72,7 @@ def exclude_matcher(globs: tuple[str, ...]) -> Callable[[str], re.Match[str] | N
     """
     if not globs:
         return _NEVER
-    return re.compile("|".join(fnmatch.translate(g.lower()) for g in globs)).match
+    return re.compile("|".join(_glob_regex(g.lower()) for g in globs)).match
 
 
 def excluded(path: str, match_glob: Callable[[str], re.Match[str] | None]) -> bool:

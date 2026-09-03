@@ -26,14 +26,16 @@ def cc_only_scope(languages: tuple[str, ...]) -> bool:
     return not any(lang in COVERABLE_LANGUAGES for lang in languages)
 
 DEFAULT_EXCLUDES = (
+    # A leading `**/` matches zero or more directories (universe._glob_regex),
+    # so each glob reaches the repo root and every nested copy at once. 0.4.12
+    # wrote every glob twice, root form beside nested form, because fnmatch
+    # demanded a directory in front of `vendor`; the prefix rule replaced that.
     "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
+    # Generated trees. A monorepo lead's first next-item was a generated client
+    # at crap 90, and ratchet seed signed for it, because nothing here spelled
+    # `generated`.
+    "**/generated/**", "**/__generated__/**", "**/*.generated.*",
     "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py",
-    # The same globs anchored at the root. `**/vendor/**` needs a directory
-    # before `vendor`, so it never reached a repo-root vendor/: init made that
-    # tree a scope, no lane measured it, and doctor FAILed the config init had
-    # just written. A root conftest.py went unclaimed for the same reason.
-    "node_modules/**", "dist/**", "build/**", "vendor/**",
-    "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go",
     # Go puts its tests beside the source, so the test-directory rule never
     # fires on them and every _test.go file would score as production code
     "**/*_test.go",
@@ -43,9 +45,7 @@ DEFAULT_EXCLUDES = (
     # Shell has no `_test.sh` convention to claim — `deploy_test.sh` is
     # production code in plenty of repos — and the two dotted spellings a shell
     # suite does use are already covered by `**/*.test.*` and `**/*.spec.*`.
-    # runner config files the docs themselves tell users to create; globs are
-    # whole-path, so the root form and the nested form are both required
-    "*.config.ts", "*.config.js", "*.config.mts",
+    # runner config files the docs themselves tell users to create
     "**/*.config.ts", "**/*.config.js", "**/*.config.mts",
 )
 
@@ -449,8 +449,19 @@ def _scope_stanza(name: str, languages: tuple[str, ...]) -> list[str]:
             f"languages = [{_quoted(languages)}]", *optional, ""]
 
 
+# What a reader editing the list needs to know before they add to it: why one
+# form per pattern is enough, and why no glob for tests/ appears below.
+_EXCLUDE_INTRO = (
+    "# A leading **/ matches zero or more directories, so each glob below reaches the",
+    "# repo root and every nested copy. Test directories leave the corpus on their own.",
+)
+
+
 def _exclude_stanza() -> list[str]:
-    return ["[exclude]", f"globs = [{_quoted(DEFAULT_EXCLUDES)}]", ""]
+    """One glob per line. The 0.4.x form was a 405-character line carrying every
+    pattern twice, which nobody could read, let alone edit."""
+    globs = [f'  "{glob}",' for glob in DEFAULT_EXCLUDES]
+    return ["[exclude]", *_EXCLUDE_INTRO, "globs = [", *globs, "]", ""]
 
 
 def _lane_env(env: tuple[tuple[str, str], ...]) -> list[str]:

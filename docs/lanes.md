@@ -371,10 +371,10 @@ export default {
 };
 ```
 
-`crapkit init` excludes `*.config.ts` (and `.js`/`.mts`, at any depth) from scoring by
-default, so this file never trips doctor's unclaimed-file check. If you wrote your
-`[exclude]` list by hand, add `"*.config.ts"`. Globs are whole-path, so the bare form matches
-the repo root and `**/*.config.ts` matches nested copies.
+`crapkit init` excludes `**/*.config.ts` (and `.js`/`.mts`) from scoring by default, so
+this file never trips doctor's unclaimed-file check. If you wrote your `[exclude]` list by
+hand, add `"**/*.config.ts"`: a leading `**/` matches zero or more directories, so that one
+glob reaches the repo root and every nested copy.
 
 ### `reportOnFailure`
 

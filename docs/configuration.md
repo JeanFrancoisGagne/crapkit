@@ -122,13 +122,12 @@ naming scripts that way. One line does it:
 
 ```toml
 [exclude]
-globs = ["*.Tests.ps1", "**/*.Tests.ps1"]
+globs = ["**/*.Tests.ps1"]
 ```
 
-Both forms, because [globs are whole-path](#exclude): `**/*.Tests.ps1` needs at least one
-directory in front of the file name, so a repo-root `Deploy.Tests.ps1` stays in the corpus
-and comes back from `doctor` as a tracked file no scope claims. PowerShell repos keep
-scripts at the root more often than most, which is why the bare form leads.
+One form is enough: a leading `**/` [matches zero or more directories](#exclude), so the
+glob reaches a repo-root `Deploy.Tests.ps1` as well as `scripts/Deploy.Tests.ps1`.
+PowerShell repos keep scripts at the root more often than most, which is why that matters.
 
 **`cpp` is the whole C family, C included.** There is no separate `c` label. lizard resolves
 all six suffixes to one reader, so two labels could never measure differently, and `.h` is
@@ -250,7 +249,7 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `globs` | array of string | `[]` | Paths matching any glob leave the corpus. Each glob must match the **whole** repo-relative path, case-insensitively. |
+| `globs` | array of string | `[]` | Paths matching any glob leave the corpus. Each glob matches the **whole** repo-relative path, case-insensitively, and a leading `**/` matches zero or more directories, so one glob covers the repo root and every nested copy. |
 | `max_file_bytes` | int >= 0 | absent (no limit) | Files larger than this leave the corpus entirely, minified blobs included. `doctor` reports each one as a `note`, never a FAIL, and the count surfaces as `skipped_max_bytes` in `inventory --json` and `coverage --json`. |
 
 Test directories are excluded **unconditionally**, before `globs` is consulted: any path
@@ -263,28 +262,49 @@ opens on a dot leaves the corpus before `globs` is read, `.github/workflows/gen.
 there had nothing that could own it and came back from `doctor` as a tracked file matching
 a scope language with no scope path. A dot *file* is not a dot directory and stays in.
 
-Globs are whole-path, so `**/dist/**` requires at least one directory *before* `dist`: it
-matches `web/dist/bundle.js` and not a repo-root `dist/bundle.js`. Write the root form
-beside the nested one for anything you want gone in both places:
+A leading `**/` matches zero or more directories, so `**/dist/**` matches a repo-root
+`dist/bundle.js` and `web/dist/bundle.js` alike, and never `src/distro/x.py`. Write each
+pattern once; a root form such as `dist/**` is still read the way fnmatch reads it (the
+root only), so a hand-written one keeps matching what it matched.
 
-```toml
-globs = ["**/dist/**", "dist/**"]
-```
-
-`init` ships both forms for the four generated trees and for the test-file spellings, so a
-tracked `vendor/` or `dist/` at the repo root no longer becomes a scope of its own, which is
-what it did before, and then either failed `doctor` as a scope no lane measures or joined
-the js lane in a repo that had one, scoring vendored code as the team's own debt.
-`crapkit init` writes this default set:
+`crapkit init` writes this default set, one glob per line:
 
 ```toml
 [exclude]
-globs = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py", "node_modules/**", "dist/**", "build/**", "vendor/**", "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "conftest.py", "*_test.go", "**/*_test.go", "*.config.ts", "*.config.js", "*.config.mts", "**/*.config.ts", "**/*.config.js", "**/*.config.mts"]
+# A leading **/ matches zero or more directories, so each glob below reaches the
+# repo root and every nested copy. Test directories leave the corpus on their own.
+globs = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/vendor/**",
+  "**/generated/**",
+  "**/__generated__/**",
+  "**/*.generated.*",
+  "**/*.test.*",
+  "**/*.spec.*",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/conftest.py",
+  "**/*_test.go",
+  "**/*.config.ts",
+  "**/*.config.js",
+  "**/*.config.mts",
+]
 ```
 
-The six `*.config.*` entries keep runner config files (`vitest.config.ts` and friends) out
-of the unclaimed-file doctor check; globs are whole-path, so the bare form matches the repo
-root and the `**/` form matches nested copies.
+The three `generated` entries keep generated clients and schemas out of the queue: a
+generated tree scores like anyone else's debt, and on one monorepo a generated client at
+CRAP 90 was the first `next-item`. The three `*.config.*` entries keep runner config files
+(`vitest.config.ts` and friends) out of the unclaimed-file doctor check. `hook-precommit`
+and `claude-hook` apply the same globs the scored corpus does, so a file the list excludes
+is gated by neither.
+
+**If your committed config carries only the nested form, its next scan moves files.**
+Before 0.5.0 `**/dist/**` left a repo-root `dist/` in the corpus; it now excludes it, and
+the same goes for a root `conftest.py` under `**/conftest.py` or a root `*.test.*` file
+under `**/*.test.*`. Ratchet marks on a function that leaves the corpus are held, not
+dropped. Run `crapkit doctor` after upgrading and read the per-scope file counts.
 
 ```
 $ crapkit doctor

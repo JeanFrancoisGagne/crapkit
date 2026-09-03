@@ -71,12 +71,23 @@ def test_a_scope_path_written_with_a_trailing_slash_still_claims_its_files():
 
 # --- the exclude matcher: regex alternation vs the fnmatch loop it replaced ---
 
+def _fnmatch_with_optional_prefix(lowered: str, glob: str) -> bool:
+    """One glob the way the matcher reads it: a leading `**/` is zero or more
+    directories, so the rest may match at the root or behind any prefix that
+    ends in a slash. Everything else is fnmatch as written."""
+    if glob.startswith("**/"):
+        rest = glob[3:]
+        return fnmatch.fnmatch(lowered, rest) or fnmatch.fnmatch(lowered, "*/" + rest)
+    return fnmatch.fnmatch(lowered, glob)
+
+
 def _excluded_by_fnmatch(path: str, globs: tuple[str, ...]) -> bool:
-    """The pre-regex implementation, kept as the oracle for the test below."""
+    """The fnmatch loop the regex replaced, with the one rule 0.5.0 added on
+    top, kept as the oracle for the corpus test below."""
     lowered = path.lower()
     if _TEST_DIR.search(path):
         return True
-    return any(fnmatch.fnmatch(lowered, g.lower()) for g in globs)
+    return any(_fnmatch_with_optional_prefix(lowered, g.lower()) for g in globs)
 
 
 _ORACLE_GLOBS = (
@@ -87,7 +98,7 @@ _ORACLE_GLOBS = (
 # Corpus separators stay forward-slash on purpose: both callers normalize
 # backslashes BEFORE the matcher sees a path, and fnmatch's Windows normcase
 # would rewrite a backslash path's separators on only one side of the compare.
-_TOPS = ("src", "ui", "Deployed", "packages")
+_TOPS = ("src", "ui", "Deployed", "packages", "dist", "node_modules", "distro")
 # "deployed" and "src" appear as inner dirs too, so a root-anchored glob like
 # "deployed/**" gets its chance to wrongly fire on "ui/deployed/x.ts".
 _MIDS = ("", "node_modules", "dist/js", "i18n/locales", "Tests", "__tests__",
@@ -98,17 +109,43 @@ _EXTS = (".ts", ".TS", ".py", ".md", "")
 
 
 def _path_corpus() -> list[str]:
-    return [f"{top}/{mid}/{name}{ext}".replace("//", "/")
-            for top in _TOPS for mid in _MIDS for name in _NAMES for ext in _EXTS]
+    nested = [f"{top}/{mid}/{name}{ext}".replace("//", "/")
+              for top in _TOPS for mid in _MIDS for name in _NAMES for ext in _EXTS]
+    # Root-level files: the paths a `**/` glob reaches only under the
+    # zero-directories reading, and the ones the old rule never matched.
+    root = [f"{name}{ext}" for name in _NAMES for ext in _EXTS]
+    return nested + root
 
 
-def test_the_compiled_exclude_regex_decides_exactly_what_the_fnmatch_loop_did():
+def test_the_compiled_exclude_regex_decides_exactly_what_the_fnmatch_oracle_does():
     match = exclude_matcher(_ORACLE_GLOBS)
     corpus = _path_corpus()
     assert len(corpus) > 2000, "the corpus is the whole point of this test"
     disagreements = [p for p in corpus
                      if excluded(p, match) != _excluded_by_fnmatch(p, _ORACLE_GLOBS)]
     assert disagreements == []
+
+
+def test_a_leading_double_star_reaches_the_repo_root():
+    """`**/dist/**` used to need a directory in front of `dist`, so a repo-root
+    dist/ stayed in the corpus while web/dist/ left. Zero or more directories
+    now, and `distro/` is still not `dist/`."""
+    match = exclude_matcher(("**/dist/**", "**/*.generated.*", "**/conftest.py"))
+
+    assert excluded("dist/x.py", match)
+    assert excluded("web/dist/x.py", match)
+    assert not excluded("src/distro/x.py", match)
+    assert excluded("client.generated.ts", match)
+    assert excluded("api/client.generated.ts", match)
+    assert excluded("conftest.py", match)
+    assert not excluded("src/conftest_helpers.py", match)
+
+
+def test_a_root_form_written_by_hand_still_matches_the_root_and_nothing_below():
+    match = exclude_matcher(("dist/**",))
+
+    assert excluded("dist/x.py", match)
+    assert not excluded("web/dist/x.py", match), "fnmatch as written: no prefix rule here"
 
 
 def test_an_empty_glob_list_excludes_nothing_but_the_test_dirs():

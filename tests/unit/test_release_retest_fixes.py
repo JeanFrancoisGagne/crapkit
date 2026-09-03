@@ -19,11 +19,12 @@ def _lane(**kw):
 
 def test_default_excludes_cover_runner_config_files_at_any_depth():
     """The vitest recipe the docs hand out creates vitest.config.ts, which made
-    doctor FAIL as an unclaimed file. Globs are whole-path, so the root form and
-    the nested form are both needed."""
+    doctor FAIL as an unclaimed file. One glob per extension since 0.5.0: a
+    leading `**/` matches zero or more directories, so the root copy is covered
+    without the duplicate 0.4.12 wrote."""
     for ext in ("ts", "js", "mts"):
-        assert f"*.config.{ext}" in DEFAULT_EXCLUDES
         assert f"**/*.config.{ext}" in DEFAULT_EXCLUDES
+        assert f"*.config.{ext}" not in DEFAULT_EXCLUDES, "the root duplicate is gone"
 
 
 def test_coveragepy_lane_ignores_the_pytest_droppings():

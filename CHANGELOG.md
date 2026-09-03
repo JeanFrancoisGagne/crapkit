@@ -4,6 +4,19 @@
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
+### One exclude glob reaches the repo root and every nested copy
+A leading `**/` in an `[exclude]` glob matches zero or more directories, so `**/dist/**`
+excludes a repo-root `dist/` as well as `web/dist/`, and `src/distro/` stays in. Under
+fnmatch alone the prefix demanded a directory in front, which is why 0.4.12's "`init` and
+`doctor` agree about the root and the dot-directories" wrote the root form beside every
+nested form; that rationale is reversed here and the duplicates are gone. The default set
+gains `**/generated/**`, `**/__generated__/**` and `**/*.generated.*`, so a generated
+client is never the first `next-item`, and `crapkit init` writes the list one glob per
+line under a two-line comment instead of a 405-character line. A hand-written root form
+such as `dist/**` still matches the root and nothing below it. A committed config carrying
+only `**/dist/**`, `**/conftest.py` or `**/*.test.*` now also excludes the root copy: run
+`crapkit doctor` after upgrading and read the per-scope file counts.
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

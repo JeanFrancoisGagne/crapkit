@@ -490,10 +490,11 @@ def test_jest_never_gets_the_flag_vitest_spells_it_with():
 
 # --- the excludes reach the repo root -----------------------------------------
 #
-# Globs are whole-path, so `**/vendor/**` needs a directory before `vendor` and
-# never matched a repo-root vendor/. init turned that tree into a scope no lane
-# measured and doctor FAILed it; the root conftest.py init left unscoped was the
-# same glob missing the same file.
+# A leading `**/` matches zero or more directories, so `**/vendor/**` reaches a
+# repo-root vendor/ as well as a nested one. Under fnmatch alone it needed a
+# directory before `vendor`: init turned a root vendor/ into a scope no lane
+# measured, doctor FAILed it, and 0.4.12 wrote every glob twice to get around
+# it. The doubled list is gone; the prefix alone does the work.
 
 def _default_match():
     from crapkit.universe import exclude_matcher
@@ -528,6 +529,37 @@ def test_the_default_excludes_still_leave_source_in_the_corpus():
 
 def test_a_repo_root_vendor_tree_is_never_sniffed_as_a_scope():
     assert sniff_scopes(["vendor/lib.js", "web/app.ts"]) == {"web": ("typescript",)}
+
+
+def test_every_default_glob_is_written_once_and_opens_with_the_prefix():
+    """No root duplicates: the prefix reaches the root on its own, and a reader
+    editing the list should meet each pattern one time."""
+    assert len(DEFAULT_EXCLUDES) == len(set(DEFAULT_EXCLUDES))
+    assert all(glob.startswith("**/") for glob in DEFAULT_EXCLUDES), DEFAULT_EXCLUDES
+
+
+def test_generated_trees_leave_the_corpus_by_default():
+    """A monorepo lead's first next-item was a generated client at crap 90,
+    because none of the defaults spelled `generated`."""
+    from crapkit.universe import excluded
+
+    match = _default_match()
+
+    assert excluded("api/src/generated/client.ts", match)
+    assert excluded("generated/client.ts", match)
+    assert excluded("web/__generated__/graphql.ts", match)
+    assert excluded("api/client.generated.ts", match)
+    assert sniff_scopes(["generated/client.ts", "web/app.ts"]) == {"web": ("typescript",)}
+
+
+def test_init_writes_the_excludes_one_glob_per_line():
+    text = starter_toml({"calc": ("python",)})
+    block = text.split("[exclude]", 1)[1].split("\n[", 1)[0]
+
+    quoted = [ln.strip() for ln in block.splitlines() if ln.strip().startswith('"')]
+    assert len(quoted) == len(DEFAULT_EXCLUDES), block
+    assert all(ln.count('"') == 2 for ln in quoted), "one glob per line"
+    assert load_config_text(text).exclude_globs == DEFAULT_EXCLUDES
 
 
 # --- a monorepo names its runner in the workspace that owns the tests ---------
