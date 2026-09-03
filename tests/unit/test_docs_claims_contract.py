@@ -246,12 +246,14 @@ def test_no_doc_still_calls_a_files_less_template_a_config_error():
     assert "whole suite" in row
 
 
-def test_a_one_timestamp_log_is_the_only_weightless_one():
-    """What the README's `risk 0.0` line actually measures. Age is not it."""
+def test_a_one_timestamp_log_counts_each_commit_once():
+    """What the README says about a one-commit repo: with no range to weight
+    against each commit counts once, so risk is ccn times one. Age is not the
+    input; position in the log is, and commits minutes apart already rank."""
     minute = 60
     same = parse_git_log(_git_log([1_787_000_000] * 3))["util/stats.py"]
     apart = parse_git_log(_git_log([1_787_000_000 + n * minute for n in (0, 12, 25)]))
-    assert same.weight == 0.0
+    assert same.weight == 3.0
     assert apart["util/stats.py"].weight > 0.5, "commits minutes apart already rank"
 
 

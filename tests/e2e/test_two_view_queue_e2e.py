@@ -196,11 +196,11 @@ def test_the_json_entries_carry_the_flag_and_the_remedy(repo: Path):
     assert by_path["core/alpha.py"]["remedy"] == "decompose"
 
 
-def test_the_header_still_counts_active_and_dormant(repo: Path):
+def test_the_header_counts_active_rows_against_their_total_and_dormant(repo: Path):
     res = run_cli(repo, "worklist")
 
     header = res.stdout.splitlines()[0]
-    assert header.endswith("— 4 active, 0 dormant"), header
+    assert header.endswith("— 4 of 4 active (worklist_top 50), 0 dormant"), header
 
 
 def test_an_inventory_only_store_leaves_both_fields_null(repo_unscored: Path):

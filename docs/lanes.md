@@ -842,8 +842,8 @@ mode and no config key for it: point crapkit at the package.
 $ crapkit coverage --repo packages/api
 run 1 @ 387e938f537: 1 functions scored — 1 measured / 0 untested / 0 no-lane / 0 cc-only, 1 over target 6, CRAP load 13.12, grade F
 $ crapkit worklist --repo packages/api
-worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) — 1 active, 0 dormant
-  risk     10.5  ccn   7 (  7 std)    6c/1a w   1.50  calc/grade.py:1  classify( score , attempts , late , bonus )
+worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+  risk     10.5  ccn   7  crap    13.1  cov  50%    6c/1a  calc/grade.py:1  classify( score , attempts , late , bonus )
 ```
 
 `--repo` names the crapkit root, never the git top, and every subcommand you invoke by hand

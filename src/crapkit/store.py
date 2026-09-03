@@ -25,9 +25,10 @@ from itertools import takewhile
 from pathlib import Path
 from typing import NamedTuple
 
-from .keys import split_ordinal
+from .keys import key_names, split_ordinal
 from .packet import bare_name, handle_ordinal, matching_names
 from .snapshot import InventoryRow
+from .worklist import Marks
 
 # {table} so the migration can build the same shape under a temp name and swap
 # it in last: the live table is never dropped until its replacement is filled.
@@ -208,6 +209,13 @@ _CODE_MIGRATION = (
     "DROP TABLE functions",
     "ALTER TABLE functions_mig RENAME TO functions",
 )
+
+
+class _Span(NamedTuple):
+    """What `keys.key_names` reads off a row: where a function is and what it is called."""
+    path: str
+    long_name: str
+    start: int
 
 
 class CrapRow(NamedTuple):
@@ -661,25 +669,51 @@ class SnapshotStore:
         ))
 
     def read_marks(self, run_id: int, *, min_ccn: int = 0,
-                   scopes: list[str] | None = None) -> dict[tuple[str, str], tuple[str, str]]:
-        """(path, long_name) -> (flag, remedy) for every row this run scored.
+                   scopes: list[str] | None = None) -> Marks:
+        """The verdict (flag, remedy) by (path, long_name) and the score (crap,
+        cov) by (path, long_name, start) of every row this run scored.
 
-        Two columns, not the row: the worklist reads inventory rows and needs
-        only the verdict half — which rows a floor must not hide, which the
-        queue will never offer, which are finished — so building a ScoredRow per
-        function would double the cost of the command. Twins collapse to the
-        WORST of them, the same rule the ratchet and the verdict use, because
-        the ORDER BY lets the highest-CRAP twin overwrite its siblings. An
-        inventory-only run answers nothing: its remedy is NULL.
+        Four columns and a start, not the row: the worklist reads inventory
+        rows and needs the verdict half — which rows a floor must not hide,
+        which the queue will never offer, which are finished — and the two
+        numbers a row prints, so building a ScoredRow per function would double
+        the cost of the command. In the verdict, twins collapse to the WORST of
+        them, the same rule the ratchet and the verdict use, because the ORDER
+        BY lets the highest-CRAP twin overwrite its siblings; the score is
+        keyed by start and stays each row's own, or twin #1 would print twin
+        #2's CRAP. An inventory-only run answers nothing: its remedy is NULL.
         """
         clause, names = _scope_clause(scopes)
         cur = self._conn.execute(
-            f"SELECT i.path, i.long_name, f.flag, f.remedy {_JOINED} WHERE f.run_id = ? "
-            f"AND f.remedy IS NOT NULL AND f.ccn >= ? {clause} ORDER BY f.crap",
+            f"SELECT i.path, i.long_name, f.start, f.flag, f.remedy, f.crap, f.cov {_JOINED} "
+            f"WHERE f.run_id = ? AND f.remedy IS NOT NULL AND f.ccn >= ? {clause} "
+            "ORDER BY f.crap",
             (run_id, min_ccn, *names))
         flags, remedies = self._codes["flags"].names, self._codes["remedies"].names
-        return {(path, name): (_name(flags, flag), _name(remedies, remedy))
-                for path, name, flag, remedy in cur}
+        verdicts, scores = {}, {}
+        for path, name, start, flag, remedy, crap, cov in cur:
+            verdicts[(path, name)] = (_name(flags, flag), _name(remedies, remedy))
+            scores[(path, name, start)] = (crap, cov)
+        return Marks(verdicts, scores)
+
+    def twin_key_names(self, run_id: int) -> dict[tuple[str, str, int], str]:
+        """The ratchet key name of every function that shares its long_name
+        with another in its file, by (path, long_name, start).
+
+        Every other function's key IS its long_name, so the map holds only the
+        rows whose key carries an ordinal: a handful, on a run of a hundred
+        thousand rows. The worklist reads rows cut at a floor and a scope, and
+        an ordinal counted over that cut would hand twin #2 the bare key, and
+        with it twin #1's mark; the count runs over the whole run here, the
+        way `brief` counts it over the whole file.
+        """
+        cur = self._conn.execute(
+            f"SELECT i.path, i.long_name, f.start {_JOINED} WHERE f.run_id = ? "
+            "AND (i.path, i.long_name) IN ("
+            "SELECT t.path, t.long_name FROM functions g JOIN identities t ON t.id = g.identity_id "
+            "WHERE g.run_id = ? GROUP BY t.path, t.long_name HAVING COUNT(DISTINCT g.start) > 1)",
+            (run_id, run_id))
+        return key_names([_Span(*row) for row in cur])
 
     def count_by_path(self, run_id: int, *, flag: str,
                       skip_scopes=frozenset()) -> list[tuple[str, int, int]]:

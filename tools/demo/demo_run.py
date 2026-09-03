@@ -24,7 +24,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SRC = HERE.parent.parent / "src"
 PAYLOAD = "posttooluse.json"
-COLUMNS = 96
+COLUMNS = 104  # a worklist row with its score and coverage runs to 101 characters
 ROWS = 32
 
 # The frames print the console-script spelling because that is what a reader
@@ -98,11 +98,27 @@ def _env() -> dict:
 def redact(text: str, repo: Path) -> str:
     """Everything that would differ between two runs, gone. The repo path is
     replaced first and in every spelling: a Windows tool prints backslashes, a
-    shell prints forward ones, and the resolved path is a third string again."""
+    shell prints forward ones, and the resolved path is a third string again.
+
+    The module run goes too. Every next step crapkit prints spells crapkit the
+    way it was started (`invocation._self`), which under `python -m crapkit` is
+    the interpreter's absolute path; the frame shows the console script a
+    reader installs, the same command by another name.
+    """
+    for spelling in _module_spellings():
+        text = text.replace(spelling, _SHOWN_NAME)
     for spelling in _spellings(repo):
         text = text.replace(spelling, ".")
     text = _TIMESTAMP.sub("<time>", text)
     return _DURATION.sub("<duration>", text)
+
+
+def _module_spellings() -> tuple[str, ...]:
+    """`python -m crapkit` as `invocation._self` prints it: the interpreter,
+    quoted when its path holds a space, in both separator styles."""
+    forms = {sys.executable, sys.executable.replace("\\", "/")}
+    quoted = {f'"{f}"' if " " in f else f for f in forms}
+    return tuple(sorted((f"{q} -m crapkit" for q in quoted), key=len, reverse=True))
 
 
 def _spellings(repo: Path) -> tuple[str, ...]:

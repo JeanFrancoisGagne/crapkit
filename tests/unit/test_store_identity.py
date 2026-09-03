@@ -296,7 +296,8 @@ def test_the_run_reads_seek_the_run_index_rather_than_scanning(tmp_path):
     store, run_id = seeded(tmp_path)
     for label, call in (("read_rows", lambda: store.read_rows(run_id)),
                         ("read_scored", lambda: store.read_scored(run_id)),
-                        ("read_marks", lambda: store.read_marks(run_id))):
+                        ("read_marks", lambda: store.read_marks(run_id)),
+                        ("twin_key_names", lambda: store.twin_key_names(run_id))):
         lines = plans(store, call)
         assert not [line for line in lines if line.startswith("SCAN functions")], \
             f"{label} scanned every row ever written: {lines}"

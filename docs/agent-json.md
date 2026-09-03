@@ -601,18 +601,20 @@ $ crapkit worklist --json
 {
   "active": [
     {
-      "authors": 1, "ccn": 7, "ccn_std": 7, "commits": 2, "end": 15,
-      "flag": "measured", "function": "render( rows , wide , totals , header )",
-      "nloc": 12, "path": "calc/report.py", "remedy": "decompose", "risk": 3.5,
-      "scope": "calc", "start": 4, "weight": 0.5
+      "authors": 1, "ccn": 7, "ccn_std": 7, "commits": 2, "cov": 0.0, "crap": 56.0,
+      "end": 15, "flag": "measured", "function": "render( rows , wide , totals , header )",
+      "nloc": 12, "path": "calc/report.py", "ratchet_mark": null, "remedy": "decompose",
+      "risk": 3.5, "scope": "calc", "start": 4, "weight": 0.5
     },
     {
-      "authors": 1, "ccn": 14, "ccn_std": 14, "commits": 2, "end": 27,
-      "flag": "measured", "function": "classify( score , attempts , late , bonus )",
-      "nloc": 24, "path": "calc/grade.py", "remedy": "decompose", "risk": 0.0252,
-      "scope": "calc", "start": 4, "weight": 0.0018
+      "authors": 1, "ccn": 14, "ccn_std": 14, "commits": 2, "cov": 0.45,
+      "crap": 46.60950000000001, "end": 27, "flag": "measured",
+      "function": "classify( score , attempts , late , bonus )",
+      "nloc": 24, "path": "calc/grade.py", "ratchet_mark": null, "remedy": "decompose",
+      "risk": 0.0252, "scope": "calc", "start": 4, "weight": 0.0018
     }
   ],
+  "active_total": 2,
   "churn_window_months": 12,
   "commit": "8c14f3daa8e88230c5b702d8f452ee2616d4de30",
   "dormant_count": 0,
@@ -631,15 +633,19 @@ $ crapkit worklist --json
 | `floor` | int | The effective `worklist_floor`, echoed so a caller need not read the config. |
 | `churn_window_months` | int | Same. |
 | `active` | array | The queue: files with churn in the window, ranked, capped at `--top` or `worklist_top`. |
+| `active_total` | int | Active rows admitted before the cap: what `--top` or `worklist_top` hid. The plain header prints it as `50 of 3980 active (worklist_top 50)`, or `(--top N)` when the flag set the cap. Not the over-ceiling count `trend` and the coverage summary carry: a row is active for its churn, whatever its score. |
 | `dormant_count` | int | How many ranked entries have zero churn in the window. |
 | `dormant_top` | array | The first 10 dormant entries, same shape. Sleeping hazards, recorded without clogging the queue. |
 | `batches` | array | Only with `--batches N`. |
 
 Each entry carries `scope`, `path`, `function`, `start`, `end`, `ccn`, `ccn_std`, `nloc`,
-`commits`, `authors`, `weight`, `risk`, plus `flag` and `remedy` from the run that scored
-it. Those last two are `null` on an inventory-only run, which scored no verdict. There is no
-`cov` and no `crap`: `worklist` ranks on complexity times churn. Use `next-item` or `brief`
-when you need the scored numbers.
+`commits`, `authors`, `weight`, `risk`, plus `flag`, `remedy`, `crap` and `cov` from the
+run that scored it, and `ratchet_mark`: the committed mark's value, or `null` when the
+function carries no mark or the repo has no marks file. The mark is read under the
+function's own ratchet key, so twins sharing a long name report their own marks and not
+each other's. The four run fields are `null` on an inventory-only run, which scored no
+verdict. `worklist` still ranks on complexity times churn, never on `crap`: `next-item` is
+the queue ordered by score, and `brief` the whole packet.
 
 `floor` orders the list and withholds no debt. A function the ranked run scored over its
 ceiling is listed whatever its ccn. An inventory-only run has no such verdict to read, and
@@ -663,7 +669,9 @@ payloads on this page come from one run of one repo: `worklist` leads with `rend
 risk 3.5, `next-item` hands out `classify` at crap 46.6. Neither is wrong.
 
 `risk = ccn * weight`, rounded to four decimals. On a repo whose commits share a timestamp
-every weight rounds to `0.0` and every risk with it; ranking then falls back to ccn.
+there is no range to weight against, so each commit counts once: every file weighs `1.0`,
+the ranking is ccn order, and the hot promotion is off, because a top 10% of equal
+weights would be every file.
 
 ### `--batches N`
 

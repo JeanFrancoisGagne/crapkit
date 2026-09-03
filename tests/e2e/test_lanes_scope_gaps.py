@@ -620,8 +620,11 @@ def test_a_non_numeric_timestamp_degrades_to_the_commit_count():
 
 
 def test_in_a_half_timestamped_log_only_stamped_files_get_a_time_weight():
+    """Two stamps give the log a range; the file on the older one weighs less
+    than a commit count, and the unstamped file falls back to its count."""
     log = ("\x01alice\x021700000000\nsrc/hot.ts\n\n"
+           "\x01alice\x021700009000\nsrc/newer.ts\n\n"
            "\x01bob\nsrc/cold.ts\n")
     churn = parse_git_log(log)
     assert churn["src/cold.ts"].weight == 1.0, "no stamp: fall back to the commit count"
-    assert churn["src/hot.ts"].weight < 1.0
+    assert churn["src/hot.ts"].weight < 1.0, "the oldest stamp in a spread weighs less than a count"

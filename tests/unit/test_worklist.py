@@ -12,7 +12,7 @@ from crapkit.cli.queue import _worklist_run
 from crapkit.errors import CrapkitError
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
-from crapkit.worklist import build_worklist
+from crapkit.worklist import Marks, build_worklist
 
 
 def row(path="src/a.ts", name="f( )", ccn=9, scope="src"):
@@ -140,3 +140,93 @@ def test_a_store_with_only_a_hook_run_names_the_command_to_run(tmp_path):
         _worklist_run(tmp_path, store)
 
     assert "crapkit coverage" in str(excinfo.value)
+
+
+# --- the number on the row ---------------------------------------------------
+
+def test_entries_carry_the_runs_score_and_coverage_off_the_marks():
+    marks = Marks({("src/a.ts", "f( )"): ("measured", "decompose")},
+                  {("src/a.ts", "f( )", 1): (45.0, 0.5)})
+
+    wl = build_worklist([row()], CHURN, floor=5, top=50, marks=marks)
+
+    assert (wl.active[0].flag, wl.active[0].remedy) == ("measured", "decompose")
+    assert (wl.active[0].crap, wl.active[0].cov) == (45.0, 0.5)
+
+
+def test_twins_carry_their_own_score_beside_the_shared_verdict():
+    """The verdict is the worst twin's, so a finished sibling never marks the
+    pair done; the score is each row's own, or twin #1 prints twin #2's CRAP."""
+    first = InventoryRow("src", "src/a.ts", "f( )", 1, 9, 7, 7, 7, 8, 1, 2)
+    second = InventoryRow("src", "src/a.ts", "f( )", 20, 28, 8, 8, 8, 8, 1, 2)
+    marks = Marks({("src/a.ts", "f( )"): ("measured", "decompose")},
+                  {("src/a.ts", "f( )", 1): (56.0, 0.0), ("src/a.ts", "f( )", 20): (72.0, 0.0)})
+
+    wl = build_worklist([first, second], CHURN, floor=5, top=50, marks=marks)
+
+    assert {e.start: (e.crap, e.remedy) for e in wl.active} ==         {1: (56.0, "decompose"), 20: (72.0, "decompose")}
+
+
+def test_an_inventory_only_run_leaves_the_score_and_the_coverage_none():
+    e = build_worklist([row()], CHURN, floor=5, top=50).active[0]
+
+    assert (e.flag, e.remedy, e.crap, e.cov) == (None, None, None, None)
+
+
+def test_active_total_counts_the_rows_the_cap_hid():
+    rows = [row(path="src/hot.ts", ccn=10 + i, name=f"f{i}( )") for i in range(10)]
+
+    wl = build_worklist(rows, CHURN, floor=5, top=3)
+
+    assert (len(wl.active), wl.active_total) == (3, 10)
+
+
+# --- the committed mark on the row --------------------------------------------
+
+def test_entries_carry_the_committed_mark_under_their_own_key():
+    from crapkit.worklist import RatchetMarks
+
+    ratchet = RatchetMarks({("src/a.ts", "f( )"): 30.0}, {})
+
+    e = build_worklist([row()], CHURN, floor=5, top=50, ratchet=ratchet).active[0]
+
+    assert e.ratchet_mark == 30.0
+
+
+def test_an_unmarked_row_and_a_repo_without_marks_read_none():
+    from crapkit.worklist import RatchetMarks
+
+    marked_elsewhere = RatchetMarks({("src/other.ts", "f( )"): 30.0}, {})
+
+    assert build_worklist([row()], CHURN, floor=5, top=50).active[0].ratchet_mark is None
+    assert build_worklist([row()], CHURN, floor=5, top=50,
+                          ratchet=marked_elsewhere).active[0].ratchet_mark is None
+
+
+def test_twins_never_take_each_others_mark():
+    """The ratchet keys the second `f( )` in a file as `f( )#2`. Read under the
+    bare name, both rows would show twin #1's mark."""
+    from crapkit.snapshot import InventoryRow
+    from crapkit.worklist import RatchetMarks
+
+    first = InventoryRow("src", "src/a.ts", "f( )", 1, 9, 9, 9, 9, 8, 1, 2)
+    second = InventoryRow("src", "src/a.ts", "f( )", 20, 29, 9, 9, 9, 8, 1, 2)
+    ratchet = RatchetMarks({("src/a.ts", "f( )"): 30.0, ("src/a.ts", "f( )#2"): 45.0},
+                           {("src/a.ts", "f( )", 1): "f( )", ("src/a.ts", "f( )", 20): "f( )#2"})
+
+    wl = build_worklist([first, second], CHURN, floor=5, top=50, ratchet=ratchet)
+
+    assert {e.start: e.ratchet_mark for e in wl.active} == {1: 30.0, 20: 45.0}
+
+
+# --- a flat log promotes nothing ----------------------------------------------
+
+def test_hot_promotion_is_off_when_every_file_weighs_the_same():
+    """On a one-commit repo every file weighs 1.0. The 90th percentile of equal
+    weights is every file, which would admit the whole repo at ccn 3."""
+    flat = {f"src/f{i}.ts": FileChurn(commits=1, authors=1, weight=1.0) for i in range(8)}
+    rows = [row(path=f"src/f{i}.ts", ccn=3) for i in range(8)]
+
+    wl = build_worklist(rows, flat, floor=5, top=50)
+
+    assert wl.active == [] and wl.dormant == []

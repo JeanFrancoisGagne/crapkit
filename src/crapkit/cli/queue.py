@@ -17,9 +17,10 @@ from ..invocation import _self
 from ..keys import key_names, key_of, split_ordinal
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
-from ..worklist import admission, build_worklist, sql_floor
+from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
+                        sql_floor)
 from ._shared import (_latest_scored, _load_repo_config, _load_sources, _open_store,
-                      _positive_top, _print_json, _ratchet_entries)
+                      _positive_top, _print_json, _ratchet_entries, _scope_names)
 
 
 def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
@@ -48,8 +49,8 @@ def cmd_next_item(args: argparse.Namespace) -> int:
     _positive_top("next-item", args.top)
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
+    scopes = _scope_names(cfg, args.scope)
     store, latest = _scored_store(root)
-    scopes = args.scope or []
     scored = store.read_scored(latest["id"], min_ccn=_pushdown_floor(cfg), scopes=scopes)
     adm = admission(load_churn(root, cfg.churn_window_months), cfg.worklist_floor)
     ranked, skipped_no_lane = _next_ranked(scored, adm)
@@ -855,11 +856,13 @@ def _stale_warning(stale: bool, as_json: bool, latest: dict) -> None:
 def _entry_json(e) -> dict:
     """One ranked row. `flag` and `remedy` are the run's verdict on it, so a
     caller can tell a wiring gap and a finished row from real work without a
-    second call; both are null on an inventory-only run."""
+    second call; `crap` and `cov` are the numbers behind that verdict. All four
+    are null on an inventory-only run."""
     return {"scope": e.scope, "path": e.path, "function": e.long_name,
             "start": e.start, "end": e.end, "ccn": e.ccn, "ccn_std": e.ccn_std,
             "nloc": e.nloc, "commits": e.commits, "authors": e.authors,
-            "weight": e.weight, "risk": e.risk, "flag": e.flag, "remedy": e.remedy}
+            "weight": e.weight, "risk": e.risk, "flag": e.flag, "remedy": e.remedy,
+            "crap": e.crap, "cov": e.cov, "ratchet_mark": e.ratchet_mark}
 
 
 def _row_marker(e) -> str:
@@ -887,6 +890,8 @@ def _worklist_payload(wl, latest: dict, cfg, stale: bool, batches: list | None) 
         "run_id": latest["id"], "commit": latest["commit"], "stale": stale,
         "floor": cfg.worklist_floor, "churn_window_months": cfg.churn_window_months,
         "active": [_entry_json(e) for e in wl.active],
+        # what the cap hid: distinct from the over-ceiling total `trend` carries
+        "active_total": wl.active_total,
         "dormant_count": len(wl.dormant),
         "dormant_top": [_entry_json(e) for e in wl.dormant[:10]],
     }
@@ -895,18 +900,38 @@ def _worklist_payload(wl, latest: dict, cfg, stale: bool, batches: list | None) 
     return payload
 
 
+def _crap_text(crap: float | None) -> str:
+    return "      -" if crap is None else f"{crap:>7.1f}"
+
+
+def _cov_text(cov: float | None) -> str:
+    return "   -" if cov is None else f"{cov:>4.0%}"
+
+
+def _row_text(e) -> str:
+    """One printed row: the rank, the two numbers the score is made of, the
+    churn, the place, the name. `ccn_std` and `weight` stay in the JSON."""
+    return (f"  risk {e.risk:>8.1f}  ccn {e.ccn:>3}  crap {_crap_text(e.crap)}  "
+            f"cov {_cov_text(e.cov)}  {e.commits:>3}c/{e.authors}a  {e.path}:{e.start}  "
+            f"{e.long_name}{_row_marker(e)}")
+
+
+def _cap_label(requested: int | None, top: int) -> str:
+    """The knob that set the cap, so a reader knows which one raises it."""
+    return f"--top {top}" if requested is not None else f"worklist_top {top}"
+
+
 def _worklist_print(as_json: bool, wl, latest: dict, cfg, stale: bool,
-                    batches: list | None) -> None:
+                    batches: list | None, cap: str) -> None:
     _stale_warning(stale, as_json, latest)
     if as_json:
         _print_json(_worklist_payload(wl, latest, cfg, stale, batches))
         return
     print(f"worklist @ {latest['commit'][:11]} (run {latest['id']}, floor ccn>={cfg.worklist_floor}, "
-          f"churn {cfg.churn_window_months}mo) — {len(wl.active)} active, {len(wl.dormant)} dormant")
+          f"churn {cfg.churn_window_months}mo) — {len(wl.active)} of {wl.active_total} active "
+          f"({cap}), {len(wl.dormant)} dormant")
     for e in wl.active:
-        print(f"  risk {e.risk:>8.1f}  ccn {e.ccn:>3} ({e.ccn_std:>3} std)  "
-              f"{e.commits:>3}c/{e.authors}a w{e.weight:>7.2f}  {e.path}:{e.start}  "
-              f"{e.long_name}{_row_marker(e)}")
+        print(_row_text(e))
     _print_batches(batches)
 
 
@@ -940,24 +965,45 @@ def _worklist_run(root: Path, store) -> dict:
 def cmd_worklist(args: argparse.Namespace) -> int:
     root = Path(args.repo).resolve()
     cfg = _load_repo_config(root)
+    scopes = _scope_names(cfg, args.scope)
     store = _open_store(root, first_command="coverage")
     latest = _worklist_run(root, store)
-    # the same pushdown next-item uses: no rule can admit anything below it, and
-    # anything above it might be over target, so those rows have to be read
-    scopes = args.scope or []
-    rows = store.read_rows(latest["id"], min_ccn=_pushdown_floor(cfg), scopes=scopes)
-    churn = load_churn(root, cfg.churn_window_months)
-    wl = build_worklist(rows, churn, floor=cfg.worklist_floor,
-                        top=_resolve_top(args.top, cfg),
-                        marks=_worklist_marks(store, cfg, latest["id"], scopes))
+    top = _resolve_top(args.top, cfg)
+    wl = _worklist_for(root, cfg, store, latest, top=top, scopes=scopes)
     batches = _worklist_batches(root, cfg, wl.active, args.batches)
-    _worklist_print(args.json, wl, latest, cfg, latest["commit"] != head_commit(root), batches)
+    _worklist_print(args.json, wl, latest, cfg, latest["commit"] != head_commit(root), batches,
+                    _cap_label(args.top, top))
     return 0
 
 
-def _worklist_marks(store, cfg, run_id: int, scopes: list) -> dict:
-    """The run's verdict per function: what the floor may not hide, and what
-    each ranked row is.
+def _worklist_for(root: Path, cfg, store, latest: dict, *, top: int, scopes: list) -> Worklist:
+    """The ranked queue off one run, shaped once for the command and the report:
+    the rows, the churn window, the run's verdicts and the committed marks."""
+    run_id = latest["id"]
+    # the same pushdown next-item uses: no rule can admit anything below it, and
+    # anything above it might be over target, so those rows have to be read
+    rows = store.read_rows(run_id, min_ccn=_pushdown_floor(cfg), scopes=scopes)
+    return build_worklist(rows, load_churn(root, cfg.churn_window_months),
+                          floor=cfg.worklist_floor, top=top,
+                          marks=_worklist_marks(store, cfg, run_id, scopes),
+                          ratchet=_worklist_ratchet(root, cfg, store, run_id))
+
+
+def _worklist_ratchet(root: Path, cfg, store, run_id: int) -> RatchetMarks:
+    """The committed marks keyed for the run's rows, or nothing when the repo
+    carries no marks file. The first mark under a key wins, as `mark_for`."""
+    entries = _ratchet_entries(root, cfg)
+    if not entries:
+        return NO_RATCHET
+    marks: dict = {}
+    for e in entries:
+        marks.setdefault((e.path, e.long_name), e.crap)
+    return RatchetMarks(marks, store.twin_key_names(run_id))
+
+
+def _worklist_marks(store, cfg, run_id: int, scopes: list) -> Marks:
+    """The run's verdict per function and score per row: what the floor may
+    not hide, what each ranked row is, and the number it prints.
 
     Empty on an inventory-only run, which scored no remedy: a run with no
     verdict has no debt to protect from the floor and nothing to say about a

@@ -28,12 +28,15 @@ Two spellings meet in step 1. The frames type `crapkit init`, which is what a re
 installs, and the generator runs `python -m crapkit init` with this checkout's `src/`
 on `PYTHONPATH`. Same code, and the module spelling is what keeps the demo describing
 the tree it was generated in rather than whatever `crapkit` a PATH resolves first.
+Every next step crapkit prints spells itself the way it was started, so under the
+module run that is the interpreter's absolute path; `demo_run.redact` folds it back to
+`crapkit` before the absolute-path check sees the frame.
 
 ## Why the fixture has a history
 
 `history/` holds the earlier version of the two files that change twice. Worklist risk
-is complexity times recency-weighted churn, so in a single-commit repo every weight is
-`0.00` and every row ranks 0.0. Replaying four commits at fixed dates gives the ranking
+is complexity times recency-weighted churn, so in a single-commit repo every file weighs
+1.0 and the ranking is ccn order. Replaying four commits at fixed dates gives the ranking
 something to rank.
 
 ## Determinism

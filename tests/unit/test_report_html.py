@@ -248,3 +248,40 @@ def test_the_report_paints_from_the_handbook_palette():
 
 def test_the_page_reads_in_both_colour_schemes():
     assert "prefers-color-scheme: dark" in rendered()
+
+
+# --- the number on the row ---------------------------------------------------
+
+def _scored_payload() -> dict:
+    """The recording predates the `crap` and `cov` row fields; a page rendered
+    from a 0.5.0 payload carries both on every row."""
+    data = payload()
+    for entry, crap, cov in zip(data["worklist"]["active"], (12.5, 56.0, 3.0), (0.4, 0.0, 1.0)):
+        entry.update(crap=crap, cov=cov)
+    return data
+
+
+def test_the_worklist_table_carries_crap_and_cov_columns():
+    page = render_report(_scored_payload())
+
+    assert "<th>CRAP</th>" in page and "<th>Cov</th>" in page
+    first = _rows(page)[0]
+    assert "12.5" in first and "40%" in first
+
+
+def test_the_page_no_longer_claims_the_score_is_absent():
+    page = render_report(_scored_payload())
+
+    assert "no repo-wide payload" not in page
+    assert "not on this page" not in page
+
+
+def test_a_row_no_run_scored_leaves_the_score_cells_empty():
+    """An inventory-only run scored nothing: null, rendered as nothing rather
+    than as a number the page invented."""
+    data = payload()
+    data["worklist"]["active"][0].update(crap=None, cov=None)
+
+    first = _rows(render_report(data))[0]
+
+    assert "None" not in first

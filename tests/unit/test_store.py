@@ -250,8 +250,8 @@ def debt_rows():
             row("util/d.py", "tiny( x )", 2, 6.0, "add-tests", scope="util")]
 
 
-def debt(marks: dict) -> set:
-    return {key for key, (_, remedy) in marks.items() if remedy != "ok"}
+def debt(marks) -> set:
+    return {key for key, (_, remedy) in marks.verdicts.items() if remedy != "ok"}
 
 
 def test_read_marks_carries_the_flag_and_the_remedy_of_every_scored_row(tmp_path):
@@ -260,8 +260,8 @@ def test_read_marks_carries_the_flag_and_the_remedy_of_every_scored_row(tmp_path
 
     marks = store.read_marks(run_id)
 
-    assert marks[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
-    assert marks[("src/c.ts", "fine( x )")] == ("measured", "ok")
+    assert marks.verdicts[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
+    assert marks.verdicts[("src/c.ts", "fine( x )")] == ("measured", "ok")
     assert debt(marks) == {("src/a.ts", "big( x )"), ("src/b.ts", "dark( x )"),
                            ("util/d.py", "tiny( x )")}
 
@@ -301,11 +301,83 @@ def test_read_marks_reports_the_worst_of_two_twins(tmp_path):
     run_id = store.write_run(commit="abc", tool_versions={},
                              rows=[twin(1, 56.0, "decompose"), twin(20, 5.0, "ok")])
 
-    assert store.read_marks(run_id)[("src/t.ts", "twin( x )")] == ("measured", "decompose")
+    assert store.read_marks(run_id).verdicts[("src/t.ts", "twin( x )")] == ("measured", "decompose")
 
 
 def test_an_inventory_run_has_no_verdict_to_report(tmp_path):
     store = SnapshotStore(tmp_path / "crap.sqlite")
     run_id = store.write_run(commit="abc", tool_versions={}, rows=rows())
 
-    assert store.read_marks(run_id) == {}, "no remedy column, no verdict"
+    marks = store.read_marks(run_id)
+
+    assert (marks.verdicts, marks.scores) == ({}, {}), "no remedy column, no verdict"
+
+
+def test_read_marks_carries_the_score_and_the_coverage_beside_the_verdict(tmp_path):
+    """The ranking view of a CRAP scorer prints the CRAP score. Reading it in
+    the same query as the verdict costs two columns, never a second read."""
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    run_id = store.write_run(commit="abc", tool_versions={}, rows=debt_rows())
+
+    marks = store.read_marks(run_id)
+
+    assert marks.verdicts[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
+    assert marks.scores[("src/b.ts", "dark( x )", 1)] == (20.0, 0.0)
+    assert marks.scores[("src/c.ts", "fine( x )", 1)] == (5.0, 0.0)
+
+
+def test_read_marks_keeps_each_twins_own_score(tmp_path):
+    """The verdict collapses to the worst twin so admission can protect the
+    pair; the score does not, or the finished twin's row prints its sibling's
+    CRAP as its own."""
+    from crapkit.score import ScoredRow
+
+    def twin(start, crap, remedy):
+        return ScoredRow("src", "src/t.ts", "twin( x )", start, start + 8, 7, 7, 7, 8, 1, 2,
+                         0.0, "measured", crap, remedy)
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    run_id = store.write_run(commit="abc", tool_versions={},
+                             rows=[twin(1, 56.0, "decompose"), twin(20, 5.0, "ok")])
+
+    scores = store.read_marks(run_id).scores
+
+    assert scores[("src/t.ts", "twin( x )", 1)] == (56.0, 0.0)
+    assert scores[("src/t.ts", "twin( x )", 20)] == (5.0, 0.0)
+
+
+# --- the twin keys a cut read cannot count ------------------------------------
+
+def test_twin_key_names_covers_only_the_functions_that_share_a_name_in_their_file(tmp_path):
+    """The worklist reads rows cut at a floor and a scope. Counting twin
+    ordinals over that cut hands twin #2 the bare key, and with it twin #1's
+    mark, so the count runs over the whole run here and names only the rows
+    whose key carries an ordinal."""
+    from crapkit.score import ScoredRow
+
+    def fn(path, name, start):
+        return ScoredRow("src", path, name, start, start + 8, 7, 7, 7, 8, 1, 2,
+                         0.0, "measured", 56.0, "decompose")
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    run_id = store.write_run(commit="abc", tool_versions={},
+                             rows=[fn("src/t.ts", "twin( x )", 20), fn("src/t.ts", "twin( x )", 1),
+                                   fn("src/t.ts", "lone( x )", 40), fn("src/u.ts", "twin( x )", 1)])
+
+    assert store.twin_key_names(run_id) == {("src/t.ts", "twin( x )", 1): "twin( x )",
+                                            ("src/t.ts", "twin( x )", 20): "twin( x )#2"}
+
+
+def test_twin_key_names_reads_one_run_and_not_its_neighbours(tmp_path):
+    from crapkit.score import ScoredRow
+
+    def fn(start):
+        return ScoredRow("src", "src/t.ts", "twin( x )", start, start + 8, 7, 7, 7, 8, 1, 2,
+                         0.0, "measured", 56.0, "decompose")
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    twinned = store.write_run(commit="c1", tool_versions={}, rows=[fn(1), fn(20)])
+    alone = store.write_run(commit="c2", tool_versions={}, rows=[fn(1)])
+
+    assert len(store.twin_key_names(twinned)) == 2
+    assert store.twin_key_names(alone) == {}

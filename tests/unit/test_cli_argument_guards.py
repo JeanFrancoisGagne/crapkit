@@ -324,3 +324,34 @@ def test_the_merge_refusal_names_the_line_whose_mark_is_unreadable(scored, capsy
 
     assert code == 3, err
     assert "ratchet line 2 has an unreadable mark" in err, err
+
+
+# --- an unknown --scope --------------------------------------------------------
+
+@pytest.mark.parametrize("command", ["worklist", "next-item"])
+def test_an_undeclared_scope_is_a_configuration_error_naming_the_declared_ones(scored, capsys,
+                                                                                command):
+    """`worklist --scope frontend` on a repo whose scopes are `src` and `web`
+    printed `0 active, 0 dormant` at exit 0, which a CI step reads as a clean
+    pass, and `next-item --scope biling` answered `empty: true` with every
+    reason at 0, the payload an agent reads as a finished scope."""
+    code, out, err = run([command, "--scope", "frontend"], scored, capsys)
+
+    assert code == 3, out
+    assert "no scope named 'frontend'" in err, err
+    assert "declared: src, web" in err, err
+    assert out == ""
+
+
+def test_a_declared_scope_still_cuts_the_worklist(scored, capsys):
+    code, out, _ = run(["worklist", "--scope", "web", "--json"], scored, capsys)
+
+    assert code == 0
+    assert {e["scope"] for e in json.loads(out)["active"]} <= {"web"}
+
+
+def test_one_unknown_scope_among_declared_ones_is_still_refused(scored, capsys):
+    code, _, err = run(["worklist", "--scope", "src", "--scope", "srv"], scored, capsys)
+
+    assert code == 3
+    assert "no scope named 'srv'" in err, err

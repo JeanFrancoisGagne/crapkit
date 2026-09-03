@@ -3,7 +3,8 @@
 The committed fixture under `fixture/` is the final tree and carries no `.git`,
 so every run starts from nothing. `history/` holds the earlier version of the
 two files that change twice; replaying the stages gives the worklist real churn
-to rank on, which a single-commit repo cannot (every weight is 0.00 there).
+to rank on, which a single-commit repo cannot (every file weighs 1.0 there, so
+the ranking is ccn order).
 
 Identity and dates are fixed because the commit sha reaches the frames: the
 demo prints `run 1 @ <sha>` and two runs have to print the same one.
