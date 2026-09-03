@@ -13,6 +13,7 @@ which is how the rendering in README's action section was produced.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 from pathlib import Path
 
@@ -23,6 +24,16 @@ from pathlib import Path
 MARKER = "<!-- crapkit-action -->"
 
 _HEADER = "| File | Function | ccn | risk | remedy |\n|---|---|---:|---:|---|"
+
+# The rule each verify exit code stands for. verify reports the first that
+# fires, so the phrase names the rule that refused the tree and the bullets
+# below it list every finding the payload carries.
+_RULES = {6: "complexity gate", 7: "ratchet regression", 8: "new test failures",
+          9: "diff-coverage ceiling"}
+
+# The verify lists whose entries name a function. The comment's table lists
+# those rows first, so the function the gate stopped is not below the fold.
+_FINDING_LISTS = ("gate_violations", "ratchet_regressions", "overridden")
 
 
 def _read_text(path: str | None) -> str:
@@ -132,6 +143,66 @@ def _against(verify: dict) -> str:
             f"{_plural(verify.get('changed_files', 0), 'changed file')}")
 
 
+def _exit_phrase(verify: dict, exit_code: int) -> str:
+    """`exit 6: complexity gate`. The ceiling joins exit 9, since it is the
+    number the uncovered lines went over and it was only in the job log."""
+    rule = _RULES.get(exit_code)
+    if rule is None:
+        return f"exit {exit_code}"
+    if exit_code == 9 and verify.get("diff_uncovered_max") is not None:
+        rule = f"{rule} {verify['diff_uncovered_max']}"
+    return f"exit {exit_code}: {rule}"
+
+
+def _percent(cov) -> str:
+    return "-" if cov is None else f"{round(cov * 100)}%"
+
+
+def _crap(value) -> str:
+    return "-" if value is None else str(round(value, 1))
+
+
+def _gate_bullets(verify: dict) -> list[str]:
+    return [f"- gate: `{v.get('path')}:{v.get('start')}` `{v.get('long_name')}` "
+            f"ccn {v.get('ccn')}, cov {_percent(v.get('cov'))}, crap {_crap(v.get('crap'))} "
+            f"-> {v.get('remedy')}"
+            for v in verify.get("gate_violations", [])]
+
+
+def _ratchet_bullets(verify: dict) -> list[str]:
+    return [f"- ratchet: `{r.get('path')}` `{r.get('long_name')}` "
+            f"{r.get('recorded')} -> {r.get('fresh_crap')} (recorded -> fresh)"
+            for r in verify.get("ratchet_regressions", [])]
+
+
+def _failure_bullets(verify: dict) -> list[str]:
+    return [f"- new test failure: `{test}`" for test in verify.get("new_failures", [])]
+
+
+def _uncovered_bullets(verify: dict) -> list[str]:
+    """The first twenty uncovered changed lines, one bullet per file, then how
+    many the cut hid. The payload itself carries at most fifty."""
+    shown = verify.get("diff_uncovered", [])[:20]
+    bullets = [f"- uncovered lines in `{path}`: " + ", ".join(str(e.get("line")) for e in group)
+               for path, group in itertools.groupby(shown, key=lambda e: e.get("path"))]
+    hidden = verify.get("diff_uncovered_count", 0) - len(shown)
+    if hidden > 0:
+        bullets.append(f"- and {_plural(hidden, 'more uncovered changed line')}")
+    return bullets
+
+
+def _failed(verify: dict, exit_code: int) -> str:
+    """The exit phrase, one bullet per finding, and the counts line last, as
+    it always read."""
+    head = f"**verify failed, {_exit_phrase(verify, exit_code)}.**"
+    counts = f"{_against(verify)}: {_findings(verify)}."
+    bullets = (_gate_bullets(verify) + _ratchet_bullets(verify) + _failure_bullets(verify)
+               + _uncovered_bullets(verify))
+    if not bullets:
+        return f"{head} {counts}"
+    return "\n".join([head, "", *bullets, "", counts])
+
+
 def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = None) -> str:
     """One line for the whole verdict, the exit code included.
 
@@ -145,7 +216,7 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
         return (f"**`crapkit verify` exited {exit_code} and wrote no verdict.** "
                 f"Read the job log: this is tooling, not a score.")
     if not verify.get("ok"):
-        return f"**verify failed, exit {exit_code}.** {_against(verify)}: {_findings(verify)}."
+        return _failed(verify, exit_code)
     if base_reason is not None:
         return (f"**verify judged no changed function:** the base run was not made "
                 f"({base_reason}). {_against(verify)}.")
@@ -159,22 +230,46 @@ def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
     return [row for row in active if row.get("path") in changed]
 
 
-def rows(worklist: dict | None, changed: list[str], top: int) -> list[dict]:
-    """The ranked rows for the changed files, worst first, capped at `top`.
+def named_by_findings(verify: dict | None) -> set[tuple[str, str]]:
+    """The (path, function) pairs verify's findings name: gate violations,
+    ratchet regressions and overridden entries. These are the only function
+    identities the comment holds, verify's `changed_files` being a count."""
+    found = itertools.chain.from_iterable((verify or {}).get(key) or [] for key in _FINDING_LISTS)
+    return {(entry.get("path"), entry.get("long_name")) for entry in found}
+
+
+def _named_first(active: list[dict], named) -> list[dict]:
+    """The rows a finding names, in ranking order, then the rest: a stable
+    sort on one bit."""
+    return sorted(active, key=lambda row: (row.get("path"), row.get("function")) not in named)
+
+
+def rows(worklist: dict | None, changed: list[str], top: int, named=frozenset()) -> list[dict]:
+    """The ranked rows for the changed files, worst first, capped at `top`,
+    the rows a finding names ahead of the rest.
 
     `crapkit worklist` ranks the whole repository by ccn times churn; the rows
     a reviewer can act on are the ones in the diff in front of them. With no
-    changed-file list (a push, a shallow clone) every row is a candidate.
+    changed-file list (a push, a shallow clone) every row is a candidate. The
+    cap comes last, so the function the gate stopped is never the row it drops.
     """
     active = (worklist or {}).get("active") or []
     if changed:
         active = _in_diff(active, changed)
-    return active[:top]
+    return _named_first(active, named)[:top]
+
+
+def _remedy(row: dict) -> str:
+    """The run's verdict on the row, and whether the committed ratchet already
+    carries a mark for it: signed debt an untouched function sits on should
+    not read like the pull request's own new function."""
+    remedy = row.get("remedy") or "-"
+    return f"{remedy} (accepted debt)" if row.get("ratchet_mark") is not None else remedy
 
 
 def _cell(row: dict) -> str:
     return (f"| `{row.get('path')}:{row.get('start')}` | `{row.get('function')}` "
-            f"| {row.get('ccn')} | {row.get('risk')} | {row.get('remedy') or '-'} |")
+            f"| {row.get('ccn')} | {row.get('risk')} | {_remedy(row)} |")
 
 
 def table(entries: list[dict]) -> str:
@@ -193,7 +288,7 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
          base_reason: str | None = None, coverage_exit: int = 0) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
     it and the next run still edits this comment instead of adding one."""
-    entries = rows(worklist, changed, top)
+    entries = rows(worklist, changed, top, named_by_findings(verify))
     verdict = (no_verdict_line(coverage, coverage_exit) if coverage_exit
                else verdict_line(verify, exit_code, base_reason))
     return "\n".join([MARKER, "", "## crapkit", "",

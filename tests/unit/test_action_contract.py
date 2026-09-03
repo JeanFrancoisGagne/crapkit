@@ -714,6 +714,151 @@ def test_the_readme_says_verify_is_skipped_when_coverage_fails():
     assert "verify did not run" in section
 
 
+# --- the comment names the finding (spec item 10, comment side) ---------------
+#
+# On exit 6 the comment read "1 gate violation" over two identical-looking rows,
+# the ratchet-marked legacy_router and the pull request's own route, while the
+# verify payload already carried the path, function, ccn, cov and remedy; on
+# exit 9 the ceiling and the uncovered lines were only in the job log.
+
+def _failing_verify(**over) -> dict:
+    base = {"ok": False, "run_id": 3, "baseline_run": 1, "changed_files": 1,
+            "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
+            "diff_uncovered": [], "diff_uncovered_count": 0, "diff_uncovered_max": None}
+    return {**base, **over}
+
+
+def _violation() -> dict:
+    return {"path": "app/calc.py", "start": 34, "long_name": "route( a , b , c , d )",
+            "ccn": 8, "cov": 0.1, "crap": 54.656, "remedy": "decompose"}
+
+
+def test_the_verdict_names_the_rule_each_exit_code_stands_for():
+    line = _builder().verdict_line
+
+    assert "exit 6: complexity gate" in line(_failing_verify(gate_violations=[_violation()]), 6)
+    assert "exit 7: ratchet regression" in line(_failing_verify(), 7)
+    assert "exit 8: new test failures" in line(_failing_verify(), 8)
+    assert "exit 9: diff-coverage ceiling 3" in line(_failing_verify(diff_uncovered_max=3), 9)
+
+
+def test_the_verdict_prints_one_bullet_per_gate_violation():
+    line = _builder().verdict_line(_failing_verify(gate_violations=[_violation()]), 6)
+
+    assert "- gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 10%, crap 54.7 -> decompose" in line
+
+
+def test_the_verdict_prints_one_bullet_per_ratchet_regression():
+    verify = _failing_verify(ratchet_regressions=[
+        {"path": "app/calc.py", "long_name": "legacy_router( a , b , c , d , e )",
+         "recorded": 72.0, "fresh_crap": 80.5}])
+
+    line = _builder().verdict_line(verify, 7)
+
+    assert "- ratchet: `app/calc.py` `legacy_router( a , b , c , d , e )` 72.0 -> 80.5 (recorded -> fresh)" in line
+
+
+def test_the_verdict_prints_one_bullet_per_new_test_failure():
+    line = _builder().verdict_line(_failing_verify(new_failures=["tests/test_calc.py::test_route"]), 8)
+
+    assert "- new test failure: `tests/test_calc.py::test_route`" in line
+
+
+def test_the_verdict_lists_the_first_twenty_uncovered_changed_lines_grouped_per_file():
+    uncovered = [{"path": "a.py", "line": n} for n in range(1, 16)] + \
+                [{"path": "b.py", "line": n} for n in range(1, 11)]
+    verify = _failing_verify(diff_uncovered=uncovered, diff_uncovered_count=25, diff_uncovered_max=3)
+
+    line = _builder().verdict_line(verify, 9)
+
+    assert "- uncovered lines in `a.py`: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15" in line
+    assert "- uncovered lines in `b.py`: 1, 2, 3, 4, 5" in line
+    assert "- uncovered lines in `b.py`: 1, 2, 3, 4, 5, 6" not in line
+    assert "- and 5 more uncovered changed lines" in line
+
+
+def test_the_counts_line_stays_verbatim_below_the_bullets():
+    verify = _failing_verify(gate_violations=[_violation()],
+                             diff_uncovered=[{"path": "app/calc.py", "line": 35}], diff_uncovered_count=1)
+
+    lines = _builder().verdict_line(verify, 6).splitlines()
+
+    assert lines[0] == "**verify failed, exit 6: complexity gate.**"
+    assert lines[-1] == ("Run 3 against baseline 1, 1 changed file: 1 gate violation, "
+                         "0 ratchet regressions, 0 new test failures, 1 uncovered changed line.")
+    assert [ln for ln in lines if ln.startswith("- ")] == [
+        "- gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 10%, crap 54.7 -> decompose",
+        "- uncovered lines in `app/calc.py`: 35"]
+
+
+def test_a_gate_violation_with_no_coverage_prints_a_dash():
+    """An untested function's cov is null in the payload."""
+    line = _builder().verdict_line(_failing_verify(gate_violations=[{**_violation(), "cov": None}]), 6)
+
+    assert "cov -," in line
+
+
+def test_a_marked_row_is_labelled_accepted_debt():
+    marked = {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )",
+              "ccn": 8, "risk": 4.0, "remedy": "decompose", "ratchet_mark": 72.0}
+    fresh = {**marked, "start": 34, "function": "route( a , b , c , d )", "ratchet_mark": None}
+
+    text = _builder().table([marked, fresh])
+
+    assert "| `legacy_router( a , b , c , d , e )` | 8 | 4.0 | decompose (accepted debt) |" in text
+    assert "| `route( a , b , c , d )` | 8 | 4.0 | decompose |" in text
+
+
+def test_a_row_without_the_mark_field_renders_as_before():
+    """A 0.4.x worklist payload carries no ratchet_mark."""
+    text = _builder().table(_worklist()["active"][:1])
+
+    assert "accepted debt" not in text
+
+
+def test_rows_named_by_a_finding_come_first_and_survive_the_cap():
+    worklist = {"active": [
+        {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )"},
+        {"path": "app/calc.py", "start": 34, "function": "route( a , b , c , d )"}]}
+    named = {("app/calc.py", "route( a , b , c , d )")}
+
+    picked = _builder().rows(worklist, ["app/calc.py"], 1, named)
+
+    assert [row["function"] for row in picked] == ["route( a , b , c , d )"]
+
+
+def test_the_findings_name_the_rows_the_table_lists_first():
+    verify = _failing_verify(
+        gate_violations=[_violation()],
+        ratchet_regressions=[{"path": "app/calc.py", "long_name": "legacy_router( a , b , c , d , e )",
+                              "recorded": 72.0, "fresh_crap": 80.5}],
+        overridden=[{"path": "app/other.py", "long_name": "f( )"}])
+
+    assert _builder().named_by_findings(verify) == {
+        ("app/calc.py", "route( a , b , c , d )"),
+        ("app/calc.py", "legacy_router( a , b , c , d , e )"),
+        ("app/other.py", "f( )")}
+    assert _builder().named_by_findings(None) == set()
+
+
+FIXTURES = ROOT / "tests" / "fixtures" / "action_comment"
+
+
+def test_the_readme_comment_is_the_render_of_the_recorded_payloads(tmp_path):
+    """comment.py promises the README fence is the byte-identical render of
+    three saved payloads; the payloads live beside this test, so the fence is
+    regenerated from a failing example and not written by hand."""
+    out = tmp_path / "comment.md"
+    _builder().main(["--coverage", str(FIXTURES / "coverage.json"), "--coverage-exit", "0",
+                     "--verify", str(FIXTURES / "verify.json"), "--verify-exit", "6",
+                     "--worklist", str(FIXTURES / "worklist.json"),
+                     "--changed", str(FIXTURES / "changed.txt"), "--top", "5", "--out", str(out)])
+    fence = re.search(r"```markdown\n(<!-- crapkit-action -->\n.*?)```", _readme_section(), re.S)
+
+    assert fence, "the README section lost its rendered comment"
+    assert fence.group(1) == out.read_text(encoding="utf-8")
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

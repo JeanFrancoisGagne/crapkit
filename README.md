@@ -515,33 +515,48 @@ One comment per pull request, edited in place on every push. A hidden
 carries one comment and not fifteen. On a `push` event there is no pull request to carry
 it, and the same text goes to the job log instead.
 
-Rendered against this repository's own store, with a base commit fifteen back standing in
-for a pull request:
+Rendered from three saved payloads: a pull request that adds an untested `route()` (ccn 8)
+beside a ratchet-marked `legacy_router()`, in a repository whose `diff_uncovered_max` is 3.
+The payloads are under `tests/fixtures/action_comment/`, and the unit suite pins this block
+to their render:
 
 ```markdown
 <!-- crapkit-action -->
 
 ## crapkit
 
-1333 functions in 61 files, 0 over target, CRAP load 3713.89, grade A+.
+4 functions in 2 files, 2 over target, CRAP load 149.59, grade F.
 
-**verify passed.** Run 2 against baseline 1, 7 changed files.
+**verify failed, exit 6: complexity gate.**
 
-### Worklist: 39 changed files
+- gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 0%, crap 72.0 -> decompose
+- uncovered lines in `app/calc.py`: 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45
+
+Run 3 against baseline 1, 1 changed file: 1 gate violation, 0 ratchet regressions, 0 new test failures, 11 uncovered changed lines.
+
+### Worklist: 1 changed file
 
 | File | Function | ccn | risk | remedy |
 |---|---|---:|---:|---|
-| `src/crapkit/cli/admin.py:1026` | `_recorded_roots( recorded )` | 6 | 10.9908 | ok |
-| `src/crapkit/lanes.py:646` | `build_retest_command( template : str , tests : set [ str ] )` | 6 | 10.8234 | ok |
-| `src/crapkit/cli/admin.py:80` | `_next_step( scopes : dict , lanes : tuple )` | 5 | 9.159 | ok |
-| `src/crapkit/cli/admin.py:239` | `_pytest_cov_probe( command : str )` | 5 | 9.159 | ok |
-| `src/crapkit/cli/admin.py:505` | `_segment_problems( name : str , cwd : Path , tokens : list [ str ] )` | 5 | 9.159 | ok |
+| `app/calc.py:34` | `route( a , b , c , d )` | 8 | 4.0 | decompose |
+| `app/calc.py:19` | `legacy_router( a , b , c , d , e )` | 8 | 4.0 | decompose (accepted debt) |
 ```
 
+The verdict opens with the exit code and the rule it stands for (`complexity gate`,
+`ratchet regression`, `new test failures`, `diff-coverage ceiling N`), then one bullet per
+finding: each gate violation with its function, ccn, coverage, CRAP and remedy; each
+ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
+uncovered changed lines, one bullet per file, with a count of the rest. The counts line
+closes it. A verify that passed is one line: `**verify passed.** Run 2 against baseline 1,
+7 changed files.`
+
 The rows are the ranked worklist for the files the pull request changed, worst first,
-`top` of them. `risk` is ccn times churn weight, the number `crapkit worklist` ranks on,
-and `remedy` is the run's own verdict for that function: `decompose`, `add-tests` or `ok`.
-A pull request that touches no ranked function gets the heading and no table.
+`top` of them, with the rows a finding names listed first. `risk` is ccn times churn
+weight, the number `crapkit worklist` ranks on, and `remedy` is the run's own verdict for
+that function: `decompose`, `add-tests` or `ok`. `(accepted debt)` marks a function the
+committed ratchet carries a mark for, so an untouched `legacy_router` does not read like
+the pull request's own new function. A pull request that touches no ranked function gets
+the heading and no table.
 
 The two file counts describe the same diff, counted twice. `39 changed files` is
 `git diff --name-only base.sha...HEAD`, the branch's own commits, and it is what the

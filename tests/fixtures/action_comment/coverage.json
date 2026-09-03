@@ -1,0 +1,44 @@
+{
+ "by_scope": {
+  "app": {
+   "crap_load": 149.59,
+   "functions": 4,
+   "grade": "F",
+   "over_target": 2
+  }
+ },
+ "cache_hits": 0,
+ "cc_only": 0,
+ "ceilings": {
+  "default": 6
+ },
+ "commit": "cade9528c16de7af511b1883c84877db0c45876e",
+ "crap_load": 149.59,
+ "db": "/home/runner/work/policy/policy/.crapkit/crap.sqlite",
+ "files": 2,
+ "functions": 4,
+ "grade": "F",
+ "kind": "coverage",
+ "lane_failures": {},
+ "lanes": {
+  "py": {
+   "artifact_sha256": "ecfc5a996e4be02a0fe55344afc150565c7eb3665d09454d70dbba342d7066a3",
+   "exit_code": 0,
+   "failures": [],
+   "parser": "coveragepy",
+   "scopes": [
+    "app"
+   ],
+   "tests_skipped": 0,
+   "tests_total": 2
+  }
+ },
+ "measured": 4,
+ "no_lane": 0,
+ "over_target": 2,
+ "run_id": 2,
+ "schema": 1,
+ "skipped_max_bytes": 0,
+ "unmeasured_scopes": [],
+ "untested": 0
+}

@@ -35,6 +35,25 @@ died before a summary, or pointing at the job log when every lane failed and not
 printed. `gate: "true"` then exits with coverage's code. The renderer takes the code as
 `--coverage-exit`.
 
+### The pull-request comment names the function and the rule that failed the check
+
+On exit 6 the comment read `1 gate violation, 0 ratchet regressions, ...` over a table in
+which the pull request's own untested `route()` and an untouched ratchet-marked
+`legacy_router()` were two identical rows, and on exit 9 the ceiling and the uncovered lines
+were only in the job log. The verdict now opens with the rule the exit code stands for,
+`**verify failed, exit 6: complexity gate.**` (7 `ratchet regression`, 8 `new test failures`,
+9 `diff-coverage ceiling 3`, the ceiling read from the receipt's `diff_uncovered_max`), then
+one bullet per finding: `- gate: \`app/calc.py:34\` \`route( a , b , c , d )\` ccn 8, cov 0%,
+crap 72.0 -> decompose`, `- ratchet: \`app/calc.py\` \`legacy_router( ... )\` 72.0 -> 80.5
+(recorded -> fresh)`, `- new test failure: \`tests/test_calc.py::test_route\``, and the first
+twenty uncovered changed lines as `- uncovered lines in \`app/calc.py\`: 35, 36, ...` with one
+bullet per file and `- and N more uncovered changed lines` for the rest. The counts line
+closes the block unchanged. In the table, a row whose function the committed ratchet carries
+a mark for (the worklist row's `ratchet_mark`) reads `decompose (accepted debt)`, and the
+rows a finding names come first, ahead of the `top` cap. Moved contract: the README's
+rendered comment is now the byte-for-byte render of the payloads under
+`tests/fixtures/action_comment/` (a failing example), pinned by the unit suite.
+
 ### The MCP server survives a bad call
 
 A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.
