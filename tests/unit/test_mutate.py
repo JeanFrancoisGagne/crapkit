@@ -114,3 +114,30 @@ def test_apply_mutant_replaces_exactly_one_line():
     assert out.splitlines()[2] == first.mutated
     assert out.splitlines()[3] == "        return 10"
     assert len(out.splitlines()) == len(PY.splitlines())
+
+
+# --- the corpus cut: which of the diff's files may grow mutants at all -----------
+
+CORPUS_TOML = (
+    '[crapkit]\ntarget = 6\n\n'
+    '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
+    '[exclude]\nglobs = ["src/gen/**"]\nmax_file_bytes = 100\n'
+)
+
+
+def test_the_corpus_cut_is_the_one_scoring_uses():
+    """Scopes, excludes, the test-file cut and the byte ceiling, all through
+    `universe.assign_files`, so mutate cannot drift from what `coverage` scores."""
+    from crapkit.config import load_config_text
+    from crapkit.mutate import partition_by_corpus
+
+    targets = {"src/a.py": None, "src/tests/test_a.py": {3}, "src/gen/client.py": None,
+               "src/b.rb": None, "tests/test_b.py": None, "src/big.py": {1}}
+    sizes = {"src/big.py": 101}
+
+    kept, outside = partition_by_corpus(targets, load_config_text(CORPUS_TOML),
+                                        size_of=lambda p: sizes.get(p, 1))
+
+    assert kept == {"src/a.py": None}
+    assert outside == ["src/b.rb", "src/big.py", "src/gen/client.py",
+                       "src/tests/test_a.py", "tests/test_b.py"]

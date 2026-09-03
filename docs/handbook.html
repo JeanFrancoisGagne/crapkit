@@ -788,7 +788,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 <h2 id="cabinet"><span class="sn">14</span>The analysis cabinet</h2>
 <p class="lede">Six read-only commands that answer a question the score cannot.</p>
 <div class="cards">
-  <div class="card"><h4><code>mutate</code>: are the tests real?</h4><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed, runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
+  <div class="card"><h4><code>mutate</code>: are the tests real?</h4><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed in files the scored corpus holds (never a test), runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
   <div class="card"><h4><code>duplication</code>: does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
   <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor. Cached since 0.4.5, so a warm run is a file read.</p></div>
   <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data, read since 0.4.5 off a per-run rollup instead of every row.</p></div>

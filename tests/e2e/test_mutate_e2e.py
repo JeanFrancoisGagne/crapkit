@@ -24,10 +24,13 @@ TESTS = (
     "    assert clamp(5) == 5\n"
 )
 
+# The scope declares its one file by name, the documented form for a flat
+# repo: a bare `.` claims nothing in scoring, and from 0.5.0 mutate places
+# mutants only in files scoring would score.
 TOML = (
     '[crapkit]\ntarget = 6\n'
     'mutation_command = "python -m pytest test_clamp.py -q -p no:cacheprovider -p no:randomly"\n\n'
-    '[[scope]]\nname = "py"\npaths = ["."]\nlanguages = ["python"]\n'
+    '[[scope]]\nname = "py"\npaths = ["clamp.py"]\nlanguages = ["python"]\n'
 )
 
 
@@ -64,8 +67,14 @@ SHELL = 'save() {\n  echo "$1" > out.txt\n}\n'
 def test_a_shell_file_is_named_and_skipped_not_mutated(clamp_repo: Path):
     """`mutate` is diff-scoped, so a changed .sh file arrives beside the .py ones
     it was aimed at. Its mutants would flip redirections, so the file is refused
-    by name on stderr and the rest of the run still reports."""
+    by name on stderr and the rest of the run still reports. The scope declares
+    shell here so the corpus cut admits the file and the language refusal is
+    what names it; in a python-only scope the corpus cut names it first."""
     (clamp_repo / "deploy.sh").write_text(SHELL, encoding="utf-8")
+    toml = clamp_repo / "crapkit.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace(
+        'paths = ["clamp.py"]\nlanguages = ["python"]',
+        'paths = ["clamp.py", "deploy.sh"]\nlanguages = ["python", "shell"]'), encoding="utf-8")
 
     res = run_cli(clamp_repo, "mutate", "--files", "deploy.sh", "clamp.py", "--json")
 
@@ -192,3 +201,141 @@ def test_a_broken_run_leaves_the_pool_usable_and_the_live_tree_alone(clamp_repo:
 
     after = run_cli(clamp_repo, "mutate", "--drop-pool")
     assert after.returncode == 0 and "removed 2" in after.stdout, after.stdout + after.stderr
+
+
+# --- the corpus cut: a test file in the diff never grows a mutant ---------------
+
+EDGE = (
+    "from clamp import clamp\n"
+    "def test_edge():\n"
+    "    assert clamp(10) == 10\n"
+)
+
+NEW_ASSERT = "    assert clamp(0) == 0\n"
+
+
+@pytest.fixture()
+def tested_repo(clamp_repo: Path) -> Path:
+    """clamp_repo plus a committed test under tests/, with the scope claiming
+    that directory by prefix: the tree the corpus cut is about. Scoring never
+    scores tests/ whatever the scope says, and from 0.5.0 mutate never mutates it."""
+    toml = clamp_repo / "crapkit.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace(
+        'paths = ["clamp.py"]', 'paths = ["clamp.py", "tests"]'), encoding="utf-8")
+    (clamp_repo / "tests").mkdir()
+    (clamp_repo / "tests" / "test_edge.py").write_text(EDGE, encoding="utf-8")
+    commit(clamp_repo, "crapkit.toml", "tests/test_edge.py")
+    return clamp_repo
+
+
+def test_a_test_file_in_the_diff_grows_no_mutants(tested_repo: Path):
+    """The diff touches clamp.py and tests/test_edge.py. The guard line grows its
+    two mutants; the new assertion under tests/ grows none, because the diff's
+    files pass through the corpus predicate scoring uses (scopes, excludes and
+    the test-file cut) before a mutant is placed. On 0.4.15 the assertion's
+    `==` was the third mutant and a survivor in a test read as a real hole."""
+    (tested_repo / "clamp.py").write_text(CLAMP.replace("x > 10:", "x > 10:  # ceiling"),
+                                          encoding="utf-8")
+    (tested_repo / "tests" / "test_edge.py").write_text(EDGE + NEW_ASSERT, encoding="utf-8")
+
+    res = run_cli(tested_repo, "mutate", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    out = json.loads(res.stdout)
+    assert out["mutants"] == 2, "clamp.py's guard line alone; the assertion under tests/ grew none"
+    assert out["outside_corpus"] == ["tests/test_edge.py"]
+    assert {m["path"] for m in out["survivors"]} == {"clamp.py"}
+    assert "not mutating tests/test_edge.py" in res.stderr
+
+
+def test_a_diff_that_touches_only_a_test_says_nothing_to_mutate(tested_repo: Path):
+    """Zero mutants, exit 0, and stdout says why. The mutation_command here
+    cannot pass, so an exit 0 also proves the suite was never started for a
+    diff with nothing left to mutate."""
+    toml = tested_repo / "crapkit.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace(
+        TOML.splitlines()[2], "mutation_command = 'python -c \"raise SystemExit(1)\"'"),
+        encoding="utf-8")
+    commit(tested_repo, "crapkit.toml")  # so the diff holds the test file alone
+    (tested_repo / "tests" / "test_edge.py").write_text(EDGE + NEW_ASSERT, encoding="utf-8")
+
+    text = run_cli(tested_repo, "mutate")
+    as_json = run_cli(tested_repo, "mutate", "--json")
+
+    assert text.returncode == 0, text.stdout + text.stderr
+    assert text.stdout.strip() == ("mutation: nothing to mutate; outside the scored corpus "
+                                   "(scopes, excludes, test files, max_file_bytes): tests/test_edge.py")
+    assert as_json.returncode == 0, as_json.stdout + as_json.stderr
+    out = json.loads(as_json.stdout)
+    assert (out["mutants"], out["outside_corpus"]) == (0, ["tests/test_edge.py"])
+
+
+def test_files_naming_a_test_file_still_never_mutates_it(tested_repo: Path):
+    """`--files` widens the line scope to the whole file; it does not widen the
+    corpus. `rescore PATH` puts its explicit paths through the same predicate."""
+    res = run_cli(tested_repo, "mutate", "--files", "tests/test_edge.py", "clamp.py", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    out = json.loads(res.stdout)
+    assert out["mutants"] == 2, "clamp.py's two, and none from the test file named beside it"
+    assert out["outside_corpus"] == ["tests/test_edge.py"]
+    assert "not mutating tests/test_edge.py: outside the scored corpus" in res.stderr
+
+
+# --- the other cuts: an exclude glob and the byte ceiling name the file too ------
+
+GEN = (
+    "def client(x):\n"
+    "    if x > 1:\n"
+    "        return 1\n"
+    "    return x\n"
+)
+
+
+def test_an_excluded_path_in_the_diff_grows_no_mutants(clamp_repo: Path):
+    """`[exclude] globs` is the second cut. gen/client.py sits under a declared
+    scope path and holds a comparison a mutant could flip; the glob takes it out
+    of the corpus, so the diff's mutants are clamp.py's two and the excluded
+    file is named on stderr with the same reason a test file gets."""
+    toml = clamp_repo / "crapkit.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace(
+        'paths = ["clamp.py"]', 'paths = ["clamp.py", "gen"]')
+        + '\n[exclude]\nglobs = ["gen/**"]\n', encoding="utf-8")
+    (clamp_repo / "gen").mkdir()
+    (clamp_repo / "gen" / "client.py").write_text(GEN, encoding="utf-8")
+    commit(clamp_repo, "crapkit.toml", "gen/client.py")
+    (clamp_repo / "clamp.py").write_text(CLAMP.replace("x > 10:", "x > 10:  # ceiling"),
+                                         encoding="utf-8")
+    (clamp_repo / "gen" / "client.py").write_text(GEN.replace("x > 1:", "x > 1:  # generated"),
+                                                  encoding="utf-8")
+
+    res = run_cli(clamp_repo, "mutate", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    out = json.loads(res.stdout)
+    assert out["mutants"] == 2, "clamp.py's guard line alone; the excluded file grew none"
+    assert out["outside_corpus"] == ["gen/client.py"]
+    assert ("crapkit: not mutating gen/client.py: outside the scored corpus "
+            "(scopes, excludes, test files, max_file_bytes)") in res.stderr
+
+
+def test_a_file_over_max_file_bytes_reads_a_reason_that_names_the_ceiling(clamp_repo: Path):
+    """The byte ceiling is the fourth cut the corpus predicate makes, and the
+    reason a user reads must name it: clamp.py grows to 71 bytes under a
+    40-byte `max_file_bytes`, `doctor` on the same tree says `skipped: over
+    max_file_bytes`, and `mutate` says so in the same sentence it uses for the
+    other cuts. Nothing is left, so the suite never starts and stdout says why."""
+    toml = clamp_repo / "crapkit.toml"
+    toml.write_text(toml.read_text(encoding="utf-8") + "\n[exclude]\nmax_file_bytes = 40\n",
+                    encoding="utf-8")
+    commit(clamp_repo, "crapkit.toml")
+    (clamp_repo / "clamp.py").write_text(CLAMP.replace("x > 10:", "x > 10:  # ceiling"),
+                                         encoding="utf-8")
+
+    res = run_cli(clamp_repo, "mutate")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert ("crapkit: not mutating clamp.py: outside the scored corpus "
+            "(scopes, excludes, test files, max_file_bytes)") in res.stderr
+    assert res.stdout.strip() == ("mutation: nothing to mutate; outside the scored corpus "
+                                  "(scopes, excludes, test files, max_file_bytes): clamp.py")

@@ -15,6 +15,8 @@ Both tools shell to their `--json` form, so all nine tools return one shape and 
 ### worklist and next_item take a scope over MCP
 
 Both tools accept `scope`, an array of declared scope names, one `--scope` each, so a large repository is partitioned before `top` applies; the CLI's answer to the flags comes back as the tool's result.
+### `mutate` never mutates a test
+`crapkit mutate` placed mutants in every file the diff touched, tests included: on one review run 6 of 9 mutants landed in `tests/test_tax.py` and the survivor was an assertion. The diff's file list, and the files `--files` names, now pass through the corpus predicate scoring uses (scopes, excludes, the test-file cut and `max_file_bytes`) before a mutant is placed. A file outside the corpus is named on stderr as `not mutating <path>: outside the scored corpus`, `--json` lists it under `outside_corpus`, and a diff with nothing left prints `mutation: nothing to mutate; outside the scored corpus (scopes, excludes, test files, max_file_bytes): <paths>` at exit 0 without starting the suite. A scope declaring `paths = ["."]` claims nothing in scoring and now claims nothing for `mutate` either; declare the files or directories by name, as `doctor` already asks.
 
 ## 0.4.15 — 2026-09-02
 
