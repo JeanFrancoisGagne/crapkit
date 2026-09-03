@@ -314,7 +314,7 @@ def _shard_hint(root: Path, lane: Lane) -> str:
             "re-run with --reuse-artifacts, scores what that suite did measure")
 
 
-def _no_artifact_head(root: Path, lane: Lane, stale: list[str]) -> str:
+def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = False) -> str:
     """What the lane failed to do, in the words the disk supports.
 
     An empty `.crapkit/` and a leftover file are the same failure — this run
@@ -326,17 +326,24 @@ def _no_artifact_head(root: Path, lane: Lane, stale: list[str]) -> str:
     When the artifact is not on disk at all, that path leads: it is where the
     reader has to look, and the recover skill triages on "produced no artifact
     at <path>". The leftover results file rides behind it as a second clause.
+
+    On reuse there was no run: the file is what the LAST attempt left, and the
+    sentence names the flag that reached it, so the reader knows which door
+    they came through and that a rewrite of the file opens it again.
     """
     if not stale:
         return f"produced no artifact at {lane.artifact}"
     leftover = f"the {', '.join(stale)} on disk"
+    if reuse:
+        return (f"wrote no artifact on its last attempt — {leftover} predates it and is the "
+                "previous run's, which --reuse-artifacts will not score")
     if (root / lane.artifact).is_file():
         return f"wrote no artifact this run — {leftover} predates it and is the previous run's"
     return f"produced no artifact at {lane.artifact}, and {leftover} is the previous run's"
 
 
 def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None,
-                       stale: list[str] | None = None) -> None:
+                       stale: list[str] | None = None, *, reuse: bool = False) -> None:
     """The log PATH before the log's words. A tail is 500 characters of a file
     that holds the whole story, and a reader who is not told where that file is
     has to go looking for it — one reporter had to ask another agent to find
@@ -344,7 +351,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     detail = f" (command exit {exit_code})" if exit_code is not None else ""
     tail = _log_tail(log_path)
     hint = f"; last output: {tail}" if tail else ""
-    raise ToolError(f"lane {lane.name!r} {_no_artifact_head(root, lane, stale or [])}{detail}"
+    raise ToolError(f"lane {lane.name!r} {_no_artifact_head(root, lane, stale or [], reuse)}{detail}"
                     f"; full log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
                     f"{_shard_hint(root, lane)}")
 
@@ -404,8 +411,9 @@ def _stamps_path(root: Path) -> Path:
 
 
 def read_stamps(root: Path) -> dict:
-    """The recorded artifact stamps: {artifact path: {commit, lane, seconds}}.
-    A missing or hand-mangled file reads as no stamps at all."""
+    """The recorded artifact stamps: {artifact path: {commit, lane, seconds}},
+    plus `refused_mtime_ns` on an artifact the lane's last attempt failed to
+    write. A missing or hand-mangled file reads as no stamps at all."""
     path = _stamps_path(root)
     if not path.is_file():
         return {}
@@ -444,6 +452,60 @@ def write_stamps(root: Path, entries: dict[str, dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({**read_stamps(root), **fresh}, sort_keys=True, indent=1),
                     encoding="utf-8")
+
+
+def _stamp_dict(stamps: dict, artifact: str) -> dict:
+    """One artifact's entry, or {} when the file records none, or something
+    hand-mangled under that key."""
+    entry = stamps.get(artifact)
+    return entry if isinstance(entry, dict) else {}
+
+
+def _stamp_commit(entry: dict) -> str:
+    """The commit a stamp records, or "" for an entry that holds only a refusal
+    (a lane whose every attempt so far failed) or nothing usable."""
+    commit = entry.get("commit")
+    return commit if isinstance(commit, str) else ""
+
+
+def _refused_on_disk(entry: dict, path: Path) -> bool:
+    """Is the file at `path` the one the last attempt failed to write? Only
+    while its modification time still equals the one the refusal recorded: a
+    salvage combined by hand or a real run rewrites the file and moves it."""
+    refused = entry.get("refused_mtime_ns")
+    return refused is not None and refused == _mtime_ns(path)
+
+
+def before_attempt(root: Path, lane: Lane) -> dict[str, int | None]:
+    """What the disk says before a lane runs: the artifact's modification time
+    and the lane log's. `refusal_entry` reads both back after the run. Taken on
+    one thread before any lane starts, since a lane command writes to the
+    working tree and could move what the next lane is judged against."""
+    return {"artifact": _mtime_ns(root / lane.artifact),
+            "log": _mtime_ns(_lane_log_path(root, lane))}
+
+
+def refusal_entry(root: Path, lane: Lane, before: dict, stamps: dict) -> dict:
+    """The stamp that records the artifact as the one this lane's last attempt
+    failed to write, or {} when there is nothing to record.
+
+    Two files answer two questions. The lane log says whether an attempt
+    happened: every attempt truncates and rewrites it, so a lane refused before
+    its first attempt (the container guard) leaves the log alone and records
+    nothing, which keeps `--reuse-artifacts` the way through that guard. The
+    artifact says whether the attempt wrote it: an unmoved modification time is
+    the test `_unwritten` applies during the run. The log's own time never
+    judges the artifact: its exit line lands after the artifact does, so that
+    comparison would refuse every honest run.
+
+    The previous stamp's fields ride along. Its commit is still where the file
+    on disk was built, and its duration still orders parallel starts.
+    """
+    artifact = _mtime_ns(root / lane.artifact)
+    attempted = _mtime_ns(_lane_log_path(root, lane)) != before.get("log")
+    if artifact is None or artifact != before.get("artifact") or not attempted:
+        return {}
+    return {**_stamp_dict(stamps, lane.artifact), "lane": lane.name, "refused_mtime_ns": artifact}
 
 
 def _recorded_seconds(entry: object) -> float | None:
@@ -523,15 +585,15 @@ def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: s
 def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) -> None:
     """On reuse: say when the artifact predates changes touching this lane's scopes.
     Uncommitted working-tree edits count — that is the most common way to go stale."""
-    stamp = read_stamps(git.root).get(lane.artifact)
-    if not stamp or not scope_paths:
+    commit = _stamp_commit(_stamp_dict(read_stamps(git.root), lane.artifact))
+    if not commit or not scope_paths:
         return
     try:
-        changed = _scope_changes(git, lane, scope_paths, stamp["commit"])
+        changed = _scope_changes(git, lane, scope_paths, commit)
     except GitError:
         return
     if changed:
-        print(f"crapkit: lane {lane.name!r} artifact was built at {stamp['commit'][:11]}; "
+        print(f"crapkit: lane {lane.name!r} artifact was built at {commit[:11]}; "
               f"{len(changed)} file(s) in its scopes changed since (their coverage is stale)",
               file=sys.stderr)
 
@@ -541,17 +603,30 @@ def _facts(root: Path, git: GitFacts | None) -> GitFacts:
     return git if git is not None else GitFacts(root)
 
 
+def _reusable_commit(root: Path, lane: Lane) -> str:
+    """The commit the artifact on disk was built at, or "" when there is no
+    artifact, no stamp for it, or the file is the one the last attempt failed
+    to write. That last case makes `--reuse-unchanged` rerun the lane: the
+    stamp commit alone said the scopes had not moved, which was true, and the
+    lane had still not measured them."""
+    stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    path = root / lane.artifact
+    if not path.is_file() or _refused_on_disk(stamp, path):
+        return ""
+    return _stamp_commit(stamp)
+
+
 def lane_unchanged(root: Path, lane: Lane, scope_paths: dict, git: GitFacts | None = None) -> bool:
     """True when the recorded artifact still describes this lane's scopes exactly:
     the stamp commit reached HEAD and nothing under the scopes moved since."""
     facts = _facts(root, git)
-    stamp = read_stamps(root).get(lane.artifact)
-    if not stamp or not (root / lane.artifact).is_file():
+    commit = _reusable_commit(root, lane)
+    if not commit:
         return False
     try:
-        if not facts.is_ancestor(stamp["commit"]):
+        if not facts.is_ancestor(commit):
             return False
-        return not _scope_changes(facts, lane, scope_paths, stamp["commit"])
+        return not _scope_changes(facts, lane, scope_paths, commit)
     except GitError:
         return False
 
@@ -939,11 +1014,24 @@ def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | Non
     about what the lane was going to do.
     """
     if reuse_artifact:
+        _refuse_unwritten_artifact(root, lane)
         _warn_stale_artifact(git, lane, scope_paths)
         return None, 0.0
     _refuse_container_python(lane)
     started = time.monotonic()
     return _run_attempts(root, lane), time.monotonic() - started
+
+
+def _refuse_unwritten_artifact(root: Path, lane: Lane) -> None:
+    """On reuse: the refusal the failed attempt raised, again, while the file
+    on disk is still the one that attempt left. Reuse read that file back and
+    scored it, so a dead lane's old numbers became the trusted baseline. A file
+    that is gone falls through to `_artifact_path`, whose sentence is the one
+    the recover skill triages on."""
+    path = root / lane.artifact
+    if path.is_file() and _refused_on_disk(_stamp_dict(read_stamps(root), lane.artifact), path):
+        _raise_no_artifact(root, lane, _lane_log_path(root, lane), None, [lane.artifact],
+                           reuse=True)
 
 
 def _artifact_path(root: Path, lane: Lane) -> Path:

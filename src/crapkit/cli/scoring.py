@@ -178,9 +178,36 @@ def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_paral
     return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel)
 
 
-def _collect_lanes(root: Path, lanes, outcomes: dict):
+def _refused_stamps(root: Path, lanes, outcomes: dict, before: dict) -> dict[str, dict]:
+    """The stamps that record a failed lane's artifact as the one its attempt
+    did not write, keyed by artifact path like every stamp. A lane the run
+    reused has no snapshot in `before` and nothing to judge; a lane that failed
+    after rewriting its artifact, or before its first attempt, records {}."""
+    from ..lanes import read_stamps, refusal_entry
+
+    stamps = read_stamps(root)
+    return {lane.artifact: refusal_entry(root, lane, before[lane], stamps)
+            for lane in lanes if lane in before and outcomes[lane][1]}
+
+
+def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
+    # `lane_errors` and not `lanes`: a cc-only repo declares no lanes, so nothing
+    # succeeded and nothing failed either, and that run is still a scored run.
+    if lane_errors and not succeeded:
+        # A count and a pointer, not the errors again: every one of them has
+        # already printed above, and quoting them here made the reader read the
+        # same block twice. Counted off `lanes`, not the error dict: the config
+        # does not force lane names to be unique, and two failed lanes sharing
+        # a name would collapse to one key.
+        failed = len(lanes) - len(succeeded)
+        raise ToolError(f"every lane failed ({failed} of {len(lanes)}); the errors are above")
+
+
+def _collect_lanes(root: Path, lanes, outcomes: dict, before: dict | None = None):
     """Fold the outcomes back together in DECLARATION order, whatever order they
-    finished in, and persist every stamp in one write."""
+    finished in, and persist every stamp in one write: the fresh stamps of the
+    lanes that succeeded, and the refusals of the lanes that ran and left their
+    artifact unwritten, judged against the `before` snapshot `_run_lanes` took."""
     from ..lanes import write_stamps
 
     coverage_by_path: dict[str, list] = {}
@@ -199,18 +226,16 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
         provenance[lane.name] = outcome.provenance
         stamps[lane.artifact] = outcome.stamp
         succeeded.append(lane)
-    write_stamps(root, stamps)
-    # `lane_errors` and not `lanes`: a cc-only repo declares no lanes, so nothing
-    # succeeded and nothing failed either, and that run is still a scored run.
-    if lane_errors and not succeeded:
-        # A count and a pointer, not the errors again: every one of them has
-        # already printed above, and quoting them here made the reader read the
-        # same block twice. Counted off `lanes`, not the error dict: the config
-        # does not force lane names to be unique, and two failed lanes sharing
-        # a name would collapse to one key.
-        failed = len(lanes) - len(succeeded)
-        raise ToolError(f"every lane failed ({failed} of {len(lanes)}); the errors are above")
+    write_stamps(root, {**stamps, **_refused_stamps(root, lanes, outcomes, before or {})})
+    _refuse_all_failed(lanes, lane_errors, succeeded)
     return coverage_by_path, provenance, lane_errors, succeeded
+
+
+def _reuse_decisions(root: Path, lanes, scope_paths: dict | None, reuse_artifacts: bool,
+                     reuse_unchanged: bool, facts) -> dict:
+    return {lane: _lane_reuse(root, lane, scope_paths or {}, reuse_artifacts,
+                               reuse_unchanged, facts)
+            for lane in lanes}
 
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
@@ -219,19 +244,19 @@ def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | Non
 
     Every reuse decision is taken up front, on one thread: it reads the working
     tree and a lane command WRITES to the working tree, so deciding lane by lane
-    would let one lane's output change the next lane's answer. Results then merge
-    in declaration order however the lanes finished, so max_parallel_lanes moves
-    wall time only — never a score.
+    would let one lane's output change the next lane's answer. The snapshot a
+    failed lane's refusal is judged against is taken there too, for the lanes
+    that will run. Results then merge in declaration order however the lanes
+    finished, so max_parallel_lanes moves wall time only — never a score.
     """
-    from ..lanes import lane_order
+    from ..lanes import before_attempt, lane_order
 
     facts = git or GitFacts(root)
-    reuse = {lane: _lane_reuse(root, lane, scope_paths or {}, reuse_artifacts,
-                               reuse_unchanged, facts)
-             for lane in lanes}
+    reuse = _reuse_decisions(root, lanes, scope_paths, reuse_artifacts, reuse_unchanged, facts)
+    before = {lane: before_attempt(root, lane) for lane in lanes if not reuse[lane]}
     ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
-    return _collect_lanes(root, lanes,
-                          _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel))
+    outcomes = _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel)
+    return _collect_lanes(root, lanes, outcomes, before)
 
 
 class _ScoredRun(NamedTuple):

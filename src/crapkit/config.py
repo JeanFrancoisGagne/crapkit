@@ -1,4 +1,8 @@
-"""crapkit.toml parsing. Pure: text in, Config out; every rejection is a ConfigError (exit 3)."""
+"""crapkit.toml parsing. Text in, Config out; every rejection is a ConfigError (exit 3).
+
+Pure, with one exception: given a `root`, the full-suite guard reads pytest's
+own configuration in a lane's working directory, and only when the lane's
+pytest command carries a positional to judge against `testpaths`."""
 from __future__ import annotations
 
 import os
@@ -6,6 +10,7 @@ import re
 import shlex
 import tomllib
 from collections.abc import Iterator
+from pathlib import Path
 from typing import NamedTuple
 
 from .errors import ConfigError
@@ -315,17 +320,119 @@ def _narrowing_arguments(tokens: list[str]) -> list[str]:
             if i not in values and not tok.startswith("-") and "=" not in tok]
 
 
-def _validate_coveragepy_command(name: str, command: str) -> None:
+# Where pytest keeps `testpaths`, in the order pytest picks its inifile: the
+# first file holding a pytest section decides, whether or not that section names
+# testpaths, because pytest reads one inifile and never consults a lower-ranked
+# one. pyproject.toml's section is the `[tool.pytest.ini_options]` table, named
+# by an empty section here. Parsed, never executed and never imported.
+_PYTEST_INI_FILES = (("pytest.ini", "pytest"), (".pytest.ini", "pytest"), ("pyproject.toml", ""),
+                     ("tox.ini", "pytest"), ("setup.cfg", "tool:pytest"))
+
+
+def _split_testpaths(value) -> tuple[str, ...]:
+    """pytest's `args` type: a list as it stands, a string split on whitespace."""
+    if isinstance(value, str):
+        return tuple(value.split())
+    if isinstance(value, list):
+        return tuple(str(path) for path in value)
+    return ()
+
+
+def _ini_testpaths(text: str, section: str) -> tuple[str, ...] | None:
+    """`testpaths` out of an ini file, or None when the file holds no pytest
+    section for the search to stop at. A file that will not parse holds none."""
+    import configparser
+
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        return None
+    if not parser.has_section(section):
+        return None
+    return _split_testpaths(parser.get(section, "testpaths", fallback=""))
+
+
+def _toml_table(data, *keys: str):
+    """One key path through nested tables, or None the moment it leaves them."""
+    for key in keys:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def _toml_testpaths(text: str) -> tuple[str, ...] | None:
+    """None unless `[tool.pytest.ini_options]` is there, the table pytest looks
+    for before it reads a pyproject as its inifile."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None
+    section = _toml_table(data, "tool", "pytest", "ini_options")
+    if not isinstance(section, dict):
+        return None
+    return _split_testpaths(section.get("testpaths"))
+
+
+def _testpaths_in(path: Path, section: str) -> tuple[str, ...] | None:
+    """One file's answer: None when it is absent or holds no pytest section,
+    else its testpaths, () included."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    return _toml_testpaths(text) if not section else _ini_testpaths(text, section)
+
+
+def pytest_testpaths_at(directory: str | os.PathLike) -> tuple[str, ...]:
+    """The `testpaths` a bare `pytest` run in `directory` collects, read from
+    the file pytest would pick there: pytest.ini, .pytest.ini, pyproject.toml,
+    tox.ini, setup.cfg, the first holding a pytest section deciding. () when
+    none does, or the section names no testpaths. stdlib only. `init` reads
+    the same files to decide whether a positional is worth writing at all."""
+    for name, section in _PYTEST_INI_FILES:
+        found = _testpaths_in(Path(directory) / name, section)
+        if found is not None:
+            return found
+    return ()
+
+
+def _as_testpath(token: str) -> str:
+    """One spelling for the comparison: forward slashes, no leading `./`, no
+    trailing separator. `tests/`, `./tests` and `tests` name one directory."""
+    spelled = token.replace("\\", "/")
+    if spelled.startswith("./"):
+        spelled = spelled[2:]
+    return spelled.rstrip("/")
+
+
+def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[str]:
+    """The positionals that are not a configured `testpaths` entry: the ones
+    that narrow the run. `pytest tests` under `testpaths = ["tests"]` collects
+    exactly what a bare `pytest` collects, and refusing it sent a maintainer
+    to `full_suite = false` on a lane that runs the whole suite. pytest's files
+    are opened only when there is a positional to judge and a directory to
+    read them in, so the common lane costs a read-only command no file read."""
+    if not positionals or lane_dir is None:
+        return positionals
+    declared = {_as_testpath(path) for path in pytest_testpaths_at(lane_dir)}
+    return [tok for tok in positionals if _as_testpath(tok) not in declared]
+
+
+def _validate_coveragepy_command(name: str, command: str, lane_dir: Path | None = None) -> None:
     # Subset coverage under a suite with cross-file pollution is run-order-dependent;
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
     # full_suite = false, an explicit and reviewable decision. Every chained
     # segment is read: a second pytest run narrows just as much as the first.
     for segment in shell_segments(command):
-        _refuse_pytest_narrowing(name, command, segment)
+        _refuse_pytest_narrowing(name, command, segment, lane_dir)
 
 
-def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str]) -> None:
-    """One command's argv. A segment that runs no pytest has nothing to narrow.
+def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str],
+                             lane_dir: Path | None = None) -> None:
+    """One command's argv. A segment that runs no pytest has nothing to narrow,
+    and a positional equal to a configured testpaths entry narrows nothing.
 
     Two exits, not one. A scoped suite opts out with `full_suite = false`. A
     suite that cannot collect all its testpaths in one process has no full-suite
@@ -333,7 +440,8 @@ def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str]) -> None
     leaves its other testpaths unmeasured with nothing saying so, which is why
     the message names the multi-lane pattern rather than only the flag.
     """
-    for tok in _narrowing_arguments(_tokens_after_pytest(tokens)):
+    positionals = _narrowing_arguments(_tokens_after_pytest(tokens))
+    for tok in _outside_testpaths(positionals, lane_dir):
         raise ConfigError(
             f"lane {name!r}: positional argument '{tok}' narrows a full-suite coverage run; "
             f"drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
@@ -460,13 +568,16 @@ class Config(NamedTuple):
     scope_notes: dict[str, tuple[str, ...]] = {}
 
 
-def load_config_text(text: str) -> Config:
+def load_config_text(text: str, *, root: str | os.PathLike | None = None) -> Config:
+    """`root` is the directory crapkit.toml sits in. Given, it lets the
+    full-suite guard read pytest's `testpaths` where each lane runs; absent, a
+    positional in a pytest command is judged from the command alone."""
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"crapkit.toml does not parse: {exc}") from exc
     try:
-        return _build_config(raw)
+        return _build_config(raw, root)
     except KeyError as exc:
         raise ConfigError(f"crapkit.toml is missing a required key: {exc}") from exc
 
@@ -553,14 +664,23 @@ def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
     return tuple(scopes), notes
 
 
-def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str) -> None:
+def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
+                           lane_dir: Path | None = None) -> None:
     if parser == "istanbul":
         _validate_istanbul_command(name, command)
     if parser == "coveragepy" and full_suite:
-        _validate_coveragepy_command(name, command)
+        _validate_coveragepy_command(name, command, lane_dir)
 
 
-def _parse_lane(row: dict, scope_names: set) -> Lane:
+def _lane_dir(root: str | os.PathLike | None, cwd: str) -> Path | None:
+    """Where the lane's command runs, which is where pytest picks its inifile;
+    None without a root, and then no file is read."""
+    if root is None:
+        return None
+    return Path(root) / cwd if cwd else Path(root)
+
+
+def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = None) -> Lane:
     parser = row["parser"]
     if parser not in SUPPORTED_PARSERS:
         raise ConfigError(f"lane {row.get('name')!r}: unsupported parser {parser!r}")
@@ -569,7 +689,8 @@ def _parse_lane(row: dict, scope_names: set) -> Lane:
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
     full_suite = bool(row.get("full_suite", True))
-    _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"])
+    _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"],
+                           _lane_dir(root, row.get("cwd", "")))
     return Lane(name=row["name"], command=row["command"], artifact=row["artifact"],
                 parser=parser, scopes=lane_scopes,
                 cwd=row.get("cwd", ""), path_prefix=row.get("path_prefix", ""),
@@ -601,13 +722,13 @@ def _reject_shared_artifacts(lanes: list) -> None:
             seen_artifacts[artifact] = lane.name
 
 
-def _build_config(raw: dict) -> Config:
+def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
     scope_rows = raw.get("scope", [])
     if not scope_rows:
         raise ConfigError("crapkit.toml declares no [[scope]] — nothing to analyze")
     scopes, scope_notes = _parse_scopes(scope_rows)
     scope_names = {s.name for s in scopes}
-    lanes = [_parse_lane(row, scope_names) for row in raw.get("lane", [])]
+    lanes = [_parse_lane(row, scope_names, root) for row in raw.get("lane", [])]
     _reject_shared_artifacts(lanes)
     main = raw.get("crapkit", {})
     return Config(
