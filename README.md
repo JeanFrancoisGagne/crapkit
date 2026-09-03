@@ -525,7 +525,7 @@ to their render:
 
 ## crapkit
 
-4 functions in 2 files, 2 over target, CRAP load 149.59, grade F.
+4 functions in 2 files, 2 over ceiling 6, CRAP load 149.59, grade F.
 
 **verify failed, exit 6: complexity gate.**
 
@@ -541,6 +541,13 @@ Run 3 against baseline 1, 1 changed file: 1 gate violation, 0 ratchet regression
 | `app/calc.py:34` | `route( a , b , c , d )` | 8 | 4.0 | decompose |
 | `app/calc.py:19` | `legacy_router( a , b , c , d , e )` | 8 | 4.0 | decompose (accepted debt) |
 ```
+
+The first line is the run `crapkit coverage` wrote: functions and files, how many sit over
+the ceiling (`over ceiling 6`, or `over their ceilings (6; reports 12, util 4)` when scopes
+set their own), CRAP load and grade, with a failed lane's first error line appended as
+`; lane 'js' failed: ...`. When `coverage --json` died before a summary, the line quotes the
+error object it printed instead: `` `crapkit coverage` exited 5: lane 'py' cannot import
+pytest-cov; pip install pytest-cov. ``
 
 The verdict opens with the exit code and the rule it stands for (`complexity gate`,
 `ratchet regression`, `new test failures`, `diff-coverage ceiling N`), then one bullet per

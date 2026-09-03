@@ -119,15 +119,40 @@ def no_verdict_line(coverage: dict | None, coverage_exit: int) -> str:
             f"({coverage_failure(coverage)}); verify did not run.**")
 
 
+def _over(coverage: dict) -> str:
+    """`over ceiling 6`, or the per-scope list when scopes set their own. A
+    payload without `ceilings` (a 0.4.x coverage) names no number."""
+    ceilings = coverage.get("ceilings")
+    if not ceilings:
+        return "over the ceiling"
+    scoped = [f"{scope} {ceiling}" for scope, ceiling in ceilings.items() if scope != "default"]
+    if not scoped:
+        return f"over ceiling {ceilings.get('default')}"
+    return f"over their ceilings ({ceilings.get('default')}; {', '.join(scoped)})"
+
+
+def _lane_failures(coverage: dict) -> str:
+    """One clause per failed lane, its first error line only: the rest is the
+    lane's own log and belongs in the job log."""
+    return "".join(f"; lane {name!r} failed: {_first_line(text)}"
+                   for name, text in (coverage.get("lane_failures") or {}).items())
+
+
 def scored_line(coverage: dict | None) -> str:
-    """What the run measured, in the words `crapkit coverage` uses for it."""
+    """What the run measured, in the words `crapkit coverage` uses for it,
+    and the ceiling the over-count is judged against. When the command died
+    before a summary, --json prints one error object and this line quotes
+    the sentence that names the fix."""
     if not coverage:
         return "`crapkit coverage` wrote no run summary."
+    error = coverage.get("error")
+    if error:
+        return f"`crapkit coverage` exited {error.get('exit')}: {_first_line(error.get('message'))}."
     return (f"{_plural(coverage.get('functions', 0), 'function')} in "
             f"{_plural(coverage.get('files', 0), 'file')}, "
-            f"{coverage.get('over_target', 0)} over target, "
+            f"{coverage.get('over_target', 0)} {_over(coverage)}, "
             f"CRAP load {coverage.get('crap_load', 0)}, "
-            f"grade {coverage.get('grade', '?')}.")
+            f"grade {coverage.get('grade', '?')}{_lane_failures(coverage)}.")
 
 
 def _findings(verify: dict) -> str:

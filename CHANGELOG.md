@@ -54,6 +54,18 @@ rows a finding names come first, ahead of the `top` cap. Moved contract: the REA
 rendered comment is now the byte-for-byte render of the payloads under
 `tests/fixtures/action_comment/` (a failing example), pinned by the unit suite.
 
+### The comment's scored line names the ceiling, a failed lane's first line, or the error
+
+The first line of the pull-request comment read `153 over target` with no number, while the
+scopes carried ceilings 4, 6 and 12, and a `coverage --json` that died before printing a
+summary left the comment with `wrote no run summary` and the sentence naming the fix in the
+job log. The line now reads `2 over ceiling 6` or `2 over their ceilings (6; reports 12,
+util 4)` from the summary's `ceilings`, appends `; lane 'js' failed: <first line>` for each
+entry of `lane_failures`, and, when the payload is the one-object error `--json` prints on
+a crapkit error, reads `` `crapkit coverage` exited 5: <message> ``. A 0.4.x payload without
+`ceilings` reads `over the ceiling`. Moved contract: the README's rendered comment is
+regenerated with the new first line.
+
 ### The MCP server survives a bad call
 
 A `tools/call` with a missing positional, an undeclared key or a wrong type answers a tool result with `isError: true` in the tool's own words (`brief needs name (see inputSchema.required)`, `worklist does not take 'bogus'; accepted: repo, top, scope`, `top must be an integer (got "three")`) before any CLI spawns, and the session continues; on 0.4.15 a missing positional killed the server and every later request read end of file. `params: null` and `arguments: null` are refusals, not crashes, and a positional sent as `null` is a missing positional (`brief needs path (see inputSchema.required)`), not a spawned CLI's stderr. `tools/list` declares `required` from each tool's positionals. `ping` answers an empty result instead of `-32601`. An exception escaping the server answers a JSON-RPC `-32603` reply and the loop reads on. ADR 0001 records why the refusals are tool results and not the protocol's `-32602`.

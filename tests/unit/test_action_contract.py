@@ -859,6 +859,50 @@ def test_the_readme_comment_is_the_render_of_the_recorded_payloads(tmp_path):
     assert fence.group(1) == out.read_text(encoding="utf-8")
 
 
+# --- the scored line quotes the ceilings and a lane failure (spec item 11) -----
+
+def _coverage(**over) -> dict:
+    base = {"functions": 12, "files": 3, "over_target": 2, "crap_load": 45.2, "grade": "B",
+            "lane_failures": {}}
+    return {**base, **over}
+
+
+def test_the_scored_line_quotes_the_ceiling_the_count_is_judged_against():
+    line = _builder().scored_line
+
+    assert "2 over ceiling 6," in line(_coverage(ceilings={"default": 6}))
+    assert "2 over their ceilings (6; reports 12, util 4)," in line(
+        _coverage(ceilings={"default": 6, "reports": 12, "util": 4}))
+
+
+def test_a_payload_without_ceilings_names_no_number():
+    """A 0.4.x `coverage --json` carries `over_target` and no `ceilings`."""
+    line = _builder().scored_line(_coverage())
+
+    assert "2 over the ceiling," in line
+    assert "target" not in line
+
+
+def test_the_scored_line_quotes_the_first_line_of_a_lane_failure():
+    coverage = _coverage(lane_failures={"js": "lane 'js' wrote no artifact on its last attempt\n  full log: x"})
+
+    line = _builder().scored_line(coverage)
+
+    assert line.endswith("grade B; lane 'js' failed: lane 'js' wrote no artifact on its last attempt.")
+    assert "full log" not in line
+
+
+def test_the_scored_line_quotes_the_error_message_when_coverage_died_under_json():
+    """0.5.0's --json prints one error object on stdout when a crapkit error
+    escapes, so the sentence that names the fix reaches the comment."""
+    coverage = {"error": {"exit": 5, "kind": "tool", "message": "lane 'py' cannot import pytest-cov; pip install pytest-cov\n"},
+                "schema": 1}
+
+    line = _builder().scored_line(coverage)
+
+    assert line == "`crapkit coverage` exited 5: lane 'py' cannot import pytest-cov; pip install pytest-cov."
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")
