@@ -1,6 +1,6 @@
 {
   "case": "worktree_git_file",
-  "why": "A linked worktree carries a `.git` FILE and, until someone commits one there, no crapkit.toml. The upward walk stops at that file instead of borrowing the parent checkout's config, which is the same refusal _load_repo_config makes by never walking up at all.",
+  "why": "A linked worktree carries a `.git` FILE and, until someone commits one there, no crapkit.toml. The upward walk stops at that file instead of borrowing the parent checkout's config, the same stop every command's walk makes (rootfind.find_root, ADR 0002).",
   "fixture": "worktree_git_file",
   "argv": ["claude-hook", "--protocol", "1"],
   "payload": {

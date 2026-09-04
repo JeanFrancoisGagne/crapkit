@@ -18,7 +18,7 @@ from ..invocation import _self
 from ..snapshot import build_inventory_rows, tsv_lines
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
-from ._shared import (_analysis_tools, _emit_findings, _file_sizer, _gate_line,
+from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _print_json, _ratchet_entries,
                       _repo_out_path, _repo_relative,
                       _write_tsv)
@@ -93,7 +93,7 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
 
 
 def cmd_inventory(args: argparse.Namespace) -> int:
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg)
     state_dir = root / ".crapkit"
@@ -482,7 +482,7 @@ def _warn_suite_drop(store: SnapshotStore, provenance: dict) -> None:
 
 
 def cmd_coverage(args: argparse.Namespace) -> int:
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     lanes = _select_lanes(cfg, args.lane)
 
@@ -527,11 +527,12 @@ def _rescored_records(root: Path, cache_path: Path, flat: list,
     return records_by_path
 
 
-def _rescore_analyze(root: Path, cfg, files) -> tuple[list, list, dict]:
-    """Fresh complexity for the named files; the shared cache is merged, never truncated."""
+def _rescore_analyze(root: Path, cfg, files, cwd: Path | None = None) -> tuple[list, list, dict]:
+    """Fresh complexity for the named files, said from `cwd` where the user
+    stands; the shared cache is merged, never truncated."""
     from ..hook import file_ceilings
 
-    rel_paths = sorted({_repo_relative(p, root) for p in files})
+    rel_paths = sorted({_repo_relative(p, root, cwd) for p in files})
     files_by_scope = assign_files(rel_paths, cfg, size_of=_file_sizer(root))
     flat = sorted(set().union(*files_by_scope.values())) if files_by_scope else []
     records_by_path = _rescored_records(root, root / ".crapkit" / "cache.json", flat,
@@ -731,11 +732,11 @@ def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
 
 
 def cmd_rescore(args: argparse.Namespace) -> int:
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     store, latest = _rescore_baseline(root)
 
-    rows, flat, ceilings = _rescore_analyze(root, cfg, args.files)
+    rows, flat, ceilings = _rescore_analyze(root, cfg, args.files, cwd=Path.cwd())
     overlay = _rescore_overlay(store, latest, rows, flat, cfg)
     verdict = _gate_verdict(root, cfg, overlay, ceilings) if args.gate else None
     if args.json:

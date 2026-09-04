@@ -136,8 +136,9 @@ crapkit 0.4.15
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
-source checkout. Every subcommand accepts `--repo PATH` (default: the current directory),
-so you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
+source checkout. Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
+at or above the current directory, so a monorepo workspace finds the root's), and with it
+you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
 where the flag goes.
 
 ## Upgrading from 0.4.4
@@ -674,9 +675,13 @@ on PATH fails that step. Both leave the rendered text in the job log.
 
 ## Subcommands
 
-Every subcommand takes `--repo PATH` (default `.`), and the flag goes **after** the
-subcommand. `claude-hook` is the one exception: it has no `--repo`, because it takes its
-root from the file named in the hook payload it reads.
+Every subcommand takes `--repo PATH`, and the flag goes **after** the subcommand. Without
+it the root is the nearest `crapkit.toml` at or above the current directory
+([ADR 0002](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adr/0002-configuration-is-found-upward-nearest-wins.md)): from a
+monorepo workspace `crapkit worklist` reads the root configuration that claims the
+workspace, says `crapkit: using crapkit.toml at /repo` on stderr, and reads a relative path
+argument from where you stand. `claude-hook` is the one exception: it has no `--repo`,
+because it takes its root from the file named in the hook payload it reads.
 
 ```
 $ crapkit worklist --repo /path/to/repo --scope util --top 1

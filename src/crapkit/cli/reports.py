@@ -13,8 +13,8 @@ from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
-from ._shared import (_load_repo_config, _open_store, _print_json, _ratchet_entries,
-                      _repo_out_path)
+from ._shared import (_command_root, _load_repo_config, _open_store, _print_json,
+                      _ratchet_entries, _repo_out_path, _repo_relative)
 
 
 def _digest_pair(store):
@@ -64,7 +64,7 @@ def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str])
 def cmd_digest(args: argparse.Namespace) -> int:
     from ..digest import build_digest
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
@@ -134,7 +134,7 @@ def _trend_payload(cfg, store: SnapshotStore) -> dict:
 
 
 def cmd_trend(args: argparse.Namespace) -> int:
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     payload = _trend_payload(cfg, _open_store(root))
     _print_trend(args.json, payload["runs"], cfg.target)
@@ -203,7 +203,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     trend series, and a banner when stale artifacts make them untrustworthy."""
     from ..report import render_report
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     payload = _report_payload(root, cfg, _open_store(root))
     _write_report(root, args.out, render_report(payload))
@@ -212,7 +212,7 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 def cmd_runs(args: argparse.Namespace) -> int:
     """History without SQL: every run with kind, verdict, commit, lane set."""
-    store = _open_store(Path(args.repo).resolve())
+    store = _open_store(_command_root(args.repo))
     if args.action == "prune":
         return _runs_prune(store, keep=args.keep, as_json=args.json)
     return _runs_list(store, as_json=args.json)
@@ -278,7 +278,7 @@ def _print_prune(deleted: int, kept: int, freed: int, as_json: bool) -> None:
 
 def cmd_overrides(args: argparse.Namespace) -> int:
     """The override audit trail, read back out of the snapshot store."""
-    store = _open_store(Path(args.repo).resolve())
+    store = _open_store(_command_root(args.repo))
     trail = [{"run_id": rid, "path": path, "function": name, "crap": crap,
               "reason": reason, "created_at": ts, "commit": sha}
              for rid, path, name, crap, reason, ts, sha in store.read_overrides_all()]
@@ -328,9 +328,10 @@ def cmd_explain(args: argparse.Namespace) -> int:
     Text and --json read the same payload, so a section can never say one thing
     to a human and another to a wrapper.
     """
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     store = _open_store(root)
+    args.path = _repo_relative(args.path, root, Path.cwd())  # said from where the user stands
     matches = store.find_functions(args.path, args.name)
     if not matches:
         raise CrapkitError(f"no function matching {args.name!r} in {args.path} appears in any run")

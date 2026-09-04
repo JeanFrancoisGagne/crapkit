@@ -321,6 +321,30 @@ pins, and every README, AGENTS.md, docs/lanes.md, docs/ratchet.md, docs/agent-js
 plugin skill transcript that pastes one of those lines (docs/demo.svg is re-rendered at
 release).
 
+### Configuration is found upward, the way git finds `.git`
+
+Every command read `crapkit.toml` from the working directory only, so from a monorepo
+workspace `crapkit worklist` exited 3 with `no crapkit.toml at .../mono/web` while the root
+configuration one level up claimed `web/`, and `crapkit init` there wrote a second
+configuration claiming the same files. Without `--repo`, every command, `crapkit mcp` and
+each MCP tool's `repo` argument now walk up from the working directory to the nearest
+`crapkit.toml`, the way the advisory hook always did (ADR 0002); a `.git` entry without one
+stops the walk, so a linked worktree or a nested repository never borrows a parent's
+configuration or store. When the root found is not the working directory one stderr line
+says `crapkit: using crapkit.toml at /repo`, and a relative path argument to `brief`,
+`explain`, `rescore`, `test-scoped` or `mutate --files` is read from where you stand, so
+`crapkit brief src/grade.ts classify` typed in `web/` names `web/src/grade.ts`; a path that
+climbs out of the root is refused with `is outside the repo at /repo`. A given `--repo` names
+an exact root and walks nowhere, and the flag now defaults to nothing rather than `.`.
+`init` writes where you stand and exits 3 with `crapkit.toml at /repo already claims web
+(scope 'web'); edit that configuration instead` when an ancestor's scope path claims the
+directory, and writes no nested `.gitignore` line when a `.gitignore` above already ignores
+`.crapkit/`. A stray `crapkit.toml` in a non-git ancestor, such as a home directory, is
+adopted with that stderr line as the only warning. Moved contracts: `--repo`'s default of
+`.` (tests/unit/test_report_command.py), the lanes page's "no monorepo mode" sentence, the
+README's two `--repo` default lines, the agents page's server line and AGENTS.md's default.
+(#69)
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

@@ -12,7 +12,7 @@ from ..churn_log import log_lines
 from ..errors import ConfigError, CrapkitError
 from ..gitio import ls_files
 from ..invocation import _self
-from ._shared import (_file_sizer, _load_repo_config, _load_sources, _open_store,
+from ._shared import (_command_root, _file_sizer, _load_repo_config, _load_sources, _open_store,
                       _positive_top, _print_json, _repo_relative)
 
 
@@ -48,7 +48,7 @@ def cmd_coupling(args: argparse.Namespace) -> int:
     """Ranked over the tracked set: a pair naming a path git no longer has is a
     recommendation to open a file that is not there."""
     _positive_top("coupling", args.top)
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     pairs = _coupling_pairs(root, cfg, args)
     if args.json:
@@ -67,14 +67,15 @@ def _range_lines(ranges: list) -> set[int]:
     return {line for start, end in ranges for line in range(start, end + 1)}
 
 
-def _mutation_targets(root: Path, files: list | None) -> dict:
+def _mutation_targets(root: Path, files: list | None, cwd: Path | None = None) -> dict:
     """path -> changed line set (None = whole file). Default is diff-scoped:
-    only the working tree's changes vs HEAD grow mutants."""
+    only the working tree's changes vs HEAD grow mutants; `--files` are said
+    from `cwd`, where the user stands."""
     from ..diffparse import changed_ranges
     from ..gitio import diff_since
 
     if files:
-        return {_repo_relative(f, root): None for f in files}
+        return {_repo_relative(f, root, cwd): None for f in files}
     targets = {p: _range_lines(rs) for p, rs in changed_ranges(diff_since(root, "HEAD")).items()}
     if not targets:
         raise CrapkitError("no changes vs HEAD to mutate — name files with --files")
@@ -167,7 +168,7 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     """
     from ..mcp_server import serve
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     if (root / "crapkit.toml").is_file():
         _load_repo_config(root)
     return serve(root)
@@ -190,13 +191,14 @@ def _drop_mutate_pool(root: Path) -> int:
 def cmd_mutate(args: argparse.Namespace) -> int:
     from ..mutate_pool import reporter, run_mutants
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     if args.drop_pool:
         return _drop_mutate_pool(root)
     cfg = _load_repo_config(root)
     if not cfg.mutation_command:
         raise ConfigError("mutate needs [crapkit] mutation_command — the suite run once per mutant")
-    targets, outside = _corpus_targets(root, cfg, _mutation_targets(root, args.files))
+    targets, outside = _corpus_targets(root, cfg,
+                                       _mutation_targets(root, args.files, cwd=Path.cwd()))
     mutants = _collect_mutants(root, targets, args.max_mutants)
     verdicts = run_mutants(root, cfg, mutants, reporter(len(mutants), sys.stderr))
     survivors = [m for m, killed in zip(mutants, verdicts) if not killed]
@@ -222,7 +224,7 @@ def cmd_duplication(args: argparse.Namespace) -> int:
     from ..store import rowful_runs
 
     _positive_top("duplication", args.top)
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     _load_repo_config(root)  # config errors first, like every command
     store = _open_store(root, first_command="inventory")
     runs = rowful_runs(store)

@@ -10,8 +10,8 @@ from pathlib import Path
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
 from ..store import SnapshotStore
-from ._shared import (_load_ratchet_or_die, _load_repo_config, _open_store, _print_json,
-                      _ratchet_or_die, repo_text)
+from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
+                      _print_json, _ratchet_or_die, repo_text)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -198,7 +198,7 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
 
     if args.action == "merge":  # a git merge driver runs with no crapkit.toml in sight
         return _ratchet_merge(args.files)
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     if args.action == "report":
         return _ratchet_report(root, cfg, args.json, args.enforce)

@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .invocation import _self
+from .rootfind import find_root
 
 # Newest first. Everything this server does — tools, annotations, structured
 # results over stdio — is inside the 2025-06-18 revision, and nothing it does
@@ -261,6 +262,14 @@ def _tool_named(name: str) -> dict | None:
     return next((t for t in TOOLS if t["name"] == name), None)
 
 
+def _config_root(repo: str) -> Path | None:
+    """The crapkit root at or above `repo`, the call's own argument or the
+    server's default, found the way every command finds it (ADR 0002): a
+    server a global client started in a workspace serves the root
+    configuration that claims the workspace."""
+    return find_root(Path(repo).resolve())
+
+
 def _call_tool(root: Path, name: str, arguments: dict) -> dict:
     """Name lookup, then the arguments against the table, then the repo the
     call names, then the run. Every refusal is decided before a CLI spawns."""
@@ -271,9 +280,10 @@ def _call_tool(root: Path, name: str, arguments: dict) -> dict:
     if refusal:
         return _result(refusal, is_error=True)
     repo = arguments.get("repo") or str(root)
-    if not (Path(repo) / "crapkit.toml").is_file():
+    found = _config_root(repo)
+    if found is None:
         return _no_config_result(repo)
-    return _run_cli(tool, arguments, repo)
+    return _run_cli(tool, arguments, str(found))
 
 
 # What a connected model needs before its first call, in the one field the

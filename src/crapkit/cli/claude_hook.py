@@ -49,10 +49,6 @@ PROTOCOL = "1"
 # Git state meaning the working tree holds content this edit did not author.
 _SEQUENCING_MARKERS = ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD")
 
-# Deeper than any real checkout, bounded so a pathological path cannot turn the
-# root walk into a filesystem scan.
-_MAX_LEVELS = 64
-
 # The Bash fallback's freshness window: a dirty *.py whose mtime is older than
 # this was not written by the command this event reports, so advising it again
 # would repeat the advisory on every later Bash call in the session.
@@ -236,18 +232,16 @@ def _fresh(path: Path, cutoff: float) -> bool:
 def _repo_root(start: Path) -> Path | None:
     """The crapkit root above an edited file, or None when there is none.
 
-    First directory holding `crapkit.toml` wins. A `.git` entry without one stops
-    the walk: a linked worktree carries `.git` as a FILE, and walking past it
-    would lend that worktree its parent checkout's config and its parent's store.
-    That refusal is the same one `_load_repo_config` makes by never walking up at
-    all. Each level costs one stat.
+    `rootfind.find_root`, the walk every command makes (ADR 0002): the nearest
+    `crapkit.toml` wins and a `.git` entry without one stops the walk, so a
+    linked worktree never borrows its parent checkout's config and store. The
+    walk was born here and moved out when the commands adopted it; the import
+    stays inside the function so this module's scope remains stdlib-only, and
+    rootfind itself imports nothing of crapkit's.
     """
-    for directory in [start, *start.parents][:_MAX_LEVELS]:
-        if (directory / "crapkit.toml").is_file():
-            return directory
-        if (directory / ".git").exists():
-            return None
-    return None
+    from ..rootfind import find_root
+
+    return find_root(start)
 
 
 def _sequencing(root: Path) -> bool:

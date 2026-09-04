@@ -166,6 +166,13 @@ def _help_topics(parser: argparse.ArgumentParser) -> dict:
     return dict(groups[0].choices)
 
 
+# Every subcommand that reads a repo takes --repo, and none defaults it to the
+# working directory: without the flag the root is found by walking up from
+# there (ADR 0002), which is `cli._shared._command_root`'s business.
+_REPO_FLAG = {"default": None,
+              "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The whole CLI surface, assembled without parsing anything. README's
     Subcommands table is checked against this parser's own subcommand set."""
@@ -175,14 +182,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("inventory", help="build the per-function complexity inventory snapshot")
-    inv.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    inv.add_argument("--repo", **_REPO_FLAG)
     inv.add_argument("--db", default=None, help="snapshot database path (default: <repo>/.crapkit/crap.sqlite)")
     inv.add_argument("--export", default=None, help="also write a canonical TSV export, relative to the repo")
     inv.add_argument("--json", action="store_true", help="print the run summary as JSON")
     inv.set_defaults(func=_Handler("scoring", "cmd_inventory"))
 
     cov = sub.add_parser("coverage", help="run coverage lanes, join onto a fresh inventory, write a scored run")
-    cov.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    cov.add_argument("--repo", **_REPO_FLAG)
     cov.add_argument("--lane", default=None,
                      help="run only this lane (default: all); the run is partial and never a "
                           "baseline, so rerun the rest with --reuse-unchanged")
@@ -199,7 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     nxt = sub.add_parser("next-item", help="the actionable queue as JSON, ranked by crap "
                                            "descending: what a refactor session takes next")
-    nxt.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    nxt.add_argument("--repo", **_REPO_FLAG)
     nxt.add_argument("--top", type=int, default=1, help="return the next N items instead of one")
     nxt.add_argument("--exclude", action="append", default=[],
                      help="skip items whose path or function name contains this (repeatable)")
@@ -219,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="release: PATH NAME, taking either the bare identifier or the "
                           "long_name next-item printed")
     clm.add_argument("--all", action="store_true", help="release: close every open claim")
-    clm.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    clm.add_argument("--repo", **_REPO_FLAG)
     clm.add_argument("--json", action="store_true", help="machine output")
     clm.set_defaults(func=_Handler("queue", "cmd_claims"))
 
@@ -233,19 +240,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help="prune: newest trusted runs to keep (default 5). A floor, not "
                              "a cap — the digest pair, passing verify baselines, runs an "
                              "override names and the newest non-hook run are kept too")
-    runs_p.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    runs_p.add_argument("--repo", **_REPO_FLAG)
     runs_p.add_argument("--json", action="store_true", help="machine output")
     runs_p.set_defaults(func=_Handler("reports", "cmd_runs"))
 
     ovr = sub.add_parser("overrides", help="the override audit trail")
-    ovr.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    ovr.add_argument("--repo", **_REPO_FLAG)
     ovr.add_argument("--json", action="store_true", help="machine output")
     ovr.set_defaults(func=_Handler("reports", "cmd_overrides"))
 
     expl = sub.add_parser("explain", help="a function's trajectory across runs, plus its ratchet mark")
     expl.add_argument("path", help="repo-relative source file")
     expl.add_argument("name", help="function name or fragment")
-    expl.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    expl.add_argument("--repo", **_REPO_FLAG)
     expl.add_argument("--history", action="store_true",
                       help="also list the commits that touched this function (git log -L)")
     expl.add_argument("--tests", action="store_true",
@@ -260,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     brf.add_argument("name", nargs="?",
                      help="function name: the bare identifier, the whole long_name "
                           "next-item printed, or the line it starts on")
-    brf.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    brf.add_argument("--repo", **_REPO_FLAG)
     brf.add_argument("--batch", type=int, default=None, metavar="N",
                      help="skip PATH NAME and emit a packet for each of the top N "
                           "queue items, assembled in one process; always JSON")
@@ -269,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the latest run's coverage")
     rsc.add_argument("files", nargs="+", help="repo-relative source files to re-analyze")
-    rsc.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    rsc.add_argument("--repo", **_REPO_FLAG)
     rsc.add_argument("--json", action="store_true", help="machine output (default: table)")
     rsc.add_argument("--gate", action="store_true",
                      help="exit 6 when a function this tree changed since HEAD is over its "
@@ -278,18 +285,18 @@ def build_parser() -> argparse.ArgumentParser:
     rsc.set_defaults(func=_Handler("scoring", "cmd_rescore"))
 
     dig = sub.add_parser("digest", help="delta between the last two scored runs; silent when unchanged")
-    dig.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    dig.add_argument("--repo", **_REPO_FLAG)
     dig.add_argument("--alert", action="store_true", help="pipe a non-quiet digest through alert_command")
     dig.set_defaults(func=_Handler("reports", "cmd_digest"))
 
     trd = sub.add_parser("trend", help="totals per scored run: over-target count, CRAP load, average")
-    trd.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    trd.add_argument("--repo", **_REPO_FLAG)
     trd.add_argument("--json", action="store_true", help="print as JSON")
     trd.set_defaults(func=_Handler("reports", "cmd_trend"))
 
     rep = sub.add_parser("report", help="one self-contained HTML page: the ranked worklist, "
                                         "the per-scope grades, the trend, and a staleness banner")
-    rep.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    rep.add_argument("--repo", **_REPO_FLAG)
     rep.add_argument("--out", default=".crapkit/report.html", metavar="PATH",
                      help="where to write the page: repo-relative, or an absolute path "
                           "you name (default: .crapkit/report.html); the path is "
@@ -298,11 +305,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     tsc = sub.add_parser("test-scoped", help="run the configured isolated test command for the files' scope")
     tsc.add_argument("files", nargs="+", help="repo-relative test files")
-    tsc.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    tsc.add_argument("--repo", **_REPO_FLAG)
     tsc.set_defaults(func=_Handler("verifying", "cmd_test_scoped"))
 
     ver = sub.add_parser("verify", help="full verdict vs the baseline snapshot: gate, ratchet, new failures")
-    ver.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    ver.add_argument("--repo", **_REPO_FLAG)
     # one baseline, named one way: two of these would leave the losing flag
     # silently ignored, and which one lost would be argument order
     picked = ver.add_mutually_exclusive_group()
@@ -329,7 +336,7 @@ def build_parser() -> argparse.ArgumentParser:
     ver.set_defaults(func=_Handler("verifying", "cmd_verify"))
 
     hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on violation")
-    hook.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    hook.add_argument("--repo", **_REPO_FLAG)
     hook.set_defaults(func=_Handler("verifying", "cmd_hook_precommit"))
 
     # No --repo: the root comes from the edited file's own path, walked upward to
@@ -344,7 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     wl = sub.add_parser("worklist", help="ranked risk map: every admitted function, "
                                          "finished and no-lane rows included, so it never empties")
-    wl.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    wl.add_argument("--repo", **_REPO_FLAG)
     wl.add_argument("--top", type=int, default=None, help="cap the active list (default: config worklist_top)")
     wl.add_argument("--scope", action="append", default=[], metavar="NAME",
                     help="restrict to this configured scope (repeatable); exact, not substring")
@@ -355,11 +362,11 @@ def build_parser() -> argparse.ArgumentParser:
     wl.set_defaults(func=_Handler("queue", "cmd_worklist"))
 
     ini = sub.add_parser("init", help="sniff the repo and write a starter crapkit.toml")
-    ini.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    ini.add_argument("--repo", **_REPO_FLAG)
     ini.set_defaults(func=_Handler("admin", "cmd_init"))
 
     doc = sub.add_parser("doctor", help="check that crapkit.toml still describes this repo")
-    doc.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    doc.add_argument("--repo", **_REPO_FLAG)
     doc.add_argument("--show-files", action="store_true", help="list every file each scope matched")
     doc.add_argument("--json", action="store_true",
                      help="one machine-readable report instead of lines: versions, store, "
@@ -394,22 +401,22 @@ def build_parser() -> argparse.ArgumentParser:
     rat.add_argument("--json", action="store_true", help="machine output (report)")
     rat.add_argument("--enforce", action="store_true",
                      help="report: exit 1 on debt policy violations (age, repayment quota)")
-    rat.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    rat.add_argument("--repo", **_REPO_FLAG)
     rat.set_defaults(func=_Handler("ratchet_cmds", "cmd_ratchet"))
 
     wat = sub.add_parser("watch", help="rescore files as they change (polls tracked files from start)")
-    wat.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    wat.add_argument("--repo", **_REPO_FLAG)
     wat.add_argument("--interval", type=float, default=2.0, help="poll seconds (default 2)")
     wat.add_argument("--cycles", type=int, default=None,
                      help="stop after N polls (default: poll until ctrl-c)")
     wat.set_defaults(func=_Handler("admin", "cmd_watch"))
 
     srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)")
-    srv.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    srv.add_argument("--repo", **_REPO_FLAG)
     srv.set_defaults(func=_Handler("analyses", "cmd_mcp"))
 
     mut = sub.add_parser("mutate", help="diff-scoped mutation testing: flip operators on changed lines, run the suite per mutant")
-    mut.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    mut.add_argument("--repo", **_REPO_FLAG)
     mut.add_argument("--files", nargs="*", default=None,
                      help="mutate these whole files instead of the working-tree diff vs HEAD "
                           "(files outside the scored corpus are named and skipped)")
@@ -421,7 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
     mut.set_defaults(func=_Handler("analyses", "cmd_mutate"))
 
     dup = sub.add_parser("duplication", help="near-duplicate functions by normalized line shingles")
-    dup.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    dup.add_argument("--repo", **_REPO_FLAG)
     dup.add_argument("--min-lines", type=int, default=8, help="smallest function considered (default 8)")
     dup.add_argument("--similarity", type=float, default=0.8,
                      help="containment threshold, shared/smaller (default 0.8)")
@@ -430,7 +437,7 @@ def build_parser() -> argparse.ArgumentParser:
     dup.set_defaults(func=_Handler("analyses", "cmd_duplication"))
 
     cpl = sub.add_parser("coupling", help="files that co-change in the churn window: hidden dependencies")
-    cpl.add_argument("--repo", default=".", help="consuming repo root (default: cwd)")
+    cpl.add_argument("--repo", **_REPO_FLAG)
     cpl.add_argument("--min-support", type=int, default=5, help="minimum shared commits (default 5)")
     cpl.add_argument("--min-confidence", type=float, default=0.5,
                      help="minimum max-direction co-change ratio (default 0.5)")

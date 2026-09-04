@@ -19,8 +19,9 @@ from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
                         sql_floor)
-from ._shared import (_latest_scored, _load_repo_config, _load_sources, _open_store,
-                      _positive_top, _print_json, _ratchet_entries, _scope_names)
+from ._shared import (_command_root, _latest_scored, _load_repo_config, _load_sources,
+                      _open_store, _positive_top, _print_json, _ratchet_entries,
+                      _repo_relative, _scope_names)
 
 
 def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
@@ -47,7 +48,7 @@ def _pushdown_floor(cfg) -> int:
 
 def cmd_next_item(args: argparse.Namespace) -> int:
     _positive_top("next-item", args.top)
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     scopes = _scope_names(cfg, args.scope)
     store, latest = _scored_store(root)
@@ -352,7 +353,7 @@ def cmd_claims(args: argparse.Namespace) -> int:
     verify happens to score that function at its ceiling — which, for the worst
     function in the repo, is the whole job.
     """
-    store = _open_store(Path(args.repo).resolve())
+    store = _open_store(_command_root(args.repo))
     claims = store.open_claims()
     if args.action != "release":
         _print_claims(args.json, claims)
@@ -827,7 +828,7 @@ def _brief_target(args: argparse.Namespace) -> tuple[str, str]:
 
 def cmd_brief(args: argparse.Namespace) -> int:
     """One call for everything a burn-down session opens a file already knowing."""
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     store, latest = _scored_store(root)
     loader = _BriefLoader(root, cfg, store, latest)
@@ -835,6 +836,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
         _print_json(_brief_batch(loader, _resolve_batch(args.batch)))
         return 0
     path, name = _brief_target(args)
+    path = _repo_relative(path, root, Path.cwd())  # said from where the user stands
     row = _pick_function(path, loader.scored_file(path), name)
     _print_brief(args.json, _brief_packet(loader, row))
     return 0
@@ -963,7 +965,7 @@ def _worklist_run(root: Path, store) -> dict:
 
 
 def cmd_worklist(args: argparse.Namespace) -> int:
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     scopes = _scope_names(cfg, args.scope)
     store = _open_store(root, first_command="coverage")

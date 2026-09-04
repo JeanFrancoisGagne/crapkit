@@ -12,8 +12,10 @@ Two audiences, two sections. Read the one that matches the repo you are in:
   itself.
 
 Every command below runs as `crapkit <sub>` (console script) or
-`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`, default `.`, except
-`claude-hook`, which reads its root from the hook payload on stdin.
+`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
+nearest `crapkit.toml` at or above the working directory
+(docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
+reads its root from the hook payload on stdin.
 
 ---
 
@@ -545,8 +547,8 @@ Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
       }
     }
 
-`--repo` sets the default root; every tool also takes an optional `repo` argument that
-overrides it per call. `initialize` negotiates the protocol revision (a client's
+`--repo` sets the default root and every tool takes an optional `repo` argument that
+overrides it per call; both are walked up to the nearest `crapkit.toml` (ADR 0002). `initialize` negotiates the protocol revision (a client's
 `2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
 `2025-06-18`) and reports server name `crapkit`.
 

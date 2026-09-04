@@ -1279,9 +1279,13 @@ Answering those calls from one long-lived process instead was measured for 0.4.5
 rejected. A kept process serves a `source` the session has already edited, and a packet whose
 `source` is stale is a packet nobody can edit from.
 
-With no `--repo`, the server serves the directory the client started it in, which is what a
-globally registered server sees in each project. In a directory with no `crapkit.toml` the
-server still starts and answers `initialize` and `tools/list`. Each `tools/call` there comes
+With no `--repo`, the server serves the nearest `crapkit.toml` at or above the directory the
+client started it in ([ADR 0002](adr/0002-configuration-is-found-upward-nearest-wins.md)),
+so a globally registered server started in a monorepo workspace serves the root
+configuration that claims the workspace; a tool's `repo` argument is walked the same way,
+and a `.git` entry without a configuration stops the walk. In a directory with no
+`crapkit.toml` at or above it the server still starts and answers `initialize` and
+`tools/list`. Each `tools/call` there comes
 back as a tool result, not a JSON-RPC error, and that result carries `isError: true` with
 text naming the missing config and `crapkit init`:
 
