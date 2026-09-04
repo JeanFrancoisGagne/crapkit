@@ -19,9 +19,10 @@ from ..doctor import Finding
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
+from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
-from ._shared import _file_sizer, _load_repo_config, _print_json, repo_text
+from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, repo_text
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -504,12 +505,42 @@ def _warn_missing_pytest_cov(lanes: tuple) -> None:
             print(note, file=sys.stderr)
 
 
+def _store_ignored_above(root: Path) -> bool:
+    """Whether a .gitignore above the root already ignores the state directory.
+
+    git applies an unanchored pattern at every depth, so a root `.crapkit/`
+    line ignores web/.crapkit/ too and a nested init has nothing to add. git
+    consults nothing above a repository's own top, so a root that is one (a
+    nested repository, a linked worktree, a checkout under an ignoring
+    directory) reads no ancestor at all, and a deeper root stops reading at
+    the first top it finds."""
+    if (root / ".git").exists():
+        return False
+    for directory in root.parents[:MAX_LEVELS]:
+        if _ignores_store(directory / ".gitignore"):
+            return True
+        if (directory / ".git").exists():
+            return False
+    return False
+
+
+def _ignores_store(gitignore: Path) -> bool:
+    if not gitignore.is_file():
+        return False
+    lines = {line.strip() for line in
+             gitignore.read_text(encoding="utf-8", errors="replace").splitlines()}
+    return bool(lines & {".crapkit/", ".crapkit"})
+
+
 def _extend_gitignore(root: Path, lanes: tuple) -> None:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
-    untracked coverage output nobody asked for."""
+    untracked coverage output nobody asked for. A nested configuration under a
+    root whose .gitignore already ignores the store writes nothing (ADR 0002)."""
     from ..scaffold import gitignore_update
 
+    if _store_ignored_above(root):
+        return
     path = root / ".gitignore"
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
     text, added = gitignore_update(current, lanes)
@@ -519,14 +550,49 @@ def _extend_gitignore(root: Path, lanes: tuple) -> None:
     print(f"added to .gitignore: {', '.join(added)}")
 
 
+def _refuse_claimed_by_ancestor(root: Path) -> None:
+    """A second crapkit.toml under a directory an ancestor's scope path already
+    claims would be two configurations selecting the same files, one store
+    each, with the nested one shadowing the root's for everything below it
+    (ADR 0002: nearest wins). The walk starts at the root itself, so a `.git`
+    entry there, a nested repository or a linked worktree, stops it and init
+    proceeds; a root that is the repository top never walks past its own `.git`."""
+    above = find_root(root)
+    if above is None:
+        return
+    directory = root.relative_to(above).as_posix()
+    scope = _claiming_scope(_load_repo_config(above), directory)
+    if scope is not None:
+        raise ConfigError(f"crapkit.toml at {above} already claims {directory} "
+                          f"(scope {scope!r}); edit that configuration instead")
+
+
+def _claiming_scope(cfg, directory: str) -> str | None:
+    """The first declared scope whose path and `directory` select a file in
+    common: one is the other or sits under it. `.` claims nothing, as in scoring."""
+    for scope in cfg.scopes:
+        if any(_overlapping(directory, path) for path in scope.paths):
+            return scope.name
+    return None
+
+
+def _overlapping(directory: str, scope_path: str) -> bool:
+    return _under(directory, scope_path) or _under(scope_path, directory)
+
+
+def _under(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(prefix.rstrip("/") + "/")
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     from ..scaffold import (detect_lanes, live_lanes, pytest_testpaths, sniff_scopes,
                             starter_toml)
 
-    root = Path(args.repo).resolve()
+    root = Path(args.repo or ".").resolve()  # init writes where the user stands; it adopts nothing
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
         raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
+    _refuse_claimed_by_ancestor(root)
     files = ls_files(root)
     scopes = sniff_scopes(files)
     if not scopes:
@@ -1522,7 +1588,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     if args.plugin_root is not None:
         return _doctor_plugin(args.plugin_root)
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)  # a config that does not parse already exits 3 here
     if args.tune:
         return _doctor_tune(root, cfg)
@@ -1588,7 +1654,7 @@ def _watch_cycle(root: Path, files: list[str], prev: dict[str, float],
 def cmd_watch(args: argparse.Namespace) -> int:
     from ..watch import snapshot_mtimes
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     files = _watched_files(root, _load_repo_config(root))
     prev = snapshot_mtimes(root, files)
     print(_watch_banner(len(prev), args.interval, args.cycles), flush=True)

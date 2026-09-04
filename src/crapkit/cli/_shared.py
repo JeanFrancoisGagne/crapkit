@@ -14,6 +14,7 @@ from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
 from ..repotext import repo_text
+from ..rootfind import find_root
 from ..store import SnapshotStore
 
 
@@ -66,7 +67,37 @@ def _unknown_scope_message(unknown: list[str], declared: list[str]) -> str:
     return f"no scope named {named}; declared: {', '.join(declared)}"
 
 
-def _repo_relative(raw: str, root: Path = Path(".")) -> str:
+def _command_root(repo: str | None) -> Path:
+    """The crapkit root a command works in.
+
+    `--repo` names an exact root and walks nowhere. Without it the root is the
+    nearest crapkit.toml at or above the working directory (ADR 0002: nearest
+    wins, a `.git` entry without one stops the walk), named on stderr when it
+    is not the working directory itself, so `cd web && crapkit worklist` reads
+    the root configuration that claims web/ and says which file it read. When
+    the walk finds nothing the working directory is the root, so the refusal
+    `_load_repo_config` raises names where the user stands.
+    """
+    if repo is not None:
+        return Path(repo).resolve()
+    cwd = Path.cwd().resolve()
+    found = find_root(cwd)
+    if found is None:
+        return cwd
+    if found != cwd:
+        print(f"crapkit: using crapkit.toml at {found}", file=sys.stderr)
+    return found
+
+
+def _stand(repo: str | None) -> Path | None:
+    """Where a relative path argument is read from: the working directory when
+    the root came from the walk, nothing when `--repo` named the root. The
+    rebase belongs to discovery (ADR 0002), not to the flag: `--repo ..` from
+    web/ reads `web/src/grade.py` against the root it named, as on 0.4.15."""
+    return None if repo is not None else Path.cwd()
+
+
+def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:
     r"""One spelling for a file argument, whatever the shell handed in.
 
     `src/a.py`, `src\a.py`, `./src/a.py` and the absolute path tab completion
@@ -77,11 +108,26 @@ def _repo_relative(raw: str, root: Path = Path(".")) -> str:
     produce most often — matched no scope prefix in any of them: `test-scoped`
     called it a file belonging to no declared scope, and `rescore --gate` scored
     nothing and passed a gate the same file failed spelled relative.
+
+    `cwd` is where the user stands, handed in only when the root came from
+    the walk (`_stand`). Below the root, a relative argument is rebased from
+    there (ADR 0002): `grade.py` typed in web/src names web/src/grade.py, and
+    one climbing out of the root is refused like an absolute path outside it.
+    At the root, from a directory outside it, or under `--repo`, the argument
+    is root-relative as it always was.
     """
     path = raw.replace("\\", "/")
     if _is_rooted(path):
         return _under_root(path, root)
+    if _below(cwd, root):
+        return _under_root(str(cwd / path), root)
     return posixpath.normpath(path)
+
+
+def _below(cwd: Path | None, root: Path) -> bool:
+    """Whether the working directory sits strictly under the root, the one
+    place a relative argument means something other than root-relative."""
+    return cwd is not None and root.resolve() in cwd.resolve().parents
 
 
 def _is_rooted(path: str) -> bool:

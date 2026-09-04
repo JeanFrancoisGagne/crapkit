@@ -16,9 +16,9 @@ from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
-from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
+from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _repo_out_path, _repo_relative, _write_tsv, repo_text)
+                      _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -578,7 +578,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..uncovered import missing_by_path
     from ..verify import diff_uncovered, evaluate
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     _refuse_lane_less_verify(cfg)
     store = _verify_store(root, args.baseline_tsv)
@@ -750,15 +750,15 @@ def _route_unowned(path: str, templates: dict) -> str:
 
 
 def _group_files_by_scope(files, scope_paths: dict, templates: dict,
-                          root: Path = Path(".")) -> dict[str, list[str]]:
+                          root: Path = Path("."), cwd: Path | None = None) -> dict[str, list[str]]:
     """Route each requested file to its owning scope; unowned or untemplated is a config error.
 
     Every spelling of a path arrives here as the one the scopes are declared in,
     because `owning_scope` matches on a prefix and `./src/a.py` shares none with
-    `src`."""
+    `src`; a file said from `cwd` below the root is placed under the root first."""
     by_scope: dict[str, list[str]] = {}
     for raw in files:
-        path = _repo_relative(raw, root)
+        path = _repo_relative(raw, root, cwd)
         owner = _owning_scope(path, scope_paths) or _route_unowned(path, templates)
         if owner not in templates:
             raise ConfigError(f"no [crapkit.scoped_tests] template for scope {owner!r}")
@@ -783,10 +783,11 @@ def _scoped_command(template: str, files: list[str]) -> str:
 def cmd_test_scoped(args: argparse.Namespace) -> int:
     import subprocess
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     templates = dict(cfg.scoped_tests)
-    by_scope = _group_files_by_scope(args.files, cfg.scope_paths, templates, root)
+    by_scope = _group_files_by_scope(args.files, cfg.scope_paths, templates, root,
+                                     cwd=_stand(args.repo))
 
     for scope, files in sorted(by_scope.items()):
         command = _scoped_command(templates[scope], files)
@@ -939,7 +940,7 @@ def _staged_gate(root: Path, cfg):
 def cmd_hook_precommit(args: argparse.Namespace) -> int:
     import os
 
-    root = Path(args.repo).resolve()
+    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     gate = _staged_gate(root, cfg)
     _warn_unscoped_staged(gate.unscoped)

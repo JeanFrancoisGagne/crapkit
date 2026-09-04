@@ -838,8 +838,9 @@ file, so every function fell to `untested` and scored as if nothing tested it.
 ## A crapkit root below the repo top
 
 The crapkit root is wherever `crapkit.toml` sits, and it does not have to be the git top. A
-package one directory down inside a bigger repo is a supported shape. There is no monorepo
-mode and no config key for it: point crapkit at the package.
+package one directory down inside a bigger repo is a supported shape, and so is a root
+configuration whose scopes claim the packages below it; neither needs a mode or a config
+key. Stand in the package, or point `--repo` at it.
 
 ```
 $ crapkit coverage --repo packages/api
@@ -852,8 +853,21 @@ worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (workli
 
 `--repo` names the crapkit root, never the git top, and every subcommand you invoke by hand
 takes it; `claude-hook` is the exception and finds the root by walking up from the edited
-file instead. Running the same two commands from inside `packages/api` with no flag does the
-same thing.
+file instead. Without `--repo`, every command finds the root the way the hook does
+([ADR 0002](adr/0002-configuration-is-found-upward-nearest-wins.md)): it walks up from the
+working directory to the nearest `crapkit.toml`. `cd packages/api && crapkit worklist` reads
+`packages/api/crapkit.toml`, and in a monorepo whose root configuration claims `web/`,
+`cd web && crapkit worklist` reads the root's. When the root found is not the working
+directory, one stderr line says which file is in use, `crapkit: using crapkit.toml at
+/repo`, and a relative path argument is read from where you stand: `crapkit brief
+src/grade.ts classify` typed in `web/` names `web/src/grade.ts`, and a path that climbs out
+of the root is refused. Nearest wins, so a nested configuration shadows an ancestor's, and
+a `.git` entry (file or directory) without a configuration stops the walk: a linked
+worktree or a nested repository never borrows a parent's configuration or its store. A
+given `--repo` names an exact root, walks nowhere, and reads a relative path argument
+against that root. `init` writes where you stand and
+refuses, exit 3, under a directory an ancestor's scope path already claims:
+`crapkit.toml at /repo already claims web (scope 'web'); edit that configuration instead`.
 
 Both halves of a row are root-relative. The scored path comes from `git ls-files`, which
 answers relative to its cwd. The churn count comes from `git log --relative`, which answers

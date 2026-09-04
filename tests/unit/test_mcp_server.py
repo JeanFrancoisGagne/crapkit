@@ -343,3 +343,32 @@ def test_both_pages_list_the_gate_tool_beside_the_other_nine(page):
     gate = _row(section, "`gate`")
     assert "`path`" in gate and "rescore" in gate and "`ok`" in gate, gate
     assert "nine" not in section.lower(), f"{page} still counts nine tools"
+
+
+# --- the repo a call names is walked upward (ADR 0002) ------------------------
+
+def test_a_repo_below_the_root_spawns_the_cli_on_the_root_above_it(monkeypatch, tmp_path):
+    """A client started in a monorepo workspace, or a call naming one, serves
+    the root configuration that claims the workspace: the CLI is spawned with
+    `--repo` at that root, never at the workspace."""
+    (tmp_path / "web" / "src").mkdir(parents=True)
+    calls = _cli_answers(monkeypatch, 0, json.dumps({"runs": [], "schema": 1}))
+    replies = _serve(monkeypatch, tmp_path,
+                     [_call(1, "runs", {"repo": str(tmp_path / "web" / "src")})])
+
+    assert replies[1]["result"]["isError"] is False
+    assert calls[0][-2:] == ["--repo", str(tmp_path)], calls
+
+
+def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing(monkeypatch,
+                                                                                 tmp_path):
+    """A mistyped `repo` is not adopted by the configuration above it: the
+    answer names the directory that is not there, and no CLI runs."""
+    _no_cli(monkeypatch)
+    missing = tmp_path / "web" / "nope"
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "runs", {"repo": str(missing)})])
+
+    call = replies[1]["result"]
+    assert call["isError"] is True, call
+    assert call["content"][0]["text"].startswith(
+        f"no crapkit.toml in {missing} - nothing measured here."), call
