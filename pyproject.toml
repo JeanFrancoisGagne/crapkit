@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crapkit"
-version = "0.4.15"
+version = "0.5.0"
 description = "Scores every function on complexity times uncovered risk, ranks the worst, and blocks commits that add more."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { text = "MIT" }

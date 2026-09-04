@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 — unreleased
+## 0.5.0 — 2026-09-03
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
 
@@ -349,6 +349,71 @@ line as the only warning. Moved contracts: `--repo`'s default of
 `.` (tests/unit/test_report_command.py), the lanes page's "no monorepo mode" sentence, the
 README's two `--repo` default lines, the agents page's server line and AGENTS.md's default.
 (#69)
+
+### Upgrading from 0.4.x
+
+- **Run `crapkit doctor` first.** Three defaults changed under committed configs, and doctor
+  names each one where it applies: an `[exclude]` glob with a leading `**/` now also matches the
+  repo-root copy (`**/dist/**` excludes `dist/` too), so read the per-scope file counts; a
+  coverage.py lane whose python cannot import pytest-cov now fails doctor instead of the first
+  `crapkit coverage`; and a `{files}` scoped-test template on a scope that holds no test file
+  fails, naming the whole-suite form as the fix.
+- **The first `inventory` or `coverage` runs the analysis cache cold.** The analysis version is 9:
+  a Python function's `nesting` is now a depth (a flat chain of seven `if`s reads 1, not 7), and
+  the cognitive pass no longer charges the first token after a nested helper to that helper. `ccn`
+  does not move, so no ratchet mark moves; six of crapkit's own 5,258 rows shift `cognitive` by one.
+- **`worklist` text rows changed shape.** `(N std)` and `w 0.00` left the line; `crap` and `cov` joined
+  it, and the header reads `50 of 3980 active (worklist_top 50)`. A script that parsed the text
+  should read `worklist --json`, which keeps `ccn_std` and `weight` and adds `crap`, `cov`,
+  `ratchet_mark` and `active_total` (schema stays 1).
+- **The coverage summary line changed shape.** It reads `run 1 @ <sha>: N functions scored:
+  N measured, 1 over ceiling 6, CRAP load 41.0, grade F`, drops zero buckets, and a partial run
+  opens with `partial run (...)`; `over_target` and `grade` on a partial run count the measured
+  scopes only. `digest` says `over ceiling`, and so does `trend`.
+- **Under `--json`, a command that dies prints one error object on stdout** (`{"error": {"exit",
+  "kind", "message"}, "schema": 1}`) instead of nothing; stderr and the exit code are unchanged.
+  Over MCP the same object is the tool's `isError` text for the `--json` tools.
+- **An unknown `--scope` exits 3** (`no scope named 'x'; declared: api, web`) where it printed an
+  empty list at exit 0.
+- **`--reuse-artifacts` refuses the artifact of a lane whose last attempt wrote nothing** (exit 5
+  for `coverage`, `cannot conclude` for `verify`). A real run or a rewrite of the file clears it.
+- **A lane positional that names pytest's `testpaths` now loads.** `python -m pytest tests --cov`
+  beside `testpaths = ["tests"]` was refused at exit 3 from every command; it is accepted when the
+  positionals together name every configured entry. `init` omits the positional in that case.
+- **`mutate` never places a mutant in a test file**, and a scope declaring `paths = ["."]` selects
+  no file for `mutate`, as it already selected none for scoring: declare the files by name.
+- **The Action fails a pull request it could not judge.** With `gate: "true"`, a base run that was
+  attempted and not made (a depth-1 checkout, no `crapkit.toml` at the fork point, a lane failing
+  there) exits 1 and the comment says why; set `fetch-depth: 0` on `actions/checkout`. A failed
+  `coverage` now skips `verify` and exits with coverage's code. The comment's verdict names the
+  rule and lists one bullet per finding.
+- **`verify` touches `crapkit-ratchet.tsv` only when something moved**, never creates it empty, and
+  its OK line says what it wrote (`ratchet: 6 dropped, 1 tightened -> git add crapkit-ratchet.tsv`).
+  A refused `--override` now prints one stderr line naming the cause.
+- **A one-commit repository ranks by complexity** instead of reading `risk 0.0` on every row.
+- **The MCP server has ten tools.** `gate` maps a path to `rescore PATH --gate --json`; `explain`
+  and `doctor` answer JSON; `worklist` and `next_item` take `scope`; a bad call answers `isError`
+  instead of ending the session.
+- **Windows reads and prints plainly.** stdin is read as UTF-8 even when it is a pipe, so the hook
+  and the MCP server no longer see mojibake; a `crapkit.toml` or marks file saved as UTF-16 (the
+  PowerShell 5.1 `Out-File` default) exits 3 with `crapkit.toml is not UTF-8 (first bytes ff fe =
+  UTF-16 ...); save it as UTF-8` where it was a traceback, and a UTF-8 BOM on either file is
+  tolerated; `doctor` WARNs on a pre-commit hook that starts with a BOM, which git cannot spawn.
+  The six shell-captured one-liners (the worklist header, the ratchet seed line, the coverage
+  `next` line, the watch line and two more) use ` - ` where they used an em dash, so a script
+  matching them by that character must change; `trend` and `brief` text say `over ceiling`.
+- **Every command finds `crapkit.toml` by walking up.** `--repo` now defaults to the walk instead of
+  `.`: a command run below a root uses the nearest configuration above it and prints
+  `crapkit: using crapkit.toml at <root>` on stderr (stdout is untouched, `--json` stays one
+  object); a `.git` entry holding no configuration stops the walk, so a linked worktree or a nested
+  repository never borrows a parent's store; an explicit `--repo` names an exact root and walks
+  nowhere, so the Action and every script that passes it are unchanged. When the walk found the
+  root, a relative path argument names the file where the user stands, and one climbing out of
+  the root exits 3; under an explicit `--repo` the argument stays root-relative as before. `init` exits 3 under a directory an ancestor configuration already claims through a
+  scope path, and skips its `.gitignore` append when an ancestor `.gitignore` up to the repository
+  top already ignores `.crapkit/`. A stray `crapkit.toml` in a non-git ancestor, a home directory
+  say, is adopted with that stderr line as the only warning (ADR 0002). Run `crapkit doctor` from
+  the directory you work in and read the root it names.
 
 ## 0.4.15 — 2026-09-02
 

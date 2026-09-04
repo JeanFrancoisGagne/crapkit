@@ -3,12 +3,12 @@
   "name": "io.github.JeanFrancoisGagne/crapkit",
   "title": "crapkit",
   "description": "Ten read-only tools over per-function CRAP scores: complexity times uncovered risk, churn-ranked.",
-  "version": "0.4.15",
+  "version": "0.5.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "crapkit",
-      "version": "0.4.15",
+      "version": "0.5.0",
       "transport": {
         "type": "stdio"
       },

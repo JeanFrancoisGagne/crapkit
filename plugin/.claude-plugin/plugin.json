@@ -1,6 +1,6 @@
 {
   "name": "crapkit",
-  "version": "0.4.15",
+  "version": "0.5.0",
   "description": "crapkit's agent surface: three skills, the read-side MCP server, and one advisory PostToolUse hook that names functions an edit pushed over their ceiling. The hook and the MCP server both spawn the bare `crapkit` console script, so it has to be on PATH: crapkit 0.4.0 or newer, which is the release that answers `crapkit claude-hook`. `crapkit doctor --plugin-root` compares an installed copy against the CLI it will call. The commit gate stays the only enforcement point; this hook never blocks.",
   "author": {
     "name": "Jean-Francois Gagne"
