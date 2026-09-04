@@ -864,7 +864,8 @@ src/grade.ts classify` typed in `web/` names `web/src/grade.ts`, and a path that
 of the root is refused. Nearest wins, so a nested configuration shadows an ancestor's, and
 a `.git` entry (file or directory) without a configuration stops the walk: a linked
 worktree or a nested repository never borrows a parent's configuration or its store. A
-given `--repo` names an exact root and walks nowhere. `init` writes where you stand and
+given `--repo` names an exact root, walks nowhere, and reads a relative path argument
+against that root. `init` writes where you stand and
 refuses, exit 3, under a directory an ancestor's scope path already claims:
 `crapkit.toml at /repo already claims web (scope 'web'); edit that configuration instead`.
 

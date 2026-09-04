@@ -20,7 +20,7 @@ from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _print_json, _ratchet_entries,
-                      _repo_out_path, _repo_relative,
+                      _repo_out_path, _repo_relative, _stand,
                       _write_tsv)
 
 
@@ -736,7 +736,7 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     store, latest = _rescore_baseline(root)
 
-    rows, flat, ceilings = _rescore_analyze(root, cfg, args.files, cwd=Path.cwd())
+    rows, flat, ceilings = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
     overlay = _rescore_overlay(store, latest, rows, flat, cfg)
     verdict = _gate_verdict(root, cfg, overlay, ceilings) if args.gate else None
     if args.json:

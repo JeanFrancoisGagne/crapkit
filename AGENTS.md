@@ -547,8 +547,9 @@ Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
       }
     }
 
-`--repo` sets the default root and every tool takes an optional `repo` argument that
-overrides it per call; both are walked up to the nearest `crapkit.toml` (ADR 0002). `initialize` negotiates the protocol revision (a client's
+`--repo` names an exact root, as on every subcommand; without it the server walks up from
+where it started, and a tool's optional `repo` argument overrides the root per call and is
+walked the same way (ADR 0002). `initialize` negotiates the protocol revision (a client's
 `2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
 `2025-06-18`) and reports server name `crapkit`.
 

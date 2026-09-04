@@ -335,12 +335,17 @@ says `crapkit: using crapkit.toml at /repo`, and a relative path argument to `br
 `explain`, `rescore`, `test-scoped` or `mutate --files` is read from where you stand, so
 `crapkit brief src/grade.ts classify` typed in `web/` names `web/src/grade.ts`; a path that
 climbs out of the root is refused with `is outside the repo at /repo`. A given `--repo` names
-an exact root and walks nowhere, and the flag now defaults to nothing rather than `.`.
-`init` writes where you stand and exits 3 with `crapkit.toml at /repo already claims web
-(scope 'web'); edit that configuration instead` when an ancestor's scope path claims the
-directory, and writes no nested `.gitignore` line when a `.gitignore` above already ignores
-`.crapkit/`. A stray `crapkit.toml` in a non-git ancestor, such as a home directory, is
-adopted with that stderr line as the only warning. Moved contracts: `--repo`'s default of
+an exact root and walks nowhere, on `mcp` as on every other subcommand, and reads a relative
+path argument against that root as before; the flag now defaults to nothing rather than `.`.
+The MCP server runs each tool's command at the root it found, so a tool's repo-relative
+`path` holds from a server a global client started in a workspace, and a `repo` argument
+naming no directory gets the no-config answer instead of an ancestor's data. `init` writes
+where you stand and exits 3 with `crapkit.toml at /repo already claims web (scope 'web');
+edit that configuration instead` when an ancestor's scope path claims the directory, and
+writes no nested `.gitignore` line when a `.gitignore` above already ignores `.crapkit/`; a
+nested repository, whose top git consults nothing above, still gets its own line. A stray
+`crapkit.toml` in a non-git ancestor, such as a home directory, is adopted with that stderr
+line as the only warning. Moved contracts: `--repo`'s default of
 `.` (tests/unit/test_report_command.py), the lanes page's "no monorepo mode" sentence, the
 README's two `--repo` default lines, the agents page's server line and AGENTS.md's default.
 (#69)

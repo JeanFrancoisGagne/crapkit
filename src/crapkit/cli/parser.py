@@ -169,6 +169,9 @@ def _help_topics(parser: argparse.ArgumentParser) -> dict:
 # Every subcommand that reads a repo takes --repo, and none defaults it to the
 # working directory: without the flag the root is found by walking up from
 # there (ADR 0002), which is `cli._shared._command_root`'s business.
+# A path argument is rebased from the working directory only when the root came
+# from the walk (ADR 0002); under --repo it is root-relative as before.
+_WHERE = " (repo-relative; without --repo, read from the working directory)"
 _REPO_FLAG = {"default": None,
               "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
 
@@ -250,7 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
     ovr.set_defaults(func=_Handler("reports", "cmd_overrides"))
 
     expl = sub.add_parser("explain", help="a function's trajectory across runs, plus its ratchet mark")
-    expl.add_argument("path", help="repo-relative source file")
+    expl.add_argument("path", help="source file" + _WHERE)
     expl.add_argument("name", help="function name or fragment")
     expl.add_argument("--repo", **_REPO_FLAG)
     expl.add_argument("--history", action="store_true",
@@ -263,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
     brf = sub.add_parser("brief", help="one function's whole start-editing packet: score, "
                                        "source, the rest of its file, gate rule, lane, mark, "
                                        "dark lines, twins, churn, coupling, commands")
-    brf.add_argument("path", nargs="?", help="repo-relative source file")
+    brf.add_argument("path", nargs="?", help="source file" + _WHERE)
     brf.add_argument("name", nargs="?",
                      help="function name: the bare identifier, the whole long_name "
                           "next-item printed, or the line it starts on")
@@ -275,7 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     brf.set_defaults(func=_Handler("queue", "cmd_brief"))
 
     rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the latest run's coverage")
-    rsc.add_argument("files", nargs="+", help="repo-relative source files to re-analyze")
+    rsc.add_argument("files", nargs="+", help="source files to re-analyze" + _WHERE)
     rsc.add_argument("--repo", **_REPO_FLAG)
     rsc.add_argument("--json", action="store_true", help="machine output (default: table)")
     rsc.add_argument("--gate", action="store_true",
@@ -304,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     rep.set_defaults(func=_Handler("reports", "cmd_report"))
 
     tsc = sub.add_parser("test-scoped", help="run the configured isolated test command for the files' scope")
-    tsc.add_argument("files", nargs="+", help="repo-relative test files")
+    tsc.add_argument("files", nargs="+", help="test files" + _WHERE)
     tsc.add_argument("--repo", **_REPO_FLAG)
     tsc.set_defaults(func=_Handler("verifying", "cmd_test_scoped"))
 

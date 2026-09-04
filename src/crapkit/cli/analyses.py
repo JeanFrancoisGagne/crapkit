@@ -13,6 +13,7 @@ from ..errors import ConfigError, CrapkitError
 from ..gitio import ls_files
 from ..invocation import _self
 from ._shared import (_command_root, _file_sizer, _load_repo_config, _load_sources, _open_store,
+                      _stand,
                       _positive_top, _print_json, _repo_relative)
 
 
@@ -158,7 +159,8 @@ def _print_mutation(as_json: bool, survivors: list, total: int, outside: list[st
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    """Serve stdio from `--repo`, or from the directory the client started in.
+    """Serve stdio from `--repo`, an exact root, or from the nearest crapkit.toml
+    at or above the directory the client started in (ADR 0002).
 
     A client registered globally opens the server in every project, most of
     which have no crapkit.toml. Refusing to start there gave the client a server
@@ -198,7 +200,7 @@ def cmd_mutate(args: argparse.Namespace) -> int:
     if not cfg.mutation_command:
         raise ConfigError("mutate needs [crapkit] mutation_command — the suite run once per mutant")
     targets, outside = _corpus_targets(root, cfg,
-                                       _mutation_targets(root, args.files, cwd=Path.cwd()))
+                                       _mutation_targets(root, args.files, cwd=_stand(args.repo)))
     mutants = _collect_mutants(root, targets, args.max_mutants)
     verdicts = run_mutants(root, cfg, mutants, reporter(len(mutants), sys.stderr))
     survivors = [m for m, killed in zip(mutants, verdicts) if not killed]

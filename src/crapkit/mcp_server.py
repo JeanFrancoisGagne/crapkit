@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .invocation import _self
-from .rootfind import find_root
+from .rootfind import CONFIG_NAME, find_root
 
 # Newest first. Everything this server does — tools, annotations, structured
 # results over stdio — is inside the 2025-06-18 revision, and nothing it does
@@ -195,12 +195,15 @@ def _no_config_result(repo: str) -> dict:
 
 
 def _run_cli(tool: dict, arguments: dict, repo: str) -> dict:
-    """One tool, run as the CLI command it maps to. A command that printed
-    nothing answers with its stderr, so a refusal reaches the caller as text.
-    An exit the tool declares in `verdict_exits` is an answer, not a failure:
-    `gate` exits 6 on a breach and its payload says so in `gate.ok`."""
+    """One tool, run as the CLI command it maps to, at the root it serves: a
+    server started in a workspace must not hand the command a working
+    directory below the root, because `path` is repo-relative on every tool's
+    schema. A command that printed nothing answers with its stderr, so a
+    refusal reaches the caller as text. An exit the tool declares in
+    `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
+    and its payload says so in `gate.ok`."""
     argv = build_argv(tool, arguments) + ["--repo", repo]
-    proc = subprocess.run([sys.executable, "-m", "crapkit", *argv],
+    proc = subprocess.run([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                           capture_output=True, text=True, timeout=600)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
@@ -263,11 +266,23 @@ def _tool_named(name: str) -> dict | None:
 
 
 def _config_root(repo: str) -> Path | None:
-    """The crapkit root at or above `repo`, the call's own argument or the
-    server's default, found the way every command finds it (ADR 0002): a
-    server a global client started in a workspace serves the root
-    configuration that claims the workspace."""
-    return find_root(Path(repo).resolve())
+    """The crapkit root at or above `repo`, a call's own argument, found the
+    way every command finds it (ADR 0002). A `repo` naming no directory finds
+    nothing: a typo must not be adopted by an ancestor's configuration and
+    read back as data."""
+    start = Path(repo).resolve()
+    return find_root(start) if start.is_dir() else None
+
+
+def _served_root(root: Path, arguments: dict) -> tuple[str, Path | None]:
+    """The repo a call names and the crapkit root that serves it. A call's own
+    `repo` argument is walked up to the nearest crapkit.toml; the server's
+    root was settled once at start, where `crapkit mcp` walks without `--repo`
+    and a given `--repo` names an exact root, as on every subcommand."""
+    repo = arguments.get("repo")
+    if repo:
+        return repo, _config_root(repo)
+    return str(root), root if (root / CONFIG_NAME).is_file() else None
 
 
 def _call_tool(root: Path, name: str, arguments: dict) -> dict:
@@ -279,8 +294,7 @@ def _call_tool(root: Path, name: str, arguments: dict) -> dict:
     refusal = _argument_error(tool, arguments)
     if refusal:
         return _result(refusal, is_error=True)
-    repo = arguments.get("repo") or str(root)
-    found = _config_root(repo)
+    repo, found = _served_root(root, arguments)
     if found is None:
         return _no_config_result(repo)
     return _run_cli(tool, arguments, str(found))

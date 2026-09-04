@@ -1283,7 +1283,9 @@ With no `--repo`, the server serves the nearest `crapkit.toml` at or above the d
 client started it in ([ADR 0002](adr/0002-configuration-is-found-upward-nearest-wins.md)),
 so a globally registered server started in a monorepo workspace serves the root
 configuration that claims the workspace; a tool's `repo` argument is walked the same way,
-and a `.git` entry without a configuration stops the walk. In a directory with no
+and a `.git` entry without a configuration stops the walk. A given `--repo` names an exact
+root, as on every subcommand, and each tool's command runs at the root the server found, so
+`path` stays repo-relative wherever the server was started. In a directory with no
 `crapkit.toml` at or above it the server still starts and answers `initialize` and
 `tools/list`. Each `tools/call` there comes
 back as a tool result, not a JSON-RPC error, and that result carries `isError: true` with

@@ -18,7 +18,7 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _repo_out_path, _repo_relative, _write_tsv, repo_text)
+                      _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -787,7 +787,7 @@ def cmd_test_scoped(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     templates = dict(cfg.scoped_tests)
     by_scope = _group_files_by_scope(args.files, cfg.scope_paths, templates, root,
-                                     cwd=Path.cwd())
+                                     cwd=_stand(args.repo))
 
     for scope, files in sorted(by_scope.items()):
         command = _scoped_command(templates[scope], files)

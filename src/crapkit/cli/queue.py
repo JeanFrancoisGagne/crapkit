@@ -21,7 +21,7 @@ from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, bu
                         sql_floor)
 from ._shared import (_command_root, _latest_scored, _load_repo_config, _load_sources,
                       _open_store, _positive_top, _print_json, _ratchet_entries,
-                      _repo_relative, _scope_names)
+                      _repo_relative, _scope_names, _stand)
 
 
 def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
@@ -836,7 +836,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
         _print_json(_brief_batch(loader, _resolve_batch(args.batch)))
         return 0
     path, name = _brief_target(args)
-    path = _repo_relative(path, root, Path.cwd())  # said from where the user stands
+    path = _repo_relative(path, root, _stand(args.repo))  # said from where the user stands
     row = _pick_function(path, loader.scored_file(path), name)
     _print_brief(args.json, _brief_packet(loader, row))
     return 0

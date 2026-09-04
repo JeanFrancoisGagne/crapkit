@@ -509,8 +509,13 @@ def _store_ignored_above(root: Path) -> bool:
     """Whether a .gitignore above the root already ignores the state directory.
 
     git applies an unanchored pattern at every depth, so a root `.crapkit/`
-    line ignores web/.crapkit/ too and a nested init has nothing to add. The
-    read stops at the repository top, the last directory git consults."""
+    line ignores web/.crapkit/ too and a nested init has nothing to add. git
+    consults nothing above a repository's own top, so a root that is one (a
+    nested repository, a linked worktree, a checkout under an ignoring
+    directory) reads no ancestor at all, and a deeper root stops reading at
+    the first top it finds."""
+    if (root / ".git").exists():
+        return False
     for directory in root.parents[:MAX_LEVELS]:
         if _ignores_store(directory / ".gitignore"):
             return True

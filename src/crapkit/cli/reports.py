@@ -13,7 +13,7 @@ from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
-from ._shared import (_command_root, _load_repo_config, _open_store, _print_json,
+from ._shared import (_command_root, _load_repo_config, _open_store, _print_json, _stand,
                       _ratchet_entries, _repo_out_path, _repo_relative)
 
 
@@ -331,7 +331,7 @@ def cmd_explain(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     store = _open_store(root)
-    args.path = _repo_relative(args.path, root, Path.cwd())  # said from where the user stands
+    args.path = _repo_relative(args.path, root, _stand(args.repo))  # from where the user stands
     matches = store.find_functions(args.path, args.name)
     if not matches:
         raise CrapkitError(f"no function matching {args.name!r} in {args.path} appears in any run")

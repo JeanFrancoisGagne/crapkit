@@ -89,6 +89,14 @@ def _command_root(repo: str | None) -> Path:
     return found
 
 
+def _stand(repo: str | None) -> Path | None:
+    """Where a relative path argument is read from: the working directory when
+    the root came from the walk, nothing when `--repo` named the root. The
+    rebase belongs to discovery (ADR 0002), not to the flag: `--repo ..` from
+    web/ reads `web/src/grade.py` against the root it named, as on 0.4.15."""
+    return None if repo is not None else Path.cwd()
+
+
 def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:
     r"""One spelling for a file argument, whatever the shell handed in.
 
@@ -101,12 +109,12 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     called it a file belonging to no declared scope, and `rescore --gate` scored
     nothing and passed a gate the same file failed spelled relative.
 
-    `cwd` is where the user stands. Below the root, a relative argument is
-    rebased from there (ADR 0002): `grade.py` typed in web/src names
-    web/src/grade.py, and one climbing out of the root is refused like an
-    absolute path outside it. At the root, or from a directory outside it
-    (`--repo` naming a tree elsewhere), the argument is root-relative as it
-    always was.
+    `cwd` is where the user stands, handed in only when the root came from
+    the walk (`_stand`). Below the root, a relative argument is rebased from
+    there (ADR 0002): `grade.py` typed in web/src names web/src/grade.py, and
+    one climbing out of the root is refused like an absolute path outside it.
+    At the root, from a directory outside it, or under `--repo`, the argument
+    is root-relative as it always was.
     """
     path = raw.replace("\\", "/")
     if _is_rooted(path):

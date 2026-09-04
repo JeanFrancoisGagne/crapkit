@@ -187,6 +187,36 @@ def test_a_path_climbing_out_of_the_root_is_refused(mono: Path):
     assert f"is outside the repo at {mono}" in res.stderr, res.stderr
 
 
+def test_at_the_root_every_spelling_of_a_path_names_the_same_file(mono: Path):
+    """The `./` and backslash forms shells and agents produce read as before."""
+    _scored(mono)
+    _breach(mono)
+
+    for spelling in ("./web/src/grade.py", "web\\src\\grade.py"):
+        res = run_cli(mono, "rescore", "--gate", spelling)
+
+        assert res.returncode == 6, spelling + res.stdout + res.stderr
+        assert "web/src/grade.py:1" in res.stdout, spelling
+
+
+@pytest.mark.parametrize("stand, repo", [("web", ".."), ("..", "mono")])
+def test_an_explicit_repo_reads_a_relative_path_against_that_root(mono: Path, stand: str,
+                                                                    repo: str):
+    """`--repo` names an exact root and a relative path argument is read against
+    it from anywhere, as on 0.4.15: the rebase belongs to the walk, not to the
+    flag. From web/, `--repo ..` with `web/src/grade.py` once named
+    web/web/src/grade.py and died on a FileNotFoundError."""
+    _scored(mono)
+    _breach(mono)
+
+    res = run_cli((mono / stand).resolve(), "rescore", "--gate", "--repo", repo,
+                  "web/src/grade.py")
+
+    assert res.returncode == 6, res.stdout + res.stderr
+    assert "web/src/grade.py:1" in res.stdout
+    assert USING not in res.stderr, res.stderr
+
+
 # --- init under an ancestor configuration -------------------------------------
 
 @pytest.mark.parametrize("stand, claimed", [("web", "web"), ("web/src", "web/src")])
@@ -213,6 +243,30 @@ def test_init_writes_a_nested_configuration_where_no_scope_claims_the_directory(
     assert "added to .gitignore" not in res.stdout
 
 
+def test_init_in_a_nested_repository_still_ignores_its_own_store(mono: Path):
+    """git consults nothing above a repository's own top, so the root
+    .gitignore that ignores `.crapkit/` never reaches a nested repository;
+    skipping the append there left the store as the untracked noise the
+    append exists to prevent."""
+    lib = mono / "lib"
+    (lib / "src").mkdir(parents=True)
+    (lib / "src" / "pkg.py").write_text("def f(a):\n    return a or 0\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=lib, check=True,
+                   capture_output=True)
+    _git(lib, "add", "-A")
+    _git(lib, "commit", "-q", "-m", "lib")
+
+    res = run_cli(lib, "init")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "added to .gitignore: .crapkit/" in res.stdout, res.stdout
+    (lib / ".crapkit").mkdir()
+    (lib / ".crapkit" / "crap.sqlite").write_bytes(b"")
+    status = subprocess.run(["git", "status", "--short", "--ignored"], cwd=lib,
+                            capture_output=True, text=True, check=True).stdout
+    assert "!! .crapkit/" in status, status
+
+
 # --- the MCP server walks the same way ----------------------------------------
 
 def _rpc(msg_id, method, params=None) -> str:
@@ -226,8 +280,8 @@ def _call(msg_id, name, arguments=None) -> str:
     return _rpc(msg_id, "tools/call", {"name": name, "arguments": arguments or {}})
 
 
-def _serve(cwd: Path, requests: list[str]) -> dict:
-    proc = run_cli(cwd, "mcp", stdin="\n".join(requests) + "\n")
+def _serve(cwd: Path, requests: list[str], *flags: str) -> dict:
+    proc = run_cli(cwd, "mcp", *flags, stdin="\n".join(requests) + "\n")
     assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
     return {m["id"]: m for m in map(json.loads, proc.stdout.strip().splitlines())}
 
@@ -247,3 +301,48 @@ def test_a_server_started_below_the_root_serves_the_configuration_above_it(mono:
         call = replies[msg_id]["result"]
         assert call["isError"] is False, call
         assert [e["path"] for e in call["structuredContent"]["active"]] == ["web/src/grade.py"]
+
+
+def test_a_server_started_in_a_workspace_reads_the_documented_repo_relative_path(mono: Path):
+    """Every path tool's schema says `path` is repo-relative, so the CLI a tool
+    spawns runs at the root the server found, never in the workspace the
+    client started it in: `brief`, `explain` and `gate` once answered
+    `no function named 'classify' in web/web/src/grade.py` from web/."""
+    _scored(mono)
+    _breach(mono)
+
+    replies = _serve(mono / "web", [
+        _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
+        _call(2, "brief", {"path": "web/src/grade.py", "name": "classify"}),
+        _call(3, "explain", {"path": "web/src/grade.py", "name": "classify"}),
+        _call(4, "gate", {"path": "web/src/grade.py"}),
+    ])
+
+    for msg_id in (2, 3):
+        call = replies[msg_id]["result"]
+        assert call["isError"] is False, call
+        assert call["structuredContent"]["path"] == "web/src/grade.py"
+    gate = replies[4]["result"]["structuredContent"]["gate"]
+    assert gate["ok"] is False, gate
+    assert [b["path"] for b in gate["breaches"]] == ["web/src/grade.py"], gate
+
+
+def test_the_servers_repo_flag_names_an_exact_root_like_every_other_subcommand(mono: Path):
+    """`crapkit mcp --repo web` serves web/ and nothing above it, the way
+    `crapkit worklist --repo web` reads web/ alone; a call's own `repo`
+    argument is the one that is walked."""
+    _scored(mono)
+
+    replies = _serve(mono, [
+        _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
+        _call(2, "worklist"),
+        _call(3, "worklist", {"repo": str(mono / "web" / "src")}),
+    ], "--repo", "web")
+
+    refused = replies[2]["result"]
+    assert refused["isError"] is True, refused
+    assert refused["content"][0]["text"].startswith(f"no crapkit.toml in {mono / 'web'}"), \
+        refused
+    walked = replies[3]["result"]
+    assert walked["isError"] is False, walked
+    assert [e["path"] for e in walked["structuredContent"]["active"]] == ["web/src/grade.py"]
