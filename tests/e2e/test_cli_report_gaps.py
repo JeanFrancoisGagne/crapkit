@@ -256,7 +256,7 @@ def test_trend_prints_one_plain_line_per_scored_run(scored_repo: Path):
     assert len(lines) == 2
     for line, run in zip(lines, runs):
         assert line.startswith(f"run {run['run_id']:>3} @ {run['commit'][:11]}")
-        assert f"{run['over_target']} over target" in line
+        assert f"{run['over_target']} over ceiling" in line, "the word digest already uses"
         assert f"load {run['crap_load']}" in line
         assert f"avg {run['avg']}" in line
 

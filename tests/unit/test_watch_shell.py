@@ -53,9 +53,9 @@ def test_a_bounded_watch_yields_exactly_the_polls_it_was_given():
 
 
 def test_the_banner_of_an_unbounded_run_says_how_to_stop_it():
-    assert _watch_banner(12, 2.0, None) == "watching 12 tracked files every 2.0s — ctrl-c to stop"
+    assert _watch_banner(12, 2.0, None) == "watching 12 tracked files every 2.0s - ctrl-c to stop"
 
 
 def test_the_banner_of_a_bounded_run_names_its_own_end_instead():
     assert _watch_banner(12, 0.5, 3) == \
-        "watching 12 tracked files every 0.5s — 3 poll(s) then stop"
+        "watching 12 tracked files every 0.5s - 3 poll(s) then stop"

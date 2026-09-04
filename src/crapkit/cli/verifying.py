@@ -18,7 +18,7 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _repo_out_path, _repo_relative, _write_tsv)
+                      _repo_out_path, _repo_relative, _write_tsv, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -133,7 +133,7 @@ def _require_ancestor(git, commit: str) -> None:
             "git fetch --unshallow")
     raise GitError(
         f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-        f"(rebase or amend rewrote history) — run `{_self()} coverage` for a fresh baseline")
+        f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -163,7 +163,7 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
     if not path.is_file():
         raise CrapkitError(f"no baseline file at {path} — write one with `verify --emit-baseline`")
     try:
-        parsed = parse_baseline_tsv(path.read_text(encoding="utf-8"))
+        parsed = parse_baseline_tsv(repo_text(path, rel))
     except ValueError as exc:
         raise ConfigError(f"unreadable baseline file {rel}: {exc}") from exc
     return {"id": None, "commit": parsed.commit, "kind": parsed.kind,
@@ -237,7 +237,7 @@ def _guard_ratchet_stamp(ratchet_path: Path, name: str) -> None:
 
     if not ratchet_path.is_file():
         return
-    recorded = read_stamp(ratchet_path.read_text(encoding="utf-8"))
+    recorded = read_stamp(repo_text(ratchet_path, name))
     if not recorded:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
               f"re-baseline with `{_self()} ratchet seed` to stamp it", file=sys.stderr)
@@ -382,7 +382,7 @@ def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
     if not ratchet_path.is_file():
         return None
     text = dump_ratchet(updated)
-    if ratchet_path.read_text(encoding="utf-8") == text:
+    if repo_text(ratchet_path, ratchet_path.name) == text:
         return None
     ratchet_path.write_text(text, encoding="utf-8", newline="\n")
     return ratchet_delta(prior, updated)

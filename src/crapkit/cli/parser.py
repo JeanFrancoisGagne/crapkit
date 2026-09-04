@@ -446,11 +446,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _reconfigure_streams() -> None:
-    """Piped output (git hooks, CI, agents) reads as UTF-8 everywhere modern;
-    Windows hands pipes the legacy codepage instead, which renders as mojibake.
-    A tty keeps its native encoding. Either way errors degrade to '?' — an
-    exotic console must never turn an exit code into a traceback."""
-    for stream in (sys.stdout, sys.stderr):
+    """Piped streams (git hooks, CI, agents, MCP clients) carry UTF-8 everywhere
+    modern; Windows hands pipes the legacy codepage instead, which renders as
+    mojibake on the way out and, on the way in, turned `pkg/café.py` in a Claude
+    Code payload into a path that does not exist, so the advisory hook and the
+    MCP server answered a non-ASCII path with silence. A tty keeps its native
+    encoding. Either way errors degrade to '?' — an exotic console must never
+    turn an exit code into a traceback. A stream swapped for a StringIO (the
+    in-process serve-loop tests) has no reconfigure and is left alone."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
         if not hasattr(stream, "reconfigure"):
             continue
         if stream.isatty():

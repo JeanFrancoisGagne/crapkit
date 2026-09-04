@@ -187,7 +187,7 @@ def _no_config_result(repo: str) -> dict:
     failure. isError stays true so nothing reads an unmeasured directory as a
     repo with nothing to report.
     """
-    return _result(f"no crapkit.toml in {repo} — nothing measured here. "
+    return _result(f"no crapkit.toml in {repo} - nothing measured here. "
                    f"Run `{_self()} init` in the repo you want scored, or pass this tool a "
                    "`repo` argument (or start the server with --repo) pointing at one.",
                    is_error=True)

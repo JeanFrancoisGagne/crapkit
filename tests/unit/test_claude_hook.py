@@ -7,6 +7,7 @@ these a broken rung and a working one look identical from outside.
 """
 import argparse
 import io
+import json
 import os
 import time
 from pathlib import Path
@@ -386,3 +387,61 @@ def test_every_claude_subcommand_the_parser_defines_is_in_the_guards_own_set():
     defined = {name for name in subs[0].choices if name.startswith("claude-")}
 
     assert defined == set(_CLAUDE_SUBCOMMANDS)
+
+
+# --- stdin arrives as UTF-8 whatever the console's code page says --------------
+
+_BRANCHES = "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8))
+BREACH = f"def sprawl(n):\n{_BRANCHES}    return n\n"  # ccn 8, over the ceiling of 6
+TOML = ('[crapkit]\ntarget = 6\n\n'
+        '[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n')
+
+
+def _cp1252_stdin(payload: dict) -> io.TextIOWrapper:
+    """What a Windows console hands the hook: Claude Code's UTF-8 bytes, wrapped
+    in the locale code page. A TextIOWrapper, because that is what sys.stdin is,
+    reconfigure() included."""
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    return io.TextIOWrapper(io.BytesIO(raw), encoding="cp1252")
+
+
+def _breaching_repo(tmp_path: Path, toml_bytes: bytes = TOML.encode("utf-8")) -> Path:
+    (tmp_path / "crapkit.toml").write_bytes(toml_bytes)
+    (tmp_path / "calc").mkdir()
+    edited = tmp_path / "calc" / "café.py"
+    edited.write_text(BREACH, encoding="utf-8")
+    return edited
+
+
+def _event(edited: Path, root: Path) -> dict:
+    return {"hook_event_name": "PostToolUse", "tool_name": "Edit",
+            "tool_input": {"file_path": str(edited)}, "cwd": str(root)}
+
+
+def test_a_non_ascii_path_under_a_cp1252_stdin_still_draws_the_advisory(tmp_path, capsys,
+                                                                         monkeypatch):
+    """Under code page 437 the advisory for an edit in `calc/café.py` was exit 0
+    and silence: stdin decoded the path as `cafÃ©.py`, no such file, catch-all."""
+    edited = _breaching_repo(tmp_path)
+    monkeypatch.setattr("sys.stdin", _cp1252_stdin(_event(edited, tmp_path)))
+
+    code = main(["claude-hook", "--protocol", "1"])
+
+    err = capsys.readouterr().err
+    assert code == 2, err
+    assert "calc/café.py" in err, err
+
+
+def test_a_configuration_saved_with_a_bom_reads_as_the_same_configuration(tmp_path, capsys,
+                                                                          monkeypatch):
+    """PowerShell's `Out-File -Encoding utf8` writes a BOM; the hook's own
+    config read choked on it (`does not parse`), so the advisory went silent in
+    every repo whose crapkit.toml came from that shell."""
+    edited = _breaching_repo(tmp_path, TOML.encode("utf-8-sig"))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_event(edited, tmp_path))))
+
+    code = main(["claude-hook", "--protocol", "1"])
+
+    err = capsys.readouterr().err
+    assert code == 2, err
+    assert "crapkit advisory" in err, err

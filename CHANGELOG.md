@@ -263,6 +263,64 @@ breach comes back as a result with `gate.ok` false and `structuredContent`, whil
 and 5 stay tool errors. The server's instructions, AGENTS.md, both MCP tables and the registry
 manifest (`server.json`) count ten tools.
 
+### stdin is read as UTF-8 on Windows, so a non-ASCII path reaches the hook and the MCP server
+
+On Windows a piped stdin arrived in the locale code page while Claude Code and MCP clients
+write UTF-8, so the PostToolUse advisory for a ccn-8 edit in `pkg/café.py` exited 0 with no
+output, and `brief` over MCP answered `no function named 'f' in pkg/cafÃ©.py ... it holds:
+nothing`. crapkit now reconfigures a non-tty stdin to UTF-8 with replacement, the same rule
+stdout and stderr already had; a tty keeps its native encoding. Under
+`PYTHONIOENCODING=cp1252` the same payload now exits 2 with the advisory naming
+`pkg/café.py`, and the MCP call answers the function.
+
+### A configuration or marks file saved with a BOM reads as the same file; a UTF-16 one names the fix
+
+PowerShell 5.1's `Out-File -Encoding utf8` writes a byte-order mark, which tomllib read as
+`crapkit.toml does not parse: Invalid statement (at line 1, column 1)` and the marks reader
+as `line 1 has 1 fields, expected 3` behind a `carries no metric stamp` warning; a bare
+`Out-File` writes UTF-16, which died as a raw UnicodeDecodeError traceback at exit 1. One
+reader, `crapkit.repotext`, now decodes crapkit.toml, the marks file and a portable baseline
+with `utf-8-sig`, and a decode error is a configuration error, exit 3: `crapkit.toml is not
+UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File default); save it as UTF-8`,
+or `(byte e9 at offset 15)` when the mark is not the cause. Every configuration read
+(`watch`, `doctor`'s raw pass and the advisory hook included), `ratchet seed`, `prune`,
+`move`, `merge` (the git merge driver, which refused a BOM side as `ours is [unstamped]` and
+died on a UTF-16 one), `explain`, `brief`, `rescore --gate`, `verify`'s stamp guard, its
+marks compare, the marks read behind `--override` and `--baseline-tsv` go through it; no
+second copy of the decode exists. `verify` and `ratchet merge` write a marks file they
+rewrite without the mark.
+
+### `doctor` warns on a hook file git cannot spawn
+
+A pre-commit hook written with `Out-File` starts with a byte-order mark, git answers every
+commit with `cannot spawn .git/hooks/pre-commit` and lets it through ungated, and `doctor`
+passed the file. It now reads the hook git would run (`git rev-parse --git-path
+hooks/pre-commit`, so `core.hooksPath` and a linked worktree are honored) and WARNs
+`.git/hooks/pre-commit starts with a UTF-8 byte-order mark (ef bb bf), which git cannot
+spawn; rewrite it as ASCII (PowerShell: Set-Content -Encoding ascii)`, naming `a UTF-16
+byte-order mark (ff fe, the PowerShell 5.1 Out-File default)` for the other. The README's
+Route 1 gains the PowerShell form, `Set-Content -Encoding ascii` with the interpreter quoted
+and forward-slashed.
+
+### The lines a shell captures are ASCII
+
+`$x = crapkit worklist` under code page 437 captured `ΓÇö` where the header's em dash was.
+The six one-liners a script reads back now use ` - `: the worklist header (`... churn 12mo)
+- 1 of 3 active (worklist_top 50), 0 dormant`), `init`'s next step (`... own files: py -
+next: run ...`), the `ratchet seed` and `prune` line (`... added 1, tightened 0 - 1 mark(s)
+vs run 1 ...`), the `watch` banner (`watching 12 tracked files every 2.0s - ctrl-c to stop`),
+with the coverage summary and the verify OK line ASCII already. The same move on the four
+lines the earlier slices handed over: doctor's `cannot import pytest_cov - run ...` note, the
+`(rebase or amend rewrote history) - run ...` refusal, the MCP `no crapkit.toml in <dir> -
+nothing measured here.` result and the CLI's `no crapkit.toml at <dir> - nothing to analyze`
+(the Action's base step quotes that line verbatim and needs no change). `trend`'s text line
+says `N over ceiling` like `digest`. Moved contracts: the worklist header suffix in
+tests/e2e/test_two_view_queue_e2e.py, the watch banner in tests/unit/test_watch_shell.py,
+`over target` in tests/e2e/test_cli_report_gaps.py and the AGENTS.md `below_floor` row it
+pins, and every README, AGENTS.md, docs/lanes.md, docs/ratchet.md, docs/agent-json.md and
+plugin skill transcript that pastes one of those lines (docs/demo.svg is re-rendered at
+release).
+
 ## 0.4.15 — 2026-09-02
 
 ### The registry name follows GitHub's casing

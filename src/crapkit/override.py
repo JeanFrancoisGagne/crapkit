@@ -14,6 +14,7 @@ from pathlib import Path
 from .errors import ConfigError, ToolError
 from .keys import stated_key
 from .ratchet import RatchetEntry, dump_ratchet, load_ratchet
+from .repotext import repo_text
 from .store import SnapshotStore
 from .verify import GateViolation
 
@@ -77,10 +78,10 @@ def _grant_ratchet_debt(ratchet_path: Path, violations: list[GateViolation], *,
 
 
 def _marks_by_key(ratchet_path: Path) -> dict[tuple[str, str], RatchetEntry]:
-    """Prior marks by (path, key name); an absent ratchet file is simply no marks."""
-    # utf-8-sig: a marks file PowerShell 5.1 saved carries a BOM, and the other
-    # readers of it already tolerate one.
-    existing = load_ratchet(ratchet_path.read_bytes().decode("utf-8-sig")) if ratchet_path.is_file() else []
+    """Prior marks by (path, key name); an absent ratchet file is simply no marks.
+    The read is the one reader's, so a BOM is dropped and UTF-16 is refused the
+    way verify refuses it."""
+    existing = load_ratchet(repo_text(ratchet_path, ratchet_path.name)) if ratchet_path.is_file() else []
     return {(e.path, e.long_name): e for e in existing}
 
 

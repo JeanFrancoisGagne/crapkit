@@ -11,7 +11,7 @@ from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ._shared import (_load_ratchet_or_die, _load_repo_config, _open_store, _print_json,
-                      _ratchet_or_die)
+                      _ratchet_or_die, repo_text)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -88,7 +88,9 @@ def _ratchet_merge(files: list) -> int:
 
     if len(files) != 3:
         raise ConfigError("ratchet merge takes exactly three files: BASE OURS THEIRS (git %O %A %B)")
-    texts = [Path(f).read_text(encoding="utf-8") for f in files]
+    # The one reader: OURS is the working copy a shell may have saved with a
+    # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3).
+    texts = [repo_text(Path(f), f) for f in files]
     stamp = _merge_stamp(texts)
     merged = merge_ratchets(*(_ratchet_or_die(t, f) for t, f in zip(texts, files)))
     Path(files[1]).write_text(dump_ratchet(merged, stamp=stamp), encoding="utf-8", newline="\n")
@@ -214,6 +216,6 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     else:
         entries, note = _pruned(root, store, prior, fresh)
     ratchet_path.write_text(dump_ratchet(entries), encoding="utf-8", newline="\n")
-    print(f"{cfg.ratchet_file}: {note} — {len(entries)} mark(s) vs run {latest['id']} "
+    print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(skipped)}")
     return 0

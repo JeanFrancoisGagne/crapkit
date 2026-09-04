@@ -80,7 +80,7 @@ says whether it still describes the repo, `crapkit coverage` produces the first 
 
     $ crapkit init
     wrote crapkit.toml with 1 scope(s): calc
-    detected 1 lane(s) from this repo's own files: py — next: run `crapkit coverage`
+    detected 1 lane(s) from this repo's own files: py - next: run `crapkit coverage`
     added to .gitignore: .crapkit/, .coverage, __pycache__/
 
 A detected lane comes out with its test-results file already wired, `--junitxml` on the

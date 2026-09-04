@@ -13,6 +13,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..repotext import repo_text
 from ..store import SnapshotStore
 
 
@@ -149,8 +150,8 @@ def _analysis_tools():
 def _load_repo_config(root: Path):
     config_path = root / "crapkit.toml"
     if not config_path.is_file():
-        raise ConfigError(f"no crapkit.toml at {root} — nothing to analyze")
-    return load_config_text(config_path.read_text(encoding="utf-8"), root=root)
+        raise ConfigError(f"no crapkit.toml at {root} - nothing to analyze")
+    return load_config_text(repo_text(config_path, "crapkit.toml"), root=root)
 
 
 def _file_sizer(root: Path):
@@ -200,7 +201,7 @@ def _ratchet_or_die(text: str, name: str) -> list:
 def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
     if not ratchet_path.is_file():
         return []
-    return _ratchet_or_die(ratchet_path.read_text(encoding="utf-8"), name)
+    return _ratchet_or_die(repo_text(ratchet_path, name), name)
 
 
 def _dirty_tag(dirty: bool) -> str:
@@ -242,7 +243,7 @@ def _ratchet_entries(root: Path, cfg) -> list | None:
     ratchet_path = root / cfg.ratchet_file
     if not ratchet_path.is_file():
         return None
-    entries, complaints = read_ratchet(ratchet_path.read_text(encoding="utf-8"))
+    entries, complaints = read_ratchet(repo_text(ratchet_path, cfg.ratchet_file))
     for complaint in complaints:
         print(f"crapkit: skipped an unreadable mark in {cfg.ratchet_file}: {complaint}",
               file=sys.stderr)

@@ -291,7 +291,7 @@
     <text x="800" y="46" class="sm">past F, the</text>
     <text x="800" y="60" class="sm">name takes over</text>
   </g>
-  <text x="450" y="112" text-anchor="middle" class="sm">crapkit's own repo grades A+, zero functions over target, and its author commits through its own gate</text>
+  <text x="450" y="112" text-anchor="middle" class="sm">crapkit's own repo grades A+, zero functions over ceiling, and its author commits through its own gate</text>
 </svg>
 <figcaption>Every scored run prints a grade.</figcaption>
 </figure>
@@ -897,7 +897,7 @@ $ crapkit verify                       # the full verdict; green releases the cl
 <p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, the other two get scored anyway.</p>
 <pre><code>$ crapkit init
 wrote crapkit.toml with 4 scope(s): api, infra, ops, ui
-detected 2 lane(s) from this repo's own files: py, js — next: run `crapkit coverage`
+detected 2 lane(s) from this repo's own files: py, js - next: run `crapkit coverage`
 added to .gitignore: .crapkit/, .coverage, __pycache__/
 
 $ crapkit doctor
@@ -910,7 +910,7 @@ $ crapkit inventory                    # complexity alone, no lanes needed
 run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
 
 $ crapkit worklist
-worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) — 4 of 4 active (worklist_top 50), 0 dormant
+worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (worklist_top 50), 0 dormant
   risk      7.0  ccn   7  crap       -  cov    -    1c/1a  api/grade.py:1  grade( n , total )
   risk      6.0  ccn   6  crap       -  cov    -    1c/1a  ui/panel.ts:1  label ( kind , hot )
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  infra/main.rs:1  route kind : u8

@@ -1286,7 +1286,7 @@ back as a tool result, not a JSON-RPC error, and that result carries `isError: t
 text naming the missing config and `crapkit init`:
 
 ```json
-{"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "no crapkit.toml in .../noconfig — nothing measured here. Run `crapkit init` in the repo you want scored, or pass this tool a `repo` argument (or start the server with --repo) pointing at one."}], "isError": true}}
+{"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "no crapkit.toml in .../noconfig - nothing measured here. Run `crapkit init` in the repo you want scored, or pass this tool a `repo` argument (or start the server with --repo) pointing at one."}], "isError": true}}
 ```
 
 Both halves are deliberate. The result keeps the client's session alive, so a global

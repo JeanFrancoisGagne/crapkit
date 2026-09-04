@@ -200,7 +200,7 @@ def test_the_header_counts_active_rows_against_their_total_and_dormant(repo: Pat
     res = run_cli(repo, "worklist")
 
     header = res.stdout.splitlines()[0]
-    assert header.endswith("— 4 of 4 active (worklist_top 50), 0 dormant"), header
+    assert header.endswith(" - 4 of 4 active (worklist_top 50), 0 dormant"), header
 
 
 def test_an_inventory_only_store_leaves_both_fields_null(repo_unscored: Path):

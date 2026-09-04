@@ -63,7 +63,7 @@ run 1 @ fae4db93108: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load
 -> next: crapkit worklist
 
 $ crapkit worklist
-worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     14.0  ccn  14  crap    38.5  cov  50%    1c/1a  calc/grade.py:7  classify( score , attempts , late , bonus )
 ```
 
@@ -323,6 +323,19 @@ exec python -m crapkit hook-precommit
 EOF
 chmod +x .git/hooks/pre-commit
 ```
+
+The same file from PowerShell. `Out-File` and `>` write a byte-order mark (UTF-16 on
+5.1) in front of the shebang, and git then answers every commit with `cannot spawn
+.git/hooks/pre-commit` and lets it through; `Set-Content -Encoding ascii` does not. Git
+runs the hook with its own `sh`, so the interpreter is spelled with forward slashes and
+quoted, and no `chmod` is needed on Windows:
+
+```powershell
+$python = (Get-Command python).Source -replace '\\', '/'
+Set-Content -Path .git/hooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$python' -m crapkit hook-precommit`n"
+```
+
+`crapkit doctor` warns when the hook file git would spawn starts with a byte-order mark.
 
 ### Route 2: a committed hooks directory
 
@@ -667,7 +680,7 @@ root from the file named in the hook payload it reads.
 
 ```
 $ crapkit worklist --repo /path/to/repo --scope util --top 1
-worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) — 1 of 3 active (--top 1), 0 dormant
+worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) - 1 of 3 active (--top 1), 0 dormant
   risk      5.4  ccn   5  crap    30.0  cov   0%    5c/1a  util/stats.py:1  bucket( value , low , high )
 ```
 
@@ -754,7 +767,7 @@ commits old, all made the same day:
 
 ```
 $ crapkit worklist --scope util
-worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) — 3 of 3 active (worklist_top 50), 0 dormant
+worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) - 3 of 3 active (worklist_top 50), 0 dormant
   risk      5.4  ccn   5  crap    30.0  cov   0%    5c/1a  util/stats.py:1  bucket( value , low , high )
   risk      4.5  ccn   9  crap    90.0  cov   0%    1c/1a  util/curve.py:1  curve( scores , mode , floor , ceiling , skip_none )
   risk      4.3  ccn   4  crap     4.2  cov  75%    5c/1a  util/stats.py:13  spread( values , cap )  ok
@@ -878,7 +891,7 @@ warns. [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/do
 ```
 $ crapkit init
 wrote crapkit.toml with 1 scope(s): calc
-detected 1 lane(s) from this repo's own files: py — next: run `crapkit coverage`
+detected 1 lane(s) from this repo's own files: py - next: run `crapkit coverage`
 added to .gitignore: .crapkit/, .coverage, __pycache__/
 ```
 
@@ -981,7 +994,7 @@ run 1 @ fae4db93108: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load
 -> next: crapkit worklist
 
 $ crapkit worklist
-worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     14.0  ccn  14  crap    38.5  cov  50%    1c/1a  calc/grade.py:7  classify( score , attempts , late , bonus )
 ```
 
@@ -1015,7 +1028,7 @@ function at its current score, and from then on nothing may get worse.
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 1 (fae4db93108)
+crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 1 (fae4db93108)
 
 $ git add crapkit.toml crapkit-ratchet.tsv .gitignore && git commit -m "adopt crapkit"
 ```
@@ -1056,7 +1069,7 @@ A vitest repo with `src/grade.ts` and `test/grade.test.ts`.
 ```
 $ crapkit init
 wrote crapkit.toml with 1 scope(s): src
-detected 1 lane(s) from this repo's own files: js — next: run `crapkit coverage`
+detected 1 lane(s) from this repo's own files: js - next: run `crapkit coverage`
 added to .gitignore: .crapkit/
 ```
 
@@ -1123,7 +1136,7 @@ run 1 @ 8bfbe613fcd: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load
 -> next: crapkit worklist
 
 $ crapkit worklist
-worklist @ 8bfbe613fcd (run 1, floor ccn>=5, churn 12mo) — 1 of 1 active (worklist_top 50), 0 dormant
+worklist @ 8bfbe613fcd (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     15.0  ccn  15  crap    52.4  cov  45%    1c/1a  src/grade.ts:8  classify ( row Row )
 ```
 
@@ -1137,7 +1150,7 @@ can get worse while you burn this one down.
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 1, tightened 0 — 1 mark(s) vs run 1 (8bfbe613fcd)
+crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 1 (8bfbe613fcd)
 
 $ git add crapkit.toml crapkit-ratchet.tsv .gitignore && git commit -m "adopt crapkit"
 ```
