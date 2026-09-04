@@ -306,3 +306,51 @@ def test_the_lines_a_shell_captures_are_ascii(scored_repo: Path, tmp_path: Path)
     assert f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run 1 (" in seeded.stdout
     assert " - next: run `" in captured["init"].stdout
     assert captured["watch"].stdout.startswith("watching 2 tracked files every 2.0s - 0 poll(s)")
+
+
+# --- the merge driver reads its three sides the way every other reader does ------------
+
+STAMP = "# crapkit-analysis=9 lizard=1.24.0\n"
+HEADER = "path\tlong_name\tcrap\n"
+
+
+def _marks(row: str) -> str:
+    return STAMP + HEADER + row
+
+
+def _merge_sides(tmp_path: Path, ours: bytes) -> None:
+    """BASE, OURS and THEIRS as git hands them to the driver, OURS as given."""
+    (tmp_path / "base.tsv").write_bytes(_marks("src/a.ts\tf( )\t50.0000\n").encode("utf-8"))
+    (tmp_path / "ours.tsv").write_bytes(ours)
+    (tmp_path / "theirs.tsv").write_bytes(_marks("src/a.ts\tf( )\t20.0000\n").encode("utf-8"))
+
+
+def test_a_merge_side_saved_with_a_bom_merges_as_the_same_marks(tmp_path: Path):
+    """OURS is the working copy PowerShell saved. Read strictly, the BOM hid its
+    stamp and the driver refused two files carrying the same stamp as `ours is
+    [unstamped] and theirs is [crapkit-analysis=9 ...]`, exit 3."""
+    _merge_sides(tmp_path, b"\xef\xbb\xbf" + _marks("src/a.ts\tf( )\t30.0000\n").encode("utf-8"))
+
+    res = _run(tmp_path, "ratchet", "merge", "base.tsv", "ours.tsv", "theirs.tsv")
+
+    assert (res.returncode, res.stderr) == (0, ""), res.stdout + res.stderr
+    assert res.stdout.strip() == "ratchet merge: 1 mark(s)"
+    merged = (tmp_path / "ours.tsv").read_bytes()
+    assert merged.startswith(STAMP.encode("utf-8")), "the merged file is written without the mark"
+    assert merged.endswith(b"src/a.ts\tf( )\t20.0000\n"), "both changed: the merge keeps the min"
+
+
+def test_a_utf16_merge_side_names_itself_and_the_fix(tmp_path: Path):
+    """A bare `Out-File` on OURS died as `UnicodeDecodeError: 'utf-8' codec
+    can't decode byte 0xff in position 0`, exit 1: the traceback every other
+    reader of the marks file already turns into a sentence."""
+    _merge_sides(tmp_path, _utf16(_marks("src/a.ts\tf( )\t30.0000\n")))
+
+    res = _run(tmp_path, "ratchet", "merge", "base.tsv", "ours.tsv", "theirs.tsv")
+
+    assert res.returncode == 3, res.stderr
+    assert ("crapkit: ours.tsv is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 "
+            "Out-File default); save it as UTF-8") in res.stderr, res.stderr
+    assert "Traceback" not in res.stderr
+    assert (tmp_path / "ours.tsv").read_bytes().startswith(b"\xff\xfe"), \
+        "a refused merge must not rewrite ours"

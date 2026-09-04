@@ -268,8 +268,8 @@ manifest (`server.json`) count ten tools.
 On Windows a piped stdin arrived in the locale code page while Claude Code and MCP clients
 write UTF-8, so the PostToolUse advisory for a ccn-8 edit in `pkg/café.py` exited 0 with no
 output, and `brief` over MCP answered `no function named 'f' in pkg/cafÃ©.py ... it holds:
-nothing`. `_reconfigure_streams` now reconfigures a non-tty stdin to UTF-8 with replacement,
-the same rule stdout and stderr already had; a tty keeps its native encoding. Under
+nothing`. crapkit now reconfigures a non-tty stdin to UTF-8 with replacement, the same rule
+stdout and stderr already had; a tty keeps its native encoding. Under
 `PYTHONIOENCODING=cp1252` the same payload now exits 2 with the advisory naming
 `pkg/café.py`, and the MCP call answers the function.
 
@@ -279,14 +279,16 @@ PowerShell 5.1's `Out-File -Encoding utf8` writes a byte-order mark, which tomll
 `crapkit.toml does not parse: Invalid statement (at line 1, column 1)` and the marks reader
 as `line 1 has 1 fields, expected 3` behind a `carries no metric stamp` warning; a bare
 `Out-File` writes UTF-16, which died as a raw UnicodeDecodeError traceback at exit 1. One
-reader, `cli._shared.repo_text`, now decodes crapkit.toml, the marks file and a portable
-baseline with `utf-8-sig`, and a decode error is a configuration error, exit 3:
-`crapkit.toml is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File default);
-save it as UTF-8`, or `(byte e9 at offset 15)` when the mark is not the cause. Every
-configuration read (`init`, `doctor`'s raw pass included), `ratchet seed`, `prune`, `move`,
-`explain`, `brief`, `rescore --gate`, `verify`'s stamp guard, its marks compare and
-`--baseline-tsv` go through it; the advisory hook inlines the same decode to keep its
-stdlib-only import rule. `verify` writes a marks file it rewrites without the mark.
+reader, `crapkit.repotext`, now decodes crapkit.toml, the marks file and a portable baseline
+with `utf-8-sig`, and a decode error is a configuration error, exit 3: `crapkit.toml is not
+UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File default); save it as UTF-8`,
+or `(byte e9 at offset 15)` when the mark is not the cause. Every configuration read
+(`watch`, `doctor`'s raw pass and the advisory hook included), `ratchet seed`, `prune`,
+`move`, `merge` (the git merge driver, which refused a BOM side as `ours is [unstamped]` and
+died on a UTF-16 one), `explain`, `brief`, `rescore --gate`, `verify`'s stamp guard, its
+marks compare, the marks read behind `--override` and `--baseline-tsv` go through it; no
+second copy of the decode exists. `verify` and `ratchet merge` write a marks file they
+rewrite without the mark.
 
 ### `doctor` warns on a hook file git cannot spawn
 

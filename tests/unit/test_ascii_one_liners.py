@@ -2,17 +2,19 @@
 
 `$x = crapkit worklist` under code page 437 captured `ΓÇö` where the header's
 separator was, and the same em dash sat in the lines `init`, `ratchet seed`,
-`watch` and two refusals print. JSON is ASCII-escaped already; these are the
-text lines a script reads back.
+`watch` and two refusals print. The lines a command prints are pinned where
+the process prints them (tests/e2e/test_encoding_e2e.py, and the watch banner
+in tests/unit/test_watch_shell.py); these are the three no e2e run reaches: a
+lane that cannot import pytest-cov, a rewritten history, and a directory with
+no crapkit.toml, on both the CLI and the MCP side.
 """
 from pathlib import Path
 
 from crapkit.cli._shared import _load_repo_config
-from crapkit.cli.admin import _missing_pytest_cov_note, _next_step, _watch_banner
+from crapkit.cli.admin import _missing_pytest_cov_note
 from crapkit.cli.verifying import _require_ancestor
 from crapkit.errors import ConfigError, GitError
 from crapkit.mcp_server import _no_config_result
-from crapkit.scaffold import LaneSpec
 
 
 class _Git:
@@ -21,22 +23,6 @@ class _Git:
 
     def is_shallow(self) -> bool:
         return False
-
-
-def test_the_watch_banner_is_ascii():
-    assert _watch_banner(12, 2.0, None) == "watching 12 tracked files every 2.0s - ctrl-c to stop"
-    assert _watch_banner(12, 0.5, 3) == \
-        "watching 12 tracked files every 0.5s - 3 poll(s) then stop"
-
-
-def test_the_init_next_step_is_ascii():
-    lane = LaneSpec("py", "pytest", ".crapkit/cov.json", "coveragepy", ("python",))
-    detected = _next_step({"calc": ("python",)}, (lane,))
-    cc_only = _next_step({"tools": ("go",)}, ())
-
-    assert detected.startswith("detected 1 lane(s) from this repo's own files: py - next: run `")
-    assert " - next: run `" in cc_only
-    assert detected.isascii() and cc_only.isascii()
 
 
 def test_the_pytest_cov_note_is_ascii():

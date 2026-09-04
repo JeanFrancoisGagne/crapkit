@@ -101,6 +101,24 @@ def test_an_override_reads_a_marks_file_that_starts_with_a_bom(tmp_path):
     assert entries[("src/a.ts", "f( )")].crap == 12.0, "the prior mark survives the BOM"
 
 
+def test_an_override_refuses_a_utf16_marks_file_with_the_sentence_every_reader_says(tmp_path):
+    """The marks read is the one reader's: a bare `Out-File` save is the
+    configuration error naming the fix, not a UnicodeDecodeError out of the
+    grant step after the alert has already fired."""
+    store = SnapshotStore(tmp_path / "db.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+    (tmp_path / "ratchet.tsv").write_bytes(b"\xff\xfe" + "src/a.ts\tf( )\t12.0\n".encode("utf-16-le"))
+    alert_cmd, _ = ok_alert(tmp_path)
+
+    with pytest.raises(ConfigError) as refused:
+        record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                        alert_command=alert_cmd, violations=[VIOLATION], reason="prod down")
+
+    assert str(refused.value) == ("ratchet.tsv is not UTF-8 (first bytes ff fe = UTF-16, the "
+                                  "PowerShell 5.1 Out-File default); save it as UTF-8")
+    assert refused.value.exit_code == 3
+
+
 def test_hook_override_still_records_a_mark_for_a_new_function(tmp_path):
     store = SnapshotStore(tmp_path / "db.sqlite")
     run_id = store.write_run(commit="c", tool_versions={}, rows=[])

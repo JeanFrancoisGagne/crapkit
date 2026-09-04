@@ -6,13 +6,40 @@ PowerShell 5.1 writes those files two ways crapkit did not read: `Out-File
 strict UTF-8 reads turned the first into `does not parse` / `line 1 has 1
 fields` and the second into a raw UnicodeDecodeError traceback at exit 1, a code
 crapkit's exit table does not define.
+
+The reader lives in a core module, `crapkit.repotext`, because two of its
+callers cannot import `cli._shared`: the advisory hook (its module scope opens
+the snapshot store) and `override` (core never imports the CLI). The CLI name
+is the same function, not a copy.
 """
+import re
+from pathlib import Path
+
 import pytest
 
+import crapkit
+from crapkit import repotext
+from crapkit.cli import _shared
 from crapkit.cli._shared import repo_text
 from crapkit.errors import ConfigError
 
 TEXT = "[crapkit]\ntarget = 6\n"
+SRC = Path(crapkit.__file__).resolve().parent
+_DECODE = re.compile(r"[\"']utf-8-sig[\"']")
+
+
+def test_the_cli_name_is_the_core_reader_not_a_copy():
+    assert _shared.repo_text is repotext.repo_text
+
+
+def test_the_utf8_sig_decode_is_written_once():
+    """One reader, zero inline copies. A second decode is a second place where
+    a UTF-16 file is a traceback instead of the sentence: the hook's config
+    read, the override's marks read and the merge driver each had one."""
+    homes = sorted(p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")
+                   if _DECODE.search(p.read_text(encoding="utf-8")))
+
+    assert homes == ["repotext.py"], homes
 
 
 def test_plain_utf8_reads_as_written(tmp_path):

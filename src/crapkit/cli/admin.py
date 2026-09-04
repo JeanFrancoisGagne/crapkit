@@ -16,8 +16,8 @@ from pathlib import Path, PurePath
 from .. import __version__, config
 from ..config import load_config_text, shell_words
 from ..doctor import Finding
-from ..errors import ConfigError, ToolError
-from ..gitio import _common_dir, _git_dir, ls_files
+from ..errors import ConfigError, GitError, ToolError
+from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
@@ -1043,9 +1043,6 @@ def _hook_file(root: Path) -> str | None:
     spells it: under `core.hooksPath` when that is set, else the admin
     directory's `hooks/`, so a linked worktree lands on the right one. None
     outside a repository."""
-    from ..errors import GitError
-    from ..gitio import _git
-
     try:
         return _git(root, "rev-parse", "--git-path", "hooks/pre-commit").strip() or None
     except GitError:

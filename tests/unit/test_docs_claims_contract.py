@@ -941,6 +941,18 @@ def test_the_handbook_counts_the_no_artifact_causes_the_skill_lists():
     assert f"{word.capitalize()} root causes" in handbook, "the exit-5 row counts them too"
 
 
+def test_the_handbook_transcripts_use_the_ascii_separator():
+    """The handbook is hand-written, so a transcript pasted from an older build
+    brings the em dash back. These two are `init`'s next step and the worklist
+    header, two of the six lines a shell captures."""
+    handbook = _doc("docs/handbook.html")
+
+    assert "— next: run" not in handbook, "init's next step reads ` - next: run`"
+    assert ") — 4 of 4 active" not in handbook, "the worklist header reads `) - 4 of 4 active`"
+    assert " - next: run `crapkit coverage`" in handbook
+    assert ") - 4 of 4 active (worklist_top 50), 0 dormant" in handbook
+
+
 # --- the README rows an agent picks a command from ---------------------------
 
 def test_the_brief_row_documents_the_packet_and_its_batch_form():
