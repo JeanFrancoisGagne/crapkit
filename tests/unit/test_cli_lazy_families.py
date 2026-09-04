@@ -119,7 +119,7 @@ BASELINE_SURFACE = """
     _explain_tests _export_scored _extend_gitignore _file_sizer _flag_counts _flake_retry
     _gate_candidates _gate_line _grant_env_override _group_files_by_scope _guard_ratchet_stamp
     _hook_modes _interpreter _is_test_path _junit_seconds _lane_command_problems _lane_durations
-    _lane_problem _lane_problems _lane_report _lane_reports _lane_reuse _lane_seconds
+    _lane_problem _lane_report _lane_reports _lane_reuse _lane_seconds
     _latest_full_run _latest_scored _latest_span _listed_files _lizard_version
     _load_ratchet_or_die _load_repo_config _load_sources _mark_text _matching_rows _maybe_claim
     _maybe_flake_retry _merge_stamp _missing_named_script _mutation_targets _name_matches

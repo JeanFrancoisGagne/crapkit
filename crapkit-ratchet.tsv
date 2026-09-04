@@ -1,4 +1,2 @@
 # crapkit-analysis=9 lizard=1.24.0
 path	long_name	crap
-src/crapkit/cli/admin.py	_lane_problems( root : Path , cfg )	12.0000
-src/crapkit/cli/admin.py	_store_ignored_above( root : Path )	8.1250

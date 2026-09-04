@@ -816,10 +816,6 @@ def _lane_problems_of(root: Path, lane) -> list[str]:
                         _lane_start_problem(lane)) if p]
 
 
-def _lane_problems(root: Path, cfg) -> list[str]:
-    return [p for lane in cfg.lanes for p in _lane_problems_of(root, lane)]
-
-
 def _lane_findings(cfg, problems: list[str]) -> list[Finding]:
     return [Finding("FAIL", p) for p in problems] or [_doctor_lane_summary(cfg)]
 

@@ -137,7 +137,6 @@ _OWNER = {
     "_lane_durations": "admin",
     "_lane_path": "admin",
     "_lane_problem": "admin",
-    "_lane_problems": "admin",
     "_lane_report": "admin",
     "_lane_reports": "admin",
     "_lane_reuse": "scoring",
