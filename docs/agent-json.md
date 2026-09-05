@@ -743,7 +743,8 @@ $ crapkit verify --json
   "ratchet_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
   "run_id": 9,
   "schema": 1,
-  "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"}
+  "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
+  "unmarked_over_target": 0
 }
 ```
 
@@ -767,6 +768,7 @@ $ crapkit verify --json
 | `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
 | `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
 | `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
+| `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
 the file holds that name, and `long_name#2` for the second function holding it. It is the

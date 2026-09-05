@@ -977,3 +977,52 @@ def test_a_green_run_never_creates_a_marks_file_to_hold_zero_marks(baselined, ca
     assert code == 0
     assert not (baselined / MARKS).exists(), "verify created a marks file with no marks in it"
     assert "ratchet:" not in out, out
+
+
+# --- standing debt no mark covers ---------------------------------------------
+#
+# Legacy debt is trend, not a blocker, until touched (test_verify.py). What that
+# leaves is a function over its ceiling with no mark: the gate never looks at it
+# and the ratchet has nothing to compare, so coverage rot on it passes unseen.
+# A header-only marks file cannot say whether seed ran. verify counts it.
+
+def _standing_debt(repo, capsys):
+    """knotty committed BEFORE the baseline: over the ceiling, untouched by the
+    diff verify will judge, and no marks file in sight."""
+    add_knotty(repo)
+    commit_all(repo, "knotty lands before the baseline")
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo
+
+
+def test_over_ceiling_functions_with_no_mark_are_counted_on_stderr(repo, capsys):
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], _standing_debt(repo, capsys),
+                         capsys)
+
+    assert code == 0, err
+    assert "warning: 1 function(s) over the ceiling carry no ratchet mark" in err, err
+    assert "coverage loss included" in err and "ratchet seed" in err, err
+    assert json.loads(out)["unmarked_over_target"] == 1
+
+
+def test_a_mark_on_the_standing_debt_silences_the_count(repo, capsys):
+    """The count reads the marks file the way the gate does, by ratchet key."""
+    _standing_debt(repo, capsys)
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 16.0))
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], repo, capsys)
+
+    assert code == 0, err
+    assert "carry no ratchet mark" not in err, err
+    assert json.loads(out)["unmarked_over_target"] == 0
+
+
+def test_a_clean_tree_owes_no_standing_debt_line(baselined, capsys):
+    """Nothing over the ceiling, no marks file: silence, and a zero in the JSON.
+    A header-only marks file is the correct state of a repo with no debt."""
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    assert (code, err) == (0, "")
+    assert json.loads(out)["unmarked_over_target"] == 0

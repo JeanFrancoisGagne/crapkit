@@ -483,9 +483,13 @@ def _verify_attribution(verdict) -> dict:
 
 
 def _verify_result(verdict, overridden, run_id: int, baseline: dict, commit: str, ranges,
-                   uncovered: list, diff_uncovered_max: int | None) -> dict:
+                   uncovered: list, diff_uncovered_max: int | None,
+                   unmarked_over_target: int) -> dict:
     """`diff_uncovered_max` travels with the count it judges: a reader of exit 9
-    (the Action's comment) can say which ceiling the lines went over."""
+    (the Action's comment) can say which ceiling the lines went over.
+    `unmarked_over_target` is the standing debt no mark covers (see
+    `_warn_standing_debt`); it fires no exit code and is the one number that
+    says how much of the tree the ratchet is not holding."""
     return {
         "ok": verdict.ok,
         "run_id": run_id,
@@ -500,8 +504,26 @@ def _verify_result(verdict, overridden, run_id: int, baseline: dict, commit: str
         "diff_uncovered_count": len(uncovered),
         "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
         "diff_uncovered_max": diff_uncovered_max,
+        "unmarked_over_target": unmarked_over_target,
         **_verify_attribution(verdict),
     }
+
+
+def _warn_standing_debt(unmarked: list) -> None:
+    """One stderr line for the over-ceiling functions no mark covers.
+
+    The gate never looks at an untouched function and the ratchet check compares
+    marks only, so a rise on these (coverage loss included) reaches no finding;
+    docs/ratchet.md says "seed once, early" for exactly this, and a header-only
+    marks file cannot say whether seed ever ran. stderr, because
+    `--json` prints one object on stdout. Silent at zero, which is the state
+    of a repo with no debt and of one seeded in full.
+    """
+    if not unmarked:
+        return
+    print(f"warning: {len(unmarked)} function(s) over the ceiling carry no ratchet mark, so a "
+          f"rise on them (coverage loss included) passes unseen; record them with "
+          f"`{_self()} ratchet seed`", file=sys.stderr)
 
 
 def _warn_diff_uncovered(uncovered: list) -> None:
@@ -576,7 +598,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import changed_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
-    from ..verify import diff_uncovered, evaluate
+    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
@@ -616,6 +638,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # the whole cost of the post-commit verify on an unchanged tree.
     uncovered = diff_uncovered(ranges, missing_by_path(root, cfg)) if ranges else []
     _warn_diff_uncovered(uncovered)
+    unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
+    _warn_standing_debt(unmarked)
     breach = _diff_cover_breach(cfg, uncovered)
     if breach:
         verdict = verdict._replace(ok=False)  # a breached run never advances the baseline
@@ -629,7 +653,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     _report_verify(args.json,
                    {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges,
-                                     uncovered, cfg.diff_uncovered_max),
+                                     uncovered, cfg.diff_uncovered_max, len(unmarked)),
                     **_receipt(tool_versions, ratchet_sha256, changes)},
                    verdict, overridden, cfg.ratchet_file)
     _refuse_override(verdict, args.override)

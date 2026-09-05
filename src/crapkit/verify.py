@@ -206,6 +206,23 @@ def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
     return regressions
 
 
+def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], target: int,
+                          scope_targets: dict[str, int] | None = None) -> list[ScoredRow]:
+    """Standing debt nothing guards: the worst row per ratchet key that sits over
+    its ceiling with no mark under that key, worst first.
+
+    The gate judges touched functions only and the ratchet check compares marks
+    only, so a rise on one of these (coverage loss included) reaches no finding.
+    A marked function that rose is a regression already; this is the debt
+    `ratchet seed` was never run on.
+    """
+    marks = _marks_of(ratchet)
+    rows = [row for key, row in rows_by_key(fresh).items()
+            if row.crap > _ceiling(row, target, scope_targets) and key not in marks]
+    rows.sort(key=lambda r: (-r.crap, r.path, r.start))
+    return rows
+
+
 def evaluate(
     *,
     fresh: list[ScoredRow],

@@ -162,7 +162,12 @@ score. It is idempotent, and it can only lower: rerunning after an improvement r
 
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
-`verify` still gates the diff, but the standing debt is unprotected.
+`verify` still gates the diff, but the standing debt is unprotected. Since 0.5.1 every
+verify counts that gap: `warning: N function(s) over the ceiling carry no ratchet mark, so
+a rise on them (coverage loss included) passes unseen; record them with `crapkit ratchet
+seed`` on stderr, and `unmarked_over_target` in `--json`. It fires no exit code and is
+silent at zero, which is the state of a repo with no debt and of one seeded in full: a
+header-only marks file is not a mistake, it says nothing is over the ceiling.
 
 `ratchet seed` needs a **trusted** run in the store:
 

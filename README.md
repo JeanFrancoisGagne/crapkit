@@ -34,6 +34,16 @@ half-executed straight-line function never reads as fully covered.
 function at ccn 7 with 100% coverage still scores 7 and still fails the gate. The only
 move that clears it is splitting the function.
 
+**Why 6 and not 30.** crap4j's conventional threshold of 30 is a CRAP score: it lets an
+untested `ccn 5` through (25 + 5 = 30) and a fully covered `ccn 30` too. crapkit's default
+is a complexity ceiling, because coverage can at best collapse CRAP to `ccn`, and a
+function you cannot cover past `ccn 6` is one you decompose. Set `target = 30` in
+`crapkit.toml` if you want the crap4j number. A repo with existing debt does not need to:
+`ratchet seed` marks today's over-ceiling functions at today's score, the gate then judges
+only the functions a change touches, and marks may only fall, so adoption never starts with
+a wall of red. Next to crap4py, radon, xenon, wily and SonarQube:
+[docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md).
+
 crapkit scores **git-tracked files only**. Source you have not `git add`ed is invisible to
 it.
 
@@ -1246,6 +1256,11 @@ dropped it once `classify` scored under the ceiling, rewriting the tracked
 A verify may also print `warning: N changed line(s) have no coverage` above its verdict;
 that block is advisory unless `diff_uncovered_max` is set
 ([docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md)).
+It prints `warning: N function(s) over the ceiling carry no ratchet mark` when the tree
+holds debt `ratchet seed` never signed: the gate judges touched functions only and the
+ratchet check compares marks only, so coverage loss on such a function would pass unseen.
+The count is `unmarked_over_target` in `--json`, fires no exit code, and is zero on a repo
+with no debt.
 
 ## Documentation
 

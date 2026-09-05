@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.1 — unreleased
+
+### `verify` counts the standing debt no mark covers
+
+The gate judges touched functions only and the ratchet check compares marks only, so an
+over-ceiling function that carries no mark is guarded by nothing: coverage loss on it
+passes a green verify. `verify` now prints `warning: N function(s) over the ceiling carry
+no ratchet mark, so a rise on them (coverage loss included) passes unseen; record them
+with `crapkit ratchet seed`` on stderr and carries the count as `unmarked_over_target` in
+`--json`. No exit code changes. Silent at zero: a header-only marks file is the correct
+state of a repo with no debt, and crapkit's own is one. Whether an empty marks file means
+"no debt" or "seed never ran" is now one line on every run.
+
+### README answers the two questions every evaluator asks first
+
+Why the ceiling is 6 and not crap4j's conventional 30, and how a repo with existing debt
+adopts crapkit without raising it: `ratchet seed` marks today's over-ceiling functions,
+the gate then judges only the functions a change touches, and marks may only fall.
+[docs/comparison.md](docs/comparison.md) gains crap4py beside radon, xenon, wily and
+SonarQube.
+
+### The registry manifest names its repository and website
+
+`server.json` declares `repository` (GitHub) and `websiteUrl`, so the MCP Registry entry
+and every aggregator that reads it can link back to the source instead of showing no
+repository and an unknown license. Pinned by a contract test. The registry refuses a
+republish of an existing version, so the fields reach it with this release.
+
 ## 0.5.0 — 2026-09-03
 
 The seventeen repairs from the seven-seat review of 0.4.15 (spec: docs/specs/2026-09-03-release-0.5.0.md, issue #58). Subsections land per slice below.
