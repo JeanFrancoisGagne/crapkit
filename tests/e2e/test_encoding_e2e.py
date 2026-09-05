@@ -148,7 +148,7 @@ def test_the_mcp_server_reads_a_utf8_request_under_a_cp1252_stdin(tmp_path: Path
     assert _run(repo, "inventory").returncode == 0
     requests = [
         _rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}}),
-        _rpc(2, "tools/call", {"name": "explain",
+        _rpc(2, "tools/call", {"name": "get_function_history",
                                "arguments": {"path": "pkg/café.py", "name": "f"}}),
     ]
 
