@@ -3,6 +3,11 @@
   "name": "io.github.JeanFrancoisGagne/crapkit",
   "title": "crapkit",
   "description": "Ten read-only tools over per-function CRAP scores: complexity times uncovered risk, churn-ranked.",
+  "repository": {
+    "url": "https://github.com/JeanFrancoisGagne/crapkit",
+    "source": "github"
+  },
+  "websiteUrl": "https://jeanfrancoisgagne.github.io/crapkit/",
   "version": "0.5.0",
   "packages": [
     {

@@ -65,3 +65,13 @@ def test_the_description_counts_the_tenth_tool():
     description = _manifest()["description"]
 
     assert description.startswith("Ten read-only tools"), description
+
+
+def test_the_manifest_names_its_repository_so_aggregators_can_link_back():
+    """The registry copies `repository` and `websiteUrl` into every listing that
+    reads it. Without them the 0.4.15 and 0.5.0 entries rendered as 'No repository
+    recorded, License Unknown' on the aggregators that mirror the registry."""
+    manifest = json.loads(Path("server.json").read_text(encoding="utf-8"))
+
+    assert manifest["repository"] == {"url": "https://github.com/JeanFrancoisGagne/crapkit", "source": "github"}
+    assert manifest["websiteUrl"] == "https://jeanfrancoisgagne.github.io/crapkit/"
