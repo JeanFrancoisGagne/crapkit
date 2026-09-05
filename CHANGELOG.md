@@ -35,7 +35,7 @@ session starts with.
 
 Contract tests pin the pattern: every name is `verb_noun` on one of the three verbs, every
 title is longer than its name, every documented output field appears in the served schema,
-every description names a sibling and stays under 480 characters.
+every description names a sibling and stays under 560 characters.
 
 ### Upgrading from 0.5.x
 

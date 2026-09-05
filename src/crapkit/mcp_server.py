@@ -316,12 +316,12 @@ TOOLS: tuple[dict, ...] = (
             "top": "--top",
             "scope": "--scope"},
         "description": ("Lists the newest trusted run's whole risk ranking, every admitted function "
-        "by ccn times recency-weighted churn, finished rows included, so it never "
-        "empties. Use it to survey a repo or split work by file, and get_next_item "
-        "for one crap-ranked packet instead. It runs no tests, and stale true means "
-        "the run predates HEAD. scope narrows first and top caps after: scope "
-        "[\"core\"] with top 20 returns core's 20 riskiest, and an unknown scope name "
-        "is a config error."),
+        "ordered by ccn times recency-weighted churn. Use it to survey a repo or "
+        "split work by file, and get_next_item for the one crap-ranked packet to fix "
+        "now. It runs no tests, keeps finished rows so it never empties, and reads "
+        "the churn cache, not git. scope narrows before top caps, so scope [\"core\"] "
+        "with top 20 returns the 20 riskiest in core, an unknown scope name is a "
+        "config error, and repo may be any directory under the measured checkout."),
         "properties": {
             "top": {
                 "type": "integer",
@@ -557,11 +557,12 @@ TOOLS: tuple[dict, ...] = (
         "positional": (),
         "flags": {},
         "description": ("Returns per-run totals for every trusted run, oldest first, with a grade per "
-        "scope. Use it for the whole repo's trajectory, get_function_history for one "
-        "function, and get_ratchet_report for marked debt. The first call on a large "
-        "store sums every run into a rollup cache and takes seconds, later calls read "
-        "it back. repo can be any directory under a measured checkout, and an "
-        "unmeasured one answers isError true with the setup pointer."),
+        "scope. Use it for the whole repo's trajectory. Use get_function_history for "
+        "one function and get_ratchet_report for marked debt. It runs no lane and "
+        "spawns no git. The first call on a large store sums every run into a rollup "
+        "cache and takes seconds. Later calls read the cache back. repo may be any "
+        "directory under a checkout where crapkit init and crapkit coverage have run. "
+        "An unmeasured one answers isError true with the setup pointer."),
         "properties": {},
         "output": {
             "schema": {
@@ -631,11 +632,12 @@ TOOLS: tuple[dict, ...] = (
         "flags": {},
         "description": ("Returns one function's start-editing packet from the newest trusted run: "
         "scored row, uncovered lines and the refresh, test, gate and verify command "
-        "lines, none of them run. Use it once a function is chosen, and "
-        "get_function_history to follow its score across runs. Every call shingles "
-        "the repo for twins, seconds on a large corpus, and reads git for churn. name "
-        "takes the long name, bare identifier, start line or NAME#2, exact match "
-        "first, and a miss lists the file's functions."),
+        "lines, none of them run. Use it once a function is chosen. Skip it for "
+        "picking what to fix, that is get_next_item, and for a score across runs, "
+        "get_function_history. Every call shingles the repo for twins, seconds on a "
+        "large corpus. name must live in path. name takes the long name, a bare "
+        "identifier, a start line or NAME#2, exact match first. A miss lists the "
+        "file's functions instead of erroring."),
         "properties": {
             "path": {
                 "type": "string",
@@ -1035,11 +1037,11 @@ TOOLS: tuple[dict, ...] = (
             "tests": "--tests"},
         "description": ("Returns one function's ccn, coverage, crap and flag in every run that "
         "measured it, oldest first, plus its ratchet mark. Use it to tell improving "
-        "from decaying or regrown, and get_function_brief to start an edit instead. "
-        "history true spawns git log -L, capped at 10 commits, and tests true is null "
+        "from decaying or regrown, and get_function_brief instead to start an edit. "
+        "history true spawns git log -L capped at 10 commits, and tests true is null "
         "unless the lane recorded contexts. name resolves off the newest run that "
-        "scored path, and a substring such as \"eval\" fans out to one entry per long "
-        "name matched."),
+        "scored path, so a substring such as \"eval\" fans out to one entry per long "
+        "name matched, and repo may be any directory under the measured checkout."),
         "properties": {
             "path": {
                 "type": "string",
@@ -1281,11 +1283,12 @@ TOOLS: tuple[dict, ...] = (
             "min_confidence": "--min-confidence"},
         "description": ("Lists file pairs that keep landing in the same commits over the churn "
         "window, strongest first, at most 50. Use it before editing a file to learn "
-        "what an edit drags along, and list_duplicate_functions for copied code "
-        "rather than co-change. It reads git, not the scored run, and non-default "
-        "thresholds re-read git log. A pair must clear both: min_support 5 needs five "
-        "shared commits, and min_confidence 0.5 means the rarer file moved with its "
-        "partner half the time, 1.0 always."),
+        "what an edit drags along. Use list_duplicate_functions for copied code "
+        "rather than co-change. It reads git log once per call, not the scored run. "
+        "An empty list means no pair cleared both thresholds, not a missing run. A "
+        "pair must clear both thresholds: min_support 5 needs five shared commits, "
+        "min_confidence 0.5 means the rarer file moved with its partner half the "
+        "time. repo defaults to the server's own root."),
         "properties": {
             "min_support": {
                 "type": "integer",
@@ -1332,13 +1335,13 @@ TOOLS: tuple[dict, ...] = (
         "positional": (),
         "flags": {
             "similarity": "--similarity"},
-        "description": ("Lists near-duplicate function pairs in the newest run, best containment "
-        "first, at most 50. Use it before a refactor so twins are folded together, "
-        "not fixed one at a time, and get_function_brief for one function's twins. It "
-        "shingles the source on every call, skips functions under 8 lines and drops "
-        "pairs within one file. similarity is shared shingles over the smaller "
-        "function: 1.0 admits only a function found whole inside another, 0.8 four "
-        "lines in five, 0.5 loose pairs."),
+        "description": ("Lists near-duplicate function pairs in the newest run, at most 50. Use it "
+        "before a refactor so twins are folded together, and get_function_brief for "
+        "one function's twins. It shingles source on every call, seconds on a large "
+        "repo, skips functions under 8 lines and same-file pairs, and an empty list "
+        "means no pair reached similarity. similarity is shared shingles over the "
+        "smaller function: 1.0 admits only a function found whole inside another, 0.8 "
+        "four lines in five, and repo may be any directory under the checkout."),
         "properties": {
             "similarity": {
                 "type": "number",
@@ -1461,12 +1464,12 @@ TOOLS: tuple[dict, ...] = (
         "flags": {},
         "verdict_exits": (6,),
         "description": ("Checks whether an edited file clears the commit gate as the hook will: fresh "
-        "ccn per changed function against its scope's ceiling, less pardoned ratchet "
-        "debt. Call it after an edit and before committing, once get_function_brief "
-        "has stated the rule. It re-measures ccn off git diff, runs no tests, and a "
-        "breach answers gate.ok false, not a tool error. path is repo-relative: a "
-        "tracked file is judged where it differs from HEAD, an untracked one in full, "
-        "an unchanged one judges 0."),
+        "ccn per changed function against its scope's ceiling, less pardoned debt. "
+        "Call it after an edit, once get_function_brief has stated the rule, and "
+        "leave the repo-wide verdict to CLI verify. It re-measures ccn off git diff, "
+        "runs no tests, and answers a breach as gate.ok false, not a tool error. path "
+        "is repo-relative and repo must hold it: a tracked file is judged on its diff "
+        "from HEAD, an untracked one in full, an unchanged one judges 0."),
         "properties": {
             "path": {
                 "type": "string",
@@ -1596,13 +1599,13 @@ TOOLS: tuple[dict, ...] = (
         "json_flag": True,
         "positional": (),
         "flags": {},
-        "description": ("Lists the open claims sessions hold on queue items, oldest first. Use it "
-        "when get_next_item answers empty or skipped_claimed above 0, and "
-        "get_function_brief's attempts for one function. It reads the store only. No "
-        "tool on this server writes a claim by design: a stale one is released in the "
-        "CLI with crapkit claims release PATH NAME, and a claim closes itself when "
-        "verify finds the function at its ceiling. repo can be any directory under a "
-        "measured checkout."),
+        "description": ("Lists open claims on queue items, oldest first. Use it when get_next_item "
+        "answers empty or skipped_claimed above 0, and get_function_brief's attempts "
+        "for one function. No tool here writes a claim by design, so a stale one is "
+        "released in the CLI with crapkit claims release PATH NAME, and one closes "
+        "when verify finds the function at its ceiling. repo may be any directory "
+        "under a checkout where crapkit init and crapkit coverage have run, and an "
+        "unmeasured one answers isError true with the setup pointer."),
         "properties": {},
         "output": {
             "schema": {

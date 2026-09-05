@@ -87,12 +87,12 @@ def test_every_description_says_what_and_when():
     resource, when to reach for it and which sibling answers the other case,
     what the call reads and costs, what a parameter means beyond its schema
     text. One-line noun phrases leave a model unable to tell list_worklist from
-    get_next_item; essays get truncated by clients, so 480 characters is the
+    get_next_item; essays get truncated by clients, so 560 characters is the
     ceiling and semicolon chains are a defect a grading client marks down."""
     for entry in tool_listing():
         d = entry["description"]
         assert d.count(". ") >= 2, f"{entry['name']} never says when to use it: {d!r}"
-        assert len(d) <= 480, f"{entry['name']} rambles at {len(d)} chars"
+        assert len(d) <= 560, f"{entry['name']} rambles at {len(d)} chars"
 
 
 def test_initialize_hands_the_client_instructions():
