@@ -50,12 +50,12 @@ def test_initialize_list_and_call(repo: Path):
         _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
         json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
         _rpc(2, "tools/list"),
-        _call(3, "doctor"),
+        _call(3, "check_config"),
     ])
 
     assert responses[1]["result"]["serverInfo"]["name"] == "crapkit"
     tool_names = {t["name"] for t in responses[2]["result"]["tools"]}
-    assert "next_item" in tool_names and "doctor" in tool_names
+    assert "get_next_item" in tool_names and "check_config" in tool_names
     call = responses[3]["result"]
     assert call["isError"] is False, call
     assert call["structuredContent"]["problems"] == [], \
@@ -68,22 +68,22 @@ def test_a_bad_call_is_a_tool_error_and_the_server_keeps_answering(repo: Path):
     tool result in the tool's words (ADR 0001); the good call still answers."""
     replies = _serve(repo, [
         _rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}}),
-        _call(2, "brief", {"path": "pylib/mod.py"}),
-        _call(3, "worklist", {"bogus": 1}),
-        _call(4, "worklist", {"top": "three"}),
-        _call(5, "brief", {"path": None, "name": "guarded"}),
+        _call(2, "get_function_brief", {"path": "pylib/mod.py"}),
+        _call(3, "list_worklist", {"bogus": 1}),
+        _call(4, "list_worklist", {"top": "three"}),
+        _call(5, "get_function_brief", {"path": None, "name": "guarded"}),
         _rpc(6, "ping"),
-        _call(7, "doctor"),
+        _call(7, "check_config"),
     ])
 
     assert set(replies) == {1, 2, 3, 4, 5, 6, 7}, "no mistake ends the session"
     texts = {i: replies[i]["result"]["content"][0]["text"] for i in (2, 3, 4, 5)}
     assert all(replies[i]["result"]["isError"] is True for i in (2, 3, 4, 5)), texts
-    assert texts[2] == "brief needs name (see inputSchema.required)"
-    assert texts[3] == "worklist does not take 'bogus'; accepted: repo, top, scope"
+    assert texts[2] == "get_function_brief needs name (see inputSchema.required)"
+    assert texts[3] == "list_worklist does not take 'bogus'; accepted: repo, top, scope"
     assert texts[4] == 'top must be an integer (got "three")'
     assert "usage:" not in texts[4], "the refusal speaks the tool's vocabulary, not argparse's"
-    assert texts[5] == "brief needs path (see inputSchema.required)", \
+    assert texts[5] == "get_function_brief needs path (see inputSchema.required)", \
         "a positional sent as null is refused by the table, not answered by a spawned CLI"
     assert replies[6]["result"] == {}
     assert replies[7]["result"]["isError"] is False
@@ -93,15 +93,15 @@ def test_tools_list_names_the_required_arguments(repo: Path):
     replies = _serve(repo, [_rpc(1, "tools/list")])
 
     schemas = {t["name"]: t["inputSchema"] for t in replies[1]["result"]["tools"]}
-    assert schemas["brief"]["required"] == ["path", "name"]
-    assert schemas["explain"]["required"] == ["path", "name"]
-    assert "required" not in schemas["worklist"]
+    assert schemas["get_function_brief"]["required"] == ["path", "name"]
+    assert schemas["get_function_history"]["required"] == ["path", "name"]
+    assert "required" not in schemas["list_worklist"]
 
 
 def test_explain_answers_structured_json_and_history_reaches_the_cli(inventoried_repo: Path):
     replies = _serve(inventoried_repo, [
-        _call(1, "explain", {"path": "pylib/mod.py", "name": "guarded"}),
-        _call(2, "explain", {"path": "pylib/mod.py", "name": "guarded", "history": True}),
+        _call(1, "get_function_history", {"path": "pylib/mod.py", "name": "guarded"}),
+        _call(2, "get_function_history", {"path": "pylib/mod.py", "name": "guarded", "history": True}),
     ])
 
     plain = replies[1]["result"]
@@ -115,12 +115,12 @@ def test_explain_answers_structured_json_and_history_reaches_the_cli(inventoried
 
 def test_worklist_and_next_item_take_a_scope_array(inventoried_repo: Path):
     """The fixture declares two scopes, src and py; only py admits a row on an
-    inventory-only run. next_item has no scored run to hand out, so its answer
+    inventory-only run. get_next_item has no scored run to hand out, so its answer
     is the CLI's own refusal: proof the scope array cleared the table."""
     replies = _serve(inventoried_repo, [
-        _call(1, "worklist", {"scope": ["py"]}),
-        _call(2, "worklist", {"scope": ["src"]}),
-        _call(3, "next_item", {"scope": ["py"]}),
+        _call(1, "list_worklist", {"scope": ["py"]}),
+        _call(2, "list_worklist", {"scope": ["src"]}),
+        _call(3, "get_next_item", {"scope": ["py"]}),
     ])
 
     py = replies[1]["result"]
@@ -171,9 +171,9 @@ def test_gate_answers_the_post_edit_question(scored_repo: Path):
     is `ok: false` with the breach in the payload, and neither is a tool error."""
     mod = scored_repo / "pylib" / "mod.py"
     mod.write_text(mod.read_text(encoding="utf-8").replace("x % 2", "x % 3"), encoding="utf-8")
-    clean = _serve(scored_repo, [_call(1, "gate", {"path": "pylib/mod.py"})])[1]["result"]
+    clean = _serve(scored_repo, [_call(1, "check_gate", {"path": "pylib/mod.py"})])[1]["result"]
     mod.write_text(mod.read_text(encoding="utf-8") + TANGLED, encoding="utf-8")
-    breached = _serve(scored_repo, [_call(2, "gate", {"path": "pylib/mod.py"})])[2]["result"]
+    breached = _serve(scored_repo, [_call(2, "check_gate", {"path": "pylib/mod.py"})])[2]["result"]
 
     assert clean["isError"] is False and clean["structuredContent"]["gate"]["ok"] is True, clean
     assert breached["isError"] is False, breached
@@ -183,7 +183,7 @@ def test_gate_answers_the_post_edit_question(scored_repo: Path):
 
 
 def test_gate_without_a_scored_run_is_still_a_tool_error(inventoried_repo: Path):
-    reply = _serve(inventoried_repo, [_call(1, "gate", {"path": "pylib/mod.py"})])[1]["result"]
+    reply = _serve(inventoried_repo, [_call(1, "check_gate", {"path": "pylib/mod.py"})])[1]["result"]
 
     assert reply["isError"] is True and "structuredContent" not in reply, reply
     error = json.loads(reply["content"][0]["text"])["error"]

@@ -293,8 +293,8 @@ def test_a_server_started_below_the_root_serves_the_configuration_above_it(mono:
 
     replies = _serve(mono / "web", [
         _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
-        _call(2, "worklist"),
-        _call(3, "worklist", {"repo": str(mono / "web" / "src")}),
+        _call(2, "list_worklist"),
+        _call(3, "list_worklist", {"repo": str(mono / "web" / "src")}),
     ])
 
     for msg_id in (2, 3):
@@ -313,9 +313,9 @@ def test_a_server_started_in_a_workspace_reads_the_documented_repo_relative_path
 
     replies = _serve(mono / "web", [
         _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
-        _call(2, "brief", {"path": "web/src/grade.py", "name": "classify"}),
-        _call(3, "explain", {"path": "web/src/grade.py", "name": "classify"}),
-        _call(4, "gate", {"path": "web/src/grade.py"}),
+        _call(2, "get_function_brief", {"path": "web/src/grade.py", "name": "classify"}),
+        _call(3, "get_function_history", {"path": "web/src/grade.py", "name": "classify"}),
+        _call(4, "check_gate", {"path": "web/src/grade.py"}),
     ])
 
     for msg_id in (2, 3):
@@ -335,8 +335,8 @@ def test_the_servers_repo_flag_names_an_exact_root_like_every_other_subcommand(m
 
     replies = _serve(mono, [
         _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
-        _call(2, "worklist"),
-        _call(3, "worklist", {"repo": str(mono / "web" / "src")}),
+        _call(2, "list_worklist"),
+        _call(3, "list_worklist", {"repo": str(mono / "web" / "src")}),
     ], "--repo", "web")
 
     refused = replies[2]["result"]

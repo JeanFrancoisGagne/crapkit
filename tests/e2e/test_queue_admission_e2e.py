@@ -365,7 +365,7 @@ def _rpc(msg_id: int, method: str, params: dict) -> str:
 
 def mcp_next_item(repo: Path, arguments: dict) -> dict:
     """One tools/call against the real server process, over stdio."""
-    request = _rpc(1, "tools/call", {"name": "next_item", "arguments": arguments}) + "\n"
+    request = _rpc(1, "tools/call", {"name": "get_next_item", "arguments": arguments}) + "\n"
     proc = run_cli(repo, "mcp", "--repo", str(repo), stdin=request)
     call = json.loads(proc.stdout.strip())["result"]
     assert call["isError"] is False, call

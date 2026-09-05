@@ -667,10 +667,10 @@ def test_no_page_says_committing_alone_clears_a_stale_artifact():
 def test_both_pages_type_the_mcp_exclude_argument_the_way_the_server_serves_it():
     from crapkit.mcp_server import tool_listing
 
-    (served,) = [t for t in tool_listing() if t["name"] == "next_item"]
+    (served,) = [t for t in tool_listing() if t["name"] == "get_next_item"]
     assert served["inputSchema"]["properties"]["exclude"]["type"] == "array"
     for page in ("AGENTS.md", "docs/agent-json.md"):
-        row = _table_row(_doc(page), "`next_item`")
+        row = _table_row(_doc(page), "`get_next_item`")
         assert "array of strings" in row, f"{page} still types exclude as one string"
 
 

@@ -14,7 +14,7 @@ session works in does not hold those pages.
 
 | Moment | What answers it |
 |---|---|
-| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `brief` tool where the server is registered |
+| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered |
 | Which house rules bind here | `notes.repo` and `notes.scope` in the packet |
 | An advisory fired on the edit you just made | Decompose that function now, not at the commit wall. The edit landed and nothing was blocked, but the gate refuses the same function later |
 | An advisory fired after a Bash command, not an edit | The same verdict, read off the working tree. See [After a shell write](#after-a-shell-write) |

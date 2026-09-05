@@ -553,20 +553,22 @@ walked the same way (ADR 0002). `initialize` negotiates the protocol revision (a
 `2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
 `2025-06-18`) and reports server name `crapkit`.
 
-Ten tools, every one the CLI command's `--json` form:
+Twelve tools, every one the CLI command's `--json` form:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `worklist` | `top` (int), `scope` (array of strings: one declared scope name per element, each becoming its own `--scope`) | JSON |
-| `brief` | `path`, `name` | JSON |
-| `runs` | none | JSON |
-| `coupling` | `min_support`, `min_confidence` | JSON |
-| `duplication` | `similarity` | JSON |
-| `ratchet_report` | none | JSON |
-| `explain` | `path`, `name`, `history` (bool: adds `commits`), `tests` (bool: adds `tests`) | JSON |
-| `doctor` | none | JSON (the `doctor --json` report) |
-| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `worklist`) | JSON text |
-| `gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate; `ok` false on a breach (exit 6), answered as a result, not a tool error |
+| `list_worklist` | `top` (int), `scope` (array of strings: one declared scope name per element, each becoming its own `--scope`) | JSON |
+| `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `list_worklist`) | JSON text |
+| `get_function_brief` | `path`, `name` | JSON |
+| `get_function_history` | `path`, `name`, `history` (bool: adds `commits`), `tests` (bool: adds `tests`) | JSON |
+| `list_runs` | none | JSON |
+| `get_trend` | none | JSON (`trend --json`: per-run totals) |
+| `check_config` | none | JSON (the `doctor --json` report) |
+| `list_coupled_files` | `min_support`, `min_confidence` | JSON |
+| `list_duplicate_functions` | `similarity` | JSON |
+| `get_ratchet_report` | none | JSON |
+| `list_claims` | none | JSON (`claims list --json`) |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate; `ok` false on a breach (exit 6), answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared

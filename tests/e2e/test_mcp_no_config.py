@@ -58,8 +58,8 @@ def test_a_bare_directory_gets_guidance_and_keeps_the_server_alive(tmp_path: Pat
         _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
         json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
         _rpc(2, "tools/list"),
-        _call(3, "doctor"),
-        _call(4, "worklist"),
+        _call(3, "check_config"),
+        _call(4, "list_worklist"),
     ])
 
     assert set(replies) == {1, 2, 3, 4}, "a call in a bare directory must still get a reply"
@@ -80,7 +80,7 @@ def test_a_configured_repo_answers_normally_with_no_repo_flag(configured_repo: P
     global registration work in every checkout."""
     replies = _serve(configured_repo, [
         _rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}}),
-        _call(2, "doctor"),
+        _call(2, "check_config"),
     ])
 
     call = replies[2]["result"]

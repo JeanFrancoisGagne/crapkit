@@ -59,14 +59,14 @@ def test_a_missing_positional_is_a_tool_error_and_the_next_request_is_answered(m
     _no_cli(monkeypatch)
     replies = _serve(monkeypatch, tmp_path, [
         _rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}}),
-        _call(2, "brief", {"path": "src/a.py"}),
+        _call(2, "get_function_brief", {"path": "src/a.py"}),
         _rpc(3, "tools/list"),
     ])
 
     assert set(replies) == {1, 2, 3}, "a refused call must not end the session"
     call = replies[2]["result"]
     assert call["isError"] is True, call
-    assert call["content"][0]["text"] == "brief needs name (see inputSchema.required)"
+    assert call["content"][0]["text"] == "get_function_brief needs name (see inputSchema.required)"
     assert "structuredContent" not in call
     assert replies[3]["result"]["tools"], "the request after the refusal is answered"
 
@@ -80,41 +80,41 @@ def test_params_null_arguments_null_and_a_null_positional_are_refusals(monkeypat
     replies = _serve(monkeypatch, tmp_path, [
         json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": None}),
         json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                    "params": {"name": "brief", "arguments": None}}),
+                    "params": {"name": "get_function_brief", "arguments": None}}),
         _rpc(3, "ping"),
-        _call(4, "brief", {"path": None, "name": "f"}),
+        _call(4, "get_function_brief", {"path": None, "name": "f"}),
     ])
 
     assert set(replies) == {1, 2, 3, 4}
     assert replies[1]["result"]["isError"] is True
     assert "unknown tool ''" in replies[1]["result"]["content"][0]["text"]
     assert replies[2]["result"]["content"][0]["text"] == \
-        "brief needs path (see inputSchema.required)"
+        "get_function_brief needs path (see inputSchema.required)"
     assert replies[3]["result"] == {}
     null_positional = replies[4]["result"]
     assert null_positional["isError"] is True, null_positional
     assert null_positional["content"][0]["text"] == \
-        "brief needs path (see inputSchema.required)"
+        "get_function_brief needs path (see inputSchema.required)"
 
 
 def test_an_undeclared_key_names_the_accepted_ones(monkeypatch, tmp_path):
     _no_cli(monkeypatch)
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "worklist", {"bogus": 1})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "list_worklist", {"bogus": 1})])
 
     call = replies[1]["result"]
     assert call["isError"] is True
     assert call["content"][0]["text"] == \
-        "worklist does not take 'bogus'; accepted: repo, top, scope"
+        "list_worklist does not take 'bogus'; accepted: repo, top, scope"
 
 
 @pytest.mark.parametrize("tool, arguments, sentence", [
-    ("worklist", {"top": "three"}, 'top must be an integer (got "three")'),
-    ("next_item", {"top": True}, "top must be an integer (got true)"),
-    ("next_item", {"exclude": "cli.py"}, 'exclude must be an array of strings (got "cli.py")'),
-    ("coupling", {"min_confidence": "high"}, 'min_confidence must be a number (got "high")'),
-    ("explain", {"path": "a.py", "name": "f", "history": "yes"},
+    ("list_worklist", {"top": "three"}, 'top must be an integer (got "three")'),
+    ("get_next_item", {"top": True}, "top must be an integer (got true)"),
+    ("get_next_item", {"exclude": "cli.py"}, 'exclude must be an array of strings (got "cli.py")'),
+    ("list_coupled_files", {"min_confidence": "high"}, 'min_confidence must be a number (got "high")'),
+    ("get_function_history", {"path": "a.py", "name": "f", "history": "yes"},
      'history must be a boolean (got "yes")'),
-    ("brief", {"path": 7, "name": "f"}, "path must be a string (got 7)"),
+    ("get_function_brief", {"path": 7, "name": "f"}, "path must be a string (got 7)"),
 ])
 def test_a_wrong_type_is_named_in_the_tools_words(monkeypatch, tmp_path, tool, arguments,
                                                   sentence):
@@ -137,7 +137,7 @@ def test_an_escaped_exception_is_a_32603_reply_and_the_loop_continues(monkeypatc
         raise RuntimeError("the store is locked")
     monkeypatch.setattr(mcp_server, "_run_cli", _explode)
     replies = _serve(monkeypatch, tmp_path, [
-        _call(1, "runs", {}),
+        _call(1, "list_runs", {}),
         _rpc(2, "ping"),
     ])
 
@@ -159,24 +159,24 @@ def test_a_non_object_frame_and_a_blank_line_get_no_reply(monkeypatch, tmp_path)
 def test_tools_list_declares_required_from_the_positionals():
     by_name = {t["name"]: t["inputSchema"] for t in tool_listing()}
 
-    assert by_name["brief"]["required"] == ["path", "name"]
-    assert by_name["explain"]["required"] == ["path", "name"]
-    for name in ("worklist", "next_item", "runs", "doctor", "coupling", "duplication",
-                 "ratchet_report"):
+    assert by_name["get_function_brief"]["required"] == ["path", "name"]
+    assert by_name["get_function_history"]["required"] == ["path", "name"]
+    for name in ("list_worklist", "get_next_item", "list_runs", "check_config", "list_coupled_files",
+                 "list_duplicate_functions", "get_ratchet_report"):
         assert "required" not in by_name[name], f"{name} has no positional to require"
 
 
 def test_explain_and_doctor_shell_to_json_like_the_other_tools():
-    explain = next(t for t in TOOLS if t["name"] == "explain")
-    doctor = next(t for t in TOOLS if t["name"] == "doctor")
+    explain = next(t for t in TOOLS if t["name"] == "get_function_history")
+    doctor = next(t for t in TOOLS if t["name"] == "check_config")
 
     assert build_argv(explain, {"path": "a.py", "name": "f"}) == ["explain", "a.py", "f", "--json"]
     assert build_argv(doctor, {}) == ["doctor", "--json"]
 
 
 def test_explain_history_and_tests_are_bare_flags_only_when_true():
-    explain = next(t for t in TOOLS if t["name"] == "explain")
-    props = next(t for t in tool_listing() if t["name"] == "explain")["inputSchema"]["properties"]
+    explain = next(t for t in TOOLS if t["name"] == "get_function_history")
+    props = next(t for t in tool_listing() if t["name"] == "get_function_history")["inputSchema"]["properties"]
 
     assert props["history"]["type"] == "boolean" and props["tests"]["type"] == "boolean"
     argv = build_argv(explain, {"path": "a.py", "name": "f", "history": True, "tests": False})
@@ -196,7 +196,7 @@ _MCP_SECTION = {"AGENTS.md": "## The MCP server", "docs/agent-json.md": "## MCP 
 
 def _mcp_section(page: str) -> str:
     """The body under the page's MCP heading, down to the next heading of the
-    same depth; agent-json.md has other `explain` rows outside it."""
+    same depth; agent-json.md has other `explain` rows outside it (the CLI section)."""
     lines = (_ROOT / page).read_text(encoding="utf-8").splitlines()
     heading = _MCP_SECTION[page]
     assert heading in lines, f"{page} lost its {heading!r} heading"
@@ -216,10 +216,10 @@ def test_both_pages_list_explain_and_doctor_as_json_with_the_new_arguments(page)
     section = _mcp_section(page)
 
     assert "plain text" not in section, f"{page} still calls a --json tool plain text"
-    explain = _row(section, "`explain`")
+    explain = _row(section, "`get_function_history`")
     assert "JSON" in explain and "`history`" in explain and "`tests`" in explain, explain
-    assert "JSON" in _row(section, "`doctor`")
-    for tool in ("`worklist`", "`next_item`"):
+    assert "JSON" in _row(section, "`check_config`")
+    for tool in ("`list_worklist`", "`get_next_item`"):
         assert "`scope`" in _row(section, tool), f"{page}: {tool} never names scope"
 
 
@@ -261,15 +261,15 @@ def _cli_answers(monkeypatch, returncode: int, stdout: str, stderr: str = "") ->
 
 
 def test_gate_is_listed_with_a_required_path_and_the_read_only_annotations():
-    (gate,) = [t for t in tool_listing() if t["name"] == "gate"]
+    (gate,) = [t for t in tool_listing() if t["name"] == "check_gate"]
 
     assert gate["inputSchema"]["required"] == ["path"]
     assert gate["annotations"]["readOnlyHint"] is True
-    assert "rescore" in gate["description"] and "ceiling" in gate["description"]
+    assert "hook" in gate["description"] and "ceiling" in gate["description"]
 
 
 def test_gate_maps_to_rescore_path_gate_json():
-    tool = next(t for t in TOOLS if t["name"] == "gate")
+    tool = next(t for t in TOOLS if t["name"] == "check_gate")
 
     assert build_argv(tool, {"path": "src/a.py"}) == ["rescore", "--gate", "src/a.py", "--json"]
 
@@ -279,7 +279,7 @@ def test_a_breach_is_a_result_with_ok_false_not_a_tool_error(monkeypatch, tmp_pa
                           "gate": {"ok": False, "judged": 1, "breaches": [{"path": "src/a.py"}]},
                           "schema": 1})
     calls = _cli_answers(monkeypatch, 6, verdict, "  GATE  crap 8.0 ...")
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {"path": "src/a.py"})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "check_gate", {"path": "src/a.py"})])
 
     call = replies[1]["result"]
     assert call["isError"] is False, call
@@ -291,7 +291,7 @@ def test_a_breach_is_a_result_with_ok_false_not_a_tool_error(monkeypatch, tmp_pa
 def test_a_clean_edit_is_a_result_with_ok_true(monkeypatch, tmp_path):
     _cli_answers(monkeypatch, 0, json.dumps({"gate": {"ok": True, "judged": 1, "breaches": []},
                                              "schema": 1}))
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {"path": "src/a.py"})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "check_gate", {"path": "src/a.py"})])
 
     call = replies[1]["result"]
     assert call["isError"] is False and call["structuredContent"]["gate"]["ok"] is True
@@ -305,7 +305,7 @@ def test_a_clean_edit_is_a_result_with_ok_true(monkeypatch, tmp_path):
 ])
 def test_the_other_exits_stay_tool_errors(monkeypatch, tmp_path, exit_code, line):
     _cli_answers(monkeypatch, exit_code, "", line)
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {"path": "src/a.py"})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "check_gate", {"path": "src/a.py"})])
 
     call = replies[1]["result"]
     assert call["isError"] is True, call
@@ -316,31 +316,31 @@ def test_the_other_exits_stay_tool_errors(monkeypatch, tmp_path, exit_code, line
 def test_exit_six_is_a_verdict_only_for_the_gate_tool(monkeypatch, tmp_path):
     """No other tool exits 6; if one ever did, that is still a failure."""
     _cli_answers(monkeypatch, 6, json.dumps({"runs": [], "schema": 1}))
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "runs", {})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "list_runs", {})])
 
     assert replies[1]["result"]["isError"] is True
 
 
 def test_gate_needs_a_path_and_takes_nothing_else(monkeypatch, tmp_path):
     _no_cli(monkeypatch)
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "gate", {}),
-                                             _call(2, "gate", {"path": "a.py", "top": 3})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "check_gate", {}),
+                                             _call(2, "check_gate", {"path": "a.py", "top": 3})])
 
-    assert replies[1]["result"]["content"][0]["text"] == "gate needs path (see inputSchema.required)"
+    assert replies[1]["result"]["content"][0]["text"] == "check_gate needs path (see inputSchema.required)"
     assert replies[2]["result"]["content"][0]["text"] == \
-        "gate does not take 'top'; accepted: repo, path"
+        "check_gate does not take 'top'; accepted: repo, path"
 
 
-def test_the_instructions_count_ten_tools_and_name_the_gate():
-    assert "ten tools" in mcp_server._INSTRUCTIONS and "nine" not in mcp_server._INSTRUCTIONS
-    assert "gate" in mcp_server._INSTRUCTIONS
+def test_the_instructions_count_twelve_tools_and_name_the_gate():
+    assert "twelve tools" in mcp_server._INSTRUCTIONS and "ten tools" not in mcp_server._INSTRUCTIONS
+    assert "check_gate" in mcp_server._INSTRUCTIONS
 
 
 @pytest.mark.parametrize("page", sorted(_MCP_SECTION))
-def test_both_pages_list_the_gate_tool_beside_the_other_nine(page):
+def test_both_pages_list_the_gate_tool_beside_the_other_eleven(page):
     section = _mcp_section(page)
 
-    gate = _row(section, "`gate`")
+    gate = _row(section, "`check_gate`")
     assert "`path`" in gate and "rescore" in gate and "`ok`" in gate, gate
     assert "nine" not in section.lower(), f"{page} still counts nine tools"
 
@@ -354,7 +354,7 @@ def test_a_repo_below_the_root_spawns_the_cli_on_the_root_above_it(monkeypatch, 
     (tmp_path / "web" / "src").mkdir(parents=True)
     calls = _cli_answers(monkeypatch, 0, json.dumps({"runs": [], "schema": 1}))
     replies = _serve(monkeypatch, tmp_path,
-                     [_call(1, "runs", {"repo": str(tmp_path / "web" / "src")})])
+                     [_call(1, "list_runs", {"repo": str(tmp_path / "web" / "src")})])
 
     assert replies[1]["result"]["isError"] is False
     assert calls[0][-2:] == ["--repo", str(tmp_path)], calls
@@ -366,7 +366,7 @@ def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing
     answer names the directory that is not there, and no CLI runs."""
     _no_cli(monkeypatch)
     missing = tmp_path / "web" / "nope"
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "runs", {"repo": str(missing)})])
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "list_runs", {"repo": str(missing)})])
 
     call = replies[1]["result"]
     assert call["isError"] is True, call

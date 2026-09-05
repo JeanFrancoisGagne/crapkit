@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.6.0 — unreleased
+
+### The MCP tools follow one naming pattern, carry titles and output schemas, and two read tools join
+
+Every tool is renamed to `verb_noun`, where the verb says what a call returns: `get_` one
+item, `list_` a ranking or a set, `check_` a verdict. An MCP client that pinned a 0.5.x
+tool name has to be updated; the CLI subcommands do not move.
+
+| 0.5.x | 0.6.0 |
+| --- | --- |
+| `next_item` | `get_next_item` |
+| `worklist` | `list_worklist` |
+| `runs` | `list_runs` |
+| `brief` | `get_function_brief` |
+| `explain` | `get_function_history` |
+| `doctor` | `check_config` |
+| `coupling` | `list_coupled_files` |
+| `duplication` | `list_duplicate_functions` |
+| `ratchet_report` | `get_ratchet_report` |
+| `gate` | `check_gate` |
+
+Two read tools are new: `get_trend` (per-run totals for every trusted run, the CLI's
+`trend --json`) and `list_claims` (the open claims sessions hold on queue items, the CLI's
+`claims list --json`). No tool writes: `crapkit claims release` stays a CLI command.
+
+Every tool now serves a `title` and an `outputSchema` whose fields are described one by
+one, so a client reads the result shape from the definition instead of guessing it from
+prose. The descriptions are rewritten to say what a tool returns, when to call it and which
+sibling to call instead, what a call reads and costs, and what each argument means beyond
+its type. The annotations gain `destructiveHint: false` beside `readOnlyHint`,
+`idempotentHint` and `openWorldHint`, and the server's `instructions` name the four tools a
+session starts with.
+
+Contract tests pin the pattern: every name is `verb_noun` on one of the three verbs, every
+title is longer than its name, every documented output field appears in the served schema,
+every description names a sibling and stays under 480 characters.
+
+### Upgrading from 0.5.x
+
+MCP clients that call tools by name (Claude Code's `mcp__...` tool ids included) apply the
+table above. Argument names, types and result payloads are unchanged, so a renamed call
+returns what the old one did. `crapkit mcp` still serves on stdio and the plugin's
+`.mcp.json` needs no edit.
+
 ## 0.5.1 — 2026-09-05
 
 ### `verify` counts the standing debt no mark covers

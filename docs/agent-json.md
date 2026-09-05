@@ -1270,10 +1270,11 @@ crapkit mcp
 A dependency-free stdio MCP server: JSON-RPC 2.0, one message per line. The handshake
 negotiates the protocol revision: a client's offer of `2025-06-18`, `2025-03-26` or
 `2024-11-05` is spoken verbatim, and anything else gets `2025-06-18`, the newest this
-server implements. Read-only, and declared so: every tool carries
-`readOnlyHint`/`idempotentHint` annotations, `initialize` returns `instructions` naming
-the two-command prerequisite, and a tool whose text is a JSON object also carries it
-parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
+server implements. Read-only, and declared so: every tool carries `readOnlyHint`,
+`idempotentHint` and `destructiveHint: false` annotations, a `title` and an `outputSchema`
+whose fields are described one by one, `initialize` returns `instructions` naming the
+two-command prerequisite and the four tools a session starts with, and a tool whose text
+is a JSON object also carries it parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
 view cannot drift from what the CLI reports, and nothing here writes a baseline, a
 ratchet, or a mutant.
 
@@ -1319,16 +1320,18 @@ can serve several checkouts.
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `worklist` | `top` (int), `scope` (array of strings: one declared scope name per element, each becoming its own `--scope`) | JSON text |
-| `runs` | | JSON text |
-| `brief` | `path`, `name` | JSON text |
-| `coupling` | `min_support`, `min_confidence` | JSON text |
-| `duplication` | `similarity` | JSON text |
-| `ratchet_report` | | JSON text |
-| `explain` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
-| `doctor` | | JSON text (the `doctor --json` report) |
-| `next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `worklist`) | JSON text |
-| `gate` | `path` (repo-relative source file) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate (`ok`, `judged`, `ceilings`, `breaches`, `untracked`); a breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
+| `list_worklist` | `top` (int), `scope` (array of strings: one declared scope name per element, each becoming its own `--scope`) | JSON text |
+| `list_runs` | | JSON text |
+| `get_trend` | | JSON text (`trend --json`: per-run totals, oldest first) |
+| `get_function_brief` | `path`, `name` | JSON text |
+| `list_coupled_files` | `min_support`, `min_confidence` | JSON text |
+| `list_duplicate_functions` | `similarity` | JSON text |
+| `get_ratchet_report` | | JSON text |
+| `list_claims` | | JSON text (`claims list --json`: the open claims) |
+| `get_function_history` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
+| `check_config` | | JSON text (the `doctor --json` report) |
+| `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `list_worklist`) | JSON text |
+| `check_gate` | `path` (repo-relative source file) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate (`ok`, `judged`, `ceilings`, `breaches`, `untracked`); a breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
@@ -1337,8 +1340,8 @@ non-zero, and then the text is what the CLI printed: for `doctor` that is still 
 report (it exits 1 on any FAIL, so a failing `doctor` answers JSON text with `isError: true`
 and no `structuredContent`); for the other `--json` tools it is the [error object](#errors)
 the CLI prints, `{"error": {"exit", "kind", "message"}, "schema": 1}`, whose `message` is
-the stderr line; `next_item`, which has no `--json` flag, answers the stderr line itself.
-`gate` is the one exception to the exit rule: its exit 6 is the verdict, so a breach answers
+the stderr line; `get_next_item`, which has no `--json` flag, answers the stderr line itself.
+`check_gate` is the one exception to the exit rule: its exit 6 is the verdict, so a breach answers
 `isError: false` with `structuredContent` attached and `gate.ok` false, while exits 3, 4 and 5
 (and 1, no scored run yet) stay tool errors. `isError` is also
 true in the cases where no CLI call runs at all: the missing-config result above, an
