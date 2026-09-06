@@ -1,0 +1,10 @@
+{
+  "src/crapkit/store.py": {
+    "before": "a26a538359f7a505c5b6c41a297762a9403ff4b094b546bffa61d7e9efb79de2",
+    "after": "def9fca092ace49a5942e6547da9759a68ed9d19047e00de51b28ab5a6f93ee3"
+  },
+  "src/crapkit/cli/reports.py": {
+    "before": "cff06d2724e51a2de3a7ac160141c60303cb931e0b3911d50fa05d0205693a4c",
+    "after": "8943d3f545b41fdf8bf3083877cbe2bb4b05ad74527b009b09c53f7f44a5cac0"
+  }
+}

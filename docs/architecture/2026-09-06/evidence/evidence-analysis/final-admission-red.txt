@@ -1,0 +1,189 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.                                   [100%]
+================================== FAILURES ===================================
+_______________ test_jsx_cache_cannot_bypass_a_cold_tsx_refusal _______________
+tests\unit\test_analysis_typed_cache.py:17: in test_jsx_cache_cannot_bypass_a_cold_tsx_refusal
+    with pytest.raises(ToolError, match='expression-arrow body'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_________ test_jsx_to_tsx_rename_reanalyzes_and_same_mode_rename_hits _________
+tests\unit\test_analysis_typed_cache.py:29: in test_jsx_to_tsx_rename_reanalyzes_and_same_mode_rename_hits
+    assert hits == 0
+E   assert 1 == 0
+__________ test_nonfinite_coverage_is_refused_before_scoring[1-NaN] ___________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+________ test_nonfinite_coverage_is_refused_before_scoring[1-Infinity] ________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_______ test_nonfinite_coverage_is_refused_before_scoring[1--Infinity] ________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_________ test_nonfinite_coverage_is_refused_before_scoring[1-1e999] __________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_________ test_nonfinite_coverage_is_refused_before_scoring[1--1e999] _________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+__________ test_nonfinite_coverage_is_refused_before_scoring[7-NaN] ___________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+________ test_nonfinite_coverage_is_refused_before_scoring[7-Infinity] ________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_______ test_nonfinite_coverage_is_refused_before_scoring[7--Infinity] ________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_________ test_nonfinite_coverage_is_refused_before_scoring[7-1e999] __________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_________ test_nonfinite_coverage_is_refused_before_scoring[7--1e999] _________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_________ test_nonfinite_coverage_is_refused_before_scoring[1024-NaN] _________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+______ test_nonfinite_coverage_is_refused_before_scoring[1024-Infinity] _______
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+______ test_nonfinite_coverage_is_refused_before_scoring[1024--Infinity] ______
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+________ test_nonfinite_coverage_is_refused_before_scoring[1024-1e999] ________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_______ test_nonfinite_coverage_is_refused_before_scoring[1024--1e999] ________
+tests\unit\test_coverage_finite_json.py:27: in test_nonfinite_coverage_is_refused_before_scoring
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+________ test_every_projection_rejects_nonfinite_numbers[NaN-istanbul] ________
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+____ test_every_projection_rejects_nonfinite_numbers[NaN-istanbul_missing] ____
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_____ test_every_projection_rejects_nonfinite_numbers[NaN-istanbul_both] ______
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_____ test_every_projection_rejects_nonfinite_numbers[NaN-python_missing] _____
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+____ test_every_projection_rejects_nonfinite_numbers[NaN-python_contexts] _____
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_____ test_every_projection_rejects_nonfinite_numbers[Infinity-istanbul] ______
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_ test_every_projection_rejects_nonfinite_numbers[Infinity-istanbul_missing] __
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+___ test_every_projection_rejects_nonfinite_numbers[Infinity-istanbul_both] ___
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+__ test_every_projection_rejects_nonfinite_numbers[Infinity-python_missing] ___
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+__ test_every_projection_rejects_nonfinite_numbers[Infinity-python_contexts] __
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_____ test_every_projection_rejects_nonfinite_numbers[-Infinity-istanbul] _____
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_ test_every_projection_rejects_nonfinite_numbers[-Infinity-istanbul_missing] _
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+__ test_every_projection_rejects_nonfinite_numbers[-Infinity-istanbul_both] ___
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+__ test_every_projection_rejects_nonfinite_numbers[-Infinity-python_missing] __
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_ test_every_projection_rejects_nonfinite_numbers[-Infinity-python_contexts] __
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+_______ test_every_projection_rejects_nonfinite_numbers[1e999-istanbul] _______
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+___ test_every_projection_rejects_nonfinite_numbers[1e999-istanbul_missing] ___
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+____ test_every_projection_rejects_nonfinite_numbers[1e999-istanbul_both] _____
+tests\unit\test_coverage_finite_json.py:42: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+____ test_every_projection_rejects_nonfinite_numbers[1e999-python_missing] ____
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+___ test_every_projection_rejects_nonfinite_numbers[1e999-python_contexts] ____
+tests\unit\test_coverage_finite_json.py:46: in test_every_projection_rejects_nonfinite_numbers
+    with pytest.raises(ToolError, match='non-finite JSON number'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+=========================== short test summary info ===========================
+FAILED tests/unit/test_analysis_typed_cache.py::test_jsx_cache_cannot_bypass_a_cold_tsx_refusal
+FAILED tests/unit/test_analysis_typed_cache.py::test_jsx_to_tsx_rename_reanalyzes_and_same_mode_rename_hits
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1-NaN]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1-Infinity]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1--Infinity]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1-1e999]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1--1e999]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[7-NaN]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[7-Infinity]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[7--Infinity]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[7-1e999]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[7--1e999]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1024-NaN]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1024-Infinity]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1024--Infinity]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1024-1e999]
+FAILED tests/unit/test_coverage_finite_json.py::test_nonfinite_coverage_is_refused_before_scoring[1024--1e999]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[NaN-istanbul]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[NaN-istanbul_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[NaN-istanbul_both]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[NaN-python_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[NaN-python_contexts]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[Infinity-istanbul]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[Infinity-istanbul_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[Infinity-istanbul_both]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[Infinity-python_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[Infinity-python_contexts]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[-Infinity-istanbul]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[-Infinity-istanbul_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[-Infinity-istanbul_both]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[-Infinity-python_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[-Infinity-python_contexts]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[1e999-istanbul]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[1e999-istanbul_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[1e999-istanbul_both]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[1e999-python_missing]
+FAILED tests/unit/test_coverage_finite_json.py::test_every_projection_rejects_nonfinite_numbers[1e999-python_contexts]
+37 failed, 1 passed in 1.96s

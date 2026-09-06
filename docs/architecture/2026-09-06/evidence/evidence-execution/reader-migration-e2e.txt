@@ -1,0 +1,14 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.........................................................F               [100%]
+================================== FAILURES ===================================
+_____ test_legacy_mark_is_preserved_and_refused_by_seed_rescore_and_hook ______
+tests\e2e\test_same_line_identity_e2e.py:68: in test_legacy_mark_is_preserved_and_refused_by_seed_rescore_and_hook
+    assert "legacy ratchet key identity is ambiguous" in result.stderr
+E   AssertionError: assert 'legacy ratchet key identity is ambiguous' in 'crapkit: crapkit-ratchet.tsv: expression reader 10 changed anonymous function ordinals in src/app.ts; refresh coverage and reconcile any saved marks with their original functions before reseeding\n'
+E    +  where 'crapkit: crapkit-ratchet.tsv: expression reader 10 changed anonymous function ordinals in src/app.ts; refresh coverage and reconcile any saved marks with their original functions before reseeding\n' = CompletedProcess(args=['<python-install>\\python.exe', '-m', 'crapkit', '...dinals in src/app.ts; refresh coverage and reconcile any saved marks with their original functions before reseeding\n').stderr
+=========================== short test summary info ===========================
+FAILED tests/e2e/test_same_line_identity_e2e.py::test_legacy_mark_is_preserved_and_refused_by_seed_rescore_and_hook
+1 failed, 57 passed in 49.57s

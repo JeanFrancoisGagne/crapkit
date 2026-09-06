@@ -1,0 +1,761 @@
+{
+  "code_ref": "c24e6a427ff3297780e9ff71f0f08764ff2a60c7",
+  "ledger": [
+    {
+      "id": "trust",
+      "opportunity": "Keep trust evidence when pruning runs",
+      "owner": "store",
+      "status": "verified",
+      "implementation": "Prune preserves verify evidence, baseline dependencies and one witness per collision group; deletion uses only observed run IDs",
+      "validation": "Original store checks plus 19 current-root/retention tests and 59 affected e2e passed; paired historical failures remain in final-state-review.md",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "lane-evidence",
+      "opportunity": "Make every verdict account for its test evidence",
+      "owner": "root+execution",
+      "status": "verified",
+      "implementation": "Unique lane and resolved artifact paths; retries require fresh explicit passing requested IDs",
+      "validation": "177 integrated checks; lane identity 5 tests; configured run70 passed all4170 tests",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "identity",
+      "opportunity": "Finish adopting per-function identity",
+      "owner": "store",
+      "status": "verified",
+      "implementation": "Occurrence reaches rows, exports, SQLite and keys; reader-version proof protects legacy anonymous marks and old-snapshot claims",
+      "validation": "196 reader-migration checks passed; all 13 new cases plus claim competition passed; three affected CLI reruns passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "claims",
+      "opportunity": "Reserve work atomically",
+      "owner": "store",
+      "status": "verified",
+      "implementation": "Atomic reservation and owner-specific release; claims from unproved JavaScript-family snapshots hold the raw-name group",
+      "validation": "Competing-process e2e and 74 claim/handle checks passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "cache",
+      "opportunity": "Include the reader in analysis-cache identity",
+      "owner": "analysis",
+      "status": "verified",
+      "implementation": "Reader class, preprocessing chain and shared typed-syntax mode key analysis entries; malformed caches miss",
+      "validation": "Cold/warm JSX-to-TSX and same-mode rename regressions pass; shared admission batch: 307 passed; 27 persisted-cache checks pass, including18 new admission cases; both cache decoders have100% statements and branches",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "store-open",
+      "opportunity": "Let current stores open without migration writes",
+      "owner": "store",
+      "status": "verified",
+      "implementation": "Current schema opens without migration writes; deferred upgrades preserve old databases",
+      "validation": "Read-only contention regressions and store focused suite passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "pytest-config",
+      "opportunity": "Read pytest configuration once, consistently",
+      "owner": "root",
+      "status": "verified",
+      "implementation": "config.py owns disk and in-memory pytest decoding; scaffold imports it",
+      "validation": "6 red cases; 104 focused tests passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "mutation-inputs",
+      "opportunity": "Give mutation workers the same checkout",
+      "owner": "execution",
+      "status": "verified",
+      "implementation": "Snapshot the entire Git checkout for nested project roots, including dirty parent inputs",
+      "validation": "Focused regressions pass; configured run70 passed all4170 tests",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "mutation-tokens",
+      "opportunity": "Generate mutants from executable tokens",
+      "owner": "execution",
+      "status": "verified",
+      "implementation": "Executable token mutation protects type arguments and rejects unresolved changed angle syntax",
+      "validation": "Focused regressions pass; configured run70 passed all4170 tests",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "coverage-reader",
+      "opportunity": "Concentrate coverage decoding in the stream",
+      "owner": "analysis+execution+store",
+      "status": "verified",
+      "implementation": "Strict streaming grammar and finite numeric admission; one-pass lane projections, selected contexts and per-run missing-line collector",
+      "validation": "Shared admission batch: 307 passed; synthetic selected-context output equal with 25.0934 to 6.016 MiB warm peak",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "twins-cost",
+      "opportunity": "Filter twin candidates before building results",
+      "owner": "analysis",
+      "status": "verified",
+      "implementation": "Reject insufficient similarity before constructing result dictionaries",
+      "validation": "Five warm synthetic samples: 7.2681 to 0.0033 MiB, outputs equal",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "process-owner",
+      "opportunity": "Use one owner for subprocess deadlines",
+      "owner": "root+execution",
+      "status": "verified",
+      "implementation": "Doctor uses bounded tree cleanup, framed version response and controlled UTF-8",
+      "validation": "22 doctor tests; real escaped child, stderr warning, and Jose venv tests passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "retire",
+      "opportunity": "Retire obsolete production reachability",
+      "owner": "root+analysis",
+      "status": "verified",
+      "implementation": "Retired discovery module, production parser/merge oracles, unused coupling helpers and private CLI facade; callers use actual owners",
+      "validation": "204 integrated CLI/reader/identity checks plus 47 coupling/packet checks passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "baseline-cost",
+      "opportunity": "Select baseline history with one ordered walk",
+      "owner": "store",
+      "status": "verified",
+      "implementation": "One ordered history walk selects a trusted baseline and refusal evidence",
+      "validation": "History and digest regressions passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "mcp-schemas",
+      "opportunity": "Reuse identical MCP schema fragments",
+      "owner": "root",
+      "status": "verified",
+      "implementation": "shared packet properties and worklist item schema; serialized TOOLS unchanged",
+      "validation": "59 MCP tests passed; SHA256 e169f66b601e4634c43c30eb9bbd3d756e4e5f44344f5683de1ce2d04da537ff",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "admin-size",
+      "opportunity": "Evaluate admin responsibility concentration after shared-reader fixes",
+      "owner": "root",
+      "status": "retained",
+      "implementation": "Keep command-family adapter; config and process rules already have shared owners",
+      "validation": "Independent source review: another extraction would move lines without removing a decision",
+      "disposition": "Keep the command-family adapter; no further extraction justified."
+    },
+    {
+      "id": "ci-evidence",
+      "opportunity": "Measure CI cost and enforce actual changed-code gating",
+      "owner": "root",
+      "status": "verified",
+      "implementation": "Actual changed-function gate uses event merge base; retain OS/Python matrix",
+      "validation": "Committed-violation e2e passes; latest CI baseline 148s ubuntu 3.12,706s windows 3.12,623s dogfood",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "action-reentry",
+      "opportunity": "Isolate repeated Action invocation state",
+      "owner": "root",
+      "status": "verified",
+      "implementation": "per-invocation mktemp directory propagated through step outputs; owned base worktree cleaned",
+      "validation": "2 red cases; actual Git Bash invocation and 88 Action/CI tests passed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "release-guards",
+      "opportunity": "Enforce release prerequisites and portable execution",
+      "owner": "root",
+      "status": "verified",
+      "implementation": "Release prerequisites and receipts require actual version/tag/verify evidence; every Git/tag/CLI call obeys configured root",
+      "validation": "Focused regressions pass; configured run70 passed all4170 tests",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "argument-data",
+      "opportunity": "Preserve literal retry IDs and scoped-test arguments",
+      "owner": "execution+root",
+      "status": "verified",
+      "implementation": "Literal Windows/POSIX command data with empty-argument and static-expansion cases covered",
+      "validation": "Focused regressions pass; configured run70 passed all4170 tests",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    },
+    {
+      "id": "portable-test",
+      "opportunity": "Replace POSIX-only mutation test no-op",
+      "owner": "execution",
+      "status": "verified",
+      "implementation": "Mutation test no-op invokes current Python instead of POSIX true",
+      "validation": "Owned mutation tests passed; baseline sole failure removed",
+      "disposition": "Implemented in c24e6a4; configured run70 and committed run71 passed."
+    }
+  ],
+  "fresh_findings": [
+    {
+      "priority": "P1",
+      "title": "Admit scope identity and configuration values once",
+      "before": [
+        "Duplicate scope names",
+        "Truthy strings and coerced numbers",
+        "Coverage rules silently weaken"
+      ],
+      "after": [
+        "One admitted name per scope",
+        "Strict booleans and bounded integers",
+        "Consumers receive valid configuration"
+      ],
+      "evidence": "Actual coverage returned A+ for a strict scope after a second scope reused its name with target 100 and coverage exemption. Quoted false also became true. Admission now rejects both before scoring.",
+      "files": [
+        "src/crapkit/config.py",
+        "tests/unit/test_config_admission_regressions.py"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Preserve distinct functions that start on the same line",
+      "before": [
+        "Rows keyed by name and line",
+        "Sibling callbacks collide",
+        "Queue, marks and packets select the wrong function"
+      ],
+      "after": [
+        "Reader assigns source occurrence",
+        "Rows carry occurrence through SQLite and exports",
+        "Canonical keys and printed handles use complete positions"
+      ],
+      "evidence": "Real TypeScript callbacks retain distinct occurrences through exports and stored rows. Queue claims, brief, release and hook tests preserve those identities. Measured functions sharing an identical line span refuse separately; numeric selectors list distinct handles. Old exports remain readable with occurrence 0.",
+      "files": [
+        "src/crapkit/analyze.py",
+        "src/crapkit/keys.py",
+        "src/crapkit/store.py",
+        "tests/e2e/test_same_line_identity_e2e.py"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Require proof before reusing legacy debt identities",
+      "before": [
+        "Old ordinals collapse same-line siblings",
+        "New ordinals distinguish them",
+        "A legacy mark silently moves"
+      ],
+      "after": [
+        "Separate metric and key format versions",
+        "Check current and historical collision groups",
+        "Refuse uncertain mapping before writing marks or audit records"
+      ],
+      "evidence": "CLI seed, rescore, verify and staged hook regressions preserve mark bytes on refusal. Override checks identity before recording any grant. Legacy claims reserve their entire raw-name group. Migration requires reviewing old source and carrying only approved values. Reader-version admission also refuses anonymous marks from pre-10 or unproved JavaScript-family analysis, even without a same-start collision; old-snapshot claims hold the entire raw-name group.",
+      "files": [
+        "src/crapkit/ratchet.py",
+        "src/crapkit/override.py",
+        "src/crapkit/cli/_shared.py",
+        "docs/ratchet.md"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Parse expression arrows at their actual source spans",
+      "before": [
+        "Expression state absorbs comma-separated callbacks",
+        "Functions disappear or inherit a sibling body",
+        "Identity and complexity use the wrong records"
+      ],
+      "after": [
+        "Reader instance owns expression state",
+        "Commas close the correct arrow body",
+        "Unresolved TypeScript angle syntax refuses with a remedy"
+      ],
+      "evidence": "39 targeted tests and the upstream JavaScript, TypeScript and TSX fixtures exercise extraction. Analysis version 10 invalidates old metric evidence. Parenthesizing an ambiguous expression or using a block body resolves the documented TypeScript limit.",
+      "files": [
+        "src/crapkit/lizardtypescript.py",
+        "src/crapkit/analyze.py",
+        "tests/unit/test_lizardtypescript_expressions.py",
+        "README.md"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Refuse coverage that cannot distinguish sibling functions",
+      "before": [
+        "Distinct functions share one line span",
+        "Coverage projection contains no column identity",
+        "Both functions borrow one measurement"
+      ],
+      "after": [
+        "One pass detects repeated spans",
+        "Measured ambiguous spans refuse",
+        "Separate definitions and regenerate coverage"
+      ],
+      "evidence": "A real CLI regression prevents a false passing score. Equal hits, different hits and a single matching coverage candidate all refuse. Copies across scopes and unmeasured or complexity-only rows preserve their existing behavior.",
+      "files": [
+        "src/crapkit/score.py",
+        "tests/e2e/test_coverage_same_span_e2e.py",
+        "docs/agent-json.md"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Apply identity admission to explain and edit advice",
+      "before": [
+        "Queue checks migrated mark identities",
+        "Explain and edit advisory read raw marks",
+        "Another caller attaches an old exemption to a new function"
+      ],
+      "after": [
+        "Explain supplies full file positions and store history",
+        "Advisory checks the edited file's current records",
+        "Unproved advisory marks grant no exemption"
+      ],
+      "evidence": "Five public seam regressions cover the missed readers. The advisory opens no snapshot store and writes no key marker. Advisory and explain integration passed 53 tests with two opt-in latency checks skipped.",
+      "files": [
+        "src/crapkit/cli/reports.py",
+        "src/crapkit/cli/claude_hook.py",
+        "tests/unit/test_ratchet_reader_identity.py"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Give a root scope ownership of loose repository files",
+      "before": [
+        "Scope declares paths dot",
+        "Matcher expects a dot prefix",
+        "Loose source files disappear from inventory"
+      ],
+      "after": [
+        "Normalize dot to the root prefix",
+        "Keep deepest named path precedence",
+        "Inventory and coverage include root files"
+      ],
+      "evidence": "25 ownership and CLI checks verify the root case, nested overrides and existing patterns. The configuration reference now states the actual root ownership rule.",
+      "files": [
+        "src/crapkit/universe.py",
+        "tests/e2e/test_root_scope_e2e.py",
+        "docs/configuration.md"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Reject nonfinite coverage numbers before scoring",
+      "before": [
+        "Default JSON decoder accepts NaN and Infinity",
+        "CRAP becomes NaN",
+        "Above-ceiling comparison returns false"
+      ],
+      "after": [
+        "Shared decoder checks numeric values",
+        "All coverage projections reject nonfinite numbers",
+        "Finite values and byte digests stay unchanged"
+      ],
+      "evidence": "Read-to-score tests reproduce NaN, Infinity, -Infinity and exponent overflow. Coverage, missing-line and selected-context projections refuse at admission. The shared admission batch went from 37 failures and one pass to 307 passing checks.",
+      "files": [
+        "src/crapkit/covstream.py",
+        "tests/unit/test_coverage_finite_json.py"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Retain evidence of historical identity collisions",
+      "before": [
+        "Legacy mark reuse correctly refuses",
+        "Pruning removes the only collision witness",
+        "The same seed silently changes ordinal meaning"
+      ],
+      "after": [
+        "Store selects one recent witness per group",
+        "Retention protects those runs",
+        "Legacy mark refusal survives pruning"
+      ],
+      "evidence": "Public CLI regressions preserve collision evidence through repeated pruning. Red retention tests are paired with 19 current-root/retention checks and 59 affected e2e passes. One retained run can witness several groups; keep count remains a floor.",
+      "files": [
+        "src/crapkit/store.py",
+        "src/crapkit/cli/reports.py",
+        "tests/unit/test_prune_identity_witnesses.py"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Limit pruning to the history it actually inspected",
+      "before": [
+        "CLI reads run history",
+        "Another process records a new run",
+        "Deletion removes that unexamined run"
+      ],
+      "after": [
+        "Capture the considered run IDs",
+        "Intersect deletion with that set",
+        "Later coverage and failed-verify runs survive"
+      ],
+      "evidence": "A real second Python process writes coverage or a failed verify between history selection and deletion. Both cases now survive. The fix adds no long write lock and does not claim to serialize updates to older runs.",
+      "files": [
+        "src/crapkit/store.py",
+        "src/crapkit/cli/reports.py",
+        "tests/unit/test_prune_identity_witnesses.py"
+      ]
+    },
+    {
+      "priority": "P1",
+      "title": "Preserve mark and claim ownership across reader upgrades",
+      "before": [
+        "Reader 9 reports anonymous starts 2 and 6",
+        "Reader 10 recovers a callback at line 3",
+        "Old ordinal 2 attaches to the recovered sibling"
+      ],
+      "after": [
+        "Stored runs record analysis-version proof",
+        "Unproved anonymous marks refuse before writes",
+        "Unproved claims reserve their raw-name group"
+      ],
+      "evidence": "Seed, old-snapshot seed, direct override and claim regressions preserve bytes and ownership without remapping debt. The repair passed 196 focused checks; all 13 new cases plus the competition test passed. An older e2e fixture failed on message precedence; its current-proof rerun passed all three cases. Named marks and other languages keep compatible reseed behavior.",
+      "files": [
+        "src/crapkit/ratchet.py",
+        "src/crapkit/keys.py",
+        "src/crapkit/store.py",
+        "src/crapkit/cli/ratchet_cmds.py",
+        "tests/unit/test_ratchet_reader_identity.py",
+        "tests/unit/test_expression_identity_migration.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Run mutation suites from the configured project root",
+      "before": [
+        "Git checkout copied",
+        "Suite starts at checkout top",
+        "Nested runner is missing"
+      ],
+      "after": [
+        "Capture whole checkout",
+        "Retain configured-root prefix",
+        "Run every worker at that prefix"
+      ],
+      "evidence": "Actual nested repositories now pass with one and two workers, including dirty parent inputs, deletions and untracked files. Root mutation integration:86 passed.",
+      "files": [
+        "src/crapkit/mutate_pool.py",
+        "src/crapkit/gitio.py",
+        "tests/unit/test_mutate_nested.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Keep generic types out of comparison mutation",
+      "before": [
+        "Lexer emits angle tokens",
+        "Type bracket is mutated",
+        "Syntax error counts as a kill"
+      ],
+      "after": [
+        "Inspect language type context",
+        "Protect proven type brackets",
+        "Refuse unresolved changed spans"
+      ],
+      "evidence": "A parser-only TypeScript runner previously killed 4 invalid mutants without assertions. Independent replay now produces no type-only mutants for TypeScript, C++, Rust or Java.",
+      "files": [
+        "src/crapkit/mutate.py",
+        "tests/unit/test_mutate_type_angles.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Preserve the configured Windows command",
+      "before": [
+        "Literal placeholders injected",
+        "Delayed expansion enabled globally",
+        "Static bang text changes"
+      ],
+      "after": [
+        "Escaped percent transport for ordinary args",
+        "Protected delayed transport for multiline args",
+        "Original shell text and argv preserved"
+      ],
+      "evidence": "Real cmd.exe tests cover static variables, bang paths, pipes, chained commands, metacharacters and distinct empty-list/empty-string cases. Multiline arguments combined with static percent expansion explicitly refuse.",
+      "files": [
+        "src/crapkit/procs.py",
+        "tests/unit/test_windows_template_transport.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Emit the same Unicode paths the Action consumes",
+      "before": [
+        "Git quotes non-ASCII filenames",
+        "Comment compares literal paths",
+        "Changed worklist row disappears"
+      ],
+      "after": [
+        "Git emits unquoted Unicode",
+        "Exact path comparison retained",
+        "Changed row reaches comment"
+      ],
+      "evidence": "Temporary Git repositories reproduce and verify caf\u00e9.py and \u4e16\u754c.py paths, independent of the user's core.quotePath setting.",
+      "files": [
+        "action.yml",
+        "tests/unit/test_action_unicode_paths.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Use the named repository throughout release verification",
+      "before": [
+        "Files read from explicit root",
+        "Git and GitHub use caller directory",
+        "Verifier combines two repositories"
+      ],
+      "after": [
+        "One explicit repository root",
+        "File, Git and GitHub reads agree",
+        "Existing callback interfaces retained"
+      ],
+      "evidence": "A target tagged v9.9.0 previously reported the caller's v1.0.0 tag. The regression now verifies both the target tag and GitHub command cwd.",
+      "files": [
+        "tools/release/release.py",
+        "tests/unit/test_release_repo_root.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Diagnose malformed installed hooks at their reader",
+      "before": [
+        "Valid JSON with invalid structure",
+        "Dictionary traversal raises",
+        "Doctor prints a traceback"
+      ],
+      "after": [
+        "Hook reader contains shape failures",
+        "Arguments require strings",
+        "Doctor names the unreadable file"
+      ],
+      "evidence": "Six malformed hook structures failed first. The complete doctor-plugin family now passes 43 checks, including valid and missing installations.",
+      "files": [
+        "src/crapkit/cli/admin.py",
+        "src/crapkit/doctor.py",
+        "tests/unit/test_doctor_plugin_root.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Use complete identities in reports and duplication results",
+      "before": [
+        "Filtered rows renumber printed handles",
+        "Numeric report links select ambiguous lines",
+        "Nested same-start functions compare equal to themselves"
+      ],
+      "after": [
+        "Read all positions once per file",
+        "Publish exact handles and occurrence fields",
+        "Compare complete identities when excluding self matches"
+      ],
+      "evidence": "Report commands survive actual PowerShell special characters. Packets and rescore output distinguish same-line siblings. The actual nested TypeScript duplication test retains the contained child as a twin.",
+      "files": [
+        "src/crapkit/report.py",
+        "src/crapkit/cli/queue.py",
+        "src/crapkit/packet.py",
+        "src/crapkit/dup.py",
+        "tests/unit/test_report_identity.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Publish churn cache bytes under their own identity",
+      "before": [
+        "Concurrent builders share a temporary path",
+        "One operation reads another operation's bytes",
+        "A cache entry carries the wrong key and data"
+      ],
+      "after": [
+        "Each operation owns a temporary file",
+        "Validate the bytes before publishing",
+        "Atomic replacement publishes one complete entry"
+      ],
+      "evidence": "Publication regressions force interleaving and confirm the returned cache belongs to the requesting operation. Invalid or interrupted cache writes remain disposable misses.",
+      "files": [
+        "src/crapkit/churn_log.py",
+        "tests/unit/test_churn_log_publication.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Keep ratchet history values and audit keys exact",
+      "before": [
+        "Committed value changes are skipped",
+        "Non-finite marks enter calculations",
+        "Override audit names a raw function instead of its canonical key"
+      ],
+      "after": [
+        "Shared decoder validates numeric marks",
+        "History updates values while preserving entry age",
+        "Override audit records the exact admitted key"
+      ],
+      "evidence": "Temporary committed histories cover changes, comment-only commits and literal path headers. Finite admission and duplicate-name override regressions preserve the values and identities actually approved.",
+      "files": [
+        "src/crapkit/ratchet_report.py",
+        "src/crapkit/ratchet.py",
+        "src/crapkit/override.py",
+        "tests/unit/test_ratchet_committed_updates.py",
+        "tests/unit/test_override_exact_audit.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Frame the doctor interpreter probe and control its encoding",
+      "before": [
+        "Startup stderr joins a version response",
+        "Windows encoding differs from the decoder",
+        "Doctor reports a foreign or damaged interpreter path"
+      ],
+      "after": [
+        "Child emits a framed record",
+        "Probe requests UTF-8 output",
+        "Bounded process owner captures and cleans up the child tree"
+      ],
+      "evidence": "A real startup warning and a real virtual environment under Jose with an accented e reproduced both defects. The replay confirms exact interpreter paths and ignores startup warnings when decoding the framed response.",
+      "files": [
+        "src/crapkit/cli/admin.py",
+        "tests/unit/test_doctor_lane_probe.py"
+      ]
+    },
+    {
+      "priority": "P2",
+      "title": "Include typed reader mode in analysis-cache identity",
+      "before": [
+        "JSX and TSX share one reader class",
+        "Warm JSX records bypass a cold TSX refusal"
+      ],
+      "after": [
+        "One predicate owns typed syntax mode",
+        "Cache keys include that mode",
+        "Same-mode renames retain cache hits"
+      ],
+      "evidence": "The public cold/warm replay accepts JSX, refuses cold TSX, and formerly accepted warm TSX. The paired admission tests now refuse both TSX paths. The shared 307-test green run also preserves same-mode rename hits.",
+      "files": [
+        "src/crapkit/analyze.py",
+        "src/crapkit/lizardtypescript.py",
+        "tests/unit/test_analysis_typed_cache.py"
+      ]
+    }
+  ],
+  "validation": {
+    "complete": true,
+    "checks": [
+      {
+        "check": "Final configured coverage and verify",
+        "result": "4170 passed, 2 skipped in 1832.04 seconds; verify passed",
+        "evidence": "verification-pass/result.json and ledger-after.json: run70, baseline67, verdict_ok1, findings0; no changed inputs, gate violations, ratchet regressions, new failures or overrides"
+      },
+      {
+        "check": "Committed inputs and supported artifact reuse",
+        "result": "480 inputs matched; run71 passed on c24e6a4",
+        "evidence": "commit-verification/input-proof.json and ledger-after.json; 478 exact committed files and 2 named JSON CRLF-to-LF exceptions; coverage digest matches run70. JUnit bytes first hashed at finalization and complete counts match run70."
+      },
+      {
+        "check": "Final full e2e suite",
+        "result": "717 passed, 2 skipped in 243.98 seconds",
+        "evidence": "e2e-verified.log; final source and test fixtures"
+      },
+      {
+        "check": "Separate full unit suite before the final cache tests",
+        "result": "3434 passed in 266.06 seconds",
+        "evidence": "unit-verified.log; production source matches the configured run; 18 cache cases were added afterward and pass in run70"
+      },
+      {
+        "check": "Staged commit gate",
+        "result": "Passed, exit 0",
+        "evidence": "staged-hook-final.log; 331 changed production functions, all CCN <= 6"
+      },
+      {
+        "check": "Cache admission regressions",
+        "result": "27 passed; both cache decoders at 100% statements and branches",
+        "evidence": "cache-admission-coverage/function-coverage.json; 18 current-fingerprint persisted-cache cases added"
+      },
+      {
+        "check": "Staged gate after cache tests",
+        "result": "Passed, exit 0",
+        "evidence": "staged-hook-cache-final.log"
+      },
+      {
+        "check": "Opt-in advisory latency budgets",
+        "result": "1 passed, 1 failed; no_toml 41.04 ms against 40 ms",
+        "evidence": "strict-latency.log; 50 paired current/release blocks found no resolved source slowdown; both versions exceeded 40 ms in all 10 five-sample groups"
+      },
+      {
+        "check": "Contributor guidance after the code commit",
+        "result": "107 documentation and CI contract tests passed",
+        "evidence": "contributing-doc-checks.log; only CONTRIBUTING.md changed outside the report folder; source and tests remain unchanged."
+      }
+    ],
+    "limits": "Saved local execution covers Windows with Python3.11.2. Hosted OS/Python results are separate evidence in the pull request checks. Nine changed lines remain uncovered within the configured rules. The optional 40 ms no-config timing check remains failed.",
+    "updated_at": "2026-09-06T22:24:27.4974502Z",
+    "phase": "Local implementation, independent reassessment and report complete. Hosted results are separate evidence in the pull request checks.",
+    "previous_attempts": [
+      {
+        "check": "First integrated full unit suite",
+        "result": "3,106 passed",
+        "evidence": "integrated-unit-first.log; before final review repairs"
+      },
+      {
+        "check": "First integrated full e2e suite",
+        "result": "710 passed,2 skipped,1 stale test-spy failure",
+        "evidence": "integrated-e2e-first.log; staged-read spy updated and6 hook integration checks pass"
+      },
+      {
+        "check": "First configured coverage and verify",
+        "result": "3,924 passed;2 skipped;1 stale manifest assertion failed; verify refused2 uncovered gate functions",
+        "evidence": "verify-first.log; lane-py.log; actual SQLite run68, baseline67, verdict_ok0, findings3,2032.51seconds;0ratchet regressions"
+      },
+      {
+        "check": "Same-line CLI identity integration",
+        "result": "3 passed",
+        "evidence": "Identity transport through coverage records, export, claims, brief, release, seed, rescore and hook; identical measured source spans have a separate explicit refusal test."
+      },
+      {
+        "check": "Previous final-admission full suites",
+        "result": "3433 unit passed/1 failed;716 e2e passed/2 skipped/1 failed",
+        "evidence": "unit-final-admission.log and e2e-final-admission.log. Fixture reader proof and receipt metadata expectations corrected; affected-file and full reruns now pass."
+      },
+      {
+        "check": "Final integrated migration checks",
+        "result": "17 passed in 8.21 seconds",
+        "evidence": "migration-integrated-final.log"
+      },
+      {
+        "check": "Final migration fixture repairs",
+        "result": "26 passed in 22.17 seconds",
+        "evidence": "final-fixture-repairs.log; followed by passing full suites"
+      },
+      {
+        "check": "Final configured coverage and verify",
+        "result": "4152 passed, 2 skipped; verify exit6, one coverage finding",
+        "evidence": "verification-final/result.json and ledger-after.json: run69,baseline67,verdict_ok0,findings1; _cached_record CCN6,cov83.33%,CRAP6.1667; no changed inputs"
+      }
+    ],
+    "verification_started_at": "2026-09-06T17:50:12.686509-04:00",
+    "report_checks": [
+      "21 unique opportunity dispositions and22 fresh findings checked against current code and tests",
+      "331 changed production functions at CCN <=6; staged commit hook passed",
+      "Report layout inspected in browser; source references and copied upstream license checked",
+      "No prohibited public-text references in staged additions or report prose",
+      "130 code references resolve to the intended commit and valid line; 130 evidence hashes match",
+      "Final rendered summary, before-and-after cards and verification table inspected"
+    ],
+    "skipped_checks": [
+      {
+        "check": "Opt-in advisory latency budgets in standard suites",
+        "reason": "CRAPKIT_STRICT_TIMING is not enabled in standard suites",
+        "cases": [
+          "no_toml",
+          "scoped_breach"
+        ],
+        "status": "Executed separately: 1 passed, 1 failed. Failure retained; paired investigation in evidence-execution/advisory-latency-review.md."
+      }
+    ],
+    "qualification": "The optional no-config startup check measured 41.04 ms against a 40 ms budget. A paired comparison found no resolved slowdown against release 0.6.0; both versions exceeded the budget on this machine. The timing check remains failed.",
+    "diff_coverage": {
+      "uncovered_changed_lines": 9,
+      "ceiling": null,
+      "status": "Reported by verify; no configured uncovered-line ceiling. Function gates passed."
+    },
+    "status_label": "Local verification passed; advisory timing limit missed",
+    "code_ref": "c24e6a427ff3297780e9ff71f0f08764ff2a60c7",
+    "recommendation": "Keep the shared configuration, coverage and state owners. Retain the full OS/Python matrix. Use representative repositories for further performance work; the synthetic gains here do not establish command latency."
+  }
+}

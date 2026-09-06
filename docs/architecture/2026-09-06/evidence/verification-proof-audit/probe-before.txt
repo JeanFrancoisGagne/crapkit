@@ -1,0 +1,46 @@
+Traceback (most recent call last):
+VERIFIED_IMPORT <repo>\src\crapkit\__init__.py
+  File "<python-install>\Lib\shutil.py", line 620, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: '<review-work>\\verification-proof-audit\\proof-fixture-mdndga1t\\repo\\.crapkit\\crap.sqlite'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<python-install>\Lib\tempfile.py", line 878, in onerror
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: '<review-work>\\verification-proof-audit\\proof-fixture-mdndga1t\\repo\\.crapkit\\crap.sqlite'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<review-work>\verification-proof-audit\probe.py", line 39, in <module>
+    with tempfile.TemporaryDirectory(prefix='proof-fixture-', dir=Path(__file__).parent) as directory:
+  File "<python-install>\Lib\tempfile.py", line 904, in __exit__
+    self.cleanup()
+  File "<python-install>\Lib\tempfile.py", line 908, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "<python-install>\Lib\tempfile.py", line 890, in _rmtree
+    _shutil.rmtree(name, onerror=onerror)
+  File "<python-install>\Lib\shutil.py", line 759, in rmtree
+    return _rmtree_unsafe(path, onerror)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<python-install>\Lib\shutil.py", line 617, in _rmtree_unsafe
+    _rmtree_unsafe(fullname, onerror)
+  File "<python-install>\Lib\shutil.py", line 617, in _rmtree_unsafe
+    _rmtree_unsafe(fullname, onerror)
+  File "<python-install>\Lib\shutil.py", line 622, in _rmtree_unsafe
+    onerror(os.unlink, fullname, sys.exc_info())
+  File "<python-install>\Lib\tempfile.py", line 881, in onerror
+    cls._rmtree(path, ignore_errors=ignore_errors)
+  File "<python-install>\Lib\tempfile.py", line 890, in _rmtree
+    _shutil.rmtree(name, onerror=onerror)
+  File "<python-install>\Lib\shutil.py", line 759, in rmtree
+    return _rmtree_unsafe(path, onerror)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<python-install>\Lib\shutil.py", line 603, in _rmtree_unsafe
+    onerror(os.scandir, path, sys.exc_info())
+  File "<python-install>\Lib\shutil.py", line 600, in _rmtree_unsafe
+    with os.scandir(path) as scandir_it:
+         ^^^^^^^^^^^^^^^^
+NotADirectoryError: [WinError 267] The directory name is invalid: '<review-work>\\verification-proof-audit\\proof-fixture-mdndga1t\\repo\\.crapkit\\crap.sqlite'

@@ -1,0 +1,34 @@
+{
+  "collisions_before": [
+    [
+      "app.ts",
+      "(anonymous)"
+    ]
+  ],
+  "commands": [
+    {
+      "command": "ratchet seed",
+      "exit": 3,
+      "stdout": "",
+      "stderr": "crapkit: crapkit-ratchet.tsv: legacy ratchet key identity is ambiguous for app.ts: (anonymous); preserve these marks and reconcile their function mapping as described in docs/ratchet.md#same-line-function-identity\n"
+    },
+    {
+      "command": "runs prune --keep 1 --json",
+      "exit": 0,
+      "stdout": "{\"freed_bytes\": 0, \"kept_runs\": 2, \"pruned_runs\": 1, \"schema\": 1}\n",
+      "stderr": ""
+    },
+    {
+      "command": "ratchet seed",
+      "exit": 0,
+      "stdout": "crapkit-ratchet.tsv: added 2, tightened 1 - 3 mark(s) vs run 3 (new2)\n",
+      "stderr": ""
+    }
+  ],
+  "collisions_after": [],
+  "kept_runs": [
+    2,
+    3
+  ],
+  "marks_after": "# crapkit-analysis=10 lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name\tcrap\napp.ts\t(anonymous)\t90.0000\napp.ts\t(anonymous)#2\t90.0000\napp.ts\t(anonymous)#3\t90.0000\n"
+}

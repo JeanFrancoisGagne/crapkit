@@ -1,0 +1,16 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...F...                                                                  [100%]
+================================== FAILURES ===================================
+__________ test_seed_cannot_label_old_snapshot_ordinals_as_reader10 ___________
+tests\unit\test_expression_identity_migration.py:112: in test_seed_cannot_label_old_snapshot_ordinals_as_reader10
+    assert main(['ratchet', 'seed', '--repo', str(tmp_path)]) == 3
+E   AssertionError: assert 0 == 3
+E    +  where 0 = main(['ratchet', 'seed', '--repo', '<user>\\AppData\\Local\\Temp\\pytest-of-jfgag\\pytest-49797\\test_seed_cannot_label_old_sna0'])
+---------------------------- Captured stdout call -----------------------------
+crapkit-ratchet.tsv: added 2, tightened 0 - 2 mark(s) vs run 1 (113d41462a7)
+=========================== short test summary info ===========================
+FAILED tests/unit/test_expression_identity_migration.py::test_seed_cannot_label_old_snapshot_ordinals_as_reader10
+1 failed, 6 passed in 2.87s

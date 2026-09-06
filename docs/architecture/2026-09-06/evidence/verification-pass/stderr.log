@@ -1,0 +1,10 @@
+warning: 9 changed line(s) have no coverage
+  uncovered src/crapkit/churn_log.py:312
+  uncovered src/crapkit/cli/admin.py:867
+  uncovered src/crapkit/cli/ratchet_cmds.py:108
+  uncovered src/crapkit/cli/ratchet_cmds.py:109
+  uncovered src/crapkit/mutate.py:195
+  uncovered src/crapkit/mutate_pool.py:137
+  uncovered src/crapkit/mutate_pool.py:341
+  uncovered src/crapkit/score.py:85
+  uncovered src/crapkit/uncovered.py:145

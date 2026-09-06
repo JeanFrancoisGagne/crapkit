@@ -1,0 +1,19 @@
+crapkit: src/crapkit/analyze.py defines __call__( self , tokens , reader ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/cli/queue.py defines key( self , row ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/gitio.py defines staged_diff( self ), staged_blobs( self , rel_paths : list [ str ] ), close( self ), __init__( self , root : Path ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/lizardpowershell.py defines _state_global( self , token ), __init__( self , context ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/lizardrust.py defines __init__( self , context ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/lizardshell.py defines __init__( self , context ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+warning: 11 changed line(s) have no coverage
+  uncovered src/crapkit/analyze.py:410
+  uncovered src/crapkit/analyze.py:418
+  uncovered src/crapkit/churn_log.py:312
+  uncovered src/crapkit/cli/admin.py:867
+  uncovered src/crapkit/cli/ratchet_cmds.py:108
+  uncovered src/crapkit/cli/ratchet_cmds.py:109
+  uncovered src/crapkit/mutate.py:195
+  uncovered src/crapkit/mutate_pool.py:137
+  uncovered src/crapkit/mutate_pool.py:341
+  uncovered src/crapkit/score.py:85
+  uncovered src/crapkit/uncovered.py:145
+warning: 1 function(s) over the ceiling carry no ratchet mark, so a rise on them (coverage loss included) passes unseen; record them with `<python-install>\python.exe -m crapkit ratchet seed`

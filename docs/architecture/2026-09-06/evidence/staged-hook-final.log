@@ -1,0 +1,3 @@
+crapkit: src/crapkit/analyze.py defines __call__( self , tokens , reader ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/cli/queue.py defines key( self , row ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/gitio.py defines staged_diff( self ), staged_blobs( self , rel_paths : list [ str ] ), close( self ), __init__( self , root : Path ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order

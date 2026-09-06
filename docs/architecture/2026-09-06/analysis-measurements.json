@@ -1,0 +1,205 @@
+{
+  "kind": "synthetic; first invocation then five warmed in-process samples; tracemalloc enabled",
+  "contexts": {
+    "output_equal_every_sample": true,
+    "cold_before": {
+      "seconds": 0.473137,
+      "peak_python_mib": 25.0934
+    },
+    "cold_after": {
+      "seconds": 0.134035,
+      "peak_python_mib": 6.0161
+    },
+    "warm_before": [
+      {
+        "seconds": 0.545964,
+        "peak_python_mib": 25.0934
+      },
+      {
+        "seconds": 0.60641,
+        "peak_python_mib": 25.0934
+      },
+      {
+        "seconds": 0.644947,
+        "peak_python_mib": 25.0934
+      },
+      {
+        "seconds": 0.799913,
+        "peak_python_mib": 25.0934
+      },
+      {
+        "seconds": 0.707881,
+        "peak_python_mib": 25.0934
+      }
+    ],
+    "warm_after": [
+      {
+        "seconds": 0.203445,
+        "peak_python_mib": 6.016
+      },
+      {
+        "seconds": 0.181139,
+        "peak_python_mib": 6.016
+      },
+      {
+        "seconds": 0.263542,
+        "peak_python_mib": 6.016
+      },
+      {
+        "seconds": 0.334397,
+        "peak_python_mib": 6.0159
+      },
+      {
+        "seconds": 0.14303,
+        "peak_python_mib": 6.0159
+      }
+    ],
+    "median_warm_before": {
+      "seconds": 0.644947,
+      "peak_python_mib": 25.0934
+    },
+    "median_warm_after": {
+      "seconds": 0.203445,
+      "peak_python_mib": 6.016
+    },
+    "fixture": {
+      "files": 5000,
+      "artifact_bytes": 3158936
+    }
+  },
+  "twins": {
+    "output_equal_every_sample": true,
+    "cold_before": {
+      "seconds": 0.142377,
+      "peak_python_mib": 7.2681
+    },
+    "cold_after": {
+      "seconds": 0.089109,
+      "peak_python_mib": 0.0033
+    },
+    "warm_before": [
+      {
+        "seconds": 0.226674,
+        "peak_python_mib": 7.2681
+      },
+      {
+        "seconds": 0.246798,
+        "peak_python_mib": 7.2681
+      },
+      {
+        "seconds": 0.225543,
+        "peak_python_mib": 7.2681
+      },
+      {
+        "seconds": 0.182774,
+        "peak_python_mib": 7.2681
+      },
+      {
+        "seconds": 0.202462,
+        "peak_python_mib": 7.2681
+      }
+    ],
+    "warm_after": [
+      {
+        "seconds": 0.101398,
+        "peak_python_mib": 0.0033
+      },
+      {
+        "seconds": 0.09303,
+        "peak_python_mib": 0.0033
+      },
+      {
+        "seconds": 0.093339,
+        "peak_python_mib": 0.0033
+      },
+      {
+        "seconds": 0.084176,
+        "peak_python_mib": 0.0033
+      },
+      {
+        "seconds": 0.120573,
+        "peak_python_mib": 0.0033
+      }
+    ],
+    "median_warm_before": {
+      "seconds": 0.225543,
+      "peak_python_mib": 7.2681
+    },
+    "median_warm_after": {
+      "seconds": 0.093339,
+      "peak_python_mib": 0.0033
+    },
+    "fixture": {
+      "indexed_functions": 25000,
+      "qualifying_twins": 0
+    }
+  },
+  "folding": {
+    "output_equal_every_sample": true,
+    "cold_before": {
+      "seconds": 0.401034,
+      "peak_python_mib": 24.3388
+    },
+    "cold_after": {
+      "seconds": 0.498925,
+      "peak_python_mib": 24.3393
+    },
+    "warm_before": [
+      {
+        "seconds": 0.417536,
+        "peak_python_mib": 24.3388
+      },
+      {
+        "seconds": 0.40603,
+        "peak_python_mib": 24.3388
+      },
+      {
+        "seconds": 0.33993,
+        "peak_python_mib": 24.3388
+      },
+      {
+        "seconds": 0.372533,
+        "peak_python_mib": 24.3388
+      },
+      {
+        "seconds": 0.310276,
+        "peak_python_mib": 24.3388
+      }
+    ],
+    "warm_after": [
+      {
+        "seconds": 0.457702,
+        "peak_python_mib": 24.3393
+      },
+      {
+        "seconds": 0.375868,
+        "peak_python_mib": 24.3393
+      },
+      {
+        "seconds": 0.309423,
+        "peak_python_mib": 24.3392
+      },
+      {
+        "seconds": 0.379994,
+        "peak_python_mib": 24.3392
+      },
+      {
+        "seconds": 0.350156,
+        "peak_python_mib": 24.3392
+      }
+    ],
+    "median_warm_before": {
+      "seconds": 0.372533,
+      "peak_python_mib": 24.3388
+    },
+    "median_warm_after": {
+      "seconds": 0.375868,
+      "peak_python_mib": 24.3392
+    },
+    "fixture": {
+      "lanes": 13,
+      "files_per_lane": 1500,
+      "missing_lines_per_file": 80
+    }
+  }
+}

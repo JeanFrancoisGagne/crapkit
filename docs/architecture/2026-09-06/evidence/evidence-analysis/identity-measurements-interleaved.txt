@@ -1,0 +1,171 @@
+{
+  "changed_function_complexity": [
+    {
+      "file": "analyze.py",
+      "function": "__call__.create( name )",
+      "ccn": 1
+    },
+    {
+      "file": "analyze.py",
+      "function": "__call__( self , tokens , reader )",
+      "ccn": 2
+    },
+    {
+      "file": "analyze.py",
+      "function": "_chain( cognitive_index : int )",
+      "ccn": 1
+    },
+    {
+      "file": "analyze.py",
+      "function": "_record( rel_path : str , fn , occurrence : int = 0 )",
+      "ccn": 3
+    },
+    {
+      "file": "analyze.py",
+      "function": "_file_records( rel_path : str , functions )",
+      "ccn": 3
+    },
+    {
+      "file": "analyze.py",
+      "function": "fingerprint( )",
+      "ccn": 1
+    },
+    {
+      "file": "analyze.py",
+      "function": "_cached_record( values )",
+      "ccn": 6
+    },
+    {
+      "file": "snapshot.py",
+      "function": "build_inventory_rows( by_scope : dict [ str , list [ FunctionRecord ] ] )",
+      "ccn": 3
+    },
+    {
+      "file": "score.py",
+      "function": "parse_scored_row( line : str )",
+      "ccn": 4
+    },
+    {
+      "file": "score.py",
+      "function": "parse_scored_tsv( text : str )",
+      "ccn": 6
+    },
+    {
+      "file": "score.py",
+      "function": "_scored_line( line : str , count : int | None )",
+      "ccn": 3
+    },
+    {
+      "file": "score.py",
+      "function": "_finish( row , cov : float , flag : str , * , target : int , scope_targets )",
+      "ccn": 3
+    },
+    {
+      "file": "score.py",
+      "function": "_nearest_overlay( row , candidates )",
+      "ccn": 4
+    },
+    {
+      "file": "score.py",
+      "function": "_same_occurrence( row , candidates )",
+      "ccn": 4
+    },
+    {
+      "file": "score.py",
+      "function": "_overlay_match( row , candidates , unique : bool )",
+      "ccn": 5
+    },
+    {
+      "file": "score.py",
+      "function": "_named_overlay_cov( row , by_key : dict , positions : dict )",
+      "ccn": 2
+    },
+    {
+      "file": "score.py",
+      "function": "_overlay_positions( rows )",
+      "ccn": 2
+    },
+    {
+      "file": "score.py",
+      "function": "overlay_stale_coverage( rows : list [ InventoryRow ] , baseline_scored : list [ \"ScoredRow\" ] , * , lane_scopes : set [ str ] , target : int = 6 , scope_targets : dict [ str , int ] | None = None , cc_only_scopes : frozenset [ str ] = frozenset ( )",
+      "ccn": 5
+    }
+  ]
+}
+{
+  "before": {
+    "cold": {
+      "seconds": 0.4885894000180997,
+      "cpu_seconds": 0.46875,
+      "peak_mib": 2.353334426879883
+    },
+    "warm": [
+      {
+        "seconds": 0.49006540002301335,
+        "cpu_seconds": 0.46875,
+        "peak_mib": 2.352667808532715
+      },
+      {
+        "seconds": 0.5194738000282086,
+        "cpu_seconds": 0.53125,
+        "peak_mib": 2.3525686264038086
+      },
+      {
+        "seconds": 0.5218916999874637,
+        "cpu_seconds": 0.515625,
+        "peak_mib": 2.352492332458496
+      },
+      {
+        "seconds": 0.4812305999803357,
+        "cpu_seconds": 0.421875,
+        "peak_mib": 2.3524084091186523
+      },
+      {
+        "seconds": 0.5081455999752507,
+        "cpu_seconds": 0.515625,
+        "peak_mib": 2.3523244857788086
+      }
+    ],
+    "warm_median_seconds": 0.5081455999752507,
+    "warm_median_cpu_seconds": 0.515625,
+    "warm_median_peak_mib": 2.352492332458496
+  },
+  "after": {
+    "cold": {
+      "seconds": 0.4913412000169046,
+      "cpu_seconds": 0.453125,
+      "peak_mib": 2.4056692123413086
+    },
+    "warm": [
+      {
+        "seconds": 0.5416313000023365,
+        "cpu_seconds": 0.546875,
+        "peak_mib": 2.405562400817871
+      },
+      {
+        "seconds": 0.7715184999979101,
+        "cpu_seconds": 0.734375,
+        "peak_mib": 2.4054861068725586
+      },
+      {
+        "seconds": 0.5057735000154935,
+        "cpu_seconds": 0.484375,
+        "peak_mib": 2.4053497314453125
+      },
+      {
+        "seconds": 0.4929661000496708,
+        "cpu_seconds": 0.484375,
+        "peak_mib": 2.4053258895874023
+      },
+      {
+        "seconds": 0.522093000006862,
+        "cpu_seconds": 0.4375,
+        "peak_mib": 2.405219078063965
+      }
+    ],
+    "warm_median_seconds": 0.522093000006862,
+    "warm_median_cpu_seconds": 0.484375,
+    "warm_median_peak_mib": 2.4053497314453125
+  },
+  "fixture": "Synthetic 1000-line TypeScript file, 2000 callbacks; traced parse and record construction"
+}

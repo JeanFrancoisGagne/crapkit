@@ -1,0 +1,18 @@
+[
+  {
+    "Path": "<repo>\\src\\crapkit\\analyze.py",
+    "Hash": "F052D28D23AEFE8AF783E20ABF61055893C3CE2F06221085666D2C9C2EBF4E1C"
+  },
+  {
+    "Path": "<repo>\\.coverage",
+    "Hash": "FD5688200FBE2D06354461A70194CCF430BC0AFDF81FDE15D358AE4B31FB2396"
+  },
+  {
+    "Path": "<repo>\\.crapkit\\cov\\py.json",
+    "Hash": "63D09AF6A961A19148D6D9A10606899CCCAB0252B10A19AACED8473D2BE1159A"
+  },
+  {
+    "Path": "<repo>\\.crapkit\\cov\\junit.xml",
+    "Hash": "E1200D3FABE5CDC8B1DED5939815E582CB76C4401090383B86FCF7ECE66808E0"
+  }
+]

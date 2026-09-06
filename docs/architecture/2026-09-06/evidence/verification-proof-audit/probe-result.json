@@ -1,0 +1,85 @@
+{
+  "checks": [
+    {
+      "case": "valid capture and exact two CRLF exceptions",
+      "result": "accepted"
+    },
+    {
+      "case": "changed coverage",
+      "result": "refused",
+      "reason": "coverage differs from the bytes consumed by verify"
+    },
+    {
+      "case": "failing JUnit",
+      "result": "refused",
+      "reason": "JUnit contains failures or errors"
+    },
+    {
+      "case": "wrong JUnit counts",
+      "result": "refused",
+      "reason": "JUnit counts differ from the completed run"
+    },
+    {
+      "case": "partial JUnit",
+      "result": "refused",
+      "reason": "JUnit declared count differs from its testcases"
+    },
+    {
+      "case": "missing required JUnit",
+      "result": "refused",
+      "reason": "[Errno 2] No such file or directory: '<review-work>\\\\verification-proof-audit\\\\proof-fixture-1i8b1pay\\\\repo\\\\.crapkit\\\\cov\\\\junit.xml'"
+    },
+    {
+      "case": "added working input",
+      "result": "refused",
+      "reason": "current input paths or bytes differ from the completed run"
+    },
+    {
+      "case": "added input at post-commit check",
+      "result": "refused",
+      "reason": "working input path set or bytes differ"
+    },
+    {
+      "case": "extra committed file despite matching working set",
+      "result": "refused",
+      "reason": "committed input path set differs from the completed run"
+    },
+    {
+      "case": "undeclared CRLF source exception",
+      "result": "refused",
+      "reason": "committed bytes differ: src/app.py"
+    },
+    {
+      "case": "empty stale artifact manifest",
+      "result": "refused",
+      "reason": "capture binding differs: artifacts-after.json"
+    },
+    {
+      "case": "empty manifest even with matching manifest hash",
+      "result": "refused",
+      "reason": "configured artifact paths or bytes differ"
+    },
+    {
+      "case": "failed capture",
+      "result": "refused",
+      "reason": "capture did not finish cleanly"
+    },
+    {
+      "case": "changed capture inputs",
+      "result": "refused",
+      "reason": "capture did not finish cleanly"
+    },
+    {
+      "case": "stale prior run receipt",
+      "result": "refused",
+      "reason": "run does not belong to this capture attempt"
+    },
+    {
+      "case": "run absent from captured ledger",
+      "result": "refused",
+      "reason": "run does not belong to this capture attempt"
+    }
+  ],
+  "passed": 16,
+  "root_tests_or_verification_run": false
+}

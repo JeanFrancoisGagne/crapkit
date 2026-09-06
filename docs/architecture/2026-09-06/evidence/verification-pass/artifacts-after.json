@@ -1,0 +1,18 @@
+[
+  {
+    "path": ".crapkit/cov/py.json",
+    "sha256": "5211d887d3237a07784f69db65210a489a2e0c63cd855edf8c52bba289ae4e7c",
+    "lane": "py",
+    "kind": "coverage"
+  },
+  {
+    "path": ".crapkit/cov/junit.xml",
+    "sha256": "4cdabc6139e914b66ca28c1c900928645122972b37b64746601c0a19ad03c423",
+    "lane": "py",
+    "kind": "junit",
+    "counts": {
+      "tests": 4172,
+      "skipped": 2
+    }
+  }
+]

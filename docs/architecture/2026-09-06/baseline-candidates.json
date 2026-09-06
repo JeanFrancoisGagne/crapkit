@@ -1,0 +1,426 @@
+[
+  {
+    "id": "trust",
+    "title": "Keep trust evidence when pruning runs",
+    "priority": "P1",
+    "strength": "Strong",
+    "effort": "Small to medium",
+    "evidence": "Four-run fixture: baseline 1 becomes baseline 4 after prune; failed verify 2 disappears.",
+    "problem": "Retention and baseline selection apply separate rules. Deleting an outstanding failed verify lets later coverage become trusted without a successful verify.",
+    "solution": "Keep the selected baseline and outstanding refusal through the existing store module. Make retention use the same trust decision as verification.",
+    "before": [
+      "Coverage 1 trusted",
+      "Verify 2 fails",
+      "Coverage 3 + 4",
+      "Prune deletes 1 + 2",
+      "Coverage 4 becomes trusted"
+    ],
+    "after": [
+      "Run history",
+      "One trust decision",
+      "Preserve baseline + refusal",
+      "Prune other eligible runs",
+      "Refusal still blocks coverage"
+    ],
+    "files": [
+      "src/crapkit/store.py:1268",
+      "src/crapkit/store.py:1162",
+      "src/crapkit/cli/reports.py:252"
+    ],
+    "validation": "Compare baseline, blocker and verdict before and after repeated pruning. Cover failed, crashed and later passing verifies, explicit baselines and no earlier trusted run.",
+    "risk": "Retention may keep more rows. Preserve audit references and digest pairs. During this work, replace repeated baseline scans with one walk only after proving equivalent decisions.",
+    "deletion": "Delete retention's independent trust assumptions. The existing transactional store remains valuable."
+  },
+  {
+    "id": "lane-evidence",
+    "title": "Make every verdict account for its test evidence",
+    "priority": "P1",
+    "strength": "Strong",
+    "effort": "Small to medium",
+    "evidence": "Duplicate lane names lost a failure and produced ok=true. A retry exiting 2 with only an unrelated pass forgave the requested failure.",
+    "problem": "Lane names identify result slots but are not unique. Retry code treats absence from failed IDs as proof of a pass.",
+    "solution": "Reject duplicate lane names at configuration admission. Let the JUnit and retry module forgive only requested tests explicitly recorded as passing in fresh, completed results.",
+    "before": [
+      "Two lanes named unit",
+      "One result overwrites another",
+      "Retry omits requested test",
+      "Missing failure becomes pass"
+    ],
+    "after": [
+      "Unique admitted lane names",
+      "Every lane result retained",
+      "Requested passing ID recorded",
+      "Only proven retries forgiven"
+    ],
+    "files": [
+      "src/crapkit/config.py:750",
+      "src/crapkit/config.py:763",
+      "src/crapkit/cli/scoring.py:217",
+      "src/crapkit/cli/scoring.py:288",
+      "src/crapkit/lanes.py:985",
+      "src/crapkit/junitparse.py:43"
+    ],
+    "validation": "Drive configuration and verdict together. Test duplicate names, artifact collisions, missing/skipped/failed requested IDs, unrelated passes, partial reports and genuine successful retries.",
+    "risk": "Some accepted configurations will need unique names. Keep zero-test and crashed-worker refusal. Make test ID matching consistent with the original report.",
+    "deletion": "Delete duplicate-name accommodations and the requested-minus-failed inference. Callers should consume proven results from the existing seam."
+  },
+  {
+    "id": "identity",
+    "title": "Finish adopting per-function identity",
+    "priority": "P1",
+    "strength": "Strong",
+    "effort": "Medium",
+    "evidence": "A CRAP 4 twin closed a CRAP 20 twin's claim at ceiling 6. A 10-to-12 twin regression produced a quiet digest. One run returned two history rows for one function.",
+    "problem": "Gates use ordinal identity, but claims, digest, history and parts of explain still merge functions by path and long name.",
+    "solution": "Carry the existing keys.py ordinal through each per-function operation. Use display names when rendering. Preserve deliberately aggregated views.",
+    "before": [
+      "Inventory twins #1 + #2",
+      "Gates keep ordinal",
+      "Claims drop ordinal",
+      "Digest drops ordinal",
+      "History combines both"
+    ],
+    "after": [
+      "Inventory twins #1 + #2",
+      "Existing keys.py rule",
+      "Claims keep exact identity",
+      "Digest compares exact identity",
+      "History selects exact identity"
+    ],
+    "files": [
+      "src/crapkit/keys.py:52",
+      "src/crapkit/worklist.py:206",
+      "src/crapkit/digest.py:134",
+      "src/crapkit/store.py:1071",
+      "src/crapkit/cli/reports.py:354"
+    ],
+    "validation": "Exercise named and anonymous twins across claims, digest, history and explain #2. Check mark, span and test contexts agree. Count ordinals before filtering.",
+    "risk": "Legacy claims lack precise identity. Keep conservative compatibility, first-twin key behavior and current rename semantics. This touches several JSON contracts.",
+    "deletion": "Delete local bare-name maps that mean one function. Reuse the identity module already used by gates and ratchet marks."
+  },
+  {
+    "id": "claims",
+    "title": "Reserve work atomically",
+    "priority": "P1",
+    "strength": "Strong",
+    "effort": "Medium",
+    "evidence": "Two SQLite connections selected the same free function, then both inserted a claim. Two open claims remained.",
+    "problem": "The CLI checks availability, inserts ownership and emits work as separate operations. A second process can take the same path between those steps.",
+    "solution": "Move acquisition into a short transaction owned by the store. Emit only acquired work and continue to another candidate after a conflict.",
+    "before": [
+      "Agent A reads free",
+      "Agent B reads free",
+      "A inserts claim",
+      "B inserts claim",
+      "Both receive same work"
+    ],
+    "after": [
+      "Rank candidates outside lock",
+      "Store reserves exact function",
+      "A receives function 1",
+      "B receives next free function"
+    ],
+    "files": [
+      "src/crapkit/cli/queue.py:59",
+      "src/crapkit/cli/queue.py:92",
+      "src/crapkit/cli/queue.py:124",
+      "src/crapkit/store.py:94",
+      "src/crapkit/store.py:875"
+    ],
+    "validation": "Use two actual CLI processes with synchronized acquisition. Cover batch conflicts, distinct twins, repeated releases, no-claim reads and a crash after acquisition.",
+    "risk": "Existing duplicate claims need deterministic treatment without losing attempt history. Keep git, ranking and packet enrichment outside the write transaction. Coordinate with ordinal identity.",
+    "deletion": "Delete the caller-side check-then-insert protocol. One store transaction gives every process the same ownership rule."
+  },
+  {
+    "id": "cache",
+    "title": "Include the reader in analysis-cache identity",
+    "priority": "P1",
+    "strength": "Strong",
+    "effort": "Small to medium",
+    "evidence": "Unchanged valid .ps1/.sh files: PowerShell long_name is f on cold analysis and f() after a warm cache hit.",
+    "problem": "The reader and extension chain depend on the filename. Cache identity depends only on bytes, so one language can reuse another language's records.",
+    "solution": "Include every filename-dependent analysis choice in cache identity. Retain same-reader rename reuse and invalidate the old cache format. Reject malformed cache shapes once at loading.",
+    "before": [
+      "Filename selects reader",
+      "Bytes select cache entry",
+      "Shell entry reused for PowerShell",
+      "Function identity changes"
+    ],
+    "after": [
+      "Filename + bytes",
+      "Reader-specific cache identity",
+      "Compatible records reused",
+      "Cold and warm results agree"
+    ],
+    "files": [
+      "src/crapkit/analyze.py:153",
+      "src/crapkit/analyze.py:333",
+      "src/crapkit/analyze.py:360",
+      "src/crapkit/cache.py:24",
+      "src/crapkit/cache.py:40",
+      "src/crapkit/analyze.py:529"
+    ],
+    "validation": "Compare complete cold/warm records, metric columns and exported bytes across identical content in different languages and suffix-changing renames. Retain same-reader rename hits and spawned-reader tests.",
+    "risk": "Discarding old cache entries costs one fresh analysis. This changes cache identity, not the metric definition. No real-repository ratchet failure was claimed by this probe.",
+    "deletion": "Delete cross-reader reuse. Keep the existing cache depth and warm-run benefit; avoid checks scattered across its consumers."
+  },
+  {
+    "id": "store-open",
+    "title": "Let current stores open without migration writes",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Medium",
+    "evidence": "Opening a current store under another connection's writer lock failed with database is locked after 5.486 seconds.",
+    "problem": "Read commands run schema setup, seed inserts and migration work on every store open, before optional cache-write protection can help.",
+    "solution": "Give the store a current-schema read path. Keep real upgrades transactional and owned by the same module. Continue treating rollup-cache population as optional.",
+    "before": [
+      "Read command",
+      "Schema + seed writes",
+      "Migration and restack",
+      "Writer lock blocks open",
+      "SELECT never starts"
+    ],
+    "after": [
+      "Read command",
+      "Inspect store shape",
+      "Current: read directly",
+      "Old: transactional upgrade",
+      "Optional cache fill"
+    ],
+    "files": [
+      "src/crapkit/store.py:385",
+      "src/crapkit/store.py:399",
+      "src/crapkit/store.py:496",
+      "src/crapkit/store.py:782"
+    ],
+    "validation": "Open current stores while a writer holds a lock; cover simultaneous first opens, every old schema fixture, mixed versions, interrupted upgrades and optional rollup fills.",
+    "risk": "A version shortcut must preserve compatibility with older writers. The finding concerns ordinary opens under a writer, not every SQLite workload.",
+    "deletion": "Delete recurring setup writes from the no-upgrade path. Preserve atomic migration implementation instead of duplicating it across commands."
+  },
+  {
+    "id": "pytest-config",
+    "title": "Read pytest configuration once, consistently",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Small to medium",
+    "evidence": "Four fixtures disagree: empty pytest.ini, .pytest.ini, TOML string testpaths, and a percent character that crashes setup's INI reader. An independent pytest 8.3.3 check also found a runtime error for empty .pytest.ini precedence.",
+    "problem": "Setup and runtime each decode pytest settings. Their search order, accepted value shapes and interpolation rules have already diverged.",
+    "solution": "Concentrate pytest configuration precedence and decoding in one existing configuration module. Keep filesystem reading and supplied-text reading as small adapters to the same behavior.",
+    "before": [
+      "Setup reads 3 config names",
+      "Runtime reads 5 config names",
+      "Different empty-file rule",
+      "Different TOML/INI decoding"
+    ],
+    "after": [
+      "File adapter or text adapter",
+      "One precedence + decoding rule",
+      "Setup uses result",
+      "Runtime guard uses result"
+    ],
+    "files": [
+      "src/crapkit/scaffold.py:201",
+      "src/crapkit/scaffold.py:205",
+      "src/crapkit/scaffold.py:230",
+      "src/crapkit/scaffold.py:252",
+      "src/crapkit/config.py:335",
+      "src/crapkit/config.py:392"
+    ],
+    "validation": "Compare both readers with installed pytest across all five failing fixtures, supported file formats, empty sections and multiple testpaths. Keep the full-suite guard behavior.",
+    "risk": "Setup may generate different commands for previously misread configurations. The runtime reader is not a complete correctness oracle: its empty .pytest.ini precedence also needs repair. Preserve lightweight per-edit imports and nearest-root discovery.",
+    "deletion": "Delete the second precedence table and decoder. Two actual adapters justify the seam; another configuration framework does not."
+  },
+  {
+    "id": "mutation-inputs",
+    "title": "Give mutation workers the same checkout",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Medium to large",
+    "evidence": "The worker had the changed source but committed tests; the main checkout had changed tests. Cleanup also attempted removal while the pool lock was held.",
+    "problem": "One worker uses the live tree. Parallel workers start at HEAD and copy only files with mutants. Worker count therefore changes the inputs under test.",
+    "solution": "Capture one set of source, tests, configuration and deletions for the run, then prepare workers from that content. Make pool cleanup obey the existing ownership lock.",
+    "before": [
+      "1 worker: live source + tests",
+      "Many workers: HEAD checkout",
+      "Copy mutated source only",
+      "Tests and support remain stale"
+    ],
+    "after": [
+      "Capture run inputs once",
+      "Prepare isolated workers",
+      "Apply one mutant privately",
+      "Reuse pool under its lock"
+    ],
+    "files": [
+      "src/crapkit/mutate_pool.py:140",
+      "src/crapkit/mutate_pool.py:235",
+      "src/crapkit/mutate_pool.py:320",
+      "src/crapkit/mutate_pool.py:347",
+      "src/crapkit/cli/analyses.py:86"
+    ],
+    "validation": "Compare outcomes at one and several workers with changed tests, supporting source, config, fixtures and deleted files. Race disposable pool cleanup against a running owner.",
+    "risk": "Input-copy rules must handle ignored build dependencies and preserve performance. Input mismatch is reproduced; its mutation-score delta was not measured. Cleanup probe observed an attempt without deleting a real worker.",
+    "deletion": "Remove competing definitions of the measured checkout. Keep private mutants, preflight, deterministic ordering and the retained pool speedup."
+  },
+  {
+    "id": "mutation-tokens",
+    "title": "Generate mutants from executable tokens",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Medium",
+    "evidence": "Four spurious mutants came from identifier fragments, an inline comment and a multiline docstring.",
+    "problem": "Mutation generation searches operator strings within line text. Its line-local string mask cannot distinguish all executable code from comments, identifiers and multiline strings.",
+    "solution": "Use code-token eligibility for operators and boolean literals. Exclude unsupported forms until the existing reader can identify them correctly.",
+    "before": [
+      "Raw text line",
+      "Substring operator search",
+      "Identifier/comment/docstring match",
+      "Unnecessary suite execution"
+    ],
+    "after": [
+      "Eligible code tokens",
+      "Operator or boolean mutation",
+      "Changed-code filter",
+      "Meaningful suite execution"
+    ],
+    "files": [
+      "src/crapkit/mutate.py:38",
+      "src/crapkit/mutate.py:117",
+      "src/crapkit/mutate.py:141",
+      "src/crapkit/mutate.py:167"
+    ],
+    "validation": "Cover identifier fragments, inline comments, multiline/escaped strings, intended comparison changes and a true semantic survivor across admitted languages.",
+    "risk": "Preserve intentional mutation coverage and deterministic ordering. Four invalid candidates were measured; full-suite time savings remain unmeasured.",
+    "deletion": "Delete invalid candidates before execution. They add test cost without useful evidence. Avoid a new language framework that only relocates substring tables."
+  },
+  {
+    "id": "coverage-reader",
+    "title": "Concentrate coverage decoding in the stream",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Medium",
+    "evidence": "A one-file context request used 25.09 MiB peak allocation; selected streaming used 6.02 MiB with equal output. Both custom JSON splitters accepted missing or leading commas.",
+    "problem": "Functions, missing lines and contexts use overlapping decode paths. History materializes every file's contexts, and Python missing lines require another artifact pass.",
+    "solution": "Build on the existing streaming reader. Gather the needed projections during decoding, select requested contexts early, and enforce one grammar. Move independent old reader oracles into tests.",
+    "before": [
+      "Artifact",
+      "Functions stream",
+      "Missing-lines second pass",
+      "All-file contexts materialized",
+      "Separate grammar implementations"
+    ],
+    "after": [
+      "Artifact",
+      "One validated streaming walk",
+      "Function coverage + missing lines",
+      "Requested contexts only",
+      "Independent oracle in tests"
+    ],
+    "files": [
+      "src/crapkit/cli/reports.py:437",
+      "src/crapkit/coverage_py.py:123",
+      "src/crapkit/covstream.py:343",
+      "src/crapkit/covstream.py:83",
+      "src/crapkit/coverage_istanbul.py:56"
+    ],
+    "validation": "Compare records, warnings, hashes, missing sets and selected contexts. Exercise malformed commas, small chunk boundaries, UTF-8 splits and path normalization. Prove Python artifact read counts.",
+    "risk": "Synthetic artifact: 5,000 files, 3.01 MiB. Timings under tracemalloc were 0.2243s and 0.0749s, one run each. These are not RSS or production benchmarks. Preserve missing-line intersections across lanes.",
+    "deletion": "Delete parallel whole-document orchestration and the second Python decode. Keep streaming and pure per-file attribution; use no new parser dependency without evidence."
+  },
+  {
+    "id": "twins-cost",
+    "title": "Filter twin candidates before building results",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Small",
+    "evidence": "25,000 unrelated indexed functions created 25,000 dictionaries, returned zero twins, and used 7.27 MiB transient Python allocation.",
+    "problem": "Every brief constructs payloads for candidates that its similarity test immediately rejects. Batch reuse saves index construction but repeats this avoidable allocation.",
+    "solution": "Apply the existing similarity qualification before creating payload dictionaries. Preserve ranking, rounding and the final top cut.",
+    "before": [
+      "Shared shingle index",
+      "Build 25,000 payloads",
+      "Filter similarity",
+      "Return zero twins"
+    ],
+    "after": [
+      "Shared shingle index",
+      "Filter similarity",
+      "Build qualifying payloads",
+      "Same ranked results"
+    ],
+    "files": [
+      "src/crapkit/dup.py:172",
+      "src/crapkit/dup.py:207",
+      "src/crapkit/cli/queue.py:510",
+      "src/crapkit/cli/queue.py:549"
+    ],
+    "validation": "Compare complete results near similarity rounding edges, ties, containment and top cuts. Count payload creation on unrelated candidates and repeat the allocation probe.",
+    "risk": "The synthetic measurement excludes index construction and source loading. It does not establish that this step dominates real brief latency.",
+    "deletion": "Delete rejected payload construction. Keep the shared batch index and existing result interface."
+  },
+  {
+    "id": "process-owner",
+    "title": "Use one owner for subprocess deadlines",
+    "priority": "P2",
+    "strength": "Strong",
+    "effort": "Small",
+    "evidence": "Doctor's 0.1-second deadline returned after 0.753 seconds when the child slept 0.7 seconds. The probe self-exited.",
+    "problem": "Doctor uses shell=True with captured pipes and a separate timeout path. Killing the shell does not close the child's inherited output handles.",
+    "solution": "Use the existing bounded process module with a small temporary output file. Keep doctor's parsing and memoization in place.",
+    "before": [
+      "Doctor creates shell",
+      "Shell creates interpreter",
+      "Deadline kills shell",
+      "Inherited pipe waits for child"
+    ],
+    "after": [
+      "Doctor asks bounded module",
+      "Module owns process tree",
+      "Deadline kills descendants",
+      "Doctor reads bounded output"
+    ],
+    "files": [
+      "src/crapkit/cli/admin.py:851",
+      "src/crapkit/procs.py:56",
+      "src/crapkit/procs.py:121"
+    ],
+    "validation": "Test normal reports, absent runners, deadline overruns and surviving descendants at the real doctor seam on both supported OS families.",
+    "risk": "Preserve normal captured output and lazy startup. Related argument issue: a Windows retry test ID containing %VAR% was expanded by cmd.exe; fix argument transport before interpreting retry results.",
+    "deletion": "Delete the local timeout implementation. Reuse the process owner already shared by lanes and mutations."
+  },
+  {
+    "id": "retire",
+    "title": "Retire obsolete production reachability",
+    "priority": "P3",
+    "strength": "Strong",
+    "effort": "Small to medium",
+    "evidence": "CLI exports 365 names, including 336 private names. 32 test files import 67 private names. discover.py has no production importer and has 384 implementation lines plus 480 dedicated test lines.",
+    "problem": "A compatibility map exposes old internals mainly for tests. Retired discovery and two-pass analysis code still ship despite having no known production callers.",
+    "solution": "Move internal tests to their owning module or the surviving command interface, then reduce the CLI export map. Remove unwired discovery unless a concrete product need is chosen. Keep independent two-pass analysis oracles in test support.",
+    "before": [
+      "365-name CLI facade",
+      "Private implementation names",
+      "Tests maintain export map",
+      "Unwired discovery ships",
+      "Old analysis oracle ships"
+    ],
+    "after": [
+      "CLI entry points stay lazy",
+      "Tests use owning seam",
+      "Private export map shrinks",
+      "Unused discovery removed",
+      "Oracle stays in tests"
+    ],
+    "files": [
+      "src/crapkit/cli/__init__.py:16",
+      "src/crapkit/cli/__init__.py:386",
+      "src/crapkit/cli/parser.py:26",
+      "src/crapkit/discover.py:1",
+      "src/crapkit/merge.py:1",
+      "tests/unit/test_discover.py:12"
+    ],
+    "validation": "Keep entry-point and lazy-load tests, independent one-pass comparison and recorded goldens. Check documented Python compatibility before removing exports. Re-run exact affected command behavior.",
+    "risk": "No production caller is a repository finding, not proof that no external Python consumer exists. Avoid mixing all deletions into one large change. Discovery naming is distinct from live nearest-root discovery.",
+    "deletion": "Deleting unused reachability removes work instead of moving it. Retain lazy command dispatch and the actual FunctionRecord type."
+  }
+]

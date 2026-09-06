@@ -1,0 +1,443 @@
+[
+  {
+    "priority": "P2",
+    "title": "Run mutation suites from the configured project root",
+    "before": [
+      "Git checkout copied",
+      "Suite starts at checkout top",
+      "Nested runner is missing"
+    ],
+    "after": [
+      "Capture whole checkout",
+      "Retain configured-root prefix",
+      "Run every worker at that prefix"
+    ],
+    "evidence": "Actual nested repositories now pass with one and two workers, including dirty parent inputs, deletions and untracked files. Root mutation integration:86 passed.",
+    "files": [
+      "src/crapkit/mutate_pool.py",
+      "src/crapkit/gitio.py",
+      "tests/unit/test_mutate_nested.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Keep generic types out of comparison mutation",
+    "before": [
+      "Lexer emits angle tokens",
+      "Type bracket is mutated",
+      "Syntax error counts as a kill"
+    ],
+    "after": [
+      "Inspect language type context",
+      "Protect proven type brackets",
+      "Refuse unresolved changed spans"
+    ],
+    "evidence": "A parser-only TypeScript runner previously killed 4 invalid mutants without assertions. Independent replay now produces no type-only mutants for TypeScript, C++, Rust or Java.",
+    "files": [
+      "src/crapkit/mutate.py",
+      "tests/unit/test_mutate_type_angles.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Preserve the configured Windows command",
+    "before": [
+      "Literal placeholders injected",
+      "Delayed expansion enabled globally",
+      "Static bang text changes"
+    ],
+    "after": [
+      "Escaped percent transport for ordinary args",
+      "Protected delayed transport for multiline args",
+      "Original shell text and argv preserved"
+    ],
+    "evidence": "Real cmd.exe tests cover static variables, bang paths, pipes, chained commands, metacharacters and distinct empty-list/empty-string cases. Multiline arguments combined with static percent expansion explicitly refuse.",
+    "files": [
+      "src/crapkit/procs.py",
+      "tests/unit/test_windows_template_transport.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Admit scope identity and configuration values once",
+    "before": [
+      "Duplicate scope names",
+      "Truthy strings and coerced numbers",
+      "Coverage rules silently weaken"
+    ],
+    "after": [
+      "One admitted name per scope",
+      "Strict booleans and bounded integers",
+      "Consumers receive valid configuration"
+    ],
+    "evidence": "Actual coverage returned A+ for a strict scope after a second scope reused its name with target 100 and coverage exemption. Quoted false also became true. Admission now rejects both before scoring.",
+    "files": [
+      "src/crapkit/config.py",
+      "tests/unit/test_config_admission_regressions.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Emit the same Unicode paths the Action consumes",
+    "before": [
+      "Git quotes non-ASCII filenames",
+      "Comment compares literal paths",
+      "Changed worklist row disappears"
+    ],
+    "after": [
+      "Git emits unquoted Unicode",
+      "Exact path comparison retained",
+      "Changed row reaches comment"
+    ],
+    "evidence": "Temporary Git repositories reproduce and verify café.py and 世界.py paths, independent of the user's core.quotePath setting.",
+    "files": [
+      "action.yml",
+      "tests/unit/test_action_unicode_paths.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Use the named repository throughout release verification",
+    "before": [
+      "Files read from explicit root",
+      "Git and GitHub use caller directory",
+      "Verifier combines two repositories"
+    ],
+    "after": [
+      "One explicit repository root",
+      "File, Git and GitHub reads agree",
+      "Existing callback interfaces retained"
+    ],
+    "evidence": "A target tagged v9.9.0 previously reported the caller's v1.0.0 tag. The regression now verifies both the target tag and GitHub command cwd.",
+    "files": [
+      "tools/release/release.py",
+      "tests/unit/test_release_repo_root.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Diagnose malformed installed hooks at their reader",
+    "before": [
+      "Valid JSON with invalid structure",
+      "Dictionary traversal raises",
+      "Doctor prints a traceback"
+    ],
+    "after": [
+      "Hook reader contains shape failures",
+      "Arguments require strings",
+      "Doctor names the unreadable file"
+    ],
+    "evidence": "Six malformed hook structures failed first. The complete doctor-plugin family now passes 43 checks, including valid and missing installations.",
+    "files": [
+      "src/crapkit/cli/admin.py",
+      "src/crapkit/doctor.py",
+      "tests/unit/test_doctor_plugin_root.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Preserve distinct functions that start on the same line",
+    "before": [
+      "Rows keyed by name and line",
+      "Sibling callbacks collide",
+      "Queue, marks and packets select the wrong function"
+    ],
+    "after": [
+      "Reader assigns source occurrence",
+      "Rows carry occurrence through SQLite and exports",
+      "Canonical keys and printed handles use complete positions"
+    ],
+    "evidence": "Real TypeScript callbacks retain distinct occurrences through exports and stored rows. Queue claims, brief, release and hook tests preserve those identities. Measured functions sharing an identical line span refuse separately; numeric selectors list distinct handles. Old exports remain readable with occurrence 0.",
+    "files": [
+      "src/crapkit/analyze.py",
+      "src/crapkit/keys.py",
+      "src/crapkit/store.py",
+      "tests/e2e/test_same_line_identity_e2e.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Require proof before reusing legacy debt identities",
+    "before": [
+      "Old ordinals collapse same-line siblings",
+      "New ordinals distinguish them",
+      "A legacy mark silently moves"
+    ],
+    "after": [
+      "Separate metric and key format versions",
+      "Check current and historical collision groups",
+      "Refuse uncertain mapping before writing marks or audit records"
+    ],
+    "evidence": "CLI seed, rescore, verify and staged hook regressions preserve mark bytes on refusal. Override checks identity before recording any grant. Legacy claims reserve their entire raw-name group. Migration requires reviewing old source and carrying only approved values. Reader-version admission also refuses anonymous marks from pre-10 or unproved JavaScript-family analysis, even without a same-start collision; old-snapshot claims hold the entire raw-name group.",
+    "files": [
+      "src/crapkit/ratchet.py",
+      "src/crapkit/override.py",
+      "src/crapkit/cli/_shared.py",
+      "docs/ratchet.md"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Parse expression arrows at their actual source spans",
+    "before": [
+      "Expression state absorbs comma-separated callbacks",
+      "Functions disappear or inherit a sibling body",
+      "Identity and complexity use the wrong records"
+    ],
+    "after": [
+      "Reader instance owns expression state",
+      "Commas close the correct arrow body",
+      "Unresolved TypeScript angle syntax refuses with a remedy"
+    ],
+    "evidence": "39 targeted tests and the upstream JavaScript, TypeScript and TSX fixtures exercise extraction. Analysis version 10 invalidates old metric evidence. Parenthesizing an ambiguous expression or using a block body resolves the documented TypeScript limit.",
+    "files": [
+      "src/crapkit/lizardtypescript.py",
+      "src/crapkit/analyze.py",
+      "tests/unit/test_lizardtypescript_expressions.py",
+      "README.md"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Refuse coverage that cannot distinguish sibling functions",
+    "before": [
+      "Distinct functions share one line span",
+      "Coverage projection contains no column identity",
+      "Both functions borrow one measurement"
+    ],
+    "after": [
+      "One pass detects repeated spans",
+      "Measured ambiguous spans refuse",
+      "Separate definitions and regenerate coverage"
+    ],
+    "evidence": "A real CLI regression prevents a false passing score. Equal hits, different hits and a single matching coverage candidate all refuse. Copies across scopes and unmeasured or complexity-only rows preserve their existing behavior.",
+    "files": [
+      "src/crapkit/score.py",
+      "tests/e2e/test_coverage_same_span_e2e.py",
+      "docs/agent-json.md"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Use complete identities in reports and duplication results",
+    "before": [
+      "Filtered rows renumber printed handles",
+      "Numeric report links select ambiguous lines",
+      "Nested same-start functions compare equal to themselves"
+    ],
+    "after": [
+      "Read all positions once per file",
+      "Publish exact handles and occurrence fields",
+      "Compare complete identities when excluding self matches"
+    ],
+    "evidence": "Report commands survive actual PowerShell special characters. Packets and rescore output distinguish same-line siblings. The actual nested TypeScript duplication test retains the contained child as a twin.",
+    "files": [
+      "src/crapkit/report.py",
+      "src/crapkit/cli/queue.py",
+      "src/crapkit/packet.py",
+      "src/crapkit/dup.py",
+      "tests/unit/test_report_identity.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Apply identity admission to explain and edit advice",
+    "before": [
+      "Queue checks migrated mark identities",
+      "Explain and edit advisory read raw marks",
+      "Another caller attaches an old exemption to a new function"
+    ],
+    "after": [
+      "Explain supplies full file positions and store history",
+      "Advisory checks the edited file's current records",
+      "Unproved advisory marks grant no exemption"
+    ],
+    "evidence": "Five public seam regressions cover the missed readers. The advisory opens no snapshot store and writes no key marker. Advisory and explain integration passed 53 tests with two opt-in latency checks skipped.",
+    "files": [
+      "src/crapkit/cli/reports.py",
+      "src/crapkit/cli/claude_hook.py",
+      "tests/unit/test_ratchet_reader_identity.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Give a root scope ownership of loose repository files",
+    "before": [
+      "Scope declares paths dot",
+      "Matcher expects a dot prefix",
+      "Loose source files disappear from inventory"
+    ],
+    "after": [
+      "Normalize dot to the root prefix",
+      "Keep deepest named path precedence",
+      "Inventory and coverage include root files"
+    ],
+    "evidence": "25 ownership and CLI checks verify the root case, nested overrides and existing patterns. The configuration reference now states the actual root ownership rule.",
+    "files": [
+      "src/crapkit/universe.py",
+      "tests/e2e/test_root_scope_e2e.py",
+      "docs/configuration.md"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Publish churn cache bytes under their own identity",
+    "before": [
+      "Concurrent builders share a temporary path",
+      "One operation reads another operation's bytes",
+      "A cache entry carries the wrong key and data"
+    ],
+    "after": [
+      "Each operation owns a temporary file",
+      "Validate the bytes before publishing",
+      "Atomic replacement publishes one complete entry"
+    ],
+    "evidence": "Publication regressions force interleaving and confirm the returned cache belongs to the requesting operation. Invalid or interrupted cache writes remain disposable misses.",
+    "files": [
+      "src/crapkit/churn_log.py",
+      "tests/unit/test_churn_log_publication.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Keep ratchet history values and audit keys exact",
+    "before": [
+      "Committed value changes are skipped",
+      "Non-finite marks enter calculations",
+      "Override audit names a raw function instead of its canonical key"
+    ],
+    "after": [
+      "Shared decoder validates numeric marks",
+      "History updates values while preserving entry age",
+      "Override audit records the exact admitted key"
+    ],
+    "evidence": "Temporary committed histories cover changes, comment-only commits and literal path headers. Finite admission and duplicate-name override regressions preserve the values and identities actually approved.",
+    "files": [
+      "src/crapkit/ratchet_report.py",
+      "src/crapkit/ratchet.py",
+      "src/crapkit/override.py",
+      "tests/unit/test_ratchet_committed_updates.py",
+      "tests/unit/test_override_exact_audit.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Frame the doctor interpreter probe and control its encoding",
+    "before": [
+      "Startup stderr joins a version response",
+      "Windows encoding differs from the decoder",
+      "Doctor reports a foreign or damaged interpreter path"
+    ],
+    "after": [
+      "Child emits a framed record",
+      "Probe requests UTF-8 output",
+      "Bounded process owner captures and cleans up the child tree"
+    ],
+    "evidence": "A real startup warning and a real virtual environment under Jose with an accented e reproduced both defects. The replay confirms exact interpreter paths and ignores startup warnings when decoding the framed response.",
+    "files": [
+      "src/crapkit/cli/admin.py",
+      "tests/unit/test_doctor_lane_probe.py"
+    ]
+  },
+  {
+    "priority": "P2",
+    "title": "Include typed reader mode in analysis-cache identity",
+    "before": [
+      "JSX and TSX share one reader class",
+      "Warm JSX records bypass a cold TSX refusal"
+    ],
+    "after": [
+      "One predicate owns typed syntax mode",
+      "Cache keys include that mode",
+      "Same-mode renames retain cache hits"
+    ],
+    "evidence": "The public cold/warm replay accepts JSX, refuses cold TSX, and formerly accepted warm TSX. The paired admission tests now refuse both TSX paths. The shared 307-test green run also preserves same-mode rename hits.",
+    "files": [
+      "src/crapkit/analyze.py",
+      "src/crapkit/lizardtypescript.py",
+      "tests/unit/test_analysis_typed_cache.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Reject nonfinite coverage numbers before scoring",
+    "before": [
+      "Default JSON decoder accepts NaN and Infinity",
+      "CRAP becomes NaN",
+      "Above-ceiling comparison returns false"
+    ],
+    "after": [
+      "Shared decoder checks numeric values",
+      "All coverage projections reject nonfinite numbers",
+      "Finite values and byte digests stay unchanged"
+    ],
+    "evidence": "Read-to-score tests reproduce NaN, Infinity, -Infinity and exponent overflow. Coverage, missing-line and selected-context projections refuse at admission. The shared admission batch went from 37 failures and one pass to 307 passing checks.",
+    "files": [
+      "src/crapkit/covstream.py",
+      "tests/unit/test_coverage_finite_json.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Retain evidence of historical identity collisions",
+    "before": [
+      "Legacy mark reuse correctly refuses",
+      "Pruning removes the only collision witness",
+      "The same seed silently changes ordinal meaning"
+    ],
+    "after": [
+      "Store selects one recent witness per group",
+      "Retention protects those runs",
+      "Legacy mark refusal survives pruning"
+    ],
+    "evidence": "Public CLI regressions preserve collision evidence through repeated pruning. Red retention tests are paired with 19 current-root/retention checks and 59 affected e2e passes. One retained run can witness several groups; keep count remains a floor.",
+    "files": [
+      "src/crapkit/store.py",
+      "src/crapkit/cli/reports.py",
+      "tests/unit/test_prune_identity_witnesses.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Limit pruning to the history it actually inspected",
+    "before": [
+      "CLI reads run history",
+      "Another process records a new run",
+      "Deletion removes that unexamined run"
+    ],
+    "after": [
+      "Capture the considered run IDs",
+      "Intersect deletion with that set",
+      "Later coverage and failed-verify runs survive"
+    ],
+    "evidence": "A real second Python process writes coverage or a failed verify between history selection and deletion. Both cases now survive. The fix adds no long write lock and does not claim to serialize updates to older runs.",
+    "files": [
+      "src/crapkit/store.py",
+      "src/crapkit/cli/reports.py",
+      "tests/unit/test_prune_identity_witnesses.py"
+    ]
+  },
+  {
+    "priority": "P1",
+    "title": "Preserve mark and claim ownership across reader upgrades",
+    "before": [
+      "Reader 9 reports anonymous starts 2 and 6",
+      "Reader 10 recovers a callback at line 3",
+      "Old ordinal 2 attaches to the recovered sibling"
+    ],
+    "after": [
+      "Stored runs record analysis-version proof",
+      "Unproved anonymous marks refuse before writes",
+      "Unproved claims reserve their raw-name group"
+    ],
+    "evidence": "Seed, old-snapshot seed, direct override and claim regressions preserve bytes and ownership without remapping debt. The repair passed 196 focused checks; all 13 new cases plus the competition test passed. An older e2e fixture failed on message precedence; its current-proof rerun passed all three cases. Named marks and other languages keep compatible reseed behavior.",
+    "files": [
+      "src/crapkit/ratchet.py",
+      "src/crapkit/keys.py",
+      "src/crapkit/store.py",
+      "src/crapkit/cli/ratchet_cmds.py",
+      "tests/unit/test_ratchet_reader_identity.py",
+      "tests/unit/test_expression_identity_migration.py"
+    ]
+  }
+]

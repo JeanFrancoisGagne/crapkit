@@ -44,28 +44,12 @@ using.
 drives in process rather than through a subprocess. `tests/e2e` drives `python -m crapkit`
 against real git repos in tmp dirs and asserts through the CLI only.
 
-### One red run that is not your diff
+### Test isolation
 
-pytest-randomly is not in the dev extra, so CI gets collection order, which is the order
-that passes. Installed globally it shuffles every run, and two files then disagree:
-`test_init_probe.py` puts fake interpreters on PATH, and doctor's runner probe memoizes
-its answer per word (`_start_probe` in `src/crapkit/cli/admin.py`, an `lru_cache` keyed on
-the word alone). Once a shim has answered for `python`, every later probe in that process
-reads the shim's exit 9009, and doctor FAILs a lane it would have passed:
-
-```
-$ python -m pytest tests/unit/test_init_probe.py tests/unit/test_doctor_results_artifact.py -p no:randomly -n 0
-FAILED tests/unit/test_doctor_results_artifact.py::test_a_pytest_lane_without_a_results_file_warns_and_names_what_is_off
-FAILED tests/unit/test_doctor_results_artifact.py::test_a_lane_that_declares_one_is_left_alone
-FAILED tests/unit/test_doctor_results_artifact.py::test_one_line_per_lane_missing_it
-3 failed, 60 passed in 12.36s
-```
-
-That file passes whole on its own, and `python -m pytest -q -n 0 -p no:randomly tests/unit`
-exits 0 in about 1m15, because collection order puts the probe file after it. A red run
-naming `doctor` or the probe, on lanes your diff never touched, is this and not you.
-Rerun with `-p no:randomly` before you go hunting. The fix is a `cache_clear()` in the
-probe file's own teardown, which one test in it already calls.
+`test_init_probe.py` and `test_doctor_results_artifact.py` clear the memoized runner
+probe before and after each test. Fake interpreters on PATH therefore do not leave
+cached answers for later tests. Investigate doctor failures under a changed test order;
+the former cache leak is fixed.
 
 ### The e2e CLI runner
 
@@ -137,7 +121,7 @@ only place its verdict stops anything.
 
 | Job | Runs | Blocks the PR |
 |---|---|---|
-| `test` | `pip install -e ".[dev]"`, `crapkit --version`, `python -m pytest tests/unit`, `python -m pytest -n 8 tests/e2e`, then `python -m crapkit hook-precommit`, on six matrix legs (Python 3.11, 3.12, 3.13 on ubuntu and windows) | yes, the gate's exit code stands |
+| `test` | `pip install -e ".[dev]"`, `crapkit --version`, `python -m pytest tests/unit`, and `python -m pytest -n 8 tests/e2e` on six matrix legs (Python 3.11, 3.12, 3.13 on Ubuntu and Windows). Only Ubuntu/Python 3.12 also runs `python -m crapkit hook-precommit --base "$BASE_REF"` against the pull-request base SHA or push event's previous SHA. | yes, test failures and the event-base gate verdict block the PR |
 | `plugin` | two calls over two files: `claude plugin validate plugin --strict`, which schema-checks `plugin/.claude-plugin/plugin.json`, its `hooks.json` and the skill frontmatter no Python test can reach, then `claude plugin validate .`, which reads the repo-root `.claude-plugin/marketplace.json` a `claude plugin marketplace add` fetches and nothing else checks | yes |
 | `dogfood` | `coverage`, `verify --json`, `worklist --top 5` on crapkit itself | no: the `verify` line ends in `\|\| true`, so a rising mark or a dark diff line is reported for a human to read, not enforced |
 

@@ -1,0 +1,16 @@
+{
+  "run_id": 70,
+  "commit": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+  "mode": "late-finalization",
+  "finished_at": "2026-09-06T22:20:50.507365+00:00",
+  "captured_at": "2026-09-06T22:21:31.907518+00:00",
+  "inputs_sha256": "139b1500fd3cc6724b1222d6af81a3291cacda95dc761a5e603628b40aef100e",
+  "artifacts_sha256": "e68c072ea577274352f0e5d52698c064a6ee824cbf13e93e2ba5acfe1a116239",
+  "stdout_sha256": "3b0bdd77977f4cbfa0eb7003ea07fff26640fb7761a9bd3f9c53448958863b02",
+  "result_sha256": "5f5bf90f54159573f87e09bfbc0e80c91cc670c9c063b7aacab6cbb51340a458",
+  "ledger_before_sha256": "0fefa66521f39c402e6403d105fceb13425fe09bde7a4fbbb21a5661940d55d8",
+  "ledger_after_sha256": "56f2a3dfc104f54c2254b65f10e7b5c7ef45ddc1c3800abcc8ef23b6c5521067",
+  "command_sha256": "deca2705ebe26ca64112b845034b7bc8269e258d770154efe2fbc0fed2c8e7ff",
+  "coverage_binding": "Exact digest recorded by the completed verify run.",
+  "junit_binding": "Bytes first hashed at captured_at; complete zero-failure counts match that run. The store does not record the original JUnit digest."
+}

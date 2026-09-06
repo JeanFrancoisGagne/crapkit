@@ -1,0 +1,2 @@
+# Preserve the evidence bytes recorded in the SHA-256 manifests.
+* -text whitespace=cr-at-eol

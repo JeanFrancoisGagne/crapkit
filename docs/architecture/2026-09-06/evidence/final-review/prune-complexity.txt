@@ -1,0 +1,7 @@
+src/crapkit/store.py:785	identity_witness_run_ids( self )	CCN 2
+src/crapkit/store.py:793	_collision_groups( self , * , run_id = None , path = None , name = None , legacy_only : bool = False )	CCN 2
+src/crapkit/store.py:798	_collision_rows( self , * , run_id = None , path = None , name = None , legacy_only = False )	CCN 3
+src/crapkit/store.py:1245	_doomed_ids( self , keep_ids : set [ int ] , observed_ids : set [ int ] | None )	CCN 5
+src/crapkit/store.py:1250	prune_runs( self , keep_ids : set [ int ] , * , observed_ids : set [ int ] | None = None )	CCN 1
+src/crapkit/store.py:1414	prune_keep_set( runs : list [ dict ] , override_run_ids , * , keep : int , identity_run_ids = ( )	CCN 5
+src/crapkit/cli/reports.py:252	_runs_prune( store : SnapshotStore , * , keep : int , as_json : bool )	CCN 3

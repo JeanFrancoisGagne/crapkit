@@ -1,0 +1,4 @@
+VERIFIED_IMPORT <repo>\src\crapkit\__init__.py
+COLD_JSX 0 2
+COLD_TSX_REFUSAL lizard failed on case.tsx: <user>\AppData\Local\Temp\crapkit-reader-cache-final-fft5i1qj\case.tsx:1: expression-arrow body has '<' before a comma; lizard cannot distinguish type arguments from an expression separator here; wrap that arrow body in parentheses or a block
+WARM_TSX_ACCEPTED 1 2 ['case.tsx', 'case.tsx']

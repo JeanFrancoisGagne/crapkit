@@ -1,0 +1,19 @@
+crapkit: src/crapkit/cli/queue.py defines key( self , row ) more than once; each one takes its own ratchet key � the first as written, later ones suffixed #2, #3 in file order
+IMPORT <worktree:identity-state>\src\crapkit\__init__.py
+CCN src/crapkit/keys.py expression_group( path : str , name : str ) 2
+CCN src/crapkit/keys.py expression_reader_current( version ) 2
+CCN src/crapkit/ratchet.py check_reader_keys( text : str ) 2
+CCN src/crapkit/ratchet.py check_reader_version( entries , version ) 5
+CCN src/crapkit/ratchet.py check_key_groups( text : str , present : set , collisions : set ) 6
+CCN src/crapkit/store.py record_claim( self , * , path : str , long_name : str , commit : str , handle : str | None = None , key_name : str | None = None , source_run_id : int | None = None ) 3
+CCN src/crapkit/store.py _claim_key_version( self , path : str , name : str , source_run_id : int | None ) 3
+CCN src/crapkit/override.py _validate_override_keys( path : Path , violations , rows , key_version : int | None ) 5
+CCN src/crapkit/override.py _check_saved_reader( path : Path ) 3
+CCN src/crapkit/cli/_shared.py _check_ratchet_identity( text : str , root : Path , name : str , rows , store = None ) 4
+CCN src/crapkit/cli/queue.py cmd_next_item( args : argparse . Namespace ) 4
+CCN src/crapkit/cli/queue.py claim( self , row , commit : str ) 1
+CCN src/crapkit/cli/queue.py _maybe_claim( commit : str , take : bool , items : list , handles , top : int ) 6
+CCN src/crapkit/cli/scoring.py _build_inventory( root : Path , cfg , git = None ) 2
+CCN src/crapkit/cli/ratchet_cmds.py cmd_ratchet( args : argparse . Namespace ) 5
+CCN src/crapkit/cli/ratchet_cmds.py _write_checked_marks( root : Path , cfg , entries , fresh , key_version : int , analysis_version ) 2
+PATCH 485 lines 13 files

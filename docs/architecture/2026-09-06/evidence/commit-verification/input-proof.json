@@ -1,0 +1,66 @@
+{
+  "commit": "c24e6a427ff3297780e9ff71f0f08764ff2a60c7",
+  "matched_files": 480,
+  "exact_committed_files": 478,
+  "normalized_json_fixtures": [
+    {
+      "path": "tests/fixtures/recorded/raw_mod.json",
+      "working_sha256": "a8e26fb34fe5a04d3289001fa1b5daecec6f5195c4e565484082974b48df2828",
+      "committed_sha256": "c76d0da6c22cdeaf4980a5930ef9454119174aa959c02d71d8c5a24a7711fc97",
+      "change": "Git CRLF to LF normalization"
+    },
+    {
+      "path": "tests/fixtures/recorded/raw_std.json",
+      "working_sha256": "6d8761e3afe47229cecd5ef0beb5e833c77efc84540558ab6c2ef560b69f0503",
+      "committed_sha256": "959a6fca82740025af382fdbfb6f16532245802a2ceb41e1d4003331580bc472",
+      "change": "Git CRLF to LF normalization"
+    }
+  ],
+  "unchanged_artifacts": [
+    {
+      "path": ".crapkit/cov/py.json",
+      "sha256": "5211d887d3237a07784f69db65210a489a2e0c63cd855edf8c52bba289ae4e7c",
+      "lane": "py",
+      "kind": "coverage"
+    },
+    {
+      "path": ".crapkit/cov/junit.xml",
+      "sha256": "4cdabc6139e914b66ca28c1c900928645122972b37b64746601c0a19ad03c423",
+      "lane": "py",
+      "kind": "junit",
+      "counts": {
+        "tests": 4172,
+        "skipped": 2
+      }
+    }
+  ],
+  "capture_binding": {
+    "run_id": 70,
+    "commit": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+    "mode": "late-finalization",
+    "finished_at": "2026-09-06T22:20:50.507365+00:00",
+    "captured_at": "2026-09-06T22:21:31.907518+00:00",
+    "inputs_sha256": "139b1500fd3cc6724b1222d6af81a3291cacda95dc761a5e603628b40aef100e",
+    "artifacts_sha256": "e68c072ea577274352f0e5d52698c064a6ee824cbf13e93e2ba5acfe1a116239",
+    "stdout_sha256": "3b0bdd77977f4cbfa0eb7003ea07fff26640fb7761a9bd3f9c53448958863b02",
+    "result_sha256": "5f5bf90f54159573f87e09bfbc0e80c91cc670c9c063b7aacab6cbb51340a458",
+    "ledger_before_sha256": "0fefa66521f39c402e6403d105fceb13425fe09bde7a4fbbb21a5661940d55d8",
+    "ledger_after_sha256": "56f2a3dfc104f54c2254b65f10e7b5c7ef45ddc1c3800abcc8ef23b6c5521067",
+    "command_sha256": "deca2705ebe26ca64112b845034b7bc8269e258d770154efe2fbc0fed2c8e7ff",
+    "coverage_binding": "Exact digest recorded by the completed verify run.",
+    "junit_binding": "Bytes first hashed at captured_at; complete zero-failure counts match that run. The store does not record the original JUnit digest."
+  },
+  "argv": [
+    "<python-install>\\python.exe",
+    "-m",
+    "crapkit",
+    "verify",
+    "--base",
+    "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+    "--reuse-artifacts",
+    "--no-tighten",
+    "--json"
+  ],
+  "started_at": "2026-09-06T22:22:20.162732+00:00",
+  "meaning": "Complete working and committed input path sets match the passing capture, except the listed JSON line endings. Coverage matches its recorded run digest; JUnit bytes were first hashed at the capture binding timestamp."
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "id": 69,
+    "commit_sha": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+    "tool_versions": "{\"analysis_version\": \"10\", \"crapkit\": \"0.6.0\", \"lizard\": \"1.24.0\"}",
+    "kind": "verify",
+    "verdict_ok": 0,
+    "findings": 1,
+    "created_at": "2026-09-06T21:37:14Z"
+  },
+  {
+    "id": 68,
+    "commit_sha": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+    "tool_versions": "{\"crapkit\": \"0.6.0\", \"lizard\": \"1.24.0\"}",
+    "kind": "verify",
+    "verdict_ok": 0,
+    "findings": 3,
+    "created_at": "2026-09-06T19:50:08Z"
+  },
+  {
+    "id": 67,
+    "commit_sha": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+    "tool_versions": "{\"crapkit\": \"0.6.0\", \"lizard\": \"1.24.0\"}",
+    "kind": "verify",
+    "verdict_ok": 1,
+    "findings": 0,
+    "created_at": "2026-09-06T01:04:30Z"
+  },
+  {
+    "id": 66,
+    "commit_sha": "dace784e006c294c154d1c13b856853b114ca499",
+    "tool_versions": "{\"crapkit\": \"0.6.0\", \"lizard\": \"1.24.0\"}",
+    "kind": "coverage",
+    "verdict_ok": null,
+    "findings": 0,
+    "created_at": "2026-09-06T00:47:16Z"
+  }
+]

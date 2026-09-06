@@ -1,0 +1,44 @@
+FFFFFFF.......                                                           [100%]
+================================== FAILURES ===================================
+___________ test_file_function_projection_keeps_same_line_identity ____________
+tests\unit\test_identity_presentations.py:20: in test_file_function_projection_keeps_same_line_identity
+    assert [function["occurrence"] for function in functions] == [1, 2]
+tests\unit\test_identity_presentations.py:20: in <listcomp>
+    assert [function["occurrence"] for function in functions] == [1, 2]
+E   KeyError: 'occurrence'
+_________________ test_rescore_json_keeps_same_line_identity __________________
+tests\unit\test_identity_presentations.py:27: in test_rescore_json_keeps_same_line_identity
+    assert [function["occurrence"] for function in functions] == [1, 2]
+tests\unit\test_identity_presentations.py:27: in <listcomp>
+    assert [function["occurrence"] for function in functions] == [1, 2]
+E   KeyError: 'occurrence'
+________ test_same_start_nested_function_is_a_contained_twin_not_self _________
+tests\unit\test_identity_presentations.py:36: in test_same_start_nested_function_is_a_contained_twin_not_self
+    assert len(twins) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+___ test_matching_artifact_cannot_prove_same_span_function_coverage[hits0] ____
+tests\unit\test_coverage_same_span.py:19: in test_matching_artifact_cannot_prove_same_span_function_coverage
+    with pytest.raises(ToolError) as error:
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+___ test_matching_artifact_cannot_prove_same_span_function_coverage[hits1] ____
+tests\unit\test_coverage_same_span.py:19: in test_matching_artifact_cannot_prove_same_span_function_coverage
+    with pytest.raises(ToolError) as error:
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+___ test_matching_artifact_cannot_prove_same_span_function_coverage[hits2] ____
+tests\unit\test_coverage_same_span.py:19: in test_matching_artifact_cannot_prove_same_span_function_coverage
+    with pytest.raises(ToolError) as error:
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+___ test_matching_artifact_cannot_prove_same_span_function_coverage[hits3] ____
+tests\unit\test_coverage_same_span.py:19: in test_matching_artifact_cannot_prove_same_span_function_coverage
+    with pytest.raises(ToolError) as error:
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ToolError'>
+=========================== short test summary info ===========================
+FAILED tests/unit/test_identity_presentations.py::test_file_function_projection_keeps_same_line_identity
+FAILED tests/unit/test_identity_presentations.py::test_rescore_json_keeps_same_line_identity
+FAILED tests/unit/test_identity_presentations.py::test_same_start_nested_function_is_a_contained_twin_not_self
+FAILED tests/unit/test_coverage_same_span.py::test_matching_artifact_cannot_prove_same_span_function_coverage[hits0]
+FAILED tests/unit/test_coverage_same_span.py::test_matching_artifact_cannot_prove_same_span_function_coverage[hits1]
+FAILED tests/unit/test_coverage_same_span.py::test_matching_artifact_cannot_prove_same_span_function_coverage[hits2]
+FAILED tests/unit/test_coverage_same_span.py::test_matching_artifact_cannot_prove_same_span_function_coverage[hits3]
+7 failed, 7 passed in 0.75s

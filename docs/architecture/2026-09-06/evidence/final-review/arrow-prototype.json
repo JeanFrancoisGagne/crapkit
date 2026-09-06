@@ -1,0 +1,624 @@
+{
+  "array": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "multiline": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 2,
+        "end_line": 4,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 2,
+        "end_line": 2,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 3,
+        "end_line": 3,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "blocks": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "nested": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 4,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "chain": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "calls": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "index": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "object": {
+    "before": [
+      {
+        "name": "a",
+        "long_name": "a ( x ) ( x )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 1
+      }
+    ],
+    "after": [
+      {
+        "name": "a",
+        "long_name": "a ( x )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 1
+      },
+      {
+        "name": "b",
+        "long_name": "b ( x )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 1
+      }
+    ]
+  },
+  "generic": {
+    "before": [
+      {
+        "name": "f",
+        "long_name": "f ( x T )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 1
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "generic_named": {
+    "before": [
+      {
+        "name": "f",
+        "long_name": "f ( x T , y U )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 2
+      }
+    ],
+    "after": [
+      {
+        "name": "f",
+        "long_name": "f ( x T , y U )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 2
+      }
+    ]
+  },
+  "nested_arrow": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "seq": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "typed": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "computed": {
+    "before": [
+      {
+        "name": "name",
+        "long_name": "name ( x )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 1
+      }
+    ],
+    "after": [
+      {
+        "name": "name",
+        "long_name": "name ( x )",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 1
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 1,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "body_newlines": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 3,
+        "end_line": 3,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 5,
+        "end_line": 5,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 3,
+        "end_line": 3,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 5,
+        "end_line": 6,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "nested_body_newlines": {
+    "before": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 2,
+        "end_line": 5,
+        "cyclomatic_complexity": 3,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 6,
+        "end_line": 7,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 3,
+        "end_line": 3,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 4,
+        "end_line": 4,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 2,
+        "end_line": 5,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 6,
+        "end_line": 6,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  },
+  "block_asi": {
+    "before": [
+      {
+        "name": "g",
+        "long_name": "g",
+        "start_line": 2,
+        "end_line": 3,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "h",
+        "long_name": "h",
+        "start_line": 3,
+        "end_line": 4,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 5,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 5,
+        "end_line": 5,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ],
+    "after": [
+      {
+        "name": "g",
+        "long_name": "g",
+        "start_line": 2,
+        "end_line": 2,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "h",
+        "long_name": "h",
+        "start_line": 3,
+        "end_line": 3,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 1,
+        "end_line": 5,
+        "cyclomatic_complexity": 1,
+        "parameter_count": 0
+      },
+      {
+        "name": "(anonymous)",
+        "long_name": "(anonymous)",
+        "start_line": 5,
+        "end_line": 5,
+        "cyclomatic_complexity": 2,
+        "parameter_count": 0
+      }
+    ]
+  }
+}

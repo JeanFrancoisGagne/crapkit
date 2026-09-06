@@ -1,0 +1,25 @@
+{
+  "equivalent_histories": 9681,
+  "timings": [
+    {
+      "runs": 500,
+      "before_ms": 4.0915,
+      "after_ms": 0.1109
+    },
+    {
+      "runs": 1000,
+      "before_ms": 15.8721,
+      "after_ms": 0.2211
+    },
+    {
+      "runs": 2000,
+      "before_ms": 70.1962,
+      "after_ms": 0.4308
+    },
+    {
+      "runs": 4000,
+      "before_ms": 278.029,
+      "after_ms": 0.9356
+    }
+  ]
+}

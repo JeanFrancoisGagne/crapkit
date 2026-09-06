@@ -1,0 +1,34 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+F.FFF                                                                    [100%]
+================================== FAILURES ===================================
+__ test_claim_taken_from_an_old_snapshot_stays_with_the_whole_unproved_group __
+tests\unit\test_expression_identity_migration.py:102: in test_claim_taken_from_an_old_snapshot_stays_with_the_whole_unproved_group
+    assert _next(tmp_path, capsys)['empty'] is True
+E   assert False is True
+____ test_version9_mark_cannot_restamp_after_multiline_reader_expansion[1] ____
+tests\unit\test_expression_identity_migration.py:57: in test_version9_mark_cannot_restamp_after_multiline_reader_expansion
+    assert main(['ratchet', 'seed', '--repo', str(tmp_path)]) == 3
+E   AssertionError: assert 0 == 3
+E    +  where 0 = main(['ratchet', 'seed', '--repo', '<user>\\AppData\\Local\\Temp\\pytest-of-jfgag\\pytest-49793\\test_version9_mark_cannot_rest0'])
+---------------------------- Captured stdout call -----------------------------
+crapkit-ratchet.tsv: added 0, tightened 0 - 1 mark(s) vs run 1 (d4effcb803c)
+____ test_version9_mark_cannot_restamp_after_multiline_reader_expansion[0] ____
+tests\unit\test_expression_identity_migration.py:57: in test_version9_mark_cannot_restamp_after_multiline_reader_expansion
+    assert main(['ratchet', 'seed', '--repo', str(tmp_path)]) == 3
+E   AssertionError: assert 0 == 3
+E    +  where 0 = main(['ratchet', 'seed', '--repo', '<user>\\AppData\\Local\\Temp\\pytest-of-jfgag\\pytest-49793\\test_version9_mark_cannot_rest1'])
+---------------------------- Captured stdout call -----------------------------
+crapkit-ratchet.tsv: added 0, tightened 0 - 1 mark(s) vs run 1 (d4effcb803c)
+____ test_current_run_records_reader_proof_and_allows_precise_arrow_claims ____
+tests\unit\test_expression_identity_migration.py:116: in test_current_run_records_reader_proof_and_allows_precise_arrow_claims
+    assert store.list_runs()[-1]['tool_versions']['analysis_version'] == '10'
+E   KeyError: 'analysis_version'
+=========================== short test summary info ===========================
+FAILED tests/unit/test_expression_identity_migration.py::test_claim_taken_from_an_old_snapshot_stays_with_the_whole_unproved_group
+FAILED tests/unit/test_expression_identity_migration.py::test_version9_mark_cannot_restamp_after_multiline_reader_expansion[1]
+FAILED tests/unit/test_expression_identity_migration.py::test_version9_mark_cannot_restamp_after_multiline_reader_expansion[0]
+FAILED tests/unit/test_expression_identity_migration.py::test_current_run_records_reader_proof_and_allows_precise_arrow_claims
+4 failed, 1 passed in 2.72s

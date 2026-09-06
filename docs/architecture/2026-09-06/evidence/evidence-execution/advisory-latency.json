@@ -1,0 +1,2152 @@
+{
+  "source_ref": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+  "root": "<repo>",
+  "snapshots": {
+    "current": "<review-work>\\advisory-latency\\current",
+    "release": "<review-work>\\advisory-latency\\release",
+    "live_root": "<repo>"
+  },
+  "start_utc": "2026-09-06T21:47:31.650118+00:00",
+  "end_utc": "2026-09-06T21:47:59.445317+00:00",
+  "python": "<python-install>\\python.exe",
+  "import_proofs": {
+    "current": "<review-work>\\advisory-latency\\current\\src\\crapkit\\__init__.py\n3.11.2 (tags/v3.11.2:878ead1, Feb  7 2023, 16:38:35) [MSC v.1934 64 bit (AMD64)]\n",
+    "release": "<review-work>\\advisory-latency\\release\\src\\crapkit\\__init__.py\n3.11.2 (tags/v3.11.2:878ead1, Feb  7 2023, 16:38:35) [MSC v.1934 64 bit (AMD64)]\n",
+    "live_root": "<repo>\\src\\crapkit\\__init__.py\n3.11.2 (tags/v3.11.2:878ead1, Feb  7 2023, 16:38:35) [MSC v.1934 64 bit (AMD64)]\n"
+  },
+  "cwd": "<review-work>\\advisory-latency\\fixture",
+  "commands": {
+    "hook": [
+      "<python-install>\\python.exe",
+      "-m",
+      "crapkit",
+      "claude-hook",
+      "--protocol",
+      "1"
+    ],
+    "floor": [
+      "<python-install>\\python.exe",
+      "-c",
+      "pass"
+    ]
+  },
+  "stdin": "{\"session_id\": \"6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f\", \"transcript_path\": \"<review-work>\\\\advisory-latency\\\\fixture\\\\repo/.claude/transcript.jsonl\", \"cwd\": \"<review-work>\\\\advisory-latency\\\\fixture\\\\repo\", \"permission_mode\": \"acceptEdits\", \"hook_event_name\": \"PostToolUse\", \"tool_name\": \"Edit\", \"tool_input\": {\"file_path\": \"<review-work>\\\\advisory-latency\\\\fixture\\\\repo/calc/grade.py\", \"old_string\": \"def grade(n):\", \"new_string\": \"def sprawl(n):\"}, \"tool_response\": {\"filePath\": \"<review-work>\\\\advisory-latency\\\\fixture\\\\repo/calc/grade.py\", \"success\": true}}",
+  "method": "3 warmups per command/source; 50 interleaved source blocks; 12 path-control blocks; fixed counts",
+  "samples": [
+    {
+      "phase": "source",
+      "block": 0,
+      "source": "current",
+      "kind": "hook",
+      "ms": 115.6485
+    },
+    {
+      "phase": "source",
+      "block": 0,
+      "source": "current",
+      "kind": "floor",
+      "ms": 54.98
+    },
+    {
+      "phase": "source",
+      "block": 0,
+      "source": "release",
+      "kind": "hook",
+      "ms": 123.6971
+    },
+    {
+      "phase": "source",
+      "block": 0,
+      "source": "release",
+      "kind": "floor",
+      "ms": 61.6589
+    },
+    {
+      "phase": "source",
+      "block": 1,
+      "source": "release",
+      "kind": "hook",
+      "ms": 108.0582
+    },
+    {
+      "phase": "source",
+      "block": 1,
+      "source": "release",
+      "kind": "floor",
+      "ms": 54.9114
+    },
+    {
+      "phase": "source",
+      "block": 1,
+      "source": "current",
+      "kind": "hook",
+      "ms": 106.4969
+    },
+    {
+      "phase": "source",
+      "block": 1,
+      "source": "current",
+      "kind": "floor",
+      "ms": 49.564
+    },
+    {
+      "phase": "source",
+      "block": 2,
+      "source": "current",
+      "kind": "floor",
+      "ms": 48.8804
+    },
+    {
+      "phase": "source",
+      "block": 2,
+      "source": "current",
+      "kind": "hook",
+      "ms": 100.6416
+    },
+    {
+      "phase": "source",
+      "block": 2,
+      "source": "release",
+      "kind": "floor",
+      "ms": 45.2737
+    },
+    {
+      "phase": "source",
+      "block": 2,
+      "source": "release",
+      "kind": "hook",
+      "ms": 204.6438
+    },
+    {
+      "phase": "source",
+      "block": 3,
+      "source": "release",
+      "kind": "floor",
+      "ms": 46.4367
+    },
+    {
+      "phase": "source",
+      "block": 3,
+      "source": "release",
+      "kind": "hook",
+      "ms": 110.4282
+    },
+    {
+      "phase": "source",
+      "block": 3,
+      "source": "current",
+      "kind": "floor",
+      "ms": 63.4001
+    },
+    {
+      "phase": "source",
+      "block": 3,
+      "source": "current",
+      "kind": "hook",
+      "ms": 115.7699
+    },
+    {
+      "phase": "source",
+      "block": 4,
+      "source": "current",
+      "kind": "hook",
+      "ms": 114.716
+    },
+    {
+      "phase": "source",
+      "block": 4,
+      "source": "current",
+      "kind": "floor",
+      "ms": 46.6476
+    },
+    {
+      "phase": "source",
+      "block": 4,
+      "source": "release",
+      "kind": "hook",
+      "ms": 107.5243
+    },
+    {
+      "phase": "source",
+      "block": 4,
+      "source": "release",
+      "kind": "floor",
+      "ms": 53.3075
+    },
+    {
+      "phase": "source",
+      "block": 5,
+      "source": "release",
+      "kind": "hook",
+      "ms": 107.0884
+    },
+    {
+      "phase": "source",
+      "block": 5,
+      "source": "release",
+      "kind": "floor",
+      "ms": 48.8705
+    },
+    {
+      "phase": "source",
+      "block": 5,
+      "source": "current",
+      "kind": "hook",
+      "ms": 106.3256
+    },
+    {
+      "phase": "source",
+      "block": 5,
+      "source": "current",
+      "kind": "floor",
+      "ms": 48.0881
+    },
+    {
+      "phase": "source",
+      "block": 6,
+      "source": "current",
+      "kind": "floor",
+      "ms": 50.6822
+    },
+    {
+      "phase": "source",
+      "block": 6,
+      "source": "current",
+      "kind": "hook",
+      "ms": 116.6488
+    },
+    {
+      "phase": "source",
+      "block": 6,
+      "source": "release",
+      "kind": "floor",
+      "ms": 56.2494
+    },
+    {
+      "phase": "source",
+      "block": 6,
+      "source": "release",
+      "kind": "hook",
+      "ms": 119.3704
+    },
+    {
+      "phase": "source",
+      "block": 7,
+      "source": "release",
+      "kind": "floor",
+      "ms": 43.3668
+    },
+    {
+      "phase": "source",
+      "block": 7,
+      "source": "release",
+      "kind": "hook",
+      "ms": 140.1889
+    },
+    {
+      "phase": "source",
+      "block": 7,
+      "source": "current",
+      "kind": "floor",
+      "ms": 132.4112
+    },
+    {
+      "phase": "source",
+      "block": 7,
+      "source": "current",
+      "kind": "hook",
+      "ms": 104.5209
+    },
+    {
+      "phase": "source",
+      "block": 8,
+      "source": "current",
+      "kind": "hook",
+      "ms": 89.015
+    },
+    {
+      "phase": "source",
+      "block": 8,
+      "source": "current",
+      "kind": "floor",
+      "ms": 47.3177
+    },
+    {
+      "phase": "source",
+      "block": 8,
+      "source": "release",
+      "kind": "hook",
+      "ms": 112.5386
+    },
+    {
+      "phase": "source",
+      "block": 8,
+      "source": "release",
+      "kind": "floor",
+      "ms": 44.4776
+    },
+    {
+      "phase": "source",
+      "block": 9,
+      "source": "release",
+      "kind": "hook",
+      "ms": 99.8972
+    },
+    {
+      "phase": "source",
+      "block": 9,
+      "source": "release",
+      "kind": "floor",
+      "ms": 49.7691
+    },
+    {
+      "phase": "source",
+      "block": 9,
+      "source": "current",
+      "kind": "hook",
+      "ms": 102.8072
+    },
+    {
+      "phase": "source",
+      "block": 9,
+      "source": "current",
+      "kind": "floor",
+      "ms": 51.861
+    },
+    {
+      "phase": "source",
+      "block": 10,
+      "source": "current",
+      "kind": "floor",
+      "ms": 123.4395
+    },
+    {
+      "phase": "source",
+      "block": 10,
+      "source": "current",
+      "kind": "hook",
+      "ms": 121.7396
+    },
+    {
+      "phase": "source",
+      "block": 10,
+      "source": "release",
+      "kind": "floor",
+      "ms": 61.6475
+    },
+    {
+      "phase": "source",
+      "block": 10,
+      "source": "release",
+      "kind": "hook",
+      "ms": 136.4806
+    },
+    {
+      "phase": "source",
+      "block": 11,
+      "source": "release",
+      "kind": "floor",
+      "ms": 79.1344
+    },
+    {
+      "phase": "source",
+      "block": 11,
+      "source": "release",
+      "kind": "hook",
+      "ms": 116.8387
+    },
+    {
+      "phase": "source",
+      "block": 11,
+      "source": "current",
+      "kind": "floor",
+      "ms": 48.4306
+    },
+    {
+      "phase": "source",
+      "block": 11,
+      "source": "current",
+      "kind": "hook",
+      "ms": 92.5953
+    },
+    {
+      "phase": "source",
+      "block": 12,
+      "source": "current",
+      "kind": "hook",
+      "ms": 111.1178
+    },
+    {
+      "phase": "source",
+      "block": 12,
+      "source": "current",
+      "kind": "floor",
+      "ms": 41.7908
+    },
+    {
+      "phase": "source",
+      "block": 12,
+      "source": "release",
+      "kind": "hook",
+      "ms": 105.5598
+    },
+    {
+      "phase": "source",
+      "block": 12,
+      "source": "release",
+      "kind": "floor",
+      "ms": 46.7895
+    },
+    {
+      "phase": "source",
+      "block": 13,
+      "source": "release",
+      "kind": "hook",
+      "ms": 104.3996
+    },
+    {
+      "phase": "source",
+      "block": 13,
+      "source": "release",
+      "kind": "floor",
+      "ms": 43.3644
+    },
+    {
+      "phase": "source",
+      "block": 13,
+      "source": "current",
+      "kind": "hook",
+      "ms": 92.723
+    },
+    {
+      "phase": "source",
+      "block": 13,
+      "source": "current",
+      "kind": "floor",
+      "ms": 54.7558
+    },
+    {
+      "phase": "source",
+      "block": 14,
+      "source": "current",
+      "kind": "floor",
+      "ms": 57.9711
+    },
+    {
+      "phase": "source",
+      "block": 14,
+      "source": "current",
+      "kind": "hook",
+      "ms": 156.9099
+    },
+    {
+      "phase": "source",
+      "block": 14,
+      "source": "release",
+      "kind": "floor",
+      "ms": 71.4287
+    },
+    {
+      "phase": "source",
+      "block": 14,
+      "source": "release",
+      "kind": "hook",
+      "ms": 114.7147
+    },
+    {
+      "phase": "source",
+      "block": 15,
+      "source": "release",
+      "kind": "floor",
+      "ms": 46.3362
+    },
+    {
+      "phase": "source",
+      "block": 15,
+      "source": "release",
+      "kind": "hook",
+      "ms": 124.0548
+    },
+    {
+      "phase": "source",
+      "block": 15,
+      "source": "current",
+      "kind": "floor",
+      "ms": 53.1752
+    },
+    {
+      "phase": "source",
+      "block": 15,
+      "source": "current",
+      "kind": "hook",
+      "ms": 103.2939
+    },
+    {
+      "phase": "source",
+      "block": 16,
+      "source": "current",
+      "kind": "hook",
+      "ms": 100.9748
+    },
+    {
+      "phase": "source",
+      "block": 16,
+      "source": "current",
+      "kind": "floor",
+      "ms": 44.2599
+    },
+    {
+      "phase": "source",
+      "block": 16,
+      "source": "release",
+      "kind": "hook",
+      "ms": 108.633
+    },
+    {
+      "phase": "source",
+      "block": 16,
+      "source": "release",
+      "kind": "floor",
+      "ms": 103.9524
+    },
+    {
+      "phase": "source",
+      "block": 17,
+      "source": "release",
+      "kind": "hook",
+      "ms": 103.3405
+    },
+    {
+      "phase": "source",
+      "block": 17,
+      "source": "release",
+      "kind": "floor",
+      "ms": 53.7493
+    },
+    {
+      "phase": "source",
+      "block": 17,
+      "source": "current",
+      "kind": "hook",
+      "ms": 108.0138
+    },
+    {
+      "phase": "source",
+      "block": 17,
+      "source": "current",
+      "kind": "floor",
+      "ms": 63.4048
+    },
+    {
+      "phase": "source",
+      "block": 18,
+      "source": "current",
+      "kind": "floor",
+      "ms": 63.5459
+    },
+    {
+      "phase": "source",
+      "block": 18,
+      "source": "current",
+      "kind": "hook",
+      "ms": 150.105
+    },
+    {
+      "phase": "source",
+      "block": 18,
+      "source": "release",
+      "kind": "floor",
+      "ms": 45.0191
+    },
+    {
+      "phase": "source",
+      "block": 18,
+      "source": "release",
+      "kind": "hook",
+      "ms": 105.1982
+    },
+    {
+      "phase": "source",
+      "block": 19,
+      "source": "release",
+      "kind": "floor",
+      "ms": 53.025
+    },
+    {
+      "phase": "source",
+      "block": 19,
+      "source": "release",
+      "kind": "hook",
+      "ms": 163.4846
+    },
+    {
+      "phase": "source",
+      "block": 19,
+      "source": "current",
+      "kind": "floor",
+      "ms": 61.8692
+    },
+    {
+      "phase": "source",
+      "block": 19,
+      "source": "current",
+      "kind": "hook",
+      "ms": 130.0188
+    },
+    {
+      "phase": "source",
+      "block": 20,
+      "source": "current",
+      "kind": "hook",
+      "ms": 94.329
+    },
+    {
+      "phase": "source",
+      "block": 20,
+      "source": "current",
+      "kind": "floor",
+      "ms": 44.1023
+    },
+    {
+      "phase": "source",
+      "block": 20,
+      "source": "release",
+      "kind": "hook",
+      "ms": 88.6949
+    },
+    {
+      "phase": "source",
+      "block": 20,
+      "source": "release",
+      "kind": "floor",
+      "ms": 38.5509
+    },
+    {
+      "phase": "source",
+      "block": 21,
+      "source": "release",
+      "kind": "hook",
+      "ms": 100.4601
+    },
+    {
+      "phase": "source",
+      "block": 21,
+      "source": "release",
+      "kind": "floor",
+      "ms": 78.8492
+    },
+    {
+      "phase": "source",
+      "block": 21,
+      "source": "current",
+      "kind": "hook",
+      "ms": 119.7178
+    },
+    {
+      "phase": "source",
+      "block": 21,
+      "source": "current",
+      "kind": "floor",
+      "ms": 52.4818
+    },
+    {
+      "phase": "source",
+      "block": 22,
+      "source": "current",
+      "kind": "floor",
+      "ms": 52.542
+    },
+    {
+      "phase": "source",
+      "block": 22,
+      "source": "current",
+      "kind": "hook",
+      "ms": 119.4939
+    },
+    {
+      "phase": "source",
+      "block": 22,
+      "source": "release",
+      "kind": "floor",
+      "ms": 67.8948
+    },
+    {
+      "phase": "source",
+      "block": 22,
+      "source": "release",
+      "kind": "hook",
+      "ms": 164.7767
+    },
+    {
+      "phase": "source",
+      "block": 23,
+      "source": "release",
+      "kind": "floor",
+      "ms": 48.0632
+    },
+    {
+      "phase": "source",
+      "block": 23,
+      "source": "release",
+      "kind": "hook",
+      "ms": 102.448
+    },
+    {
+      "phase": "source",
+      "block": 23,
+      "source": "current",
+      "kind": "floor",
+      "ms": 37.7025
+    },
+    {
+      "phase": "source",
+      "block": 23,
+      "source": "current",
+      "kind": "hook",
+      "ms": 93.3998
+    },
+    {
+      "phase": "source",
+      "block": 24,
+      "source": "current",
+      "kind": "hook",
+      "ms": 100.944
+    },
+    {
+      "phase": "source",
+      "block": 24,
+      "source": "current",
+      "kind": "floor",
+      "ms": 40.9927
+    },
+    {
+      "phase": "source",
+      "block": 24,
+      "source": "release",
+      "kind": "hook",
+      "ms": 148.8049
+    },
+    {
+      "phase": "source",
+      "block": 24,
+      "source": "release",
+      "kind": "floor",
+      "ms": 63.4534
+    },
+    {
+      "phase": "source",
+      "block": 25,
+      "source": "release",
+      "kind": "hook",
+      "ms": 120.3383
+    },
+    {
+      "phase": "source",
+      "block": 25,
+      "source": "release",
+      "kind": "floor",
+      "ms": 75.6767
+    },
+    {
+      "phase": "source",
+      "block": 25,
+      "source": "current",
+      "kind": "hook",
+      "ms": 104.5264
+    },
+    {
+      "phase": "source",
+      "block": 25,
+      "source": "current",
+      "kind": "floor",
+      "ms": 56.7975
+    },
+    {
+      "phase": "source",
+      "block": 26,
+      "source": "current",
+      "kind": "floor",
+      "ms": 56.4794
+    },
+    {
+      "phase": "source",
+      "block": 26,
+      "source": "current",
+      "kind": "hook",
+      "ms": 96.7824
+    },
+    {
+      "phase": "source",
+      "block": 26,
+      "source": "release",
+      "kind": "floor",
+      "ms": 53.7201
+    },
+    {
+      "phase": "source",
+      "block": 26,
+      "source": "release",
+      "kind": "hook",
+      "ms": 125.5366
+    },
+    {
+      "phase": "source",
+      "block": 27,
+      "source": "release",
+      "kind": "floor",
+      "ms": 53.4794
+    },
+    {
+      "phase": "source",
+      "block": 27,
+      "source": "release",
+      "kind": "hook",
+      "ms": 84.468
+    },
+    {
+      "phase": "source",
+      "block": 27,
+      "source": "current",
+      "kind": "floor",
+      "ms": 48.8916
+    },
+    {
+      "phase": "source",
+      "block": 27,
+      "source": "current",
+      "kind": "hook",
+      "ms": 100.969
+    },
+    {
+      "phase": "source",
+      "block": 28,
+      "source": "current",
+      "kind": "hook",
+      "ms": 129.7642
+    },
+    {
+      "phase": "source",
+      "block": 28,
+      "source": "current",
+      "kind": "floor",
+      "ms": 61.7888
+    },
+    {
+      "phase": "source",
+      "block": 28,
+      "source": "release",
+      "kind": "hook",
+      "ms": 131.7901
+    },
+    {
+      "phase": "source",
+      "block": 28,
+      "source": "release",
+      "kind": "floor",
+      "ms": 118.6165
+    },
+    {
+      "phase": "source",
+      "block": 29,
+      "source": "release",
+      "kind": "hook",
+      "ms": 94.4654
+    },
+    {
+      "phase": "source",
+      "block": 29,
+      "source": "release",
+      "kind": "floor",
+      "ms": 42.7664
+    },
+    {
+      "phase": "source",
+      "block": 29,
+      "source": "current",
+      "kind": "hook",
+      "ms": 112.7503
+    },
+    {
+      "phase": "source",
+      "block": 29,
+      "source": "current",
+      "kind": "floor",
+      "ms": 46.8778
+    },
+    {
+      "phase": "source",
+      "block": 30,
+      "source": "current",
+      "kind": "floor",
+      "ms": 51.086
+    },
+    {
+      "phase": "source",
+      "block": 30,
+      "source": "current",
+      "kind": "hook",
+      "ms": 95.3761
+    },
+    {
+      "phase": "source",
+      "block": 30,
+      "source": "release",
+      "kind": "floor",
+      "ms": 45.1616
+    },
+    {
+      "phase": "source",
+      "block": 30,
+      "source": "release",
+      "kind": "hook",
+      "ms": 108.0236
+    },
+    {
+      "phase": "source",
+      "block": 31,
+      "source": "release",
+      "kind": "floor",
+      "ms": 56.5256
+    },
+    {
+      "phase": "source",
+      "block": 31,
+      "source": "release",
+      "kind": "hook",
+      "ms": 150.3037
+    },
+    {
+      "phase": "source",
+      "block": 31,
+      "source": "current",
+      "kind": "floor",
+      "ms": 59.591
+    },
+    {
+      "phase": "source",
+      "block": 31,
+      "source": "current",
+      "kind": "hook",
+      "ms": 164.8388
+    },
+    {
+      "phase": "source",
+      "block": 32,
+      "source": "current",
+      "kind": "hook",
+      "ms": 158.6911
+    },
+    {
+      "phase": "source",
+      "block": 32,
+      "source": "current",
+      "kind": "floor",
+      "ms": 51.4129
+    },
+    {
+      "phase": "source",
+      "block": 32,
+      "source": "release",
+      "kind": "hook",
+      "ms": 146.6141
+    },
+    {
+      "phase": "source",
+      "block": 32,
+      "source": "release",
+      "kind": "floor",
+      "ms": 77.6979
+    },
+    {
+      "phase": "source",
+      "block": 33,
+      "source": "release",
+      "kind": "hook",
+      "ms": 152.6071
+    },
+    {
+      "phase": "source",
+      "block": 33,
+      "source": "release",
+      "kind": "floor",
+      "ms": 59.6093
+    },
+    {
+      "phase": "source",
+      "block": 33,
+      "source": "current",
+      "kind": "hook",
+      "ms": 119.3186
+    },
+    {
+      "phase": "source",
+      "block": 33,
+      "source": "current",
+      "kind": "floor",
+      "ms": 51.1248
+    },
+    {
+      "phase": "source",
+      "block": 34,
+      "source": "current",
+      "kind": "floor",
+      "ms": 61.8528
+    },
+    {
+      "phase": "source",
+      "block": 34,
+      "source": "current",
+      "kind": "hook",
+      "ms": 158.6211
+    },
+    {
+      "phase": "source",
+      "block": 34,
+      "source": "release",
+      "kind": "floor",
+      "ms": 103.254
+    },
+    {
+      "phase": "source",
+      "block": 34,
+      "source": "release",
+      "kind": "hook",
+      "ms": 209.2155
+    },
+    {
+      "phase": "source",
+      "block": 35,
+      "source": "release",
+      "kind": "floor",
+      "ms": 54.9201
+    },
+    {
+      "phase": "source",
+      "block": 35,
+      "source": "release",
+      "kind": "hook",
+      "ms": 165.666
+    },
+    {
+      "phase": "source",
+      "block": 35,
+      "source": "current",
+      "kind": "floor",
+      "ms": 76.1231
+    },
+    {
+      "phase": "source",
+      "block": 35,
+      "source": "current",
+      "kind": "hook",
+      "ms": 157.7641
+    },
+    {
+      "phase": "source",
+      "block": 36,
+      "source": "current",
+      "kind": "hook",
+      "ms": 229.0459
+    },
+    {
+      "phase": "source",
+      "block": 36,
+      "source": "current",
+      "kind": "floor",
+      "ms": 73.1705
+    },
+    {
+      "phase": "source",
+      "block": 36,
+      "source": "release",
+      "kind": "hook",
+      "ms": 158.147
+    },
+    {
+      "phase": "source",
+      "block": 36,
+      "source": "release",
+      "kind": "floor",
+      "ms": 66.7323
+    },
+    {
+      "phase": "source",
+      "block": 37,
+      "source": "release",
+      "kind": "hook",
+      "ms": 147.498
+    },
+    {
+      "phase": "source",
+      "block": 37,
+      "source": "release",
+      "kind": "floor",
+      "ms": 73.9286
+    },
+    {
+      "phase": "source",
+      "block": 37,
+      "source": "current",
+      "kind": "hook",
+      "ms": 168.2505
+    },
+    {
+      "phase": "source",
+      "block": 37,
+      "source": "current",
+      "kind": "floor",
+      "ms": 78.231
+    },
+    {
+      "phase": "source",
+      "block": 38,
+      "source": "current",
+      "kind": "floor",
+      "ms": 76.446
+    },
+    {
+      "phase": "source",
+      "block": 38,
+      "source": "current",
+      "kind": "hook",
+      "ms": 137.7614
+    },
+    {
+      "phase": "source",
+      "block": 38,
+      "source": "release",
+      "kind": "floor",
+      "ms": 65.8224
+    },
+    {
+      "phase": "source",
+      "block": 38,
+      "source": "release",
+      "kind": "hook",
+      "ms": 156.0494
+    },
+    {
+      "phase": "source",
+      "block": 39,
+      "source": "release",
+      "kind": "floor",
+      "ms": 66.8782
+    },
+    {
+      "phase": "source",
+      "block": 39,
+      "source": "release",
+      "kind": "hook",
+      "ms": 160.0911
+    },
+    {
+      "phase": "source",
+      "block": 39,
+      "source": "current",
+      "kind": "floor",
+      "ms": 73.351
+    },
+    {
+      "phase": "source",
+      "block": 39,
+      "source": "current",
+      "kind": "hook",
+      "ms": 145.554
+    },
+    {
+      "phase": "source",
+      "block": 40,
+      "source": "current",
+      "kind": "hook",
+      "ms": 166.9026
+    },
+    {
+      "phase": "source",
+      "block": 40,
+      "source": "current",
+      "kind": "floor",
+      "ms": 75.5028
+    },
+    {
+      "phase": "source",
+      "block": 40,
+      "source": "release",
+      "kind": "hook",
+      "ms": 158.7753
+    },
+    {
+      "phase": "source",
+      "block": 40,
+      "source": "release",
+      "kind": "floor",
+      "ms": 80.2525
+    },
+    {
+      "phase": "source",
+      "block": 41,
+      "source": "release",
+      "kind": "hook",
+      "ms": 144.0094
+    },
+    {
+      "phase": "source",
+      "block": 41,
+      "source": "release",
+      "kind": "floor",
+      "ms": 82.8064
+    },
+    {
+      "phase": "source",
+      "block": 41,
+      "source": "current",
+      "kind": "hook",
+      "ms": 164.2377
+    },
+    {
+      "phase": "source",
+      "block": 41,
+      "source": "current",
+      "kind": "floor",
+      "ms": 77.9385
+    },
+    {
+      "phase": "source",
+      "block": 42,
+      "source": "current",
+      "kind": "floor",
+      "ms": 75.138
+    },
+    {
+      "phase": "source",
+      "block": 42,
+      "source": "current",
+      "kind": "hook",
+      "ms": 169.5732
+    },
+    {
+      "phase": "source",
+      "block": 42,
+      "source": "release",
+      "kind": "floor",
+      "ms": 64.7718
+    },
+    {
+      "phase": "source",
+      "block": 42,
+      "source": "release",
+      "kind": "hook",
+      "ms": 164.7371
+    },
+    {
+      "phase": "source",
+      "block": 43,
+      "source": "release",
+      "kind": "floor",
+      "ms": 109.7956
+    },
+    {
+      "phase": "source",
+      "block": 43,
+      "source": "release",
+      "kind": "hook",
+      "ms": 198.3495
+    },
+    {
+      "phase": "source",
+      "block": 43,
+      "source": "current",
+      "kind": "floor",
+      "ms": 85.5071
+    },
+    {
+      "phase": "source",
+      "block": 43,
+      "source": "current",
+      "kind": "hook",
+      "ms": 155.6733
+    },
+    {
+      "phase": "source",
+      "block": 44,
+      "source": "current",
+      "kind": "hook",
+      "ms": 159.0813
+    },
+    {
+      "phase": "source",
+      "block": 44,
+      "source": "current",
+      "kind": "floor",
+      "ms": 85.5079
+    },
+    {
+      "phase": "source",
+      "block": 44,
+      "source": "release",
+      "kind": "hook",
+      "ms": 186.7576
+    },
+    {
+      "phase": "source",
+      "block": 44,
+      "source": "release",
+      "kind": "floor",
+      "ms": 82.9646
+    },
+    {
+      "phase": "source",
+      "block": 45,
+      "source": "release",
+      "kind": "hook",
+      "ms": 210.792
+    },
+    {
+      "phase": "source",
+      "block": 45,
+      "source": "release",
+      "kind": "floor",
+      "ms": 275.2401
+    },
+    {
+      "phase": "source",
+      "block": 45,
+      "source": "current",
+      "kind": "hook",
+      "ms": 153.9531
+    },
+    {
+      "phase": "source",
+      "block": 45,
+      "source": "current",
+      "kind": "floor",
+      "ms": 66.7982
+    },
+    {
+      "phase": "source",
+      "block": 46,
+      "source": "current",
+      "kind": "floor",
+      "ms": 68.1594
+    },
+    {
+      "phase": "source",
+      "block": 46,
+      "source": "current",
+      "kind": "hook",
+      "ms": 168.3397
+    },
+    {
+      "phase": "source",
+      "block": 46,
+      "source": "release",
+      "kind": "floor",
+      "ms": 68.9135
+    },
+    {
+      "phase": "source",
+      "block": 46,
+      "source": "release",
+      "kind": "hook",
+      "ms": 151.9041
+    },
+    {
+      "phase": "source",
+      "block": 47,
+      "source": "release",
+      "kind": "floor",
+      "ms": 79.611
+    },
+    {
+      "phase": "source",
+      "block": 47,
+      "source": "release",
+      "kind": "hook",
+      "ms": 147.8259
+    },
+    {
+      "phase": "source",
+      "block": 47,
+      "source": "current",
+      "kind": "floor",
+      "ms": 74.261
+    },
+    {
+      "phase": "source",
+      "block": 47,
+      "source": "current",
+      "kind": "hook",
+      "ms": 184.7101
+    },
+    {
+      "phase": "source",
+      "block": 48,
+      "source": "current",
+      "kind": "hook",
+      "ms": 163.3639
+    },
+    {
+      "phase": "source",
+      "block": 48,
+      "source": "current",
+      "kind": "floor",
+      "ms": 64.4592
+    },
+    {
+      "phase": "source",
+      "block": 48,
+      "source": "release",
+      "kind": "hook",
+      "ms": 250.2647
+    },
+    {
+      "phase": "source",
+      "block": 48,
+      "source": "release",
+      "kind": "floor",
+      "ms": 68.2523
+    },
+    {
+      "phase": "source",
+      "block": 49,
+      "source": "release",
+      "kind": "hook",
+      "ms": 143.0478
+    },
+    {
+      "phase": "source",
+      "block": 49,
+      "source": "release",
+      "kind": "floor",
+      "ms": 133.1231
+    },
+    {
+      "phase": "source",
+      "block": 49,
+      "source": "current",
+      "kind": "hook",
+      "ms": 159.3398
+    },
+    {
+      "phase": "source",
+      "block": 49,
+      "source": "current",
+      "kind": "floor",
+      "ms": 79.1931
+    },
+    {
+      "phase": "path",
+      "block": 0,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 183.4685
+    },
+    {
+      "phase": "path",
+      "block": 0,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 75.7065
+    },
+    {
+      "phase": "path",
+      "block": 0,
+      "source": "current",
+      "kind": "hook",
+      "ms": 180.0874
+    },
+    {
+      "phase": "path",
+      "block": 0,
+      "source": "current",
+      "kind": "floor",
+      "ms": 76.4202
+    },
+    {
+      "phase": "path",
+      "block": 1,
+      "source": "current",
+      "kind": "hook",
+      "ms": 154.5602
+    },
+    {
+      "phase": "path",
+      "block": 1,
+      "source": "current",
+      "kind": "floor",
+      "ms": 91.9112
+    },
+    {
+      "phase": "path",
+      "block": 1,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 165.0126
+    },
+    {
+      "phase": "path",
+      "block": 1,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 63.7463
+    },
+    {
+      "phase": "path",
+      "block": 2,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 68.4331
+    },
+    {
+      "phase": "path",
+      "block": 2,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 152.1361
+    },
+    {
+      "phase": "path",
+      "block": 2,
+      "source": "current",
+      "kind": "floor",
+      "ms": 76.3358
+    },
+    {
+      "phase": "path",
+      "block": 2,
+      "source": "current",
+      "kind": "hook",
+      "ms": 182.4477
+    },
+    {
+      "phase": "path",
+      "block": 3,
+      "source": "current",
+      "kind": "floor",
+      "ms": 94.931
+    },
+    {
+      "phase": "path",
+      "block": 3,
+      "source": "current",
+      "kind": "hook",
+      "ms": 168.0648
+    },
+    {
+      "phase": "path",
+      "block": 3,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 74.4239
+    },
+    {
+      "phase": "path",
+      "block": 3,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 143.9574
+    },
+    {
+      "phase": "path",
+      "block": 4,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 158.2695
+    },
+    {
+      "phase": "path",
+      "block": 4,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 82.0744
+    },
+    {
+      "phase": "path",
+      "block": 4,
+      "source": "current",
+      "kind": "hook",
+      "ms": 161.3814
+    },
+    {
+      "phase": "path",
+      "block": 4,
+      "source": "current",
+      "kind": "floor",
+      "ms": 66.8737
+    },
+    {
+      "phase": "path",
+      "block": 5,
+      "source": "current",
+      "kind": "hook",
+      "ms": 172.2604
+    },
+    {
+      "phase": "path",
+      "block": 5,
+      "source": "current",
+      "kind": "floor",
+      "ms": 105.7826
+    },
+    {
+      "phase": "path",
+      "block": 5,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 164.916
+    },
+    {
+      "phase": "path",
+      "block": 5,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 66.9178
+    },
+    {
+      "phase": "path",
+      "block": 6,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 68.0224
+    },
+    {
+      "phase": "path",
+      "block": 6,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 168.6493
+    },
+    {
+      "phase": "path",
+      "block": 6,
+      "source": "current",
+      "kind": "floor",
+      "ms": 72.9646
+    },
+    {
+      "phase": "path",
+      "block": 6,
+      "source": "current",
+      "kind": "hook",
+      "ms": 159.864
+    },
+    {
+      "phase": "path",
+      "block": 7,
+      "source": "current",
+      "kind": "floor",
+      "ms": 82.277
+    },
+    {
+      "phase": "path",
+      "block": 7,
+      "source": "current",
+      "kind": "hook",
+      "ms": 170.1105
+    },
+    {
+      "phase": "path",
+      "block": 7,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 70.5507
+    },
+    {
+      "phase": "path",
+      "block": 7,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 144.7144
+    },
+    {
+      "phase": "path",
+      "block": 8,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 184.1279
+    },
+    {
+      "phase": "path",
+      "block": 8,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 70.6964
+    },
+    {
+      "phase": "path",
+      "block": 8,
+      "source": "current",
+      "kind": "hook",
+      "ms": 139.1668
+    },
+    {
+      "phase": "path",
+      "block": 8,
+      "source": "current",
+      "kind": "floor",
+      "ms": 72.4694
+    },
+    {
+      "phase": "path",
+      "block": 9,
+      "source": "current",
+      "kind": "hook",
+      "ms": 152.1699
+    },
+    {
+      "phase": "path",
+      "block": 9,
+      "source": "current",
+      "kind": "floor",
+      "ms": 72.4703
+    },
+    {
+      "phase": "path",
+      "block": 9,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 142.267
+    },
+    {
+      "phase": "path",
+      "block": 9,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 65.5718
+    },
+    {
+      "phase": "path",
+      "block": 10,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 66.9277
+    },
+    {
+      "phase": "path",
+      "block": 10,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 163.7684
+    },
+    {
+      "phase": "path",
+      "block": 10,
+      "source": "current",
+      "kind": "floor",
+      "ms": 73.5244
+    },
+    {
+      "phase": "path",
+      "block": 10,
+      "source": "current",
+      "kind": "hook",
+      "ms": 150.9623
+    },
+    {
+      "phase": "path",
+      "block": 11,
+      "source": "current",
+      "kind": "floor",
+      "ms": 74.6195
+    },
+    {
+      "phase": "path",
+      "block": 11,
+      "source": "current",
+      "kind": "hook",
+      "ms": 199.7874
+    },
+    {
+      "phase": "path",
+      "block": 11,
+      "source": "live_root",
+      "kind": "floor",
+      "ms": 69.5391
+    },
+    {
+      "phase": "path",
+      "block": 11,
+      "source": "live_root",
+      "kind": "hook",
+      "ms": 182.798
+    }
+  ],
+  "summary": {
+    "source/current": {
+      "hook": {
+        "min": 89.015,
+        "median": 119.40625,
+        "mean": 129.863108,
+        "max": 229.0459,
+        "stdev": 31.27869222315657
+      },
+      "floor": {
+        "min": 37.7025,
+        "median": 57.384299999999996,
+        "mean": 62.199716,
+        "max": 132.4112,
+        "stdev": 18.372715446567913
+      },
+      "paired_overhead": {
+        "min": -27.89030000000001,
+        "median": 67.09394999999999,
+        "mean": 67.663392,
+        "max": 155.87539999999998,
+        "stdev": 28.66081134493821
+      },
+      "min_hook_minus_min_floor": 51.3125,
+      "five_sample_min_deltas": [
+        53.994,
+        41.6973,
+        50.8045,
+        56.7149,
+        55.6973,
+        49.904599999999995,
+        44.290099999999995,
+        64.5909,
+        80.5353,
+        89.49390000000001
+      ]
+    },
+    "source/release": {
+      "hook": {
+        "min": 84.468,
+        "median": 134.13535000000002,
+        "mean": 137.77203,
+        "max": 250.2647,
+        "stdev": 35.829001228677754
+      },
+      "floor": {
+        "min": 38.5509,
+        "median": 61.6532,
+        "mean": 69.321992,
+        "max": 275.2401,
+        "stdev": 36.223208373716
+      },
+      "paired_overhead": {
+        "min": -64.44809999999998,
+        "median": 66.02625,
+        "mean": 68.450038,
+        "max": 182.0124,
+        "stdev": 37.90241578955142
+      },
+      "min_hook_minus_min_floor": 45.917100000000005,
+      "five_sample_min_deltas": [
+        62.2506,
+        56.5304,
+        61.0352,
+        58.321400000000004,
+        50.144000000000005,
+        41.701600000000006,
+        62.862,
+        92.5779,
+        79.2376,
+        74.79549999999999
+      ]
+    },
+    "source/difference": {
+      "min": -124.7124,
+      "median": 0.4503999999999948,
+      "mean": -0.7866460000000014,
+      "max": 151.603,
+      "stdev": 45.225270052172405,
+      "median_bootstrap_95": [
+        -15.004699999999996,
+        10.5567
+      ],
+      "raw_hook_difference": {
+        "min": -104.0022,
+        "median": -5.1899000000000015,
+        "mean": -7.9089220000000005,
+        "max": 70.8989,
+        "stdev": 31.495778136671017
+      }
+    },
+    "path/live_root": {
+      "hook": {
+        "min": 142.267,
+        "median": 164.3422,
+        "mean": 162.840425,
+        "max": 184.1279,
+        "stdev": 15.268721899486666
+      },
+      "floor": {
+        "min": 63.7463,
+        "median": 68.9861,
+        "mean": 70.21750833333333,
+        "max": 82.0744,
+        "stdev": 5.066663802912369
+      },
+      "paired_overhead": {
+        "min": 69.5335,
+        "median": 97.41945000000001,
+        "mean": 92.62291666666667,
+        "max": 113.43150000000001,
+        "stdev": 15.812774060569073
+      },
+      "min_hook_minus_min_floor": 78.5207
+    },
+    "path/current": {
+      "hook": {
+        "min": 139.1668,
+        "median": 164.7231,
+        "mean": 165.90523333333334,
+        "max": 199.7874,
+        "stdev": 16.509199135761925
+      },
+      "floor": {
+        "min": 66.8737,
+        "median": 75.47765000000001,
+        "mean": 80.04830833333334,
+        "max": 105.7826,
+        "stdev": 11.54846728298989
+      },
+      "paired_overhead": {
+        "min": 62.649000000000015,
+        "median": 83.29950000000001,
+        "mean": 85.856925,
+        "max": 125.16789999999999,
+        "stdev": 18.84040238882796
+      },
+      "min_hook_minus_min_floor": 72.2931
+    },
+    "path/difference": {
+      "min": -22.40889999999999,
+      "median": 0.545199999999987,
+      "mean": 6.765991666666667,
+      "max": 46.73410000000001,
+      "stdev": 23.138772186034352,
+      "median_bootstrap_95": [
+        -12.789399999999993,
+        25.461600000000004
+      ],
+      "raw_hook_difference": {
+        "min": -30.3116,
+        "median": -5.228150000000014,
+        "mean": -3.064808333333332,
+        "max": 44.961100000000016,
+        "stdev": 21.03222442372476
+      }
+    }
+  },
+  "source_manifests": {
+    "current": {
+      "aggregate_sha256": "f33727583a53332bda781293a1ddd376072696a5483c73c4b054b8aa6893a9aa",
+      "files": {
+        "src/crapkit/__init__.py": "6619808f365d4917ab9c992d6ad184b7070c166381b5c6e3a8ca8e68da48ca93",
+        "src/crapkit/__main__.py": "13a1a5b340cdcfc1902b62be90e508c7c71886000d5bf087e7854aadf09fb35e",
+        "src/crapkit/_pygdefer.py": "15b27e857a8efe8121715f1256deff5f5d5a7eeebc1c3a7934259136452a2c1c",
+        "src/crapkit/analyze.py": "f052d28d23aefe8af783e20abf61055893c3ce2f06221085666d2c9c2ebf4e1c",
+        "src/crapkit/cache.py": "1464f1aefde9306c11be073f594fba1a2d1297976aa149169ae80fc8f92ccdce",
+        "src/crapkit/churn.py": "5b0252fa1718be98faeaa2086dab468f91052ad4fd4177029f7fc58d1baef94e",
+        "src/crapkit/churn_cache.py": "f15ce178de10c34d1ec06863ecd43105b32f86287c8b8db2f1a0d8a7c3ffbc0e",
+        "src/crapkit/churn_log.py": "f79e0df49bcd9b1168241c9ab039f7daf692f7ea671d53b0644428c48a69e5d3",
+        "src/crapkit/cli/__init__.py": "5fcd7e713b7963406c4406dc4d5ba6c58780b2b247c059a0e49afa827aa69a8b",
+        "src/crapkit/cli/_shared.py": "af97f55147abea785b68c9a09b37b588718965570783e712912b8f1f462fdd7d",
+        "src/crapkit/cli/admin.py": "9500ec530e786a5390801f99c9bc40f7998ff007345a000bb2aff8f4b9429d3e",
+        "src/crapkit/cli/analyses.py": "64a43e393944c371fa59ce9ae81cdde9d9ea6c6f52e5f9699ae7c1478c955684",
+        "src/crapkit/cli/claude_hook.py": "563de7e89af55a524fad02535b6142865956f59396d7b75e0697e6202a43c1f4",
+        "src/crapkit/cli/parser.py": "fe2d5582b257bdc7b983e1d7e0734a3f70c7b3fe25a2bd8958799fe3be382714",
+        "src/crapkit/cli/queue.py": "5922baedd691b41f50bd77cf01358b6a89a115518a0811e65f23b9a1e2f7f674",
+        "src/crapkit/cli/ratchet_cmds.py": "1391b154c750870ddb3c5822a8b03fccc03bfd7c30007c557e01635094d85799",
+        "src/crapkit/cli/reports.py": "d1c2512f8bb1557855f6e4069fda42b27ac8f32b03136371fa1ac73727e847fc",
+        "src/crapkit/cli/scoring.py": "e75a0b7f05c30b2673de5c13190d1fc37094a3e80238cb06742f6d7d3bfce4fa",
+        "src/crapkit/cli/verifying.py": "71e4e714e63043e74c83abce912e23531d97418a6b02450a5e44f87094683220",
+        "src/crapkit/config.py": "f248766496c34c784796569df2d02f20dfe18f7117b3361ca08dc68cafc93173",
+        "src/crapkit/coupling.py": "de8b0d7c8493c279aa11c98814798f892661d63ec33574bc0def4e354154b1eb",
+        "src/crapkit/coupling_cache.py": "fb3171dd76e3b17c186bdcbd17c43297680a0b11bbe28ed4bd72b5a549ed8423",
+        "src/crapkit/coverage_istanbul.py": "8a266abe9e9d5efdaa76e2138ba6af5a4322b810282bda1715fbdbe486ebdc6f",
+        "src/crapkit/coverage_py.py": "3e230567114723981b4d961a4e9e15ed338928321eb168cf1a85965fc0194cf0",
+        "src/crapkit/covstream.py": "bec0bb19ce538bc9282d3e6a9c09feae545e97314ae62f3edefc27340d188706",
+        "src/crapkit/diffparse.py": "84c59c5f4a5314ae8782d978f3f73b5fb4d455e02a1a4cafa45ced62ba81e6c5",
+        "src/crapkit/digest.py": "44a41d96951b205e9eb75589a4afa97110c2713006e12ef1d2b6ddbb64c369b5",
+        "src/crapkit/doctor.py": "53e5c3472fe22e5bdf28e5ae9c640b2bf9e04b7554115ade2fc812581ea7972a",
+        "src/crapkit/dup.py": "bd018b6977dfe72bdb4ba7fc30db9bed51328abd49f3aa3e8808788a9ce054fd",
+        "src/crapkit/errors.py": "b128fec2c9e0ad0a76f136e8eec8c09bd607b4e28d08d6d0cc239b9f80a46927",
+        "src/crapkit/gitio.py": "e8ce1ee2b5de778c065c2fdce73397af0c13eff0d657c74fa6839fd54d751ccb",
+        "src/crapkit/hook.py": "511f9e4e57a22f4bb2afba5ea2f957fd82203566b59ecdaf6e48452abe40b03e",
+        "src/crapkit/invocation.py": "b571316313f5df9deeb552be00f3b3898f0459a530307b7c5ebfd4c13887c780",
+        "src/crapkit/junitparse.py": "ca8f00ed6e77376f16d17cb9854c94f5d6108d779da765accce71e3cea3ec3ac",
+        "src/crapkit/keys.py": "929442441475df1b48f0cc53af516f4a16f6861554e1cee44cd55033198bdbb2",
+        "src/crapkit/lanes.py": "0c506c507c969c1291ee674b57b8984c6f7c90e6a403b634f66a76db5a328be1",
+        "src/crapkit/lizardcognitive.py": "d185cd33d31454a63872b7f9b895c6516d67096995b6a280be4f8ee4a8667ef7",
+        "src/crapkit/lizardpowershell.py": "e9f2229675d51cf7370fef25e35f24635aa9a8fa88ae9e5f1614bbe6be878bb2",
+        "src/crapkit/lizardrust.py": "b77efcc7691184cd786ddb18b0bd5aae3adcf4d2e07f5f59defb93699b8271ed",
+        "src/crapkit/lizardshell.py": "da4d88a4bda8c791ff4c3b53b76caf9f1a8729b533a99354dce7576f280c356a",
+        "src/crapkit/lizardtypescript.py": "8b39dd2d24148bd32f28da9a0f0866b2c69800ca5787e858f79121493774e846",
+        "src/crapkit/mcp_server.py": "a7601987e77fc4b55c3c2988553609ac8611075c1311249f080382570078941c",
+        "src/crapkit/merge.py": "fe0cfc7b721b2c2566755e270986a3781d7cae03581c8c7cd6b239a0d2653c96",
+        "src/crapkit/mutate.py": "c8460a3b0ab167343263f1c33cbddaea604194f1c0b27b8c7bfec24c26ec39b4",
+        "src/crapkit/mutate_pool.py": "6903b4a597bb7c72da72770649a1eca4469daf4eca7631584b97bb4f41388c4c",
+        "src/crapkit/override.py": "0b7fea51fef02b8665c0ae6f000cb7f3becd65687a20f88a31f6ac35972fb463",
+        "src/crapkit/packet.py": "e78f2555a9fd7f83fdbc4d73c99b0a0efd499f396f85fc3837ff875ce27f5fda",
+        "src/crapkit/procs.py": "5b4bd04dfe7a3f17aff5584b6fb83d017e5595c5701d2b9d06252eaeb858d4c1",
+        "src/crapkit/ratchet.py": "1f97deef7123c3be8ab1de3c8a0a9c375c0a036908952658de4c5244d9c64067",
+        "src/crapkit/ratchet_report.py": "8bbea9c0a297a8110f4fb63f539df5bcc6f49bf8f30e57eed44fd2e3b4d7fdba",
+        "src/crapkit/report.py": "c87800a651473ae7f9a31bbca0b77faa3666e547455ac7d83023c7b6f9051d49",
+        "src/crapkit/repotext.py": "e617dfb8d11a6dfb531cf8d60767ef4057cc133d0e585be8c047ca261acf3294",
+        "src/crapkit/rootfind.py": "302fe9955dcfd65e4924a69f0a6cf711b12e700ee0f7f5c24a796476024d5625",
+        "src/crapkit/sarif.py": "566a0c6d6176705d569b43eeff31e4147485dbbc1929aa3d939b685307dde0d2",
+        "src/crapkit/sarifio.py": "542585a8c6256073cca79096a2d21affe4179a54b2badbefaa1a50392efd4043",
+        "src/crapkit/scaffold.py": "3309f3f213ae59289fad6bd0842212551e6c9a72e98acdd5f85b725eef88727e",
+        "src/crapkit/score.py": "6ca7a904d129272cbf5f3e3e75df4bd0c5c2b2fe1e4d77f3446b0ff0e50c9972",
+        "src/crapkit/snapshot.py": "9df39f3a1c6925a5b8ffd9eb39210112f3decc61a450edf552a0e0a08f380759",
+        "src/crapkit/store.py": "45939b7fcff87c231eabf43ca83e781905f6fc5ca6e77e9ceed91b44bfd8972c",
+        "src/crapkit/uncovered.py": "f3aae9294360f761407e8ae370be320d46ba9eeb391ae753597c79437026384a",
+        "src/crapkit/universe.py": "5ec31a2f6b47e4f6b4b110e744d7337edfadb6e93501b3de45f1514364a8922b",
+        "src/crapkit/verify.py": "c6af8e2d67131ac37c141fb0727a65754c683b27fac837d98994de3d8fa80c0a",
+        "src/crapkit/watch.py": "0d033d3a4dc34381bc747421c4bb7acd3491b89eb4fbfd7fa9327215262efa85",
+        "src/crapkit/worklist.py": "6fa7c2ad225bec40db29bf8cc7d260eb1405355fc6c55f7440b6240dc5e9ed6b",
+        "src/crapkit.egg-info/dependency_links.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/crapkit.egg-info/entry_points.txt": "559fbe0676c334872a2878ff69fe6769b30ea9c84d7f73ade196e6c3b559d88e",
+        "src/crapkit.egg-info/PKG-INFO": "d7bead204379888a24068927951f24ae873badba9538e4886de1b52094b0ed41",
+        "src/crapkit.egg-info/requires.txt": "1b267288e2fca5b091d4652ca87abedfc67ed9d011c221416bc20860262fb468",
+        "src/crapkit.egg-info/SOURCES.txt": "067238e75e54ab85ef673165945c259a25e2cb33368db69d6662eb06060d1f70",
+        "src/crapkit.egg-info/top_level.txt": "9ed1e823ef5b757f8c78aa90858f44804b68965f173e35f633055b329c579f40"
+      }
+    },
+    "release": {
+      "aggregate_sha256": "8b9051ee5ef400568815ecdfb5d269ae1853d450d624c6a399ca21b259069620",
+      "files": {
+        "src/crapkit/__init__.py": "6619808f365d4917ab9c992d6ad184b7070c166381b5c6e3a8ca8e68da48ca93",
+        "src/crapkit/__main__.py": "13a1a5b340cdcfc1902b62be90e508c7c71886000d5bf087e7854aadf09fb35e",
+        "src/crapkit/_pygdefer.py": "15b27e857a8efe8121715f1256deff5f5d5a7eeebc1c3a7934259136452a2c1c",
+        "src/crapkit/analyze.py": "b5af884d52eb9aebe302be2b60e8bedb7d94edaf3a4959f1ac7a4354106b18b6",
+        "src/crapkit/cache.py": "f3fbe4ba1bcf20629807eee1bd73ec954398793f544b42fb75b4171c6de9862f",
+        "src/crapkit/churn.py": "5b0252fa1718be98faeaa2086dab468f91052ad4fd4177029f7fc58d1baef94e",
+        "src/crapkit/churn_cache.py": "f15ce178de10c34d1ec06863ecd43105b32f86287c8b8db2f1a0d8a7c3ffbc0e",
+        "src/crapkit/churn_log.py": "f64ec24470f3b3dec1005d50cbaeca43556c1fa8ecd02361b63dd82be4737269",
+        "src/crapkit/cli/__init__.py": "883a6fd42297e68f12179b55d6d85cc486df24c242f2c0dae1e6b5460ddcb173",
+        "src/crapkit/cli/_shared.py": "cafc497e7b234feda91561e61bfbe5e3cbf0ea778c9d6a9a4bba240f1f6dd0a5",
+        "src/crapkit/cli/admin.py": "0a1f09f23a97187e38c2c3fc2239f81d20049fc4ff1dc5871d2b45ada42bb9cb",
+        "src/crapkit/cli/analyses.py": "64a43e393944c371fa59ce9ae81cdde9d9ea6c6f52e5f9699ae7c1478c955684",
+        "src/crapkit/cli/claude_hook.py": "900e3b06cf389f56e3738e6a067e5d928f0accb38ff079bdfe04336365145d48",
+        "src/crapkit/cli/parser.py": "df0b5f1a530c93e3c42ffab58624d5ce966d1957221a50af633d6f8af0fee6d4",
+        "src/crapkit/cli/queue.py": "6f0cf89ed309c0e74a46b78a894dbcf9597375fc4c325278e9f5708b756996ed",
+        "src/crapkit/cli/ratchet_cmds.py": "8e296c74df884b45901d7d54ff9d068c0ba1e05ce0ab8770cf8afbbf7bcc3af0",
+        "src/crapkit/cli/reports.py": "963a895e6c8e6dd69ae26a625e9a9e53817ad5f95a10518b9853cdb2c0c528cf",
+        "src/crapkit/cli/scoring.py": "750f012393866d02ffc95a3eafe37cd011e874ce86fb92e03a2ffa09be3e6154",
+        "src/crapkit/cli/verifying.py": "2780d99b13b085735ab54f2d2654dcac46859ed03037aebbae7aec0e356c1df7",
+        "src/crapkit/config.py": "7c86ffaa1fc18017e579121ed562afe677976a233a53a2a4539529c81756a5a0",
+        "src/crapkit/coupling.py": "3be5d6666319a3f1b171ef19dae3804d4dc963e8a5705bc20b19bd0ae3da57f3",
+        "src/crapkit/coupling_cache.py": "fb3171dd76e3b17c186bdcbd17c43297680a0b11bbe28ed4bd72b5a549ed8423",
+        "src/crapkit/coverage_istanbul.py": "06ebb1490cdc91612afc29d47f4bcbca8eb15dd2369ddbbbc1c06ee40a114e19",
+        "src/crapkit/coverage_py.py": "ddf52476d703e148ee59f3b34dce51888fbb112a106fca5abf733ffb8c5e6184",
+        "src/crapkit/covstream.py": "c93f0ca191f68e717960fa2416b1363bd811f5958e0c243fff63dfcf91f2fb26",
+        "src/crapkit/diffparse.py": "84c59c5f4a5314ae8782d978f3f73b5fb4d455e02a1a4cafa45ced62ba81e6c5",
+        "src/crapkit/digest.py": "d9e6ac5633b24cacaa1dfee848aacb88632d34b62393f3c8b97d9fe700872605",
+        "src/crapkit/discover.py": "bb32899ed788efdbe0955ff7db427cb6062001aa4df3b902991dd859ba994f23",
+        "src/crapkit/doctor.py": "043c7137906ae926f305ef7acaba2313af1c9aa9e5f565fd039c0ea0db01288b",
+        "src/crapkit/dup.py": "9118dae0cd9be0c3b78f518f851ebdced5cdd8a9b64ee4fe86675cabfa3745d9",
+        "src/crapkit/errors.py": "b128fec2c9e0ad0a76f136e8eec8c09bd607b4e28d08d6d0cc239b9f80a46927",
+        "src/crapkit/gitio.py": "ac3cb91db00ef2be1a27b82132c40cc21d394360070da6ffc714fec164038731",
+        "src/crapkit/hook.py": "30eeb604845a45a350ba65eeadb2b1317868dace0f1ff373cd937a16eecfdb6e",
+        "src/crapkit/invocation.py": "b571316313f5df9deeb552be00f3b3898f0459a530307b7c5ebfd4c13887c780",
+        "src/crapkit/junitparse.py": "055d0be7edfd44f02618e5e68aaf9a330b96225a2eb5a89d7aed3edea67b5fdd",
+        "src/crapkit/keys.py": "b8959b7d2e7e0849ac66a796d12bb6cc458e458bddd4cc8a0c1e2de04122df42",
+        "src/crapkit/lanes.py": "3fb518671dbe583e2e8a6f2468244d980581158b8bc770a4c7a134b12b64990a",
+        "src/crapkit/lizardcognitive.py": "d185cd33d31454a63872b7f9b895c6516d67096995b6a280be4f8ee4a8667ef7",
+        "src/crapkit/lizardpowershell.py": "e9f2229675d51cf7370fef25e35f24635aa9a8fa88ae9e5f1614bbe6be878bb2",
+        "src/crapkit/lizardrust.py": "b77efcc7691184cd786ddb18b0bd5aae3adcf4d2e07f5f59defb93699b8271ed",
+        "src/crapkit/lizardshell.py": "da4d88a4bda8c791ff4c3b53b76caf9f1a8729b533a99354dce7576f280c356a",
+        "src/crapkit/mcp_server.py": "ad4389d9aa0f42407fb4d54e2b5d9deda55b4de3b2f45a1677840f3f2e97b952",
+        "src/crapkit/merge.py": "2a97cd1f9c3730f6687d11b2d19b8f521271b58ee09cc51790645e8eb4d03bdc",
+        "src/crapkit/mutate.py": "2ed2e740a4ff4d0c07c220eedf4cbea94a655fd37da2283bc8d28a22ccb9e6c1",
+        "src/crapkit/mutate_pool.py": "867a28ed99705a99529dd9388fcbddf8717a9e42397a4b65ccbdc7f971ec5f93",
+        "src/crapkit/override.py": "8c2e1176acc13993c77608d3b42ffad8cd34434770c4151673a9f48e6ed9b746",
+        "src/crapkit/packet.py": "968f7d6cc06d884e3fc40866f9219439f83e33b43ab89dd0896f12e4a26233bd",
+        "src/crapkit/procs.py": "1532292845c62d81523e2316d582a86ddd19775a5272e2bf777f133110130bd8",
+        "src/crapkit/ratchet.py": "7ee19c7f9cae55b30723a1aa5230365588d327dddfa2ff26ca21312c2af17e2e",
+        "src/crapkit/ratchet_report.py": "5bffbeedc0bceca728937b6e2cd03627b0933f05699967ad2faa2bc4c37bac44",
+        "src/crapkit/report.py": "9bfa74012dbbbd9cf390dffa49f8034220ab496bfdb75a71fbe09d6ee88c9e1d",
+        "src/crapkit/repotext.py": "e617dfb8d11a6dfb531cf8d60767ef4057cc133d0e585be8c047ca261acf3294",
+        "src/crapkit/rootfind.py": "302fe9955dcfd65e4924a69f0a6cf711b12e700ee0f7f5c24a796476024d5625",
+        "src/crapkit/sarif.py": "566a0c6d6176705d569b43eeff31e4147485dbbc1929aa3d939b685307dde0d2",
+        "src/crapkit/sarifio.py": "542585a8c6256073cca79096a2d21affe4179a54b2badbefaa1a50392efd4043",
+        "src/crapkit/scaffold.py": "fed66e2c8931c6057f8eed908085cbe4895e524297bf8abbbc8a568080c10521",
+        "src/crapkit/score.py": "e823f5fdf869a8cb4aed7a396de689b69401669212781273276f42dd573467d3",
+        "src/crapkit/snapshot.py": "341d1051cea1912a1a21b1b8d4e2672ba112c3d576f574427b25f1984e07738b",
+        "src/crapkit/store.py": "898c0a498bb26518becf721a28ccd2c2f96bac78312616db32022e114b0a4948",
+        "src/crapkit/uncovered.py": "d181c12e1d9c3d9078ae2d72f1b5014fc9ac4763e7f184b6e38432136711980e",
+        "src/crapkit/universe.py": "98d68c8b5d35a21b508894b8d487e40cfd46f9c7278215dd890b81e717aaf873",
+        "src/crapkit/verify.py": "c6af8e2d67131ac37c141fb0727a65754c683b27fac837d98994de3d8fa80c0a",
+        "src/crapkit/watch.py": "0d033d3a4dc34381bc747421c4bb7acd3491b89eb4fbfd7fa9327215262efa85",
+        "src/crapkit/worklist.py": "e92c87f5eb6cd5c3864836740118179991b4e02d7ef16465daf2927a86b7f6af"
+      }
+    },
+    "live_root": {
+      "aggregate_sha256": "f33727583a53332bda781293a1ddd376072696a5483c73c4b054b8aa6893a9aa",
+      "files": {
+        "src/crapkit/__init__.py": "6619808f365d4917ab9c992d6ad184b7070c166381b5c6e3a8ca8e68da48ca93",
+        "src/crapkit/__main__.py": "13a1a5b340cdcfc1902b62be90e508c7c71886000d5bf087e7854aadf09fb35e",
+        "src/crapkit/_pygdefer.py": "15b27e857a8efe8121715f1256deff5f5d5a7eeebc1c3a7934259136452a2c1c",
+        "src/crapkit/analyze.py": "f052d28d23aefe8af783e20abf61055893c3ce2f06221085666d2c9c2ebf4e1c",
+        "src/crapkit/cache.py": "1464f1aefde9306c11be073f594fba1a2d1297976aa149169ae80fc8f92ccdce",
+        "src/crapkit/churn.py": "5b0252fa1718be98faeaa2086dab468f91052ad4fd4177029f7fc58d1baef94e",
+        "src/crapkit/churn_cache.py": "f15ce178de10c34d1ec06863ecd43105b32f86287c8b8db2f1a0d8a7c3ffbc0e",
+        "src/crapkit/churn_log.py": "f79e0df49bcd9b1168241c9ab039f7daf692f7ea671d53b0644428c48a69e5d3",
+        "src/crapkit/cli/__init__.py": "5fcd7e713b7963406c4406dc4d5ba6c58780b2b247c059a0e49afa827aa69a8b",
+        "src/crapkit/cli/_shared.py": "af97f55147abea785b68c9a09b37b588718965570783e712912b8f1f462fdd7d",
+        "src/crapkit/cli/admin.py": "9500ec530e786a5390801f99c9bc40f7998ff007345a000bb2aff8f4b9429d3e",
+        "src/crapkit/cli/analyses.py": "64a43e393944c371fa59ce9ae81cdde9d9ea6c6f52e5f9699ae7c1478c955684",
+        "src/crapkit/cli/claude_hook.py": "563de7e89af55a524fad02535b6142865956f59396d7b75e0697e6202a43c1f4",
+        "src/crapkit/cli/parser.py": "fe2d5582b257bdc7b983e1d7e0734a3f70c7b3fe25a2bd8958799fe3be382714",
+        "src/crapkit/cli/queue.py": "5922baedd691b41f50bd77cf01358b6a89a115518a0811e65f23b9a1e2f7f674",
+        "src/crapkit/cli/ratchet_cmds.py": "1391b154c750870ddb3c5822a8b03fccc03bfd7c30007c557e01635094d85799",
+        "src/crapkit/cli/reports.py": "d1c2512f8bb1557855f6e4069fda42b27ac8f32b03136371fa1ac73727e847fc",
+        "src/crapkit/cli/scoring.py": "e75a0b7f05c30b2673de5c13190d1fc37094a3e80238cb06742f6d7d3bfce4fa",
+        "src/crapkit/cli/verifying.py": "71e4e714e63043e74c83abce912e23531d97418a6b02450a5e44f87094683220",
+        "src/crapkit/config.py": "f248766496c34c784796569df2d02f20dfe18f7117b3361ca08dc68cafc93173",
+        "src/crapkit/coupling.py": "de8b0d7c8493c279aa11c98814798f892661d63ec33574bc0def4e354154b1eb",
+        "src/crapkit/coupling_cache.py": "fb3171dd76e3b17c186bdcbd17c43297680a0b11bbe28ed4bd72b5a549ed8423",
+        "src/crapkit/coverage_istanbul.py": "8a266abe9e9d5efdaa76e2138ba6af5a4322b810282bda1715fbdbe486ebdc6f",
+        "src/crapkit/coverage_py.py": "3e230567114723981b4d961a4e9e15ed338928321eb168cf1a85965fc0194cf0",
+        "src/crapkit/covstream.py": "bec0bb19ce538bc9282d3e6a9c09feae545e97314ae62f3edefc27340d188706",
+        "src/crapkit/diffparse.py": "84c59c5f4a5314ae8782d978f3f73b5fb4d455e02a1a4cafa45ced62ba81e6c5",
+        "src/crapkit/digest.py": "44a41d96951b205e9eb75589a4afa97110c2713006e12ef1d2b6ddbb64c369b5",
+        "src/crapkit/doctor.py": "53e5c3472fe22e5bdf28e5ae9c640b2bf9e04b7554115ade2fc812581ea7972a",
+        "src/crapkit/dup.py": "bd018b6977dfe72bdb4ba7fc30db9bed51328abd49f3aa3e8808788a9ce054fd",
+        "src/crapkit/errors.py": "b128fec2c9e0ad0a76f136e8eec8c09bd607b4e28d08d6d0cc239b9f80a46927",
+        "src/crapkit/gitio.py": "e8ce1ee2b5de778c065c2fdce73397af0c13eff0d657c74fa6839fd54d751ccb",
+        "src/crapkit/hook.py": "511f9e4e57a22f4bb2afba5ea2f957fd82203566b59ecdaf6e48452abe40b03e",
+        "src/crapkit/invocation.py": "b571316313f5df9deeb552be00f3b3898f0459a530307b7c5ebfd4c13887c780",
+        "src/crapkit/junitparse.py": "ca8f00ed6e77376f16d17cb9854c94f5d6108d779da765accce71e3cea3ec3ac",
+        "src/crapkit/keys.py": "929442441475df1b48f0cc53af516f4a16f6861554e1cee44cd55033198bdbb2",
+        "src/crapkit/lanes.py": "0c506c507c969c1291ee674b57b8984c6f7c90e6a403b634f66a76db5a328be1",
+        "src/crapkit/lizardcognitive.py": "d185cd33d31454a63872b7f9b895c6516d67096995b6a280be4f8ee4a8667ef7",
+        "src/crapkit/lizardpowershell.py": "e9f2229675d51cf7370fef25e35f24635aa9a8fa88ae9e5f1614bbe6be878bb2",
+        "src/crapkit/lizardrust.py": "b77efcc7691184cd786ddb18b0bd5aae3adcf4d2e07f5f59defb93699b8271ed",
+        "src/crapkit/lizardshell.py": "da4d88a4bda8c791ff4c3b53b76caf9f1a8729b533a99354dce7576f280c356a",
+        "src/crapkit/lizardtypescript.py": "8b39dd2d24148bd32f28da9a0f0866b2c69800ca5787e858f79121493774e846",
+        "src/crapkit/mcp_server.py": "a7601987e77fc4b55c3c2988553609ac8611075c1311249f080382570078941c",
+        "src/crapkit/merge.py": "fe0cfc7b721b2c2566755e270986a3781d7cae03581c8c7cd6b239a0d2653c96",
+        "src/crapkit/mutate.py": "c8460a3b0ab167343263f1c33cbddaea604194f1c0b27b8c7bfec24c26ec39b4",
+        "src/crapkit/mutate_pool.py": "6903b4a597bb7c72da72770649a1eca4469daf4eca7631584b97bb4f41388c4c",
+        "src/crapkit/override.py": "0b7fea51fef02b8665c0ae6f000cb7f3becd65687a20f88a31f6ac35972fb463",
+        "src/crapkit/packet.py": "e78f2555a9fd7f83fdbc4d73c99b0a0efd499f396f85fc3837ff875ce27f5fda",
+        "src/crapkit/procs.py": "5b4bd04dfe7a3f17aff5584b6fb83d017e5595c5701d2b9d06252eaeb858d4c1",
+        "src/crapkit/ratchet.py": "1f97deef7123c3be8ab1de3c8a0a9c375c0a036908952658de4c5244d9c64067",
+        "src/crapkit/ratchet_report.py": "8bbea9c0a297a8110f4fb63f539df5bcc6f49bf8f30e57eed44fd2e3b4d7fdba",
+        "src/crapkit/report.py": "c87800a651473ae7f9a31bbca0b77faa3666e547455ac7d83023c7b6f9051d49",
+        "src/crapkit/repotext.py": "e617dfb8d11a6dfb531cf8d60767ef4057cc133d0e585be8c047ca261acf3294",
+        "src/crapkit/rootfind.py": "302fe9955dcfd65e4924a69f0a6cf711b12e700ee0f7f5c24a796476024d5625",
+        "src/crapkit/sarif.py": "566a0c6d6176705d569b43eeff31e4147485dbbc1929aa3d939b685307dde0d2",
+        "src/crapkit/sarifio.py": "542585a8c6256073cca79096a2d21affe4179a54b2badbefaa1a50392efd4043",
+        "src/crapkit/scaffold.py": "3309f3f213ae59289fad6bd0842212551e6c9a72e98acdd5f85b725eef88727e",
+        "src/crapkit/score.py": "6ca7a904d129272cbf5f3e3e75df4bd0c5c2b2fe1e4d77f3446b0ff0e50c9972",
+        "src/crapkit/snapshot.py": "9df39f3a1c6925a5b8ffd9eb39210112f3decc61a450edf552a0e0a08f380759",
+        "src/crapkit/store.py": "45939b7fcff87c231eabf43ca83e781905f6fc5ca6e77e9ceed91b44bfd8972c",
+        "src/crapkit/uncovered.py": "f3aae9294360f761407e8ae370be320d46ba9eeb391ae753597c79437026384a",
+        "src/crapkit/universe.py": "5ec31a2f6b47e4f6b4b110e744d7337edfadb6e93501b3de45f1514364a8922b",
+        "src/crapkit/verify.py": "c6af8e2d67131ac37c141fb0727a65754c683b27fac837d98994de3d8fa80c0a",
+        "src/crapkit/watch.py": "0d033d3a4dc34381bc747421c4bb7acd3491b89eb4fbfd7fa9327215262efa85",
+        "src/crapkit/worklist.py": "6fa7c2ad225bec40db29bf8cc7d260eb1405355fc6c55f7440b6240dc5e9ed6b",
+        "src/crapkit.egg-info/dependency_links.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/crapkit.egg-info/entry_points.txt": "559fbe0676c334872a2878ff69fe6769b30ea9c84d7f73ade196e6c3b559d88e",
+        "src/crapkit.egg-info/PKG-INFO": "d7bead204379888a24068927951f24ae873badba9538e4886de1b52094b0ed41",
+        "src/crapkit.egg-info/requires.txt": "1b267288e2fca5b091d4652ca87abedfc67ed9d011c221416bc20860262fb468",
+        "src/crapkit.egg-info/SOURCES.txt": "067238e75e54ab85ef673165945c259a25e2cb33368db69d6662eb06060d1f70",
+        "src/crapkit.egg-info/top_level.txt": "9ed1e823ef5b757f8c78aa90858f44804b68965f173e35f633055b329c579f40"
+      }
+    }
+  }
+}

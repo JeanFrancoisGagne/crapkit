@@ -1,0 +1,16 @@
+VERIFIED_IMPORT <repo>\src\crapkit\__init__.py
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...........................                                              [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.11.2-final-0 _______________
+
+Name                     Stmts   Miss Branch BrPart  Cover   Missing
+--------------------------------------------------------------------
+src\crapkit\analyze.py     282     50     68     12    79%   98-102, 120-122, 178, 194, 235, 260, 266-268, 311, 314-315, 351, 367-368, 379-386, 446, 464, 532-536, 542-543, 554, 619-622, 633-636, 656-658
+--------------------------------------------------------------------
+TOTAL                      282     50     68     12    79%
+Coverage JSON written to file <review-work>\cache-admission-coverage\coverage-after.json
+27 passed in 0.44s

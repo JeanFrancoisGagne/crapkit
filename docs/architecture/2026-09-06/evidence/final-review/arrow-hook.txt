@@ -1,0 +1,2 @@
+crapkit: src/crapkit/cli/queue.py defines key( self , row ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+exit=0

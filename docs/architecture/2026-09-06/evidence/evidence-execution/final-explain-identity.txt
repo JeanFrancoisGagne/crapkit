@@ -1,0 +1,48 @@
+IMPORT <repo>\src\crapkit\__init__.py
+FRESH [('(anonymous)', 1, 1), ('(anonymous)', 1, 2), ('(anonymous)', 2, 1)]
+EXPLAIN_EXIT 0
+EXPLAIN_OUT {"functions": [{"history": [{"ccn": 1, "commit": "fixture", "cov": 0.0, "crap": 2.0, "created_at": "2026-09-06T20:08:35Z", "flag": "untested", "kind": "coverage", "run_id": 1}], "long_name": "(anonymous)", "ratchet_mark": 44.0, "uncovered_lines": null, "uncovered_lines_note": "no [[lane]] declared, so no artifact can say which lines are dark"}], "name": "(anonymous)#2", "path": "app.ts", "schema": 1}
+EXPLAIN_ERR 
+Traceback (most recent call last):
+  File "<python-install>\Lib\shutil.py", line 620, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: '<user>\\AppData\\Local\\Temp\\crapkit-explain-identity-taf9pjic\\.crapkit\\crap.sqlite'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<python-install>\Lib\tempfile.py", line 878, in onerror
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: '<user>\\AppData\\Local\\Temp\\crapkit-explain-identity-taf9pjic\\.crapkit\\crap.sqlite'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<review-work>\evidence-execution\final-explain-identity.py", line 14, in <module>
+    with tempfile.TemporaryDirectory(prefix='crapkit-explain-identity-') as temp:
+  File "<python-install>\Lib\tempfile.py", line 904, in __exit__
+    self.cleanup()
+  File "<python-install>\Lib\tempfile.py", line 908, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "<python-install>\Lib\tempfile.py", line 890, in _rmtree
+    _shutil.rmtree(name, onerror=onerror)
+  File "<python-install>\Lib\shutil.py", line 759, in rmtree
+    return _rmtree_unsafe(path, onerror)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<python-install>\Lib\shutil.py", line 617, in _rmtree_unsafe
+    _rmtree_unsafe(fullname, onerror)
+  File "<python-install>\Lib\shutil.py", line 622, in _rmtree_unsafe
+    onerror(os.unlink, fullname, sys.exc_info())
+  File "<python-install>\Lib\tempfile.py", line 881, in onerror
+    cls._rmtree(path, ignore_errors=ignore_errors)
+  File "<python-install>\Lib\tempfile.py", line 890, in _rmtree
+    _shutil.rmtree(name, onerror=onerror)
+  File "<python-install>\Lib\shutil.py", line 759, in rmtree
+    return _rmtree_unsafe(path, onerror)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<python-install>\Lib\shutil.py", line 603, in _rmtree_unsafe
+    onerror(os.scandir, path, sys.exc_info())
+  File "<python-install>\Lib\shutil.py", line 600, in _rmtree_unsafe
+    with os.scandir(path) as scandir_it:
+         ^^^^^^^^^^^^^^^^
+NotADirectoryError: [WinError 267] The directory name is invalid: '<user>\\AppData\\Local\\Temp\\crapkit-explain-identity-taf9pjic\\.crapkit\\crap.sqlite'

@@ -1,0 +1,16 @@
+__init__( self , context )	1
+__call__( self , token , reader = None )	1
+sub_state( self , state , callback = None , token = None )	2
+_arrow_function( self , token )	2
+_pop_function_from_stack( self )	3
+_state_global( self , token )	6
+_global_token( self , token )	4
+_track_type_angles( self , token )	4
+_separate_comma( self , token )	4
+_refuse_type_comma( self )	2
+_end_nested_expression( self , token )	3
+_ternary_token( self , token )	4
+_square_token( self , token )	4
+_computed_property( self )	3
+__call__( self , tokens , reader )	3
+15 functions; max CCN 6

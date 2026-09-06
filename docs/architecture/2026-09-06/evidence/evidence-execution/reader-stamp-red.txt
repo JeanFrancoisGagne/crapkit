@@ -1,0 +1,13 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+F..                                                                      [100%]
+================================== FAILURES ===================================
+________ test_only_an_analysis_stamp_can_prove_reader_identity[# 10\n] ________
+tests\unit\test_expression_identity_migration.py:65: in test_only_an_analysis_stamp_can_prove_reader_identity
+    with pytest.raises(ValueError, match='reader'):
+E   Failed: DID NOT RAISE <class 'ValueError'>
+=========================== short test summary info ===========================
+FAILED tests/unit/test_expression_identity_migration.py::test_only_an_analysis_stamp_can_prove_reader_identity[# 10\n]
+1 failed, 2 passed, 7 deselected in 0.70s

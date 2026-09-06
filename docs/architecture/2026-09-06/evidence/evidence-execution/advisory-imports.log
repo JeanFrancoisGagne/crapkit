@@ -1,0 +1,6 @@
+current ['crapkit', 'crapkit.cli', 'crapkit.cli.claude_hook', 'crapkit.cli.parser', 'crapkit.errors', 'crapkit.invocation', 'crapkit.rootfind']
+release ['crapkit', 'crapkit.cli', 'crapkit.cli.claude_hook', 'crapkit.cli.parser', 'crapkit.errors', 'crapkit.invocation', 'crapkit.rootfind']
+added_modules []
+removed_modules []
+added_calls [('cli/__init__.py', 'main')]
+removed_calls [('cli/__init__.py', '__getattr__')]

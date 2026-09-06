@@ -1,0 +1,77 @@
+[
+  {
+    "language": "TypeScript",
+    "tests": 88,
+    "stock_ok": true,
+    "local_ok": true,
+    "skipped": 2,
+    "parser_fixtures": 84,
+    "changes": []
+  },
+  {
+    "language": "JavaScript",
+    "tests": 54,
+    "stock_ok": true,
+    "local_ok": true,
+    "skipped": 3,
+    "parser_fixtures": 42,
+    "changes": [
+      {
+        "source": "\n        function sum(arr) {\n            return arr.reduce((acc, x) => acc + x, 0);\n        }\n        ",
+        "before": [
+          {
+            "name": "(anonymous)",
+            "long_name": "(anonymous)",
+            "start_line": 3,
+            "end_line": 3,
+            "nloc": 1,
+            "token_count": 6,
+            "cyclomatic_complexity": 1,
+            "parameter_count": 0
+          },
+          {
+            "name": "sum",
+            "long_name": "sum ( arr )",
+            "start_line": 2,
+            "end_line": 4,
+            "nloc": 3,
+            "token_count": 18,
+            "cyclomatic_complexity": 1,
+            "parameter_count": 1
+          }
+        ],
+        "after": [
+          {
+            "name": "(anonymous)",
+            "long_name": "(anonymous)",
+            "start_line": 3,
+            "end_line": 3,
+            "nloc": 1,
+            "token_count": 4,
+            "cyclomatic_complexity": 1,
+            "parameter_count": 0
+          },
+          {
+            "name": "sum",
+            "long_name": "sum ( arr )",
+            "start_line": 2,
+            "end_line": 4,
+            "nloc": 3,
+            "token_count": 20,
+            "cyclomatic_complexity": 1,
+            "parameter_count": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "language": "TSX",
+    "tests": 44,
+    "stock_ok": true,
+    "local_ok": true,
+    "skipped": 0,
+    "parser_fixtures": 33,
+    "changes": []
+  }
+]

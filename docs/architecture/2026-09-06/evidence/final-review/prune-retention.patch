@@ -1,0 +1,280 @@
+--- a/src/crapkit/store.py
++++ b/src/crapkit/store.py
+@@ -782,17 +782,28 @@
+         """Raw-name groups that contained same-line twins in any stored run."""
+         return self._collision_groups()
+ 
++    def identity_witness_run_ids(self) -> set[int]:
++        """One recent run per collision group keeps legacy key checks unchanged."""
++        newest = {}
++        for path, name, run_id in self._collision_rows():
++            key = path, name
++            newest[key] = max(run_id, newest.get(key, 0))
++        return set(newest.values())
++
+     def _collision_groups(self, *, run_id=None, path=None, name=None,
+                           legacy_only: bool = False) -> set[tuple[str, str]]:
++        return {(path, name) for path, name, _ in self._collision_rows(
++            run_id=run_id, path=path, name=name, legacy_only=legacy_only)}
++
++    def _collision_rows(self, *, run_id=None, path=None, name=None, legacy_only=False):
+         where, params = _identity_where(run_id, path, name)
+         mixed = "MIN(f.occurrence) = 0 AND MAX(f.occurrence) > 0"
+         multiple = mixed if legacy_only else "COUNT(DISTINCT f.occurrence) > 1"
+         joined = _BY_PATH if path is not None else _JOINED
+-        cur = self._conn.execute(
+-            f"SELECT i.path, i.long_name {joined} WHERE {where} "
++        return self._conn.execute(
++            f"SELECT i.path, i.long_name, f.run_id {joined} WHERE {where} "
+             "GROUP BY f.run_id, i.scope, i.path, i.long_name, f.start "
+             f"HAVING SUM(f.occurrence = 0) > 1 OR ({multiple})", params)
+-        return set(cur)
+ 
+     def _require_identity(self, *, run_id=None, path=None, name=None) -> None:
+         refuse_ambiguous(self._collision_groups(run_id=run_id, path=path, name=name,
+@@ -1231,12 +1242,13 @@
+         """Runs an override record names. Deleting one deletes an audit row."""
+         return {rid for (rid,) in self._conn.execute("SELECT DISTINCT run_id FROM overrides")}
+ 
+-    def _doomed_ids(self, keep_ids: set[int]) -> list[tuple]:
++    def _doomed_ids(self, keep_ids: set[int], observed_ids: set[int] | None) -> list[tuple]:
+         cur = self._conn.execute("SELECT id FROM runs ORDER BY id")
+-        return [(rid,) for (rid,) in cur if rid not in keep_ids]
+-
+-    def prune_runs(self, keep_ids: set[int]) -> int:
+-        """Delete every run outside keep_ids, rows and metadata together.
++        return [(rid,) for (rid,) in cur if rid not in keep_ids
++                and (observed_ids is None or rid in observed_ids)]
++
++    def prune_runs(self, keep_ids: set[int], *, observed_ids: set[int] | None = None) -> int:
++        """Delete observed runs outside keep_ids, rows and metadata together.
+ 
+         Whole runs, never rows within a run: a run row that outlives its
+         functions reads as a real run that scored zero, which is how a prune
+@@ -1248,7 +1260,9 @@
+         holds. Ids come from AUTOINCREMENT and are never handed out twice, so
+         nothing else would ever overwrite the row.
+         """
+-        doomed = self._doomed_ids(keep_ids)
++        # A concurrent writer may add a run after the caller selected retention.
++        # Only runs that selection observed can be candidates for deletion.
++        doomed = self._doomed_ids(keep_ids, observed_ids)
+         with self._conn:
+             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
+             self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
+@@ -1397,17 +1411,20 @@
+                        and _verify_blocker(r, None) is not None}
+ 
+ 
+-def prune_keep_set(runs: list[dict], override_run_ids, *, keep: int) -> set[int]:
++def prune_keep_set(runs: list[dict], override_run_ids, *, keep: int,
++                   identity_run_ids=()) -> set[int]:
+     """The runs a prune may never delete.
+ 
+     Retention counts trusted runs, but recency alone is not the contract: a
+     prune that keeps N and nothing else re-arms the digest, drops a baseline
+     someone can still name, and orphans an override record whose audit trail
+-    joins through the run row.
++    joins through the run row. Legacy key migration also needs a surviving
++    witness for each historical same-line collision group.
+     """
+     if keep < 1:
+         raise ValueError(f"keep must be >= 1, got {keep}")
+     trusted = [r for r in runs if is_trusted(r)]
+     return ({r["id"] for r in trusted[-keep:]}
+             | _digest_pair_ids(trusted) | _passing_verify_ids(runs)
+-            | _newest_non_hook_id(runs) | _baseline_keep_ids(runs) | set(override_run_ids))
++            | _newest_non_hook_id(runs) | _baseline_keep_ids(runs)
++            | set(override_run_ids) | set(identity_run_ids))
+--- a/src/crapkit/cli/reports.py
++++ b/src/crapkit/cli/reports.py
+@@ -254,16 +254,19 @@
+ 
+     Keep is a floor on retention, not a cap: the keep-set also holds the digest
+     pair, every passing verify baseline, every run an override names, and the
+-    newest non-hook run, so a prune can never make another command lie.
++    newest non-hook run and identity collision witnesses. Runs added after
++    selection belong to a later retention decision.
+     """
+     from ..store import prune_keep_set
+ 
+     if keep < 1:
+         raise ConfigError(f"runs prune --keep must be >= 1, got {keep}")
+-    keep_ids = prune_keep_set(store.list_runs(), store.override_run_ids(), keep=keep)
++    history = store.list_runs()
++    keep_ids = prune_keep_set(history, store.override_run_ids(), keep=keep,
++                              identity_run_ids=store.identity_witness_run_ids())
+     before = store.size_bytes()
+     store.prune_claims(keep_ids)  # retention is one decision, runs and loop state together
+-    deleted = store.prune_runs(keep_ids)
++    deleted = store.prune_runs(keep_ids, observed_ids={run["id"] for run in history})
+     store.vacuum()  # the DELETE alone frees pages, not disk
+     _print_prune(deleted, len(keep_ids), before - store.size_bytes(), as_json)
+     return 0
+--- /dev/null
++++ b/tests/unit/test_prune_identity_witnesses.py
+@@ -0,0 +1,164 @@
++"""Pruning cannot remove the facts that keep legacy debt attached to its function."""
++from contextlib import closing
++import json
++import subprocess
++import sys
++
++import pytest
++
++from crapkit.score import score_rows
++from crapkit.snapshot import InventoryRow
++from crapkit.store import SnapshotStore
++
++
++def _rows(path="app.ts", starts=(1, 2, 10), occurrence=1):
++    rows = [InventoryRow("app", path, "(anonymous)", line, line, 9, 9, 9, 1, 1, 0,
++                         occurrence=occurrence) for line in starts]
++    return score_rows(rows, {}, lane_scopes={"app"}, target=6)
++
++
++def _repo(root):
++    (root / "crapkit.toml").write_text(
++        '[crapkit]\ntarget=6\n[[scope]]\nname="app"\npaths=["."]\n'
++        'languages=["typescript"]\ncoverage_optional=true\n', encoding="utf-8")
++    (root / ".crapkit").mkdir()
++    return root / ".crapkit/crap.sqlite"
++
++
++def _run(root, *args):
++    return subprocess.run([sys.executable, "-B", "-m", "crapkit", *args, "--repo", str(root)],
++                          capture_output=True, text=True, encoding="utf-8")
++
++
++def _write(store, rows):
++    return store.write_run(commit="fixture", tool_versions={}, rows=rows)
++
++
++def test_seed_refusal_survives_prune_without_rewriting_the_legacy_mark(tmp_path):
++    store = SnapshotStore(_repo(tmp_path))
++    marks = tmp_path / "crapkit-ratchet.tsv"
++    marks.write_text("path\tlong_name\tcrap\napp.ts\t(anonymous)#2\t99.0000\n", encoding="utf-8")
++    before = marks.read_bytes()
++    with closing(store._conn):
++        _write(store, _rows(starts=(1, 1, 10), occurrence=0))
++        _write(store, _rows())
++        _write(store, _rows())
++    initial = _run(tmp_path, "ratchet", "seed")
++    assert initial.returncode == 3 and "legacy ratchet key identity" in initial.stderr
++    pruned = _run(tmp_path, "runs", "prune", "--keep", "1", "--json")
++    assert pruned.returncode == 0, pruned.stderr
++    repeated = _run(tmp_path, "ratchet", "seed")
++    assert repeated.returncode == 3, repeated.stdout + repeated.stderr
++    assert "legacy ratchet key identity" in repeated.stderr
++    assert marks.read_bytes() == before
++
++
++def test_prune_keeps_one_recent_witness_per_group_and_reclaims_redundant_history(tmp_path):
++    store = SnapshotStore(_repo(tmp_path))
++    with closing(store._conn):
++        for _ in range(8):
++            _write(store, _rows(starts=(1, 1), occurrence=0))
++        b = _write(store, _rows("b.ts", starts=(1, 1), occurrence=0))
++        for _ in range(2):
++            _write(store, _rows())
++    for _ in range(2):
++        result = _run(tmp_path, "runs", "prune", "--keep", "1", "--json")
++        assert result.returncode == 0, result.stderr
++        check = SnapshotStore(tmp_path / ".crapkit/crap.sqlite")
++        with closing(check._conn):
++            assert [run["id"] for run in check.list_runs()] == [8, b, 10, 11]
++            assert check.historical_collision_groups() == {
++                ("app.ts", "(anonymous)"), ("b.ts", "(anonymous)")}
++    assert json.loads(result.stdout)["pruned_runs"] == 0
++
++
++def test_one_witness_run_can_preserve_multiple_collision_groups(tmp_path):
++    store = SnapshotStore(_repo(tmp_path))
++    with closing(store._conn):
++        old = _write(store, _rows(starts=(1, 1), occurrence=0))
++        shared = _write(store, _rows(starts=(1, 1), occurrence=0)
++                        + _rows("b.ts", starts=(1, 1), occurrence=0))
++        recent = [_write(store, _rows()) for _ in range(2)]
++    result = _run(tmp_path, "runs", "prune", "--keep", "1", "--json")
++    assert result.returncode == 0, result.stderr
++    check = SnapshotStore(tmp_path / ".crapkit/crap.sqlite")
++    with closing(check._conn):
++        kept = {run["id"] for run in check.list_runs()}
++        assert kept == {shared, *recent}
++        assert old not in kept
++
++
++@pytest.mark.parametrize("occurrences, scopes, collision", [
++    ((0, 0), ("app", "app"), True),
++    ((1, 2), ("app", "app"), True),
++    ((0, 1), ("app", "app"), True),
++    ((0, 0), ("app", "overlay"), False),
++    ((1, 1), ("app", "overlay"), False),
++])
++def test_witness_retention_uses_the_same_identity_rule_as_migration(
++        tmp_path, occurrences, scopes, collision):
++    rows = [row._replace(scope=scope, occurrence=occurrence)
++            for row, scope, occurrence in zip(_rows(starts=(1, 1)), scopes, occurrences)]
++    store = SnapshotStore(_repo(tmp_path))
++    with closing(store._conn):
++        witness = _write(store, rows)
++        expected = store.historical_collision_groups()
++        for _ in range(2):
++            _write(store, _rows())
++    result = _run(tmp_path, "runs", "prune", "--keep", "1", "--json")
++    assert result.returncode == 0, result.stderr
++    check = SnapshotStore(tmp_path / ".crapkit/crap.sqlite")
++    with closing(check._conn):
++        assert check.historical_collision_groups() == expected
++        assert (witness in {run["id"] for run in check.list_runs()}) == collision
++
++
++_WRITER = """
++from contextlib import closing
++import sys
++from crapkit.snapshot import InventoryRow
++from crapkit.store import SnapshotStore
++store = SnapshotStore(sys.argv[1])
++with closing(store._conn):
++    row = InventoryRow('app', 'concurrent.py', 'f()', 1, 2, 2, 2, 2, 2, 0, 0)
++    run = store.write_run(commit='concurrent', tool_versions={}, rows=[row], kind=sys.argv[2])
++    if sys.argv[2] == 'verify':
++        store.set_verdict_ok(run, False, findings=1)
++"""
++
++_PRUNER = """
++import subprocess
++import sys
++from crapkit.cli import main
++from crapkit.store import SnapshotStore
++original = SnapshotStore.size_bytes
++written = False
++def interleave(store):
++    global written
++    if not written:
++        written = True
++        subprocess.run([sys.executable, '-B', '-c', sys.argv[3], str(store._path), sys.argv[2]],
++                       check=True)
++    return original(store)
++SnapshotStore.size_bytes = interleave
++sys.exit(main(['runs', 'prune', '--keep', '1', '--json', '--repo', sys.argv[1]]))
++"""
++
++
++@pytest.mark.parametrize("kind", ["coverage", "verify"])
++def test_prune_never_deletes_a_run_committed_after_its_retention_snapshot(tmp_path, kind):
++    store = SnapshotStore(_repo(tmp_path))
++    with closing(store._conn):
++        for _ in range(3):
++            _write(store, _rows())
++    result = subprocess.run([sys.executable, "-B", "-c", _PRUNER, str(tmp_path), kind, _WRITER],
++                            capture_output=True, text=True, encoding="utf-8")
++    assert result.returncode == 0, result.stderr
++    check = SnapshotStore(tmp_path / ".crapkit/crap.sqlite")
++    with closing(check._conn):
++        runs = check.list_runs()
++        assert [run["id"] for run in runs] == [2, 3, 4]
++        assert runs[-1]["commit"] == "concurrent"
++        assert runs[-1]["kind"] == kind
++        assert check.read_rows(4)[0].path == "concurrent.py"
++    assert json.loads(result.stdout)["pruned_runs"] == 1

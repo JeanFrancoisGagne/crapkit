@@ -1,0 +1,10 @@
+[
+  {
+    "path": ".crapkit/cov/py.json",
+    "sha256": "63d09af6a961a19148d6d9a10606899cccab0252b10a19aaced8473d2be1159a"
+  },
+  {
+    "path": ".crapkit/cov/junit.xml",
+    "sha256": "e1200d3fabe5cdc8b1ded5939815e582cb76c4401090383b86fcf7ece66808e0"
+  }
+]

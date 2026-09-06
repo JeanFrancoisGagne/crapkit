@@ -1,0 +1,19 @@
+crapkit: tracked file missing from working tree, skipped: src/crapkit/discover.py
+crapkit: src/crapkit/cli/queue.py defines key( self , row ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/gitio.py defines staged_diff( self ), staged_blobs( self , rel_paths : list [ str ] ), close( self ), __init__( self , root : Path ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/lizardpowershell.py defines _state_global( self , token ), __init__( self , context ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/lizardrust.py defines __init__( self , context ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/crapkit/lizardshell.py defines __init__( self , context ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+warning: 10 changed line(s) have no coverage
+  uncovered src/crapkit/analyze.py:381
+  uncovered src/crapkit/analyze.py:387
+  uncovered src/crapkit/cli/admin.py:867
+  uncovered src/crapkit/cli/queue.py:109
+  uncovered src/crapkit/cli/queue.py:163
+  uncovered src/crapkit/mutate.py:195
+  uncovered src/crapkit/mutate.py:233
+  uncovered src/crapkit/mutate_pool.py:137
+  uncovered src/crapkit/mutate_pool.py:341
+  uncovered src/crapkit/uncovered.py:145
+warning: 2 function(s) over the ceiling carry no ratchet mark, so a rise on them (coverage loss included) passes unseen; record them with `<python-install>\python.exe -m crapkit ratchet seed`
+{"baseline_commit": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6", "baseline_run": 67, "changed_files": 121, "commit": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6", "committed_findings": 1, "diff_uncovered": [{"line": 381, "path": "src/crapkit/analyze.py"}, {"line": 387, "path": "src/crapkit/analyze.py"}, {"line": 867, "path": "src/crapkit/cli/admin.py"}, {"line": 109, "path": "src/crapkit/cli/queue.py"}, {"line": 163, "path": "src/crapkit/cli/queue.py"}, {"line": 195, "path": "src/crapkit/mutate.py"}, {"line": 233, "path": "src/crapkit/mutate.py"}, {"line": 137, "path": "src/crapkit/mutate_pool.py"}, {"line": 341, "path": "src/crapkit/mutate_pool.py"}, {"line": 145, "path": "src/crapkit/uncovered.py"}], "diff_uncovered_count": 10, "diff_uncovered_max": null, "dirty_failures": [], "dirty_findings": 2, "gate_violations": [{"ccn": 6, "cov": 0.8333333333333334, "crap": 6.166666666666667, "dirty": true, "key_name": "_angle_kind( syntax : str , tokens : list , start : int , end : int , typed : set , language : str )", "long_name": "_angle_kind( syntax : str , tokens : list , start : int , end : int , typed : set , language : str )", "path": "src/crapkit/mutate.py", "remedy": "add-tests", "start": 226}, {"ccn": 6, "cov": 0.875, "crap": 6.0703125, "dirty": true, "key_name": "_maybe_claim( store , commit : str , take : bool , items : list , handles , top : int )", "long_name": "_maybe_claim( store , commit : str , take : bool , items : list , handles , top : int )", "path": "src/crapkit/cli/queue.py", "remedy": "add-tests", "start": 143}], "new_failures": ["tests.unit.test_registry_manifest::test_the_description_counts_the_tenth_tool"], "ok": false, "overridden": [], "ratchet_changes": null, "ratchet_regressions": [], "ratchet_sha256": "3ddd4fd16b040f9109f55b988e486f251d163be34473becb5834cde73070c83f", "run_id": 68, "schema": 1, "tool_versions": {"crapkit": "0.6.0", "lizard": "1.24.0"}, "unmarked_over_target": 2}

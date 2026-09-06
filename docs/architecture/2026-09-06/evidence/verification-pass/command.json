@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "<python-install>\\python.exe",
+    "-m",
+    "crapkit",
+    "verify",
+    "--base",
+    "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+    "--no-tighten",
+    "--json"
+  ],
+  "cwd": "<repo>",
+  "started_at": "2026-09-06T21:50:12.686509+00:00",
+  "versions": {
+    "lizard": "1.24.0",
+    "pytest": "8.3.3",
+    "coverage": "7.13.2",
+    "pytest-cov": "6.3.0"
+  },
+  "python": "3.11.2 (tags/v3.11.2:878ead1, Feb  7 2023, 16:38:35) [MSC v.1934 64 bit (AMD64)]",
+  "platform": "win32"
+}

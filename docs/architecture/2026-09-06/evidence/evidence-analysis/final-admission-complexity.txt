@@ -1,0 +1,22 @@
+[
+  {
+    "path": "src/crapkit/analyze.py",
+    "function": "_analysis_key( path : str , digest : str )",
+    "ccn": 2
+  },
+  {
+    "path": "src/crapkit/covstream.py",
+    "function": "_finite_number( token : str )",
+    "ccn": 2
+  },
+  {
+    "path": "src/crapkit/lizardtypescript.py",
+    "function": "uses_type_syntax( filename : str )",
+    "ccn": 1
+  },
+  {
+    "path": "src/crapkit/lizardtypescript.py",
+    "function": "__init__( self , context )",
+    "ccn": 1
+  }
+]

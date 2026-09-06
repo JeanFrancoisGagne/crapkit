@@ -1,0 +1,23 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+_ test_direct_override_refuses_old_reader_marks_before_any_side_effect[None] __
+tests\unit\test_expression_identity_migration.py:159: in test_direct_override_refuses_old_reader_marks_before_any_side_effect
+    with pytest.raises(ConfigError, match='reader'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ConfigError'>
+___ test_direct_override_refuses_old_reader_marks_before_any_side_effect[0] ___
+tests\unit\test_expression_identity_migration.py:159: in test_direct_override_refuses_old_reader_marks_before_any_side_effect
+    with pytest.raises(ConfigError, match='reader'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ConfigError'>
+___ test_direct_override_refuses_old_reader_marks_before_any_side_effect[1] ___
+tests\unit\test_expression_identity_migration.py:159: in test_direct_override_refuses_old_reader_marks_before_any_side_effect
+    with pytest.raises(ConfigError, match='reader'):
+E   Failed: DID NOT RAISE <class 'crapkit.errors.ConfigError'>
+=========================== short test summary info ===========================
+FAILED tests/unit/test_expression_identity_migration.py::test_direct_override_refuses_old_reader_marks_before_any_side_effect[None]
+FAILED tests/unit/test_expression_identity_migration.py::test_direct_override_refuses_old_reader_marks_before_any_side_effect[0]
+FAILED tests/unit/test_expression_identity_migration.py::test_direct_override_refuses_old_reader_marks_before_any_side_effect[1]
+3 failed, 10 deselected in 1.29s

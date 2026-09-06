@@ -1,0 +1,29 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [ 15%]
+........................................................................ [ 31%]
+........................................................................ [ 47%]
+.......................................................................F [ 62%]
+........................................................................ [ 78%]
+........................................................................ [ 94%]
+..........................                                               [100%]
+================================== FAILURES ===================================
+_________________ test_update_compares_against_the_worst_twin _________________
+tests\unit\test_ratchet.py:59: in test_update_compares_against_the_worst_twin
+    (entry,) = update_ratchet(prior, fresh, target=6)
+src\crapkit\ratchet.py:365: in update_ratchet
+    fresh_by_key = rows_by_key(fresh)
+src\crapkit\verify.py:151: in rows_by_key
+    names = key_names(fresh)
+src\crapkit\keys.py:113: in key_names
+    require_unambiguous(rows)
+src\crapkit\keys.py:99: in require_unambiguous
+    refuse_ambiguous(ambiguous_groups(rows, legacy_only=True))
+src\crapkit\keys.py:106: in refuse_ambiguous
+    raise ToolError(f"ambiguous legacy function identity in {names}; "
+E   crapkit.errors.ToolError: ambiguous legacy function identity in src/a.ts: handlers ( ); refresh analysis before selecting or comparing these functions
+=========================== short test summary info ===========================
+FAILED tests/unit/test_ratchet.py::test_update_compares_against_the_worst_twin
+1 failed, 457 passed in 31.15s

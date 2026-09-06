@@ -1,0 +1,15 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+F.                                                                       [100%]
+================================== FAILURES ===================================
+_____ test_the_warm_path_costs_little_more_than_starting_python[no_toml] ______
+tests\e2e\test_claude_hook_e2e.py:390: in test_the_warm_path_costs_little_more_than_starting_python
+    assert _warm_ms(name, tmp_path) - _floor_ms() < allowed
+E   AssertionError: assert (74.22499998938292 - 33.18680002121255) < 40.0
+E    +  where 74.22499998938292 = _warm_ms('no_toml', WindowsPath('<user>/AppData/Local/Temp/pytest-of-jfgag/pytest-49951/test_the_warm_path_costs_littl0'))
+E    +  and   33.18680002121255 = _floor_ms()
+=========================== short test summary info ===========================
+FAILED tests/e2e/test_claude_hook_e2e.py::test_the_warm_path_costs_little_more_than_starting_python[no_toml]
+1 failed, 1 passed in 2.87s

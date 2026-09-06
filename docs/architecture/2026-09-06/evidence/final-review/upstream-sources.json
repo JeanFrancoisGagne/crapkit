@@ -1,0 +1,39 @@
+{
+  "repository": "https://github.com/terryyin/lizard",
+  "fixture_revision": "147b1637f246d188979d876956671ab957df4f92",
+  "fixture_revision_url": "https://github.com/terryyin/lizard/commit/147b1637f246d188979d876956671ab957df4f92",
+  "runtime_version_tested": "1.24.0",
+  "verification": "All three preserved fixture files matched the raw bytes at this revision.",
+  "files": [
+    {
+      "path": "upstream-testTypeScript.py",
+      "upstream_path": "test/test_languages/testTypeScript.py",
+      "url": "https://raw.githubusercontent.com/terryyin/lizard/147b1637f246d188979d876956671ab957df4f92/test/test_languages/testTypeScript.py",
+      "bytes": 46030,
+      "sha256": "ffc8e67ffc4836711571e407d99dccd6bb6bfd4fe7001f60782899e6a6bfa0aa",
+      "pinned_bytes_verified": true
+    },
+    {
+      "path": "upstream-testJavaScript.py",
+      "upstream_path": "test/test_languages/testJavaScript.py",
+      "url": "https://raw.githubusercontent.com/terryyin/lizard/147b1637f246d188979d876956671ab957df4f92/test/test_languages/testJavaScript.py",
+      "bytes": 31296,
+      "sha256": "e6d0bf01d466d54a2da11f4bc524a9214d4c3545391ef3bf26c69434505c6fd2",
+      "pinned_bytes_verified": true
+    },
+    {
+      "path": "upstream-testTSX.py",
+      "upstream_path": "test/test_languages/testTSX.py",
+      "url": "https://raw.githubusercontent.com/terryyin/lizard/147b1637f246d188979d876956671ab957df4f92/test/test_languages/testTSX.py",
+      "bytes": 25703,
+      "sha256": "7695ff609cae04d8ee579c39b85c2f3a7b2a1df9cb1547c4fbd1f7c598f96b8c",
+      "pinned_bytes_verified": true
+    }
+  ],
+  "license": {
+    "path": "LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/terryyin/lizard/147b1637f246d188979d876956671ab957df4f92/LICENSE.txt",
+    "bytes": 1303,
+    "sha256": "d39663810f02975743f69d01856f93c7391ce6b842a20189544b9fd464f663f3"
+  }
+}

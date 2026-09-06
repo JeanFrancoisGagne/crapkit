@@ -1,0 +1,11 @@
+VERIFIED_IMPORT <repo>\src\crapkit\__init__.py
+STOCK_ARROWS [('(anonymous)', 2, 4, 3), ('(anonymous)', 6, 6, 2)]
+VERSION10_ARROWS [('app.ts', '(anonymous)', 2, 2, 2, 2, 2, 1, 0, 1, 1, 1), ('app.ts', '(anonymous)', 3, 3, 2, 2, 2, 2, 0, 1, 1, 1), ('app.ts', '(anonymous)', 6, 6, 2, 2, 2, 1, 0, 1, 1, 1)]
+VERSION 10 crapkit=0.6.0;analysis=10;lizard=1.24.0;cache=3
+READER js lizard_languages.javascript.JavaScriptReader:0:digest
+READER jsx lizard_languages.tsx.TSXReader:0:digest
+READER ts lizard_languages.typescript.TypeScriptReader:0:digest
+READER tsx lizard_languages.tsx.TSXReader:0:digest
+READER mts lizard_languages.clike.CLikeReader:0:digest
+READER cts lizard_languages.clike.CLikeReader:0:digest
+NONFINITE_COVERAGE nan nan decompose over_target= False finite= False

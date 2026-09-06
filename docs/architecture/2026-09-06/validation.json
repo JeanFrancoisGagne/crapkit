@@ -1,0 +1,124 @@
+{
+  "complete": true,
+  "checks": [
+    {
+      "check": "Final configured coverage and verify",
+      "result": "4170 passed, 2 skipped in 1832.04 seconds; verify passed",
+      "evidence": "verification-pass/result.json and ledger-after.json: run70, baseline67, verdict_ok1, findings0; no changed inputs, gate violations, ratchet regressions, new failures or overrides"
+    },
+    {
+      "check": "Committed inputs and supported artifact reuse",
+      "result": "480 inputs matched; run71 passed on c24e6a4",
+      "evidence": "commit-verification/input-proof.json and ledger-after.json; 478 exact committed files and 2 named JSON CRLF-to-LF exceptions; coverage digest matches run70. JUnit bytes first hashed at finalization and complete counts match run70."
+    },
+    {
+      "check": "Final full e2e suite",
+      "result": "717 passed, 2 skipped in 243.98 seconds",
+      "evidence": "e2e-verified.log; final source and test fixtures"
+    },
+    {
+      "check": "Separate full unit suite before the final cache tests",
+      "result": "3434 passed in 266.06 seconds",
+      "evidence": "unit-verified.log; production source matches the configured run; 18 cache cases were added afterward and pass in run70"
+    },
+    {
+      "check": "Staged commit gate",
+      "result": "Passed, exit 0",
+      "evidence": "staged-hook-final.log; 331 changed production functions, all CCN <= 6"
+    },
+    {
+      "check": "Cache admission regressions",
+      "result": "27 passed; both cache decoders at 100% statements and branches",
+      "evidence": "cache-admission-coverage/function-coverage.json; 18 current-fingerprint persisted-cache cases added"
+    },
+    {
+      "check": "Staged gate after cache tests",
+      "result": "Passed, exit 0",
+      "evidence": "staged-hook-cache-final.log"
+    },
+    {
+      "check": "Opt-in advisory latency budgets",
+      "result": "1 passed, 1 failed; no_toml 41.04 ms against 40 ms",
+      "evidence": "strict-latency.log; 50 paired current/release blocks found no resolved source slowdown; both versions exceeded 40 ms in all 10 five-sample groups"
+    },
+    {
+      "check": "Contributor guidance after the code commit",
+      "result": "107 documentation and CI contract tests passed",
+      "evidence": "contributing-doc-checks.log; only CONTRIBUTING.md changed outside the report folder; source and tests remain unchanged."
+    }
+  ],
+  "limits": "Saved local execution covers Windows with Python3.11.2. Hosted OS/Python results are separate evidence in the pull request checks. Nine changed lines remain uncovered within the configured rules. The optional 40 ms no-config timing check remains failed.",
+  "updated_at": "2026-09-06T22:24:27.4974502Z",
+  "phase": "Local implementation, independent reassessment and report complete. Hosted results are separate evidence in the pull request checks.",
+  "previous_attempts": [
+    {
+      "check": "First integrated full unit suite",
+      "result": "3,106 passed",
+      "evidence": "integrated-unit-first.log; before final review repairs"
+    },
+    {
+      "check": "First integrated full e2e suite",
+      "result": "710 passed,2 skipped,1 stale test-spy failure",
+      "evidence": "integrated-e2e-first.log; staged-read spy updated and6 hook integration checks pass"
+    },
+    {
+      "check": "First configured coverage and verify",
+      "result": "3,924 passed;2 skipped;1 stale manifest assertion failed; verify refused2 uncovered gate functions",
+      "evidence": "verify-first.log; lane-py.log; actual SQLite run68, baseline67, verdict_ok0, findings3,2032.51seconds;0ratchet regressions"
+    },
+    {
+      "check": "Same-line CLI identity integration",
+      "result": "3 passed",
+      "evidence": "Identity transport through coverage records, export, claims, brief, release, seed, rescore and hook; identical measured source spans have a separate explicit refusal test."
+    },
+    {
+      "check": "Previous final-admission full suites",
+      "result": "3433 unit passed/1 failed;716 e2e passed/2 skipped/1 failed",
+      "evidence": "unit-final-admission.log and e2e-final-admission.log. Fixture reader proof and receipt metadata expectations corrected; affected-file and full reruns now pass."
+    },
+    {
+      "check": "Final integrated migration checks",
+      "result": "17 passed in 8.21 seconds",
+      "evidence": "migration-integrated-final.log"
+    },
+    {
+      "check": "Final migration fixture repairs",
+      "result": "26 passed in 22.17 seconds",
+      "evidence": "final-fixture-repairs.log; followed by passing full suites"
+    },
+    {
+      "check": "Final configured coverage and verify",
+      "result": "4152 passed, 2 skipped; verify exit6, one coverage finding",
+      "evidence": "verification-final/result.json and ledger-after.json: run69,baseline67,verdict_ok0,findings1; _cached_record CCN6,cov83.33%,CRAP6.1667; no changed inputs"
+    }
+  ],
+  "verification_started_at": "2026-09-06T17:50:12.686509-04:00",
+  "report_checks": [
+    "21 unique opportunity dispositions and22 fresh findings checked against current code and tests",
+    "331 changed production functions at CCN <=6; staged commit hook passed",
+    "Report layout inspected in browser; source references and copied upstream license checked",
+    "No prohibited public-text references in staged additions or report prose",
+    "130 code references resolve to the intended commit and valid line; 130 evidence hashes match",
+    "Final rendered summary, before-and-after cards and verification table inspected"
+  ],
+  "skipped_checks": [
+    {
+      "check": "Opt-in advisory latency budgets in standard suites",
+      "reason": "CRAPKIT_STRICT_TIMING is not enabled in standard suites",
+      "cases": [
+        "no_toml",
+        "scoped_breach"
+      ],
+      "status": "Executed separately: 1 passed, 1 failed. Failure retained; paired investigation in evidence-execution/advisory-latency-review.md."
+    }
+  ],
+  "qualification": "The optional no-config startup check measured 41.04 ms against a 40 ms budget. A paired comparison found no resolved slowdown against release 0.6.0; both versions exceeded the budget on this machine. The timing check remains failed.",
+  "diff_coverage": {
+    "uncovered_changed_lines": 9,
+    "ceiling": null,
+    "status": "Reported by verify; no configured uncovered-line ceiling. Function gates passed."
+  },
+  "status_label": "Local verification passed; advisory timing limit missed",
+  "code_ref": "c24e6a427ff3297780e9ff71f0f08764ff2a60c7",
+  "recommendation": "Keep the shared configuration, coverage and state owners. Retain the full OS/Python matrix. Use representative repositories for further performance work; the synthetic gains here do not establish command latency."
+}

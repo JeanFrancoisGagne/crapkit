@@ -1,0 +1,113 @@
+<python-install>\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+........................................................................ [ 10%]
+........................................................................ [ 13%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+.....................................F.................................. [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+................................................FF...................... [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+......................................................................F. [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+...................................F.................................... [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+......................................................................   [100%]
+================================== FAILURES ===================================
+________ test_the_handle_the_pages_promise_is_the_one_the_code_builds _________
+tests\unit\test_handle_docs_contract.py:60: in test_the_handle_the_pages_promise_is_the_one_the_code_builds
+    assert packet.handles(_anon_rows(2)) == {10: "(anonymous)#1", 20: "(anonymous)#2"}
+E   AssertionError: assert {('calc/repor...anonymous)#2'} == {10: '(anonym...anonymous)#2'}
+E     
+E     Left contains 2 more items:
+E     {('calc/report.py', '(anonymous)', 10, 0): '(anonymous)#1',
+E      ('calc/report.py', '(anonymous)', 20, 0): '(anonymous)#2'}
+E     Right contains 2 more items:
+E     {10: '(anonymous)#1', 20: '(anonymous)#2'}
+E     Use -v to get more diff
+_________ test_the_digest_read_matches_the_wide_read_field_for_field __________
+tests\unit\test_narrow_reads.py:54: in test_the_digest_read_matches_the_wide_read_field_for_field
+    assert [(r.scope, r.path, r.long_name, r.crap, r.start) for r in wide] == \
+E   AssertionError: same rows, same order, same values
+E   assert [('api', 'src...4.0, 31), ...] == [('api', 'src..., 31, 0), ...]
+E     
+E     At index 0 diff: ('api', 'src/m0.py', 'f0( a )', 4.0, 1) != ('api', 'src/m0.py', 'f0( a )', 4.0, 1, 0)
+E     Use -v to get more diff
+______ test_the_digest_read_keeps_the_start_needed_to_distinguish_twins _______
+tests\unit\test_narrow_reads.py:67: in test_the_digest_read_keeps_the_start_needed_to_distinguish_twins
+    assert projection == "SELECT i.scope, i.path, i.long_name, f.crap, f.start", \
+E   AssertionError: the digest read still pulls columns nothing reads: SELECT i.scope, i.path, i.long_name, f.crap, f.start, f.occurrence
+E   assert 'SELECT i.sco... f.occurrence' == 'SELECT i.sco...crap, f.start'
+E     
+E     Skipping 41 identical leading characters in diff, use -v to show
+E     - ap, f.start
+E     + ap, f.start, f.occurrence
+_________________ test_update_compares_against_the_worst_twin _________________
+tests\unit\test_ratchet.py:59: in test_update_compares_against_the_worst_twin
+    (entry,) = update_ratchet(prior, fresh, target=6)
+src\crapkit\ratchet.py:365: in update_ratchet
+    fresh_by_key = rows_by_key(fresh)
+src\crapkit\verify.py:151: in rows_by_key
+    names = key_names(fresh)
+src\crapkit\keys.py:113: in key_names
+    require_unambiguous(rows)
+src\crapkit\keys.py:99: in require_unambiguous
+    refuse_ambiguous(ambiguous_groups(rows, legacy_only=True))
+src\crapkit\keys.py:106: in refuse_ambiguous
+    raise ToolError(f"ambiguous legacy function identity in {names}; "
+E   crapkit.errors.ToolError: ambiguous legacy function identity in src/a.ts: handlers ( ); refresh analysis before selecting or comparing these functions
+_________ test_recorded_passes_replay_to_the_committed_golden_export __________
+tests\unit\test_recorded_fixtures.py:32: in test_recorded_passes_replay_to_the_committed_golden_export
+    assert produced == golden
+E   AssertionError: assert 'scope\tpath\...t1\t1\t0\t0\n' == 'scope\tpath\...t1\t1\t1\t0\n'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - 	cognitive
+E     + 	cognitive	occurrence
+E     - py	pylib/mod.py	guarded( a , b )	1	4	5	5	5	4	2	3	0
+E     + py	pylib/mod.py	guarded( a , b )	1	4	5	5	5	4	2	3	0	0
+E     ?   	            	                	 	 	 	 	 	 	 	 ++...
+E     
+E     ...Full output truncated (9 lines hidden), use '-vv' to show
+=========================== short test summary info ===========================
+FAILED tests/unit/test_handle_docs_contract.py::test_the_handle_the_pages_promise_is_the_one_the_code_builds
+FAILED tests/unit/test_narrow_reads.py::test_the_digest_read_matches_the_wide_read_field_for_field
+FAILED tests/unit/test_narrow_reads.py::test_the_digest_read_keeps_the_start_needed_to_distinguish_twins
+FAILED tests/unit/test_ratchet.py::test_update_compares_against_the_worst_twin
+FAILED tests/unit/test_recorded_fixtures.py::test_recorded_passes_replay_to_the_committed_golden_export
+5 failed, 3305 passed in 180.69s (0:03:00)

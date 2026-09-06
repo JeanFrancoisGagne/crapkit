@@ -1,0 +1,2325 @@
+{
+  "baseline": "20f00e1371334f84aa70bba6f7b23bfc4bdae0f6",
+  "ceiling": 6,
+  "changed_functions": 331,
+  "violations": [],
+  "functions": [
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "__call__.create( name )",
+      "start": 134,
+      "end": 138,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "__call__( self , tokens , reader )",
+      "start": 129,
+      "end": 144,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_chain( cognitive_index : int )",
+      "start": 147,
+      "end": 157,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_record( rel_path : str , fn , occurrence : int = 0 )",
+      "start": 198,
+      "end": 214,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_file_records( rel_path : str , functions )",
+      "start": 271,
+      "end": 278,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "fingerprint( )",
+      "start": 393,
+      "end": 395,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_analysis_key( path : str , digest : str )",
+      "start": 398,
+      "end": 402,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_cached_record( values )",
+      "start": 405,
+      "end": 413,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_cached_rows( rows )",
+      "start": 416,
+      "end": 419,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_drained_records( entries : dict )",
+      "start": 422,
+      "end": 436,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "load_cache( path : Path )",
+      "start": 439,
+      "end": 452,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_load_stamps( path : Path )",
+      "start": 500,
+      "end": 512,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_valid_stamp( stamp )",
+      "start": 515,
+      "end": 519,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_stamp_entries( stamps )",
+      "start": 522,
+      "end": 526,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_hash_paths( root : Path , rel_paths : list [ str ] , stamps : dict )",
+      "start": 557,
+      "end": 577,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "_restamped( hits : dict [ str , list [ FunctionRecord ] ] )",
+      "start": 590,
+      "end": 595,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/analyze.py",
+      "name": "analyze_files( root : Path , rel_paths : list [ str ] , * , cache : dict , workers : int | None = None )",
+      "start": 671,
+      "end": 688,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cache.py",
+      "name": "updated_cache( hashes : dict [ str , str ] , records_by_path : dict [ str , list [ FunctionRecord ] ] , * , fingerprint : str , )",
+      "start": 31,
+      "end": 40,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/churn_log.py",
+      "name": "_tee( source : Iterator [ str ] , path : Path , key : dict | None )",
+      "start": 254,
+      "end": 276,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/churn_log.py",
+      "name": "_open_part( path : Path , key : dict | None )",
+      "start": 279,
+      "end": 289,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/churn_log.py",
+      "name": "_discard( part : BinaryIO )",
+      "start": 292,
+      "end": 298,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/churn_log.py",
+      "name": "_keep( part : BinaryIO , path : Path , key : dict | None )",
+      "start": 301,
+      "end": 312,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/__init__.py",
+      "name": "main( argv : list [ str ] | None = None )",
+      "start": 6,
+      "end": 10,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/_shared.py",
+      "name": "_identity_history( root : Path , store = None )",
+      "start": 276,
+      "end": 286,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/_shared.py",
+      "name": "_check_ratchet_identity( text : str , root : Path , name : str , rows , store = None )",
+      "start": 289,
+      "end": 301,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/_shared.py",
+      "name": "_ratchet_key_version( root : Path , cfg , rows , store = None )",
+      "start": 304,
+      "end": 307,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/_shared.py",
+      "name": "_ratchet_entries( root : Path , cfg , rows = None , store = None )",
+      "start": 310,
+      "end": 333,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/admin.py",
+      "name": "_runner_versions( report : str )",
+      "start": 843,
+      "end": 847,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/admin.py",
+      "name": "_runner_report( word : str )",
+      "start": 851,
+      "end": 869,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/admin.py",
+      "name": "_named_protocol( handler : dict )",
+      "start": 1381,
+      "end": 1390,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/admin.py",
+      "name": "_hook_protocols( root : Path )",
+      "start": 1393,
+      "end": 1404,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/cli/claude_hook.py",
+      "name": "_judge( root : Path , rel : str )",
+      "start": 256,
+      "end": 271,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/claude_hook.py",
+      "name": "_report( root : Path , cfg , rel : str , breaches : list , ceiling : int , records : list )",
+      "start": 401,
+      "end": 413,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/claude_hook.py",
+      "name": "_marks_for( marks_path : Path , rel : str , records = ( )",
+      "start": 416,
+      "end": 435,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/claude_hook.py",
+      "name": "_known_marks( text : str , records )",
+      "start": 438,
+      "end": 446,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/parser.py",
+      "name": "build_parser( )",
+      "start": 179,
+      "end": 457,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "cmd_next_item( args : argparse . Namespace )",
+      "start": 49,
+      "end": 69,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "__init__( self , store , run_id : int )",
+      "start": 81,
+      "end": 85,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "of( self , row )",
+      "start": 87,
+      "end": 92,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "key( self , row )",
+      "start": 94,
+      "end": 96,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "claim( self , row , commit : str )",
+      "start": 98,
+      "end": 101,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_unclaimed( store , ranked : list , handles )",
+      "start": 104,
+      "end": 118,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_claim_available( row , held : dict , legacy : set , handles )",
+      "start": 121,
+      "end": 124,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_claimable( ranked : list , top : int )",
+      "start": 142,
+      "end": 145,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_maybe_claim( commit : str , take : bool , items : list , handles , top : int )",
+      "start": 148,
+      "end": 170,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_emit_next( store , head : dict , ranked , top : int , adm , cfg , scored , excludes : list , scopes : list , uncovered , handles = None )",
+      "start": 193,
+      "end": 208,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_print_claims( as_json : bool , claims : list )",
+      "start": 335,
+      "end": 343,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_claim_matches( c : dict , name : str )",
+      "start": 353,
+      "end": 368,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_row_at_line( path : str , rows : list , name : str )",
+      "start": 448,
+      "end": 455,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_single_line_row( path : str , name : str , rows : list , at : list )",
+      "start": 458,
+      "end": 463,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_row_by_handle( path : str , rows : list , name : str )",
+      "start": 472,
+      "end": 488,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_pick_function( path : str , rows : list , name : str )",
+      "start": 497,
+      "end": 511,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_one_of( path : str , matched : list , name : str , wanted : str , ordinal : int )",
+      "start": 514,
+      "end": 531,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "mark( self , row )",
+      "start": 655,
+      "end": 659,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "attempts( self , row )",
+      "start": 675,
+      "end": 679,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "prime_attempts( self , rows : list )",
+      "start": 681,
+      "end": 684,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_packet_commands( cfg , row , scope : str )",
+      "start": 727,
+      "end": 731,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_packet_context( loader , row , rows : list )",
+      "start": 734,
+      "end": 753,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_brief_packet( loader , row )",
+      "start": 756,
+      "end": 783,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_entry_json( e )",
+      "start": 906,
+      "end": 916,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_worklist_for( root : Path , cfg , store , latest : dict , * , top : int , scopes : list )",
+      "start": 1030,
+      "end": 1041,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_worklist_handles( wl : Worklist , handles : _Handles )",
+      "start": 1044,
+      "end": 1048,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/queue.py",
+      "name": "_worklist_ratchet( root : Path , cfg , store , run_id : int )",
+      "start": 1051,
+      "end": 1060,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/ratchet_cmds.py",
+      "name": "_ratchet_merge( files : list )",
+      "start": 86,
+      "end": 100,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/ratchet_cmds.py",
+      "name": "_merge_key_version( texts : list [ str ] )",
+      "start": 103,
+      "end": 113,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/ratchet_cmds.py",
+      "name": "_ratchet_move( root : Path , cfg , files : list )",
+      "start": 116,
+      "end": 131,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/ratchet_cmds.py",
+      "name": "cmd_ratchet( args : argparse . Namespace )",
+      "start": 213,
+      "end": 240,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/ratchet_cmds.py",
+      "name": "_write_checked_marks( root : Path , cfg , entries , fresh , key_version : int , analysis_version )",
+      "start": 243,
+      "end": 253,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/reports.py",
+      "name": "_runs_prune( store : SnapshotStore , * , keep : int , as_json : bool )",
+      "start": 252,
+      "end": 272,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/reports.py",
+      "name": "_explain_ctx( root : Path , cfg , store : SnapshotStore , args )",
+      "start": 342,
+      "end": 350,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/reports.py",
+      "name": "_explain_payload( ctx : _ExplainCtx , store : SnapshotStore , args , long_name : str )",
+      "start": 353,
+      "end": 366,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/reports.py",
+      "name": "_contexts_for_path( root : Path , cfg , path : str )",
+      "start": 435,
+      "end": 452,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_build_inventory( root : Path , cfg , git = None )",
+      "start": 83,
+      "end": 95,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_run_one_lane( root : Path , lane , reuse : bool , scope_paths : dict | None , git , dead_lines = None )",
+      "start": 147,
+      "end": 157,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_traced_lane( root : Path , lane , reuse : bool , scope_paths : dict | None , git , dead_lines = None )",
+      "start": 160,
+      "end": 164,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_execute_parallel( root : Path , ordered , reuse : dict , scope_paths , git , max_parallel : int , dead_lines = None )",
+      "start": 167,
+      "end": 176,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_execute_lanes( root : Path , ordered , reuse : dict , scope_paths , git , max_parallel : int , dead_lines = None )",
+      "start": 179,
+      "end": 185,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_refuse_all_failed( lanes , lane_errors : dict , succeeded : list )",
+      "start": 188,
+      "end": 193,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_run_lanes( root : Path , lanes , reuse_artifacts : bool , scope_paths : dict | None = None , reuse_unchanged : bool = False , max_parallel : int = 1 , git = None , dead_lines = None )",
+      "start": 225,
+      "end": 244,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_scored_run( root : Path , cfg , lanes , * , reuse_artifacts : bool , reuse_unchanged : bool = False , git = None )",
+      "start": 268,
+      "end": 293,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_rescore_json( overlay , latest : dict , gate : dict | None = None )",
+      "start": 577,
+      "end": 592,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "name": "_gate_verdict( root : Path , cfg , overlay , ceilings : dict [ str , int ] )",
+      "start": 677,
+      "end": 684,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "_apply_verify_override( store : SnapshotStore , run_id : int , root : Path , cfg , verdict , reason , * , key_version : int | None = None , identity_rows = None )",
+      "start": 303,
+      "end": 315,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "_write_marks_if_changed( ratchet_path : Path , prior : list [ RatchetEntry ] , updated : list [ RatchetEntry ] , * , key_version : int | None = None )",
+      "start": 369,
+      "end": 391,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "_settle_verify( store : SnapshotStore , run_id : int , verdict , overridden , ratchet_path : Path , ratchet , scored , cfg , * , args , commit : str , key_version : int | None = None )",
+      "start": 394,
+      "end": 412,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "cmd_verify( args : argparse . Namespace )",
+      "start": 600,
+      "end": 664,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "cmd_test_scoped( args : argparse . Namespace )",
+      "start": 793,
+      "end": 810,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "_grant_env_override( root : Path , cfg , violations , reason : str , records = ( )",
+      "start": 852,
+      "end": 873,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "_gated_violations( root : Path , cfg , violations : list , records = ( )",
+      "start": 918,
+      "end": 934,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "_staged_gate( root : Path , cfg , base : str | None = None )",
+      "start": 937,
+      "end": 951,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/cli/verifying.py",
+      "name": "cmd_hook_precommit( args : argparse . Namespace )",
+      "start": 954,
+      "end": 977,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_pytest_text( directory : str | os . PathLike , name : str )",
+      "start": 384,
+      "end": 389,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_pytest_testpaths( read_text )",
+      "start": 392,
+      "end": 400,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "pytest_testpaths_texts( texts : dict [ str , str ] )",
+      "start": 403,
+      "end": 405,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "pytest_testpaths_at( directory : str | os . PathLike )",
+      "start": 408,
+      "end": 410,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_scope_path( name , raw : str )",
+      "start": 638,
+      "end": 657,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_parse_scope( row : dict )",
+      "start": 660,
+      "end": 670,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_parse_scopes( rows )",
+      "start": 685,
+      "end": 702,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_parse_lane( row : dict , scope_names : set , root : str | os . PathLike | None = None )",
+      "start": 721,
+      "end": 741,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_reject_shared_artifacts( lanes : list , root = None )",
+      "start": 752,
+      "end": 761,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_unique_lanes( rows , scope_names : set , root )",
+      "start": 764,
+      "end": 771,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_build_config( raw : dict , root : str | os . PathLike | None = None )",
+      "start": 774,
+      "end": 806,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_boolean( row : dict , key : str , default : bool )",
+      "start": 809,
+      "end": 813,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/config.py",
+      "name": "_factor( main : dict , key : str , default : float )",
+      "start": 823,
+      "end": 830,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/coverage_istanbul.py",
+      "name": "_dead_lines( cov : dict )",
+      "start": 137,
+      "end": 143,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/coverage_py.py",
+      "name": "_line_contexts( raw : dict )",
+      "start": 102,
+      "end": 108,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "_finite_number( token : str )",
+      "start": 38,
+      "end": 42,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "_next_member( w : _Window , first : bool )",
+      "start": 99,
+      "end": 111,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "split_window( w : _Window )",
+      "start": 159,
+      "end": 170,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "_walk_nested( w : _Window , start : int )",
+      "start": 182,
+      "end": 194,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "walk_report( w : _Window , target : str )",
+      "start": 197,
+      "end": 215,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "parse_istanbul_file( path : Path | str , * , repo_root : str , chunk : int = CHUNK )",
+      "start": 256,
+      "end": 266,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "__init__( self )",
+      "start": 332,
+      "end": 336,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "add( self , prefix : str , raw_path : str , data : dict )",
+      "start": 338,
+      "end": 347,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "_coveragepy_both( w : _Window , prefix : str , label : str )",
+      "start": 350,
+      "end": 366,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "parse_coveragepy_file( path : Path | str , * , path_prefix : str , chunk : int = CHUNK , label : str = \"\" )",
+      "start": 369,
+      "end": 374,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "parse_coveragepy_both_file( path : Path | str , * , path_prefix : str , chunk : int = CHUNK , label : str = \"\" )",
+      "start": 377,
+      "end": 384,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "_coveragepy_contexts( w : _Window , prefix : str , source_path : str )",
+      "start": 403,
+      "end": 410,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/covstream.py",
+      "name": "parse_coveragepy_contexts_file( path : Path | str , * , path_prefix : str , source_path : str , chunk : int = CHUNK )",
+      "start": 413,
+      "end": 419,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/digest.py",
+      "name": "_by_key( rows : list [ ScoredRow ] )",
+      "start": 135,
+      "end": 142,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/doctor.py",
+      "name": "_protocol_gap( where : str , protocols : tuple [ str , ... ] | None , supported : str )",
+      "start": 374,
+      "end": 388,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/dup.py",
+      "name": "_is_self( r : InventoryRow , target )",
+      "start": 163,
+      "end": 165,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/dup.py",
+      "name": "_qualified_twins( mine : set [ int ] , target , entries : list [ tuple [ InventoryRow , set [ int ] ] ] , similarity : float )",
+      "start": 173,
+      "end": 180,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/dup.py",
+      "name": "find_twins( target , rows : list [ InventoryRow ] , sources : dict [ str , str ] , * , min_lines : int = 8 , similarity : float = 0 . 8 , top : int = 10 , indexed : FunctionIndex | None = None )",
+      "start": 193,
+      "end": 212,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/gitio.py",
+      "name": "__init__( self , root : Path , base : str | None = None )",
+      "start": 360,
+      "end": 364,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/gitio.py",
+      "name": "staged_reads( root : Path , base : str | None = None )",
+      "start": 381,
+      "end": 392,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/gitio.py",
+      "name": "worktree_root( root : Path )",
+      "start": 623,
+      "end": 625,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/hook.py",
+      "name": "gate_staged( root : Path , cfg : Config , reads = None )",
+      "start": 143,
+      "end": 160,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/junitparse.py",
+      "name": "passed_test_ids( xml_text : str )",
+      "start": 118,
+      "end": 127,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/junitparse.py",
+      "name": "_refuse_partial( root : ET . Element )",
+      "start": 130,
+      "end": 136,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "expression_group( path : str , name : str )",
+      "start": 40,
+      "end": 42,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "expression_reader_current( version )",
+      "start": 45,
+      "end": 50,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "position( row )",
+      "start": 71,
+      "end": 73,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "lookup( row )",
+      "start": 76,
+      "end": 78,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "_position_counts( rows )",
+      "start": 81,
+      "end": 87,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "_ambiguous( counts , legacy_only : bool )",
+      "start": 90,
+      "end": 95,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "_unknown_count( counts )",
+      "start": 98,
+      "end": 99,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "ambiguous_groups( rows , * , legacy_only : bool = False )",
+      "start": 102,
+      "end": 109,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "require_unambiguous( rows )",
+      "start": 112,
+      "end": 113,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "refuse_ambiguous( groups )",
+      "start": 116,
+      "end": 121,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "key_names( rows )",
+      "start": 124,
+      "end": 133,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "key_of( keys : dict [ tuple [ str , str , int , int ] , str ] , row )",
+      "start": 136,
+      "end": 138,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "claim_key( claim : dict )",
+      "start": 150,
+      "end": 163,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/keys.py",
+      "name": "claim_holds( claim : dict , key : tuple [ str , str ] )",
+      "start": 166,
+      "end": 171,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/lanes.py",
+      "name": "_read_and_parse( lane : Lane , root : Path , artifact_path : Path , dead_lines = None )",
+      "start": 642,
+      "end": 664,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lanes.py",
+      "name": "retest_lane( root : Path , lane : Lane , tests : set [ str ] )",
+      "start": 956,
+      "end": 975,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lanes.py",
+      "name": "_retest_template( template : str , tests : set [ str ] )",
+      "start": 978,
+      "end": 984,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lanes.py",
+      "name": "_retested_passes( root : Path , lane : Lane , before : int | None )",
+      "start": 987,
+      "end": 996,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/lanes.py",
+      "name": "run_lane( root : Path , lane : Lane , * , reuse_artifact : bool = False , scope_paths : dict | None = None , git : GitFacts | None = None , dead_lines = None )",
+      "start": 1068,
+      "end": 1084,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "uses_type_syntax( filename : str )",
+      "start": 23,
+      "end": 25,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "__init__( self , context )",
+      "start": 29,
+      "end": 38,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "__call__( self , token , reader = None )",
+      "start": 40,
+      "end": 43,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "sub_state( self , state , callback = None , token = None )",
+      "start": 45,
+      "end": 48,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_arrow_function( self , token )",
+      "start": 50,
+      "end": 59,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_pop_function_from_stack( self )",
+      "start": 61,
+      "end": 67,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_state_global( self , token )",
+      "start": 69,
+      "end": 77,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_global_token( self , token )",
+      "start": 79,
+      "end": 86,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_track_type_angles( self , token )",
+      "start": 88,
+      "end": 91,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_separate_comma( self , token )",
+      "start": 93,
+      "end": 99,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_refuse_type_comma( self )",
+      "start": 101,
+      "end": 107,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_end_nested_expression( self , token )",
+      "start": 109,
+      "end": 113,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_ternary_token( self , token )",
+      "start": 115,
+      "end": 121,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_square_token( self , token )",
+      "start": 123,
+      "end": 131,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "_computed_property( self )",
+      "start": 133,
+      "end": 134,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/lizardtypescript.py",
+      "name": "__call__( self , tokens , reader )",
+      "start": 138,
+      "end": 142,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_line_mutations( line : str , tokens : list , ops : dict )",
+      "start": 129,
+      "end": 139,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "file_mutants( text : str , changed_lines : set [ int ] | None , language : str )",
+      "start": 142,
+      "end": 151,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_code_tokens( text : str , language : str )",
+      "start": 154,
+      "end": 163,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_code_masks( text : str , lexed : list , language : str )",
+      "start": 166,
+      "end": 173,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_syntax_kind( kind )",
+      "start": 176,
+      "end": 179,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_syntax_depths( syntax : str )",
+      "start": 182,
+      "end": 189,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_close_angle( stack : list , index : int , tokens : list )",
+      "start": 192,
+      "end": 198,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_angle_pairs( tokens : list )",
+      "start": 201,
+      "end": 211,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_discard_angles( stack : list , tokens : list , depth : int )",
+      "start": 214,
+      "end": 215,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_type_prefix( tokens : list , start : int , typed : set )",
+      "start": 218,
+      "end": 223,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_angle_kind( syntax : str , tokens : list , start : int , end : int , typed : set , language : str )",
+      "start": 226,
+      "end": 234,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_java_type_tail( tokens : list , end : int , language : str )",
+      "start": 237,
+      "end": 240,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_type_angles( syntax : str , lexed : list , language : str )",
+      "start": 243,
+      "end": 254,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_record_angles( tokens : list , start : int , end : int , kind : str , protected : set , ambiguous : set )",
+      "start": 257,
+      "end": 262,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_code_kind( kind , language : str )",
+      "start": 265,
+      "end": 268,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_tokens_by_line( text : str , language : str , changed : set [ int ] | None )",
+      "start": 271,
+      "end": 282,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/mutate.py",
+      "name": "_mutants( text : str , changed_lines : set [ int ] | None , language : str )",
+      "start": 285,
+      "end": 291,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "_input_snapshot( root : Path , targets : list , state : Path )",
+      "start": 130,
+      "end": 138,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "_snapshot_file( path : Path )",
+      "start": 141,
+      "end": 144,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "_seed( tree : Path , files : dict )",
+      "start": 147,
+      "end": 156,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "_drop( root : Path , base : Path , trees : list )",
+      "start": 237,
+      "end": 241,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "drop_pool( root : Path )",
+      "start": 244,
+      "end": 256,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "_pool_lock( root : Path )",
+      "start": 284,
+      "end": 301,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "_run_parallel( root : Path , cfg , mutants : list , workers : int , report )",
+      "start": 333,
+      "end": 350,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "name": "run_mutants( root : Path , cfg , mutants : list , report )",
+      "start": 353,
+      "end": 366,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/override.py",
+      "name": "record_override( * , store : SnapshotStore , run_id : int , root : Path , ratchet_file : str , alert_command : str , violations : list [ GateViolation ] , reason : str , raise_marks : bool = True , key_version : int | None = None , identity_rows = None , )",
+      "start": 22,
+      "end": 45,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/override.py",
+      "name": "_validate_override_keys( path : Path , violations , rows , key_version : int | None )",
+      "start": 48,
+      "end": 60,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/override.py",
+      "name": "_check_saved_reader( path : Path )",
+      "start": 63,
+      "end": 71,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/override.py",
+      "name": "_grant_ratchet_debt( ratchet_path : Path , violations : list [ GateViolation ] , * , raise_marks : bool , key_version : int | None = None )",
+      "start": 99,
+      "end": 108,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/override.py",
+      "name": "_grant_key_version( path : Path , checked : int | None )",
+      "start": 111,
+      "end": 116,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "name": "file_functions( rows )",
+      "start": 59,
+      "end": 66,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "name": "scoped_test_command( template : str , files : list [ str ] )",
+      "start": 123,
+      "end": 134,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "name": "anonymous_positions( rows )",
+      "start": 199,
+      "end": 204,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "name": "handles( rows )",
+      "start": 207,
+      "end": 223,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "name": "_named_handles( groups : dict )",
+      "start": 226,
+      "end": 233,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "name": "handle_names( rows )",
+      "start": 236,
+      "end": 243,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+      "start": 33,
+      "end": 53,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "name": "_has_newlines( values : dict [ str , list [ str ] ] )",
+      "start": 56,
+      "end": 58,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+      "start": 61,
+      "end": 68,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "name": "_literal_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+      "start": 71,
+      "end": 76,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+      "start": 79,
+      "end": 83,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "name": "_replace_placeholders( template : str , replacements : dict [ str , str ] )",
+      "start": 86,
+      "end": 91,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "read_stamp( text : str )",
+      "start": 57,
+      "end": 66,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "read_key_version( text : str )",
+      "start": 69,
+      "end": 77,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "_marked_group( entry : RatchetEntry , groups : set )",
+      "start": 80,
+      "end": 84,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "check_reader_keys( text : str )",
+      "start": 87,
+      "end": 92,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "check_reader_version( entries , version )",
+      "start": 95,
+      "end": 106,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "check_key_groups( text : str , present : set , collisions : set )",
+      "start": 109,
+      "end": 126,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "checked_key_version( text : str , rows , * , historical : set = frozenset ( )",
+      "start": 129,
+      "end": 133,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "_finite_mark( text : str )",
+      "start": 153,
+      "end": 157,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "read_ratchet( text : str )",
+      "start": 160,
+      "end": 185,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "load_ratchet( text : str )",
+      "start": 188,
+      "end": 196,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/ratchet.py",
+      "name": "dump_ratchet( entries : list [ RatchetEntry ] , * , stamp : str | None = None , key_version : int = 0 )",
+      "start": 212,
+      "end": 223,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/ratchet_report.py",
+      "name": "_mark_line( line : str )",
+      "start": 12,
+      "end": 20,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/ratchet_report.py",
+      "name": "mark_events( patches : list [ tuple [ int , str ] ] )",
+      "start": 37,
+      "end": 44,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/ratchet_report.py",
+      "name": "_commit_events( ts : int , added : dict , removed : dict )",
+      "start": 47,
+      "end": 51,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/ratchet_report.py",
+      "name": "_replay( events : list [ tuple ] )",
+      "start": 84,
+      "end": 100,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/report.py",
+      "name": "_drill_down( entry : dict )",
+      "start": 269,
+      "end": 272,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/report.py",
+      "name": "_command_arg( value : str )",
+      "start": 275,
+      "end": 280,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/scaffold.py",
+      "name": "_python_entry( name : str , facts : _ScopedFacts )",
+      "start": 631,
+      "end": 642,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "parse_scored_row( line : str )",
+      "start": 80,
+      "end": 89,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "parse_scored_tsv( text : str )",
+      "start": 92,
+      "end": 99,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_scored_line( line : str , count : int | None )",
+      "start": 102,
+      "end": 106,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_finish( row , cov : float , flag : str , * , target : int , scope_targets )",
+      "start": 137,
+      "end": 149,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_nearest_overlay( row , candidates )",
+      "start": 152,
+      "end": 156,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_same_occurrence( row , candidates )",
+      "start": 159,
+      "end": 162,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_overlay_match( row , candidates , unique : bool )",
+      "start": 165,
+      "end": 171,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_named_overlay_cov( row , by_key : dict , positions : dict )",
+      "start": 174,
+      "end": 180,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_overlay_positions( rows )",
+      "start": 183,
+      "end": 187,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "overlay_stale_coverage( rows : list [ InventoryRow ] , baseline_scored : list [ \"ScoredRow\" ] , * , lane_scopes : set [ str ] , target : int = 6 , scope_targets : dict [ str , int ] | None = None , cc_only_scopes : frozenset [ str ] = frozenset ( )",
+      "start": 255,
+      "end": 285,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_shared_source_spans( rows , lane_scopes : set , cc_only_scopes )",
+      "start": 288,
+      "end": 297,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "_check_coverage_spans( rows , coverage_by_path : dict , start_index : dict , lane_scopes : set , cc_only_scopes )",
+      "start": 300,
+      "end": 308,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "name": "score_rows( rows : list [ InventoryRow ] , coverage_by_path : dict [ str , list [ FnCoverage ] ] , * , lane_scopes : set [ str ] , target : int = 6 , scope_targets : dict [ str , int ] | None = None , cc_only_scopes : frozenset [ str ] = frozenset ( )",
+      "start": 311,
+      "end": 327,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/snapshot.py",
+      "name": "build_inventory_rows( by_scope : dict [ str , list [ FunctionRecord ] ] )",
+      "start": 30,
+      "end": 39,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_verdict_names( rows : list )",
+      "start": 285,
+      "end": 289,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_writable( row , flags : dict , remedies : dict )",
+      "start": 292,
+      "end": 301,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_scored_rows( cur , flags : dict , remedies : dict )",
+      "start": 372,
+      "end": 384,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_identity_where( run_id , path , name )",
+      "start": 400,
+      "end": 404,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "__init__( self , path : Path | str )",
+      "start": 408,
+      "end": 414,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_current( self )",
+      "start": 416,
+      "end": 425,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_current_columns( self )",
+      "start": 427,
+      "end": 431,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_current_codes( self )",
+      "start": 433,
+      "end": 435,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_text_lanes( self )",
+      "start": 437,
+      "end": 439,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_prepare( self )",
+      "start": 441,
+      "end": 449,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_migrate( self )",
+      "start": 459,
+      "end": 472,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_add_occurrence_column( self )",
+      "start": 496,
+      "end": 499,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_add_claim_handle_column( self )",
+      "start": 516,
+      "end": 530,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "read_rows( self , run_id : int , * , min_ccn : int = 0 , scopes : list [ str ] | None = None )",
+      "start": 667,
+      "end": 688,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "read_crap( self , run_id : int )",
+      "start": 707,
+      "end": 718,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "read_positions( self , run_id : int , path : str )",
+      "start": 732,
+      "end": 738,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "read_marks( self , run_id : int , * , min_ccn : int = 0 , scopes : list [ str ] | None = None )",
+      "start": 740,
+      "end": 759,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "twin_key_names( self , run_id : int )",
+      "start": 761,
+      "end": 780,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "historical_collision_groups( self )",
+      "start": 782,
+      "end": 784,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "identity_witness_run_ids( self )",
+      "start": 786,
+      "end": 792,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_collision_groups( self , * , run_id = None , path = None , name = None , legacy_only : bool = False )",
+      "start": 794,
+      "end": 797,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_collision_rows( self , * , run_id = None , path = None , name = None , legacy_only = False )",
+      "start": 799,
+      "end": 807,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_require_identity( self , * , run_id = None , path = None , name = None )",
+      "start": 809,
+      "end": 811,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "function_span( self , run_id : int , path : str , long_name : str )",
+      "start": 922,
+      "end": 931,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "record_claim( self , * , path : str , long_name : str , commit : str , handle : str | None = None , key_name : str | None = None , source_run_id : int | None = None )",
+      "start": 969,
+      "end": 992,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_claim_key_version( self , path : str , name : str , source_run_id : int | None )",
+      "start": 994,
+      "end": 1000,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_claim_conflict( self , path : str , name : str , key : tuple | None )",
+      "start": 1002,
+      "end": 1008,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "open_claims( self )",
+      "start": 1010,
+      "end": 1016,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "attempts_for( self , keys )",
+      "start": 1018,
+      "end": 1035,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_pair_attempts( rows , found : dict )",
+      "start": 1038,
+      "end": 1047,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "prune_claims( self , keep_ids : set [ int ] )",
+      "start": 1069,
+      "end": 1080,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "find_functions( self , path : str , name_fragment : str )",
+      "start": 1114,
+      "end": 1140,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_at_start_line( self , path : str , start : int )",
+      "start": 1154,
+      "end": 1170,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_anonymous_names( self , path : str )",
+      "start": 1183,
+      "end": 1192,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "function_key( self , path : str , long_name : str , selector : str )",
+      "start": 1194,
+      "end": 1202,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_ordinal_at_start( self , path : str , name : str , start : int )",
+      "start": 1204,
+      "end": 1211,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_require_line( self , path : str , run_id : int | None , start : int )",
+      "start": 1213,
+      "end": 1219,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "function_history( self , path : str , long_name : str )",
+      "start": 1228,
+      "end": 1251,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_doomed_ids( self , keep_ids : set [ int ] , observed_ids : set [ int ] | None )",
+      "start": 1257,
+      "end": 1260,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "prune_runs( self , keep_ids : set [ int ] , * , observed_ids : set [ int ] | None = None )",
+      "start": 1262,
+      "end": 1282,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_verify_blocker( run : dict , previous : dict | None )",
+      "start": 1321,
+      "end": 1325,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "pick_baseline( runs : list [ dict ] )",
+      "start": 1328,
+      "end": 1342,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "_baseline_keep_ids( runs : list [ dict ] )",
+      "start": 1413,
+      "end": 1423,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/store.py",
+      "name": "prune_keep_set( runs : list [ dict ] , override_run_ids , * , keep : int , identity_run_ids = ( )",
+      "start": 1426,
+      "end": 1442,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/uncovered.py",
+      "name": "__init__( self )",
+      "start": 137,
+      "end": 140,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/uncovered.py",
+      "name": "add( self , artifact : Path , dead : dict [ str , set [ int ] ] )",
+      "start": 142,
+      "end": 148,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/uncovered.py",
+      "name": "take( self , wanted : set )",
+      "start": 150,
+      "end": 157,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/uncovered.py",
+      "name": "missing_by_path( root : Path , cfg , * , folded : DeadLineFold | None = None )",
+      "start": 170,
+      "end": 185,
+      "ccn": 5
+    },
+    {
+      "path": "src/crapkit/universe.py",
+      "name": "_scope_match( name : str , path : str , extensions : tuple [ str , ... ] )",
+      "start": 114,
+      "end": 119,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/universe.py",
+      "name": "scope_matchers( scopes : tuple [ Scope , ... ] )",
+      "start": 122,
+      "end": 126,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/universe.py",
+      "name": "path_matchers( scope_paths : dict [ str , tuple [ str , ... ] ] )",
+      "start": 129,
+      "end": 137,
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "verdict( self , r : InventoryRow )",
+      "start": 141,
+      "end": 143,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "score( self , r : InventoryRow )",
+      "start": 145,
+      "end": 146,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "of( self , r : InventoryRow )",
+      "start": 165,
+      "end": 167,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "_entry( r : InventoryRow , churn : FileChurn , marks : Marks , ratchet : RatchetMarks )",
+      "start": 179,
+      "end": 183,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "_rank_key( e : WorklistEntry )",
+      "start": 186,
+      "end": 189,
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "_at_ceiling( scored , target : int , scope_targets : dict [ str , int ] | None )",
+      "start": 207,
+      "end": 214,
+      "ccn": 6
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "_finished_legacy( scored , done : set )",
+      "start": 217,
+      "end": 222,
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "_claim_finished( claim : dict , done : set , legacy : set )",
+      "start": 225,
+      "end": 227,
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/worklist.py",
+      "name": "closable_claims( claims : list [ dict ] , scored : list , * , target : int , scope_targets : dict [ str , int ] | None , stale_commits : set [ str ] )",
+      "start": 230,
+      "end": 242,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_git_tag( root : Path )",
+      "start": 208,
+      "end": 209,
+      "ccn": 1
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_gh_release( root : Path , version : str )",
+      "start": 212,
+      "end": 215,
+      "ccn": 1
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "verify( root : Path , version : str , * , fetch : Callable | None = None , git_tag : Callable | None = None , gh_release : Callable | None = None )",
+      "start": 261,
+      "end": 273,
+      "ccn": 5
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "plan( version : str )",
+      "start": 291,
+      "end": 328,
+      "ccn": 1
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_git( root : Path , * arguments : str )",
+      "start": 333,
+      "end": 337,
+      "ccn": 3
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_clean_main( root : Path )",
+      "start": 340,
+      "end": 345,
+      "ccn": 3
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_guard_bump( root : Path , version : str )",
+      "start": 348,
+      "end": 356,
+      "ccn": 3
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_release_tree( root : Path , version : str )",
+      "start": 359,
+      "end": 364,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_guard_contracts( root : Path , version : str )",
+      "start": 367,
+      "end": 371,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_receipt_path( root : Path )",
+      "start": 374,
+      "end": 375,
+      "ccn": 1
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_guard_receipt( root : Path , version : str )",
+      "start": 378,
+      "end": 391,
+      "ccn": 5
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_contracts_digest( )",
+      "start": 394,
+      "end": 395,
+      "ccn": 1
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_ledger_rows( root : Path )",
+      "start": 398,
+      "end": 408,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_last_run( root : Path )",
+      "start": 411,
+      "end": 413,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_latest_verification( root : Path )",
+      "start": 416,
+      "end": 418,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_passing_run( root : Path , head : str , after : int )",
+      "start": 421,
+      "end": 427,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_guard_publish( root : Path , version : str )",
+      "start": 430,
+      "end": 438,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_preflight( stage : str , root : Path , version : str )",
+      "start": 441,
+      "end": 444,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_write_receipt( root : Path , receipt : dict )",
+      "start": 447,
+      "end": 452,
+      "ccn": 1
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_finish_stage( stage : str , root : Path , version : str , receipt : dict , before : int )",
+      "start": 455,
+      "end": 464,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_dist_path( root : Path )",
+      "start": 467,
+      "end": 471,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_remove_dist( root : Path )",
+      "start": 474,
+      "end": 477,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_dist_artifacts( root : Path )",
+      "start": 480,
+      "end": 484,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_check_artifacts( artifacts : list [ Path ] )",
+      "start": 487,
+      "end": 491,
+      "ccn": 5
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_arguments( command : tuple , root : Path )",
+      "start": 494,
+      "end": 496,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_execute( command : tuple , root : Path , dry_run : bool )",
+      "start": 499,
+      "end": 506,
+      "ccn": 3
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_stage1_files( root : Path )",
+      "start": 509,
+      "end": 514,
+      "ccn": 2
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_run_step( step : Step , root : Path , version : str , dry_run : bool )",
+      "start": 517,
+      "end": 525,
+      "ccn": 6
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_run_or_untag( step : Step , root : Path , version : str , dry_run : bool , head : str = \"\" )",
+      "start": 528,
+      "end": 537,
+      "ccn": 3
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_run_guarded( stage : str , steps : list , version : str , root : Path )",
+      "start": 540,
+      "end": 548,
+      "ccn": 4
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "run( stage : str , version : str , root : Path , * , dry_run : bool = False )",
+      "start": 551,
+      "end": 561,
+      "ccn": 6
+    },
+    {
+      "path": "tools/release/release.py",
+      "name": "_print_plan( version : str )",
+      "start": 574,
+      "end": 581,
+      "ccn": 5
+    }
+  ]
+}

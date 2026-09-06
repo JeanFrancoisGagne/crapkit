@@ -1,0 +1,109 @@
+{
+  "changed_functions": [
+    {
+      "path": "src/crapkit/dup.py",
+      "function": "_is_self( r : InventoryRow , target )",
+      "ccn": 1
+    },
+    {
+      "path": "src/crapkit/packet.py",
+      "function": "file_functions( rows )",
+      "ccn": 2
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "function": "_shared_source_spans( rows , lane_scopes : set , cc_only_scopes )",
+      "ccn": 4
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "function": "_check_coverage_spans( rows , coverage_by_path : dict , start_index : dict , lane_scopes : set , cc_only_scopes )",
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "function": "score_rows( rows : list [ InventoryRow ] , coverage_by_path : dict [ str , list [ FnCoverage ] ] , * , lane_scopes : set [ str ] , target : int = 6 , scope_targets : dict [ str , int ] | None = None , cc_only_scopes : frozenset [ str ] = frozenset ( )",
+      "ccn": 3
+    },
+    {
+      "path": "src/crapkit/cli/scoring.py",
+      "function": "_rescore_json( overlay , latest : dict , gate : dict | None = None )",
+      "ccn": 3
+    }
+  ],
+  "files": [
+    "src/crapkit/dup.py",
+    "src/crapkit/packet.py",
+    "src/crapkit/score.py",
+    "src/crapkit/cli/scoring.py",
+    "docs/agent-json.md",
+    "tests/unit/test_packet.py",
+    "tests/unit/test_identity_presentations.py",
+    "tests/unit/test_coverage_same_span.py",
+    "tests/e2e/test_coverage_same_span_e2e.py"
+  ]
+}
+{
+  "fixture": "Synthetic 100,000 distinct-span functions in 1,000 paths; every artifact entry has exact start",
+  "output_equality": true,
+  "before": {
+    "cold": {
+      "seconds": 0.6003504000254907,
+      "peak_mib": 35.778038024902344
+    },
+    "warm": [
+      {
+        "seconds": 0.5340361000271514,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 0.8282907000393607,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 0.9329809000482783,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 0.9801606999826618,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 0.9424190000281669,
+        "peak_mib": 35.778038024902344
+      }
+    ],
+    "warm_median_seconds": 0.9329809000482783,
+    "warm_median_peak_mib": 35.778038024902344
+  },
+  "after": {
+    "cold": {
+      "seconds": 0.6785946000018157,
+      "peak_mib": 35.778038024902344
+    },
+    "warm": [
+      {
+        "seconds": 0.6695264999871142,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 1.1191317000193521,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 1.2338044000207447,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 1.1315779999713413,
+        "peak_mib": 35.778038024902344
+      },
+      {
+        "seconds": 1.095282100024633,
+        "peak_mib": 35.778038024902344
+      }
+    ],
+    "warm_median_seconds": 1.1191317000193521,
+    "warm_median_peak_mib": 35.778038024902344
+  }
+}
