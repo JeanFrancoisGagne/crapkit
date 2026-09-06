@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 — unreleased
+## 0.6.0 — 2026-09-05
 
 ### The MCP tools follow one naming pattern, carry titles and output schemas, and two read tools join
 
