@@ -185,6 +185,20 @@ def owning_scope(path: str, matchers: tuple[ScopeMatch, ...]) -> str | None:
     return None
 
 
+def overlapping_scope(directory: str, matchers: tuple[ScopeMatch, ...]) -> str | None:
+    """A scope containing this directory or declaring a path below it.
+
+    Init asks with path matchers because a nested configuration would shadow
+    every language below it. Both directions use the corpus ownership rule,
+    including its empty prefix for a repository-wide scope.
+    """
+    owner = owning_scope(directory, matchers)
+    if owner is not None:
+        return owner
+    subtree = (_scope_match("nested", directory, ANY_EXTENSION),)
+    return next((m.name for m in matchers if owning_scope(m.path, subtree) is not None), None)
+
+
 class Universe(NamedTuple):
     """Every candidate file's verdict.
 

@@ -21,7 +21,7 @@ from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
-from ..universe import assign_files, scan_files
+from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
 from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, repo_text
 
 
@@ -561,27 +561,11 @@ def _refuse_claimed_by_ancestor(root: Path) -> None:
     if above is None:
         return
     directory = root.relative_to(above).as_posix()
-    scope = _claiming_scope(_load_repo_config(above), directory)
+    cfg = _load_repo_config(above)
+    scope = overlapping_scope(directory, path_matchers({s.name: s.paths for s in cfg.scopes}))
     if scope is not None:
         raise ConfigError(f"crapkit.toml at {above} already claims {directory} "
                           f"(scope {scope!r}); edit that configuration instead")
-
-
-def _claiming_scope(cfg, directory: str) -> str | None:
-    """The first declared scope whose path and `directory` select a file in
-    common: one is the other or sits under it. `.` claims nothing, as in scoring."""
-    for scope in cfg.scopes:
-        if any(_overlapping(directory, path) for path in scope.paths):
-            return scope.name
-    return None
-
-
-def _overlapping(directory: str, scope_path: str) -> bool:
-    return _under(directory, scope_path) or _under(scope_path, directory)
-
-
-def _under(path: str, prefix: str) -> bool:
-    return path == prefix or path.startswith(prefix.rstrip("/") + "/")
 
 
 def cmd_init(args: argparse.Namespace) -> int:
