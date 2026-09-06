@@ -19,7 +19,7 @@ parenthesis, so an empty bare name is still the one test for it.
 import pytest
 
 from crapkit.analyze import analyze_source
-from crapkit.packet import ANONYMOUS, anonymous_starts, bare_name, handles
+from crapkit.packet import ANONYMOUS, anonymous_positions, bare_name, handles
 from crapkit.score import ScoredRow
 
 # One named function per language, at the spelling its lizard reader actually
@@ -67,7 +67,7 @@ def test_a_go_functions_handle_is_the_identifier_not_the_signature():
     into the next command, so a signature there is a name nothing accepts."""
     (record,) = analyze_source("app.go", SOURCES["app.go"])
 
-    assert handles([row(record.long_name, 3)]) == {3: "Classify"}
+    assert handles([row(record.long_name, 3)]) == {("app.rs", record.long_name, 3, 0): "Classify"}
 
 
 @pytest.mark.parametrize("long_name,expected", [
@@ -89,10 +89,12 @@ def test_an_anonymous_function_still_has_no_bare_name():
 
 
 def test_anonymity_is_still_the_empty_bare_name():
-    """`anonymous_starts` and the store's handle listing both read anonymity off
+    """`anonymous_positions` and the store's handle listing both read anonymity off
     an empty prefix; a rule that named `(anonymous)` would renumber every handle.
     """
     rows = [row(ANONYMOUS, 9), row("route cmd : & Cmd", 20), row(ANONYMOUS, 41)]
 
-    assert anonymous_starts(rows) == [9, 41]
-    assert handles(rows) == {9: f"{ANONYMOUS}#1", 20: "route", 41: f"{ANONYMOUS}#2"}
+    assert anonymous_positions(rows) == [("app.rs", ANONYMOUS, 9, 0), ("app.rs", ANONYMOUS, 41, 0)]
+    assert handles(rows) == {("app.rs", ANONYMOUS, 9, 0): f"{ANONYMOUS}#1",
+                             ("app.rs", "route cmd : & Cmd", 20, 0): "route",
+                             ("app.rs", ANONYMOUS, 41, 0): f"{ANONYMOUS}#2"}

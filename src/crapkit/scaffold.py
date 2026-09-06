@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from typing import NamedTuple
 
+from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths
+
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
                        scopes_with_tests)
 
@@ -103,7 +105,7 @@ class LaneSpec(NamedTuple):
     cwd: str = ""  # the directory the command runs in; "" is the repo root
 
 
-PYTEST_MARKERS = ("pyproject.toml", "pytest.ini", "setup.cfg")
+PYTEST_MARKERS = PYTEST_CONFIG_FILES
 
 # A lockfile is the repo saying it pins its own environment through a manager,
 # and only that manager's `run` binds a command to it. A bare `python` binds to
@@ -192,83 +194,6 @@ def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
                     _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES, _PY_RESULTS)
 
 
-# Where pytest keeps `testpaths`, and the order it reads those files in: the
-# first file carrying a pytest section ends the search, whether or not that
-# section names testpaths, because pytest picks one inifile and never consults a
-# lower-ranked one. A repo holding all three is read the way pytest reads it.
-# This is the same presence-and-config signal that picks the lane itself — the
-# file is parsed, never executed and never imported.
-_TESTPATHS_SECTION = {"pytest.ini": "pytest", "setup.cfg": "tool:pytest"}
-_TESTPATHS_ORDER = ("pytest.ini", "pyproject.toml", "setup.cfg")
-
-
-def _ini_testpaths(text: str, section: str) -> tuple[str, ...] | None:
-    """`testpaths` out of an ini file, or None when the file carries no pytest
-    section for the search to stop at. A file that will not parse carries
-    nothing: init is describing the repo, not judging its pytest config."""
-    import configparser
-
-    parser = configparser.ConfigParser()
-    try:
-        parser.read_string(text)
-    except configparser.Error:
-        return None
-    if not parser.has_section(section):
-        return None
-    return tuple(parser.get(section, "testpaths", fallback="").split())
-
-
-def _toml_value(data, *keys: str):
-    """One key path through nested tables, or None the moment it leaves them."""
-    for key in keys:
-        if not isinstance(data, dict):
-            return None
-        data = data.get(key)
-    return data
-
-
-def _toml_testpaths(text: str) -> tuple[str, ...] | None:
-    """None unless `[tool.pytest.ini_options]` is there, which is the table
-    pytest itself looks for before it reads a pyproject as its inifile."""
-    import tomllib
-
-    try:
-        data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
-        return None
-    section = _toml_value(data, "tool", "pytest", "ini_options")
-    if not isinstance(section, dict):
-        return None
-    found = section.get("testpaths")
-    return tuple(str(path) for path in found) if isinstance(found, list) else ()
-
-
-def _testpaths_of(name: str, text: str) -> tuple[str, ...] | None:
-    if name == "pyproject.toml":
-        return _toml_testpaths(text)
-    return _ini_testpaths(text, _TESTPATHS_SECTION[name])
-
-
-def pytest_testpaths(marker_texts: dict[str, str]) -> tuple[str, ...]:
-    """The paths a bare `pytest` in this repo collects, in the order declared.
-
-    More than one of them is the shape that can defeat the full-suite lane: a
-    conftest two testpaths both import registers twice under
-    `--import-mode=importlib` and the whole run dies during collection, with no
-    full-suite command left to write. init cannot know whether that happens
-    without running the suite, so it reads the count and writes the fallback
-    commented out.
-
-    The first file carrying a pytest section answers, empty section included:
-    that is the file pytest reads, and a `[pytest]` naming no testpaths means a
-    bare `pytest` collects from the rootdir. Falling through to the next file
-    would name paths the repo's own run never collects.
-    """
-    for name in _TESTPATHS_ORDER:
-        found = _testpaths_of(name, marker_texts.get(name, ""))
-        if found is not None:
-            return found
-    return ()
 
 
 def _npm_test_script(scripts: dict) -> str | None:
@@ -706,7 +631,7 @@ def _suite_why(name: str, facts: _ScopedFacts) -> str:
 def _python_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
     """`{files}` where the scope holds its own tests; the whole-suite form
     everywhere else, naming the repo's test directory unless testpaths already
-    collects it. `_scoped_command` runs a template with no {files} verbatim."""
+    collects it. A scoped template with no {files} runs verbatim."""
     live = "python" in facts.confirmed
     if name in facts.tested:
         return ScopedEntry(_PYTEST_FILES.replace("{python}", facts.launcher),

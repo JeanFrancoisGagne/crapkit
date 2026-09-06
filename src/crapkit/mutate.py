@@ -1,4 +1,4 @@
-"""Line-based mutant generation. Pure: text + changed lines in, mutants out.
+"""Mutant generation from language tokens and changed source lines.
 
 Corpus-scoped too: `partition_by_corpus` puts the diff's file list through
 the predicate scoring uses before a mutant is placed, so a test file never
@@ -6,9 +6,8 @@ grows one.
 
 Diff-scoped by design: mutating a whole repo is a research project, mutating
 the lines a change touched is a review step. Operators flip comparisons,
-boolean connectives, and boolean literals — the mutants that catch a test
-suite asserting nothing. String literals are masked and comment lines skipped:
-a survivor in dead text would erode trust in the survivor list.
+boolean connectives, and boolean literals. Language lexers exclude identifiers,
+strings, comments and markup while retaining code inside template expressions.
 
 The language decides the table, and two languages have no table at all. Shell
 and PowerShell both spell redirection with the same `<` and `>` this module
@@ -17,11 +16,14 @@ treats as comparisons, so both are refused rather than mutated — see
 """
 from __future__ import annotations
 
+from bisect import bisect_right
+from collections import defaultdict
+from itertools import accumulate
 import re
 from typing import NamedTuple
 
 from .errors import ToolError
-from .universe import assign_files
+from .universe import LANGUAGE_EXTENSIONS, assign_files
 
 
 class Mutant(NamedTuple):
@@ -34,7 +36,7 @@ class Mutant(NamedTuple):
 
 # source token -> mutation targets. Negation flips plus boundary shifts —
 # the boundary mutant (> vs >=) is the one an off-by-one test hole misses.
-# Word-ish operators bind on spaces to dodge identifiers like Sand/oreo.
+# Word operators retain their historical display spelling in this table.
 _OPS = {
     "python": {"==": ("!=",), "!=": ("==",), "<=": ("<", ">"), ">=": (">", "<"),
                "<": ("<=", ">="), ">": (">=", "<="),
@@ -48,16 +50,16 @@ _OPS = {
 # entirely. `0..<b` mutated to `0..<=b` does not compile, so the mutant dies on
 # the compiler and reads as killed by a test that never ran.
 _PROTECT = ("===", "!==", "==", "!=", "<=", ">=", "=>", "->", "..<", "...")
-_COMMENT_PREFIXES = ("#", "//", "/*", "*")
-_STRING_RE = re.compile(r"'[^']*'|\"[^\"]*\"|`[^`]*`")
 
-# The suffixes that pick something other than the C-family table. Rust is named
-# here rather than left to the default because it is a decision: it spells `==`,
-# `!=`, `<`, `>`, `&&`, `||`, `true` and `false` exactly as C does, and its `..`
-# and `..=` ranges contain none of those tokens, so they need no `_PROTECT` entry
-# the way Swift's `0..<n` did (measured on a range-heavy function: zero mutants).
-_LANGUAGE_BY_SUFFIX = {".py": "python", ".rs": "rust", ".sh": "shell", ".bash": "shell",
-                       ".ps1": "powershell", ".psm1": "powershell"}
+# Keep lexer selection aligned with the source languages the corpus admits.
+_LANGUAGE_BY_SUFFIX = {suffix: language for language, suffixes in LANGUAGE_EXTENSIONS.items()
+                       for suffix in suffixes}
+_LEXEMES = re.compile(r"\w+|===|!==|==|!=|<=|>=|<<=?|>>=?|&&|\|\||->|=>|\.\.<|\.\.\.|[<>]")
+_SYNTAX = re.compile(r"\w+|::|->|=>|<=|>=|==|!=|&&|\|\||<<|\.\.<|\.\.\.|[^\s]")
+_TYPE_ARGUMENTS = re.compile(r"(?:[\w\s:,.?*\[\]'<>]|&(?!&))+")
+_ANGLE_LANGUAGES = {"typescript", "tsx", "vue", "cpp", "rust", "java", "swift", "objectivec"}
+_TYPE_CONTEXT = {":", "::", "->", "as", "new", "class", "struct", "interface", "type",
+                 "fn", "function", "impl", "typedef", "using", "extends", "implements"}
 
 # Languages this module refuses, with the reason a user reads. Shell's `<` and
 # `>` are redirections: on a 9-line function 8 of 11 mutants flipped one
@@ -114,20 +116,6 @@ def refusal(language: str) -> str | None:
     return UNMUTABLE.get(language)
 
 
-def _masked(line: str) -> str:
-    """String literal contents blanked, length preserved, so operator offsets
-    found on the mask apply to the real line."""
-    return _STRING_RE.sub(lambda m: " " * len(m.group()), line)
-
-
-def _occurrences(mask: str, needle: str) -> list[int]:
-    out, at = [], mask.find(needle)
-    while at != -1:
-        out.append(at)
-        at = mask.find(needle, at + 1)
-    return out
-
-
 def _covered_by_longer(mask: str, at: int, token: str) -> bool:
     for p in _PROTECT:
         if len(p) <= len(token):
@@ -138,13 +126,12 @@ def _covered_by_longer(mask: str, at: int, token: str) -> bool:
     return False
 
 
-def _line_mutations(line: str, ops: dict) -> list[tuple[str, str]]:
-    """(mutated_line, op_label) for every operator occurrence outside strings."""
-    mask = _masked(line)
+def _line_mutations(line: str, tokens: list, ops: dict) -> list[tuple[str, str]]:
+    """Mutate whole code tokens, in the existing operator-table order."""
     out = []
     for source, targets in ops.items():
-        for at in _occurrences(mask, source):
-            if _covered_by_longer(mask, at, source):
+        for at, token in tokens:
+            if token != source or _covered_by_longer(line, at, source):
                 continue
             for target in targets:
                 out.append((line[:at] + target + line[at + len(source):],
@@ -161,19 +148,147 @@ def file_mutants(text: str, changed_lines: set[int] | None, language: str) -> li
     reason = refusal(language)
     if reason:
         raise ToolError(f"crapkit does not mutate {language}: {reason}")
-    return _mutants(text, changed_lines, _OPS.get(language, _OPS["typescript"]))
+    return _mutants(text, changed_lines, language)
 
 
-def _mutants(text: str, changed_lines: set[int] | None, ops: dict) -> list[Mutant]:
-    mutants = []
-    for line_no, line in enumerate(text.splitlines(), start=1):
-        if changed_lines is not None and line_no not in changed_lines:
-            continue
-        if line.strip().startswith(_COMMENT_PREFIXES):
-            continue
-        for mutated, op in _line_mutations(line, ops):
-            mutants.append(Mutant("", line_no, line, mutated, op))
-    return mutants
+def _code_tokens(text: str, language: str):
+    """Pygments ships with lizard and keeps language-specific string/comment state."""
+    from pygments.lexers import get_lexer_by_name
+    aliases = {"cpp": "c++", "objectivec": "objective-c"}
+    lexed = list(get_lexer_by_name(aliases.get(language, language)).get_tokens_unprocessed(text))
+    mask, syntax = _code_masks(text, lexed, language)
+    protected, ambiguous = _type_angles(syntax, lexed, language)
+    tokens = ((match.start(), match.group()) for match in _LEXEMES.finditer(mask)
+              if match.start() not in protected)
+    return tokens, ambiguous
+
+
+def _code_masks(text: str, lexed: list, language: str) -> tuple[str, str]:
+    mask, syntax = [" "] * len(text), [" "] * len(text)
+    for at, kind, value in lexed:
+        if _code_kind(kind, language):
+            mask[at:at + len(value)] = value
+        if _syntax_kind(kind):
+            syntax[at:at + len(value)] = value
+    return "".join(mask), "".join(syntax)
+
+
+def _syntax_kind(kind) -> bool:
+    from pygments.token import Keyword, Name, Number, Operator, Punctuation
+
+    return any(kind in category for category in (Keyword, Name, Number, Operator, Punctuation))
+
+
+def _syntax_depths(syntax: str) -> list:
+    depth, tokens = 0, []
+    for match in _SYNTAX.finditer(syntax):
+        word = match.group()
+        depth += {"(": 1, "[": 1, "{": 1}.get(word, 0)
+        tokens.append((match.start(), word, depth))
+        depth -= {")": 1, "]": 1, "}": 1}.get(word, 0)
+    return tokens
+
+
+def _close_angle(stack: list, index: int, tokens: list):
+    depth = tokens[index][2]
+    while stack and tokens[stack[-1]][2] > depth:
+        stack.pop()
+    if stack and tokens[stack[-1]][2] == depth:
+        return stack.pop(), index
+    return None
+
+
+def _angle_pairs(tokens: list):
+    stack = []
+    for index, (_, word, depth) in enumerate(tokens):
+        if word in (";", "{", "}"):
+            _discard_angles(stack, tokens, depth)
+        if word == "<":
+            stack.append(index)
+        elif word == ">":
+            pair = _close_angle(stack, index, tokens)
+            if pair is not None:
+                yield pair
+
+
+def _discard_angles(stack: list, tokens: list, depth: int) -> None:
+    stack[:] = [index for index in stack if tokens[index][2] < depth]
+
+
+def _type_prefix(tokens: list, start: int, typed: set) -> bool:
+    if start and tokens[start - 1][0] in typed:
+        return True
+    if start >= 2 and tokens[start - 2][1] in _TYPE_CONTEXT:
+        return True
+    return False
+
+
+def _angle_kind(syntax: str, tokens: list, start: int, end: int, typed: set, language: str) -> str:
+    if _type_prefix(tokens, start, typed):
+        return "type"
+    inside = syntax[tokens[start][0] + 1:tokens[end][0]]
+    if not _TYPE_ARGUMENTS.fullmatch(inside):
+        return "comparison"
+    if any(at in typed for at, _, _ in tokens[start:end]):
+        return "type"
+    return "type" if _java_type_tail(tokens, end, language) else "ambiguous"
+
+
+def _java_type_tail(tokens: list, end: int, language: str) -> bool:
+    if language != "java" or end + 1 >= len(tokens):
+        return False
+    return bool(re.fullmatch(r"\w+", tokens[end + 1][1]))
+
+
+def _type_angles(syntax: str, lexed: list, language: str) -> tuple[set, set]:
+    from pygments.token import Keyword, Name
+
+    protected, ambiguous = set(), set()
+    if language not in _ANGLE_LANGUAGES:
+        return protected, ambiguous
+    typed = {at for at, kind, _ in lexed if kind in Keyword.Type or kind in Name.Builtin}
+    tokens = _syntax_depths(syntax)
+    for start, end in _angle_pairs(tokens):
+        kind = _angle_kind(syntax, tokens, start, end, typed, language)
+        _record_angles(tokens, start, end, kind, protected, ambiguous)
+    return protected, ambiguous - protected
+
+
+def _record_angles(tokens: list, start: int, end: int, kind: str, protected: set, ambiguous: set) -> None:
+    if kind == "type":
+        protected.update(at for at, word, depth in tokens[start:end + 1]
+                         if word in ("<", ">") and depth == tokens[start][2])
+    if kind == "ambiguous":
+        ambiguous.update((tokens[start][0], tokens[end][0]))
+
+
+def _code_kind(kind, language: str) -> bool:
+    from pygments.token import Keyword, Name, Operator, Punctuation
+
+    return kind in Keyword or kind in Name.Builtin or kind in Operator or (language == "go" and kind in Punctuation)
+
+
+def _tokens_by_line(text: str, language: str, changed: set[int] | None) -> dict:
+    starts = list(accumulate((len(line) for line in text.splitlines(keepends=True)), initial=0))
+    by_line = defaultdict(list)
+    tokens, ambiguous = _code_tokens(text, language)
+    for at, token in tokens:
+        line = bisect_right(starts, at)
+        if changed is None or line in changed:
+            if at in ambiguous:
+                raise ToolError(f"ambiguous {language} angle syntax on line {line}: "
+                                "cannot distinguish type arguments from comparisons")
+            by_line[line].append((at - starts[line - 1], token))
+    return by_line
+
+
+def _mutants(text: str, changed_lines: set[int] | None, language: str) -> list[Mutant]:
+    ops = {key.strip(): tuple(value.strip() for value in values)
+           for key, values in _OPS.get(language, _OPS["typescript"]).items()}
+    lines = text.splitlines()
+    return [Mutant("", number, lines[number - 1], mutated, op)
+            for number, tokens in sorted(_tokens_by_line(text, language, changed_lines).items())
+            for mutated, op in _line_mutations(lines[number - 1], tokens, ops)]
 
 
 def apply_mutant(text: str, mutant: Mutant) -> str:

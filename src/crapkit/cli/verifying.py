@@ -18,7 +18,7 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
+                      _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -300,7 +300,8 @@ def _refuse_override(verdict, reason: str | None) -> None:
         print(refusal, file=sys.stderr)
 
 
-def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, verdict, reason):
+def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, verdict, reason,
+                            *, key_version: int | None = None, identity_rows=None):
     """Grant --override for pure gate violations; regressions and new failures
     never qualify (`_refuse_override` says so once the verdict is printed)."""
     from ..override import record_override
@@ -309,7 +310,7 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
         return verdict, []
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=verdict.gate_violations,
-                    reason=reason)
+                    reason=reason, key_version=key_version, identity_rows=identity_rows)
     overridden = verdict.gate_violations
     return verdict._replace(ok=True, gate_violations=[]), overridden
 
@@ -366,7 +367,7 @@ def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
 
 
 def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
-                            updated: list[RatchetEntry]) -> RatchetDelta | None:
+                            updated: list[RatchetEntry], *, key_version: int | None = None) -> RatchetDelta | None:
     """Rewrite the marks file only when its text would change, and never create
     one to hold zero marks. Returns what the write did, or None when the file
     was left alone.
@@ -377,12 +378,14 @@ def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
     can only drop or lower marks, so a marks file that does not exist has
     nothing to write, and a text that matches the disk has nothing to say.
     """
-    from ..ratchet import dump_ratchet, ratchet_delta
+    from ..ratchet import dump_ratchet, ratchet_delta, read_key_version
 
     if not ratchet_path.is_file():
         return None
-    text = dump_ratchet(updated)
-    if repo_text(ratchet_path, ratchet_path.name) == text:
+    before = repo_text(ratchet_path, ratchet_path.name)
+    version = read_key_version(before) if key_version is None else key_version
+    text = dump_ratchet(updated, key_version=version)
+    if before == text:
         return None
     ratchet_path.write_text(text, encoding="utf-8", newline="\n")
     return ratchet_delta(prior, updated)
@@ -390,7 +393,7 @@ def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
 
 def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
                    ratchet_path: Path, ratchet, scored, cfg, *, args,
-                   commit: str) -> RatchetDelta | None:
+                   commit: str, key_version: int | None = None) -> RatchetDelta | None:
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
     Returns the tighten's counts, or None when the tighten wrote nothing.
 
@@ -406,7 +409,7 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
     hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
     updated = update_ratchet(ratchet, scored, target=cfg.target,
                              scope_targets=cfg.scope_targets, hold=hold)
-    return _write_marks_if_changed(ratchet_path, ratchet, updated)
+    return _write_marks_if_changed(ratchet_path, ratchet, updated, key_version=key_version)
 
 
 def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
@@ -614,8 +617,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     baseline, basis = _verify_basis(root, store, args, git)
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
-    # Six of the eight fields by name; corpus and cache_hits are coverage's report
-    # line and no part of a verdict.
+    # Corpus and cache_hits are coverage's report line, not verdict inputs.
     run = _scored_run(root, cfg, list(cfg.lanes), reuse_artifacts=args.reuse_artifacts,
                       reuse_unchanged=args.reuse_unchanged, git=git)
     commit, scored, provenance = run.commit, run.scored, run.provenance
@@ -626,6 +628,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     ranges = changed_ranges(diff_since(root, basis))
     ratchet_path = root / cfg.ratchet_file
     ratchet = _load_ratchet_or_die(ratchet_path, cfg.ratchet_file)
+    key_version = _ratchet_key_version(root, cfg, scored, store)
     ratchet_sha256 = _ratchet_sha256(ratchet_path)
 
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
@@ -636,7 +639,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever
     # the artifacts say — and reading every lane's artifact to spell that [] is
     # the whole cost of the post-commit verify on an unchanged tree.
-    uncovered = diff_uncovered(ranges, missing_by_path(root, cfg)) if ranges else []
+    uncovered = diff_uncovered(ranges, missing_by_path(root, cfg, folded=run.dead_lines)) if ranges else []
     _warn_diff_uncovered(uncovered)
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
@@ -645,9 +648,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
         verdict = verdict._replace(ok=False)  # a breached run never advances the baseline
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=provenance, kind="verify")
-    verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override)
+    verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
+                                                 key_version=key_version, identity_rows=scored)
     changes = _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored,
-                             cfg, args=args, commit=commit)
+                             cfg, args=args, commit=commit, key_version=key_version)
     _release_claims(store, git, cfg, scored)
     _emit_verify_findings(root, args, verdict, uncovered)
 
@@ -726,14 +730,6 @@ def _more_skips_line(name: str, base_n: int | None, fresh_n: int | None) -> str 
     return None
 
 
-def _under_scope_path(path: str, scope_path: str) -> bool:
-    """True when path is the declared scope path itself or sits under it.
-
-    Kept as a name on this module because `crapkit.cli._under_scope_path` is part
-    of the frozen import surface (tests/unit/test_cli_lazy_families.py). The
-    ownership rule itself is universe's; owning_scope precomputes both arms.
-    """
-    return path == scope_path or path.startswith(scope_path.rstrip("/") + "/")
 
 
 def _owning_scope(path: str, scope_paths: dict[str, tuple[str, ...]]) -> str | None:
@@ -790,22 +786,14 @@ def _group_files_by_scope(files, scope_paths: dict, templates: dict,
     return by_scope
 
 
-def _scoped_command(template: str, files: list[str]) -> str:
-    """The scope's test command: its template with the quoted file list, or the
-    template verbatim when it names no {files}.
 
-    A template without {files} runs the scope's whole suite. That is the coarse
-    but working escape for the ordinary layout, where tests live in a top-level
-    tests/ directory owned by no scope: substituting a SOURCE file there hands
-    pytest a collection target with no tests in it (exit 5).
-    """
-    if "{files}" not in template:
-        return template
-    return template.replace("{files}", " ".join(f'"{f}"' for f in files))
+
 
 
 def cmd_test_scoped(args: argparse.Namespace) -> int:
+    import os
     import subprocess
+    from ..procs import prepare_template
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
@@ -814,8 +802,8 @@ def cmd_test_scoped(args: argparse.Namespace) -> int:
                                      cwd=_stand(args.repo))
 
     for scope, files in sorted(by_scope.items()):
-        command = _scoped_command(templates[scope], files)
-        proc = subprocess.run(command, shell=True, cwd=root)
+        command, additions = prepare_template(templates[scope], {'files': files})
+        proc = subprocess.run(command, shell=True, cwd=root, env={**os.environ, **additions})
         if proc.returncode != 0:
             print(f"crapkit: scoped tests for {scope!r} failed (runner exit {proc.returncode})", file=sys.stderr)
             return 1  # the runner's own code would collide with crapkit's 3/5/6/7/8
@@ -861,7 +849,7 @@ def _print_clear_the_reason() -> None:
           "here — clear it where it was set.")
 
 
-def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
+def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing."""
     from ..gitio import head_commit, stage_path
@@ -871,6 +859,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
     db_path = root / ".crapkit" / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
+    key_version = _ratchet_key_version(root, cfg, records, store)
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
     gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
@@ -878,7 +867,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str) -> None:
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
-                    raise_marks=False)
+                    raise_marks=False, key_version=key_version, identity_rows=records)
     stage_path(root, cfg.ratchet_file)  # the debt must be IN the commit, not dangling
     print(f"crapkit: override granted with full audit ({reason}).")
     _print_clear_the_reason()
@@ -926,7 +915,7 @@ def _note_marked_staged(exempt: list) -> None:
               "were not gated — `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
-def _gated_violations(root: Path, cfg, violations: list) -> list:
+def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:
     """The breaches the commit is actually refused for.
 
     The marks file is read only once something breached: a clean commit is the
@@ -939,12 +928,13 @@ def _gated_violations(root: Path, cfg, violations: list) -> list:
     if not violations:
         return []
     entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
+    _ratchet_key_version(root, cfg, records)
     gated, exempt = _split_marked(violations, entries)
     _note_marked_staged(exempt)
     return gated
 
 
-def _staged_gate(root: Path, cfg):
+def _staged_gate(root: Path, cfg, base: str | None = None):
     """The gate's verdict, with both git reads started before lizard is imported.
 
     Neither answer is needed until the import is paid for and the two do not
@@ -954,7 +944,7 @@ def _staged_gate(root: Path, cfg):
     """
     from ..gitio import staged_reads
 
-    with staged_reads(root) as reads:
+    with staged_reads(root, base) as reads:
         _analysis_tools()  # importing crapkit.hook reaches lizard too, so it waits its turn
         from ..hook import gate_staged
 
@@ -966,9 +956,9 @@ def cmd_hook_precommit(args: argparse.Namespace) -> int:
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
-    gate = _staged_gate(root, cfg)
+    gate = _staged_gate(root, cfg, getattr(args, "base", None))
     _warn_unscoped_staged(gate.unscoped)
-    violations = _gated_violations(root, cfg, gate.violations)
+    violations = _gated_violations(root, cfg, gate.violations, gate.records)
     if not violations:
         return 0
     print(f"crapkit gate: {len(violations)} staged function(s) exceed the complexity ceiling of {cfg.target}:")
@@ -980,7 +970,7 @@ def cmd_hook_precommit(args: argparse.Namespace) -> int:
     # three-record audit and the gate holds unless all three land.
     reason = os.environ.get("CRAPKIT_OVERRIDE_REASON", "").strip()
     if reason:
-        _grant_env_override(root, cfg, violations, reason)
+        _grant_env_override(root, cfg, violations, reason, gate.records)
         return 0
 
     print("decompose before committing (coverage cannot save a function above the target).")

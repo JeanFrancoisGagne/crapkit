@@ -160,9 +160,9 @@ def test_the_packet_carries_every_function_in_the_file_not_just_this_one(repo: P
 
     assert out["file_functions"] == [
         {"function": "beta( a , b )", "start": 1, "end": 13, "ccn": 6, "crap": 42.0,
-         "remedy": "add-tests"},
+         "remedy": "add-tests", "occurrence": 1},
         {"function": "helper( a )", "start": 16, "end": 19, "ccn": 2, "crap": 6.0,
-         "remedy": "ok"},
+         "remedy": "ok", "occurrence": 1},
     ]
     assert out["file_totals"] == {"functions": 2, "over_target": 1, "crap_load": 48.0}, \
         "helper sits exactly at the ceiling of 6, which is not over it"

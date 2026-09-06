@@ -53,9 +53,10 @@ def test_malformed_ratchet_line_is_loud():
         load_ratchet("src/a.ts\tonly-two-fields\n")
 
 
-def test_update_compares_against_the_worst_twin():
+def test_update_compares_against_the_worst_scope_copy():
     prior = [RatchetEntry("src/a.ts", "handlers ( )", 90.0)]
-    fresh = [scored("src/a.ts", "handlers ( )", 2, 1.0), scored("src/a.ts", "handlers ( )", 9, 0.0)]
+    fresh = [scored("src/a.ts", "handlers ( )", 2, 1.0),
+             scored("src/a.ts", "handlers ( )", 9, 0.0)._replace(scope="other")]
     (entry,) = update_ratchet(prior, fresh, target=6)
     assert entry.crap == 90.0, "the surviving worst twin (crap 90) keeps the mark; the clean twin cannot tighten it"
 

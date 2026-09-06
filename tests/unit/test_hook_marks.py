@@ -12,7 +12,8 @@ that the new hook rule did not leak into them.
 """
 import pytest
 
-from crapkit.cli import _ceiling_breaches, _split_marked, _unmarked_breaches
+from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
+from crapkit.cli.verifying import _split_marked
 from crapkit.hook import Violation
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow

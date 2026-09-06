@@ -21,14 +21,16 @@ import json
 import sqlite3
 import sys
 import zlib
-from itertools import takewhile
 from pathlib import Path
 from typing import NamedTuple
 
-from .keys import key_names, split_ordinal
+from .keys import (claim_holds, claim_key, expression_group, expression_reader_current,
+                   key_name, key_names, position,
+                   refuse_ambiguous, split_ordinal)
 from .packet import bare_name, handle_ordinal, matching_names
 from .snapshot import InventoryRow
 from .worklist import Marks
+from .errors import ToolError
 
 # {table} so the migration can build the same shape under a temp name and swap
 # it in last: the live table is never dropped until its replacement is filled.
@@ -44,7 +46,8 @@ _FUNCTIONS_DDL = """CREATE TABLE IF NOT EXISTS {table} (
     ccn_std INTEGER NOT NULL, ccn_mod INTEGER NOT NULL, ccn INTEGER NOT NULL,
     nloc INTEGER NOT NULL, params INTEGER NOT NULL, nesting INTEGER NOT NULL,
     cov REAL, flag INTEGER, crap REAL, remedy INTEGER,
-    cognitive INTEGER NOT NULL DEFAULT 0
+    cognitive INTEGER NOT NULL DEFAULT 0,
+    occurrence INTEGER NOT NULL DEFAULT 0
 )"""
 
 # The UNIQUE leads with the path, and that ordering IS the index the path-scoped
@@ -96,7 +99,9 @@ CREATE TABLE IF NOT EXISTS attempts (
     commit_sha TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     closed_at TEXT,
-    handle TEXT
+    handle TEXT,
+    key_name TEXT,
+    key_version INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS run_rollup (
     run_id INTEGER NOT NULL REFERENCES runs(id),
@@ -120,11 +125,19 @@ _INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_functions_run ON functions(run_id);
 CREATE INDEX IF NOT EXISTS idx_functions_identity ON functions(identity_id, run_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_open ON attempts(closed_at);
+CREATE INDEX IF NOT EXISTS idx_attempts_identity ON attempts(path, key_name);
 """
 
 # Indexes an earlier shape carried that nothing reads now. idx_identities_path
 # is what the reordered UNIQUE replaced; both are dropped on open.
 _DEAD_INDEXES = ("idx_functions_run_path", "idx_identities_path")
+
+_CURRENT_OBJECTS = frozenset(("runs", "identities", "flags", "remedies", "functions",
+                              "overrides", "attempts", "run_rollup", "idx_functions_run",
+                              "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity"))
+_ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence"},
+                  "runs": {"lanes", "kind", "verdict_ok", "findings"},
+                  "attempts": {"handle", "key_name", "key_version"}}
 
 _JOINED = "FROM functions f JOIN identities i ON i.id = f.identity_id"
 # Path-scoped reads, identities first. CROSS JOIN is SQLite's documented way to
@@ -134,16 +147,16 @@ _JOINED = "FROM functions f JOIN identities i ON i.id = f.identity_id"
 _BY_PATH = "FROM identities i CROSS JOIN functions f ON f.identity_id = i.id"
 _ID_COLS = "i.scope, i.path, i.long_name"
 _METRIC_COLS = "f.start, f.end, f.ccn_std, f.ccn_mod, f.ccn, f.nloc, f.params, f.nesting"
-_INV_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cognitive"
-_ALL_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cov, f.flag, f.crap, f.remedy, f.cognitive"
-_CRAP_COLS = f"{_ID_COLS}, f.crap"
+_INV_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cognitive, f.occurrence"
+_ALL_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cov, f.flag, f.crap, f.remedy, f.cognitive, f.occurrence"
+_CRAP_COLS = f"{_ID_COLS}, f.crap, f.start, f.occurrence"
 # what write_run binds per row: everything but the three identity strings
 _WRITE_COLS = ("start, end, ccn_std, ccn_mod, ccn, nloc, params, nesting, "
-               "cov, flag, crap, remedy, cognitive")
+               "cov, flag, crap, remedy, cognitive, occurrence")
 _N_COLS = _WRITE_COLS.count(",") + 3  # every _WRITE_COLS column plus run_id and identity_id
 # the identity strings, never the ids: a row's place in an export may not depend
 # on when its identity was first seen
-_ROW_ORDER = "ORDER BY i.scope, i.path, f.start, f.end, i.long_name"
+_ROW_ORDER = "ORDER BY i.scope, i.path, f.start, f.occurrence, f.end, i.long_name"
 
 def _selected(**substitutions: str) -> str:
     """_WRITE_COLS as a SELECT list off alias f, with named columns replaced.
@@ -213,23 +226,25 @@ _CODE_MIGRATION = (
 
 class _Span(NamedTuple):
     """What `keys.key_names` reads off a row: where a function is and what it is called."""
+    scope: str
     path: str
     long_name: str
     start: int
+    occurrence: int
 
 
 class CrapRow(NamedTuple):
     """A scored function reduced to what a comparison between two runs needs.
 
-    These four fields are the whole of what build_digest reads: the key it pairs
-    functions on, the number it compares, and the scope whose ceiling decides
-    over-target. The other twelve columns of a ScoredRow are 140,000 rows of
-    dead weight per run, twice per digest.
+    Start counts same-named twins before comparing runs. The remaining columns
+    supply their names, scores and scope ceilings without whole scored rows.
     """
     scope: str
     path: str
     long_name: str
     crap: float
+    start: int
+    occurrence: int = 0
 
 
 class _Codes(NamedTuple):
@@ -270,7 +285,7 @@ def _inflate(stored) -> str:
 def _verdict_names(rows: list) -> tuple[set, set]:
     """The flag and remedy strings this batch stores. Inventory rows carry
     neither, so they name nothing."""
-    scored = [row for row in rows if len(row) == 16]
+    scored = [row for row in rows if len(row) in (16, 17)]
     return ({row[12] for row in scored} - {None}, {row[14] for row in scored} - {None})
 
 
@@ -280,9 +295,10 @@ def _writable(row, flags: dict, remedies: dict):
     Scored rows already carry the four coverage columns; inventory rows carry
     cognitive last, so the four unscored columns slot in before it.
     """
-    if len(row) == 16:
-        return (*row[3:12], _code(flags, row[12]), row[13], _code(remedies, row[14]), row[15])
-    return (*row[3:11], None, None, None, None, row[11])
+    occurrence = position(row)[1]
+    if len(row) in (16, 17):
+        return (*row[3:12], _code(flags, row[12]), row[13], _code(remedies, row[14]), row[15], occurrence)
+    return (*row[3:11], None, None, None, None, row[11], occurrence)
 
 
 def _own_ceilings(target: int, scope_targets: dict[str, int] | None) -> list[tuple[str, int]]:
@@ -364,8 +380,8 @@ def _scored_rows(cur, flags: dict, remedies: dict) -> list:
     from .score import ScoredRow
     si = sys.intern
     return [ScoredRow(si(scope), si(path), si(name), a, b, c, d, e, f, g, h, cov,
-                      _name(flags, flag), crap, _name(remedies, remedy), cog)
-            for scope, path, name, a, b, c, d, e, f, g, h, cov, flag, crap, remedy, cog in cur]
+                      _name(flags, flag), crap, _name(remedies, remedy), cog, occurrence)
+            for scope, path, name, a, b, c, d, e, f, g, h, cov, flag, crap, remedy, cog, occurrence in cur]
 
 
 def _scope_clause(scopes, *, keyword: str = "IN") -> tuple[str, list]:
@@ -381,11 +397,49 @@ def _scope_clause(scopes, *, keyword: str = "IN") -> tuple[str, list]:
     return f"AND i.scope {keyword} ({','.join('?' * len(names))})", names
 
 
+def _identity_where(run_id, path, name) -> tuple[str, list]:
+    fields = [(column, value) for column, value in
+              (("f.run_id", run_id), ("i.path", path), ("i.long_name", name))
+              if value is not None]
+    return " AND ".join(f"{column} = ?" for column, _ in fields) or "1", [v for _, v in fields]
+
+
 class SnapshotStore:
     def __init__(self, path: Path | str):
         self._path = Path(path)
         self._identities: dict[tuple[str, str, str], int] = {}
         self._conn = sqlite3.connect(str(path))
+        if not self._current():
+            self._prepare()
+        self._codes = {table: _read_codes(self._conn, table) for table in _CODE_SEEDS}
+
+    def _current(self) -> bool:
+        """Detect actual schema and data, including writes by older crapkit.
+
+        A current store owes no setup writes. Shape checks avoid a version stamp
+        that an older writer could leave current while adding uncompressed rows.
+        """
+        objects = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master")}
+        if not _CURRENT_OBJECTS <= objects or objects.intersection(_DEAD_INDEXES):
+            return False
+        return self._current_columns() and self._current_codes() and not self._text_lanes()
+
+    def _current_columns(self) -> bool:
+        have = all(columns <= self._existing_columns(table)
+                   for table, columns in _ADDED_COLUMNS.items())
+        return (have and self._identity_key() == _IDENTITY_KEY
+                and self._declared_types("functions").get("flag") == "INTEGER")
+
+    def _current_codes(self) -> bool:
+        return all(set(enumerate(names, 1)) <= set(self._conn.execute(f"SELECT id, name FROM {table}"))
+                   for table, names in _CODE_SEEDS.items())
+
+    def _text_lanes(self) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM runs WHERE typeof(lanes) = 'text' LIMIT 1").fetchone() is not None
+
+    def _prepare(self) -> None:
+        """Create or upgrade a store only when its measured shape requires it."""
         self._conn.executescript(_SCHEMA)
         self._seed_codes()
         self._migrate()
@@ -393,8 +447,6 @@ class SnapshotStore:
         # these index columns do not exist yet
         self._conn.executescript(_INDEXES)
         self._conn.commit()
-        # last, because a migration can mint codes for names it met on the way
-        self._codes = {table: _read_codes(self._conn, table) for table in _CODE_SEEDS}
 
     def _seed_codes(self) -> None:
         """The known verdict names, at their fixed codes. Before any migration:
@@ -412,6 +464,7 @@ class SnapshotStore:
         # table that already exists, and the two rewrites.
         self._add_coverage_columns()
         self._add_cognitive_column()
+        self._add_occurrence_column()
         self._add_run_provenance_columns()
         self._add_claim_handle_column()
         self._conn.commit()
@@ -440,6 +493,11 @@ class SnapshotStore:
             self._conn.execute(
                 "ALTER TABLE functions ADD COLUMN cognitive INTEGER NOT NULL DEFAULT 0")
 
+    def _add_occurrence_column(self) -> None:
+        if "occurrence" not in self._existing_columns("functions"):
+            self._conn.execute(
+                "ALTER TABLE functions ADD COLUMN occurrence INTEGER NOT NULL DEFAULT 0")
+
     def _add_run_provenance_columns(self) -> None:
         run_cols = self._existing_columns("runs")
         if "lanes" not in run_cols:
@@ -466,6 +524,10 @@ class SnapshotStore:
         """
         if "handle" not in self._existing_columns("attempts"):
             self._conn.execute("ALTER TABLE attempts ADD COLUMN handle TEXT")
+        if "key_name" not in self._existing_columns("attempts"):
+            self._conn.execute("ALTER TABLE attempts ADD COLUMN key_name TEXT")
+        if "key_version" not in self._existing_columns("attempts"):
+            self._conn.execute("ALTER TABLE attempts ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0")
 
     def _normalize_identities(self) -> None:
         """Move scope, path and long_name out of every functions row.
@@ -622,8 +684,8 @@ class SnapshotStore:
             (run_id, min_ccn, *names),
         )
         si = sys.intern
-        return [InventoryRow(si(scope), si(path), si(name), a, b, c, d, e, f, g, h, cog)
-                for scope, path, name, a, b, c, d, e, f, g, h, cog in cur]
+        return [InventoryRow(si(scope), si(path), si(name), a, b, c, d, e, f, g, h, cog, occurrence)
+                for scope, path, name, a, b, c, d, e, f, g, h, cog, occurrence in cur]
 
     def read_scored(self, run_id: int, *, min_ccn: int = 0,
                     scopes: list[str] | None = None) -> list:
@@ -643,18 +705,17 @@ class SnapshotStore:
         return _scored_rows(cur, self._codes["flags"].names, self._codes["remedies"].names)
 
     def read_crap(self, run_id: int) -> list[CrapRow]:
-        """One run's scored functions as (scope, path, long_name, crap).
+        """One run's names, scores, scopes and starts for ordinal matching.
 
-        What `digest` compares. It holds two whole runs at once and reads four
-        of the sixteen fields, so the twelve it does not read are paid for twice
-        over — 1,328 ms of a digest on the flagship consumer's store.
+        Digest holds two runs at once. These five fields retain exact identity
+        without building the other eleven fields of every scored row.
         """
         cur = self._conn.execute(
             f"SELECT {_CRAP_COLS} {_JOINED} WHERE f.run_id = ? AND f.crap IS NOT NULL "
             f"{_ROW_ORDER}", (run_id,))
         si = sys.intern
-        return [CrapRow(si(scope), si(path), si(name), crap)
-                for scope, path, name, crap in cur]
+        return [CrapRow(si(scope), si(path), si(name), crap, start, occurrence)
+                for scope, path, name, crap, start, occurrence in cur]
 
     def read_scored_file(self, run_id: int, path: str) -> list:
         """One file's scored rows: the path seeks identities, the ids seek the run.
@@ -668,37 +729,38 @@ class SnapshotStore:
             (path, run_id),
         ))
 
+    def read_positions(self, run_id: int, path: str) -> list[_Span]:
+        """One file's complete positions, including rows ranking filters omit."""
+        cur = self._conn.execute(
+            f"SELECT i.scope, i.path, i.long_name, f.start, f.occurrence {_BY_PATH} "
+            "WHERE i.path = ? AND f.run_id = ? ORDER BY f.start, f.occurrence, i.long_name",
+            (path, run_id))
+        return [_Span(*row) for row in cur]
+
     def read_marks(self, run_id: int, *, min_ccn: int = 0,
                    scopes: list[str] | None = None) -> Marks:
-        """The verdict (flag, remedy) by (path, long_name) and the score (crap,
-        cov) by (path, long_name, start) of every row this run scored.
+        """Verdict and score by full function location, from one narrow read.
 
-        Four columns and a start, not the row: the worklist reads inventory
-        rows and needs the verdict half — which rows a floor must not hide,
-        which the queue will never offer, which are finished — and the two
-        numbers a row prints, so building a ScoredRow per function would double
-        the cost of the command. In the verdict, twins collapse to the WORST of
-        them, the same rule the ratchet and the verdict use, because the ORDER
-        BY lets the highest-CRAP twin overwrite its siblings; the score is
-        keyed by start and stays each row's own, or twin #1 would print twin
-        #2's CRAP. An inventory-only run answers nothing: its remedy is NULL.
+        Duplicate scopes use the highest score for their shared span. Twins
+        keep separate verdicts so a finished sibling stays finished.
         """
+        self._require_identity(run_id=run_id)
         clause, names = _scope_clause(scopes)
         cur = self._conn.execute(
-            f"SELECT i.path, i.long_name, f.start, f.flag, f.remedy, f.crap, f.cov {_JOINED} "
+            f"SELECT i.path, i.long_name, f.start, f.occurrence, f.flag, f.remedy, f.crap, f.cov {_JOINED} "
             f"WHERE f.run_id = ? AND f.remedy IS NOT NULL AND f.ccn >= ? {clause} "
             "ORDER BY f.crap",
             (run_id, min_ccn, *names))
         flags, remedies = self._codes["flags"].names, self._codes["remedies"].names
         verdicts, scores = {}, {}
-        for path, name, start, flag, remedy, crap, cov in cur:
-            verdicts[(path, name)] = (_name(flags, flag), _name(remedies, remedy))
-            scores[(path, name, start)] = (crap, cov)
+        for path, name, start, occurrence, flag, remedy, crap, cov in cur:
+            verdicts[(path, name, start, occurrence)] = (_name(flags, flag), _name(remedies, remedy))
+            scores[(path, name, start, occurrence)] = (crap, cov)
         return Marks(verdicts, scores)
 
-    def twin_key_names(self, run_id: int) -> dict[tuple[str, str, int], str]:
+    def twin_key_names(self, run_id: int) -> dict[tuple[str, str, int, int], str]:
         """The ratchet key name of every function that shares its long_name
-        with another in its file, by (path, long_name, start).
+        with another in its file, by (path, long_name, start, occurrence).
 
         Every other function's key IS its long_name, so the map holds only the
         rows whose key carries an ordinal: a handful, on a run of a hundred
@@ -707,13 +769,46 @@ class SnapshotStore:
         with it twin #1's mark; the count runs over the whole run here, the
         way `brief` counts it over the whole file.
         """
+        self._require_identity(run_id=run_id)
         cur = self._conn.execute(
-            f"SELECT i.path, i.long_name, f.start {_JOINED} WHERE f.run_id = ? "
+            f"SELECT i.scope, i.path, i.long_name, f.start, f.occurrence {_JOINED} WHERE f.run_id = ? "
             "AND (i.path, i.long_name) IN ("
             "SELECT t.path, t.long_name FROM functions g JOIN identities t ON t.id = g.identity_id "
-            "WHERE g.run_id = ? GROUP BY t.path, t.long_name HAVING COUNT(DISTINCT g.start) > 1)",
+            "WHERE g.run_id = ? GROUP BY t.path, t.long_name "
+            "HAVING COUNT(DISTINCT g.start) > 1 OR COUNT(DISTINCT g.occurrence) > 1)",
             (run_id, run_id))
         return key_names([_Span(*row) for row in cur])
+
+    def historical_collision_groups(self) -> set[tuple[str, str]]:
+        """Raw-name groups that contained same-line twins in any stored run."""
+        return self._collision_groups()
+
+    def identity_witness_run_ids(self) -> set[int]:
+        """One recent run per collision group keeps legacy key checks unchanged."""
+        newest = {}
+        for path, name, run_id in self._collision_rows():
+            key = path, name
+            newest[key] = max(run_id, newest.get(key, 0))
+        return set(newest.values())
+
+    def _collision_groups(self, *, run_id=None, path=None, name=None,
+                          legacy_only: bool = False) -> set[tuple[str, str]]:
+        return {(path, name) for path, name, _ in self._collision_rows(
+            run_id=run_id, path=path, name=name, legacy_only=legacy_only)}
+
+    def _collision_rows(self, *, run_id=None, path=None, name=None, legacy_only=False):
+        where, params = _identity_where(run_id, path, name)
+        mixed = "MIN(f.occurrence) = 0 AND MAX(f.occurrence) > 0"
+        multiple = mixed if legacy_only else "COUNT(DISTINCT f.occurrence) > 1"
+        joined = _BY_PATH if path is not None else _JOINED
+        return self._conn.execute(
+            f"SELECT i.path, i.long_name, f.run_id {joined} WHERE {where} "
+            "GROUP BY f.run_id, i.scope, i.path, i.long_name, f.start "
+            f"HAVING SUM(f.occurrence = 0) > 1 OR ({multiple})", params)
+
+    def _require_identity(self, *, run_id=None, path=None, name=None) -> None:
+        refuse_ambiguous(self._collision_groups(run_id=run_id, path=path, name=name,
+                                               legacy_only=True))
 
     def count_by_path(self, run_id: int, *, flag: str,
                       skip_scopes=frozenset()) -> list[tuple[str, int, int]]:
@@ -825,15 +920,14 @@ class SnapshotStore:
         return self._rollup(target, scope_targets)
 
     def function_span(self, run_id: int, path: str, long_name: str) -> tuple | None:
-        """One function's (start, end) in one run, off the identity path index.
-
-        Same tie-break as read_rows, which this replaced: path and long_name are
-        pinned by the WHERE, so export order reduces to scope, start, end.
-        """
+        """One keyed function's span; duplicate scopes count as one twin."""
+        name, ordinal = split_ordinal(long_name)
+        self._require_identity(run_id=run_id, path=path, name=name)
         cur = self._conn.execute(
             f"SELECT f.start, f.end {_BY_PATH} WHERE i.path = ? AND i.long_name = ? "
-            "AND f.run_id = ? ORDER BY i.scope, f.start, f.end LIMIT 1",
-            (path, long_name, run_id))
+            "AND f.run_id = ? GROUP BY f.start, f.occurrence "
+            "ORDER BY f.start, f.occurrence LIMIT 1 OFFSET ?",
+            (path, name, run_id, ordinal - 1))
         return cur.fetchone()
 
     def set_verdict_ok(self, run_id: int, ok: bool, *, findings: int = 0) -> None:
@@ -873,27 +967,53 @@ class SnapshotStore:
         return list(cur.fetchall())
 
     def record_claim(self, *, path: str, long_name: str, commit: str,
-                     handle: str | None = None) -> int:
+                     handle: str | None = None, key_name: str | None = None,
+                     source_run_id: int | None = None) -> int | None:
         """Take a claim on one function. Opt-in: nothing writes here unless a
         session asked for it, so a store with no claims answers every query the
         way it did before claims existed.
 
         `handle` is the name the claim was handed out under. None is the honest
         answer for a caller that never had one, and reads back as null.
+        A pre-10 expression snapshot cannot prove an anonymous ordinal; its
+        claim holds the raw-name group until released, pruned, or all healthy.
         """
+        version = self._claim_key_version(path, long_name, source_run_id)
+        key = claim_key({"path": path, "long_name": long_name, "handle": handle,
+                         "key_name": key_name, "key_version": version})
+        precise = key[1] if key else None
         with self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            if self._claim_conflict(path, long_name, key):
+                return None
             cur = self._conn.execute(
-                "INSERT INTO attempts (path, long_name, commit_sha, handle) "
-                "VALUES (?, ?, ?, ?)", (path, long_name, commit, handle))
+                "INSERT INTO attempts (path, long_name, commit_sha, handle, key_name, key_version) "
+                "VALUES (?, ?, ?, ?, ?, ?)", (path, long_name, commit, handle, precise, version))
         return cur.lastrowid
+
+    def _claim_key_version(self, path: str, name: str, source_run_id: int | None) -> int:
+        if not expression_group(path, name):
+            return 1
+        row = self._conn.execute("SELECT tool_versions FROM runs WHERE id = ?",
+                                 (source_run_id,)).fetchone()
+        versions = json.loads(row[0]) if row else {}
+        return int(expression_reader_current(versions.get("analysis_version")))
+
+    def _claim_conflict(self, path: str, name: str, key: tuple | None) -> bool:
+        cur = self._conn.execute(
+            "SELECT handle, key_name, key_version FROM attempts WHERE path = ? AND long_name = ? "
+            "AND closed_at IS NULL", (path, name))
+        return any(key is None or claim_holds(
+            {"path": path, "long_name": name, "handle": handle, "key_name": precise,
+             "key_version": version}, key) for handle, precise, version in cur)
 
     def open_claims(self) -> list[dict]:
         cur = self._conn.execute(
-            "SELECT id, path, long_name, commit_sha, created_at, handle FROM attempts "
+            "SELECT id, path, long_name, commit_sha, created_at, handle, key_name, key_version FROM attempts "
             "WHERE closed_at IS NULL ORDER BY id")
         return [{"id": cid, "path": p, "long_name": n, "commit": sha,
-                 "created_at": ts, "handle": handle}
-                for cid, p, n, sha, ts, handle in cur]
+                 "created_at": ts, "handle": handle, "key_name": name, "key_version": version}
+                for cid, p, n, sha, ts, handle, name, version in cur]
 
     def attempts_for(self, keys) -> dict[tuple[str, str], list[dict]]:
         """Every claim ever taken on each named function, oldest first.
@@ -909,12 +1029,22 @@ class SnapshotStore:
             return found
         paths = sorted({path for path, _ in wanted})
         cur = self._conn.execute(
-            "SELECT path, long_name, created_at, closed_at FROM attempts "
+            "SELECT path, long_name, handle, key_name, key_version, created_at, closed_at FROM attempts "
             f"WHERE path IN ({','.join('?' * len(paths))}) ORDER BY id", paths)
-        for path, long_name, opened, closed in cur:
-            if (path, long_name) in found:
-                found[(path, long_name)].append({"opened": opened, "closed": closed})
+        self._pair_attempts(cur, found)
         return found
+
+    @staticmethod
+    def _pair_attempts(rows, found: dict) -> None:
+        grouped: dict[tuple, list] = {}
+        for key in found:
+            grouped.setdefault((key[0], split_ordinal(key[1])[0]), []).append(key)
+        for path, name, handle, precise, version, opened, closed in rows:
+            claim = {"path": path, "long_name": name, "handle": handle, "key_name": precise,
+                     "key_version": version}
+            for key in grouped.get((path, name), ()):
+                if claim_holds(claim, key):
+                    found[key].append({"opened": opened, "closed": closed})
 
     def close_claims(self, claim_ids) -> int:
         """Stamp the named claims closed; already-closed ones are left alone, so
@@ -939,9 +1069,8 @@ class SnapshotStore:
     def prune_claims(self, keep_ids: set[int]) -> int:
         """Drop claims older than the oldest run a prune keeps.
 
-        Retention is one decision: a claim taken before the surviving history
-        names a function nothing left will score, so no verify can ever close it
-        and it would hide that function from every future queue.
+        Explicit pruning expires ownership before the retained history, even
+        when the function still exists. Ordinary queue reads never expire it.
         """
         floor = self._oldest_kept_at(keep_ids)
         if floor is None:
@@ -992,9 +1121,8 @@ class SnapshotStore:
         question about one function. Matching in Python also makes `_` and `%`
         the characters they are rather than LIKE's wildcards.
 
-        A bare start line is resolved by position, the form `brief` takes and
-        the one handle every function has: two functions in a file can share a
-        name and an anonymous one has none, but no two open on the same line.
+        A bare start line selects only when one function opens there. Same-line
+        callbacks require a handle, as they do in `brief`.
 
         `(anonymous)#N` is resolved by position instead: an anonymous function
         carries no text to match, and the fragment would otherwise hunt for a
@@ -1035,8 +1163,9 @@ class SnapshotStore:
         run_id = self._newest_run_for(path)
         if run_id is None:
             return []
+        self._require_line(path, run_id, start)
         cur = self._conn.execute(
-            f"SELECT i.long_name {_BY_PATH} WHERE i.path = ? AND f.run_id = ? AND f.start = ?",
+            f"SELECT DISTINCT i.long_name {_BY_PATH} WHERE i.path = ? AND f.run_id = ? AND f.start = ?",
             (path, run_id, start))
         return [n for (n,) in cur]
 
@@ -1056,10 +1185,38 @@ class SnapshotStore:
         run_id = self._newest_run_for(path)
         if run_id is None:
             return []
+        self._require_identity(run_id=run_id, path=path)
         cur = self._conn.execute(
-            f"SELECT i.long_name {_BY_PATH} WHERE i.path = ? AND f.run_id = ? "
-            "ORDER BY f.start", (path, run_id))
-        return [n for (n,) in cur if not bare_name(n)]
+            f"SELECT DISTINCT f.start, f.occurrence, i.long_name {_BY_PATH} "
+            "WHERE i.path = ? AND f.run_id = ? ORDER BY f.start, f.occurrence, i.long_name", (path, run_id))
+        return [n for _, _, n in cur if not bare_name(n)]
+
+    def function_key(self, path: str, long_name: str, selector: str) -> str:
+        """The key of an already-resolved selector, including inventory rows."""
+        self._require_identity(run_id=self._newest_run_for(path), path=path, name=long_name)
+        if selector.isdigit():
+            return key_name(long_name, self._ordinal_at_start(path, long_name, int(selector)))
+        anonymous = handle_ordinal(selector)
+        ordinal = (self._anonymous_names(path)[:anonymous].count(long_name)
+                   if anonymous is not None else split_ordinal(selector)[1])
+        return key_name(long_name, ordinal)
+
+    def _ordinal_at_start(self, path: str, name: str, start: int) -> int:
+        run_id = self._newest_run_for(path)
+        self._require_line(path, run_id, start)
+        cur = self._conn.execute(
+            f"SELECT COUNT(*) FROM (SELECT DISTINCT f.start, f.occurrence {_BY_PATH} "
+            "WHERE i.path = ? AND i.long_name = ? AND f.run_id = ? AND f.start <= ?)",
+            (path, name, run_id, start))
+        return cur.fetchone()[0]
+
+    def _require_line(self, path: str, run_id: int | None, start: int) -> None:
+        self._require_identity(run_id=run_id, path=path)
+        cur = self._conn.execute(
+            f"SELECT DISTINCT i.long_name, f.occurrence {_BY_PATH} "
+            "WHERE i.path = ? AND f.run_id = ? AND f.start = ?", (path, run_id, start))
+        if len(cur.fetchmany(2)) > 1:
+            raise ToolError(f"line {start} in {path} identifies multiple functions; use a function handle")
 
     def _newest_run_for(self, path: str) -> int | None:
         """The last run that holds a row for this path. Hook runs carry no rows,
@@ -1074,11 +1231,20 @@ class SnapshotStore:
         The path seeks identities once; (identity_id, run_id) then hands back
         every run that scored it, already in run order.
         """
+        name, ordinal = split_ordinal(long_name)
+        self._require_identity(path=path, name=name)
         cur = self._conn.execute(
-            f"""SELECT f.run_id, r.commit_sha, r.kind, r.created_at, f.ccn, f.cov, f.flag, f.crap
-               {_BY_PATH} JOIN runs r ON r.id = f.run_id
-               WHERE i.path = ? AND i.long_name = ? ORDER BY f.run_id""",
-            (path, long_name))
+            f"""WITH history AS (
+                SELECT f.run_id, r.commit_sha, r.kind, r.created_at,
+                       f.ccn, f.cov, f.flag, f.crap,
+                       DENSE_RANK() OVER (PARTITION BY f.run_id ORDER BY f.start, f.occurrence) AS twin,
+                       ROW_NUMBER() OVER (PARTITION BY f.run_id, f.start, f.occurrence
+                                          ORDER BY f.crap DESC, i.scope) AS copy
+                {_BY_PATH} JOIN runs r ON r.id = f.run_id
+                WHERE i.path = ? AND i.long_name = ?)
+                SELECT run_id, commit_sha, kind, created_at, ccn, cov, flag, crap
+                FROM history WHERE twin = ? AND copy = 1 ORDER BY run_id""",
+            (path, name, ordinal))
         flags = self._codes["flags"].names
         return [{"run_id": rid, "commit": sha, "kind": kind, "created_at": ts,
                  "ccn": ccn, "cov": cov, "flag": _name(flags, flag), "crap": crap}
@@ -1088,12 +1254,13 @@ class SnapshotStore:
         """Runs an override record names. Deleting one deletes an audit row."""
         return {rid for (rid,) in self._conn.execute("SELECT DISTINCT run_id FROM overrides")}
 
-    def _doomed_ids(self, keep_ids: set[int]) -> list[tuple]:
+    def _doomed_ids(self, keep_ids: set[int], observed_ids: set[int] | None) -> list[tuple]:
         cur = self._conn.execute("SELECT id FROM runs ORDER BY id")
-        return [(rid,) for (rid,) in cur if rid not in keep_ids]
+        return [(rid,) for (rid,) in cur if rid not in keep_ids
+                and (observed_ids is None or rid in observed_ids)]
 
-    def prune_runs(self, keep_ids: set[int]) -> int:
-        """Delete every run outside keep_ids, rows and metadata together.
+    def prune_runs(self, keep_ids: set[int], *, observed_ids: set[int] | None = None) -> int:
+        """Delete observed runs outside keep_ids, rows and metadata together.
 
         Whole runs, never rows within a run: a run row that outlives its
         functions reads as a real run that scored zero, which is how a prune
@@ -1105,7 +1272,9 @@ class SnapshotStore:
         holds. Ids come from AUTOINCREMENT and are never handed out twice, so
         nothing else would ever overwrite the row.
         """
-        doomed = self._doomed_ids(keep_ids)
+        # A concurrent writer may add a run after the caller selected retention.
+        # Only runs that selection observed can be candidates for deletion.
+        doomed = self._doomed_ids(keep_ids, observed_ids)
         with self._conn:
             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
@@ -1149,52 +1318,28 @@ class BaselinePick(NamedTuple):
     blocker: dict | None
 
 
-def _verdict_verifies(runs: list[dict], through_id: int) -> list[dict]:
-    """Verify runs at or below `through_id` that actually recorded a verdict.
-
-    A crashed verify leaves verdict_ok NULL. It found nothing, so it may not
-    block a baseline, and it proved nothing, so it may not clear one either.
-    """
-    return [r for r in runs if r["kind"] == "verify"
-            and r["verdict_ok"] is not None and r["id"] <= through_id]
-
-
-def _blocking_verify(runs: list[dict], candidate_id: int) -> dict | None:
-    """The failed verify standing in front of `candidate_id`, if one does.
-
-    A failed verify recorded findings against a tree. Any later run that becomes
-    the baseline moves the comparison point past them: the functions it flagged
-    stop being touched, and no verify ever looks at them again. Only a PASSING
-    verify clears it, because passing is the proof the findings were answered.
-    """
-    blocker = None
-    for r in _verdict_verifies(runs, candidate_id):
-        blocker = None if r["verdict_ok"] else r
-    return blocker
-
-
-def _is_refused(candidate: tuple) -> bool:
-    return candidate[1] is not None
-
-
-def _baseline_candidates(runs: list[dict]) -> list[tuple]:
-    """Every trusted run newest first, each paired with the verify blocking it."""
-    return [(r, _blocking_verify(runs, r["id"]))
-            for r in reversed([r for r in runs if is_trusted(r)])]
+def _verify_blocker(run: dict, previous: dict | None) -> dict | None:
+    """Only a completed verify changes the outstanding failure."""
+    if run["kind"] != "verify" or run["verdict_ok"] is None:
+        return previous
+    return None if run["verdict_ok"] else run
 
 
 def pick_baseline(runs: list[dict]) -> BaselinePick:
     """The newest trusted run no unanswered failed verify stands in front of.
 
-    Run id is the order and the walk is newest first, so everything above the
-    first clean candidate was refused. `verify --baseline ID` skips this
-    entirely, which is the deliberate, auditable way to accept a newer run.
+    One chronological walk remembers the newest clean candidate and the newest
+    refused one. A crashed verify changes neither trust nor the outstanding
+    failure. An explicit `verify --baseline ID` still skips this decision.
     """
-    newest_first = _baseline_candidates(runs)
-    refused = list(takewhile(_is_refused, newest_first))
-    kept = newest_first[len(refused):]
-    skipped, blocker = refused[0] if refused else (None, None)
-    return BaselinePick(kept[0][0] if kept else None, skipped, blocker)
+    picked = BaselinePick(None, None, None)
+    blocker = None
+    for run in runs:
+        blocker = _verify_blocker(run, blocker)
+        if is_trusted(run):
+            picked = (BaselinePick(picked.run, run, blocker) if blocker
+                      else BaselinePick(run, None, None))
+    return picked
 
 
 def is_trusted(r: dict) -> bool:
@@ -1265,17 +1410,33 @@ def _newest_non_hook_id(runs: list[dict]) -> set[int]:
     return {ids[-1]} if ids else set()
 
 
-def prune_keep_set(runs: list[dict], override_run_ids, *, keep: int) -> set[int]:
+def _baseline_keep_ids(runs: list[dict]) -> set[int]:
+    """Keep the chosen comparison point and every failure it still answers.
+
+    Failures after the newest coverage matter to the next run too. Retaining
+    their records preserves both verify's blocker and ratchet's refusal list.
+    """
+    pick = pick_baseline(runs)
+    selected = {r["id"] for r in filter(None, pick)}
+    cutoff = pick.run["id"] if pick.run else 0
+    return selected | {r["id"] for r in runs if r["id"] > cutoff
+                       and _verify_blocker(r, None) is not None}
+
+
+def prune_keep_set(runs: list[dict], override_run_ids, *, keep: int,
+                   identity_run_ids=()) -> set[int]:
     """The runs a prune may never delete.
 
     Retention counts trusted runs, but recency alone is not the contract: a
     prune that keeps N and nothing else re-arms the digest, drops a baseline
     someone can still name, and orphans an override record whose audit trail
-    joins through the run row.
+    joins through the run row. Legacy key migration also needs a surviving
+    witness for each historical same-line collision group.
     """
     if keep < 1:
         raise ValueError(f"keep must be >= 1, got {keep}")
     trusted = [r for r in runs if is_trusted(r)]
     return ({r["id"] for r in trusted[-keep:]}
             | _digest_pair_ids(trusted) | _passing_verify_ids(runs)
-            | _newest_non_hook_id(runs) | set(override_run_ids))
+            | _newest_non_hook_id(runs) | _baseline_keep_ids(runs)
+            | set(override_run_ids) | set(identity_run_ids))

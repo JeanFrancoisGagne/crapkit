@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 from crapkit.errors import ConfigError
 
 
@@ -40,14 +40,10 @@ def test_report_defaults_to_the_page_the_docs_name():
     assert args.repo is None
 
 
-def test_report_resolves_its_handler_from_the_reports_family():
-    from crapkit.cli import _OWNER
-
-    assert _OWNER["cmd_report"] == "reports"
 
 
 def test_the_handler_is_importable_by_name():
-    from crapkit.cli import cmd_report
+    from crapkit.cli.reports import cmd_report
 
     assert callable(cmd_report)
 

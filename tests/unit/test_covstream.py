@@ -1,7 +1,7 @@
 """Streaming artifact readers: the same answer as the whole-document parsers,
 without the whole document ever being in memory.
 
-Every test here diffs a file-backed reader against the shipped text-backed one
+Every test here diffs a file reader against an independent whole-document oracle
 on the same bytes. The chunk size is a parameter so the refill boundary lands
 in the middle of a key, a value and a separator — a 1 MiB default hides those
 seams on any fixture small enough to keep in a test.
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.coverage_istanbul import parse_istanbul, parse_istanbul_missing
+from coverage_oracles import parse_istanbul, parse_istanbul_missing
 from crapkit.covstream import (parse_istanbul_both_file, parse_istanbul_file,
                                parse_istanbul_missing_file)
 from crapkit.errors import ToolError
@@ -44,23 +44,6 @@ def _write(tmp_path, obj, **dumps):
     path = tmp_path / "cov.json"
     path.write_bytes(json.dumps(obj, **dumps).encode("utf-8"))
     return path
-
-
-def test_this_file_starts_every_test_on_an_empty_fold():
-    """The isolation test_the_walks_fold_answers_once... depends on, asserted at
-    the top of the file where it can only fail for one reason.
-
-    `crapkit.uncovered._folded` is process-global and only a reader empties it,
-    so the 48 tests in this suite that run a lane and never read it hand one on.
-    `_take_folded` drops the WHOLE fold when it carries an artifact the caller
-    did not name, and the handover below then reads its file twice instead of
-    once. The autouse fixture in tests/unit/conftest.py empties the fold per
-    test. Without it this fails in file order, because test_cli_scoring_inproc.py
-    sorts ahead of this file and leaks on 15 of its tests, and it fails on some
-    random seeds and not others, which is how the defect stayed hidden."""
-    from crapkit import uncovered
-
-    assert (uncovered._folded, uncovered._folded_from) == ({}, set())
 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
@@ -209,7 +192,7 @@ REPORT = {
 @pytest.mark.parametrize("chunk", CHUNKS)
 @pytest.mark.parametrize("indent", [None, 1])
 def test_streamed_coveragepy_equals_the_whole_document_parse(tmp_path, chunk, indent):
-    from crapkit.coverage_py import parse_coveragepy
+    from coverage_oracles import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     path = _write(tmp_path, REPORT, indent=indent)
@@ -225,7 +208,7 @@ def test_streamed_coveragepy_equals_the_whole_document_parse(tmp_path, chunk, in
 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_streamed_coveragepy_applies_the_lane_path_prefix(tmp_path, chunk):
-    from crapkit.coverage_py import parse_coveragepy
+    from coverage_oracles import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     path = _write(tmp_path, REPORT)
@@ -236,7 +219,7 @@ def test_streamed_coveragepy_applies_the_lane_path_prefix(tmp_path, chunk):
 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_streamed_coveragepy_missing_equals_the_whole_document_parse(tmp_path, chunk):
-    from crapkit.coverage_py import parse_coveragepy_missing
+    from coverage_oracles import parse_coveragepy_missing
     from crapkit.covstream import parse_coveragepy_missing_file
 
     path = _write(tmp_path, REPORT)
@@ -248,7 +231,7 @@ def test_streamed_coveragepy_missing_equals_the_whole_document_parse(tmp_path, c
 def test_a_report_without_branch_data_streams_the_same_statement_scores(tmp_path, chunk):
     """The stream and the whole-document parser make the same salvage, so a
     lane cannot score one way and a test another."""
-    from crapkit.coverage_py import parse_coveragepy
+    from coverage_oracles import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "meta": {"branch_coverage": False}}
@@ -274,7 +257,7 @@ def test_a_streamed_report_with_no_data_to_divide_by_is_still_refused(tmp_path, 
 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_one_streamed_file_without_regions_leaves_the_others_scored(tmp_path, chunk):
-    from crapkit.coverage_py import parse_coveragepy
+    from coverage_oracles import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "files": {**REPORT["files"], "tpl/page.html": {"executed_lines": []}}}
@@ -324,13 +307,13 @@ def test_a_coveragepy_lane_streams_its_artifact_off_the_file(tmp_path, monkeypat
     from crapkit import lanes
 
     seen = []
-    real = lanes.parse_coveragepy_file
+    real = lanes.parse_coveragepy_both_file
 
     def spy(path, **kwargs):
         seen.append(Path(path).name)
         return real(path, **kwargs)
 
-    monkeypatch.setattr(lanes, "parse_coveragepy_file", spy)
+    monkeypatch.setattr(lanes, "parse_coveragepy_both_file", spy)
     _write(tmp_path, REPORT)
     lanes.run_lane(tmp_path, _lane("coveragepy", "cov.json"), reuse_artifact=True)
     assert seen == ["cov.json"]
@@ -408,9 +391,11 @@ def test_a_lane_already_walked_hands_its_dead_lines_over_instead_of_being_reread
 
     _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
     seen = _spy_on_the_missing_reader(monkeypatch)
-    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+    folded = uncovered.DeadLineFold()
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"),
+                    reuse_artifact=True, dead_lines=folded)
 
-    missing = uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json")))
+    missing = uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json")), folded=folded)
 
     assert missing == {TARGET: {3, 4}}
     assert seen == []
@@ -439,8 +424,10 @@ def test_a_line_stays_dead_only_when_no_lane_ran_it_whichever_route_it_took(tmp_
     cfg = _istanbul_cfg(("a", "a.json"), ("b", "b.json"))
 
     read_only = uncovered.missing_by_path(tmp_path, cfg)
-    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
-    half_folded = uncovered.missing_by_path(tmp_path, cfg)
+    folded = uncovered.DeadLineFold()
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"),
+                    reuse_artifact=True, dead_lines=folded)
+    half_folded = uncovered.missing_by_path(tmp_path, cfg, folded=folded)
 
     assert read_only == {TARGET: {4}}
     assert half_folded == read_only
@@ -452,10 +439,13 @@ def test_an_artifact_rewritten_since_the_lane_walked_it_is_read_again(tmp_path):
     from crapkit import lanes, uncovered
 
     _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
-    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+    folded = uncovered.DeadLineFold()
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"),
+                    reuse_artifact=True, dead_lines=folded)
     _dead_artifact(tmp_path, "a.json", (7,), alive=(3, 4, 5, 8))
 
-    assert uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json"))) == {TARGET: {7}}
+    assert uncovered.missing_by_path(tmp_path, _istanbul_cfg(("a", "a.json")),
+                                      folded=folded) == {TARGET: {7}}
 
 
 def test_the_walks_fold_answers_once_and_the_next_reader_reads_the_file(
@@ -465,12 +455,14 @@ def test_the_walks_fold_answers_once_and_the_next_reader_reads_the_file(
     from crapkit import lanes, uncovered
 
     _dead_artifact(tmp_path, "a.json", (3, 4), alive=(5,))
-    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"), reuse_artifact=True)
+    folded = uncovered.DeadLineFold()
+    lanes.run_lane(tmp_path, _lane("istanbul", "a.json", name="a"),
+                    reuse_artifact=True, dead_lines=folded)
     cfg = _istanbul_cfg(("a", "a.json"))
     seen = _spy_on_the_missing_reader(monkeypatch)
 
-    first = uncovered.missing_by_path(tmp_path, cfg)
-    second = uncovered.missing_by_path(tmp_path, cfg)
+    first = uncovered.missing_by_path(tmp_path, cfg, folded=folded)
+    second = uncovered.missing_by_path(tmp_path, cfg, folded=folded)
 
     assert first == second == {TARGET: {3, 4}}
     assert seen == ["a.json"]
@@ -480,7 +472,7 @@ def test_the_walks_fold_answers_once_and_the_next_reader_reads_the_file(
 def test_a_report_written_with_sorted_keys_still_finds_its_branch_flag(tmp_path, chunk):
     """json.dump(sort_keys=True) writes "files" BEFORE "meta", so a reader that
     decides at the first file refuses a perfectly good report."""
-    from crapkit.coverage_py import parse_coveragepy
+    from coverage_oracles import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     path = _write(tmp_path, REPORT, sort_keys=True)
@@ -494,7 +486,7 @@ def test_missing_regions_outrank_missing_branch_data_whatever_order_they_are_in(
     Regions win: a coverage too old to emit them emits no statement counts
     either, so `--cov-branch` is a rerun that changes nothing. Member order must
     not flip it — json.dump(sort_keys=True) writes "files" before "meta"."""
-    from crapkit.coverage_py import parse_coveragepy
+    from coverage_oracles import parse_coveragepy
     from crapkit.covstream import parse_coveragepy_file
 
     report = {"files": {"a.py": {"executed_lines": []}}, "meta": {"branch_coverage": False}}
@@ -510,7 +502,7 @@ def test_missing_regions_outrank_missing_branch_data_whatever_order_they_are_in(
 def test_a_truncated_report_is_unreadable_not_empty(tmp_path, chunk, text):
     """A walk that stops at the first thing it cannot read reports NO dark lines,
     which reads exactly like a fully covered repo. It has to fail instead."""
-    from crapkit.coverage_py import parse_coveragepy_missing
+    from coverage_oracles import parse_coveragepy_missing
     from crapkit.covstream import parse_coveragepy_missing_file
 
     path = tmp_path / "cov.json"

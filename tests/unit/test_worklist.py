@@ -146,7 +146,7 @@ def test_a_store_with_only_a_hook_run_names_the_command_to_run(tmp_path):
 
 def test_entries_carry_the_runs_score_and_coverage_off_the_marks():
     marks = Marks({("src/a.ts", "f( )"): ("measured", "decompose")},
-                  {("src/a.ts", "f( )", 1): (45.0, 0.5)})
+                  {("src/a.ts", "f( )", 1, 0): (45.0, 0.5)})
 
     wl = build_worklist([row()], CHURN, floor=5, top=50, marks=marks)
 
@@ -160,7 +160,7 @@ def test_twins_carry_their_own_score_beside_the_shared_verdict():
     first = InventoryRow("src", "src/a.ts", "f( )", 1, 9, 7, 7, 7, 8, 1, 2)
     second = InventoryRow("src", "src/a.ts", "f( )", 20, 28, 8, 8, 8, 8, 1, 2)
     marks = Marks({("src/a.ts", "f( )"): ("measured", "decompose")},
-                  {("src/a.ts", "f( )", 1): (56.0, 0.0), ("src/a.ts", "f( )", 20): (72.0, 0.0)})
+                  {("src/a.ts", "f( )", 1, 0): (56.0, 0.0), ("src/a.ts", "f( )", 20, 0): (72.0, 0.0)})
 
     wl = build_worklist([first, second], CHURN, floor=5, top=50, marks=marks)
 
@@ -212,7 +212,7 @@ def test_twins_never_take_each_others_mark():
     first = InventoryRow("src", "src/a.ts", "f( )", 1, 9, 9, 9, 9, 8, 1, 2)
     second = InventoryRow("src", "src/a.ts", "f( )", 20, 29, 9, 9, 9, 8, 1, 2)
     ratchet = RatchetMarks({("src/a.ts", "f( )"): 30.0, ("src/a.ts", "f( )#2"): 45.0},
-                           {("src/a.ts", "f( )", 1): "f( )", ("src/a.ts", "f( )", 20): "f( )#2"})
+                           {("src/a.ts", "f( )", 1, 0): "f( )", ("src/a.ts", "f( )", 20, 0): "f( )#2"})
 
     wl = build_worklist([first, second], CHURN, floor=5, top=50, ratchet=ratchet)
 

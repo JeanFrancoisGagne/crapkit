@@ -105,11 +105,6 @@ def _parse_missing(lane, root: Path, artifact: Path) -> dict[str, set[int]]:
 # lines fall out of that same decode, so the lane hands them here instead of
 # leaving this module to reopen the file and decode it all again.
 
-_FOLD_LOCK = Lock()
-_folded: dict[str, set[int]] = {}
-_folded_from: set[tuple] = set()
-
-
 def _artifact_key(artifact: Path) -> tuple | None:
     """Identity plus enough state to notice a rewrite, or None when the file
     cannot be stat'd.
@@ -132,39 +127,34 @@ def _fold_into(missing: dict[str, set[int]], lines_by_path: dict[str, set[int]])
         missing[path] = missing[path] & lines if path in missing else set(lines)
 
 
-def fold_dead_lines(artifact: Path, dead: dict[str, set[int]]) -> None:
-    """Take one lane's dead lines into the run's fold so the lane can drop them.
+class DeadLineFold:
+    """One run's missing-line intersection, filled by its lane workers.
 
-    Handing the map over immediately is the point. Keeping all 13 lanes' maps
-    alive until the reader folded them peaked at 204.9 MB against 100.3 MB
-    folding as they arrive, on the same 13 artifacts. Lanes parse on a thread
-    pool, hence the lock.
+    Each lane drops its map after adding it. The run keeps one intersection,
+    rather than every lane's map, and no other run can consume its state.
     """
-    key = _artifact_key(artifact)
-    if key is None:
-        return
-    with _FOLD_LOCK:
-        _fold_into(_folded, dead)
-        _folded_from.add(key)
 
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._missing: dict[str, set[int]] = {}
+        self._sources: set[tuple] = set()
 
-def _take_folded(wanted: set) -> tuple[dict[str, set[int]], set]:
-    """The fold and the artifact keys it covers, or ({}, set()) when it speaks
-    for an artifact `wanted` does not name.
+    def add(self, artifact: Path, dead: dict[str, set[int]]) -> None:
+        key = _artifact_key(artifact)
+        if key is None:
+            return
+        with self._lock:
+            _fold_into(self._missing, dead)
+            self._sources.add(key)
 
-    Emptied either way, and handed over rather than copied, because the caller
-    folds the remaining lanes straight into it. An artifact rewritten since its
-    walk keys differently and so lands outside `wanted`: the whole fold is then
-    dropped and every lane read again, rather than one stale map being served.
-    """
-    global _folded, _folded_from
-
-    with _FOLD_LOCK:
-        folded, sources = _folded, _folded_from
-        _folded, _folded_from = {}, set()
-    if not sources or not sources <= wanted:
-        return {}, set()
-    return folded, sources
+    def take(self, wanted: set) -> tuple[dict[str, set[int]], set]:
+        """Transfer the map once, refusing any artifact rewritten since its walk."""
+        with self._lock:
+            missing, sources = self._missing, self._sources
+            self._missing, self._sources = {}, set()
+        if not sources or not sources <= wanted:
+            return {}, set()
+        return missing, sources
 
 
 def _lane_artifacts(root: Path, cfg) -> list[tuple]:
@@ -177,7 +167,7 @@ def _lane_artifacts(root: Path, cfg) -> list[tuple]:
     return found
 
 
-def missing_by_path(root: Path, cfg) -> dict[str, set[int]]:
+def missing_by_path(root: Path, cfg, *, folded: DeadLineFold | None = None) -> dict[str, set[int]]:
     """Union of the lanes' line-level truth; a file two lanes measured keeps a
     line dead only when NO lane ran it.
 
@@ -187,7 +177,8 @@ def missing_by_path(root: Path, cfg) -> dict[str, set[int]]:
     route cannot move the answer.
     """
     lanes = _lane_artifacts(root, cfg)
-    missing, covered = _take_folded({key for _, _, key in lanes})
+    wanted = {key for _, _, key in lanes}
+    missing, covered = folded.take(wanted) if folded is not None else ({}, set())
     for lane, artifact, key in lanes:
         if key not in covered:
             _fold_into(missing, _parse_missing(lane, root, artifact))

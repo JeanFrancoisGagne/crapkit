@@ -376,11 +376,11 @@ def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str)
 
     A handler naming no `--protocol` at all is not a gap: argparse defaults it,
     and the default is the supported one. `None` is the other thing entirely, a
-    plugin carrying no hooks file, which registers no advisory at all.
+    plugin whose hooks file is missing or unreadable.
     """
     if protocols is None:
-        return (f"crapkit doctor: the plugin at {where} ships no hooks/hooks.json, so it "
-                f"registers no advisory hook.")
+        return (f"crapkit doctor: the plugin at {where} has no readable hooks/hooks.json; "
+                f"reinstall the plugin or repair that file before relying on its advisory hook.")
     odd = sorted(set(protocols) - {supported})
     if not odd:
         return None

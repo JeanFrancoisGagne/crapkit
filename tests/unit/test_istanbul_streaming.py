@@ -19,9 +19,8 @@ import random
 import pytest
 
 from crapkit.config import Lane
-from crapkit.coverage_istanbul import (FnCoverage, _fn_spans, _span_owners,
-                                       parse_istanbul, parse_istanbul_missing,
-                                       split_top_level)
+from crapkit.coverage_istanbul import FnCoverage, _fn_spans, _span_owners
+from coverage_readers import parse_istanbul, parse_istanbul_missing, split_top_level
 from crapkit.errors import ToolError
 from crapkit.lanes import run_lane
 

@@ -5,6 +5,7 @@ own configuration in a lane's working directory, and only when the lane's
 pytest command carries a positional to judge against `testpaths`."""
 from __future__ import annotations
 
+import math
 import os
 import re
 import shlex
@@ -322,14 +323,15 @@ def _narrowing_arguments(tokens: list[str]) -> list[str]:
 
 # Where pytest keeps `testpaths`, in the order pytest picks its inifile, as
 # (file, pytest section, decides even without that section). pytest reads one
-# inifile and never consults a lower-ranked one: pytest.ini and .pytest.ini
-# decide the moment they exist, even empty, while the other three decide only
+# inifile and never consults a lower-ranked one: pytest.ini decides even empty,
+# while .pytest.ini and the other three decide only
 # when they hold a pytest section. pyproject.toml's section is the
 # `[tool.pytest.ini_options]` table, named by an empty section here. Parsed,
 # never executed and never imported.
-_PYTEST_INI_FILES = (("pytest.ini", "pytest", True), (".pytest.ini", "pytest", True),
+_PYTEST_INI_FILES = (("pytest.ini", "pytest", True), (".pytest.ini", "pytest", False),
                      ("pyproject.toml", "", False), ("tox.ini", "pytest", False),
                      ("setup.cfg", "tool:pytest", False))
+PYTEST_CONFIG_FILES = tuple(name for name, _, _ in _PYTEST_INI_FILES)
 
 
 def _split_testpaths(value) -> tuple[str, ...]:
@@ -379,28 +381,33 @@ def _toml_testpaths(text: str) -> tuple[str, ...] | None:
     return _split_testpaths(section.get("testpaths"))
 
 
-def _testpaths_in(path: Path, section: str, always: bool) -> tuple[str, ...] | None:
-    """One file's answer: None when it is absent, or holds no pytest section
-    and does not decide without one; else its testpaths, () included."""
+def _pytest_text(directory: str | os.PathLike, name: str) -> str | None:
+    """Read one candidate file without confusing absence with an empty file."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        return (Path(directory) / name).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    return _toml_testpaths(text) if not section else _ini_testpaths(text, section, always)
 
 
-def pytest_testpaths_at(directory: str | os.PathLike) -> tuple[str, ...]:
-    """The `testpaths` a bare `pytest` run in `directory` collects, read from
-    the file pytest would pick there, in pytest's order: pytest.ini and
-    .pytest.ini decide when present, even empty; pyproject.toml, tox.ini and
-    setup.cfg decide when they hold a pytest section. () when no file decides,
-    or the deciding one names no testpaths. stdlib only. `init` reads the same
-    files to decide whether a positional is worth writing at all."""
+def _pytest_testpaths(read_text) -> tuple[str, ...]:
     for name, section, always in _PYTEST_INI_FILES:
-        found = _testpaths_in(Path(directory) / name, section, always)
+        text = read_text(name)
+        if text is None:
+            continue
+        found = _toml_testpaths(text) if not section else _ini_testpaths(text, section, always)
         if found is not None:
             return found
     return ()
+
+
+def pytest_testpaths_texts(texts: dict[str, str]) -> tuple[str, ...]:
+    """Select testpaths from supplied config texts using pytest's precedence."""
+    return _pytest_testpaths(texts.get)
+
+
+def pytest_testpaths_at(directory: str | os.PathLike) -> tuple[str, ...]:
+    """Read testpaths from the first deciding pytest config in this directory."""
+    return _pytest_testpaths(lambda name: _pytest_text(directory, name))
 
 
 def _as_testpath(token: str) -> str:
@@ -639,9 +646,8 @@ def _scope_path(name, raw: str) -> str:
     empty scope. `..` is refused as a SEGMENT, not as a prefix: `src/../etc` is
     the spelling a reader reaches for when they mean a sibling directory, and
     matching a leading `../` alone let it through into the same silent empty
-    scope. A bare `.` is left exactly as it is: whether a scope can declare the
-    repo root is the matcher's question, not this one's, and `doctor` already
-    reports such a scope as `0 files`.
+    scope. A bare `.` is the repo root. The matcher gives it the lowest path
+    precedence so a deeper scope can own its subtree.
     """
     path = _unrooted(raw)
     if path == "" or ".." in path.split("/") or ":" in path:
@@ -656,14 +662,12 @@ def _parse_scope(row: dict) -> Scope:
     unknown = set(languages) - SUPPORTED_LANGUAGES
     if unknown:
         raise ConfigError(f"unsupported language(s) {sorted(unknown)} in scope {row.get('name')!r}")
-    scope_target = row.get("target")
-    if scope_target is not None and (not isinstance(scope_target, int) or scope_target < 1):
-        raise ConfigError(f"scope {row.get('name')!r}: target must be a positive int, got {scope_target!r}")
+    scope_target = _positive_int(row, "target", DEFAULT_TARGET) if "target" in row else None
     return Scope(name=row["name"],
                  paths=tuple(_scope_path(row.get("name"), p) for p in row["paths"]),
                  languages=languages,
                  target=scope_target,
-                 coverage_optional=bool(row.get("coverage_optional", False)))
+                 coverage_optional=_boolean(row, "coverage_optional", False))
 
 
 def _notes(row: dict, where: str) -> tuple[str, ...]:
@@ -685,15 +689,17 @@ def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
     second pass would re-read and re-validate every row for nothing — and, when
     the rows arrive as an iterator, would find none of them.
     """
-    scopes: list[Scope] = []
+    scopes: dict[str, Scope] = {}
     notes: dict[str, tuple[str, ...]] = {}
     for row in rows:
         scope = _parse_scope(row)
-        scopes.append(scope)
+        if scope.name in scopes:
+            raise ConfigError(f"duplicate scope name {scope.name!r}; each scope needs its own name")
+        scopes[scope.name] = scope
         row_notes = _notes(row, f"scope {scope.name!r}")
         if row_notes:
             notes[scope.name] = row_notes
-    return tuple(scopes), notes
+    return tuple(scopes.values()), notes
 
 
 def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
@@ -720,14 +726,14 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     unknown_scopes = set(lane_scopes) - scope_names
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
-    full_suite = bool(row.get("full_suite", True))
+    full_suite = _boolean(row, "full_suite", True)
     _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"],
                            _lane_dir(root, row.get("cwd", "")))
     return Lane(name=row["name"], command=row["command"], artifact=row["artifact"],
                 parser=parser, scopes=lane_scopes,
                 cwd=row.get("cwd", ""), path_prefix=row.get("path_prefix", ""),
                 env=tuple(sorted((str(k), str(v)) for k, v in row.get("env", {}).items())),
-                full_suite=full_suite, container_ok=bool(row.get("container_ok", False)),
+                full_suite=full_suite, container_ok=_boolean(row, "container_ok", False),
                 results_artifact=row.get("results_artifact", ""),
                 timeout_seconds=_nonneg_int(row, "timeout_seconds"),
                 no_progress_seconds=_nonneg_int(row, "no_progress_seconds"),
@@ -743,15 +749,26 @@ def _nonneg_int(row: dict, key: str) -> int:
     return value
 
 
-def _reject_shared_artifacts(lanes: list) -> None:
+def _reject_shared_artifacts(lanes: list, root=None) -> None:
     seen_artifacts: dict[str, str] = {}
     for lane in lanes:
         for artifact in filter(None, (lane.artifact, lane.results_artifact)):
-            if artifact in seen_artifacts and seen_artifacts[artifact] != lane.name:
+            key = os.path.normcase(os.path.abspath(os.path.join(root or '.', artifact)))
+            if key in seen_artifacts:
                 raise ConfigError(
-                    f"lanes {seen_artifacts[artifact]!r} and {lane.name!r} share the artifact path "
+                    f"lanes {seen_artifacts[key]!r} and {lane.name!r} share the artifact path "
                     f"{artifact!r}; reused paths cross-attribute coverage under --reuse-artifacts")
-            seen_artifacts[artifact] = lane.name
+            seen_artifacts[key] = lane.name
+
+
+def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
+    lanes: dict[str, Lane] = {}
+    for row in rows:
+        lane = _parse_lane(row, scope_names, root)
+        if lane.name in lanes:
+            raise ConfigError(f"duplicate lane name {lane.name!r}; each lane needs its own name")
+        lanes[lane.name] = lane
+    return list(lanes.values())
 
 
 def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
@@ -760,23 +777,23 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
         raise ConfigError("crapkit.toml declares no [[scope]] — nothing to analyze")
     scopes, scope_notes = _parse_scopes(scope_rows)
     scope_names = {s.name for s in scopes}
-    lanes = [_parse_lane(row, scope_names, root) for row in raw.get("lane", [])]
-    _reject_shared_artifacts(lanes)
+    lanes = _unique_lanes(raw.get("lane", []), scope_names, root)
+    _reject_shared_artifacts(lanes, root)
     main = raw.get("crapkit", {})
     return Config(
-        target=int(main.get("target", DEFAULT_TARGET)),
+        target=_positive_int(main, "target", DEFAULT_TARGET),
         scopes=scopes,
         exclude_globs=tuple(raw.get("exclude", {}).get("globs", ())),
         max_file_bytes=_optional_int(raw.get("exclude", {}), "max_file_bytes"),
-        churn_window_months=int(main.get("churn_window_months", 12)),
-        worklist_floor=int(main.get("worklist_floor", 5)),
-        worklist_top=int(main.get("worklist_top", 50)),
+        churn_window_months=_positive_int(main, "churn_window_months", 12),
+        worklist_floor=_positive_int(main, "worklist_floor", 5),
+        worklist_top=_positive_int(main, "worklist_top", 50),
         lanes=tuple(lanes),
         ratchet_file=main.get("ratchet_file", "crapkit-ratchet.tsv"),
         alert_command=main.get("alert_command", ""),
         scoped_tests=tuple(sorted((str(k), str(v)) for k, v in main.get("scoped_tests", {}).items())),
         mutation_command=main.get("mutation_command", ""),
-        mutation_timeout_seconds=int(main.get("mutation_timeout_seconds", 300)),
+        mutation_timeout_seconds=_positive_int(main, "mutation_timeout_seconds", 300),
         mutation_workers=_positive_int(main, "mutation_workers", 1),
         diff_uncovered_max=_optional_int(main, "diff_uncovered_max"),
         tighten_max_jump=_factor(main, "tighten_max_jump", 2.0),
@@ -787,6 +804,13 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
         notes=_notes(main, "[crapkit]"),
         scope_notes=scope_notes,
     )
+
+
+def _boolean(row: dict, key: str, default: bool) -> bool:
+    value = row.get(key, default)
+    if not isinstance(value, bool):
+        raise ConfigError(f"{key} must be a boolean, got {value!r}")
+    return value
 
 
 def _bounded_int(main: dict, key: str, *, default: int, minimum: int) -> int:
@@ -800,7 +824,8 @@ def _factor(main: dict, key: str, default: float) -> float:
     """A ratio knob: any number at or above 1. Below 1 would refuse a tighten
     where nothing moved, which stops the ratchet falling and says nothing."""
     value = main.get(key, default)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 1:
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or value < 1 or not math.isfinite(value)):
         raise ConfigError(f"{key} must be a number >= 1, got {value!r}")
     return float(value)
 

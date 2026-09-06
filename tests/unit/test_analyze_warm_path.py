@@ -39,7 +39,7 @@ def _repo(tmp_path: Path, rel: str) -> Path:
 
 def _cache(root: Path, rel: str, stamped_as: str) -> dict:
     return {"fp": fingerprint(),
-            "entries": {content_hash(root / rel): _rows(stamped_as)}}
+            "entries": {analyze._analysis_key(rel, content_hash(root / rel)): _rows(stamped_as)}}
 
 
 def test_a_cache_hit_whose_path_did_not_move_reuses_its_rows_untouched(tmp_path):
@@ -47,7 +47,7 @@ def test_a_cache_hit_whose_path_did_not_move_reuses_its_rows_untouched(tmp_path)
     they already carry is the whole cost being removed."""
     root = _repo(tmp_path, "src/a.ts")
     cache = _cache(root, "src/a.ts", "src/a.ts")
-    cached = cache["entries"][content_hash(root / "src/a.ts")]
+    cached = cache["entries"][analyze._analysis_key("src/a.ts", content_hash(root / "src/a.ts"))]
 
     records, hits, _ = analyze_files(root, ["src/a.ts"], cache=cache)
 
@@ -96,7 +96,8 @@ def test_an_entry_with_no_rows_is_a_hit_and_stays_empty(tmp_path):
     """2,315 of the consumer repo's 14,152 files have no functions at all."""
     root = tmp_path
     (root / "empty.ts").write_text("", encoding="utf-8")
-    cache = {"fp": fingerprint(), "entries": {content_hash(root / "empty.ts"): []}}
+    cache = {"fp": fingerprint(),
+             "entries": {analyze._analysis_key("empty.ts", content_hash(root / "empty.ts")): []}}
 
     records, hits, _ = analyze_files(root, ["empty.ts"], cache=cache)
 

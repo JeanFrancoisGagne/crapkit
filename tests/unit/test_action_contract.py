@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 ACTION = ROOT / "action.yml"
@@ -543,6 +543,10 @@ def _bash() -> str:
     the `bash` on PATH can be the WSL launcher under System32, which cannot
     read the files this test writes."""
     bash = shutil.which("bash")
+    if os.name == "nt" and (bash is None or "system32" in bash.lower()):
+        git = shutil.which("git")
+        candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else Path()
+        bash = str(candidate) if candidate.is_file() else None
     if bash is None or "system32" in bash.lower():
         pytest.skip("no bash on PATH to run the step under")
     return bash
@@ -561,7 +565,7 @@ def _run_exit_step(tmp_path, gate: str, attempted: str, verify_exit: int, base_s
         (runner_temp / "crapkit-base.sha").write_text(base_sha + "\n", encoding="utf-8")
     script = tmp_path / "exit-step.sh"
     script.write_text(_step_named("the exit code")["run"], encoding="utf-8", newline="\n")
-    env = {**os.environ, "GATE": gate, "ATTEMPTED": attempted, "RUNNER_TEMP": runner_temp.as_posix()}
+    env = {**os.environ, "GATE": gate, "ATTEMPTED": attempted, "CRAPKIT_STATE": runner_temp.as_posix()}
     return subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
                           env=env, capture_output=True, text=True)
 

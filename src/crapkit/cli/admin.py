@@ -834,8 +834,17 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
 # word lands, and which pytest and pytest-cov it carries. Printed on a clean
 # doctor, because `no problems found` on a lane running the system python
 # while the repo's own venv held the plugin is the report this came from.
+_RUNNER_MARKER = "CRAPKIT_RUNNER_REPORT "
 _VERSION_PROBE = ('-c "import sys, pytest, pytest_cov; '
-                  'print(sys.executable, pytest.__version__, pytest_cov.__version__)"')
+                  f"print('{_RUNNER_MARKER}' + sys.executable, "
+                  'pytest.__version__, pytest_cov.__version__)"')
+
+
+def _runner_versions(report: str) -> tuple[str, str, str] | None:
+    line = next((line[len(_RUNNER_MARKER):] for line in report.splitlines()
+                 if line.startswith(_RUNNER_MARKER)), "")
+    parts = line.rsplit(None, 2)
+    return (parts[0], parts[1], parts[2]) if len(parts) == 3 else None
 
 
 @lru_cache(maxsize=None)
@@ -845,15 +854,19 @@ def _runner_report(word: str) -> tuple[str, str, str] | None:
     the word for the reason `_start_probe` is: one machine fact per word,
     however many lanes name it. The path may hold spaces, so the two versions
     are split off the right."""
-    import subprocess
+    from tempfile import TemporaryFile
+    from ..procs import run_bounded
 
     try:
-        done = subprocess.run(f"{_shell_quote(word)} {_VERSION_PROBE}", shell=True,
-                              capture_output=True, text=True, timeout=_PROBE_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
+        with TemporaryFile() as output:
+            code = run_bounded(f"{_shell_quote(word)} {_VERSION_PROBE}",
+                               _PROBE_TIMEOUT_SECONDS, stream=output,
+                               env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+            output.seek(0)
+            report = output.read().decode("utf-8", errors="replace")
+    except OSError:
         return None
-    parts = done.stdout.strip().rsplit(None, 2) if done.returncode == 0 else []
-    return (parts[0], parts[1], parts[2]) if len(parts) == 3 else None
+    return _runner_versions(report) if code == 0 else None
 
 
 def _same_environment(a: str, b: str) -> bool:
@@ -1372,17 +1385,22 @@ def _named_protocol(handler: dict) -> str | None:
     args end at `--protocol` is malformed, and reading it must not raise.
     """
     args = handler.get("args", [])
+    if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
+        raise ValueError("hook args must be a list of strings")
     return dict(zip(args, args[1:])).get("--protocol")
 
 
 def _hook_protocols(root: Path) -> tuple[str, ...] | None:
-    """Every protocol the plugin's hooks name, or None when it ships no hooks
-    file. The empty tuple is the third state: a hooks file naming no protocol,
+    """Every protocol the plugin's hooks name, or None for unreadable hooks.
+    The empty tuple is the third state: a hooks file naming no protocol,
     which argparse defaults to the supported one."""
     hooks = _plugin_json(root / "hooks" / "hooks.json")
     if not isinstance(hooks, dict):
         return None
-    named = [_named_protocol(handler) for handler in _hook_handlers(hooks)]
+    try:
+        named = [_named_protocol(handler) for handler in _hook_handlers(hooks)]
+    except (AttributeError, TypeError, ValueError):
+        return None
     return tuple(p for p in named if p is not None)
 
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 HEADING = "## Subcommands"

@@ -10,8 +10,8 @@ from types import SimpleNamespace
 import pytest
 from crapkit.config import Config
 from crapkit.churn import FileChurn
-from crapkit.cli import (_actionable, _claims_to_release, _matching_rows, _name_matches,
-                         _next_reasons, _policy_findings, _uncovered_fields, _worklist_payload)
+from crapkit.cli.queue import _actionable, _claims_to_release, _matching_rows, _name_matches, _next_reasons, _uncovered_fields, _worklist_payload
+from crapkit.cli.ratchet_cmds import _policy_findings
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
 from crapkit.uncovered import MissingLines

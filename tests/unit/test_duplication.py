@@ -30,6 +30,17 @@ def test_unrelated_bodies_do_not_pair():
     assert find_duplicates(rows, lambda: {"src/a.py": A, "src/c.py": C}) == []
 
 
+def test_unrelated_twin_candidates_never_allocate_result_payloads(monkeypatch):
+    import crapkit.dup as dup
+
+    def refuse(*args):
+        raise AssertionError("a rejected twin allocated a result payload")
+
+    rows = [row("src/a.py", "alpha", 1, 11), row("src/c.py", "gamma", 1, 11)]
+    monkeypatch.setattr(dup, "_twin_payload", refuse)
+    assert find_twins(rows[0], rows, {"src/a.py": A, "src/c.py": C}) == []
+
+
 def test_tiny_functions_are_skipped():
     tiny = "def t():\n    return 1\n"
     rows = [row("src/a.py", "t", 1, 2), row("src/b.py", "t", 1, 2)]

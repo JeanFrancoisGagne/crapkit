@@ -19,8 +19,9 @@ from pathlib import Path
 import pytest
 
 from crapkit.analyze import analyze_source
-from crapkit.cli import (_BriefLoader, _ceiling_breaches, _pick_function, _split_marked,
-                         _unmarked_breaches)
+from crapkit.cli.queue import _BriefLoader, _pick_function
+from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
+from crapkit.cli.verifying import _split_marked
 from crapkit.cli.reports import cmd_explain
 from crapkit.config import load_config_text
 from crapkit.errors import CrapkitError
@@ -373,7 +374,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 @pytest.mark.parametrize("page", ["AGENTS.md", "docs/agent-json.md"])
 def test_the_documented_out_of_range_twin_message_is_the_one_the_tool_prints(page: str):
-    from crapkit.cli import _no_twin_message
+    from crapkit.cli.queue import _no_twin_message
 
     printed = _no_twin_message("calc/iso_cost.py", "__post_init__#5", "__post_init__", 2)
 

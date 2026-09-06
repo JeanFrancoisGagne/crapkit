@@ -4,7 +4,7 @@
 what the run SCORES, and it must not care which lane finished first: same tree,
 same artifacts, same numbers, serial or not.
 """
-from crapkit.cli import _collect_lanes
+from crapkit.cli.scoring import _collect_lanes
 from crapkit.config import Lane, load_config_text
 from crapkit.lanes import LaneOutcome, lane_order, write_stamps
 

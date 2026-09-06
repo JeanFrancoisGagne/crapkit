@@ -1,4 +1,4 @@
-"""coverage.py JSON report parser. Pure: report text in, per-file function coverage out.
+"""Per-file coverage.py regions, context cleanup, and report completeness rules.
 
 Requires the per-function regions coverage.py has emitted since 7.6.0 and the
 start_line key from 7.13.1. Branch data is preferred and not required: the
@@ -9,7 +9,6 @@ executed/missing line, the closest thing the report offers to an end line.
 """
 from __future__ import annotations
 
-import json
 import sys
 
 from .coverage_istanbul import FnCoverage
@@ -100,17 +99,6 @@ def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
           f"are skipped and the rest of the report is scored", file=sys.stderr)
 
 
-def parse_coveragepy_missing(text: str, *, path_prefix: str) -> dict[str, set[int]]:
-    """Per measured file, the lines coverage.py reports as never run."""
-    try:
-        report = json.loads(text)
-        prefix = (path_prefix.rstrip("/") + "/") if path_prefix else ""
-        return {prefix + p.replace("\\", "/"): set(data.get("missing_lines", ()))
-                for p, data in report.get("files", {}).items()}
-    except Exception as exc:
-        raise ToolError(f"unparseable coverage.py report: {exc}") from exc
-
-
 def _line_contexts(raw: dict) -> dict[int, list[str]]:
     out = {}
     for line, contexts in raw.items():
@@ -118,47 +106,3 @@ def _line_contexts(raw: dict) -> dict[int, list[str]]:
         if tests:
             out[int(line)] = tests
     return out
-
-
-def parse_coveragepy_contexts(text: str, *, path_prefix: str) -> dict[str, dict[int, list[str]]]:
-    """line -> test ids per file, from a report made with --show-contexts and
-    dynamic_context = test_function. The empty module-import context is not a test."""
-    try:
-        report = json.loads(text)
-        prefix = (path_prefix.rstrip("/") + "/") if path_prefix else ""
-        out = {}
-        for p, data in report.get("files", {}).items():
-            contexts = _line_contexts(data.get("contexts", {}))
-            if contexts:
-                out[prefix + p.replace("\\", "/")] = contexts
-        return out
-    except Exception as exc:
-        raise ToolError(f"unparseable coverage.py report: {exc}") from exc
-
-
-def _scored_files(files: dict, prefix: str) -> dict[str, list[FnCoverage]]:
-    return {prefix + raw_path.replace("\\", "/"): _file_functions(data)
-            for raw_path, data in files.items() if has_regions(data)}
-
-
-def _regionless_files(files: dict) -> list[str]:
-    return [raw_path for raw_path, data in files.items() if not has_regions(data)]
-
-
-def parse_coveragepy(text: str, *, path_prefix: str,
-                     label: str = "") -> dict[str, list[FnCoverage]]:
-    try:
-        report = json.loads(text)
-        prefix = (path_prefix.rstrip("/") + "/") if path_prefix else ""
-        files = report.get("files", {})
-        per_file = _scored_files(files, prefix)
-        # Regions first: a report with none of them has no statement counts
-        # either, so the branch verdict would answer "add --cov-branch" to a
-        # coverage too old to emit regions at all, and the rerun changes nothing.
-        judge_regions(_regionless_files(files), len(files), label)
-        judge_branch(bool(report.get("meta", {}).get("branch_coverage")), per_file, label)
-        return per_file
-    except ToolError:
-        raise
-    except Exception as exc:
-        raise ToolError(f"unparseable coverage.py report: {exc}") from exc

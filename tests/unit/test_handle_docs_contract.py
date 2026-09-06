@@ -39,7 +39,7 @@ def test_the_pages_say_the_handle_counts_positions_not_lines(page: str):
 
 
 def test_the_documented_out_of_range_message_is_the_one_the_tool_prints():
-    from crapkit.cli import _no_handle_message
+    from crapkit.cli.queue import _no_handle_message
 
     printed = _no_handle_message("calc/report.py", "(anonymous)#5", _anon_rows(2))
 
@@ -57,7 +57,9 @@ def _anon_rows(count: int) -> list:
 
 
 def test_the_handle_the_pages_promise_is_the_one_the_code_builds():
-    assert packet.handles(_anon_rows(2)) == {10: "(anonymous)#1", 20: "(anonymous)#2"}
+    assert packet.handles(_anon_rows(2)) == {
+        ("calc/report.py", "(anonymous)", 10, 0): "(anonymous)#1",
+        ("calc/report.py", "(anonymous)", 20, 0): "(anonymous)#2"}
 
 
 # --- the refresh contract ----------------------------------------------------

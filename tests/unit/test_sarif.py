@@ -68,7 +68,7 @@ def test_a_fully_covered_diff_emits_nothing():
 # --- verify's own emission wires all three finding kinds -------------------
 
 def _verify_sarif(tmp_path, uncovered: list) -> list[dict]:
-    from crapkit.cli import _emit_verify_findings
+    from crapkit.cli.verifying import _emit_verify_findings
 
     args = SimpleNamespace(sarif="out.sarif", github=False)
     verdict = SimpleNamespace(gate_violations=(), ratchet_regressions=())

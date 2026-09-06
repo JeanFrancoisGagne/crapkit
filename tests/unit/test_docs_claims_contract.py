@@ -16,7 +16,7 @@ import pytest
 
 from crapkit.config import Config
 from crapkit.churn import parse_git_log
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 from crapkit.scaffold import detect_lanes, gitignore_entries, live_lanes, starter_toml
 from crapkit.score import grade
 
@@ -402,7 +402,7 @@ def test_the_readme_prints_the_taint_warning_the_code_produces():
     """The subsection quotes a captured warning. Reword the message and this
     pins the doc to the new text rather than leaving a transcript nobody can
     reproduce."""
-    from crapkit.cli import _taint_note
+    from crapkit.cli.verifying import _taint_note
     from crapkit.store import BaselinePick
 
     pick = BaselinePick(run={"id": 1, "commit": "88012a148f6d0a1b2c3d4e5f60718293a4b5c6d7"},
@@ -578,7 +578,7 @@ def test_both_pages_state_next_items_ordering_rule():
 
 
 def test_the_readme_names_the_markers_the_worklist_row_prints():
-    from crapkit.cli import _row_marker
+    from crapkit.cli.queue import _row_marker
 
     assert [_row_marker(_marked(f, r)) for f, r in
             (("measured", "ok"), ("no-lane", "decompose"), ("measured", "add-tests"),
@@ -637,7 +637,7 @@ def test_est_splits_in_the_tool_matches_the_formula_both_pages_print():
 
 def _payload_splits(ccn: int) -> int:
     
-    from crapkit.cli import _next_item_payload
+    from crapkit.cli.queue import _next_item_payload
     from crapkit.score import ScoredRow
     from crapkit.uncovered import MissingLines
     from crapkit.worklist import admission

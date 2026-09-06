@@ -9,7 +9,7 @@ Parity is more than the policy: the hook judges the functions the diff touched,
 and a ratchet mark is a recorded decision to carry a function as it stands. Both
 filters run before the ceiling rule, or a repo with seeded debt gates red forever.
 """
-from crapkit.cli import _ceiling_breaches, _unmarked_breaches
+from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
 from crapkit.config import Config, Scope
 from crapkit.hook import file_ceilings
 from crapkit.ratchet import RatchetEntry

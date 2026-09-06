@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from crapkit import config, mutate_pool, procs
-from crapkit.cli import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
+from crapkit.cli.admin import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
 from crapkit.config import Lane
 from crapkit.mutate import Mutant

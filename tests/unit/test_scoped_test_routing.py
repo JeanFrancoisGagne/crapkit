@@ -7,21 +7,12 @@ substituted into pytest's collection list, where it collects nothing (exit 5).
 """
 import pytest
 
-from crapkit.cli import _group_files_by_scope, _scoped_command
+from crapkit.cli.verifying import _group_files_by_scope
 from crapkit.errors import ConfigError
 
 
-def test_a_template_with_files_still_substitutes_the_quoted_list():
-    cmd = _scoped_command("python -m pytest {files} -q", ["util/a.py", "util/b.py"])
-
-    assert cmd == 'python -m pytest "util/a.py" "util/b.py" -q'
 
 
-def test_a_template_without_files_runs_verbatim_as_the_scopes_whole_suite():
-    cmd = _scoped_command("python -m pytest tests/util -q", ["util/stats.py"])
-
-    assert cmd == "python -m pytest tests/util -q", \
-        "the coarse escape: the scope's own suite, whatever file was named"
 
 
 def test_the_multi_scope_routing_error_names_a_recipe_that_works():

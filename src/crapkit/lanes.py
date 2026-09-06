@@ -21,11 +21,10 @@ from typing import IO, NamedTuple
 
 from .config import Lane, shell_segments, shell_words
 from .coverage_istanbul import FnCoverage
-from .covstream import lane_prefix, parse_coveragepy_file, parse_istanbul_both_file
+from .covstream import lane_prefix, parse_coveragepy_both_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
 from .procs import NoProgress, run_bounded
-from .uncovered import fold_dead_lines
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
@@ -641,7 +640,7 @@ def lane_unchanged(root: Path, lane: Lane, scope_paths: dict, git: GitFacts | No
 
 
 def _read_and_parse(lane: Lane, root: Path,
-                    artifact_path: Path) -> tuple[dict[str, list[FnCoverage]], str]:
+                    artifact_path: Path, dead_lines=None) -> tuple[dict[str, list[FnCoverage]], str]:
     """This lane's coverage, plus the sha256 of the artifact's own bytes.
 
     The reader takes the PATH, not the text: a whole-document parse needs the
@@ -650,19 +649,19 @@ def _read_and_parse(lane: Lane, root: Path,
     Streaming holds one chunk and one file's coverage instead, and hashes the
     bytes on the way past, so the recorded digest costs no second read.
 
-    An istanbul walk also yields the lines no statement ran, which diff coverage
-    used to get by reopening the artifact and decoding every member a second
-    time. They are folded into the run's union here and dropped, so no lane's
-    map has to stay alive next to the others'.
+    Both readers also yield uncovered lines. An optional collector combines
+    them for this command without keeping separate lane maps or global state.
     """
     if lane.parser == "istanbul":
         per_file, dead, digest = parse_istanbul_both_file(artifact_path, repo_root=str(root))
-        fold_dead_lines(artifact_path, dead)
-        return per_file, digest
-    if lane.parser == "coveragepy":
-        return parse_coveragepy_file(artifact_path, path_prefix=lane.path_prefix,
-                                     label=f"lane {lane.name!r}")
-    raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
+    elif lane.parser == "coveragepy":
+        per_file, dead, digest = parse_coveragepy_both_file(
+            artifact_path, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}")
+    else:
+        raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
+    if dead_lines is not None:
+        dead_lines.add(artifact_path, dead)
+    return per_file, digest
 
 
 _SAMPLE_PATHS = 3
@@ -954,40 +953,47 @@ def suite_drops(previous: dict, current: dict, *,
     return notes
 
 
-def build_retest_command(template: str, tests: set[str]) -> str:
-    """Fill a retest template. {tests}: sorted quoted ids verbatim (pytest style).
-    {files}: unique quoted classnames — vitest's junit classname IS the test file.
-    {names}: re.escape'd alternation of test names, for -t style regex filters."""
-    import re
-
-    ordered = sorted(tests)
-    files = sorted({t.split("::", 1)[0] for t in ordered})
-    names = "|".join(re.escape(t.split("::", 1)[1]) for t in ordered if "::" in t)
-    return (template.replace("{tests}", " ".join(f'"{t}"' for t in ordered))
-                    .replace("{files}", " ".join(f'"{f}"' for f in files))
-                    .replace("{names}", names))
-
-
 def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
     """Run the lane's retest_command on just these ids; return the ones that
     PASS the rerun (the flakes). Any doubt — no artifact, a crash, a timeout —
     keeps everything failed."""
-    command = build_retest_command(lane.retest_command, tests)
+    command, additions = _retest_template(lane.retest_command, tests)
+    kwargs = _popen_kwargs(root, lane)
+    kwargs["env"] = {**(kwargs.get("env") or os.environ), **additions}
     log_path = _lane_log_path(root, lane)
+    before = _mtime_ns(root / lane.results_artifact)
     with open(log_path, "a", encoding="utf-8", errors="replace") as fh:
         fh.write(f"\n--- flake retest ---\n$ {command}\n")
         fh.flush()
         try:
             code = run_bounded(command, _deadline(lane), stream=fh,
-                               no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
+                               no_progress=_no_progress(lane), **kwargs)
         except NoProgress:
             return set()
-    if code is None:
+    if code not in (0, 1):
         return set()
-    still = _still_failed(root, lane)
-    if still is None:
+    return tests & _retested_passes(root, lane, before)
+
+
+def _retest_template(template: str, tests: set[str]) -> tuple[str, dict[str, str]]:
+    from .procs import prepare_template
+
+    ordered = sorted(tests)
+    files = sorted({test.split("::", 1)[0] for test in ordered})
+    names = "|".join(re.escape(test.split("::", 1)[1]) for test in ordered if "::" in test)
+    return prepare_template(template, {"tests": ordered, "files": files, "names": [names]})
+
+
+def _retested_passes(root: Path, lane: Lane, before: int | None) -> set[str]:
+    from .junitparse import passed_test_ids
+
+    path = root / lane.results_artifact
+    if _mtime_ns(path) == before:
         return set()
-    return set(tests) - still
+    try:
+        return passed_test_ids(path.read_text(encoding="utf-8"))
+    except (OSError, ToolError):
+        return set()
 
 
 def _still_failed(root: Path, lane: Lane) -> set[str] | None:
@@ -1060,10 +1066,11 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
 
 
 def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
-             scope_paths: dict | None = None, git: GitFacts | None = None) -> LaneOutcome:
+             scope_paths: dict | None = None, git: GitFacts | None = None,
+             dead_lines=None) -> LaneOutcome:
     facts = _facts(root, git)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact)
-    coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane))
+    coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
     _judge_artifact_scope(lane, coverage, scope_paths, root)
     provenance = {
         "artifact_sha256": digest,

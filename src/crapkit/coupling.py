@@ -74,23 +74,8 @@ def _rank_pairs(file_counts: dict, pair_counts: dict, min_support: int,
     return out if top is None else out[:top]
 
 
-def _partner(pair: dict, path: str) -> dict:
-    a, b = pair["files"]
-    return {"path": b if a == path else a, "support": pair["support"],
-            "confidence": pair["confidence"]}
 
 
-def partners(lines: Iterable[str], path: str, *, min_support: int = DEFAULT_MIN_SUPPORT,
-             min_confidence: float = DEFAULT_MIN_CONFIDENCE, top: int = 5) -> list[dict]:
-    """One file's coupled partners, best first.
-
-    Ranked over EVERY qualifying pair before the cut: a global top applied first
-    would drop a quiet file's own partners behind the repo's noisiest pairs and
-    report it as uncoupled.
-    """
-    ranked = change_coupling_lines(lines, min_support=min_support,
-                                   min_confidence=min_confidence, top=None)
-    return [_partner(p, path) for p in ranked if path in p["files"]][:top]
 
 
 def change_coupling(log_text: str, *, min_support: int = DEFAULT_MIN_SUPPORT,

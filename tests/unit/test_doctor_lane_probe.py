@@ -175,6 +175,46 @@ def test_the_real_probe_answers_for_this_interpreter():
     assert report[1] == pytest.__version__
 
 
+def test_a_timed_out_probe_cannot_keep_running(monkeypatch, tmp_path):
+    import time
+
+    marker = tmp_path / "escaped-probe"
+    monkeypatch.setenv("CRAPKIT_PROBE_MARKER", str(marker))
+    monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(admin, "_VERSION_PROBE", (
+        '-c "import os, time; from pathlib import Path; time.sleep(3); '
+        "Path(os.environ['CRAPKIT_PROBE_MARKER']).write_text('escaped')\""))
+
+    assert admin._runner_report(sys.executable) is None
+    time.sleep(3.1)
+    assert not marker.exists(), "doctor returned while its interpreter could still run"
+
+
+def test_interpreter_startup_warnings_do_not_change_its_report(monkeypatch, tmp_path):
+    (tmp_path / 'sitecustomize.py').write_text(
+        'import sys\nprint("BENIGN_STARTUP_WARNING", file=sys.stderr)\n', encoding='utf-8')
+    monkeypatch.setenv('PYTHONPATH', os.pathsep.join([str(tmp_path), os.environ.get('PYTHONPATH', '')]))
+
+    report = admin._runner_report(sys.executable)
+
+    assert report is not None
+    assert report[0].lower() == sys.executable.lower()
+
+
+def test_the_probe_controls_its_output_encoding(monkeypatch, tmp_path):
+    import venv
+
+    environment = tmp_path / 'Jos\u00e9'
+    venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)
+    executable = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    monkeypatch.setenv('PYTHONIOENCODING', 'cp1252')
+
+    report = admin._runner_report(str(executable))
+
+    assert report is not None
+    assert report[0] == str(executable)
+
+
 def _linked(base: Path, target: Path) -> str:
     """A second name for the same file: what a venv's bin/python is to the base
     interpreter on POSIX, without needing a symlink privilege here."""

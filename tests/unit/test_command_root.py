@@ -4,7 +4,7 @@ itself is pinned at the CLI seam in tests/e2e/test_discovery_e2e.py.
 """
 import pytest
 
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 
 
 def _subcommands() -> dict:

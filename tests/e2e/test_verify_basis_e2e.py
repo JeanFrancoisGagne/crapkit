@@ -17,6 +17,7 @@ import pytest
 
 from conftest import cli_runner
 
+from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.ratchet import metric_version
 
 PY = sys.executable
@@ -312,7 +313,8 @@ def test_the_verdict_names_the_tools_that_produced_it(receipt_repo: Path):
 
     assert res.returncode == 0, res.stdout + res.stderr
     versions = json.loads(res.stdout)["tool_versions"]
-    assert set(versions) == {"crapkit", "lizard"}
+    assert set(versions) == {"analysis_version", "crapkit", "lizard"}
+    assert versions["analysis_version"] == str(ANALYSIS_VERSION)
     assert all(v and isinstance(v, str) for v in versions.values())
 
 

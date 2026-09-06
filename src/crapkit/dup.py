@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from .keys import lookup
 from .snapshot import InventoryRow
 
 WINDOW = 4  # consecutive normalized lines per shingle
@@ -160,8 +161,8 @@ def _nested_spans(a, b) -> bool:
 
 
 def _is_self(r: InventoryRow, target) -> bool:
-    """Path plus start line: no two functions in a file open on the same line."""
-    return r.path == target.path and r.start == target.start
+    """Scope copies share a location; separate same-line functions do not."""
+    return lookup(r) == lookup(target)
 
 
 def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int] | None:
@@ -169,12 +170,14 @@ def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int
     return None if lines is None else _row_shingles(target, lines, min_lines)
 
 
-def _twin_scores(mine: set[int], target,
-                 entries: list[tuple[InventoryRow, set[int]]]) -> list[dict]:
-    return [_twin_payload(r, len(mine & other) / min(len(mine), len(other)),
-                          _nested_spans(r, target))
-            for r, other in entries
-            if not _is_self(r, target)]
+def _qualified_twins(mine: set[int], target,
+                     entries: list[tuple[InventoryRow, set[int]]], similarity: float):
+    for row, other in entries:
+        if _is_self(row, target):
+            continue
+        score = round(len(mine & other) / min(len(mine), len(other)), 4)
+        if score >= similarity:
+            yield _twin_payload(row, score, _nested_spans(row, target))
 
 
 def _entries_at(indexed: FunctionIndex | None, rows: list[InventoryRow],
@@ -204,8 +207,7 @@ def find_twins(target, rows: list[InventoryRow], sources: dict[str, str], *,
     if not mine:
         return []
     entries = _entries_at(indexed, rows, sources, min_lines)
-    kept = [t for t in _twin_scores(mine, target, entries)
-            if t["similarity"] >= similarity]
+    kept = list(_qualified_twins(mine, target, entries, similarity))
     kept.sort(key=lambda t: (-t["similarity"], t["path"], t["start"]))
     return kept[:top]
 

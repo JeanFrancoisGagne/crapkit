@@ -20,7 +20,7 @@ from contextlib import redirect_stdout
 
 import pytest
 
-from crapkit.cli import _baseline_rows, _print_rescore_table, _rescore_json, _rescore_overlay
+from crapkit.cli.scoring import _baseline_rows, _print_rescore_table, _rescore_json, _rescore_overlay
 from crapkit.config import Config, Scope
 from crapkit.score import ScoredRow
 from crapkit.snapshot import InventoryRow

@@ -161,12 +161,9 @@ def test_a_pyproject_string_value_is_split_the_way_pytest_splits_it(tmp_path):
     assert pytest_testpaths_at(tmp_path) == ("tests", "integration")
 
 
-@pytest.mark.parametrize("filename", ["pytest.ini", ".pytest.ini"])
-def test_an_empty_pytest_ini_decides_and_names_no_testpaths(tmp_path, filename: str):
-    """pytest.ini and .pytest.ini take precedence over every other file even
-    when empty: beside one, a bare `pytest` collects from the rootdir and never
-    reads the pyproject below it, so `pytest tests` narrows that run."""
-    _write(tmp_path, filename, "")
+def test_an_empty_pytest_ini_decides_and_names_no_testpaths(tmp_path):
+    """Only pytest.ini takes precedence even without a pytest section."""
+    _write(tmp_path, "pytest.ini", "")
     _write(tmp_path, "pyproject.toml", PYPROJECT)
 
     assert pytest_testpaths_at(tmp_path) == ()

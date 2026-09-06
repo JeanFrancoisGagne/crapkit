@@ -11,7 +11,7 @@ import sys
 import pytest
 
 from crapkit import __version__
-from crapkit.cli import _version_line
+from crapkit.cli.parser import _version_line
 
 
 def _no_dist_info_reachable(monkeypatch) -> None:
@@ -53,7 +53,7 @@ def test_a_source_tree_with_nothing_installed_falls_back_to_the_package(monkeypa
 
 
 def test_the_parser_serves_that_line_and_exits_zero(capsys):
-    from crapkit.cli import build_parser
+    from crapkit.cli.parser import build_parser
 
     with pytest.raises(SystemExit) as exit_info:
         build_parser().parse_args(["--version"])
@@ -65,7 +65,7 @@ def test_the_parser_serves_that_line_and_exits_zero(capsys):
 def test_building_the_parser_costs_no_distribution_lookup(monkeypatch):
     """Every command builds the parser, `hook-precommit` at every commit
     included, and the lookup costs ~30ms. Nobody pays it to run the hook."""
-    from crapkit.cli import build_parser
+    from crapkit.cli.parser import build_parser
 
     def refuse(name: str) -> str:
         raise AssertionError("--version resolved before anyone asked for it")

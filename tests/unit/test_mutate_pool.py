@@ -7,6 +7,7 @@ nothing half-built, because a half-built pool is reused in silence.
 """
 import os
 import shutil
+import subprocess
 import threading
 import time
 
@@ -161,7 +162,7 @@ def test_a_run_that_loses_the_lock_removes_its_own_trees(tmp_path, monkeypatch):
     """The peer's path is the old one, and the old one cleans up after itself."""
     tried = _fake_git(monkeypatch)
     pool_dir(tmp_path).mkdir(parents=True)
-    handle = os.open(pool_dir(tmp_path) / ".lock", os.O_CREAT | os.O_RDWR)
+    handle = os.open(pool_dir(tmp_path).parent / "mutate-pool.lock", os.O_CREAT | os.O_RDWR)
     assert _take_lock(handle)
     try:
         with _worktrees(tmp_path, 2) as trees:
@@ -195,6 +196,10 @@ def _mutant(tmp_path):
     from crapkit.mutate import Mutant
 
     (tmp_path / "a.py").write_text("def f(x):\n    return x > 1\n", encoding="utf-8")
+    subprocess.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    subprocess.run(['git', 'add', 'a.py'], cwd=tmp_path, check=True)
+    subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=t@t',
+                    'commit', '-qm', 'fixture'], cwd=tmp_path, check=True)
     return Mutant(path="a.py", line=2, op="cmp", original="x > 1", mutated="x >= 1")
 
 

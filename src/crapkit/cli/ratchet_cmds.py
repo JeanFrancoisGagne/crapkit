@@ -11,7 +11,7 @@ from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
-                      _print_json, _ratchet_or_die, repo_text)
+                      _print_json, _ratchet_key_version, _ratchet_or_die, repo_text)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -92,24 +92,41 @@ def _ratchet_merge(files: list) -> int:
     # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3).
     texts = [repo_text(Path(f), f) for f in files]
     stamp = _merge_stamp(texts)
+    key_version = _merge_key_version(texts)
     merged = merge_ratchets(*(_ratchet_or_die(t, f) for t, f in zip(texts, files)))
-    Path(files[1]).write_text(dump_ratchet(merged, stamp=stamp), encoding="utf-8", newline="\n")
+    Path(files[1]).write_text(dump_ratchet(merged, stamp=stamp, key_version=key_version),
+                              encoding="utf-8", newline="\n")
     print(f"ratchet merge: {len(merged)} mark(s)")
     return 0
 
 
+def _merge_key_version(texts: list[str]) -> int:
+    from ..ratchet import read_key_version
+
+    try:
+        versions = {read_key_version(text) for text in texts}
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    if len(versions) != 1:
+        raise ConfigError("ratchet key identity versions differ; reconcile the legacy "
+                          "function mapping before merging; OURS was left unchanged")
+    return versions.pop()
+
+
 def _ratchet_move(root: Path, cfg, files: list) -> int:
-    from ..ratchet import dump_ratchet, move_marks
+    from ..ratchet import dump_ratchet, move_marks, read_key_version, read_stamp
 
     if len(files) != 2:
         raise ConfigError("ratchet move takes exactly two paths: OLD NEW")
     ratchet_path = root / cfg.ratchet_file
+    before = repo_text(ratchet_path, cfg.ratchet_file) if ratchet_path.is_file() else ""
     entries, moved = move_marks(_load_ratchet_or_die(ratchet_path, cfg.ratchet_file),
                                 files[0], files[1])
     if not moved:
         raise ConfigError(f"ratchet move: no mark under {files[0]} in {cfg.ratchet_file} "
                           "(a directory must end in '/')")
-    ratchet_path.write_text(dump_ratchet(entries), encoding="utf-8", newline="\n")
+    text = dump_ratchet(entries, stamp=read_stamp(before), key_version=read_key_version(before))
+    ratchet_path.write_text(text, encoding="utf-8", newline="\n")
     print(f"{cfg.ratchet_file}: moved {moved} mark(s) from {files[0]} to {files[1]}")
     return 0
 
@@ -209,13 +226,28 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     fresh = store.read_scored(latest["id"])
     ratchet_path = root / cfg.ratchet_file
     prior = _load_ratchet_or_die(ratchet_path, cfg.ratchet_file)
+    key_version = _ratchet_key_version(root, cfg, fresh, store)
     if args.action == "seed":
         entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target,
                                                  scope_targets=cfg.scope_targets)
         note = f"added {added}, tightened {tightened}"
     else:
         entries, note = _pruned(root, store, prior, fresh)
-    ratchet_path.write_text(dump_ratchet(entries), encoding="utf-8", newline="\n")
+    _write_checked_marks(root, cfg, entries, fresh, key_version,
+                          latest['tool_versions'].get('analysis_version'))
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(skipped)}")
     return 0
+
+
+def _write_checked_marks(root: Path, cfg, entries, fresh, key_version: int,
+                          analysis_version) -> None:
+    from ..ratchet import check_reader_version, checked_key_version, dump_ratchet
+
+    text = dump_ratchet(entries, key_version=key_version)
+    try:
+        check_reader_version(entries, analysis_version)
+        checked_key_version(text, fresh)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    (root / cfg.ratchet_file).write_text(text, encoding="utf-8", newline="\n")

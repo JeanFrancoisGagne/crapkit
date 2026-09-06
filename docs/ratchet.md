@@ -19,13 +19,14 @@ Commit it.
 ## What a mark is
 
 ```
-# crapkit-analysis=8 lizard=1.24.0
+# crapkit-analysis=10 lizard=1.24.0
+# crapkit-keys=1
 path	long_name	crap
 calc/grade.py	classify( score , attempts , late , bonus )	66.0714
 calc/report.py	render( rows , wide , totals , header )	56.0000
 ```
 
-A comment line carrying the metric stamp, a header, then one tab-separated row per mark:
+Comments carrying the metric and key-format stamps, a header, then one row per mark:
 path, key name, CRAP to four decimals. Rows are sorted by that pair, so the file is
 diffable and merge conflicts are local.
 
@@ -53,12 +54,11 @@ The ordinal, not the start line, because a line is invalidated by any edit above
 would re-key marks nothing touched. Delete one twin and the rest renumber, which is honest:
 they really are different functions now, and `prune` drops the key that no longer names one.
 
-**Adopting it needs no migration.** Before the ordinal, all of a file's twins shared
-`(path, long_name)`. One of them owned the key and the rest were neither marked nor gated,
-so any of them could grow past every ceiling with no gate firing. Because twin #1 keeps the
-bare name, **every mark in an existing `crapkit-ratchet.tsv` already reads as twin #1** —
-there is nothing to rewrite. Run `crapkit ratchet seed` when you want the other twins'
-standing debt recorded too; it adds their marks and touches nothing else.
+Before the ordinal, all of a file's twins shared `(path, long_name)`. One owned the key
+and the rest were neither marked nor gated. For groups whose membership is unchanged,
+twin #1 keeps the bare name and existing marks keep their meaning. Same-line callbacks
+and callbacks recovered by a newer reader need the
+[identity checks below](#same-line-function-identity) before their ordinals can be reused.
 
 `analyze` prints one line per file naming the colliding names, so a `#2` in a marks diff
 has an explanation:
@@ -245,7 +245,7 @@ Three cases:
 |---|---|
 | Matches the running metric | Compare normally. |
 | Differs | **Refused**, exit 3. |
-| Absent (a file written before stamping) | Accepted with a warning. There is nothing to disagree with. |
+| Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
 
 ```
 $ crapkit verify
@@ -260,13 +260,16 @@ verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files)
 EXIT=0
 ```
 
-`ratchet seed` and `prune` always rewrite the stamp to the running metric. The merge driver
-is the exception: it writes whatever stamp both sides already shared, so two legacy sides
-stay legacy.
+After their identity checks pass, `ratchet seed` and `prune` rewrite the stamp to the
+running metric. An upgrade that changes which functions a reader finds needs a reviewed
+mapping first; fresh coverage alone cannot supply it. See
+[same-line function identity](#same-line-function-identity). An explicit move preserves
+both stamps. The merge driver writes the stamps both sides already shared, so two legacy
+sides stay legacy.
 
-This is why `crapkit` pins its lizard dependency by lower bound and why upgrading lizard is
-a deliberate act. A new lizard changes the stamp, and every consumer's next run refuses its
-own marks until somebody re-seeds.
+Upgrading lizard changes the stamp, so the next comparison refuses existing marks.
+Reseeding can update compatible marks; changed function membership needs the identity
+review below first.
 
 ### Upgrading to 0.4.5: analysis version 8
 
@@ -695,3 +698,83 @@ crapkit verify              # should be green on the tree you just committed
 ```
 
 Then install the gate ([README](../README.md#the-gate)) and the merge driver above.
+
+## Same-line function identity
+
+Several callbacks can start on one source line. New records include `occurrence`,
+their creation order within that line. Canonical marks still use the raw name and
+`#N` ordinal, now ordered by `(start, occurrence)`.
+
+The two stamps answer different questions:
+
+| Stamp | What it records |
+| --- | --- |
+| `# crapkit-analysis=10 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
+| `# crapkit-keys=1` | Ordinals ordered by `(start, occurrence)`. |
+
+A missing key-version comment means the old start-only rule. For unchanged groups
+whose reader identity is proved, seed, prune and a successful tightening can keep
+the keys and values and add the new key marker. Marks for absent names retain the
+old key format until their mapping can be checked. Named functions and functions
+in other languages keep compatible reseed behavior when their groups have no
+unresolved collision. An explicit move preserves both stamps; a merge refuses
+different key versions without rewriting OURS.
+
+### Same-line collisions and recovered callbacks
+
+If a legacy marked name has two functions starting on the same line, its entire
+name group needs review. A collision also shifts later ordinals: two callbacks on
+line 1 can move the old second callback on line 10 from `#2` to `#3`. Available
+historical runs participate in this check. Their commit IDs alone cannot prove
+source identity because a run may have measured uncommitted code.
+
+Analysis reader 10 also recovers JavaScript and TypeScript expression callbacks
+that older readers missed, including siblings on different lines. For example,
+old anonymous functions at lines 2 and 6 become functions at lines 2, 3 and 6.
+The old `#2` belongs to line 6; the new `#2` belongs to line 3. Neither function
+set has a same-start collision, so the key-format marker alone cannot prove the
+mapping.
+
+For anonymous groups in `.js`, `.cjs`, `.mjs`, `.ts`, `.tsx` and `.jsx` files,
+missing, malformed or pre-10 reader proof refuses comparisons, seed, prune and
+override, even when `# crapkit-keys=1` is already present. The refusal leaves marks
+unchanged; an override emits no alert or audit record. An old stored run also
+cannot supply anonymous marks that seed labels as reader 10. New runs record
+their analysis version in `tool_versions.analysis_version`.
+
+### Reconcile saved marks
+
+Fresh coverage describes the current functions. It cannot establish which
+original function owned an old mark. Reconcile the mapping before restamping:
+
+1. Run `crapkit coverage --export .crapkit/current-functions.tsv` to inspect current
+   rows, including `start` and `occurrence`, without applying the ratchet.
+2. Compare each affected old key with the source that its mark measured. Review
+   the group's whole ordinal sequence, including functions on later lines and
+   siblings the old reader missed. Keep a copy of the original ratchet.
+3. Edit only the affected keys in the ratchet. Carry each existing value to the
+   function it belongs to and retain unrelated marks. Review any mark whose
+   original function cannot be established before assigning or removing it.
+4. After every affected group has a reviewed mapping, record the current run's
+   analysis/lizard stamp and add `# crapkit-keys=1`. If only the key format changed
+   and the metric stamp already matches, retain that metric stamp. Changing either
+   comment without proving the mapping does not reconcile the marks.
+5. Run `crapkit ratchet seed` against the fresh run to record remaining measured
+   debt, review the diff, commit the focused change, then run `crapkit verify`.
+
+If an original function cannot be established, leave its mark and stamps intact
+until that mapping is resolved. A blanket seed cannot perform this review.
+
+### Claims and coverage
+
+Old claims without position proof, and anonymous claims taken from runs without
+current reader proof, hold the whole raw-name group. They remain held until
+released, expired by an explicit `runs prune` under its existing age rule, or all
+functions in the group become healthy. The existing commit-history release rule
+also applies. See the [claim lifecycle](agent-json.md#claims). Release uses the
+saved handle and leaves unrelated claims intact. Claims from current runs can
+still reserve individual callbacks.
+
+`occurrence` distinguishes parsed functions. Line-only coverage artifacts still
+cannot distinguish callbacks whose source spans are identical; it does not add
+coverage columns that the artifact did not provide.

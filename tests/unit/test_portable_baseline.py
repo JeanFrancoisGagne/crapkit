@@ -13,8 +13,8 @@ ROW = ScoredRow("src", "src/a.ts", "f( )", 1, 9, 8, 8, 8, 5, 1, 1, 0.0, "measure
 OTHER = ScoredRow("py", "pylib/b.py", "g( )", 4, 6, 2, 2, 2, 3, 0, 0, 1.0, "measured", 2.0, "ok", 0)
 
 HEADER = ("scope\tpath\tlong_name\tstart\tend\tccn_std\tccn_mod\tccn\tnloc\tparams\t"
-          "nesting\tcov\tflag\tcrap\tremedy\tcognitive\n")
-ROW_LINE = "src\tsrc/a.ts\tf( )\t1\t9\t8\t8\t8\t5\t1\t1\t0.0\tmeasured\t72.0\tdecompose\t3\n"
+          "nesting\tcov\tflag\tcrap\tremedy\tcognitive\toccurrence\n")
+ROW_LINE = "src\tsrc/a.ts\tf( )\t1\t9\t8\t8\t8\t5\t1\t1\t0.0\tmeasured\t72.0\tdecompose\t3\t0\n"
 DOC = "# commit=abc1234def run_kind=coverage\n" + HEADER + ROW_LINE
 
 

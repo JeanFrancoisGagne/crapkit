@@ -1,7 +1,8 @@
 """Istanbul parser seam: coverage-final.json content in, per-file function coverage out. Pure."""
 import json
 
-from crapkit.coverage_istanbul import FnCoverage, parse_istanbul
+from crapkit.coverage_istanbul import FnCoverage
+from coverage_readers import parse_istanbul
 
 ARTIFACT = {
     "C:\\repo\\src\\app.ts": {

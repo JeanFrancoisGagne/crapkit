@@ -254,16 +254,19 @@ def _runs_prune(store: SnapshotStore, *, keep: int, as_json: bool) -> int:
 
     Keep is a floor on retention, not a cap: the keep-set also holds the digest
     pair, every passing verify baseline, every run an override names, and the
-    newest non-hook run, so a prune can never make another command lie.
+    newest non-hook run and identity collision witnesses. Runs added after
+    selection belong to a later retention decision.
     """
     from ..store import prune_keep_set
 
     if keep < 1:
         raise ConfigError(f"runs prune --keep must be >= 1, got {keep}")
-    keep_ids = prune_keep_set(store.list_runs(), store.override_run_ids(), keep=keep)
+    history = store.list_runs()
+    keep_ids = prune_keep_set(history, store.override_run_ids(), keep=keep,
+                              identity_run_ids=store.identity_witness_run_ids())
     before = store.size_bytes()
     store.prune_claims(keep_ids)  # retention is one decision, runs and loop state together
-    deleted = store.prune_runs(keep_ids)
+    deleted = store.prune_runs(keep_ids, observed_ids={run["id"] for run in history})
     store.vacuum()  # the DELETE alone frees pages, not disk
     _print_prune(deleted, len(keep_ids), before - store.size_bytes(), as_json)
     return 0
@@ -316,10 +319,6 @@ class _ExplainCtx(NamedTuple):
     uncovered: MissingLines
     ratchet: list | None
     contexts: dict
-    # The twin NAME selected: 1 for a bare name, 2 for `f#2`. It is the ordinal
-    # in the ratchet key, and `(anonymous)#2` reads the same way — that handle
-    # and that twin's key are the same string.
-    ordinal: int = 1
 
 
 def cmd_explain(args: argparse.Namespace) -> int:
@@ -341,25 +340,24 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 
 def _explain_ctx(root: Path, cfg, store: SnapshotStore, args) -> _ExplainCtx:
-    from ..keys import split_ordinal
     from ..store import rowful_runs
 
     runs = rowful_runs(store)
-    return _ExplainCtx(root, args.path, runs[-1]["id"] if runs else None,
-                       load_uncovered(root, cfg), _ratchet_entries(root, cfg),
-                       _contexts_for_path(root, cfg, args.path) if args.tests else {},
-                       split_ordinal(args.name)[1])
+    run_id = runs[-1]["id"] if runs else None
+    rows = store.read_positions(run_id, args.path) if run_id is not None else []
+    return _ExplainCtx(root, args.path, run_id,
+                       load_uncovered(root, cfg), _ratchet_entries(root, cfg, rows, store),
+                       _contexts_for_path(root, cfg, args.path) if args.tests else {})
 
 
 def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: str) -> dict:
     """One function's whole packet. The span is looked up once and passed down:
     dark lines, --history and --tests all want the same line range."""
-    from ..keys import key_name
-
-    span = _latest_span(store, ctx.run_id, ctx.path, long_name)
+    key = store.function_key(ctx.path, long_name, args.name)
+    span = _latest_span(store, ctx.run_id, ctx.path, key)
     out = {"long_name": long_name,
-           "history": store.function_history(ctx.path, long_name),
-           **_mark_fields(ctx.ratchet, ctx.path, key_name(long_name, ctx.ordinal)),
+           "history": store.function_history(ctx.path, key),
+           **_mark_fields(ctx.ratchet, ctx.path, key),
            **_dark_fields(ctx.uncovered, ctx.path, span)}
     if args.history:
         out.update(_commits_fields(ctx.root, ctx.path, span))
@@ -440,16 +438,16 @@ def _contexts_for_path(root: Path, cfg, path: str) -> dict[int, set]:
     Every matched function used to reparse every artifact to ask the same
     question about the same file.
     """
-    from ..coverage_py import parse_coveragepy_contexts
+    from ..covstream import parse_coveragepy_contexts_file
 
     by_line: dict[int, set] = {}
     for lane in cfg.lanes:
         artifact = root / lane.artifact
         if lane.parser != "coveragepy" or not artifact.is_file():
             continue
-        ctx = parse_coveragepy_contexts(artifact.read_text(encoding="utf-8"),
-                                        path_prefix=lane.path_prefix)
-        for line, ids in ctx.get(path, {}).items():
+        ctx = parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
+                                            source_path=path)
+        for line, ids in ctx.items():
             by_line.setdefault(line, set()).update(ids)
     return by_line
 

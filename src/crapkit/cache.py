@@ -1,6 +1,6 @@
-"""Content-hash analysis cache. Pure partition/update; the shell owns file I/O.
+"""Reader-and-content analysis cache. Pure partition/update; the shell owns file I/O.
 
-Keys are file content hashes, never mtimes (checkout resets mtimes). The
+Keys identify the reader, extension chain and content hash. The
 fingerprint bundles everything that changes analysis output for identical
 content (lizard pin, crapkit analysis version); a fingerprint change drops
 the whole cache rather than serving stale records.
@@ -33,7 +33,6 @@ def updated_cache(
     records_by_path: dict[str, list[FunctionRecord]],
     *,
     fingerprint: str,
-    stale_hashes: list[str] | None = None,
 ) -> dict:
     return {
         "fp": fingerprint,

@@ -9,7 +9,7 @@ reviewed act.
 import json
 from pathlib import Path
 
-from crapkit.merge import RawFn, merge_passes
+from merge_oracle import RawFn, merge_passes
 from crapkit.snapshot import build_inventory_rows, tsv_lines
 
 RECORDED = Path(__file__).resolve().parent.parent / "fixtures" / "recorded"

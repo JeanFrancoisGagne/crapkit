@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from crapkit.coverage_py import parse_coveragepy
+from coverage_readers import parse_coveragepy
 from crapkit.errors import ToolError
 
 REPORT = {

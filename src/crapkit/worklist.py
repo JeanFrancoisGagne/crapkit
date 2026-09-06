@@ -24,6 +24,7 @@ from typing import NamedTuple
 
 from .churn import FileChurn
 from .snapshot import InventoryRow
+from .keys import claim_key, key_names, key_of, lookup, position
 
 
 HOT_MIN_CCN = 3  # hot promotion reaches no lower than this, whatever the floor
@@ -119,6 +120,8 @@ class WorklistEntry(NamedTuple):
     # The committed mark on this function, or None: unmarked, or no marks file.
     # An untouched marked function and a fresh one read the same without it.
     ratchet_mark: float | None = None
+    occurrence: int = 0
+    handle: str | None = None
 
 
 _NO_VERDICT = (None, None)
@@ -128,21 +131,19 @@ _NO_SCORE = (None, None)
 class Marks(NamedTuple):
     """The verdict half of a scored run, as `SnapshotStore.read_marks` answers it.
 
-    `verdicts` is (flag, remedy) by (path, long_name), the worst twin standing
-    for the pair, the rule the ratchet and the verdict use, so a finished
-    sibling can never hide the pair from admission. `scores` is (crap, cov) by
-    (path, long_name, start), each row's own: under the shared verdict a
-    twin's row prints its own score, never its sibling's. Both empty on an
-    inventory-only run, which scored nothing.
+    Verdicts and scores use full stored locations, keeping twins separate.
+    Older callers can supply name-wide verdicts; the row lookup falls back
+    to those only when a span has no verdict. Inventory runs leave both empty.
     """
-    verdicts: Mapping[tuple[str, str], tuple]
-    scores: Mapping[tuple[str, str, int], tuple]
+    verdicts: Mapping[tuple, tuple]
+    scores: Mapping[tuple, tuple]
 
     def verdict(self, r: InventoryRow) -> tuple:
-        return self.verdicts.get((r.path, r.long_name), _NO_VERDICT)
+        return self.verdicts.get(lookup(r),
+                                 self.verdicts.get((r.path, r.long_name), _NO_VERDICT))
 
     def score(self, r: InventoryRow) -> tuple:
-        return self.scores.get((r.path, r.long_name, r.start), _NO_SCORE)
+        return self.scores.get(lookup(r), _NO_SCORE)
 
 
 NO_MARKS = Marks(MappingProxyType({}), MappingProxyType({}))
@@ -154,15 +155,15 @@ class RatchetMarks(NamedTuple):
     `marks` is keyed the way the ratchet file keys them: `(path, key name)`,
     the bare long_name for a function alone under that name in its file and
     `name#N` for the Nth twin. `twin_keys` holds the key name of every twin by
-    `(path, long_name, start)`, `SnapshotStore.twin_key_names`; a row absent
+    full location, `SnapshotStore.twin_key_names`; a row absent
     from it keys under its bare long_name. Read under the bare name, twin #2
     shows twin #1's mark, which is the mistake `brief` keys around too.
     """
     marks: Mapping[tuple[str, str], float]
-    twin_keys: Mapping[tuple[str, str, int], str]
+    twin_keys: Mapping[tuple, str]
 
     def of(self, r: InventoryRow) -> float | None:
-        name = self.twin_keys.get((r.path, r.long_name, r.start), r.long_name)
+        name = self.twin_keys.get(lookup(r), r.long_name)
         return self.marks.get((r.path, name))
 
 
@@ -179,13 +180,13 @@ def _entry(r: InventoryRow, churn: FileChurn, marks: Marks, ratchet: RatchetMark
     return WorklistEntry(r.scope, r.path, r.long_name, r.start, r.end,
                          r.ccn, r.ccn_std, r.nloc, churn.commits, churn.authors,
                          churn.weight, round(r.ccn * churn.weight, 4),
-                         *marks.verdict(r), *marks.score(r), ratchet.of(r))
+                         *marks.verdict(r), *marks.score(r), ratchet.of(r), position(r)[1])
 
 
 def _rank_key(e: WorklistEntry):
     # Composite hotspot rank; equal risk (e.g. weightless churn data) falls
     # back to the old ccn-then-commits order.
-    return (-e.risk, -e.ccn, -e.commits, e.path, e.start)
+    return (-e.risk, -e.ccn, -e.commits, e.path, *position(e))
 
 
 def _hot_threshold(churn: dict[str, FileChurn]) -> float | None:
@@ -204,10 +205,26 @@ def _hot_threshold(churn: dict[str, FileChurn]) -> float | None:
 
 
 def _at_ceiling(scored, target: int, scope_targets: dict[str, int] | None) -> set:
-    """(path, long_name) of every scored function at or under its own ceiling."""
+    """Exact keys whose every scope measurement is at or under its ceiling."""
     ceilings = scope_targets or {}
-    return {(r.path, r.long_name) for r in scored
-            if r.crap is not None and r.crap <= ceilings.get(r.scope, target)}
+    names = key_names(scored)
+    present = {key_of(names, r) for r in scored}
+    unfinished = {key_of(names, r) for r in scored
+                  if r.crap is None or r.crap > ceilings.get(r.scope, target)}
+    return present - unfinished
+
+
+def _finished_legacy(scored, done: set) -> set:
+    """A claim with no exact identity can close only when all its twins finish."""
+    names = key_names(scored)
+    present = {(r.path, r.long_name) for r in scored}
+    unfinished = {(r.path, r.long_name) for r in scored if key_of(names, r) not in done}
+    return present - unfinished
+
+
+def _claim_finished(claim: dict, done: set, legacy: set) -> bool:
+    key = claim_key(claim)
+    return key in done if key is not None else (claim["path"], claim["long_name"]) in legacy
 
 
 def closable_claims(claims: list[dict], scored: list, *, target: int,
@@ -220,8 +237,9 @@ def closable_claims(claims: list[dict], scored: list, *, target: int,
     run never scored keeps its claim — absence is not evidence of a fix.
     """
     done = _at_ceiling(scored, target, scope_targets)
+    legacy = _finished_legacy(scored, done)
     return sorted(c["id"] for c in claims
-                  if (c["path"], c["long_name"]) in done or c["commit"] in stale_commits)
+                  if _claim_finished(c, done, legacy) or c["commit"] in stale_commits)
 
 
 def build_worklist(

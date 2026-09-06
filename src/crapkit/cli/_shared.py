@@ -273,7 +273,41 @@ def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _ratchet_entries(root: Path, cfg) -> list | None:
+def _identity_history(root: Path, store=None) -> set:
+    if store is not None:
+        return store.historical_collision_groups()
+    path = root / ".crapkit" / "crap.sqlite"
+    if not path.is_file():
+        return set()
+    from contextlib import closing
+
+    opened = SnapshotStore(path)
+    with closing(opened._conn):
+        return opened.historical_collision_groups()
+
+
+def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None) -> int:
+    from ..ratchet import (KEY_VERSION, check_reader_keys, checked_key_version,
+                           read_key_version, read_ratchet)
+
+    try:
+        check_reader_keys(text)
+        if read_key_version(text) == KEY_VERSION:
+            return KEY_VERSION
+        if not read_ratchet(text)[0]:
+            return KEY_VERSION
+        return checked_key_version(text, rows, historical=_identity_history(root, store))
+    except ValueError as exc:
+        raise ConfigError(f"{name}: {exc}") from exc
+
+
+def _ratchet_key_version(root: Path, cfg, rows, store=None) -> int:
+    path = root / cfg.ratchet_file
+    text = repo_text(path, cfg.ratchet_file) if path.is_file() else ""
+    return _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store)
+
+
+def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
     """The committed marks, or None when the repo carries no marks file yet.
 
     Lenient, because every caller here only READS the marks: `explain`, `brief`
@@ -289,7 +323,10 @@ def _ratchet_entries(root: Path, cfg) -> list | None:
     ratchet_path = root / cfg.ratchet_file
     if not ratchet_path.is_file():
         return None
-    entries, complaints = read_ratchet(repo_text(ratchet_path, cfg.ratchet_file))
+    text = repo_text(ratchet_path, cfg.ratchet_file)
+    entries, complaints = read_ratchet(text)
+    if rows is not None:
+        _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store)
     for complaint in complaints:
         print(f"crapkit: skipped an unreadable mark in {cfg.ratchet_file}: {complaint}",
               file=sys.stderr)

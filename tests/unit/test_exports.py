@@ -6,7 +6,8 @@ of that contract: the writers must not inherit the host's line separator.
 """
 import json
 
-from crapkit.cli import _emit_findings, _export_scored, _write_tsv
+from crapkit.cli._shared import _emit_findings, _write_tsv
+from crapkit.cli.scoring import _export_scored
 from crapkit.merge import FunctionRecord
 from crapkit.sarif import over_target_results, sarif_document
 from crapkit.score import ScoredRow

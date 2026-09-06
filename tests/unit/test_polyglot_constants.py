@@ -1,18 +1,16 @@
 """Four constants that each name a language vocabulary crapkit had half-learned.
 
-The istanbul file-filter guard, the definition-line pattern discovery reads, the
-mutation operator guard, and the README sentence that tells a user which
-languages exist. Each one was written for the ts/py pair and never widened.
+The istanbul file-filter guard, the mutation operator guard, and the README
+sentence that tells a user which languages exist. Each one was written for the ts/py pair and never widened.
 """
 import re
 from pathlib import Path
 
 import pytest
 
-from crapkit import discover, mutate
+from crapkit import mutate
 from crapkit.config import (SUPPORTED_LANGUAGES, SUPPORTED_PARSERS, ConfigError,
                             _SOURCE_SUFFIXES, load_config_text)
-from crapkit.discover import callers
 from crapkit.mutate import file_mutants
 from crapkit.universe import LANGUAGE_EXTENSIONS
 
@@ -57,139 +55,6 @@ def test_the_filter_guard_knows_every_extension_an_istanbul_lane_can_run():
                  for ext in LANGUAGE_EXTENSIONS[lang]}
 
     assert js_family <= set(_SOURCE_SUFFIXES)
-
-
-# --- discover._def_pattern: func and fun --------------------------------------
-
-GO = ("package main\n"
-      "\n"
-      "func send(x int) int {\n"
-      "\tif x == 0 {\n"
-      "\t\treturn 0\n"
-      "\t}\n"
-      "\treturn send(x - 1)\n"
-      "}\n"
-      "\n"
-      "func relay(x int) int {\n"
-      "\treturn send(x)\n"
-      "}\n")
-
-SWIFT = ("func send(_ x: Int) -> Int {\n"
-         "    if x == 0 {\n"
-         "        return 0\n"
-         "    }\n"
-         "    return send(x - 1)\n"
-         "}\n"
-         "\n"
-         "func relay(_ x: Int) -> Int {\n"
-         "    return send(x)\n"
-         "}\n")
-
-KOTLIN = ("fun send(x: Int): Int {\n"
-          "    if (x == 0) {\n"
-          "        return 0\n"
-          "    }\n"
-          "    return send(x - 1)\n"
-          "}\n"
-          "\n"
-          "fun relay(x: Int): Int {\n"
-          "    return send(x)\n"
-          "}\n")
-
-RUST = ("fn send(x: i32) -> i32 {\n"
-        "    if x == 0 {\n"
-        "        return 0;\n"
-        "    }\n"
-        "    send(x - 1)\n"
-        "}\n"
-        "\n"
-        "fn relay(x: i32) -> i32 {\n"
-        "    send(x)\n"
-        "}\n")
-
-# The 1,308-of-1,342 spelling, counted over 259 real scripts: no keyword at all.
-SHELL = ('send() {\n'
-         '  local x="$1"\n'
-         '  send "$x"\n'
-         '}\n'
-         '\n'
-         'relay() {\n'
-         '  send "$1"\n'
-         '}\n')
-
-# The body a paren opens. The method-shorthand branch misses it, because that one
-# ends on ':' or '{'.
-SHELL_SUBSHELL = ('send() (\n'
-                  '  send "$1"\n'
-                  ')\n'
-                  '\n'
-                  'relay() {\n'
-                  '  send "$1"\n'
-                  '}\n')
-
-
-@pytest.fixture()
-def grep(monkeypatch):
-    """`git grep`, recorded instead of spawned."""
-    def stub(root, args):
-        return stub.output
-
-    stub.output = ""
-    monkeypatch.setattr(discover, "_grep_output", stub)
-    return stub
-
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
-
-
-@pytest.mark.parametrize(("name", "source", "own_call", "outside_call"), [
-    ("cmd/a.go", GO, 7, 11),
-    ("cmd/a.swift", SWIFT, 5, 9),
-    ("cmd/a.kt", KOTLIN, 5, 9),
-    ("cmd/a.rs", RUST, 5, 9),
-    ("cmd/a.sh", SHELL, 3, 7),
-    ("cmd/b.sh", SHELL_SUBSHELL, 2, 6),
-])
-def test_a_func_or_fun_body_does_not_count_as_its_own_caller(
-        tmp_path: Path, grep, name: str, source: str, own_call: int, outside_call: int):
-    """`_def_pattern` matched def/class/function only, so a Swift, Kotlin or Go
-    definition had no span and its own recursive call read as a caller.
-
-    Rust needed `fn` added: `fun` does not claim it, and `pub fn` needs `pub` in
-    the modifier set as well. Shell needs no keyword in its common spelling —
-    the method-shorthand branch already claims `name() {` — but the
-    subshell-bodied `name() (` opens with a paren the shorthand does not end on."""
-    _write(tmp_path / name, source)
-    grep.output = f"{name}:{own_call}:    return send(x - 1)\n{name}:{outside_call}:    return send(x)"
-
-    found = callers(tmp_path, ["cmd"], name, "send")
-
-    assert found["callers"] == [{"path": name, "line": outside_call}]
-    assert found["count"] == 1
-
-
-def test_a_rust_pub_fn_is_still_its_own_definition(tmp_path: Path, grep):
-    """`pub` is Rust's export modifier and half of all Rust definitions carry it;
-    without it in the modifier set the line stops matching at column 0."""
-    _write(tmp_path / "cmd" / "a.rs", "pub fn send(x: i32) -> i32 {\n    send(x - 1)\n}\n")
-    grep.output = "cmd/a.rs:2:    send(x - 1)\ncmd/b.rs:4:    send(1);"
-
-    found = callers(tmp_path, ["cmd"], "cmd/a.rs", "send")
-
-    assert found["callers"] == [{"path": "cmd/b.rs", "line": 4}]
-
-
-def test_the_function_keyword_still_wins_over_the_shorter_forms(tmp_path: Path, grep):
-    """`fun`, `func` and `fn` are prefixes of `function`; adding them must not
-    stop a JavaScript definition from matching."""
-    _write(tmp_path / "src" / "a.js", "function send(x) {\n  return send(x - 1);\n}\n")
-    grep.output = "src/a.js:2:  return send(x - 1);\nsrc/b.js:4:  send(1);"
-
-    found = callers(tmp_path, ["src"], "src/a.js", "send")
-
-    assert found["callers"] == [{"path": "src/b.js", "line": 4}]
 
 
 # --- mutate._PROTECT: the Swift range operators -------------------------------
@@ -241,7 +106,8 @@ def test_no_admitted_language_mutates_to_nothing_without_saying_why():
         route = mutate.mutation_language(f"probe{LANGUAGE_EXTENSIONS[language][0]}")
         if mutate.refusal(route):
             continue
-        if not file_mutants(comparison, changed_lines={1}, language=route):
+        source = f'<script>{comparison}</script>' if language == 'vue' else comparison
+        if not file_mutants(source, changed_lines={1}, language=route):
             silent.append(language)
 
     assert silent == []

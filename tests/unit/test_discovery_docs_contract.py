@@ -5,7 +5,7 @@ lanes page's monorepo section, the agents page's server line and AGENTS.md all
 stated the one-directory read; a reader who trusts any of them cds into a
 workspace and reaches for `--repo ..` they no longer need.
 """
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 from test_docs_claims_contract import _section
 from test_docs_claims_contract import _doc as _raw_doc
 

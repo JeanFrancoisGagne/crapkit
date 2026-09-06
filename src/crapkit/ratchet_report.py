@@ -12,15 +12,12 @@ DAY = 86400
 def _mark_line(line: str) -> tuple | None:
     """((path, long_name), crap) when a +/- patch line is a mark row; else None."""
     body = line[1:]
-    if body.startswith(("++ ", "-- ", "path\t")):
+    if body.startswith(("++ ", "-- ")):
         return None
-    parts = body.split("\t")
-    if len(parts) != 3:
-        return None
-    try:
-        return (parts[0], parts[1]), float(parts[2])
-    except ValueError:
-        return None
+    from .ratchet import read_ratchet
+
+    entries, _ = read_ratchet(body)
+    return ((entries[0].path, entries[0].long_name), entries[0].crap) if entries else None
 
 
 def _commit_delta(patch: str) -> tuple[dict, dict]:
@@ -38,17 +35,20 @@ def _commit_delta(patch: str) -> tuple[dict, dict]:
 
 
 def mark_events(patches: list[tuple[int, str]]) -> list[tuple]:
-    """(ts, key, 'added'|'dropped', crap) per commit. A key removed and re-added
-    in the same commit is a tightening and emits nothing — only entry and
-    repayment count."""
-    events = []
-    for ts, patch in patches:
-        added, removed = _commit_delta(patch)
-        for key in sorted(set(added) - set(removed)):
-            events.append((ts, key, "added", added[key]))
-        for key in sorted(set(removed) - set(added)):
-            events.append((ts, key, "dropped", removed[key]))
-    return events
+    """Committed additions, updates and repayments, plus the history clock.
+
+    Updating a value preserves the original entry date. A commit with no mark
+    change still advances the clock through an observed event with no key.
+    """
+    return [event for ts, patch in patches
+            for event in _commit_events(ts, *_commit_delta(patch))]
+
+
+def _commit_events(ts: int, added: dict, removed: dict) -> list[tuple]:
+    events = [(ts, key, "updated" if key in removed else "added", added[key])
+              for key in sorted(added)]
+    events += [(ts, key, "dropped", removed[key]) for key in sorted(set(removed) - set(added))]
+    return events or [(ts, None, "observed", 0.0)]
 
 
 def _drop_velocity(dropped: list[int], anchor: int) -> dict:
@@ -88,8 +88,10 @@ def _replay(events: list[tuple]) -> tuple[dict, dict, list[int]]:
     crap: dict = {}
     dropped: list[int] = []
     for ts, key, kind, value in events:
-        if kind == "added":
-            entered[key] = ts
+        if kind == "observed":
+            continue
+        if kind in ("added", "updated"):
+            entered.setdefault(key, ts)
             crap[key] = value
         else:
             entered.pop(key, None)

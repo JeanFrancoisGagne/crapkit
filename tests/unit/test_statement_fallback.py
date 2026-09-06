@@ -3,8 +3,9 @@ Branch coverage stays authoritative whenever branches exist — the coverage ter
 must measure the same structure the complexity term counts."""
 import json
 
-from crapkit.coverage_istanbul import FnCoverage, parse_istanbul
-from crapkit.coverage_py import parse_coveragepy
+from crapkit.coverage_istanbul import FnCoverage
+from coverage_readers import parse_istanbul
+from coverage_readers import parse_coveragepy
 
 
 def test_property_prefers_branches_then_statements_then_invoked():

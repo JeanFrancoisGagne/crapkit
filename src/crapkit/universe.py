@@ -111,11 +111,18 @@ def _ordered(matches) -> tuple[ScopeMatch, ...]:
     return tuple(sorted(matches, key=lambda m: -len(m.path)))
 
 
+def _scope_match(name: str, path: str, extensions: tuple[str, ...]) -> ScopeMatch:
+    """The root's empty prefix matches all files and ranks below child paths."""
+    path = path.rstrip("/")
+    if path == ".":
+        return ScopeMatch(name, "", "", extensions)
+    return ScopeMatch(name, path, path + "/", extensions)
+
+
 def scope_matchers(scopes: tuple[Scope, ...]) -> tuple[ScopeMatch, ...]:
     """Matchers for the scored corpus: a scope claims a path only when one of its
     languages claims the extension too."""
-    return _ordered(ScopeMatch(s.name, p.rstrip("/"), p.rstrip("/") + "/",
-                               _source_extensions(s.languages))
+    return _ordered(_scope_match(s.name, p, _source_extensions(s.languages))
                     for s in scopes for p in s.paths)
 
 
@@ -126,7 +133,7 @@ def path_matchers(scope_paths: dict[str, tuple[str, ...]]) -> tuple[ScopeMatch, 
     `test-scoped` routes files whose language no scope declares, so both read
     ownership with the extension arm open.
     """
-    return _ordered(ScopeMatch(name, p.rstrip("/"), p.rstrip("/") + "/", ANY_EXTENSION)
+    return _ordered(_scope_match(name, p, ANY_EXTENSION)
                     for name, paths in scope_paths.items() for p in paths)
 
 

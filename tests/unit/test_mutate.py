@@ -36,6 +36,44 @@ def test_string_literals_are_never_mutated():
     assert file_mutants(src, changed_lines={2}, language="python") == []
 
 
+@pytest.mark.parametrize('source', [
+    'def f():\n    isTrue = 1\n    return isTrue\n',
+    'def f():\n    return 1  # True == False\n',
+    'def f():\n    """\n    True == False\n    """\n    return 1\n',
+    'def f():\n    return "escaped \\" True == False"\n',
+])
+def test_python_identifiers_comments_and_multiline_strings_are_not_mutants(source):
+    assert file_mutants(source, None, 'python') == []
+
+
+@pytest.mark.parametrize('language,source,expected', [
+    ('typescript', 'function f() { return `true ${true}`; }',
+     'function f() { return `true ${false}`; }'),
+    ('rust', 'fn f() -> bool { let s = r#"true == false"#; /* true */ true }',
+     'fn f() -> bool { let s = r#"true == false"#; /* true */ false }'),
+    ('go', 'func f() bool { s := `true == false`; return true }',
+     'func f() bool { s := `true == false`; return false }'),
+    ('cpp', 'bool f() { auto s = R"(true == false)"; return true; }',
+     'bool f() { auto s = R"(true == false)"; return false; }'),
+    ('vue', '<template><div>true</div></template><script>const x = true;</script>',
+     '<template><div>true</div></template><script>const x = false;</script>'),
+    ('tsx', 'function F() { return <div>{true}</div>; }',
+     'function F() { return <div>{false}</div>; }'),
+    ('javascript', 'function f() { const s = /true/; return true; }',
+     'function f() { const s = /true/; return false; }'),
+    ('java', 'boolean f() { String s = "true"; return true; }',
+     'boolean f() { String s = "true"; return false; }'),
+    ('swift', 'func f() -> Bool { let s = "true"; return true }',
+     'func f() -> Bool { let s = "true"; return false }'),
+    ('zig', 'fn f() bool { const s = "true"; return true; }',
+     'fn f() bool { const s = "true"; return false; }'),
+    ('objectivec', 'bool f() { NSString *s = @"true"; return true; }',
+     'bool f() { NSString *s = @"true"; return false; }'),
+])
+def test_language_readers_keep_strings_markup_and_comments_out_of_mutants(language, source, expected):
+    assert [m.mutated for m in file_mutants(source, None, language)] == [expected]
+
+
 def test_typescript_strict_equality_flips():
     src = "export function eq(a: number, b: number) {\n  return a === b && a > 0;\n}\n"
     mutants = file_mutants(src, changed_lines={2}, language="typescript")

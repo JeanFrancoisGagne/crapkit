@@ -39,6 +39,92 @@ _SCOPE = {
     "items": {
         "type": "string"}}
 
+_PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
+ 'path': {'type': 'string', 'description': 'repo-relative source path, forward slashes'},
+ 'function': {'type': 'string',
+              'description': 'lizard long name with the spaced parameter list; get_function_brief '
+                             'and get_function_history accept it as name'},
+ 'handle': {'type': 'string',
+            'description': 'short name form: the bare identifier, or (anonymous)#N for a function '
+                           'lizard could not name; it names a position, not a line, so it survives '
+                           'the edit this item asks for; pass it back as name'},
+ 'start': {'type': 'integer', 'description': 'first line, 1-based inclusive'},
+ 'end': {'type': 'integer', 'description': 'last line, 1-based inclusive'},
+ 'ccn': {'type': 'integer',
+         'description': 'min(ccn_std, ccn_mod): the complexity the gate and the ratchet judge'},
+ 'ccn_std': {'type': 'integer', 'description': 'standard cyclomatic complexity'},
+ 'cognitive': {'type': 'integer',
+               'description': 'Sonar-spec cognitive complexity, reporting only, never gated'},
+ 'nloc': {'type': 'integer', 'description': 'non-comment lines of code'},
+ 'nesting': {'type': 'integer', 'description': 'maximum nesting depth'},
+ 'cov': {'type': 'number', 'description': 'branch coverage inside the span, 0.0 to 1.0'},
+ 'flag': {'type': 'string',
+          'description': 'measured, untested, no-lane or cc-only: whether a lane artifact could '
+                         'measure this span',
+          'enum': ('measured', 'untested', 'no-lane', 'cc-only')},
+ 'crap': {'type': 'number', 'description': 'the score: ccn^2 x (1 - cov)^3 + ccn'},
+ 'remedy': {'type': 'string',
+            'description': 'decompose (ccn over ceiling), add-tests (coverage short) or ok '
+                           '(nothing left to do)',
+            'enum': ('decompose', 'add-tests', 'ok')},
+ 'target': {'type': 'integer', 'description': "this scope's effective ccn ceiling"},
+ 'commits': {'type': 'integer', 'description': 'commits touching the file in the churn window'},
+ 'authors': {'type': 'integer', 'description': 'distinct authors of those commits'},
+ 'est_splits': {'type': 'integer',
+                'description': '0 when ccn <= target, else ceil(ccn / target): roughly how many '
+                               'functions this must become'},
+ 'est_uncovered_paths': {'type': 'integer',
+                         'description': 'round((1 - cov) x ccn): decision paths no test walks'},
+ 'uncovered_lines': {'type': ('array', 'null'),
+                     'description': 'line numbers no test ran; [] when the span is fully covered; '
+                                    'null when no artifact could answer, then uncovered_lines_note '
+                                    'says why',
+                     'items': {'type': 'integer'}},
+ 'uncovered_lines_note': {'type': 'string',
+                          'description': 'present only when uncovered_lines is null: the reason '
+                                         'and the move (stale artifact, no test imports the file, '
+                                         'coverage_optional scope)'}}
+
+_WORKLIST_ITEM = {'type': 'object',
+ 'description': 'one ranked function',
+ 'properties': {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
+                'path': {'type': 'string',
+                         'description': 'repo-relative source path, forward slashes'},
+                'function': {'type': 'string',
+                             'description': 'lizard long name with the spaced parameter list; pass '
+                                            'it to get_function_brief as name'},
+                'start': {'type': 'integer', 'description': 'first line, 1-based'},
+                'end': {'type': 'integer', 'description': 'last line, inclusive'},
+                'ccn': {'type': 'integer',
+                        'description': 'min(ccn_std, ccn_mod): what the gate judges'},
+                'ccn_std': {'type': 'integer', 'description': 'standard cyclomatic complexity'},
+                'nloc': {'type': 'integer', 'description': 'non-comment lines of code'},
+                'commits': {'type': 'integer',
+                            'description': 'commits touching the file in the churn window'},
+                'authors': {'type': 'integer', 'description': 'distinct authors of those commits'},
+                'weight': {'type': 'number',
+                           'description': 'recency-weighted churn of the file; 1.0 on every file '
+                                          'when commits share one timestamp'},
+                'risk': {'type': 'number',
+                         'description': 'ccn x weight, four decimals: the sort key'},
+                'flag': {'type': ('string', 'null'),
+                         'description': 'measured, untested, no-lane or cc-only; null on an '
+                                        'inventory-only run',
+                         'enum': ('measured', 'untested', 'no-lane', 'cc-only', None)},
+                'remedy': {'type': 'string',
+                           'description': 'decompose, add-tests or ok; only decompose and '
+                                          'add-tests rows with a lane reach get_next_item',
+                           'enum': ('decompose', 'add-tests', 'ok')},
+                'crap': {'type': ('number', 'null'),
+                         'description': 'the score from the ranked run; null on an inventory-only '
+                                        'run'},
+                'cov': {'type': ('number', 'null'),
+                        'description': 'branch coverage 0.0 to 1.0; null on an inventory-only run'},
+                'ratchet_mark': {'type': ('number', 'null'),
+                                 'description': 'the committed ratchet mark on this function, read '
+                                                'under its own ratchet key; null when it carries '
+                                                'none or the repo has no marks file'}}}
+
 TOOLS: tuple[dict, ...] = (
     {
         "name": "get_next_item",
@@ -100,90 +186,7 @@ TOOLS: tuple[dict, ...] = (
             "item": {
                 "type": "object",
                 "description": "the one packet, present when empty is false and top is absent or 1",
-                "properties": {
-                    "scope": {
-                        "type": "string",
-                        "description": "the declared scope that owns the file"},
-                    "path": {
-                        "type": "string",
-                        "description": "repo-relative source path, forward slashes"},
-                    "function": {
-                        "type": "string",
-                        "description": ("lizard long name with the spaced parameter list; "
-                        "get_function_brief and get_function_history accept it as "
-                        "name")},
-                    "handle": {
-                        "type": "string",
-                        "description": ("short name form: the bare identifier, or (anonymous)#N for a "
-                        "function lizard could not name; it names a position, not a "
-                        "line, so it survives the edit this item asks for; pass it "
-                        "back as name")},
-                    "start": {
-                        "type": "integer",
-                        "description": "first line, 1-based inclusive"},
-                    "end": {
-                        "type": "integer",
-                        "description": "last line, 1-based inclusive"},
-                    "ccn": {
-                        "type": "integer",
-                        "description": ("min(ccn_std, ccn_mod): the complexity the gate and the "
-                        "ratchet judge")},
-                    "ccn_std": {
-                        "type": "integer",
-                        "description": "standard cyclomatic complexity"},
-                    "cognitive": {
-                        "type": "integer",
-                        "description": "Sonar-spec cognitive complexity, reporting only, never gated"},
-                    "nloc": {
-                        "type": "integer",
-                        "description": "non-comment lines of code"},
-                    "nesting": {
-                        "type": "integer",
-                        "description": "maximum nesting depth"},
-                    "cov": {
-                        "type": "number",
-                        "description": "branch coverage inside the span, 0.0 to 1.0"},
-                    "flag": {
-                        "type": "string",
-                        "description": ("measured, untested, no-lane or cc-only: whether a lane "
-                        "artifact could measure this span"),
-                        "enum": ("measured", "untested", "no-lane", "cc-only")},
-                    "crap": {
-                        "type": "number",
-                        "description": "the score: ccn^2 x (1 - cov)^3 + ccn"},
-                    "remedy": {
-                        "type": "string",
-                        "description": ("decompose (ccn over ceiling), add-tests (coverage short) or "
-                        "ok (nothing left to do)"),
-                        "enum": ("decompose", "add-tests", "ok")},
-                    "target": {
-                        "type": "integer",
-                        "description": "this scope's effective ccn ceiling"},
-                    "commits": {
-                        "type": "integer",
-                        "description": "commits touching the file in the churn window"},
-                    "authors": {
-                        "type": "integer",
-                        "description": "distinct authors of those commits"},
-                    "est_splits": {
-                        "type": "integer",
-                        "description": ("0 when ccn <= target, else ceil(ccn / target): roughly how "
-                        "many functions this must become")},
-                    "est_uncovered_paths": {
-                        "type": "integer",
-                        "description": "round((1 - cov) x ccn): decision paths no test walks"},
-                    "uncovered_lines": {
-                        "type": ("array", "null"),
-                        "description": ("line numbers no test ran; [] when the span is fully covered; "
-                        "null when no artifact could answer, then "
-                        "uncovered_lines_note says why"),
-                        "items": {
-                            "type": "integer"}},
-                    "uncovered_lines_note": {
-                        "type": "string",
-                        "description": ("present only when uncovered_lines is null: the reason and "
-                        "the move (stale artifact, no test imports the file, "
-                        "coverage_optional scope)")}}},
+                "properties": _PACKET_PROPERTIES},
             "items": {
                 "type": "array",
                 "description": ("up to top packets in crap-descending order, present when empty is "
@@ -191,91 +194,7 @@ TOOLS: tuple[dict, ...] = (
                 "items": {
                     "type": "object",
                     "description": "a packet, same shape as item",
-                    "properties": {
-                        "scope": {
-                            "type": "string",
-                            "description": "the declared scope that owns the file"},
-                        "path": {
-                            "type": "string",
-                            "description": "repo-relative source path, forward slashes"},
-                        "function": {
-                            "type": "string",
-                            "description": ("lizard long name with the spaced parameter list; "
-                            "get_function_brief and get_function_history accept it as "
-                            "name")},
-                        "handle": {
-                            "type": "string",
-                            "description": ("short name form: the bare identifier, or (anonymous)#N "
-                            "for a function lizard could not name; it names a "
-                            "position, not a line, so it survives the edit this item "
-                            "asks for; pass it back as name")},
-                        "start": {
-                            "type": "integer",
-                            "description": "first line, 1-based inclusive"},
-                        "end": {
-                            "type": "integer",
-                            "description": "last line, 1-based inclusive"},
-                        "ccn": {
-                            "type": "integer",
-                            "description": ("min(ccn_std, ccn_mod): the complexity the gate and the "
-                            "ratchet judge")},
-                        "ccn_std": {
-                            "type": "integer",
-                            "description": "standard cyclomatic complexity"},
-                        "cognitive": {
-                            "type": "integer",
-                            "description": ("Sonar-spec cognitive complexity, reporting only, never "
-                            "gated")},
-                        "nloc": {
-                            "type": "integer",
-                            "description": "non-comment lines of code"},
-                        "nesting": {
-                            "type": "integer",
-                            "description": "maximum nesting depth"},
-                        "cov": {
-                            "type": "number",
-                            "description": "branch coverage inside the span, 0.0 to 1.0"},
-                        "flag": {
-                            "type": "string",
-                            "description": ("measured, untested, no-lane or cc-only: whether a lane "
-                            "artifact could measure this span"),
-                            "enum": ("measured", "untested", "no-lane", "cc-only")},
-                        "crap": {
-                            "type": "number",
-                            "description": "the score: ccn^2 x (1 - cov)^3 + ccn"},
-                        "remedy": {
-                            "type": "string",
-                            "description": ("decompose (ccn over ceiling), add-tests (coverage short) "
-                            "or ok (nothing left to do)"),
-                            "enum": ("decompose", "add-tests", "ok")},
-                        "target": {
-                            "type": "integer",
-                            "description": "this scope's effective ccn ceiling"},
-                        "commits": {
-                            "type": "integer",
-                            "description": "commits touching the file in the churn window"},
-                        "authors": {
-                            "type": "integer",
-                            "description": "distinct authors of those commits"},
-                        "est_splits": {
-                            "type": "integer",
-                            "description": ("0 when ccn <= target, else ceil(ccn / target): roughly "
-                            "how many functions this must become")},
-                        "est_uncovered_paths": {
-                            "type": "integer",
-                            "description": "round((1 - cov) x ccn): decision paths no test walks"},
-                        "uncovered_lines": {
-                            "type": ("array", "null"),
-                            "description": ("line numbers no test ran; [] when the span is fully "
-                            "covered; null when no artifact could answer, then "
-                            "uncovered_lines_note says why"),
-                            "items": {
-                                "type": "integer"}},
-                        "uncovered_lines_note": {
-                            "type": "string",
-                            "description": ("present only when uncovered_lines is null: the reason "
-                            "and the move (stale artifact, no test imports the file, "
-                            "coverage_optional scope)")}}}},
+                    "properties": _PACKET_PROPERTIES}},
             "reasons": {
                 "type": "object",
                 "description": ("why the queue is empty, present only when empty is true; the stop "
@@ -354,70 +273,7 @@ TOOLS: tuple[dict, ...] = (
                 "type": "array",
                 "description": ("the ranking: functions in files with churn in the window, risk "
                 "descending, cut at top or worklist_top"),
-                "items": {
-                    "type": "object",
-                    "description": "one ranked function",
-                    "properties": {
-                        "scope": {
-                            "type": "string",
-                            "description": "the declared scope that owns the file"},
-                        "path": {
-                            "type": "string",
-                            "description": "repo-relative source path, forward slashes"},
-                        "function": {
-                            "type": "string",
-                            "description": ("lizard long name with the spaced parameter list; pass it "
-                            "to get_function_brief as name")},
-                        "start": {
-                            "type": "integer",
-                            "description": "first line, 1-based"},
-                        "end": {
-                            "type": "integer",
-                            "description": "last line, inclusive"},
-                        "ccn": {
-                            "type": "integer",
-                            "description": "min(ccn_std, ccn_mod): what the gate judges"},
-                        "ccn_std": {
-                            "type": "integer",
-                            "description": "standard cyclomatic complexity"},
-                        "nloc": {
-                            "type": "integer",
-                            "description": "non-comment lines of code"},
-                        "commits": {
-                            "type": "integer",
-                            "description": "commits touching the file in the churn window"},
-                        "authors": {
-                            "type": "integer",
-                            "description": "distinct authors of those commits"},
-                        "weight": {
-                            "type": "number",
-                            "description": ("recency-weighted churn of the file; 1.0 on every file "
-                            "when commits share one timestamp")},
-                        "risk": {
-                            "type": "number",
-                            "description": "ccn x weight, four decimals: the sort key"},
-                        "flag": {
-                            "type": ("string", "null"),
-                            "description": ("measured, untested, no-lane or cc-only; null on an "
-                            "inventory-only run"),
-                            "enum": ("measured", "untested", "no-lane", "cc-only", None)},
-                        "remedy": {
-                            "type": "string",
-                            "description": ("decompose, add-tests or ok; only decompose and add-tests "
-                            "rows with a lane reach get_next_item"),
-                            "enum": ("decompose", "add-tests", "ok")},
-                        "crap": {
-                            "type": ("number", "null"),
-                            "description": ("the score from the ranked run; null on an inventory-only "
-                            "run")},
-                        "cov": {
-                            "type": ("number", "null"),
-                            "description": "branch coverage 0.0 to 1.0; null on an inventory-only run"},
-                        "ratchet_mark": {
-                            "type": ("number", "null"),
-                            "description": ("the committed ratchet mark on this function, read under "
-                            "its own ratchet key; null when it carries none or the "
-                            "repo has no marks file")}}}},
+                "items": _WORKLIST_ITEM},
             "active_total": {
                 "type": "integer",
                 "description": "active rows admitted before the cap: what top or worklist_top hid"},
@@ -428,70 +284,7 @@ TOOLS: tuple[dict, ...] = (
                 "type": "array",
                 "description": ("the first 10 dormant functions, same shape as active: sleeping "
                 "hazards kept out of the queue"),
-                "items": {
-                    "type": "object",
-                    "description": "one ranked function",
-                    "properties": {
-                        "scope": {
-                            "type": "string",
-                            "description": "the declared scope that owns the file"},
-                        "path": {
-                            "type": "string",
-                            "description": "repo-relative source path, forward slashes"},
-                        "function": {
-                            "type": "string",
-                            "description": ("lizard long name with the spaced parameter list; pass it "
-                            "to get_function_brief as name")},
-                        "start": {
-                            "type": "integer",
-                            "description": "first line, 1-based"},
-                        "end": {
-                            "type": "integer",
-                            "description": "last line, inclusive"},
-                        "ccn": {
-                            "type": "integer",
-                            "description": "min(ccn_std, ccn_mod): what the gate judges"},
-                        "ccn_std": {
-                            "type": "integer",
-                            "description": "standard cyclomatic complexity"},
-                        "nloc": {
-                            "type": "integer",
-                            "description": "non-comment lines of code"},
-                        "commits": {
-                            "type": "integer",
-                            "description": "commits touching the file in the churn window"},
-                        "authors": {
-                            "type": "integer",
-                            "description": "distinct authors of those commits"},
-                        "weight": {
-                            "type": "number",
-                            "description": ("recency-weighted churn of the file; 1.0 on every file "
-                            "when commits share one timestamp")},
-                        "risk": {
-                            "type": "number",
-                            "description": "ccn x weight, four decimals: the sort key"},
-                        "flag": {
-                            "type": ("string", "null"),
-                            "description": ("measured, untested, no-lane or cc-only; null on an "
-                            "inventory-only run"),
-                            "enum": ("measured", "untested", "no-lane", "cc-only", None)},
-                        "remedy": {
-                            "type": "string",
-                            "description": ("decompose, add-tests or ok; only decompose and add-tests "
-                            "rows with a lane reach get_next_item"),
-                            "enum": ("decompose", "add-tests", "ok")},
-                        "crap": {
-                            "type": ("number", "null"),
-                            "description": ("the score from the ranked run; null on an inventory-only "
-                            "run")},
-                        "cov": {
-                            "type": ("number", "null"),
-                            "description": "branch coverage 0.0 to 1.0; null on an inventory-only run"},
-                        "ratchet_mark": {
-                            "type": ("number", "null"),
-                            "description": ("the committed ratchet mark on this function, read under "
-                            "its own ratchet key; null when it carries none or the "
-                            "repo has no marks file")}}}}},
+                "items": _WORKLIST_ITEM}},
     },
     {
         "name": "list_runs",

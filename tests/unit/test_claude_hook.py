@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli import build_parser, main
+from crapkit.cli.parser import build_parser
+from crapkit.cli import main
 from crapkit.cli import claude_hook
 from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _command_event,
                                      _edited_file, _edited_path, _fresh, _fresh_python,
@@ -347,10 +348,6 @@ def test_the_subcommand_defaults_to_protocol_one():
     assert build_parser().parse_args(["claude-hook"]).protocol == "1"
 
 
-def test_the_handler_is_owned_by_its_own_module():
-    from crapkit.cli import _OWNER
-
-    assert _OWNER["cmd_claude_hook"] == "claude_hook"
 
 
 @pytest.mark.parametrize("argv", [["claude-anything"], ["claude-hook-v2", "--protocol", "2"],

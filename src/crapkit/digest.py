@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Callable, NamedTuple
 
 from .score import ScoredRow, grade
+from .keys import key_names, key_of
 
 # scope -> the ceiling its rows are judged against
 _CeilingOf = Callable[[str], int]
@@ -116,7 +117,7 @@ def skipped_runs(runs: list[dict], pair: tuple[dict, dict] | None) -> list[dict]
     return [r for r in runs[runs.index(prev) + 1:] if r["id"] != cur["id"]]
 
 
-_Key = tuple[str, str]  # (path, long_name): what identifies a function across runs
+_Key = tuple[str, str]  # path and ordinal key name identify one function across runs
 _Move = tuple[float, ScoredRow, ScoredRow]  # (delta, before, after)
 _Delta = tuple[float, ScoredRow]
 
@@ -132,7 +133,13 @@ class _Changes(NamedTuple):
 
 
 def _by_key(rows: list[ScoredRow]) -> dict[_Key, ScoredRow]:
-    return {(r.path, r.long_name): r for r in rows}
+    names = key_names(rows)
+    found = {}
+    for row in rows:
+        key = key_of(names, row)
+        if key not in found or row.crap > found[key].crap:
+            found[key] = row._replace(long_name=key[1])
+    return found
 
 
 def _moves(prev_by_key: dict[_Key, ScoredRow],

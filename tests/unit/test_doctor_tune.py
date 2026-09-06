@@ -60,7 +60,7 @@ def test_without_a_cost_signal_the_suggestion_says_so():
 def test_lane_durations_prefer_the_recorded_run_and_fall_back_to_junit(tmp_path):
     """artifacts.json holds a duration only for lanes that actually ran here; a
     lane whose artifact was reused still has its junit report to cost it."""
-    from crapkit.cli import _lane_durations
+    from crapkit.cli.admin import _lane_durations
     from crapkit.config import load_config_text
     from crapkit.lanes import write_stamps
 
@@ -77,7 +77,7 @@ def test_lane_durations_prefer_the_recorded_run_and_fall_back_to_junit(tmp_path)
 
 
 def test_a_lane_with_no_signal_at_all_contributes_no_duration(tmp_path):
-    from crapkit.cli import _lane_durations
+    from crapkit.cli.admin import _lane_durations
     from crapkit.config import load_config_text
 
     cfg = load_config_text(

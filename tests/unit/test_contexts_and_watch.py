@@ -2,7 +2,7 @@
 loop's pure core. The transport shells stay thin; the logic lives here."""
 import json
 
-from crapkit.coverage_py import parse_coveragepy_contexts
+from coverage_readers import parse_coveragepy_contexts
 from crapkit.watch import changed_paths
 
 REPORT = {

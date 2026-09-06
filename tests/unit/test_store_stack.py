@@ -113,7 +113,7 @@ def _insert_prev_rows(conn, run_id: int, rows: list) -> None:
         conn.execute(
             "INSERT INTO functions (run_id, identity_id, start, end, ccn_std, ccn_mod, ccn, "
             "nloc, params, nesting, cov, flag, crap, remedy, cognitive) "
-            "VALUES (?" + ",?" * 14 + ")", (run_id, ids[key], *r[3:]))
+            "VALUES (?" + ",?" * 14 + ")", (run_id, ids[key], *r[3:16]))
 
 
 def conn_of(db):
@@ -219,8 +219,8 @@ def test_a_flag_outside_the_seeded_domain_round_trips(tmp_path):
 
     assert store.read_scored(run_id) == [odd]
     marks = store.read_marks(run_id)
-    assert marks.verdicts == {("src/m9.py", "g( )"): ("brand-new-flag", "brand-new-remedy")}
-    assert marks.scores == {("src/m9.py", "g( )", 1): (3.5, 0.5)}
+    assert marks.verdicts == {("src/m9.py", "g( )", 1, 0): ("brand-new-flag", "brand-new-remedy")}
+    assert marks.scores == {("src/m9.py", "g( )", 1, 0): (3.5, 0.5)}
 
 
 def test_an_inventory_run_still_stores_no_verdict(tmp_path):
@@ -371,7 +371,7 @@ def _oldest_store(db, rows: list) -> None:
     conn.executemany(
         "INSERT INTO functions (run_id, scope, path, long_name, start, end, ccn_std, ccn_mod, "
         "ccn, nloc, params, nesting, cov, flag, crap, remedy, cognitive) VALUES (?" + ",?" * 16 + ")",
-        [(cur.lastrowid, *r) for r in rows])
+        [(cur.lastrowid, *r[:16]) for r in rows])
     conn.commit()
     conn.close()
 

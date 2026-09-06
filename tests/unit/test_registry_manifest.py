@@ -59,12 +59,13 @@ def test_the_description_reads_as_one_plain_sentence():
     assert re.match(r"^[A-Z]", description) and description.endswith(".")
 
 
-def test_the_description_counts_the_tenth_tool():
-    """0.5.0 added `gate`. The registry republishes this sentence after PyPI,
-    so it moves with the count in `_INSTRUCTIONS`, AGENTS.md and the MCP tables."""
+def test_the_description_counts_the_published_tools():
+    from crapkit.mcp_server import TOOLS
+
     description = _manifest()["description"]
 
-    assert description.startswith("Ten read-only tools"), description
+    assert len(TOOLS) == 12
+    assert description.startswith("Twelve read-only tools"), description
 
 
 def test_the_manifest_names_its_repository_so_aggregators_can_link_back():

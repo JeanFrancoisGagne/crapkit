@@ -4,7 +4,7 @@ queue. One version for the whole surface: any removed or retyped field bumps it.
 """
 import json
 
-from crapkit.cli import SCHEMA_VERSION, _print_json
+from crapkit.cli._shared import SCHEMA_VERSION, _print_json
 
 
 def test_print_json_stamps_the_schema_version(capsys):

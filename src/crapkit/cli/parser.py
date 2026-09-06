@@ -339,6 +339,8 @@ def build_parser() -> argparse.ArgumentParser:
     ver.set_defaults(func=_Handler("verifying", "cmd_verify"))
 
     hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on violation")
+    hook.add_argument("--base", metavar="REF",
+                      help="compare the index with merge-base(REF, HEAD), for CI checkouts")
     hook.add_argument("--repo", **_REPO_FLAG)
     hook.set_defaults(func=_Handler("verifying", "cmd_hook_precommit"))
 

@@ -165,6 +165,25 @@ def test_an_unparseable_manifest_reads_as_a_missing_one(tmp_path, capsys):
     assert len(lines) == 1 and ".claude-plugin/plugin.json" in lines[0], lines
 
 
+@pytest.mark.parametrize("hooks", [
+    {"hooks": []},
+    {"hooks": {"PostToolUse": 1}},
+    {"hooks": {"PostToolUse": [None]}},
+    {"hooks": {"PostToolUse": [{"hooks": [None]}]}},
+    {"hooks": {"PostToolUse": [{"hooks": [{"args": "--protocol 1"}]}]}},
+    {"hooks": {"PostToolUse": [{"hooks": [{"args": ["--protocol", []]}]}]}},
+])
+def test_malformed_hook_shapes_report_the_file_without_crashing(tmp_path, capsys, hooks):
+    root = plugin(tmp_path / "p")
+    _write(root / "hooks" / "hooks.json", hooks)
+
+    code, lines, err = check(root, capsys)
+
+    assert code == 1
+    assert len(lines) == 1 and "readable hooks/hooks.json" in lines[0]
+    assert not err
+
+
 # --- what it does not read ----------------------------------------------------
 
 def test_the_handshake_runs_where_there_is_no_crapkit_toml(tmp_path, capsys, monkeypatch):

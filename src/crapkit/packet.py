@@ -15,6 +15,7 @@ what was added around it.
 from __future__ import annotations
 
 from .ratchet_report import DAY
+from .keys import lookup, position, require_unambiguous
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -62,7 +63,7 @@ def file_functions(rows) -> list[dict]:
     twin beside it, the row that is already at its ceiling and must stay there.
     """
     return [{"function": r.long_name, "start": r.start, "end": r.end, "ccn": r.ccn,
-             "crap": r.crap, "remedy": r.remedy} for r in rows]
+             "crap": r.crap, "remedy": r.remedy, "occurrence": position(r)[1]} for r in rows]
 
 
 def file_totals(rows, scope_targets: dict, target: int) -> dict:
@@ -117,6 +118,20 @@ def lane_record(lane) -> dict | None:
     return {"name": lane.name, "command": lane.command, "artifact": lane.artifact,
             "parser": lane.parser, "cwd": lane.cwd, "env": dict(lane.env),
             "timeout_seconds": lane.timeout_seconds}
+
+
+def scoped_test_command(template: str, files: list[str]) -> str:
+    """The scope's test command: its template with the quoted file list, or the
+    template verbatim when it names no {files}.
+
+    A template without {files} runs the scope's whole suite. That is the coarse
+    but working escape for the ordinary layout, where tests live in a top-level
+    tests/ directory owned by no scope: substituting a SOURCE file there hands
+    pytest a collection target with no tests in it (exit 5).
+    """
+    if "{files}" not in template:
+        return template
+    return template.replace("{files}", " ".join(f'"{f}"' for f in files))
 
 
 def commands(path: str, scoped: str | None, note: str = "") -> dict:
@@ -181,25 +196,41 @@ def matching_names(names, name: str) -> list[str]:
     return exact_names(names, name) or [n for n in names if name in n]
 
 
-def anonymous_starts(rows) -> list[int]:
-    """Where the file's anonymous functions open, in file order."""
-    return sorted(r.start for r in rows if not bare_name(r.long_name))
+def anonymous_positions(rows) -> list[tuple]:
+    """Anonymous locations in source order, with scope copies shared."""
+    rows = list(rows)
+    require_unambiguous(rows)
+    return sorted({lookup(r) for r in rows if not bare_name(r.long_name)},
+                  key=lambda place: (place[2], place[3], place[1]))
 
 
-def handles(rows) -> dict[int, str]:
-    """The handle for every row in one file, keyed by the line it opens on.
+def handles(rows) -> dict[tuple, str]:
+    """The handle for every row in one file, keyed by its full stored location.
 
-    A named function is its own handle. An anonymous one is `(anonymous)#N`,
-    counted over the file's anonymous functions in start order — a position, not
-    a line, so the string a session copies out of a packet still names the same
-    function after an edit above it moves every line below.
+    Named twins carry #N, including #1; overloads retain their full signature.
+    Anonymous handles count all anonymous spans in file order. Duplicate scopes
+    share a span and a handle. Moving lines above a function keeps its ordinal.
 
-    Keyed by start because no two functions in a file open on the same line,
-    which makes it the one per-file key a row already carries.
     """
-    ordinals = {start: n for n, start in enumerate(anonymous_starts(rows), 1)}
-    return {r.start: bare_name(r.long_name) or f"{ANONYMOUS}#{ordinals[r.start]}"
-            for r in rows}
+    rows = list(rows)
+    require_unambiguous(rows)
+    groups: dict[str, dict[str, set[tuple]]] = {}
+    for row in rows:
+        groups.setdefault(bare_name(row.long_name), {}).setdefault(row.long_name, set()).add(lookup(row))
+    found = _named_handles(groups)
+    found.update({place: f"{ANONYMOUS}#{n}"
+                  for n, place in enumerate(anonymous_positions(rows), 1)})
+    return found
+
+
+def _named_handles(groups: dict) -> dict[tuple, str]:
+    found = {}
+    for siblings in groups.values():
+        for name, starts in siblings.items():
+            label = name if len(siblings) > 1 else bare_name(name)
+            for n, start in enumerate(sorted(starts), 1):
+                found[start] = f"{label}#{n}" if len(starts) > 1 else label
+    return found
 
 
 def handle_names(rows) -> list[str]:
@@ -209,7 +240,7 @@ def handle_names(rows) -> list[str]:
     needs the two that exist, the same way a wrong bare name gets the file's
     real names back.
     """
-    return [f"{ANONYMOUS}#{n}" for n in range(1, len(anonymous_starts(rows)) + 1)]
+    return [f"{ANONYMOUS}#{n}" for n in range(1, len(anonymous_positions(rows)) + 1)]
 
 
 def handle_ordinal(name: str) -> int | None:

@@ -1,7 +1,7 @@
 [crapkit]
 target = 6
 notes = [
-  "tests/unit is the in-process suite and the one `crapkit test-scoped` runs: 2,688 tests, about a minute serially and about 16 s at `-n 8`. tests/e2e drives the CLI against real git repos in tmp dirs: 626 tests, about 1m30 at `-n 8` and about 8 minutes serially. Both run before a change is done.",
+  "Run tests/unit serially for in-process checks. Run tests/e2e with -n 8 for CLI checks against isolated git repositories. Both suites run before a change is done.",
   "Every function crapkit ships stays at ccn <= 6. The ceiling is not a number to argue with: decompose the function, never raise it.",
 ]
 
@@ -16,7 +16,7 @@ name = "src"
 paths = ["src"]
 languages = ["python"]
 notes = [
-  "A new subcommand needs a row in the _OWNER table in cli/__init__.py as well as a parser entry. Command functions are re-exported lazily by name, so a missing row means the name never resolves.",
+  "Register a new subcommand once in the parser. Import helpers from their owning CLI family; crapkit.cli exports only the lazy main entry point.",
 ]
 
 # --cov=crapkit (module name, not path): the e2e tests run the CLI in tmp repos,

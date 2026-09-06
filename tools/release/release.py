@@ -21,13 +21,17 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from contextlib import closing
 from typing import Callable, NamedTuple
 
 DASH = chr(0x2014)
@@ -201,14 +205,13 @@ def _urlopen(url: str) -> str:
         raise ReleaseError(f"{url}: {exc}") from exc
 
 
-def _git_tag() -> str:
-    return subprocess.run(["git", "describe", "--tags", "--abbrev=0"], capture_output=True,
-                          text=True, check=True).stdout.strip()
+def _git_tag(root: Path) -> str:
+    return _git(root, "describe", "--tags", "--abbrev=0")
 
 
-def _gh_release(version: str) -> str:
+def _gh_release(root: Path, version: str) -> str:
     done = subprocess.run(["gh", "release", "view", f"v{version}", "--json", "url", "--jq", ".url"],
-                          capture_output=True, text=True)
+                          cwd=root, capture_output=True, text=True)
     return done.stdout.strip()
 
 
@@ -260,8 +263,8 @@ def verify(root: Path, version: str, *, fetch: Callable | None = None,
     """One row per surface: what the release should say, what the live surface
     says. The fetchers are arguments so a test can answer for the network."""
     fetch = fetch or _urlopen
-    tag = (git_tag or _git_tag)()
-    url = (gh_release or _gh_release)(version)
+    tag = git_tag() if git_tag else _git_tag(root)
+    url = gh_release(version) if gh_release else _gh_release(root, version)
     rows = [_row("git tag", f"v{version}", tag),
             Row("GitHub release", f"v{version}", url or "none", f"v{version}" in url),
             _pypi_row(version, fetch)]
@@ -280,7 +283,9 @@ class Step(NamedTuple):
     note: str = ""
 
 
-PY = "python"
+PY = sys.executable
+RELEASE_FILES = tuple(sorted({surface.path for surface in SURFACES}
+                            | {"CHANGELOG.md", "crapkit-ratchet.tsv"}))
 
 
 def plan(version: str) -> list:
@@ -288,46 +293,225 @@ def plan(version: str) -> list:
     contracts require: the tag before the contract files (two of them read the
     newest tag), verify before anything leaves the machine, PyPI before the
     registry (the registry validates the README PyPI serves)."""
-    _parse(version)  # digits and dots only: the version is spliced into shell commands below
-    tool = f"{PY} tools/release/release.py"
-    contracts = f"{PY} -m pytest -q -n 0 -p no:randomly " + " ".join(CONTRACT_FILES)
+    _parse(version)
+    tool = (PY, "tools/release/release.py")
+    contracts = (PY, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", *CONTRACT_FILES)
     return [
         Step("stage1", "stage1", (
-            f"{tool} check {version}", f"{tool} bump {version}",
-            f"{PY} -m pip install -e . --no-deps -q",
-            f"{PY} -m pytest -q -n 0 -p no:randomly tests/unit/test_version_surface.py",
-            f"{PY} -m crapkit coverage", f"{PY} -m crapkit ratchet seed", f"{PY} -m crapkit ratchet prune",
-            "git add -A", f'git commit -q -m "Release {version}"'),
+            (*tool, "check", version), (*tool, "bump", version),
+            (PY, "-m", "pip", "install", "-e", ".", "--no-deps", "-q"),
+            (PY, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", "tests/unit/test_version_surface.py"),
+            (PY, "-m", "crapkit", "coverage"), (PY, "-m", "crapkit", "ratchet", "seed"),
+            (PY, "-m", "crapkit", "ratchet", "prune"),
+            ("git", "add", "--", *RELEASE_FILES), ("git", "commit", "-q", "-m", f"Release {version}")),
             note="guard: clean tree and main pushed before the bump"),
-        Step("tag", "stage2a", (f"git tag v{version}",)),
+        Step("tag", "stage2a", (("git", "tag", f"v{version}"),)),
         Step("contracts", "stage2a", (contracts,), note=f"red: git tag -d v{version} and stop"),
-        Step("verify", "verify", (f"{PY} -m crapkit verify",), background=True,
+        Step("verify", "verify", ((PY, "-m", "crapkit", "verify"),), background=True,
              note="its own background command: a foreground tool call dies at 600 s"),
-        Step("push", "stage2b", (f"git push -q origin main v{version}",)),
-        Step("pypi", "stage2b", ("rm -rf dist", f"{PY} -m build -q", f"{PY} -m twine check dist/*",
-                                 f"{PY} -m twine upload --non-interactive dist/*")),
+        Step("push", "stage2b", (("git", "push", "-q", "origin", "main", f"v{version}"),)),
+        Step("pypi", "stage2b", (("@remove-dist",), (PY, "-m", "build", "-q"),
+                                 (PY, "-m", "twine", "check", "dist/*"),
+                                 (PY, "-m", "twine", "upload", "--non-interactive", "dist/*"))),
         Step("github release", "stage2b", (
-            f'gh release create v{version} dist/* --title "crapkit {version}" '
-            f"--notes-file .crapkit/release-notes-{version}.md",),
+            ("gh", "release", "create", f"v{version}", "dist/*", "--title", f"crapkit {version}",
+             "--notes-file", f".crapkit/release-notes-{version}.md"),),
             note="the notes file is the changelog section, written by `notes` first"),
-        Step("plugin", "stage2b", ("claude plugin update crapkit@crapkit",)),
-        Step("pages", "stage2b", (f"gh api -X POST repos/{REPO_SLUG}/pages/builds --jq .status",)),
-        Step("registry", "registry", ("mcp-publisher login github", "mcp-publisher publish"),
+        Step("plugin", "stage2b", (("claude", "plugin", "update", "crapkit@crapkit"),)),
+        Step("pages", "stage2b", (("gh", "api", "-X", "POST", f"repos/{REPO_SLUG}/pages/builds", "--jq", ".status"),)),
+        Step("registry", "registry", (("mcp-publisher", "login", "github"), ("mcp-publisher", "publish")),
              note="device flow; the token lasts about 40 minutes, so publish right after login"),
         Step("glama", "glama", (),
              note="Sync Server on the Repository admin tab; the sync builds and publishes the "
                   "release with the GitHub notes on its own"),
-        Step("surfaces", "surfaces", (f"{tool} verify {version}",)),
+        Step("surfaces", "surfaces", ((*tool, "verify", version),)),
     ]
 
 
 # --- run one stage -------------------------------------------------------------------
 
-def _shell(command: str, root: Path, dry_run: bool) -> None:
-    print(f"$ {command}")
+def _git(root: Path, *arguments: str) -> str:
+    done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True)
+    if done.returncode:
+        raise ReleaseError(done.stderr.strip() or f"git {' '.join(arguments)} failed")
+    return done.stdout.strip()
+
+
+def _clean_main(root: Path) -> str:
+    if _git(root, "branch", "--show-current") != "main":
+        raise ReleaseError("release requires the main branch")
+    if _git(root, "status", "--porcelain", "--untracked-files=all"):
+        raise ReleaseError("release requires a clean tree, including untracked files")
+    return _git(root, "rev-parse", "HEAD")
+
+
+def _guard_bump(root: Path, version: str) -> dict:
+    head = _clean_main(root)
+    remote = _git(root, "ls-remote", "--exit-code", "origin", "refs/heads/main")
+    if remote.split()[0] != head:
+        raise ReleaseError("push main before starting the version bump")
+    report = check(root, version)
+    if report.problems:
+        raise ReleaseError(NL.join(report.problems))
+    return {"head": head}
+
+
+def _release_tree(root: Path, version: str) -> str:
+    head = _clean_main(root)
+    problems = _surface_problems(root, version)
+    if problems:
+        raise ReleaseError(NL.join(problems))
+    return head
+
+
+def _guard_contracts(root: Path, version: str) -> dict:
+    head = _release_tree(root, version)
+    if _git(root, "tag", "--list", f"v{version}"):
+        raise ReleaseError(f"v{version} already exists; this stage does not own that tag")
+    return {"head": head, "version": version}
+
+
+def _receipt_path(root: Path) -> Path:
+    return root / ".crapkit" / "release-receipt.json"
+
+
+def _guard_receipt(root: Path, version: str) -> dict:
+    head = _release_tree(root, version)
+    if _git(root, "rev-parse", f"refs/tags/v{version}^{{commit}}") != head:
+        raise ReleaseError(f"v{version} does not point to HEAD")
+    try:
+        receipt = json.loads(_receipt_path(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReleaseError("run stage2a and verify before publishing; no readable release receipt") from exc
+    if not isinstance(receipt, dict):
+        raise ReleaseError("release receipt must be an object")
+    if (receipt.get("head"), receipt.get("version"), receipt.get("contracts_sha256")) != (
+            head, version, _contracts_digest()):
+        raise ReleaseError("release receipt belongs to another HEAD or version")
+    return receipt
+
+
+def _contracts_digest() -> str:
+    return hashlib.sha256(NL.join(CONTRACT_FILES).encode("utf-8")).hexdigest()
+
+
+def _ledger_rows(root: Path) -> list:
+    path = root / ".crapkit" / "crap.sqlite"
+    if not path.is_file():
+        return []
+    try:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
+            db.row_factory = sqlite3.Row
+            return [dict(row) for row in db.execute(
+                "SELECT id,commit_sha,kind,verdict_ok,findings FROM runs ORDER BY id")]
+    except sqlite3.Error as exc:
+        raise ReleaseError(f"cannot read the verification ledger: {exc}") from exc
+
+
+def _last_run(root: Path) -> int:
+    rows = _ledger_rows(root)
+    return rows[-1]["id"] if rows else 0
+
+
+def _latest_verification(root: Path) -> dict:
+    rows = [row for row in _ledger_rows(root) if row["kind"].startswith("verify")]
+    return rows[-1] if rows else {}
+
+
+def _passing_run(root: Path, head: str, after: int) -> int:
+    row = _latest_verification(root)
+    expected = (head, "verify", 1, 0)
+    observed = tuple(row.get(key) for key in ("commit_sha", "kind", "verdict_ok", "findings"))
+    if observed != expected or row.get("id", 0) <= after:
+        raise ReleaseError("a new passing full verify at this HEAD is required in the runs ledger")
+    return row["id"]
+
+
+def _guard_publish(root: Path, version: str) -> dict:
+    receipt = _guard_receipt(root, version)
+    after = receipt.get("verify_after")
+    if type(after) is not int or after < 0:
+        raise ReleaseError("run the verify stage before publishing this release")
+    latest = _passing_run(root, receipt["head"], after)
+    if receipt.get("verify_run") != latest:
+        raise ReleaseError("run the verify stage before publishing this release")
+    return receipt
+
+
+def _preflight(stage: str, root: Path, version: str) -> dict:
+    guards = {"stage1": _guard_bump, "stage2a": _guard_contracts,
+              "verify": _guard_receipt, "stage2b": _guard_publish, "registry": _guard_publish}
+    return guards[stage](root, version) if stage in guards else {}
+
+
+def _write_receipt(root: Path, receipt: dict) -> None:
+    path = _receipt_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(receipt, sort_keys=True) + NL, encoding="utf-8")
+    temporary.replace(path)
+
+
+def _finish_stage(stage: str, root: Path, version: str, receipt: dict, before: int) -> None:
+    if stage not in ("stage2a", "verify"):
+        return
+    if _release_tree(root, version) != receipt["head"]:
+        raise ReleaseError("HEAD changed during the release stage; repeat its checks")
+    receipt["contracts_sha256"] = _contracts_digest()
+    if stage == "verify":
+        receipt["verify_run"] = _passing_run(root, receipt["head"], before)
+        receipt["verify_after"] = before
+    _write_receipt(root, receipt)
+
+
+def _dist_path(root: Path) -> Path:
+    expected = root.resolve() / "dist"
+    if expected.resolve() != expected:
+        raise ReleaseError("dist must be a directory inside the release repository")
+    return expected
+
+
+def _remove_dist(root: Path) -> None:
+    target = _dist_path(root)
+    if target.exists():
+        shutil.rmtree(target)
+
+
+def _dist_artifacts(root: Path) -> list[str]:
+    artifacts = sorted(path for path in _dist_path(root).glob("*")
+                       if path.name.endswith((".whl", ".tar.gz")))
+    _check_artifacts(artifacts)
+    return [str(path.relative_to(root.resolve())) for path in artifacts]
+
+
+def _check_artifacts(artifacts: list[Path]) -> None:
+    if not artifacts:
+        raise ReleaseError("dist contains no wheel or source archive")
+    if any(path.is_symlink() or not path.is_file() for path in artifacts):
+        raise ReleaseError("release artifacts must be regular files inside dist")
+
+
+def _arguments(command: tuple, root: Path) -> list[str]:
+    return [value for arg in command for value in
+            (_dist_artifacts(root) if arg == "dist/*" else [arg])]
+
+
+def _execute(command: tuple, root: Path, dry_run: bool) -> None:
+    print(f"$ {subprocess.list2cmdline(command)}")
     if dry_run:
         return
-    subprocess.run(command, shell=True, cwd=root, check=True)
+    if command == ("@remove-dist",):
+        _remove_dist(root)
+        return
+    subprocess.run(_arguments(command, root), cwd=root, check=True)
+
+
+def _stage1_files(root: Path) -> None:
+    changed = _git(root, "diff", "--name-only", "HEAD", "-z").split("\0")
+    untracked = _git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0")
+    unexpected = (set(changed) | set(untracked)) - set(RELEASE_FILES) - {""}
+    if unexpected:
+        raise ReleaseError("unexpected release edits: " + ", ".join(sorted(unexpected)))
 
 
 def _run_step(step: Step, root: Path, version: str, dry_run: bool) -> None:
@@ -336,27 +520,45 @@ def _run_step(step: Step, root: Path, version: str, dry_run: bool) -> None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(notes(root, version), encoding="utf-8", newline=NL)
     for command in step.commands:
-        _shell(command, root, dry_run)
+        if step.stage == "stage1" and not dry_run:
+            _stage1_files(root)
+        _execute(command, root, dry_run)
 
 
-def _run_or_untag(step: Step, root: Path, version: str, dry_run: bool) -> None:
+def _run_or_untag(step: Step, root: Path, version: str, dry_run: bool,
+                  head: str = "") -> None:
     """A red contract run deletes the tag it just made, so the tree never
     carries a tag the contracts refused."""
     try:
         _run_step(step, root, version, dry_run)
     except subprocess.CalledProcessError as exc:
         if step.name == "contracts":
-            _shell(f"git tag -d v{version}", root, dry_run)
+            subprocess.run(["git", "update-ref", "-d", f"refs/tags/v{version}", head], cwd=root)
         raise ReleaseError(f"{step.name} failed: {exc}") from exc
 
 
+def _run_guarded(stage: str, steps: list, version: str, root: Path) -> None:
+    receipt = _preflight(stage, root, version)
+    before = _last_run(root) if stage == "verify" else 0
+    if stage == "verify":
+        receipt.pop("verify_run", None)
+        _write_receipt(root, receipt)
+    for step in steps:
+        _run_or_untag(step, root, version, False, receipt.get("head", ""))
+    _finish_stage(stage, root, version, receipt, before)
+
+
 def run(stage: str, version: str, root: Path, *, dry_run: bool = False) -> None:
-    """Execute every step of one stage in order."""
+    """Check repository proof, then execute a stage; a dry run only prints it."""
+    root = root.resolve()
     steps = [s for s in plan(version) if s.stage == stage]
     if not steps:
         raise ReleaseError(f"no stage {stage!r}; stages: stage1, stage2a, verify, stage2b, registry, surfaces")
-    for step in steps:
-        _run_or_untag(step, root, version, dry_run)
+    if dry_run:
+        for step in steps:
+            _run_step(step, root, version, True)
+        return
+    _run_guarded(stage, steps, version, root)
 
 
 # --- the CLI ----------------------------------------------------------------------------
@@ -374,7 +576,7 @@ def _print_plan(version: str) -> None:
         tail = "  [background]" if step.background else ""
         print(f"[{step.stage}] {step.name}{tail}")
         for command in step.commands:
-            print(f"    $ {command}")
+            print(f"    $ {subprocess.list2cmdline(command)}")
         if step.note:
             print(f"    note: {step.note}")
 

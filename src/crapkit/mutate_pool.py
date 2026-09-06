@@ -1,31 +1,21 @@
-"""Where mutants actually run. One worker (the default) mutates the live
-working tree, exactly as this command always has. `mutation_workers = N` gives
-each worker its own detached git worktree instead, because a mutant is a write
-to a source file: two of them in one tree would read each other's edits.
+"""Run every mutant in a private detached worktree, at any worker count.
 
-Two things the parallel path owes the serial one. Results merge by the mutant's
-position in the list, never by who finished first, so the same tree reports the
-same JSON at any worker count. And the worktree is a checkout of HEAD while
-`mutate` is diff-scoped against the working tree, so the targeted files are
-copied in as they are on disk — uncommitted lines are the ones being mutated.
+Capture changed and untracked inputs once, including tests, configuration and
+deletions, then apply that snapshot to every worker's checkout of HEAD. Results
+merge in mutant order. Neither the runner nor a mutant writes to the source tree.
 
 The command runs with cwd set to the worktree. A consumer whose test command
 resolves the code under test from somewhere else (an editable install pointing
 at the main checkout, a global site-packages copy) would measure unmutated
 code and score every mutant a survivor: keep the command cwd-relative.
 
-Those worktrees are KEPT, at `<root>/.crapkit/mutate-pool/w0..wN`. Building four
-of them costs 30.6 s on a 31,459-file repo and re-preparing the kept four costs
-0.46 s (best of 5, interleaved), and `mutate` is diff-scoped, so that build was
-most of a run's wall clock. Re-preparing is `git checkout --force <sha>` naming
-the main repo's HEAD, then `git clean -xdff`: the last run's mutant goes back,
-the last suite's artifacts go away, and a commit made since lands. What is left
-on disk is four checkouts, which `crapkit mutate --drop-pool` removes.
+Keep worktrees at `<root>/.crapkit/mutate-pool/w0..wN` for reuse. Resetting them
+to HEAD and cleaning them removes the preceding run's changes. Ignored local
+dependencies are not copied; the configured command supplies its own setup.
 
-The pool is one directory shared by every run in the repo, where mkdtemp gave
-each run its own, so entry takes an exclusive lock on `.crapkit/mutate-pool/`.
-A second `mutate` in the same repo finds it held and falls back to the old
-throwaway base: slower, never the first run's tree with a second run's mutant.
+An OS lock at `.crapkit/mutate-pool.lock` protects reuse and removal. A second
+run uses temporary worktrees while the pool is occupied. Cleanup refuses an
+occupied pool, and removing the pool never removes the lock file's identity.
 """
 from __future__ import annotations
 
@@ -40,7 +30,7 @@ from pathlib import Path
 
 from .config import shell_words
 from .errors import GitError, ToolError
-from .gitio import head_commit, worktree_add, worktree_remove, worktree_reset
+from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
 from .mutate import apply_mutant
 from .procs import run_bounded
 
@@ -137,13 +127,33 @@ def _run_shard(tree: Path, cfg, shard: list, report) -> list:
     return out
 
 
-def _seed(root: Path, tree: Path, rel_paths: list) -> None:
-    """The worktree checked out HEAD; the mutants were grown from the working
-    tree. Copy the targeted files over so both agree on what line 40 is."""
-    for rel in rel_paths:
+def _input_snapshot(root: Path, targets: list, state: Path) -> tuple[str, dict]:
+    """Freeze every working-tree change once, including tests and deletions."""
+    head = head_commit(root)
+    paths = sorted(set(status_names(root)) | set(targets))
+    files = {rel: _snapshot_file(root / rel) for rel in paths
+             if not Path(rel).is_relative_to(state)}
+    if head_commit(root) != head:
+        raise ToolError("HEAD changed while preparing mutation inputs; rerun mutate")
+    return head, files
+
+
+def _snapshot_file(path: Path) -> tuple[bytes, int] | None:
+    if not path.exists():
+        return None
+    return path.read_bytes(), path.stat().st_mode
+
+
+def _seed(tree: Path, files: dict) -> None:
+    """Apply the same captured bytes and deletions to every private worker."""
+    for rel, saved in files.items():
         dst = tree / rel
+        if saved is None:
+            dst.unlink(missing_ok=True)
+            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(root / rel, dst)
+        dst.write_bytes(saved[0])
+        dst.chmod(saved[1])
 
 
 def _on_every_tree(action, root: Path, trees: list) -> None:
@@ -226,8 +236,7 @@ def _reset_to(head: str, root: Path, tree: Path) -> None:
 
 def _drop(root: Path, base: Path, trees: list) -> None:
     """Through `worktree remove`, never an rmtree alone: an abandoned checkout
-    leaves an entry in `git worktree list` that outlives the directory. The base
-    stays, because the lock this process is holding is a file inside it."""
+    leaves an entry in `git worktree list` that outlives the directory."""
     if trees:
         _on_every_tree(worktree_remove, root, trees)
 
@@ -236,10 +245,15 @@ def drop_pool(root: Path) -> list:
     """Every kept checkout removed, and the base with it. Returns what was
     there, for the command that prints it."""
     base = pool_dir(root)
-    trees = sorted(p for p in base.glob("w*") if p.is_dir())
-    _drop(root, base, trees)
-    shutil.rmtree(base, ignore_errors=True)
-    return trees
+    if not base.exists():
+        return []
+    with _pool_lock(root) as held:
+        if not held:
+            raise ToolError("mutation worktree pool is in use; retry --drop-pool after the run finishes")
+        trees = sorted(p for p in base.glob("w*") if p.is_dir())
+        _drop(root, base, trees)
+        shutil.rmtree(base, ignore_errors=True)
+        return trees
 
 
 @contextmanager
@@ -276,8 +290,9 @@ def _pool_lock(root: Path):
     the pool for good — a 35 s regression per run that nothing reports.
     """
     base = pool_dir(root)
-    base.mkdir(parents=True, exist_ok=True)
-    handle = os.open(base / ".lock", os.O_CREAT | os.O_RDWR)
+    base.parent.mkdir(parents=True, exist_ok=True)
+    # Outside the removable pool: deleting a held lock creates two lock owners.
+    handle = os.open(base.parent / "mutate-pool.lock", os.O_CREAT | os.O_RDWR)
     held = _take_lock(handle)
     try:
         yield held
@@ -317,15 +332,21 @@ def _fan_out(cfg, trees: list, shards: list, report) -> list:
 
 def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[bool]:
     shards = _shards(list(enumerate(mutants)), workers)
-    targets = sorted({m.path for m in mutants})
+    checkout = worktree_root(root)
+    prefix = root.resolve().relative_to(checkout)
+    targets = sorted({(prefix / m.path).as_posix() for m in mutants})
+    head, files = _input_snapshot(checkout, targets, prefix / ".crapkit")
     with _worktrees(root, workers) as trees:
+        if head_commit(root) != head:
+            raise ToolError("HEAD changed while preparing mutation workers; rerun mutate")
         for tree in trees:
-            _seed(root, tree, targets)
+            _seed(tree, files)
         # In the worker's own checkout, which is where the mutants will run: a
         # baseline taken at the root would clear a command the worktree cannot
         # start.
-        require_live_suite(trees[0], cfg)
-        done = _fan_out(cfg, trees, shards, report)
+        execution_roots = [tree / prefix for tree in trees]
+        require_live_suite(execution_roots[0], cfg)
+        done = _fan_out(cfg, execution_roots, shards, report)
     return _merge(done)
 
 
@@ -342,10 +363,7 @@ def run_mutants(root: Path, cfg, mutants: list, report) -> list[bool]:
     if not mutants:
         return []
     workers = min(cfg.mutation_workers, len(mutants))
-    if workers > 1:
-        return _run_parallel(root, cfg, mutants, workers, report)
-    require_live_suite(root, cfg)
-    return _merge(_run_shard(root, cfg, list(enumerate(mutants)), report))
+    return _run_parallel(root, cfg, mutants, workers, report)
 
 
 def reporter(total: int, stream):

@@ -68,6 +68,10 @@ An array of tables. One scope per group of directories that share a ceiling and 
 languages. Every tracked source file in a declared language must belong to a scope, or
 `doctor` fails with `N tracked file(s) match a scope language but no scope path`.
 
+Use `paths = ["."]` to claim the repo root, including loose source files. A deeper
+declared path takes precedence over this root scope. Language and exclude rules
+still apply.
+
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring; a name no scope declares is a configuration error, exit 3, naming the declared scopes). |

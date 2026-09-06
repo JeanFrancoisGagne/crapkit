@@ -1,17 +1,18 @@
 """explain --tests against real context data, and istanbul branch attribution.
 
 Everything asserts through a public seam: the CLI as a subprocess on a tmp_path
-repo built inline, or parse_istanbul, which is the parser other tools call.
+repo built inline, or the file reader other tools call.
 The coverage artifacts are hand-written because explain never runs a lane; it
 only reads what a lane left on disk.
 """
 import copy
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
-from crapkit.coverage_istanbul import parse_istanbul
+from crapkit.covstream import parse_istanbul_file
 
 from conftest import cli_runner, git_commit_all, git_init_repo
 
@@ -203,7 +204,10 @@ ISTANBUL = {
 
 
 def solo_of(artifact: dict):
-    per_file = parse_istanbul(json.dumps(artifact), repo_root="C:/repo")
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "coverage.json"
+        path.write_text(json.dumps(artifact), encoding="utf-8")
+        per_file, _ = parse_istanbul_file(path, repo_root="C:/repo")
     (fn,) = per_file["web/solo.ts"]
     return fn
 

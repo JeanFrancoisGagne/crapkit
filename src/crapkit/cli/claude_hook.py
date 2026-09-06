@@ -27,13 +27,10 @@ Two constraints shape the code rather than the contract:
 - Module scope is stdlib only, and stays that way. `_Handler` imports this
   module before the body runs, so anything imported here is paid by every edit
   on the machine, including the ones in repos crapkit never measures.
-- The snapshot store is never opened. `SnapshotStore.__init__` has no read-only
-  path: it runs the schema script, seeds, and applies ALTER TABLE migrations, so
-  a per-edit hook would migrate whatever store it touched, and with two crapkit
-  versions installed whichever fired first would rewrite the schema. It has no
-  busy timeout either, so a store the weekly job holds means an uncaught
-  OperationalError and a multi-second stall that PostToolUse renders invisible.
-  Nothing here writes anything, for the same reason.
+- The snapshot store is never opened. The advisory needs source, configuration
+  and committed ratchet marks; opening a store would add schema inspection and
+  database I/O to every edit. Old stores can still need a migration. The hook
+  stays independent of that lifecycle and writes nothing.
 """
 from __future__ import annotations
 
@@ -271,7 +268,7 @@ def _judge(root: Path, rel: str) -> int:
     records = _records(root, rel)
     ranges = _changed(root, rel, diff.communicate()[0])
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
-    return _report(root, cfg, rel, breaches, ceiling, _keys(records))
+    return _report(root, cfg, rel, breaches, ceiling, records)
 
 
 def _config(root: Path):
@@ -401,12 +398,13 @@ def _keys(records: list) -> dict:
     return key_names(records)
 
 
-def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, keys: dict) -> int:
+def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: list) -> int:
     """Rung 9. stdout stays empty whatever happens: protocol 1 reserves it for a
     future JSON channel, and Claude Code parses stdout JSON on exit 0."""
     from ..keys import key_of
 
-    marked = _marks_for(root / cfg.ratchet_file, rel)
+    keys = _keys(records)
+    marked = _marks_for(root / cfg.ratchet_file, rel, records)
     unmarked = [rec for rec in breaches if key_of(keys, rec)[1] not in marked]
     if not unmarked:
         return 0
@@ -415,7 +413,7 @@ def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, keys: dict)
     return 2
 
 
-def _marks_for(marks_path: Path, rel: str) -> set[str]:
+def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
     """The ratchet KEY names one file carries marks for, `#N` ordinals included.
 
     Existence, not the numeric high-water rule `verify` applies: crap needs
@@ -423,15 +421,29 @@ def _marks_for(marks_path: Path, rel: str) -> set[str]:
     recorded decision to carry that function as it stands, so without this the
     advisory nags about debt the repo already signed for on every edit.
 
-    Read as lines, not as parsed entries: building 40,303 of them to answer one
-    file's question costs 35 ms, and the answer is a prefix test.
+    Parse only this file's lines and the format comments. Whole-repo entry
+    construction costs 35 ms for 40,303 marks and answers no extra question.
     """
+    from ..repotext import repo_text
+
     if not marks_path.is_file():
         return set()
     prefix = rel + "\t"
-    text = marks_path.read_text(encoding="utf-8", errors="replace")
-    return {line[len(prefix):].rsplit("\t", 1)[0]
-            for line in text.splitlines() if line.startswith(prefix)}
+    text = repo_text(marks_path, marks_path.name)
+    selected = "\n".join(line for line in text.splitlines()
+                           if line.startswith(prefix) or line.startswith("#"))
+    return _known_marks(selected, records)
+
+
+def _known_marks(text: str, records) -> set[str]:
+    """Unproved key identity grants no advisory exemption and writes nothing."""
+    from ..ratchet import checked_key_version, read_ratchet
+
+    try:
+        checked_key_version(text, records)
+    except ValueError:
+        return set()
+    return {entry.long_name for entry in read_ratchet(text)[0]}
 
 
 def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:

@@ -18,6 +18,7 @@ commit`, so it holds three rules the batch commands do not:
 from __future__ import annotations
 
 import tempfile
+from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
@@ -54,6 +55,7 @@ class StagedGate(NamedTuple):
     """The verdict on the staged blobs."""
     violations: list[Violation]
     unscoped: list[str] = []  # staged source files no scope claims: ungated, but never silently
+    records: tuple = ()  # full staged identities, including siblings below the ceiling
 
 
 def _touches(record: FunctionRecord, ranges: list[tuple[int, int]]) -> bool:
@@ -154,5 +156,5 @@ def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     records_by_path = staged_records(reads.staged_blobs(checked_files))
     return StagedGate(
         _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
-        unscoped
+        unscoped, tuple(chain.from_iterable(records_by_path.values()))
     )

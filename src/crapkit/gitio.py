@@ -357,8 +357,9 @@ class _StartedReads:
     costs more than both spawns together, so the spawns belong underneath it.
     """
 
-    def __init__(self, root: Path) -> None:
-        self._diff = _Started(root, ("diff", "--cached", "-U0", "--no-renames"),
+    def __init__(self, root: Path, base: str | None = None) -> None:
+        basis = (merge_base(root, base),) if base is not None else ()
+        self._diff = _Started(root, ("diff", "--cached", "-U0", "--no-renames", *basis),
                               text=True, stdin=False)
         self._batch = _Started(root, ("cat-file", "--batch"), text=False, stdin=True)
 
@@ -377,14 +378,14 @@ class _StartedReads:
 
 
 @contextmanager
-def staged_reads(root: Path):
+def staged_reads(root: Path, base: str | None = None):
     """The gate's two git reads, started before the caller needs either.
 
     Both processes are shut down on the way out, whichever of them the caller got
     around to reading: a commit with nothing staged never asks for a blob, and a
     machine with no lizard never asks for anything at all.
     """
-    reads = _StartedReads(root)
+    reads = _StartedReads(root, base)
     try:
         yield reads
     finally:
@@ -617,6 +618,11 @@ def head_commit(root: Path) -> str:
     if not out:
         raise GitError(f"no HEAD commit in {root}")
     return out
+
+
+def worktree_root(root: Path) -> Path:
+    """The checkout containing root, including a linked or nested worktree."""
+    return Path(_git_unflagged(root, "rev-parse", "--show-toplevel").strip()).resolve()
 
 
 class GitFacts:

@@ -18,7 +18,8 @@ from pathlib import Path
 import pytest
 
 from crapkit import gitio
-from crapkit.cli import build_parser, cmd_verify
+from crapkit.cli.parser import build_parser
+from crapkit.cli.verifying import cmd_verify
 
 from conftest import cli_runner
 

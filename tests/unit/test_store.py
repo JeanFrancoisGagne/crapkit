@@ -251,7 +251,7 @@ def debt_rows():
 
 
 def debt(marks) -> set:
-    return {key for key, (_, remedy) in marks.verdicts.items() if remedy != "ok"}
+    return {key[:2] for key, (_, remedy) in marks.verdicts.items() if remedy != "ok"}
 
 
 def test_read_marks_carries_the_flag_and_the_remedy_of_every_scored_row(tmp_path):
@@ -260,8 +260,8 @@ def test_read_marks_carries_the_flag_and_the_remedy_of_every_scored_row(tmp_path
 
     marks = store.read_marks(run_id)
 
-    assert marks.verdicts[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
-    assert marks.verdicts[("src/c.ts", "fine( x )")] == ("measured", "ok")
+    assert marks.verdicts[("src/b.ts", "dark( x )", 1, 0)] == ("untested", "add-tests")
+    assert marks.verdicts[("src/c.ts", "fine( x )", 1, 0)] == ("measured", "ok")
     assert debt(marks) == {("src/a.ts", "big( x )"), ("src/b.ts", "dark( x )"),
                            ("util/d.py", "tiny( x )")}
 
@@ -270,7 +270,7 @@ def test_read_marks_decides_debt_the_way_the_queue_does(tmp_path):
     """The rule lives twice: `remedy != 'ok'` off these marks, and `r.remedy !=
     "ok"` in the ranking. They have to answer the same, or the worklist floor
     starts hiding rows next-item hands out."""
-    from crapkit.cli import _actionable
+    from crapkit.cli.queue import _actionable
 
     store = SnapshotStore(tmp_path / "crap.sqlite")
     run_id = store.write_run(commit="abc", tool_versions={}, rows=debt_rows())
@@ -288,9 +288,8 @@ def test_read_marks_takes_the_same_floor_and_scope_cut(tmp_path):
     assert debt(store.read_marks(run_id, scopes=["util"])) == {("util/d.py", "tiny( x )")}
 
 
-def test_read_marks_reports_the_worst_of_two_twins(tmp_path):
-    """Twins share (path, long_name). The worst one represents the key, so a
-    finished sibling can never mark the pair done."""
+def test_read_marks_reports_each_twins_verdict(tmp_path):
+    """Twins have separate spans and separate verdicts."""
     from crapkit.score import ScoredRow
 
     def twin(start, crap, remedy):
@@ -301,7 +300,9 @@ def test_read_marks_reports_the_worst_of_two_twins(tmp_path):
     run_id = store.write_run(commit="abc", tool_versions={},
                              rows=[twin(1, 56.0, "decompose"), twin(20, 5.0, "ok")])
 
-    assert store.read_marks(run_id).verdicts[("src/t.ts", "twin( x )")] == ("measured", "decompose")
+    assert store.read_marks(run_id).verdicts == {
+        ("src/t.ts", "twin( x )", 1, 0): ("measured", "decompose"),
+        ("src/t.ts", "twin( x )", 20, 0): ("measured", "ok")}
 
 
 def test_an_inventory_run_has_no_verdict_to_report(tmp_path):
@@ -321,9 +322,9 @@ def test_read_marks_carries_the_score_and_the_coverage_beside_the_verdict(tmp_pa
 
     marks = store.read_marks(run_id)
 
-    assert marks.verdicts[("src/b.ts", "dark( x )")] == ("untested", "add-tests")
-    assert marks.scores[("src/b.ts", "dark( x )", 1)] == (20.0, 0.0)
-    assert marks.scores[("src/c.ts", "fine( x )", 1)] == (5.0, 0.0)
+    assert marks.verdicts[("src/b.ts", "dark( x )", 1, 0)] == ("untested", "add-tests")
+    assert marks.scores[("src/b.ts", "dark( x )", 1, 0)] == (20.0, 0.0)
+    assert marks.scores[("src/c.ts", "fine( x )", 1, 0)] == (5.0, 0.0)
 
 
 def test_read_marks_keeps_each_twins_own_score(tmp_path):
@@ -342,8 +343,8 @@ def test_read_marks_keeps_each_twins_own_score(tmp_path):
 
     scores = store.read_marks(run_id).scores
 
-    assert scores[("src/t.ts", "twin( x )", 1)] == (56.0, 0.0)
-    assert scores[("src/t.ts", "twin( x )", 20)] == (5.0, 0.0)
+    assert scores[("src/t.ts", "twin( x )", 1, 0)] == (56.0, 0.0)
+    assert scores[("src/t.ts", "twin( x )", 20, 0)] == (5.0, 0.0)
 
 
 # --- the twin keys a cut read cannot count ------------------------------------
@@ -364,8 +365,8 @@ def test_twin_key_names_covers_only_the_functions_that_share_a_name_in_their_fil
                              rows=[fn("src/t.ts", "twin( x )", 20), fn("src/t.ts", "twin( x )", 1),
                                    fn("src/t.ts", "lone( x )", 40), fn("src/u.ts", "twin( x )", 1)])
 
-    assert store.twin_key_names(run_id) == {("src/t.ts", "twin( x )", 1): "twin( x )",
-                                            ("src/t.ts", "twin( x )", 20): "twin( x )#2"}
+    assert store.twin_key_names(run_id) == {("src/t.ts", "twin( x )", 1, 0): "twin( x )",
+                                            ("src/t.ts", "twin( x )", 20, 0): "twin( x )#2"}
 
 
 def test_twin_key_names_reads_one_run_and_not_its_neighbours(tmp_path):

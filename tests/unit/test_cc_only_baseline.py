@@ -15,7 +15,8 @@ that scope really is unmeasured.
 """
 import pytest
 
-from crapkit.cli import _refuse_lane_less_verify, _select_lanes
+from crapkit.cli.verifying import _refuse_lane_less_verify
+from crapkit.cli.scoring import _select_lanes
 from crapkit.config import Config, Lane, Scope
 from crapkit.errors import ConfigError
 from crapkit.snapshot import InventoryRow

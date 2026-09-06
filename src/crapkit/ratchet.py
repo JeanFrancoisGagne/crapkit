@@ -15,12 +15,15 @@ comparable, and without the stamp that reads as a clean run.
 """
 from __future__ import annotations
 
+import math
 from typing import NamedTuple
 
 from .invocation import _self
 from .score import ScoredRow
 
 _HEADER = "path\tlong_name\tcrap"
+KEY_VERSION = 1
+_KEY_STAMP = "# crapkit-keys="
 
 
 class RatchetEntry(NamedTuple):
@@ -54,11 +57,80 @@ def metric_version() -> str:
 def read_stamp(text: str) -> str:
     """The metric a marks file was written under; "" for one written before stamping."""
     for line in text.splitlines():
+        if line.startswith(_KEY_STAMP):
+            continue
         if line.startswith("#"):
             return line[1:].strip()
         if line.strip():
             return ""
     return ""
+
+
+def read_key_version(text: str) -> int:
+    """Missing means the old start-only identity; an unknown format cannot compare."""
+    stamps = [line[len(_KEY_STAMP):] for line in text.splitlines()
+              if line.startswith(_KEY_STAMP)]
+    if not stamps:
+        return 0
+    if len(stamps) != 1 or stamps[0] not in ("0", str(KEY_VERSION)):
+        raise ValueError("unreadable or unsupported ratchet key identity version")
+    return int(stamps[0])
+
+
+def _marked_group(entry: RatchetEntry, groups: set) -> tuple[str, str]:
+    from .keys import split_ordinal
+
+    exact = (entry.path, entry.long_name)
+    return exact if exact in groups else (entry.path, split_ordinal(entry.long_name)[0])
+
+
+def check_reader_keys(text: str) -> None:
+    """Old expression readers lost callbacks, so their anonymous ordinals lack proof."""
+    stamp = read_stamp(text)
+    prefix = "crapkit-analysis="
+    version = stamp[len(prefix):].partition(" ")[0] if stamp.startswith(prefix) else None
+    check_reader_version(read_ratchet(text)[0], version)
+
+
+def check_reader_version(entries, version) -> None:
+    """Admit expression keys only when their source reader enumerated every callback."""
+    from .keys import expression_group, expression_reader_current
+
+    if expression_reader_current(version):
+        return
+    affected = sorted({entry.path for entry in entries
+                       if expression_group(entry.path, entry.long_name)})
+    if affected:
+        raise ValueError("expression reader 10 changed anonymous function ordinals in "
+                         f"{', '.join(affected)}; refresh coverage and reconcile any saved "
+                         "marks with their original functions before reseeding")
+
+
+def check_key_groups(text: str, present: set, collisions: set) -> int:
+    """Prove old marks still name the same functions before comparing or rewriting.
+
+    An unseen mark stays intact with its old version. A known collision needs
+    a reviewed mapping, because it also shifts every later ordinal of that name.
+    """
+    check_reader_keys(text)
+    version = read_key_version(text)
+    if version == KEY_VERSION:
+        return version
+    groups = {_marked_group(entry, present | collisions) for entry in read_ratchet(text)[0]}
+    unresolved = groups & collisions
+    if unresolved:
+        names = "; ".join(f"{path}: {name}" for path, name in sorted(unresolved))
+        raise ValueError(f"legacy ratchet key identity is ambiguous for {names}; "
+                         "preserve these marks and reconcile their function mapping "
+                         "as described in docs/ratchet.md#same-line-function-identity")
+    return KEY_VERSION if groups <= present else 0
+
+
+def checked_key_version(text: str, rows, *, historical: set = frozenset()) -> int:
+    from .keys import ambiguous_groups
+
+    present = {(row.path, row.long_name) for row in rows}
+    return check_key_groups(text, present, ambiguous_groups(rows) | set(historical))
 
 
 def stamp_conflict(recorded: str, current: str) -> str | None:
@@ -76,6 +148,13 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
 def _is_skippable(line: str) -> bool:
     """Blank lines, the header and comment lines (the metric stamp) carry no mark."""
     return not line.strip() or line == _HEADER or line.startswith("#")
+
+
+def _finite_mark(text: str) -> float:
+    mark = float(text)
+    if not math.isfinite(mark):
+        raise ValueError("ratchet mark must be finite")
+    return mark
 
 
 def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
@@ -100,7 +179,7 @@ def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
                               f"expected 3: {line!r}")
             continue
         try:
-            entries.append(RatchetEntry(parts[0], parts[1], float(parts[2])))
+            entries.append(RatchetEntry(parts[0], parts[1], _finite_mark(parts[2])))
         except ValueError:
             complaints.append(f"ratchet line {i + 1} has an unreadable mark: {line!r}")
     return entries, complaints
@@ -110,6 +189,7 @@ def load_ratchet(text: str) -> list[RatchetEntry]:
     """Every mark, refusing a file that holds a line carrying none. What every
     caller that REWRITES the file reads with: a line skipped there would delete
     a mark the repo signed for."""
+    read_key_version(text)
     entries, complaints = read_ratchet(text)
     if complaints:
         raise ValueError(complaints[0])
@@ -129,11 +209,14 @@ def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | 
     return None
 
 
-def dump_ratchet(entries: list[RatchetEntry], *, stamp: str | None = None) -> str:
+def dump_ratchet(entries: list[RatchetEntry], *, stamp: str | None = None,
+                 key_version: int = 0) -> str:
     """`stamp` None takes the running metric; a version string is written verbatim
     and "" writes none, which is how the merge driver keeps two legacy sides legacy."""
     version = metric_version() if stamp is None else stamp
     lines = [f"# {version}"] if version else []
+    if key_version:
+        lines.append(f"{_KEY_STAMP}{key_version}")
     lines.append(_HEADER)
     for e in sorted(entries, key=lambda e: (e.path, e.long_name)):
         lines.append(f"{e.path}\t{e.long_name}\t{e.crap:.4f}")

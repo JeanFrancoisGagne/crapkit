@@ -5,7 +5,7 @@ of five tables the key belonged to and how the real one is spelled, with no key
 list anywhere in the tool. The table travels with the finding so the message can
 carry that list.
 """
-from crapkit.cli import _unknown_key_text
+from crapkit.cli.admin import _unknown_key_text
 from crapkit.doctor import _KNOWN, UnknownKey, table_label, unknown_key_findings, valid_keys
 
 

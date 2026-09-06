@@ -1,7 +1,8 @@
 """Change coupling: files that keep landing in the same commits are coupled,
 whatever the import graph says. Same git-log text the churn pass reads."""
 from crapkit.churn import parse_git_log
-from crapkit.coupling import change_coupling, partners
+from crapkit.coupling import change_coupling
+from crapkit.packet import coupling_partners
 
 # What `git log --name-only` prints for src/bêta.py at core.quotePath's default:
 # the name in double quotes with the two UTF-8 bytes as literal octal text.
@@ -47,9 +48,10 @@ def test_bulk_commits_do_not_couple_everything():
 
 def test_partners_name_the_other_side_of_every_pair_a_file_is_in():
     log = _log(*[["src/a.ts", "src/b.ts"]] * 4, *[["src/a.ts", "src/c.ts"]] * 3)
-    out = partners(log.splitlines(), "src/a.ts", min_support=3, min_confidence=0.4)
-    assert out == [{"path": "src/b.ts", "support": 4, "confidence": 1.0},
-                   {"path": "src/c.ts", "support": 3, "confidence": 1.0}], \
+    out = coupling_partners(change_coupling(log, min_support=3, min_confidence=0.4, top=None),
+                            "src/a.ts", lambda path: False)
+    assert out == [{"path": "src/b.ts", "support": 4, "confidence": 1.0, "is_test": False},
+                   {"path": "src/c.ts", "support": 3, "confidence": 1.0, "is_test": False}], \
         "b.ts leads: 4 shared commits beat 3 at equal confidence"
 
 
@@ -58,13 +60,15 @@ def test_a_files_partners_survive_a_global_top_that_would_cut_them():
     # file cut would leave a.ts reading as uncoupled.
     noisy = [[f"src/n{i}.ts", f"src/m{i}.ts"] for i in range(60) for _ in range(9)]
     log = _log(*noisy, *[["src/a.ts", "src/z.ts"]] * 3)
-    out = partners(log.splitlines(), "src/a.ts", min_support=3, min_confidence=0.5)
+    out = coupling_partners(change_coupling(log, min_support=3, min_confidence=0.5, top=None),
+                            "src/a.ts", lambda path: False)
     assert [p["path"] for p in out] == ["src/z.ts"]
 
 
 def test_partners_of_an_uncoupled_file_is_empty_not_an_error():
     log = _log(["src/a.ts"], ["src/b.ts"])
-    assert partners(log.splitlines(), "src/a.ts", min_support=3, min_confidence=0.5) == []
+    assert coupling_partners(change_coupling(log, min_support=3, min_confidence=0.5, top=None),
+                            "src/a.ts", lambda path: False) == []
 
 
 def test_a_quoted_non_ascii_path_is_the_same_key_churn_reads():

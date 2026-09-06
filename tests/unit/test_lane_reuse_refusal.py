@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli import _collect_lanes
+from crapkit.cli.scoring import _collect_lanes
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.lanes import LaneOutcome, read_stamps, run_lane, write_stamps

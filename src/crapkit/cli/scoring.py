@@ -18,6 +18,7 @@ from ..invocation import _self
 from ..snapshot import build_inventory_rows, tsv_lines
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
+from ..uncovered import DeadLineFold
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _print_json, _ratchet_entries,
                       _repo_out_path, _repo_relative, _stand,
@@ -82,13 +83,15 @@ class _Corpus(NamedTuple):
 def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int, dict]:
     """Shared by inventory/coverage: returns (commit, rows, corpus, cache_hits, tool_versions)."""
     lizard, *_ = _analysis_tools()
+    from ..analyze import ANALYSIS_VERSION
     commit = (git or GitFacts(root)).head_commit()
     universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
     records_by_path, cache_hits = _analyzed_corpus(
         root, root / ".crapkit" / "cache.json", flat, _analysis_workers(cfg))
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
-    tool_versions = {"crapkit": __version__, "lizard": lizard.version}
+    tool_versions = {"crapkit": __version__, "lizard": lizard.version,
+                     "analysis_version": str(ANALYSIS_VERSION)}
     return commit, rows, _Corpus(len(flat), len(universe.oversized)), cache_hits, tool_versions
 
 
@@ -141,55 +144,52 @@ def _progress(message: str) -> None:
     sys.stderr.write(f"crapkit: {message}\n")
 
 
-def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git):
+def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None):
     """One lane's outcome or the error that failed it; a failed lane never sinks
     the run. The error object, not its text: a refusal carries the modification
     times of the files the attempt left unwritten, which the fold persists."""
     from ..lanes import run_lane
 
     try:
-        return run_lane(root, lane, reuse_artifact=reuse, scope_paths=scope_paths, git=git), ""
+        return run_lane(root, lane, reuse_artifact=reuse, scope_paths=scope_paths, git=git,
+                        dead_lines=dead_lines), ""
     except ToolError as exc:
         return None, exc
 
 
-def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git):
+def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None):
     _progress(f"lane {lane.name!r} started")
-    outcome = _run_one_lane(root, lane, reuse, scope_paths, git)
+    outcome = _run_one_lane(root, lane, reuse, scope_paths, git, dead_lines)
     _progress(f"lane {lane.name!r} finished")
     return outcome
 
 
-def _execute_parallel(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int) -> dict:
+def _execute_parallel(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int,
+                      dead_lines=None) -> dict:
     """Lanes are subprocess-bound, so threads are enough: subprocess.run drops the
     GIL for the whole command and each lane streams to its own log file."""
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=max_parallel) as pool:
-        futures = {lane: pool.submit(_traced_lane, root, lane, reuse[lane], scope_paths, git)
+        futures = {lane: pool.submit(_traced_lane, root, lane, reuse[lane], scope_paths, git, dead_lines)
                    for lane in ordered}
     return {lane: future.result() for lane, future in futures.items()}
 
 
-def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int) -> dict:
-    """lane -> (outcome, error), keyed by the Lane itself rather than its
-    name, which the config does not force to be unique. Serial below 2, which is
-    the default: same thread, same order, none of the started/finished chatter."""
+def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int,
+                   dead_lines=None) -> dict:
+    """Lane outcomes, serial below 2 and parallel otherwise."""
     if max_parallel < 2:
-        return {lane: _run_one_lane(root, lane, reuse[lane], scope_paths, git) for lane in ordered}
-    return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel)
+        return {lane: _run_one_lane(root, lane, reuse[lane], scope_paths, git, dead_lines)
+                for lane in ordered}
+    return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel, dead_lines)
 
 
 def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
     # `lane_errors` and not `lanes`: a cc-only repo declares no lanes, so nothing
     # succeeded and nothing failed either, and that run is still a scored run.
     if lane_errors and not succeeded:
-        # A count and a pointer, not the errors again: every one of them has
-        # already printed above, and quoting them here made the reader read the
-        # same block twice. Counted off `lanes`, not the error dict: the config
-        # does not force lane names to be unique, and two failed lanes sharing
-        # a name would collapse to one key.
-        failed = len(lanes) - len(succeeded)
+        failed = len(lane_errors)
         raise ToolError(f"every lane failed ({failed} of {len(lanes)}); the errors are above")
 
 
@@ -223,7 +223,7 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
 
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
-               reuse_unchanged: bool = False, max_parallel: int = 1, git=None):
+               reuse_unchanged: bool = False, max_parallel: int = 1, git=None, dead_lines=None):
     """Run each lane; a failed lane is recorded and skipped, never fatal alone.
 
     Every reuse decision is taken up front, on one thread: it reads the working
@@ -240,7 +240,8 @@ def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | Non
              for lane in lanes}
     ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
     return _collect_lanes(root, lanes,
-                          _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel))
+                          _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel,
+                                         dead_lines))
 
 
 class _ScoredRun(NamedTuple):
@@ -261,6 +262,7 @@ class _ScoredRun(NamedTuple):
     tool_versions: dict
     corpus: _Corpus
     cache_hits: int
+    dead_lines: DeadLineFold | None = None
 
 
 def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchanged: bool = False,
@@ -274,10 +276,11 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
 
     git = git or GitFacts(root)
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg, git)
+    dead_lines = DeadLineFold()
 
     coverage_by_path, provenance, lane_errors, succeeded = _run_lanes(
         root, lanes, reuse_artifacts, cfg.scope_paths, reuse_unchanged,
-        cfg.max_parallel_lanes, git)
+        cfg.max_parallel_lanes, git, dead_lines)
 
     # Only scopes a SUCCESSFUL lane covers count as measured; a failed lane's
     # scopes fall back to no-lane flags rather than reading as untested code.
@@ -287,7 +290,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
                         cc_only_scopes=cfg.coverage_optional_scopes)
     test_failures = {f for prov in provenance.values() for f in prov.get("failures", ())}
     return _ScoredRun(commit, scored, provenance, lane_errors, test_failures, tool_versions,
-                      corpus, cache_hits)
+                      corpus, cache_hits, dead_lines)
 
 
 def _run_kind(lanes, cfg, failures) -> str:
@@ -578,6 +581,7 @@ def _rescore_json(overlay, latest: dict, gate: dict | None = None) -> None:
         "baseline_run": latest["id"], "baseline_commit": latest["commit"],
         "functions": [{
             "scope": r.scope, "path": r.path, "function": r.long_name, "start": r.start,
+            "occurrence": r.occurrence,
             "end": r.end, "ccn": r.ccn, "cov": r.cov, "flag": r.flag, "crap": r.crap,
             "remedy": r.remedy, "stale_coverage": True,
         } for r in overlay],
@@ -676,7 +680,7 @@ def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int]) -> _GateVe
     untracked = _untracked_of(root, overlay)
     candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
-    breaches = _unmarked_breaches(touched, _ratchet_entries(root, cfg) or [])
+    breaches = _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
     return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked))
 
 

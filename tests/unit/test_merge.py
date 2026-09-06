@@ -5,7 +5,7 @@ RawFn tuples mirror what the analyze shell extracts from lizard's API:
 """
 import pytest
 
-from crapkit.merge import RawFn, merge_passes
+from merge_oracle import RawFn, merge_passes
 
 
 def raw(path="a.ts", name="f( x )", start=1, end=9, ccn=7, nloc=8, params=1, nesting=2):

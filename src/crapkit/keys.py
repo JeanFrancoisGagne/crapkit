@@ -22,13 +22,32 @@ The first twin keeps the BARE name. That is what makes the change free to adopt:
 every mark recorded under the old two-field key already reads as twin #1, so no
 committed `crapkit-ratchet.tsv` needs rewriting.
 
-`(anonymous)` twins take the same rule. Their keys line up with the
-`(anonymous)#N` handles `packet` publishes from #2 up; handle #1 is the bare
-`(anonymous)`, the same function under its key.
+Anonymous functions take the same canonical key rule within each raw
+signature. Their printed `(anonymous)#N` handles count all anonymous spans
+in the file, starting at #1. Claims save the canonical key separately because
+the printed ordinal does not identify an ordinal within one signature.
 """
 from __future__ import annotations
 
+from collections import Counter
+
+from .errors import ToolError
+
 ORDINAL = "#"
+_EXPRESSION_SUFFIXES = frozenset(("js", "cjs", "mjs", "ts", "tsx", "jsx"))
+
+
+def expression_group(path: str, name: str) -> bool:
+    """The anonymous groups whose membership changed with expression reader 10."""
+    return path.rpartition(".")[2].lower() in _EXPRESSION_SUFFIXES and name.startswith("(anonymous)")
+
+
+def expression_reader_current(version) -> bool:
+    """A saved reader version proves that expression callbacks were enumerated."""
+    try:
+        return int(version) >= 10
+    except (ValueError, TypeError):
+        return False
 
 
 def key_name(long_name: str, ordinal: int) -> str:
@@ -49,32 +68,74 @@ def split_ordinal(name: str) -> tuple[str, int]:
     return head, int(tail)
 
 
-def key_names(rows) -> dict[tuple[str, str, int], str]:
-    """Every row's key name, looked up by (path, long_name, the line it opens on).
+def position(row) -> tuple[int, int]:
+    """A parsed function's line and its creation order within that line."""
+    return row.start, getattr(row, "occurrence", 0)
 
-    Start is what separates one twin from the next: no two functions in a file
-    open on the same line, which is the fact `packet.handles` already keys on. It
-    is not the lookup on its own, because a synthetic row set can hand two names
-    the same start and a silently overwritten entry would key a mark to the
-    wrong function.
 
-    One function scored twice in a run — two scopes claiming one path — is one
-    span, so it takes one ordinal rather than becoming a phantom twin.
+def lookup(row) -> tuple[str, str, int, int]:
+    """The stored location shared by keys, marks and presentation handles."""
+    return row.path, row.long_name, *position(row)
 
-    Rows may arrive in any order; ordinals are read off sorted start lines,
-    never off arrival.
-    """
-    starts: dict[tuple[str, str], set[int]] = {}
+
+def _position_counts(rows) -> dict:
+    groups: dict = {}
     for row in rows:
-        starts.setdefault((row.path, row.long_name), set()).add(row.start)
-    return {(path, long_name, start): key_name(long_name, n)
-            for (path, long_name), lines in starts.items()
-            for n, start in enumerate(sorted(lines), 1)}
+        key = row.path, row.long_name, row.start
+        copies = groups.setdefault(key, Counter())
+        copies[(getattr(row, "scope", ""), position(row)[1])] += 1
+    return groups
 
 
-def key_of(keys: dict[tuple[str, str, int], str], row) -> tuple[str, str]:
+def _ambiguous(counts, legacy_only: bool) -> bool:
+    occurrences = {occ for _, occ in counts}
+    unknown = _unknown_count(counts)
+    if legacy_only:
+        return unknown > 1 or (unknown > 0 and len(occurrences) > 1)
+    return unknown > 1 or len(occurrences) > 1
+
+
+def _unknown_count(counts) -> int:
+    return max((n for (_, occ), n in counts.items() if occ == 0), default=0)
+
+
+def ambiguous_groups(rows, *, legacy_only: bool = False) -> set[tuple[str, str]]:
+    """Raw-name groups with same-line twins; scope copies count once.
+
+    Legacy-only asks whether those twins lack a recorded within-line position.
+    Rows must belong to one run; historical callers group runs separately.
+    """
+    return {(path, name) for (path, name, _), counts in _position_counts(rows).items()
+            if _ambiguous(counts, legacy_only)}
+
+
+def require_unambiguous(rows) -> None:
+    refuse_ambiguous(ambiguous_groups(rows, legacy_only=True))
+
+
+def refuse_ambiguous(groups) -> None:
+    """The same refusal for row-backed and SQL-backed identity checks."""
+    if groups:
+        names = "; ".join(f"{path}: {name}" for path, name in sorted(groups))
+        raise ToolError(f"ambiguous legacy function identity in {names}; "
+                        "refresh analysis before selecting or comparing these functions")
+
+
+def key_names(rows) -> dict[tuple[str, str, int, int], str]:
+    """Canonical ordinals ordered by source position, with scope copies shared."""
+    rows = list(rows)
+    require_unambiguous(rows)
+    starts: dict[tuple[str, str], set[tuple[int, int]]] = {}
+    for row in rows:
+        starts.setdefault((row.path, row.long_name), set()).add(position(row))
+    return {(path, name, *place): key_name(name, n)
+            for (path, name), places in starts.items()
+            for n, place in enumerate(sorted(places), 1)}
+
+
+def key_of(keys: dict[tuple[str, str, int, int], str], row) -> tuple[str, str]:
     """One row's whole key, out of the map `key_names` built."""
-    return row.path, keys[(row.path, row.long_name, row.start)]
+    return row.path, keys[lookup(row)]
 
 
 def stated_key(item) -> tuple[str, str]:
@@ -84,3 +145,27 @@ def stated_key(item) -> tuple[str, str]:
     long_name, and that is what every mark written before the ordinal holds.
     """
     return item.path, item.key_name or item.long_name
+
+
+def claim_key(claim: dict) -> tuple[str, str] | None:
+    """A precise claim's key; older bare-name claims remain ambiguous."""
+    if claim.get("key_version", 1) == 0:
+        return None
+    name = claim.get("key_name")
+    if name is not None:
+        return claim["path"], name
+    handle = claim.get("handle") or ""
+    bare, ordinal = split_ordinal(handle)
+    # Old anonymous handles count the whole file; keys count one signature.
+    # Without the saved key, that ordinal cannot identify a signature's twin.
+    if bare == handle or bare == "(anonymous)":
+        return None
+    return claim["path"], key_name(claim["long_name"], ordinal)
+
+
+def claim_holds(claim: dict, key: tuple[str, str]) -> bool:
+    """Legacy ownership covers all twins until it can be resolved or released."""
+    precise = claim_key(claim)
+    if precise is not None:
+        return precise == key
+    return (claim["path"], claim["long_name"]) == (key[0], split_ordinal(key[1])[0])

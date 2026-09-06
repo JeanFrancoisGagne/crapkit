@@ -8,7 +8,7 @@ scores CRAP 20 against a ceiling of 6, and the queue reported empty.
 import pytest
 
 from crapkit.churn import FileChurn
-from crapkit.cli import _no_lane_gap, _rankable, _skip_reason
+from crapkit.cli.queue import _no_lane_gap, _rankable, _skip_reason
 from crapkit.score import ScoredRow, crap
 from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, sql_floor
 

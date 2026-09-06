@@ -622,8 +622,8 @@ rejected in review.
 ## Tests
 
     python -m pytest                      # both suites
-    python -m pytest tests/unit           # 2,688 tests, about a minute (16 s at -n 8)
-    python -m pytest tests/e2e -n 8       # 626 tests, about 1m30
+    python -m pytest tests/unit           # in-process suite, run serially
+    python -m pytest tests/e2e -n 8       # CLI tests in isolated repositories
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else: no xdist and no
@@ -662,9 +662,9 @@ best effort, because two crapkit processes on one store can collide on it: losin
 cache is a cost, losing the command is a bug.
 
 `src/crapkit/cli/` is the command layer, split into ten family modules. `cli/__init__.py`
-holds no logic. It carries `_OWNER`, a name-to-module map, and a `__getattr__` that loads
-one family the first time a name is read. Eight eager imports used to load every family on
-every invocation, which put the cost of every subcommand on `crapkit --version`.
+exports only `main` and loads the parser when called. The parser names each handler's
+family and imports that family only when dispatching its command. Import helpers from
+their owning modules; there is no second export registry to maintain.
 
 | Family | Subcommands |
 |---|---|
@@ -681,10 +681,10 @@ every invocation, which put the cost of every subcommand on `crapkit --version`.
 
 `claude_hook.py` carries two rules the other families do not, and both are load-bearing.
 Its module scope imports stdlib only, because every edit on the machine pays for it. And
-it never opens the snapshot store: `SnapshotStore.__init__` runs migrations, so a per-edit
-hook would rewrite the schema of whatever store it touched.
+it never opens the snapshot store. Opening an older store can still migrate it, and
+a per-edit hook has no reason to read or change snapshot state.
 
-Four reader modules sit beside the core, all registered in `analyze.py`'s
+Five reader modules sit beside the core, all registered in `analyze.py`'s
 `deferred_pygments()` block:
 
 | Module | What it does |
@@ -693,14 +693,15 @@ Four reader modules sit beside the core, all registered in `analyze.py`'s
 | `lizardrust.py` | counts Rust `match` arms, which lizard does not (lizard #494) |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
+| `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax |
 
 Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child
 imports `analyze.py`, so a reader registered anywhere later leaves spawned workers
 measuring with the readers lizard shipped and reporting plausible wrong numbers.
 
-One module is neither: `discover.py` has no importer and has not had one since it was
-added. It is either wired into the packet or removed in a later release. Do not build on
-it before that lands.
+Unused `discover.py` was removed. Live configuration discovery remains in `rootfind.py`.
+Reference implementations for analyzer and coverage comparisons live in test support,
+not in the installed package.
 
 ## Standing rules
 
@@ -709,9 +710,8 @@ else, usually later, usually as a plausible wrong number.
 
 - **Every function you add or edit sits at ccn 6 or below.** The pre-commit gate refuses
   the rest; the section below says what a refusal means.
-- **A name added to a family module gets its `_OWNER` entry in the same commit.** A name
-  with no entry is not re-exported, and the suite reaches dozens of these helpers by name
-  through `crapkit.cli`.
+- **Register a new command once, in the parser.** Import helpers directly from their
+  owning family module. Keep `crapkit.cli.main` as the public process entry point.
 - **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
   ratchet stamps every marks file with the version that produced it, and `verify` refuses
   to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,

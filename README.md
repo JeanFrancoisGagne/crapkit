@@ -292,6 +292,16 @@ lizard #494), so crapkit counts each non-wildcard arm like a C `case` and retire
 override the day upstream fixes it. The cognitive column charges that same block once,
 the way Sonar charges a `switch`.
 
+Expression arrows in arrays and argument lists are measured separately. In TypeScript,
+wrap an arrow body in parentheses when it contains `<` before a comma, such as
+`x => (pair<T,U>(x))` or `x => (x < 0)`. Without that delimiter, analysis refuses
+the file because this reader cannot distinguish type arguments from an expression
+separator. Generic arrow parameter declarations remain supported.
+
+Functions on the same line have separate occurrence identifiers. Existing ratchet
+marks with ambiguous old identities require a reviewed mapping; see
+[same-line function identity](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#same-line-function-identity).
+
 ## The gate
 
 Four surfaces ask the same question, ccn against the scope's ceiling, with four

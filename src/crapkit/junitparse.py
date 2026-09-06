@@ -115,6 +115,27 @@ def failed_test_ids(xml_text: str) -> set[str]:
     return suite_summary(xml_text)[0]
 
 
+def passed_test_ids(xml_text: str) -> set[str]:
+    """Completed passing cases; any failure or skip of the same ID wins."""
+    root = _root(xml_text)
+    _refuse_unfinished(root)
+    _refuse_partial(root)
+    passed, blocked = set(), set()
+    for case in root.iter("testcase"):
+        destination = blocked if _is_failure(case) or case.find("skipped") is not None else passed
+        destination.add(_case_id(case))
+    return passed - blocked
+
+
+def _refuse_partial(root: ET.Element) -> None:
+    for suite in root.iter("testsuite"):
+        declared = suite.get("tests")
+        if declared is None:
+            continue
+        if not declared.isdigit() or int(declared) != sum(1 for _ in suite.iter("testcase")):
+            raise ToolError("junit test count does not match its cases; the retry is incomplete")
+
+
 def _seconds(raw: str | None) -> float:
     """A hand-edited or absent time attribute costs nothing, never a crash."""
     try:

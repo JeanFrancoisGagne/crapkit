@@ -1,6 +1,6 @@
 """Reads that pull the columns their caller actually uses.
 
-digest builds two whole runs of sixteen-field rows and reads four of the
+digest builds two whole runs of scored rows and reads six of the
 fields; doctor builds one and reads three, then groups a hundred thousand rows
 in Python to answer a question about a few thousand directories. Both are the
 same waste, and both are fixed the same way: the projection and the grouping go
@@ -42,7 +42,7 @@ def seeded(tmp_path, *runs) -> tuple[SnapshotStore, list[int]]:
                    for i, rows in enumerate(runs)]
 
 
-# --- digest reads four columns, not sixteen ----------------------------------
+# --- digest keeps only the fields its identity and score comparison use ------
 
 def test_the_digest_read_matches_the_wide_read_field_for_field(tmp_path):
     rows = scored(60)
@@ -51,11 +51,11 @@ def test_the_digest_read_matches_the_wide_read_field_for_field(tmp_path):
     narrow = store.read_crap(run_id)
     wide = store.read_scored(run_id)
 
-    assert [(r.scope, r.path, r.long_name, r.crap) for r in wide] == \
+    assert [(r.scope, r.path, r.long_name, r.crap, r.start, r.occurrence) for r in wide] == \
         [tuple(r) for r in narrow], "same rows, same order, same values"
 
 
-def test_the_digest_read_asks_for_four_columns(tmp_path):
+def test_the_digest_read_keeps_the_start_needed_to_distinguish_twins(tmp_path):
     """The mechanism, not the timing: a read that still names sixteen columns
     has not saved anything however fast the machine is."""
     store, (run_id,) = seeded(tmp_path, scored(20))
@@ -64,12 +64,12 @@ def test_the_digest_read_asks_for_four_columns(tmp_path):
                  if s.lstrip().upper().startswith("SELECT")]
 
     projection = select.split(" FROM ")[0].strip()
-    assert projection == "SELECT i.scope, i.path, i.long_name, f.crap", \
+    assert projection == "SELECT i.scope, i.path, i.long_name, f.crap, f.start, f.occurrence", \
         f"the digest read still pulls columns nothing reads: {projection}"
 
 
 def test_the_digest_lines_are_identical_from_the_narrow_rows(tmp_path):
-    """The contract build_digest has to keep: it names four fields and nothing
+    """The contract build_digest has to keep: it names six fields and nothing
     else, so the narrow rows drive it to the same lines the wide rows did."""
     prev, cur = scored(60), scored(60, bump=3.0)
     store, (a, b) = seeded(tmp_path, prev, cur)

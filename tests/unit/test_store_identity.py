@@ -71,7 +71,7 @@ def old_store(db, runs: list[list], *, nullable: bool = False) -> None:
             "INSERT INTO functions (run_id, scope, path, long_name, start, end, ccn_std, "
             "ccn_mod, ccn, nloc, params, nesting, cov, flag, crap, remedy, cognitive) "
             "VALUES (?" + ",?" * 16 + ")",
-            [(cur.lastrowid, *r) for r in rows])
+            [(cur.lastrowid, *r[:16]) for r in rows])
     conn.commit()
     conn.close()
 
@@ -103,7 +103,7 @@ def traced(store, call) -> list[str]:
 
 def plans(store, call) -> list[str]:
     """EXPLAIN QUERY PLAN for every SELECT the store ran during `call`."""
-    reads = [s for s in traced(store, call) if s.lstrip().upper().startswith("SELECT")]
+    reads = [s for s in traced(store, call) if s.lstrip().upper().startswith(("SELECT", "WITH"))]
     assert reads, "the call ran no SELECT, so there is no plan to judge"
     return [row[-1] for sql in reads
             for row in store._conn.execute("EXPLAIN QUERY PLAN " + sql)]
@@ -314,11 +314,13 @@ def test_the_path_scoped_reads_seek_the_identity_index(tmp_path):
              ("function_history", lambda: store.function_history("src/m1.py", "f1( a )")))
     for label, call in calls:
         lines = plans(store, call)
-        assert not [line for line in lines if line.startswith("SCAN")], \
+        assert not [line for line in lines if line.startswith("SCAN")
+                    and not line.startswith(("SCAN (subquery-", "SCAN history"))], \
             f"{label} scanned a whole table instead of seeking a path: {lines}"
-        assert "identities" in lines[0] and "(path=" in lines[0], \
+        seeks = [line for line in lines if line.startswith("SEARCH")]
+        assert "identities" in seeks[0] and "(path=" in seeks[0], \
             f"{label} did not start from the path: {lines}"
-        assert "idx_functions_identity" in lines[1], \
+        assert "idx_functions_identity" in seeks[1], \
             f"{label} did not reach the rows through the identity: {lines}"
 
 

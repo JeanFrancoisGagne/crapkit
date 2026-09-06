@@ -31,6 +31,14 @@ Two more house rules that hold across every payload:
 
 `next-item` is the exception to the flag: it has no `--json` because it only ever emits JSON.
 
+Function rows carry `occurrence` alongside their real `start` and `end` lines. A new
+measurement numbers functions sharing a start line from 1 in source creation order,
+including functions with different names. `0` means an older row has no such position.
+Use `(path, long_name or function, start, occurrence)` to distinguish rows within a
+run. The raw function signature stays unchanged. This field appears in `next-item`,
+`worklist`, `brief.scored`, `brief.file_functions` and `rescore.functions`; adding it
+does not change JSON schema 1.
+
 ---
 
 ## `next-item`
@@ -64,6 +72,7 @@ $ crapkit next-item
     "handle": "classify",
     "nesting": 3,
     "nloc": 24,
+    "occurrence": 1,
     "path": "calc/grade.py",
     "remedy": "decompose",
     "scope": "calc",
@@ -101,6 +110,7 @@ $ crapkit next-item
 | `function` | string | The lizard long name, including the spaced parameter list. `brief` and `explain` also accept the bare identifier. |
 | `handle` | string | The short name form: the bare identifier, or `(anonymous)#N` for a function lizard could not name. Unlike `start` it names a position rather than a line, so it survives the edit this item asks for. `brief`, `explain` and `claims release` all take it. |
 | `start`, `end` | int | 1-based inclusive line span. |
+| `occurrence` | int | Source creation order among functions sharing `start`, from 1; `0` on older rows with no recorded position. |
 | `ccn` | int | `min(ccn_std, ccn_mod)`. This is what the gate and the ratchet judge. |
 | `ccn_std` | int | Standard cyclomatic complexity. |
 | `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
@@ -318,10 +328,11 @@ $ crapkit brief app/parse_csv.py parse_row --json
     }
   ],
   "file_functions": [
-    {"ccn": 9, "cov": 0.6, "crap": 14.184000000000001, "end": 16,
-     "long_name": "parse_row( text , strict , sep , header )", "remedy": "decompose", "start": 4},
-    {"ccn": 2, "cov": 1.0, "crap": 2.0, "end": 24,
-     "long_name": "_split( text , sep )", "remedy": "ok", "start": 18}
+    {"ccn": 9, "crap": 14.184000000000001, "end": 16,
+     "function": "parse_row( text , strict , sep , header )", "occurrence": 1,
+     "remedy": "decompose", "start": 4},
+    {"ccn": 2, "crap": 2.0, "end": 24,
+     "function": "_split( text , sep )", "occurrence": 1, "remedy": "ok", "start": 18}
   ],
   "est_splits": 2,
   "est_uncovered_paths": 4,
@@ -355,7 +366,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
     "ccn": 9, "ccn_mod": 9, "ccn_std": 9, "cognitive": 8, "cov": 0.6,
     "crap": 14.184000000000001, "end": 16, "flag": "measured",
     "long_name": "parse_row( text , strict , sep , header )", "nesting": 2,
-    "nloc": 13, "params": 4, "path": "app/parse_csv.py", "remedy": "decompose",
+    "nloc": 13, "occurrence": 1, "params": 4, "path": "app/parse_csv.py", "remedy": "decompose",
     "scope": "app", "start": 4
   },
   "source": "def parse_row(text, strict, sep, header):\n    ...\n",
@@ -377,10 +388,10 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `est_splits`, `est_uncovered_paths` | int | no | The budget, from the same code `next-item` publishes it with. Formulas under [`item` fields](#item-fields). |
 | `source` | string | no | The function's own text, `start` to `end` inclusive, newlines intact. The packet is editable without a second read of the file. |
 | `params` | array of string | no | Its parameter names, in declaration order, so a new test can call it without opening the file. `scored.params` is the count of these. |
-| `scored` | object | no | The whole scored row: the 16 fields above, including `params` and `ccn_mod`, which `next-item` does not carry. |
+| `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. |
 | `target` | int | no | The scope's effective ceiling. |
 | `stale` | bool | no | `true` when `commit` is not HEAD, so every number here describes an older tree. Run `commands.refresh` first. |
-| `file_functions` | array | no | Every scored function in the same file: `long_name`, `start`, `end`, `ccn`, `cov`, `crap`, `remedy`. What an extracted helper lands beside, and what names are already taken. |
+| `file_functions` | array | no | Every scored function in the same file: `function`, `start`, `end`, `occurrence`, `ccn`, `crap`, `remedy`. What an extracted helper lands beside, and what names are already taken. |
 | `file_totals` | object | no | That file rolled up: `functions`, `over_target`, `crap_load`. |
 | `gate_rule` | object | no | What the gate will judge this edit by. Below. |
 | `commands` | object | no | The rest of the loop, filled in for this file and this scope. Below. |
@@ -493,9 +504,10 @@ names, which is what turns a half-remembered name into a list of candidates. `br
 and `explain` run the identical rule, so one string cannot name one function in a
 packet and three in a trajectory.
 
-The start line is the disambiguator: it settles a bare name two functions share. `explain`
-resolves it the same way as of 0.4.5, off the newest run that scored the path, so a line
-number read out of a packet opens the same function in either command:
+The start line resolves a function only when that line names one source position.
+When several functions start there, the command refuses the numeric selector and lists
+their handles. Use the handle to select one. `explain` resolves against the newest run
+that scored the path, just as `brief` does:
 
 ```
 $ crapkit explain calc/grade.py 1
@@ -639,7 +651,7 @@ $ crapkit worklist --json
 | `dormant_top` | array | The first 10 dormant entries, same shape. Sleeping hazards, recorded without clogging the queue. |
 | `batches` | array | Only with `--batches N`. |
 
-Each entry carries `scope`, `path`, `function`, `start`, `end`, `ccn`, `ccn_std`, `nloc`,
+Each entry carries `scope`, `path`, `function`, `start`, `end`, `occurrence`, `ccn`, `ccn_std`, `nloc`,
 `commits`, `authors`, `weight`, `risk`, plus `flag`, `remedy`, `crap` and `cov` from the
 run that scored it, and `ratchet_mark`: the committed mark's value, or `null` when the
 function carries no mark or the repo has no marks file. The mark is read under the
@@ -890,6 +902,14 @@ $ crapkit coverage --json
 `inventory --json` is the same run summary minus everything coverage adds: `run_id`,
 `commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `db`.
 
+Coverage attribution uses line spans. When distinct functions share the same path,
+start line and end line, an artifact that overlaps that span cannot distinguish their
+coverage. The command refuses with exit 5, names the path and line, and asks you to
+split their definitions onto separate lines and regenerate coverage. Equal coverage
+values do not remove this ambiguity. Copies of one function in several scopes do not
+trigger the refusal. `cc-only`, `no-lane`, and functions with no matching artifact keep
+their existing flags.
+
 The plain form prints the same run on one line, zero buckets dropped and the ceiling
 labelled, then the command to run next:
 
@@ -1078,7 +1098,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `runs prune --json` | `{"pruned_runs": 6, "kept_runs": 4, "freed_bytes": 0}`. |
 | `trend --json` | `{"runs": [{run_id, commit, created_at, functions, over_target, crap_load, avg, by_scope}], "target": 6}`, trusted runs only. Reads and fills the `run_rollup` cache; see below. |
 | `overrides --json` | `{"overrides": [{run_id, commit, created_at, path, function, crap, reason}]}`. |
-| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark covers, `ok` is `breaches == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
+| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark covers, `ok` is `breaches == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
 | `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. A pair whose two spans nest in one file is dropped, not ranked: a factory and the closure defined inside it score 1.0 by construction and cannot be deduplicated. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
 | `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
 | `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. With `mutation_workers > 1` the worker worktrees are kept under `.crapkit/mutate-pool/`; `crapkit mutate --drop-pool` removes them and exits. |

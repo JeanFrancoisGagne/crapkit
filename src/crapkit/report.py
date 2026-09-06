@@ -26,6 +26,8 @@ contract test compares the two.
 from __future__ import annotations
 
 from html import escape
+import os
+import shlex
 
 from .errors import ConfigError
 from .invocation import _self
@@ -266,7 +268,16 @@ def _remedy_tone(remedy) -> str:
 
 def _drill_down(entry: dict) -> str:
     """The command that opens the row: dark lines, history, the committed mark."""
-    return _esc(f'crapkit explain {entry["path"]} "{entry["function"]}"')
+    selector = entry.get("handle") or str(entry["start"])
+    return _esc(f'crapkit explain {_command_arg(entry["path"])} {_command_arg(selector)}')
+
+
+def _command_arg(value: str) -> str:
+    """Quote for PowerShell on Windows and POSIX shells elsewhere."""
+    quoted = shlex.quote(value)
+    if os.name == "nt" and quoted != value:
+        return "'" + value.replace("'", "''") + "'"
+    return quoted
 
 
 # --- the trend series --------------------------------------------------------

@@ -14,6 +14,8 @@ from collections.abc import Iterator
 from typing import NamedTuple
 
 from .coverage_istanbul import FnCoverage
+from .errors import ToolError
+from .keys import require_unambiguous
 from .snapshot import InventoryRow
 
 
@@ -52,11 +54,13 @@ class ScoredRow(NamedTuple):
     crap: float
     remedy: str
     cognitive: int = 0  # Sonar-spec cognitive complexity; reporting only, never gated
+    occurrence: int = 0  # Positive source order on one start line; 0 is legacy
 
 
 _FIELD_TYPES = (str, str, str, int, int, int, int, int, int, int, int,
-                float, str, float, str, int)
+                float, str, float, str, int, int)
 _SCORED_HEADER = "\t".join(ScoredRow._fields)
+_SCORED_HEADERS = {"\t".join(ScoredRow._fields[:-1]): 16, _SCORED_HEADER: 17}
 # One %s per field, built once. %s of every field is str() of it, so the bytes
 # do not move; a row is a tuple, so it IS the argument list and the per-row
 # generator, the join and the concatenation all disappear (179 -> 116 ms on
@@ -77,14 +81,29 @@ def parse_scored_row(line: str) -> ScoredRow:
     """One exported line back to a row. str() of every field round-trips through
     its own constructor, floats included, so the re-emitted bytes are identical."""
     parts = line.split("\t")
-    if len(parts) != len(_FIELD_TYPES):
-        raise ValueError(f"scored row has {len(parts)} fields, expected {len(_FIELD_TYPES)}: {line!r}")
-    return ScoredRow(*[cast(part) for cast, part in zip(_FIELD_TYPES, parts)])
+    if len(parts) not in (16, 17):
+        raise ValueError(f"scored row has {len(parts)} fields, expected 16 or 17: {line!r}")
+    row = ScoredRow(*[cast(part) for cast, part in zip(_FIELD_TYPES, parts)])
+    if row.occurrence < 0:
+        raise ValueError("scored occurrence must be nonnegative")
+    return row
 
 
 def parse_scored_tsv(text: str) -> list[ScoredRow]:
-    return [parse_scored_row(line) for line in text.splitlines()
-            if line.strip() and line != _SCORED_HEADER]
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    count = _SCORED_HEADERS.get(lines[0])
+    if count is not None:
+        lines = lines[1:]
+    return [_scored_line(line, count) for line in lines]
+
+
+def _scored_line(line: str, count: int | None) -> ScoredRow:
+    fields = len(line.split("\t"))
+    if count is not None and fields != count:
+        raise ValueError(f"scored row has {fields} fields, expected {count}")
+    return parse_scored_row(line)
 
 
 def _overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
@@ -121,25 +140,51 @@ def _finish(row, cov: float, flag: str, *, target: int, scope_targets) -> Scored
     # add-tests about code no test can reach.
     score = float(row.ccn) if flag == "cc-only" else crap(row.ccn, cov)
     ceiling = scope_targets.get(row.scope, target) if scope_targets else target
-    # Positional, and NOT *row: cognitive is last in both tuples with four
+    # Positional, and NOT *row: cognitive and occurrence trail both tuples with four
     # fields between, so splicing the row in whole lands it in cov. Building
     # this row is a third of the join's cost at 140,922 rows — **row._asdict()
     # built a throwaway dict per row and looked every field up by name.
     return ScoredRow(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7],
                      row[8], row[9], row[10],
-                     cov, flag, score, _remedy(row[7], score, ceiling), row[11])
+                     cov, flag, score, _remedy(row[7], score, ceiling), row[11], row[12])
 
 
-def _named_overlay_cov(row, by_key: dict) -> tuple[float, str]:
-    # by_key is grouped on (path, long_name) up front: filtering the whole
-    # path's candidates per row made this O(rows x candidates) per file
-    # (measured 2,998,554 comparisons on a whole-repo rescore). The nearest-start
-    # tie-break is unchanged, and min() still keeps the FIRST nearest twin
-    # because the group holds the baseline's own order.
-    named = by_key.get((row.path, row.long_name))
-    if named:
-        return min(named, key=lambda c: abs(c.start - row.start)).cov, "measured"
-    return 0.0, "untested"
+def _nearest_overlay(row, candidates) -> list:
+    if not candidates:
+        return []
+    start = min(candidates, key=lambda c: abs(c.start - row.start)).start
+    return [c for c in candidates if c.start == start]
+
+
+def _same_occurrence(row, candidates):
+    if not row.occurrence:
+        return None
+    return next((c for c in candidates if c.occurrence == row.occurrence), None)
+
+
+def _overlay_match(row, candidates, unique: bool):
+    exact = _same_occurrence(row, candidates)
+    if exact is not None:
+        return exact
+    if unique and len({c.occurrence for c in candidates}) == 1:
+        return candidates[0]
+    return None
+
+
+def _named_overlay_cov(row, by_key: dict, positions: dict) -> tuple[float, str]:
+    # Search only this signature's candidates, keeping the baseline order for
+    # equal-distance starts. Occurrence separates siblings at that start.
+    named = _nearest_overlay(row, by_key.get((row.path, row.long_name)))
+    unique = len(positions[(row.path, row.long_name, row.start)]) == 1
+    match = _overlay_match(row, named, unique)
+    return (match.cov, "measured") if match is not None else (0.0, "untested")
+
+
+def _overlay_positions(rows) -> dict:
+    positions: dict[tuple, set[int]] = {}
+    for row in rows:
+        positions.setdefault((row.path, row.long_name, row.start), set()).add(row.occurrence)
+    return positions
 
 
 def _cov_without_join(row, lane_scopes: set, cc_only_scopes) -> tuple[float, str] | None:
@@ -218,12 +263,15 @@ def overlay_stale_coverage(
 ) -> list[ScoredRow]:
     """Rescore fresh complexity against a BASELINE run's coverage.
 
-    Joins by function NAME only (edits shift spans, names survive), nearest
-    start among same-name twins. A renamed or new function joins NOTHING —
+    Joins by function name, nearest start among same-name twins, and occurrence
+    when callbacks share a line. A renamed or new function joins NOTHING —
     a span join here would hand it a neighbour's stale number and mislead
     the preview. Coverage values are the baseline's; the caller labels them
     stale.
     """
+    require_unambiguous(rows)
+    require_unambiguous(baseline_scored)
+    positions = _overlay_positions(rows)
     by_key: dict[tuple[str, str], list[ScoredRow]] = {}
     for r in baseline_scored:
         if r.flag == "measured":
@@ -232,9 +280,32 @@ def overlay_stale_coverage(
     scored = []
     for row in rows:
         cov, flag = (_cov_without_join(row, lane_scopes, cc_only_scopes)
-                     or _named_overlay_cov(row, by_key))
+                     or _named_overlay_cov(row, by_key, positions))
         scored.append(_finish(row, cov, flag, target=target, scope_targets=scope_targets))
     return scored
+
+
+def _shared_source_spans(rows, lane_scopes: set, cc_only_scopes) -> dict:
+    seen, collisions = {}, {}
+    for row in rows:
+        if _cov_without_join(row, lane_scopes, cc_only_scopes) is not None:
+            continue
+        span = row.path, row.start, row.end
+        identity = row.long_name, row.occurrence
+        if seen.setdefault(span, identity) != identity:
+            collisions[span] = row
+    return collisions
+
+
+def _check_coverage_spans(rows, coverage_by_path: dict, start_index: dict,
+                         lane_scopes: set, cc_only_scopes) -> None:
+    for row in _shared_source_spans(rows, lane_scopes, cc_only_scopes).values():
+        _, flag = _span_join_cov(row, coverage_by_path, start_index)
+        if flag == "measured":
+            raise ToolError(
+                f"coverage for {row.path}:{row.start} cannot distinguish functions "
+                "with the same line span; split their definitions onto separate "
+                "lines and regenerate coverage")
 
 
 def score_rows(
@@ -247,6 +318,7 @@ def score_rows(
     cc_only_scopes: frozenset[str] = frozenset(),
 ) -> list[ScoredRow]:
     start_index = _start_index(coverage_by_path)
+    _check_coverage_spans(rows, coverage_by_path, start_index, lane_scopes, cc_only_scopes)
     scored = []
     for r in rows:
         cov, flag = (_cov_without_join(r, lane_scopes, cc_only_scopes)

@@ -25,9 +25,9 @@ def test_every_scored_row_in_the_file_is_published():
 
     assert packet.file_functions(rows) == [
         {"function": "alpha( a , b )", "start": 1, "end": 20, "ccn": 8,
-         "crap": 64.0, "remedy": "decompose"},
+         "crap": 64.0, "remedy": "decompose", "occurrence": 0},
         {"function": "helper( a )", "start": 22, "end": 25, "ccn": 2,
-         "crap": 4.0, "remedy": "ok"},
+         "crap": 4.0, "remedy": "ok", "occurrence": 0},
     ]
 
 

@@ -113,7 +113,7 @@ full_suite = false
 # the TSV export header: brief publishes the scored row whole
 SCORED_COLUMNS = {"scope", "path", "long_name", "start", "end", "ccn_std", "ccn_mod",
                   "ccn", "nloc", "params", "nesting", "cov", "flag", "crap", "remedy",
-                  "cognitive"}
+                  "cognitive", "occurrence"}
 
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")

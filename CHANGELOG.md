@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+- Keep same-line callbacks distinct in stored rows, exports, packets and report
+  commands. Version ratchet and claim identity; preserve ambiguous legacy debt
+  instead of assigning it to a different callback. Separate JavaScript and
+  TypeScript expression arrows that the upstream reader merged. Analysis version
+  10 invalidates older cached records.
+- Refuse anonymous JavaScript/TypeScript mark migration without reader proof,
+  including callbacks recovered on different lines. Keep old marks unchanged and
+  hold unproved claims across their name group until released or expired.
+- Reject ambiguous same-span coverage attribution instead of borrowing a sibling's
+  coverage. Accept `paths = ["."]` as a root scope with lower precedence than
+  deeper paths. Keep concurrent churn-cache data tied to its own checksum.
+- Reject nonfinite ratchet marks, audit overrides under their exact canonical key,
+  and retain debt age when committed marks change value.
+- Preserve failed verification evidence, trusted baselines and function-identity
+  witnesses when pruning runs. Leave concurrently created runs intact. Keep
+  same-named functions distinct through claims, history, digests and reports; reserve
+  queue items atomically. Current stores open without repeating migration writes.
+- Require fresh, explicit passing test results before a retry clears a failure.
+  Preserve literal retry and scoped-test arguments on Windows and POSIX.
+- Give every mutation worker the same captured source, tests and configuration,
+  including dirty files and deletions. Pool cleanup respects active workers. Generate
+  mutants from executable tokens rather than words inside names or comments.
+- Include the language reader and typed expression mode in analysis cache identity.
+  Reject nonfinite JSON coverage values before they can enter a score. Treat malformed disposable
+  caches as misses. Share strict streaming coverage decoding and keep missing-line
+  state inside its run. Read contexts for the requested file and filter twin
+  candidates before building their result payloads.
+- Share pytest configuration decoding between setup and runtime. Refuse duplicate
+  scope and lane names, invalid numeric and boolean settings, and artifact paths
+  that refer to the same output file.
+- Bound doctor probes through the process-tree runner, frame their version response
+  and control its encoding. Reuse MCP schema fragments without changing their output.
+- Gate committed CI changes against the event base. Isolate each composite Action
+  invocation, preserve Unicode changed paths, and enforce release prerequisites
+  before executing a release stage. Release verification uses the named repository.
+- Retire unused discovery code and production copies of reference algorithms. Internal
+  CLI helpers are imported from their owning family modules; `crapkit.cli.main`
+  remains the public entry point.
+
 ## 0.6.0 — 2026-09-05
 
 ### The MCP tools follow one naming pattern, carry titles and output schemas, and two read tools join

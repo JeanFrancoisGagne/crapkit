@@ -467,9 +467,9 @@ def test_the_repo_config_is_loaded_once_even_with_tests_attribution(repo, capsys
 
 
 def test_the_context_artifacts_are_parsed_once_for_every_match(tmp_path, capsys, monkeypatch):
-    import crapkit.coverage_py as coverage_py
+    import crapkit.covstream as covstream
     repo = _with_contexts(tmp_path, {"2": ["t/a.py::test_alpha|run"]})
-    calls = _counted(monkeypatch, "parse_coveragepy_contexts", coverage_py)
+    calls = _counted(monkeypatch, "parse_coveragepy_contexts_file", covstream)
 
     _explain(repo, capsys, tests=True)
 

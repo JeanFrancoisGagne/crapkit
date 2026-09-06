@@ -18,7 +18,8 @@ from cli_inproc_repo import (add_knotty, commit_all, git, istanbul,  # noqa: F40
 import pytest
 
 from crapkit import config
-from crapkit.cli import _verify_exit_code, main
+from crapkit.cli.verifying import _verify_exit_code
+from crapkit.cli import main
 from crapkit.cli import verifying
 from crapkit.ratchet import RatchetEntry, dump_ratchet
 from crapkit.store import SnapshotStore
@@ -42,9 +43,10 @@ def head(repo) -> str:
     return git(repo, "rev-parse", "HEAD").strip()
 
 
-def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None) -> None:
+def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None,
+                key_version: int = 0) -> None:
     (repo / MARKS).write_text(
-        dump_ratchet([RatchetEntry(*e) for e in entries], stamp=stamp),
+        dump_ratchet([RatchetEntry(*e) for e in entries], stamp=stamp, key_version=key_version),
         encoding="utf-8", newline="\n")
 
 
@@ -936,7 +938,7 @@ def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_deb
     """Written only when its text would change: a mark already at its measured
     value is not a tighten, and rewriting the file dirtied a clean checkout with
     a diff of nothing."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0))
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), key_version=1)
     before = (marked_debt / MARKS).stat().st_mtime_ns
 
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
@@ -947,7 +949,7 @@ def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_deb
 
 
 def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, capsys):
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0))
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), key_version=1)
 
     _, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 

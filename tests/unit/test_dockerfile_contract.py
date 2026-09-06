@@ -12,7 +12,7 @@ import tomllib
 from functools import lru_cache
 from pathlib import Path
 
-from crapkit.cli import build_parser
+from crapkit.cli.parser import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DOCKERFILE = ROOT / "Dockerfile"

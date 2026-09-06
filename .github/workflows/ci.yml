@@ -41,12 +41,14 @@ jobs:
       # numbers, not this runner's; the PR template and pyproject.toml quote the
       # same pair. pytest-xdist comes from the dev extra above.
       - run: python -m pytest -n 8 tests/e2e
-      # The gate reads staged blobs and a fresh checkout stages nothing, so what
-      # this proves is that the hook runs clean against the repo's own
-      # crapkit.toml on a bare install. `|| true` hid even a crash; the tree
-      # passes the gate with every file staged, so the exit code can stand.
-      - name: gate the diff crapkit-style
-        run: python -m crapkit hook-precommit
+      # The checkout's index holds HEAD. Comparing it with the event's base
+      # gates the actual changed functions without running the suites again.
+      - name: gate changed functions against the event base
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python -m crapkit hook-precommit --base "$BASE_REF"
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
   # test can schema-check: a malformed handler fails here with exit 1. The two

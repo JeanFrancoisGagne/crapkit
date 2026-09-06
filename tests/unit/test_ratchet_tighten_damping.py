@@ -122,7 +122,7 @@ def test_the_worst_row_is_what_the_jump_is_measured_against():
     Real twins open on different lines and each hold their own key, which
     `test_shared_trust_and_twin_keys` pins end to end.
     """
-    fresh = [scored(20.0), scored(72.0)]
+    fresh = [scored(20.0), scored(72.0)._replace(scope="second-scope")]
 
     (refusal,) = unstable_marks([RatchetEntry(JUDGE, NAME, 90.0)], fresh,
                                 {(JUDGE, NAME): 20.0}, max_jump=2.0)
@@ -131,7 +131,7 @@ def test_the_worst_row_is_what_the_jump_is_measured_against():
 
 
 def test_the_refusal_line_names_the_function_and_both_values():
-    from crapkit.cli import _no_tighten_line
+    from crapkit.cli.verifying import _no_tighten_line
     from crapkit.ratchet import TightenRefusal
 
     line = _no_tighten_line(TightenRefusal(JUDGE, NAME, 20.0, 72.0))

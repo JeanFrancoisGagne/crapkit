@@ -10,7 +10,7 @@ tests/e2e/test_watch_cycles_e2e.py proves against a real repo.
 import subprocess
 import sys
 
-from crapkit.cli import _watch_banner, _watch_cycles, _watch_rescore
+from crapkit.cli.admin import _watch_banner, _watch_cycles, _watch_rescore
 
 
 def _recorded(monkeypatch) -> list:

@@ -2,8 +2,8 @@
 next bug ships. Line-level truth comes from the same artifacts the lanes wrote."""
 import json
 
-from crapkit.coverage_istanbul import parse_istanbul_missing
-from crapkit.coverage_py import parse_coveragepy_missing
+from coverage_readers import parse_istanbul_missing
+from coverage_readers import parse_coveragepy_missing
 from crapkit.verify import diff_uncovered
 
 

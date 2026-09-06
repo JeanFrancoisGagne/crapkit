@@ -26,7 +26,6 @@ def test_updated_cache_holds_only_current_universe_hashes():
         {"src/a.ts": "h_a", "src/b.ts": "h_b"},
         {"src/a.ts": [rec("src/a.ts")], "src/b.ts": [rec("src/b.ts")]},
         fingerprint="v1",
-        stale_hashes=["h_gone"],
     )
     assert fresh["fp"] == "v1"
     assert set(fresh["entries"]) == {"h_a", "h_b"}

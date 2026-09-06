@@ -28,12 +28,12 @@ from __future__ import annotations
 
 import codecs
 import json
-import os
 import zlib
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from itertools import chain
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import BinaryIO
 
 from .errors import GitError
@@ -254,7 +254,7 @@ def _within(lines: Iterator[str], cutoff: int) -> Iterator[str]:
 def _tee(source: Iterator[str], path: Path, key: dict | None) -> Iterator[str]:
     """Stream the log out and lay the compressed copy down as the lines go past.
 
-    Written under a pid-unique .part and renamed at the end, so a reader that
+    Written under an operation's own .part and renamed at the end, so a reader that
     stops early, a crash, or a second crapkit running beside this one never
     leaves a truncated log looking valid.
     """
@@ -271,13 +271,9 @@ def _tee(source: Iterator[str], path: Path, key: dict | None) -> Iterator[str]:
             yield line
         part.write(comp.flush())
     except BaseException:
-        _discard(part, path)
+        _discard(part)
         raise
     _keep(part, path, key)
-
-
-def _part_path(path: Path) -> Path:
-    return path.with_suffix(f".{os.getpid()}.part")
 
 
 def _open_part(path: Path, key: dict | None) -> BinaryIO | None:
@@ -287,31 +283,33 @@ def _open_part(path: Path, key: dict | None) -> BinaryIO | None:
         return None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        return _part_path(path).open("wb")
+        return NamedTemporaryFile(dir=path.parent, prefix=path.stem + ".",
+                                  suffix=".part", delete=False)
     except OSError:
         return None
 
 
-def _discard(part: BinaryIO, path: Path) -> None:
+def _discard(part: BinaryIO) -> None:
     """Never raises: a cleanup error must not mask the failure that caused it."""
     try:
         part.close()
     except OSError:
         pass
-    _part_path(path).unlink(missing_ok=True)
+    _drop(Path(part.name))
 
 
 def _keep(part: BinaryIO, path: Path, key: dict | None) -> None:
-    """Rename, then key. The key is written last and carries the log's size and
-    CRC, so a log without one — or with one that describes other bytes — is cold."""
+    """Checksum our own bytes before publication. A competing rename can leave
+    a mismatched pair, which reads as cold, but cannot attach our key to its log."""
+    scratch = Path(part.name)
     try:
         part.close()
-        _part_path(path).replace(path)
-        blob = path.read_bytes()
+        blob = scratch.read_bytes()
         stamp = {**key, "size": len(blob), "crc": zlib.crc32(blob)}
+        scratch.replace(path)
         _key_path(path).write_text(json.dumps(stamp, sort_keys=True), encoding="utf-8")
     except OSError:
-        _part_path(path).unlink(missing_ok=True)
+        _drop(scratch)
 
 
 def _window_log(root: Path, months: int) -> Iterator[str]:

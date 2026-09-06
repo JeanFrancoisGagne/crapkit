@@ -22,6 +22,8 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from .lizardpowershell import register as _register_powershell
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
+    from .lizardtypescript import LizardExtension as _TypeScriptExpressions
+    from .lizardtypescript import uses_type_syntax
 
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
@@ -49,7 +51,8 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 9  # 9: a Python row's nesting is the depth the cognitive
+ANALYSIS_VERSION = 10  # Separate sibling JavaScript/TypeScript expression arrows.
+# 9: a Python row's nesting is the depth the cognitive
 #                          pass measured, not lizard's ND count of structures,
 #                          so every cached .py record carries a count under the
 #                          depth's name (a flat seven-`if` function read 7).
@@ -120,6 +123,27 @@ class _ModifiedDelta:
             yield token
 
 
+class _CreationOrder:
+    """Keep declaration order when nested functions finish before their parents."""
+
+    def __call__(self, tokens, reader):
+        context = reader.context
+        original = context.try_new_function
+        sequence = 0
+
+        def create(name):
+            nonlocal sequence
+            original(name)
+            sequence += 1
+            context.current_function.crapkit_creation = sequence
+
+        context.try_new_function = create
+        try:
+            yield from tokens
+        finally:
+            context.try_new_function = original
+
+
 def _chain(cognitive_index: int) -> list:
     """lizard's standard extensions with cognitive spliced in at one index.
 
@@ -130,7 +154,7 @@ def _chain(cognitive_index: int) -> list:
     """
     extensions = lizard.get_extensions(["ND"])
     extensions.insert(cognitive_index, _Cognitive())
-    return extensions + [_ModifiedDelta()]
+    return [_TypeScriptExpressions(), *extensions, _ModifiedDelta(), _CreationOrder()]
 
 
 # Two chains, built once per process each, not once per file: 14k files paid 14k
@@ -171,7 +195,7 @@ def _nesting_depth(rel_path: str, fn) -> int:
     return getattr(fn, "max_nesting_depth", 0) or 0
 
 
-def _record(rel_path: str, fn) -> FunctionRecord:
+def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
     std = fn.cyclomatic_complexity
     mod = std + (getattr(fn, "modified_delta", 0) or 0)
     return FunctionRecord(
@@ -186,6 +210,7 @@ def _record(rel_path: str, fn) -> FunctionRecord:
         params=len(fn.parameters),
         nesting=_nesting_depth(rel_path, fn),
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
+        occurrence=occurrence,
     )
 
 
@@ -246,7 +271,11 @@ def _listed(names: list[str]) -> str:
 def _file_records(rel_path: str, functions) -> list[FunctionRecord]:
     """Pure, and silent: this runs inside pool workers, whose stderr is not the
     parent's. The twin-key note is the caller's to print."""
-    return [_record(rel_path, fn) for fn in functions]
+    counts, occurrences = {}, {}
+    for fn in sorted(functions, key=lambda fn: fn.crapkit_creation):
+        counts[fn.start_line] = counts.get(fn.start_line, 0) + 1
+        occurrences[id(fn)] = counts[fn.start_line]
+    return [_record(rel_path, fn, occurrences[id(fn)]) for fn in functions]
 
 
 # --- how a source file's bytes become text -------------------------------------
@@ -363,7 +392,31 @@ def content_hash(path: Path) -> str:
 
 def fingerprint() -> str:
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version}"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=3"
+
+
+def _analysis_key(path: str, digest: str) -> str:
+    """Bytes are reusable only under the same reader and extension chain."""
+    reader = lizard.get_reader_for(path) or lizard.get_reader_for("fallback.c")
+    chain = int(_extensions_for(path) is _PREPROCESSED_EXTENSIONS)
+    return f"{reader.__module__}.{reader.__qualname__}:{chain}:{int(uses_type_syntax(path))}:{digest}"
+
+
+def _cached_record(values) -> FunctionRecord:
+    if not isinstance(values, list) or len(values) != 12:
+        raise ValueError("cached function fields must be a record list")
+    types = (str, str) + (int,) * 10
+    if any(type(value) is not expected for value, expected in zip(values, types)):
+        raise ValueError("cached function fields have invalid types")
+    if values[-1] < 0:
+        raise ValueError("cached function occurrence must be nonnegative")
+    return FunctionRecord(*values)
+
+
+def _cached_rows(rows) -> list[FunctionRecord]:
+    if not isinstance(rows, list):
+        raise ValueError("cached functions must be a list")
+    return [_cached_record(values) for values in rows]
 
 
 def _drained_records(entries: dict) -> dict[str, list[FunctionRecord]]:
@@ -374,10 +427,12 @@ def _drained_records(entries: dict) -> dict[str, list[FunctionRecord]]:
     of MB for no reason. Draining leaves the caller's parsed dict empty, which is
     fine: nothing reads it afterwards.
     """
+    if not isinstance(entries, dict):
+        raise ValueError("cached entries must be an object")
     records: dict[str, list[FunctionRecord]] = {}
     while entries:
         h, rows = entries.popitem()
-        records[h] = [FunctionRecord(*vals) for vals in rows]
+        records[h] = _cached_rows(rows)
     return records
 
 
@@ -393,7 +448,7 @@ def load_cache(path: Path) -> dict:
         with path.open(encoding="utf-8") as fh:
             raw = json.load(fh)
         return {"fp": raw.get("fp"), "entries": _drained_records(raw.get("entries", {}))}
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+    except (OSError, TypeError, ValueError, AttributeError):
         return {}
 
 
@@ -452,9 +507,23 @@ def _load_stamps(path: Path) -> dict:
     try:
         with path.open(encoding="utf-8") as fh:
             raw = json.load(fh)
-        return raw["stamps"] if raw.get("v") == 1 else {}
+        return _stamp_entries(raw["stamps"]) if raw.get("v") == 1 else {}
     except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError, AttributeError):
         return {}
+
+
+def _valid_stamp(stamp) -> bool:
+    if not isinstance(stamp, list) or len(stamp) != 3:
+        return False
+    return (type(stamp[0]) is int and type(stamp[1]) is int
+            and isinstance(stamp[2], str))
+
+
+def _stamp_entries(stamps) -> dict:
+    if not isinstance(stamps, dict):
+        return {}
+    return {path: stamp for path, stamp in stamps.items()
+            if isinstance(path, str) and _valid_stamp(stamp)}
 
 
 def _save_stamps(path: Path, stamps: dict, prior: dict) -> None:
@@ -488,8 +557,8 @@ def _stamp(fresh: dict, rel: str, stat: tuple[int, int] | None, digest: str, now
 def _hash_paths(root: Path, rel_paths: list[str], stamps: dict) -> tuple[dict[str, str], dict]:
     """Content hash per path, plus the stat index the next run should keep.
 
-    The cache keys are content hashes and stay content hashes; (mtime_ns, size)
-    only decides whether a hash has to be recomputed. A file that has not moved
+    The cache identity includes the content hash; (mtime_ns, size) only decides
+    whether that hash has to be recomputed. A file that has not moved
     since the run that hashed it keeps that hash without being opened, which is
     the difference between reading 14k files and stat-ing them.
 
@@ -519,7 +588,7 @@ def _kept_stamps(prior: dict, fresh: dict, visited: set) -> dict:
 
 
 def _restamped(hits: dict[str, list[FunctionRecord]]) -> dict[str, list[FunctionRecord]]:
-    # A cache entry keys on content only; re-stamp the path so a moved file cannot
+    # An entry keys on reader and content; re-stamp the path so a moved file cannot
     # carry its old location into the snapshot. Almost nothing moves between two
     # runs, and rebuilding 140k namedtuples to write back the path they already
     # hold is the most expensive thing a fully-warm run does.
@@ -608,11 +677,12 @@ def analyze_files(
     hashes, fresh_stamps = _hash_paths(root, rel_paths, prior_stamps)
     kept = _kept_stamps(prior_stamps, fresh_stamps, set(rel_paths))
     _save_stamps(stamps_path, kept, prior_stamps)
-    hits, misses = partition_by_cache(hashes, cache, fingerprint=fp)
+    identities = {rel: _analysis_key(rel, digest) for rel, digest in hashes.items()}
+    hits, misses = partition_by_cache(identities, cache, fingerprint=fp)
     hits = _restamped(hits)
 
     fresh = analyze_jobs([(str(root / rel), rel) for rel in misses], workers=workers)
 
     all_records = {**hits, **fresh}
-    new_cache = updated_cache(hashes, all_records, fingerprint=fp)
+    new_cache = updated_cache(identities, all_records, fingerprint=fp)
     return all_records, len(hits), new_cache

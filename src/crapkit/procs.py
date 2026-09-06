@@ -14,7 +14,9 @@ because the caller's next move is deleting the directory the tree ran in.
 from __future__ import annotations
 
 import os
+import re
 import signal
+import shlex
 import subprocess
 import time
 from typing import IO
@@ -26,6 +28,67 @@ _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
 # lands close to the deadline, large enough that watching a two-hour suite costs
 # nothing measurable.
 _TICK = 0.5
+
+
+def prepare_template(template: str, values: dict[str, list[str]]) -> tuple[str, dict[str, str]]:
+    """Render whole-argument placeholders and return required environment values.
+
+    Windows percent substitutions carry caret-escaped CRT arguments without
+    changing the command's expansion mode. Multiline arguments need delayed
+    expansion, with static bangs protected from that extra pass. Quoting a
+    placeholder in the template is optional; quoting belongs to this function.
+    """
+    values = {name: arguments for name, arguments in values.items() if '{' + name + '}' in template}
+    delayed = _multiline_mode(template, values)
+    environment, replacements = {}, {}
+    for index, (name, arguments) in enumerate(values.items()):
+        variable = f"CRAPKIT_LITERAL_{index}"
+        replacements[name] = _literal_arguments(arguments, variable, environment, delayed)
+    if delayed:
+        environment["CRAPKIT_LITERAL_BANG"] = "!"
+        template = template.replace("!", "!CRAPKIT_LITERAL_BANG!")
+    template = _replace_placeholders(template, replacements)
+    if delayed:
+        template = f'cmd /D /V:ON /S /C "{template}"'
+    return template, environment
+
+
+def _has_newlines(values: dict[str, list[str]]) -> bool:
+    return any("\n" in argument or "\r" in argument
+               for arguments in values.values() for argument in arguments)
+
+
+def _multiline_mode(template: str, values: dict[str, list[str]]) -> bool:
+    if os.name != "nt" or not _has_newlines(values):
+        return False
+    if re.search(r"%[^%\r\n]+%", template):
+        from .errors import ToolError
+        raise ToolError("Windows templates cannot combine multiline arguments with percent "
+                        "environment expansion; use a literal command path for this template")
+    return True
+
+
+def _literal_arguments(arguments: list[str], variable: str, environment: dict, delayed: bool) -> str:
+    if not arguments:
+        return ""
+    if os.name == "nt":
+        return _windows_arguments(arguments, variable, environment, delayed)
+    return " ".join(shlex.quote(arg) for arg in arguments)
+
+
+def _windows_arguments(arguments: list[str], variable: str, environment: dict, delayed: bool) -> str:
+    raw = subprocess.list2cmdline(arguments)
+    environment[variable] = raw if delayed else "".join("^" + char for char in raw)
+    marker = "!" if delayed else "%"
+    return f"{marker}{variable}{marker}"
+
+
+def _replace_placeholders(template: str, replacements: dict[str, str]) -> str:
+    if not replacements:
+        return template
+    names = "|".join(re.escape(name) for name in replacements)
+    pattern = re.compile(r"(?P<quote>['\"]?)\{(?P<name>" + names + r")\}(?P=quote)")
+    return pattern.sub(lambda match: replacements[match["name"]], template)
 
 
 class NoProgress(Exception):

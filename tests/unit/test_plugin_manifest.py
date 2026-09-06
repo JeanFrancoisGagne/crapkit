@@ -293,7 +293,7 @@ def test_hooks_json_subcommands_exist_in_parser():
     """
     import argparse
 
-    from crapkit.cli import build_parser
+    from crapkit.cli.parser import build_parser
 
     subs = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
     spawned = {_spawned_subcommand(h) for h in _committed_handlers()}
@@ -335,7 +335,7 @@ def test_the_mcp_manifest_runs_the_subcommand_the_parser_defines():
     makes a dead MCP server with no visible error."""
     import argparse
 
-    from crapkit.cli import build_parser
+    from crapkit.cli.parser import build_parser
 
     servers = _json(MCP_JSON)["mcpServers"]
     assert servers == {"crapkit": {"command": "crapkit", "args": ["mcp"]}}

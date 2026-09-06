@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli import build_parser, cmd_watch
+from crapkit.cli.parser import build_parser
+from crapkit.cli.admin import cmd_watch
 
 from conftest import cli_runner
 

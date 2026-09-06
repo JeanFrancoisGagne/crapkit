@@ -14,7 +14,7 @@ still finds everything holding it. A repo whose names nest — `route` inside
 import pytest
 
 from crapkit import packet
-from crapkit.cli import _pick_function
+from crapkit.cli.queue import _pick_function
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
