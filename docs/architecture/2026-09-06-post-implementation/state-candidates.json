@@ -1,0 +1,203 @@
+[
+  {
+    "id": "ST1",
+    "rank": 1,
+    "title": "Keep override publication and run retention under one owner",
+    "strength": "Strong",
+    "files": [
+      {"path": "src/crapkit/cli/verifying.py", "line": 863, "end_line": 871, "role": "The hook commits its placeholder run before sending the alert."},
+      {"path": "src/crapkit/override.py", "line": 34, "end_line": 45, "role": "Alert, audit insertion and mark grant are separate steps."},
+      {"path": "src/crapkit/cli/reports.py", "line": 264, "end_line": 270, "role": "Retention observes the run before its audit exists."},
+      {"path": "src/crapkit/store.py", "line": 956, "end_line": 961, "role": "Audit insertion does not require a surviving run."},
+      {"path": "src/crapkit/store.py", "line": 1107, "end_line": 1112, "role": "The public audit joins through runs and hides orphan rows."},
+      {"path": "src/crapkit/store.py", "line": 1262, "end_line": 1282, "role": "Deletion uses the earlier retention decision."}
+    ],
+    "problem": "Prune can delete a hook run while its override alert is in progress. The alert then succeeds, the store accepts an audit row for the deleted run, and the ratchet grants debt. The public override history shows no record. Protecting runs added after selection does not protect a run already selected while its audit is incomplete.",
+    "proposed_change": "Make the store preserve the relationship between an override and its run throughout publication and pruning. Keep the alert outside database locks. Refuse a grant when its audit cannot remain attached to a surviving run, and make retention honor an override that is being completed.",
+    "evidence": {
+      "observed": "The probe creates two coverage runs, starts a hook override in a subprocess, pauses its harmless alert, and calls the actual prune handler. Prune deletes hook run 3. After the alert resumes, record_override returns normally, read_overrides(3) returns one row, the TSV grants 90, and public overrides --json returns an empty list.",
+      "inferred": "The production hook has the same ordering. The full hook command and git staging were not run. Frequency in ordinary concurrent use was not measured.",
+      "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+      "probe": "state-probes.py:prune_during_override and override_worker",
+      "result": "state-probes.json:prune_override"
+    },
+    "before_after_schematic": {
+      "before": "hook writes run -> alert waits | prune sees no audit -> deletes run | audit inserts -> mark grants -> audit listing loses the record",
+      "after": "override publication + retention -> one store-owned run/audit rule; alert remains outside the short write transaction"
+    },
+    "deletion_test": "Remove the caller-owned assumption that an earlier run insertion guarantees later audit retention. A helper that merely wraps the existing three calls leaves the defect intact.",
+    "leverage": "Hook overrides, verify overrides, runs prune and overrides history share the same durable rule.",
+    "locality": "Keep SQLite relationship and retention decisions in the store; keep alert execution and committed file handling with their existing owners.",
+    "test_benefits": "One subprocess interleaving test covers the run/audit contract through prune and the public audit reader. Include failed alerts, failed audits, interrupted publication and already completed overrides.",
+    "cost": "Medium. Coordinate the override lifecycle with retention and existing legacy stores.",
+    "risk": "Do not hold SQLite locks while an external alert runs, delete existing audit history, or change failed/crashed verify trust. Cleanup of abandoned work needs an explicit rule.",
+    "adr_conflict": "None. Accepted ADRs 0001 and 0002 concern MCP argument errors and configuration discovery. Preserve the existing three-record override contract."
+  },
+  {
+    "id": "ST4",
+    "rank": 2,
+    "title": "Give ratchet file updates one concurrency rule",
+    "strength": "Strong",
+    "files": [
+      {"path": "src/crapkit/cli/verifying.py", "line": 630, "end_line": 634, "role": "Verify loads the prior marks separately from settlement."},
+      {"path": "src/crapkit/cli/verifying.py", "line": 369, "end_line": 391, "role": "The writer rereads disk only for byte equality and overwrites it with a result derived from stale input."},
+      {"path": "src/crapkit/cli/verifying.py", "line": 394, "end_line": 412, "role": "Settlement computes a tighten from the earlier marks."},
+      {"path": "src/crapkit/cli/ratchet_cmds.py", "line": 116, "end_line": 129, "role": "Move owns another read/write sequence."},
+      {"path": "src/crapkit/cli/ratchet_cmds.py", "line": 243, "end_line": 253, "role": "Seed and prune publish through a separate direct file write."},
+      {"path": "src/crapkit/override.py", "line": 99, "end_line": 108, "role": "Override owns another read/modify/write sequence."}
+    ],
+    "problem": "Two writers can each tighten their own prior snapshot while the second raises the mark already on disk. The current writer treats a fresh disk read as an equality optimization, not a check that the input being replaced is still the input that was judged.",
+    "proposed_change": "Concentrate ratchet file mutation and stale-input handling in one owner. Apply each operation against the marks it is allowed to replace, preserving tighter marks and separately audited grants. Publish a complete file and report the actual change made. Keep test runs and analysis outside file coordination.",
+    "evidence": {
+      "observed": "Two real subprocesses each load mark 50, call update_ratchet for fresh 10 and 20, and pause before the actual verify writer. Releasing the 10 writer then the 20 writer changes disk 50 ->10 ->20. Both returned receipts say tightened:1.",
+      "inferred": "The probe exercises the pure update and internal file-publication seam, not two full verify commands. It proves the allowed stale-write ordering; it does not measure how often that ordering occurs. Abrupt file truncation and other writer pairs were inspected but not fault-injected.",
+      "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+      "probe": "state-probes.py:stale_ratchet_write and marks_worker",
+      "result": "state-probes.json:stale_ratchet_write"
+    },
+    "before_after_schematic": {
+      "before": "verify / seed / prune / move / override -> separate read-modify-write sequences -> one shared TSV",
+      "after": "operation intent + checked prior state -> one ratchet file owner -> complete publication + truthful receipt"
+    },
+    "deletion_test": "Delete independent file-publication decisions from the command families. Moving their write_text calls into a shared wrapper without stale-input handling does not pass.",
+    "leverage": "All ratchet writers gain one rule for concurrency, complete publication and receipts.",
+    "locality": "Keep pure seed, update, move and merge policy in ratchet.py; concentrate filesystem coordination beside that policy rather than in each CLI family.",
+    "test_benefits": "Test two writers after a shared prior read, both writer orders, disjoint marks, dropped marks, an intervening audited grant, and interruptions during publication. Preserve merge-driver semantics and metric/key stamps.",
+    "cost": "Medium. Several existing writers and their distinct allowed operations must move together.",
+    "risk": "A blanket minimum operation would erase legitimate override behavior. A rename-only atomic write would still lose concurrent updates. Do not lock across lane execution or alerts.",
+    "adr_conflict": "None. Preserve marks-only-tighten outside audited grants, explicit prune/move semantics, and three-way merge behavior."
+  },
+  {
+    "id": "ST5",
+    "rank": 3,
+    "title": "Read report history from one store snapshot",
+    "strength": "Strong",
+    "files": [
+      {"path": "src/crapkit/cli/reports.py", "line": 120, "end_line": 133, "role": "Trend combines three independent reads and substitutes zero for a missing whole-run total."},
+      {"path": "src/crapkit/cli/reports.py", "line": 173, "end_line": 182, "role": "The HTML collector adds another independently selected worklist run."},
+      {"path": "src/crapkit/store.py", "line": 889, "end_line": 920, "role": "Whole and scoped totals each fetch the rollup separately."},
+      {"path": "src/crapkit/store.py", "line": 944, "end_line": 954, "role": "Run metadata is read after those aggregates."}
+    ],
+    "problem": "A run committed between report reads can appear with zero whole-run totals but nonzero scope totals. The CLI coordinates a result that requires one snapshot, although only the store can keep the reads consistent.",
+    "proposed_change": "Have the store own the run set and the aggregate values used for one history answer. Derive whole-run and per-scope totals from that same data, then render the result without rereading the live run list or substituting zero for a run not measured by that read.",
+    "evidence": {
+      "observed": "A transparent wrapper around run_totals inserts one real run through a second SQLite connection after returning the real totals. The actual _trend_payload then reports new run 2 with functions:0 and crap_load:0, while by_scope.src reports functions:1 and crap_load:6.",
+      "inferred": "This is a deterministic internal-seam interleaving using two connections. It is not a timing-based full CLI concurrency test. Additional HTML, digest and prune/read races were traced but not separately reproduced.",
+      "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+      "probe": "state-probes.py:mixed_trend_read",
+      "result": "state-probes.json:mixed_trend_read"
+    },
+    "before_after_schematic": {
+      "before": "trend -> whole totals at A + scope totals at B + run list at C -> inconsistent row",
+      "after": "trend/report -> one store-owned history snapshot -> whole and scoped views of the same rows"
+    },
+    "deletion_test": "Delete the report collector's joins across independently fetched aggregates and run metadata. An extra formatting helper would only move those decisions.",
+    "leverage": "Trend and HTML report already share this collector. The same snapshot discipline can then be checked at digest and packet readers without building a generic query framework.",
+    "locality": "The store owns data consistency and rollup reuse; report code owns presentation.",
+    "test_benefits": "Assert whole totals equal the sum of scope totals when a new run lands between reads and when pruning overlaps a read. Keep best-effort rollup publication tests and legacy empty-run behavior.",
+    "cost": "Medium. Change collection ownership while retaining existing JSON and cached aggregates.",
+    "risk": "Long read transactions can delay writers under SQLite's current journal mode. Keep collection short, and do not include Git, source reads or HTML rendering in the snapshot lifetime.",
+    "adr_conflict": "None. Preserve the existing shared trend/report payload and read-only command behavior."
+  },
+  {
+    "id": "ST2",
+    "rank": 4,
+    "title": "Use one ratchet history interpretation for report and packet age",
+    "strength": "Strong",
+    "files": [
+      {"path": "src/crapkit/packet.py", "line": 87, "end_line": 100, "role": "Packet age clears the entry date for any event other than added."},
+      {"path": "src/crapkit/ratchet_report.py", "line": 38, "end_line": 53, "role": "History emits updated events for changed values."},
+      {"path": "src/crapkit/ratchet_report.py", "line": 84, "end_line": 100, "role": "The report correctly preserves entry date on an update."},
+      {"path": "src/crapkit/cli/queue.py", "line": 661, "end_line": 673, "role": "Brief and next-item packets feed those same events to the separate age replay."},
+      {"path": "src/crapkit/cli/ratchet_cmds.py", "line": 199, "end_line": 204, "role": "Ratchet report uses the other replay."}
+    ],
+    "problem": "A committed tightening erases packet mark age even though the mark remains open. The current ratchet report says the debt is 90 days old while a packet for the same history says its age is unknown. Two modules interpret the same event vocabulary independently.",
+    "proposed_change": "Let ratchet history own replay and entry dates. Have packet age use that interpretation, retaining its per-key answer and the existing rule that an unmarked function does not read Git history.",
+    "evidence": {
+      "observed": "Real mark_events over an addition 50 and update 20 ninety days later produces an updated event. report_from_events returns age_days:90; packet.mark_age_days returns null.",
+      "inferred": "The CLI caller flow is verified in source. This probe uses the shared pure event seam; it does not create commits or run full brief/ratchet CLI commands.",
+      "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+      "probe": "state-probes.py:packet_age",
+      "result": "state-probes.json:packet_age"
+    },
+    "before_after_schematic": {
+      "before": "mark_events -> report replay keeps update age | packet replay discards update age",
+      "after": "mark_events -> one history replay -> report ages + per-function packet age"
+    },
+    "deletion_test": "Delete packet's separate event-state machine. Adding an updated branch there repairs this case but leaves event ownership duplicated.",
+    "leverage": "Ratchet report, brief and next-item agree when history gains or changes an event kind.",
+    "locality": "Debt entry, update and repayment semantics remain in ratchet_report; packet keeps payload shaping.",
+    "test_benefits": "One history fixture should feed both views and cover additions, tightenings, raised audited marks, drops, re-additions and comment-only history clock changes.",
+    "cost": "Small. Reuse the existing replay without moving unrelated packet functions.",
+    "risk": "Preserve null for absent marks and the entry date after repayment and re-entry. Do not add a Git read for unmarked packets.",
+    "adr_conflict": "None. Retain deterministic history time instead of wall-clock age."
+  },
+  {
+    "id": "ST3",
+    "rank": 5,
+    "title": "Let optional ratchet admission decide whether it needs rows",
+    "strength": "Strong",
+    "files": [
+      {"path": "src/crapkit/cli/queue.py", "line": 1030, "end_line": 1041, "role": "Worklist pushes its floor and scopes into its initial reads."},
+      {"path": "src/crapkit/cli/queue.py", "line": 1051, "end_line": 1061, "role": "The optional marks read immediately materializes the complete run."},
+      {"path": "src/crapkit/cli/_shared.py", "line": 310, "end_line": 333, "role": "The marks reader checks whether the file exists only after the caller supplied all rows."},
+      {"path": "src/crapkit/store.py", "line": 667, "end_line": 688, "role": "The unconditional call builds every inventory tuple and identity string."},
+      {"path": "src/crapkit/cli/reports.py", "line": 149, "end_line": 161, "role": "The HTML report uses the same worklist path."}
+    ],
+    "problem": "Worklist and report scan the entire run for a marks file that may not exist. This undoes their earlier SQL floor and scope filtering. Current-version marks also do not require the legacy whole-run identity proof, but callers must pay before the marks reader can decide.",
+    "proposed_change": "Make the marks reader decide which identity evidence it needs after admitting the file and key version. Read no inventory for absent marks, and request only the existing proof needed for legacy marks. Preserve complete-file twin numbering wherever marks actually require it.",
+    "evidence": {
+      "observed": "A synthetic run with 100000 ccn 1 rows and no marks file causes one unrestricted joined functions scan. _worklist_ratchet returns zero marks after allocating 22388342 peak traced bytes. The saved run took 0.660 seconds with tracemalloc enabled.",
+      "inferred": "This is an instrumented synthetic measurement of the internal optional-marks seam, not end-to-end command latency or a production speedup. Removing the absent-file scan should remove that allocation; the proposed path was not implemented or timed.",
+      "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+      "probe": "state-probes.py:full_worklist_read",
+      "result": "state-probes.json:full_worklist_read"
+    },
+    "before_after_schematic": {
+      "before": "filtered worklist read -> full run read -> optional TSV check -> no marks",
+      "after": "optional TSV admission -> no rows when absent/current proof suffices; legacy proof only when required"
+    },
+    "deletion_test": "Delete the eager full-run materialization and the caller's decision about legacy identity evidence. Replacing the scan with a differently named full-run helper would not pass.",
+    "leverage": "Worklist and HTML report lose the same avoidable scan. The existing shared marks reader becomes the place to prevent other optional callers from repeating it.",
+    "locality": "The ratchet admission module decides what its file format requires; the store retains precise identity queries.",
+    "test_benefits": "Trace actual SQL for absent, current-version and legacy marks. Assert zero inventory scans for absent marks, identical output, and continued refusal for ambiguous legacy groups and unknown expression-reader identities.",
+    "cost": "Small. Change when existing evidence is read, while keeping the established identity policy.",
+    "risk": "Skipping evidence based only on file presence would weaken legacy identity admission. Tests must include same-line twins and scope/floor cuts.",
+    "adr_conflict": "None. Preserve exact twin semantics and legacy key refusals."
+  },
+  {
+    "id": "ST6",
+    "rank": 6,
+    "title": "Give the GitHub annotation adapter its own property encoding",
+    "strength": "Strong",
+    "files": [
+      {"path": "src/crapkit/sarif.py", "line": 22, "end_line": 31, "role": "The result carries a source path as its artifact uri."},
+      {"path": "src/crapkit/sarif.py", "line": 89, "end_line": 97, "role": "Only the message is escaped; the file property is emitted verbatim."},
+      {"path": "src/crapkit/cli/_shared.py", "line": 222, "end_line": 230, "role": "The shared findings emitter prints this directly to workflow stdout."}
+    ],
+    "problem": "A source filename is inserted into the GitHub workflow-command property grammar without encoding. A comma splits the filename into properties, a literal percent escape decodes to a different path, and a newline creates another command line. Message escaping does not protect properties.",
+    "proposed_change": "Keep filename interpretation inside the GitHub output adapter. Encode every workflow property using the runner's property rules, while retaining the separate message rules. Do not treat a SARIF artifact value as ready-to-print workflow syntax.",
+    "evidence": {
+      "observed": "The actual builder emits file=src/a,b.py for src/a,b.py and file=src/a%2Cb.py for a filename containing a literal percent sequence. A source path containing a newline produces two output lines. The probe only captures strings; it sends no workflow commands or network writes.",
+      "inferred": "The official runner splits properties on commas and decodes percent escapes, so those first two paths resolve incorrectly. A second workflow-command line is possible on filesystems that admit newline filenames. No GitHub runner was launched and no downstream exploit or privilege impact is claimed.",
+      "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+      "probe": "state-probes.py:annotation_paths",
+      "result": "state-probes.json:annotation_paths",
+      "sources": [
+        {"url": "https://raw.githubusercontent.com/actions/toolkit/main/packages/core/src/command.ts", "lines": "104-110", "supports": "Properties escape percent, carriage return, newline, colon and comma."},
+        {"url": "https://raw.githubusercontent.com/actions/runner/main/src/Runner.Common/ActionCommand.cs", "lines": "85-99 and 206-218", "supports": "The runner splits properties before decoding their escaped values."}
+      ]
+    },
+    "before_after_schematic": {
+      "before": "source path -> SARIF-shaped result -> raw GitHub file property",
+      "after": "source path -> GitHub property encoder -> one faithful workflow command"
+    },
+    "deletion_test": "Delete the assumption that a path already carried by another output format needs no GitHub encoding. Keep this a local adapter repair; no general output framework is needed.",
+    "leverage": "Coverage and verify share the findings emitter, including changed uncovered-line annotations.",
+    "locality": "All GitHub command syntax stays in sarif.py's existing annotation adapter.",
+    "test_benefits": "Round-trip comma, colon, percent, carriage-return and newline properties against the published parsing rule. Assert one emitted command line per finding and unchanged ordinary paths/messages.",
+    "cost": "Small. Add the missing property rule and focused adapter regressions.",
+    "risk": "Do not apply message escaping twice or pass percent-encoded SARIF URIs as filesystem paths. Broader SARIF URI compliance was not validated against a schema or consumer in this review.",
+    "adr_conflict": "None. Preserve existing rule IDs, levels, result locations and ordinary annotation text."
+  }
+]

@@ -1,0 +1,197 @@
+{
+  "reviewed_commit": "499d9db4f9ff4d212fb94ea3975c7477b6b1c968",
+  "files": {
+    ".gitattributes": {
+      "bytes": 30,
+      "sha256": "f06202a408fef9b9ea69bb6b1cb8160dbb0378c5bb67a444d510d231813824c8"
+    },
+    "analysis-candidates.json": {
+      "bytes": 13338,
+      "sha256": "6d9c09c340de44e9fe4b336569368b9206811589936ea231cbef433354aafe04"
+    },
+    "build-review.py": {
+      "bytes": 15291,
+      "sha256": "37310936d220a3c7797f18ee31f75211d8c0fe9912bc22fc074c471d4571440e"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/analysis-probe.json": {
+      "bytes": 3939,
+      "sha256": "bbae9a487fb8447b91c015fb1d930c8bcd171c348ec5b6569990105e3f8dc87f"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/analysis-probe.py": {
+      "bytes": 6810,
+      "sha256": "70988b6a82a39f71e56bb21a9495f58863bf04bacbce94c2f75b98d8c044ac35"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/analysis-review.md": {
+      "bytes": 14899,
+      "sha256": "ed3b99728b4a10b8453f059762ed0979af0b3f03ffe80a632729b4b9ee125b6d"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-cancel-probe.py": {
+      "bytes": 1984,
+      "sha256": "eb8d757f392f8f0e2b69e64a9a505a7198a21cf947abeef417acbdb2c56294af"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-cancel-probe.txt": {
+      "bytes": 282,
+      "sha256": "e73c643071f61d29c08b61c7558dd4efcfb567f1dba5f0bcce929d6a7630d760"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-cancel-result.json": {
+      "bytes": 216,
+      "sha256": "c3b4cadd1e4643e5675553586fc985896e9db1da81ebfa63db243d889b36daa0"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-concurrent-probe.py": {
+      "bytes": 4078,
+      "sha256": "445abdb67f1d9fef440dc5390b244a5c7115b4fd3dd9f7b3d2ac7215912b3d73"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-concurrent-probe.txt": {
+      "bytes": 623,
+      "sha256": "ea2cd9a235633f0d885960d4243798228a1a4345290d4fb220b953c120e6d35e"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-concurrent-result.json": {
+      "bytes": 557,
+      "sha256": "8d245eff6419d4820c8ae9122841a76d09a03342b48a75ee37fe5750f2ca132d"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-init-probe.py": {
+      "bytes": 2337,
+      "sha256": "042f651272f003eabd8ee612d72064016406050f40ad61cd89202674f51a95ce"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-init-probe.txt": {
+      "bytes": 971,
+      "sha256": "b63cd599104112157defde20c184ee5505e9e6a8bdcc65d6a9fcddc8bc14e197"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-init-result.json": {
+      "bytes": 905,
+      "sha256": "198a4315e5ca5953f9663b9cf4397eb01394e0117838bed06e00aa4049e32e2d"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-reuse-probe.py": {
+      "bytes": 4322,
+      "sha256": "a80cab980353df4a6c3ee4c7add1473dc873d619a2b8dd545492b98571bd23de"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-reuse-probe.txt": {
+      "bytes": 3989,
+      "sha256": "62154bec0f1e12443c2c6a9d1b77dd0149f428d24535d6c9c17683917ca4156f"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-reuse-result.json": {
+      "bytes": 3923,
+      "sha256": "1e898aab955fda224bf931af956a352238c92e3c2f357b6f1360d95eb85ef384"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/execution-review.md": {
+      "bytes": 12582,
+      "sha256": "1f0c8f262de8022c178277a65eb8e703577ee78585bba4926da810e47e7d5f1f"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/git-path-probe.json": {
+      "bytes": 705,
+      "sha256": "03262ee1236ab842c6e725a97dcce020ec0be27e287f15725f5bcb5be364ec9b"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/git-path-probe.py": {
+      "bytes": 1813,
+      "sha256": "32302863ee97e849e82f9f875bbd815a65124bdf7020e08c0413439e6e2ad097"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/measure-project.py": {
+      "bytes": 2458,
+      "sha256": "555d46bca2e15e1d1c996a34b1489bf53c1f30acc9d4fedb29cbbaeb60a9f736"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/probe-independent.py": {
+      "bytes": 1176,
+      "sha256": "adb82f4df00e809bb624e78caf6c2e171fcf0f17d1d7d3a802cbaa02c32de725"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/probe-project-contracts.py": {
+      "bytes": 2419,
+      "sha256": "1264521931c49463c6a5244ed08ceba809e879642e2043bf781ed11a1e5502d0"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/probe-wheel.py": {
+      "bytes": 2349,
+      "sha256": "4fd4a4e94d39ca5b229a7559303e9abd05fa37b99b205ba2ea2362cad550c5e5"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/project-inventory.json.gz": {
+      "bytes": 27382,
+      "sha256": "c46387e2bb0ff41349a523bdd7cc941c2177a585dfd310c1fefde939f293a7cf"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/config-shapes.json": {
+      "bytes": 2190,
+      "sha256": "eedcdaf080f98e4c3e6fcd014fe7ab8d1866317136dd567125dcf75128e0a7f0"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/independent-replay.json": {
+      "bytes": 1930,
+      "sha256": "32dd19c8479f451eabc4f8fdb60e082bce54e117c9a31219d30fba2fad8f1a10"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/release-replay.json": {
+      "bytes": 3449,
+      "sha256": "efc9630e2de706d3aab670058f27ea6d42eb81bbcd7dd2c41c69134a53f1d81d"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/self-duplication.json": {
+      "bytes": 343,
+      "sha256": "0798ce80eace1ace7eb77f5c84717bfc59bdfd24ea3da5d92d98307388c5efea"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/self-worklist.json": {
+      "bytes": 3895,
+      "sha256": "cb2c0e5175bf03ad89527841d7b44cc6083841ff53a5cb3f0e0bdf08c610472c"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/state-independent-replay.json": {
+      "bytes": 1750,
+      "sha256": "eb9d9bd9165293db5688cc18794d3dd48902184063c87b5042a42f7a58c5abe9"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/wheel-build.log": {
+      "bytes": 17227,
+      "sha256": "8ba268d2cab01906484ef38d354f9262fa227c2cda015be856b1baf70b6baf18"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-evidence/wheel-proof.json": {
+      "bytes": 3039,
+      "sha256": "1a45a79cb220af4ed044f3028f923cce1f4434550af2b386e8433391cbf4d350"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/root-review.md": {
+      "bytes": 6542,
+      "sha256": "3275fdfe0ad8e3ded84c5c1a6eaba1be729175960fa71bdc6b300a89ea698773"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/state-probes.json": {
+      "bytes": 3583,
+      "sha256": "eea8cbbf8d7bade89b2b6fa0fbc38e6640a4a0bf9f3b7ec33aff80f04f49b767"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/state-probes.py": {
+      "bytes": 9250,
+      "sha256": "879ef18dbf5805244bddec3d305a6184f1fc9a78e4fd2a4f652ccbaec861f0f1"
+    },
+    "crapkit-architecture-rerun-2026-09-06-evidence/state-review.md": {
+      "bytes": 14287,
+      "sha256": "5af3076c6df51b1067f552a8fa8135b2c286ba05631d155e1a727f9b6df13ee4"
+    },
+    "crapkit-architecture-rerun-2026-09-06.html": {
+      "bytes": 87375,
+      "sha256": "15633b2a7716afd2fca62512b4ec40221b917097ae2a9eadcd0162c7f1e3df9c"
+    },
+    "crapkit-architecture-rerun-2026-09-06.json": {
+      "bytes": 71925,
+      "sha256": "35c66eeeed9d1affdc42470d1a42c980d5f65ec7da6f56d6ccd14d8e738b2bb6"
+    },
+    "decisions.tsv": {
+      "bytes": 1668,
+      "sha256": "af0f58a01a1cdccd19dcbaa63d9a0c8d905ed4cea0bdfdd90292a6977f3ae483"
+    },
+    "execution-candidates.json": {
+      "bytes": 17644,
+      "sha256": "8d9636551388291c704950a0c90f9dafea2e6c9695c06d412e232cab9fc8d514"
+    },
+    "prepare-review.py": {
+      "bytes": 5090,
+      "sha256": "2252d6b01a6b96f52fb1b376ae606ea47c4dc3e9b740ea8b07ba468f0395b76f"
+    },
+    "publish-review.py": {
+      "bytes": 5390,
+      "sha256": "cdf8bc0e6111c4bb883ac60ef20bafbc08c618a55af55fdff722f2c36c52c017"
+    },
+    "README.md": {
+      "bytes": 1838,
+      "sha256": "aa892dc09596b396d69b9e22e45fda091541a92c90823829adec13d64602fc30"
+    },
+    "review-data.json": {
+      "bytes": 9312,
+      "sha256": "5682e828cc5167b32513e395ea42799a4b235e93bb1d10f49375c5dbdc8c3d25"
+    },
+    "root-candidates.json": {
+      "bytes": 9964,
+      "sha256": "cb8b8ef785017e92895e244b2b7686cb8bd883add564ee5c3f7d3c184d928568"
+    },
+    "state-candidates.json": {
+      "bytes": 21765,
+      "sha256": "f5341b24c8ac1bf3386d99aecde46d0e60c2a92a3956413d94360309b92dea2b"
+    }
+  }
+}

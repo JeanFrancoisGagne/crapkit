@@ -1,0 +1,166 @@
+[
+  {
+    "id": "AN1",
+    "title": "Bind analysis cache records to the bytes actually parsed",
+    "strength": "Strong",
+    "files": [
+      {
+        "path": "src/crapkit/analyze.py",
+        "lines": "362-367,389-390,557-577,671-688"
+      },
+      {
+        "path": "src/crapkit/cache.py",
+        "lines": "31-40"
+      },
+      {
+        "path": "src/crapkit/cli/scoring.py",
+        "lines": "61-94"
+      }
+    ],
+    "problem": "The analysis cache hashes a source file before the parser opens it again. An edit or deletion between the reads stores later records under the earlier bytes' identity. The wrong answer survives cache serialization and a normal restoration of the original source.",
+    "proposed_change": "Concentrate ownership of source bytes, their digest and their parsed records in the analysis operation. Never store records against a hash obtained from different bytes. Refuse or retry an interrupted source read, and invalidate caches that can already contain mismatched records. Keep current metric rules, path restamping and the settled-file fast path.",
+    "evidence": {
+      "observation": "The controlled edit replay returns CCN2/end4 on a warm hit for current source whose independent analysis returns CCN1/end2. The deletion replay saves and reloads cache.json, restores the original source normally, then gets one cache hit with zero functions instead of one. No restored timestamps or source changes in the reviewed checkout.",
+      "inference": "Editors, generators or another command can cause this interleaving. Its frequency on user repositories is not measured. Inventory, coverage, verify and rescore consume the affected cached records.",
+      "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\analysis-probe.py'",
+      "artifacts": [
+        "analysis-probe.py",
+        "analysis-probe.json"
+      ],
+      "caller_flow": "cli.scoring._build_inventory -> _analyzed_corpus -> analyze_files -> _hash_paths -> analyze_jobs -> analyze_one -> updated_cache -> save_cache; later load_cache repeats the wrong metrics."
+    },
+    "before_after_schematic": {
+      "before": "path -> read A -> hash A -> queue path -> read B -> records B -> cache[hash A]",
+      "after": "one owned source input -> matching digest and records -> cache; changed or incomplete input cannot publish a mismatched entry"
+    },
+    "deletion_test": "Remove the handoff that couples an earlier path read's identity to a later independent parse. This is a deeper existing module, not a new cache wrapper.",
+    "leverage": "One correction covers every analyze_files caller and every supported reader.",
+    "locality": "Byte identity and parsing belong together in analyze.py; cache.py can retain its pure partition/update role.",
+    "test_benefits": "The existing analyze_files interface is the seam. Add controlled edit and delete interleavings, persisted cache round trips, warm/cold equality and spawned-worker variants. Preserve the existing cross-reader and typed-cache fixtures.",
+    "cost_risk": "Medium. Source ownership can affect worker memory and IPC, so compare reading in the worker with retaining input bytes before choosing. Existing cache fingerprints need invalidation. Do not change ANALYSIS_VERSION solely for this cache correction.",
+    "adr_conflict": "None. Neither ADR0001 nor ADR0002 governs source cache ownership."
+  },
+  {
+    "id": "AN2",
+    "title": "Preserve Git path bytes before history and dirty-file joins",
+    "strength": "Strong",
+    "files": [
+      {
+        "path": "src/crapkit/gitio.py",
+        "lines": "87-90,152-155,199-216"
+      },
+      {
+        "path": "src/crapkit/churn.py",
+        "lines": "85-104"
+      },
+      {
+        "path": "src/crapkit/coupling.py",
+        "lines": "22-46"
+      },
+      {
+        "path": "src/crapkit/mutate_pool.py",
+        "lines": "130-155"
+      },
+      {
+        "path": "src/crapkit/lanes.py",
+        "lines": "577-590"
+      }
+    ],
+    "problem": "Git path lists and two history consumers remove surrounding whitespace. A valid tracked top-level path named ' leading.py' becomes 'leading.py'. Path identity now depends on which Git reader supplied it.",
+    "proposed_change": "Make Git transport preserve path spelling. Use NUL-delimited path-list output where Git provides it, and remove record terminators without trimming path content in history. Concentrate the shared history path decoding rule so churn and coupling cannot reinterpret names independently. Refresh derived history caches after changing the path contract.",
+    "evidence": {
+      "observation": "In a real disposable Windows Git repository, ls_files returns ' leading.py', while status_names and unstaged_paths return 'leading.py'. Churn records the wrong key. Coupling produces a pair under the wrong name, then drops it when given the real tracked set. Mutation input capture records 'leading.py': null and omits the dirty dependency's actual bytes.",
+      "inference": "This misses dirty-file joins and can seed committed dependency bytes into a mutation worker. An exact-file lane scope can also miss the changed path. The probe does not claim a full verify or mutation verdict.",
+      "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\git-path-probe.py'",
+      "artifacts": [
+        "git-path-probe.py",
+        "git-path-probe.json"
+      ],
+      "caller_flow": "gitio._diff_names -> status_names -> GitFacts, lanes._scope_changes, cli.verifying dirty attribution and mutate_pool._input_snapshot; git log -> churn._collect/coupling._commit_file_sets -> tracked/scored path joins."
+    },
+    "before_after_schematic": {
+      "before": "Git path -> generic strip -> altered name -> lookup misses; churn and coupling each decode history paths",
+      "after": "Git record framing -> unchanged path -> all joins use the tracked-file spelling; one shared history decoding rule"
+    },
+    "deletion_test": "Delete generic whitespace trimming from path interpretation and duplicate history decoding knowledge. Retain separate consumers for churn weights and coupling counts.",
+    "leverage": "Dirty-state checks, mutation snapshots, churn risk and coupling rankings share the corrected path contract.",
+    "locality": "Git transport owns delimiters and spelling; analytical consumers own counts and weights.",
+    "test_benefits": "Real Git fixtures should cover leading spaces, ordinary names, Unicode, nested roots and renames. On platforms that support them, include tabs/newlines and literal backslashes. Check tracked paths against status/history keys and actual captured snapshot bytes.",
+    "cost_risk": "Small to medium. Preserve Git C quoting where line-oriented output remains. Invalidate derived caches carrying changed spellings; keep the existing raw compressed history schema unless its framing changes.",
+    "adr_conflict": "None. Preserve the nested-root behavior required by ADR0002."
+  },
+  {
+    "id": "AN3",
+    "title": "Decode each large coverage member once",
+    "strength": "Worth exploring",
+    "files": [
+      {
+        "path": "src/crapkit/covstream.py",
+        "lines": "53-84,114-132,151-171,350-385"
+      },
+      {
+        "path": "src/crapkit/uncovered.py",
+        "lines": "91-99"
+      }
+    ],
+    "problem": "The streaming JSON reader retries raw_decode from a member's beginning after every chunk refill. A large per-file member is decoded repeatedly even though the reader bounds memory by that member.",
+    "proposed_change": "Keep enough framing state across refills to recognize a complete JSON value before decoding it. Preserve the existing reader interface, one-pass digest, bounded window, strict JSON completion rules and format projections.",
+    "evidence": {
+      "observation": "A 16,777,204-byte synthetic member causes 16 raw_decode attempts that receive 142,606,116 characters in total. A valid coverage.py artifact with a 16MiB per-file contexts member takes median 0.4825s through the public parse_coveragepy_both_file entry point across three samples. Reading that same artifact in one chunk takes 0.0782s and returns identical coverage, missing lines and digest.",
+      "inference": "The repeated-prefix mechanism has quadratic work in member size relative to fixed chunk size. The timings are local synthetic measurements, not a measured end-user regression; the frequency of very large per-file members is unknown.",
+      "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\analysis-probe.py'",
+      "artifacts": [
+        "analysis-probe.py",
+        "analysis-probe.json"
+      ],
+      "caller_flow": "lanes._read_and_parse or uncovered readers -> covstream public reader -> walk_report/split_window -> _decode_value -> _whole_value -> raw_decode on each refill."
+    },
+    "before_after_schematic": {
+      "before": "1MiB prefix decode fails -> 2MiB prefix decode fails -> ... -> full member decode",
+      "after": "each chunk advances framing once -> one completed member decode -> projection"
+    },
+    "deletion_test": "Remove repeated whole-prefix decode attempts. Keep covstream as the shared adapter and make its window own completion; do not add a second public parser.",
+    "leverage": "Both coverage formats, dead-line readers and context lookup share the same window.",
+    "locality": "JSON framing stays in covstream; per-format meaning stays in coverage_py and coverage_istanbul.",
+    "test_benefits": "Existing chunk-boundary, UTF-8, separator, finite-number and trailing-garbage contracts remain the seam. Add a large-member scaling probe and output/digest equivalence, including strings containing escaped delimiters.",
+    "cost_risk": "Medium. A framing scanner must handle strings, escapes, arrays, objects, numbers and incomplete input without weakening refusal. A larger fixed chunk alone trades away the memory gain and does not remove repeated work.",
+    "adr_conflict": "None. Metric and artifact output semantics stay unchanged."
+  },
+  {
+    "id": "AN4",
+    "title": "Parse each distinct cold analysis input once",
+    "strength": "Worth exploring",
+    "files": [
+      {
+        "path": "src/crapkit/analyze.py",
+        "lines": "398-402,590-605,639-688"
+      },
+      {
+        "path": "src/crapkit/cache.py",
+        "lines": "13-40"
+      }
+    ],
+    "problem": "The warm cache shares records for equivalent reader/content identities, but a cold run schedules every path independently. The cache collapses duplicate inputs only after all of them were parsed.",
+    "proposed_change": "Group equivalent cold inputs before parsing and reuse their records with the existing path restamping behavior. Keep reader class, extension chain and typed-language mode in the identity, and combine this work with the source ownership correction so grouping never trusts mismatched bytes.",
+    "evidence": {
+      "observation": "Twelve identical Python files containing 100 functions each schedule 12 real parser calls and create 1 cache entry. The fixture returns 1200 correctly stamped records. The cold run takes 0.2122s; a warm run takes 0.00274s with 12 hits and equal output.",
+      "inference": "Repeated source files increase parser work and can start extra workers. Actual duplicate-content prevalence and savings on large consumer repositories were not measured; the recorded timing is not a promised speedup for the proposed change.",
+      "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\analysis-probe.py'",
+      "artifacts": [
+        "analysis-probe.py",
+        "analysis-probe.json"
+      ],
+      "caller_flow": "analyze_files -> partition_by_cache returns every cold path -> analyze_jobs parses each -> updated_cache retains one record set per identity."
+    },
+    "before_after_schematic": {
+      "before": "12 paths with1identity ->12 parser jobs ->1cache entry ->12path-specific results",
+      "after": "12paths with1identity ->1parser job ->12path-specific results and1cache entry"
+    },
+    "deletion_test": "Remove duplicate parser jobs and their worker serialization. Reuse the current identity and restamping owners; no new abstraction layer.",
+    "leverage": "Cold inventory, coverage and rescore benefit when their selected corpus repeats source bytes.",
+    "locality": "Group misses beside existing cache partitioning; preserve pure cache logic and path-specific output.",
+    "test_benefits": "Count actual parser calls at analyze_files while asserting full row equality, empty-file behavior, path restamping, deterministic order and no cross-reader reuse.",
+    "cost_risk": "Small after AN1. Benefit depends on repeated content. Handle parser diagnostics per path and preserve worker registration; do not confuse equal bytes across distinct readers.",
+    "adr_conflict": "None. No metric or public record change."
+  }
+]

@@ -1,0 +1,146 @@
+VERIFIED_IMPORT C:\Users\jfgag\crapkit\src\crapkit\__init__.py
+{
+  "initial": {
+    "argv": [
+      "coverage"
+    ],
+    "returncode": 0,
+    "stdout": {
+      "by_scope": {
+        "src": {
+          "crap_load": 1.0,
+          "functions": 1,
+          "grade": "A+",
+          "over_target": 0
+        }
+      },
+      "cache_hits": 0,
+      "cc_only": 0,
+      "ceilings": {
+        "default": 6
+      },
+      "commit": "14a17b89efda172b002c22ccb7d83ccbf8d29ab5",
+      "crap_load": 1.0,
+      "db": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\reuse-fixture-zh22kmh_\\.crapkit\\crap.sqlite",
+      "files": 1,
+      "functions": 1,
+      "grade": "A+",
+      "kind": "coverage",
+      "lane_failures": {},
+      "lanes": {
+        "js": {
+          "artifact_sha256": "8246c77561ceba4380b4afa6773b1a95d23dee1d2daffab9fef4911e1f2b51f2",
+          "exit_code": 0,
+          "failures": [],
+          "parser": "istanbul",
+          "scopes": [
+            "src"
+          ],
+          "tests_skipped": 0,
+          "tests_total": 1
+        }
+      },
+      "measured": 1,
+      "no_lane": 0,
+      "over_target": 0,
+      "run_id": 1,
+      "schema": 1,
+      "skipped_max_bytes": 0,
+      "unmeasured_scopes": [],
+      "untested": 0
+    },
+    "stderr": ""
+  },
+  "reused_after_test_edit": {
+    "argv": [
+      "verify",
+      "--reuse-unchanged",
+      "--no-tighten"
+    ],
+    "returncode": 0,
+    "stdout": {
+      "baseline_commit": "14a17b89efda172b002c22ccb7d83ccbf8d29ab5",
+      "baseline_run": 1,
+      "changed_files": 1,
+      "commit": "14a17b89efda172b002c22ccb7d83ccbf8d29ab5",
+      "committed_findings": 0,
+      "diff_uncovered": [],
+      "diff_uncovered_count": 0,
+      "diff_uncovered_max": null,
+      "dirty_failures": [],
+      "dirty_findings": 0,
+      "gate_violations": [],
+      "new_failures": [],
+      "ok": true,
+      "overridden": [],
+      "ratchet_changes": null,
+      "ratchet_regressions": [],
+      "ratchet_sha256": null,
+      "run_id": 2,
+      "schema": 1,
+      "tool_versions": {
+        "analysis_version": "10",
+        "crapkit": "0.6.0",
+        "lizard": "1.24.0"
+      },
+      "unmarked_over_target": 0
+    },
+    "stderr": "crapkit: lane 'js': artifact still matches its scopes; reusing without rerun\n"
+  },
+  "fresh_after_same_test_edit": {
+    "argv": [
+      "verify",
+      "--no-tighten"
+    ],
+    "returncode": 8,
+    "stdout": {
+      "baseline_commit": "14a17b89efda172b002c22ccb7d83ccbf8d29ab5",
+      "baseline_run": 2,
+      "changed_files": 1,
+      "commit": "14a17b89efda172b002c22ccb7d83ccbf8d29ab5",
+      "committed_findings": 1,
+      "diff_uncovered": [],
+      "diff_uncovered_count": 0,
+      "diff_uncovered_max": null,
+      "dirty_failures": [],
+      "dirty_findings": 0,
+      "gate_violations": [],
+      "new_failures": [
+        "tests.test_app::test_f"
+      ],
+      "ok": false,
+      "overridden": [],
+      "ratchet_changes": null,
+      "ratchet_regressions": [],
+      "ratchet_sha256": null,
+      "run_id": 3,
+      "schema": 1,
+      "tool_versions": {
+        "analysis_version": "10",
+        "crapkit": "0.6.0",
+        "lizard": "1.24.0"
+      },
+      "unmarked_over_target": 0
+    },
+    "stderr": ""
+  },
+  "runner_calls_after_reuse": 1,
+  "runner_calls_after_fresh": 2,
+  "bare_string_scope_paths": {
+    "argv": [
+      "inventory"
+    ],
+    "returncode": 0,
+    "stdout": {
+      "cache_hits": 0,
+      "commit": "14a17b89efda172b002c22ccb7d83ccbf8d29ab5",
+      "db": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\reuse-fixture-zh22kmh_\\.crapkit\\crap.sqlite",
+      "files": 0,
+      "functions": 0,
+      "run_id": 4,
+      "schema": 1,
+      "skipped_max_bytes": 0
+    },
+    "stderr": ""
+  }
+}

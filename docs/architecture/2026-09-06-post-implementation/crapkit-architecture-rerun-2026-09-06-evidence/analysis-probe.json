@@ -1,0 +1,173 @@
+{
+  "source": "C:\\Users\\jfgag\\crapkit\\src\\crapkit\\__init__.py",
+  "cache_race": {
+    "first_records": [
+      [
+        "m.py",
+        "f( x )",
+        1,
+        4,
+        2,
+        2,
+        2,
+        4,
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "second_records": [
+      [
+        "m.py",
+        "f( x )",
+        1,
+        4,
+        2,
+        2,
+        2,
+        4,
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "expected_records": [
+      [
+        "m.py",
+        "f( x )",
+        1,
+        2,
+        1,
+        1,
+        1,
+        2,
+        1,
+        0,
+        0,
+        1
+      ]
+    ],
+    "second_cache_hits": 1,
+    "wrong_metrics": true
+  },
+  "deleted_between_reads": {
+    "first_function_count": 0,
+    "restored_function_count": 0,
+    "expected_function_count": 1,
+    "cache_hits": 1
+  },
+  "cold_duplicates": {
+    "files": 12,
+    "function_records": 1200,
+    "cache_entries": 1,
+    "cold_parser_calls": 12,
+    "cold_seconds": 0.21217329998034984,
+    "warm_seconds": 0.0027404000284150243,
+    "warm_hits": 12,
+    "outputs_equal": true
+  },
+  "member_scaling": [
+    {
+      "bytes": 1048556,
+      "decode_attempts": 1,
+      "characters_offered": 1048543,
+      "seconds": [
+        0.0019159999792464077,
+        0.002339899947401136,
+        0.002285800001118332
+      ],
+      "median_seconds": 0.002285800001118332,
+      "whole_decode_seconds": 0.0032330999965779483,
+      "outputs_equal": true
+    },
+    {
+      "bytes": 2097084,
+      "decode_attempts": 2,
+      "characters_offered": 3145634,
+      "seconds": [
+        0.012333500024396926,
+        0.019660499994643033,
+        0.01289129996439442
+      ],
+      "median_seconds": 0.01289129996439442,
+      "whole_decode_seconds": 0.005171499971766025,
+      "outputs_equal": true
+    },
+    {
+      "bytes": 4194244,
+      "decode_attempts": 4,
+      "characters_offered": 10485648,
+      "seconds": [
+        0.030540600011590868,
+        0.03686860000016168,
+        0.02517370000714436
+      ],
+      "median_seconds": 0.030540600011590868,
+      "whole_decode_seconds": 0.0071508000255562365,
+      "outputs_equal": true
+    },
+    {
+      "bytes": 8388564,
+      "decode_attempts": 8,
+      "characters_offered": 37748588,
+      "seconds": [
+        0.09928909997688606,
+        0.09666409995406866,
+        0.09855689998948947
+      ],
+      "median_seconds": 0.09855689998948947,
+      "whole_decode_seconds": 0.014405299967620522,
+      "outputs_equal": true
+    },
+    {
+      "bytes": 16777204,
+      "decode_attempts": 16,
+      "characters_offered": 142606116,
+      "seconds": [
+        0.6040463999961503,
+        0.4197681999648921,
+        0.43942229996901006
+      ],
+      "median_seconds": 0.43942229996901006,
+      "whole_decode_seconds": 0.04719170002499595,
+      "outputs_equal": true
+    }
+  ],
+  "public_member_scaling": [
+    {
+      "bytes": 1048812,
+      "seconds": [
+        0.007190499978605658,
+        0.005861599987838417,
+        0.0058459999854676425
+      ],
+      "median_seconds": 0.005861599987838417,
+      "one_chunk_seconds": 0.0032657000119797885,
+      "outputs_and_digest_equal": true
+    },
+    {
+      "bytes": 4194500,
+      "seconds": [
+        0.05514790001325309,
+        0.054288399987854064,
+        0.04073549999156967
+      ],
+      "median_seconds": 0.054288399987854064,
+      "one_chunk_seconds": 0.012887399992905557,
+      "outputs_and_digest_equal": true
+    },
+    {
+      "bytes": 16777460,
+      "seconds": [
+        0.5090863999794237,
+        0.46444210002664477,
+        0.4824866999988444
+      ],
+      "median_seconds": 0.4824866999988444,
+      "one_chunk_seconds": 0.07823020004434511,
+      "outputs_and_digest_equal": true
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "source": "C:\\Users\\jfgag\\crapkit\\src",
+  "packet_age": {
+    "events": [
+      [
+        1000,
+        [
+          "a.py",
+          "f( )"
+        ],
+        "added",
+        50.0
+      ],
+      [
+        7777000,
+        [
+          "a.py",
+          "f( )"
+        ],
+        "updated",
+        20.0
+      ]
+    ],
+    "packet_age_days": null,
+    "ratchet_report": {
+      "open": 1,
+      "dropped_total": 0,
+      "anchor_ts": 7777000,
+      "uncommitted": 0,
+      "oldest": [
+        {
+          "path": "a.py",
+          "long_name": "f( )",
+          "age_days": 90
+        }
+      ],
+      "dropped_last_30d": 0,
+      "dropped_last_90d": 0
+    }
+  },
+  "prune_override": {
+    "before_runs": [
+      [
+        1,
+        "coverage"
+      ],
+      [
+        2,
+        "coverage"
+      ],
+      [
+        3,
+        "hook"
+      ]
+    ],
+    "prune": {
+      "freed_bytes": 0,
+      "kept_runs": 2,
+      "pruned_runs": 1,
+      "schema": 1
+    },
+    "override_worker": {
+      "run_id": 3,
+      "audit_rows_by_id": 1
+    },
+    "ratchet_granted": true,
+    "public_overrides": {
+      "overrides": [],
+      "schema": 1
+    }
+  },
+  "full_worklist_read": {
+    "rows": 100000,
+    "ratchet_exists": false,
+    "result_marks": 0,
+    "seconds_with_tracemalloc": 0.5741325999842957,
+    "peak_bytes": 22388342,
+    "queries": [
+      "SELECT i.scope, i.path, i.long_name, f.start, f.end, f.ccn_std, f.ccn_mod, f.ccn, f.nloc, f.params, f.nesting, f.cognitive, f.occurrence FROM functions f JOIN identities i ON i.id = f.identity_id WHERE f.run_id = 1 AND f.ccn >= 0  ORDER BY i.scope, i.path, f.start, f.occurrence, f.end, i.long_name"
+    ]
+  }
+}

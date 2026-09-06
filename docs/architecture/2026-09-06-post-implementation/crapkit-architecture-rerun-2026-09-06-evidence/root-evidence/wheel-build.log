@@ -1,0 +1,318 @@
+running egg_info
+creating src\crapkit.egg-info
+writing src\crapkit.egg-info\PKG-INFO
+writing dependency_links to src\crapkit.egg-info\dependency_links.txt
+writing entry points to src\crapkit.egg-info\entry_points.txt
+writing requirements to src\crapkit.egg-info\requires.txt
+writing top-level names to src\crapkit.egg-info\top_level.txt
+writing manifest file 'src\crapkit.egg-info\SOURCES.txt'
+reading manifest file 'src\crapkit.egg-info\SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file 'src\crapkit.egg-info\SOURCES.txt'
+running bdist_wheel
+running build
+running build_py
+creating build\lib\crapkit
+copying src\crapkit\analyze.py -> build\lib\crapkit
+copying src\crapkit\cache.py -> build\lib\crapkit
+copying src\crapkit\churn.py -> build\lib\crapkit
+copying src\crapkit\churn_cache.py -> build\lib\crapkit
+copying src\crapkit\churn_log.py -> build\lib\crapkit
+copying src\crapkit\config.py -> build\lib\crapkit
+copying src\crapkit\coupling.py -> build\lib\crapkit
+copying src\crapkit\coupling_cache.py -> build\lib\crapkit
+copying src\crapkit\coverage_istanbul.py -> build\lib\crapkit
+copying src\crapkit\coverage_py.py -> build\lib\crapkit
+copying src\crapkit\covstream.py -> build\lib\crapkit
+copying src\crapkit\diffparse.py -> build\lib\crapkit
+copying src\crapkit\digest.py -> build\lib\crapkit
+copying src\crapkit\doctor.py -> build\lib\crapkit
+copying src\crapkit\dup.py -> build\lib\crapkit
+copying src\crapkit\errors.py -> build\lib\crapkit
+copying src\crapkit\gitio.py -> build\lib\crapkit
+copying src\crapkit\hook.py -> build\lib\crapkit
+copying src\crapkit\invocation.py -> build\lib\crapkit
+copying src\crapkit\junitparse.py -> build\lib\crapkit
+copying src\crapkit\keys.py -> build\lib\crapkit
+copying src\crapkit\lanes.py -> build\lib\crapkit
+copying src\crapkit\lizardcognitive.py -> build\lib\crapkit
+copying src\crapkit\lizardpowershell.py -> build\lib\crapkit
+copying src\crapkit\lizardrust.py -> build\lib\crapkit
+copying src\crapkit\lizardshell.py -> build\lib\crapkit
+copying src\crapkit\lizardtypescript.py -> build\lib\crapkit
+copying src\crapkit\mcp_server.py -> build\lib\crapkit
+copying src\crapkit\merge.py -> build\lib\crapkit
+copying src\crapkit\mutate.py -> build\lib\crapkit
+copying src\crapkit\mutate_pool.py -> build\lib\crapkit
+copying src\crapkit\override.py -> build\lib\crapkit
+copying src\crapkit\packet.py -> build\lib\crapkit
+copying src\crapkit\procs.py -> build\lib\crapkit
+copying src\crapkit\ratchet.py -> build\lib\crapkit
+copying src\crapkit\ratchet_report.py -> build\lib\crapkit
+copying src\crapkit\report.py -> build\lib\crapkit
+copying src\crapkit\repotext.py -> build\lib\crapkit
+copying src\crapkit\rootfind.py -> build\lib\crapkit
+copying src\crapkit\sarif.py -> build\lib\crapkit
+copying src\crapkit\sarifio.py -> build\lib\crapkit
+copying src\crapkit\scaffold.py -> build\lib\crapkit
+copying src\crapkit\score.py -> build\lib\crapkit
+copying src\crapkit\snapshot.py -> build\lib\crapkit
+copying src\crapkit\store.py -> build\lib\crapkit
+copying src\crapkit\uncovered.py -> build\lib\crapkit
+copying src\crapkit\universe.py -> build\lib\crapkit
+copying src\crapkit\verify.py -> build\lib\crapkit
+copying src\crapkit\watch.py -> build\lib\crapkit
+copying src\crapkit\worklist.py -> build\lib\crapkit
+copying src\crapkit\_pygdefer.py -> build\lib\crapkit
+copying src\crapkit\__init__.py -> build\lib\crapkit
+copying src\crapkit\__main__.py -> build\lib\crapkit
+creating build\lib\crapkit\cli
+copying src\crapkit\cli\admin.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\analyses.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\claude_hook.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\parser.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\queue.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\ratchet_cmds.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\reports.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\scoring.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\verifying.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\_shared.py -> build\lib\crapkit\cli
+copying src\crapkit\cli\__init__.py -> build\lib\crapkit\cli
+running egg_info
+writing src\crapkit.egg-info\PKG-INFO
+writing dependency_links to src\crapkit.egg-info\dependency_links.txt
+writing entry points to src\crapkit.egg-info\entry_points.txt
+writing requirements to src\crapkit.egg-info\requires.txt
+writing top-level names to src\crapkit.egg-info\top_level.txt
+reading manifest file 'src\crapkit.egg-info\SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file 'src\crapkit.egg-info\SOURCES.txt'
+installing to build\bdist.win-amd64\wheel
+running install
+running install_lib
+creating build\bdist.win-amd64\wheel
+creating build\bdist.win-amd64\wheel\crapkit
+copying build\lib\crapkit\analyze.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\cache.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\churn.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\churn_cache.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\churn_log.py -> build\bdist.win-amd64\wheel\.\crapkit
+creating build\bdist.win-amd64\wheel\crapkit\cli
+copying build\lib\crapkit\cli\admin.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\analyses.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\claude_hook.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\parser.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\queue.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\ratchet_cmds.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\reports.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\scoring.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\verifying.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\_shared.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\cli\__init__.py -> build\bdist.win-amd64\wheel\.\crapkit\cli
+copying build\lib\crapkit\config.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\coupling.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\coupling_cache.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\coverage_istanbul.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\coverage_py.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\covstream.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\diffparse.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\digest.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\doctor.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\dup.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\errors.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\gitio.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\hook.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\invocation.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\junitparse.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\keys.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\lanes.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\lizardcognitive.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\lizardpowershell.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\lizardrust.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\lizardshell.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\lizardtypescript.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\mcp_server.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\merge.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\mutate.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\mutate_pool.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\override.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\packet.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\procs.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\ratchet.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\ratchet_report.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\report.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\repotext.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\rootfind.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\sarif.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\sarifio.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\scaffold.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\score.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\snapshot.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\store.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\uncovered.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\universe.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\verify.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\watch.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\worklist.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\_pygdefer.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\__init__.py -> build\bdist.win-amd64\wheel\.\crapkit
+copying build\lib\crapkit\__main__.py -> build\bdist.win-amd64\wheel\.\crapkit
+running install_egg_info
+Copying src\crapkit.egg-info to build\bdist.win-amd64\wheel\.\crapkit-0.6.0-py3.11.egg-info
+running install_scripts
+creating build\bdist.win-amd64\wheel\crapkit-0.6.0.dist-info\WHEEL
+creating 'C:\Users\jfgag\AppData\Local\Temp\crapkit-wheel-review-iim_uywu\source\dist\.tmp-7fwq0c30\crapkit-0.6.0-py3-none-any.whl' and adding 'build\bdist.win-amd64\wheel' to it
+adding 'crapkit/__init__.py'
+adding 'crapkit/__main__.py'
+adding 'crapkit/_pygdefer.py'
+adding 'crapkit/analyze.py'
+adding 'crapkit/cache.py'
+adding 'crapkit/churn.py'
+adding 'crapkit/churn_cache.py'
+adding 'crapkit/churn_log.py'
+adding 'crapkit/config.py'
+adding 'crapkit/coupling.py'
+adding 'crapkit/coupling_cache.py'
+adding 'crapkit/coverage_istanbul.py'
+adding 'crapkit/coverage_py.py'
+adding 'crapkit/covstream.py'
+adding 'crapkit/diffparse.py'
+adding 'crapkit/digest.py'
+adding 'crapkit/doctor.py'
+adding 'crapkit/dup.py'
+adding 'crapkit/errors.py'
+adding 'crapkit/gitio.py'
+adding 'crapkit/hook.py'
+adding 'crapkit/invocation.py'
+adding 'crapkit/junitparse.py'
+adding 'crapkit/keys.py'
+adding 'crapkit/lanes.py'
+adding 'crapkit/lizardcognitive.py'
+adding 'crapkit/lizardpowershell.py'
+adding 'crapkit/lizardrust.py'
+adding 'crapkit/lizardshell.py'
+adding 'crapkit/lizardtypescript.py'
+adding 'crapkit/mcp_server.py'
+adding 'crapkit/merge.py'
+adding 'crapkit/mutate.py'
+adding 'crapkit/mutate_pool.py'
+adding 'crapkit/override.py'
+adding 'crapkit/packet.py'
+adding 'crapkit/procs.py'
+adding 'crapkit/ratchet.py'
+adding 'crapkit/ratchet_report.py'
+adding 'crapkit/report.py'
+adding 'crapkit/repotext.py'
+adding 'crapkit/rootfind.py'
+adding 'crapkit/sarif.py'
+adding 'crapkit/sarifio.py'
+adding 'crapkit/scaffold.py'
+adding 'crapkit/score.py'
+adding 'crapkit/snapshot.py'
+adding 'crapkit/store.py'
+adding 'crapkit/uncovered.py'
+adding 'crapkit/universe.py'
+adding 'crapkit/verify.py'
+adding 'crapkit/watch.py'
+adding 'crapkit/worklist.py'
+adding 'crapkit/cli/__init__.py'
+adding 'crapkit/cli/_shared.py'
+adding 'crapkit/cli/admin.py'
+adding 'crapkit/cli/analyses.py'
+adding 'crapkit/cli/claude_hook.py'
+adding 'crapkit/cli/parser.py'
+adding 'crapkit/cli/queue.py'
+adding 'crapkit/cli/ratchet_cmds.py'
+adding 'crapkit/cli/reports.py'
+adding 'crapkit/cli/scoring.py'
+adding 'crapkit/cli/verifying.py'
+adding 'crapkit-0.6.0.dist-info/licenses/LICENSE'
+adding 'crapkit-0.6.0.dist-info/METADATA'
+adding 'crapkit-0.6.0.dist-info/WHEEL'
+adding 'crapkit-0.6.0.dist-info/entry_points.txt'
+adding 'crapkit-0.6.0.dist-info/top_level.txt'
+adding 'crapkit-0.6.0.dist-info/RECORD'
+removing build\bdist.win-amd64\wheel
+Successfully built crapkit-0.6.0-py3-none-any.whl
+* Getting build dependencies for wheel...
+C:\Users\jfgag\AppData\Local\Programs\Python\Python311\Lib\site-packages\setuptools\config\_apply_pyprojecttoml.py:82: SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated
+!!
+
+        ********************************************************************************
+        Please use a simple string containing a SPDX expression for `project.license`. You can also use `project.license-files`. (Both options available on setuptools>=77.0.0).
+
+        This deprecation is overdue, please update your project and remove deprecated
+        calls to avoid build errors in the future.
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  corresp(dist, value, root_dir)
+C:\Users\jfgag\AppData\Local\Programs\Python\Python311\Lib\site-packages\setuptools\config\_apply_pyprojecttoml.py:61: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+!!
+
+        ********************************************************************************
+        Please consider removing the following classifiers in favor of a SPDX license expression:
+
+        License :: OSI Approved :: MIT License
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  dist._finalize_license_expression()
+C:\Users\jfgag\AppData\Local\Programs\Python\Python311\Lib\site-packages\setuptools\dist.py:759: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+!!
+
+        ********************************************************************************
+        Please consider removing the following classifiers in favor of a SPDX license expression:
+
+        License :: OSI Approved :: MIT License
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  self._finalize_license_expression()
+* Building wheel...
+C:\Users\jfgag\AppData\Local\Programs\Python\Python311\Lib\site-packages\setuptools\config\_apply_pyprojecttoml.py:82: SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated
+!!
+
+        ********************************************************************************
+        Please use a simple string containing a SPDX expression for `project.license`. You can also use `project.license-files`. (Both options available on setuptools>=77.0.0).
+
+        This deprecation is overdue, please update your project and remove deprecated
+        calls to avoid build errors in the future.
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  corresp(dist, value, root_dir)
+C:\Users\jfgag\AppData\Local\Programs\Python\Python311\Lib\site-packages\setuptools\config\_apply_pyprojecttoml.py:61: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+!!
+
+        ********************************************************************************
+        Please consider removing the following classifiers in favor of a SPDX license expression:
+
+        License :: OSI Approved :: MIT License
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  dist._finalize_license_expression()
+C:\Users\jfgag\AppData\Local\Programs\Python\Python311\Lib\site-packages\setuptools\dist.py:759: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+!!
+
+        ********************************************************************************
+        Please consider removing the following classifiers in favor of a SPDX license expression:
+
+        License :: OSI Approved :: MIT License
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  self._finalize_license_expression()

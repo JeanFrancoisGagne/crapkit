@@ -1,0 +1,1129 @@
+{
+  "reviewed_commit": "499d9db4f9ff4d212fb94ea3975c7477b6b1c968",
+  "created_at": "2026-09-06T23:19:05.413077+00:00",
+  "review_type": "Fresh whole-project architecture review; no product changes",
+  "candidate_order": [
+    "EX1",
+    "EX3",
+    "AN1",
+    "ST4",
+    "ST1",
+    "RT1",
+    "AN2",
+    "EX2",
+    "ST2",
+    "ST5",
+    "ST6",
+    "RT2",
+    "ST3",
+    "AN3",
+    "AN4",
+    "RT5",
+    "RT3",
+    "RT4"
+  ],
+  "evidence_classes": {
+    "EX1": "Reproduced defect",
+    "EX3": "Reproduced defect",
+    "AN1": "Reproduced defect",
+    "ST4": "Reproduced defect",
+    "ST1": "Reproduced defect",
+    "RT1": "Reproduced defect",
+    "AN2": "Reproduced defect",
+    "EX2": "Reproduced defect",
+    "ST2": "Reproduced defect",
+    "ST5": "Reproduced defect",
+    "ST6": "Reproduced defect",
+    "ST3": "Measured avoidable work",
+    "AN3": "Measured scaling cost",
+    "AN4": "Measured repeated work",
+    "RT2": "Verified CI gap",
+    "RT3": "Replayed release plan",
+    "RT4": "Verified reference drift",
+    "RT5": "Unmeasured optimization"
+  },
+  "coverage": [
+    {
+      "area": "Production module graph and depth",
+      "disposition": "All 64 modules assigned to the three independent source walks; findings require a concrete caller or state invariant, not a file-size split."
+    },
+    {
+      "area": "Configuration and schema",
+      "disposition": "RT1: five schema/runtime admission mismatches reproduced; string paths can produce an empty inventory."
+    },
+    {
+      "area": "CLI and agent ergonomics",
+      "disposition": "Preserve the public lazy main entry point, per-family imports, structured errors and stable handles. Dedicated execution review covers command orchestration, init, doctor, watch and MCP."
+    },
+    {
+      "area": "Analysis, language support and coverage",
+      "disposition": "Dedicated analytical review covers all readers, cache identity, format projection, complexity semantics, source joins and scaling."
+    },
+    {
+      "area": "State, audit, ratchet and reports",
+      "disposition": "Dedicated state review covers store schema, reads/writes, retention, claims, reports, history interpretation and serialization."
+    },
+    {
+      "area": "Execution and recovery",
+      "disposition": "Dedicated execution review covers lane reuse, parallel command ownership, cancellation and mutation snapshots."
+    },
+    {
+      "area": "CI and self-verification",
+      "disposition": "RT2: full hosted CRAP comparison absent; RT5: self-verification uses a different suite schedule."
+    },
+    {
+      "area": "Packaging and installation",
+      "disposition": "Wheel build and import/version smoke pass from a disposable Git archive. Existing interpreter dependencies are reused; this is not a clean dependency-resolution test. CI exercises editable installations only."
+    },
+    {
+      "area": "Release lifecycle",
+      "disposition": "RT3: in-memory execution adapters show whole-stage replay; source proof is present, artifact digests and per-surface completion are absent. No release command ran."
+    },
+    {
+      "area": "Documentation and policy",
+      "disposition": "RT4: reference drift includes mutation ownership, supported versions and unit-test scheduling. Preserve editorial explanations and stable page anchors."
+    },
+    {
+      "area": "Test architecture",
+      "disposition": "Inspected representative public CLI, private helper, schema and documentation contracts. Sixteen focused contract tests pass despite the reproduced admission mismatches. 186 imports reference 132 private production names; counts alone do not justify rewriting them."
+    },
+    {
+      "area": "Performance",
+      "disposition": "Measured analytical decoding and state-read probes are supplied by the independent walks. Suite aggregation and release changes remain design proposals without measured speedup."
+    },
+    {
+      "area": "Portability",
+      "disposition": "Windows disposable CLI/process/Git probes; static review of POSIX process and shell paths. No fresh Linux execution in this pass."
+    },
+    {
+      "area": "Security and output handling",
+      "disposition": "Reviewed trusted repository-command assumption, local state ownership, Docker mount access and output encoders. This is not a full adversarial audit or secret scan."
+    },
+    {
+      "area": "Plugin, marketplace, Action and MCP",
+      "disposition": "Dedicated execution review plus root installation/CI review. Keep ADR 0001's invalid-tool-argument result behavior."
+    },
+    {
+      "area": "Demo and reproduction tools",
+      "disposition": "Read build/capture/render ownership and deterministic fixture/font design. Keep these existing modules; their interfaces own distinct work. No image regeneration was needed."
+    },
+    {
+      "area": "Dependencies and extensibility",
+      "disposition": "Keep the small Python package and real format adapters. No new framework or dependency proposed merely to reduce visible function counts."
+    },
+    {
+      "area": "Architecture history",
+      "disposition": "Preserve previous report and evidence bytes. The new review uses a separate directory and source SHA."
+    }
+  ],
+  "module_owners": {
+    "src/crapkit/__init__.py": "Root review",
+    "src/crapkit/__main__.py": "Root review",
+    "src/crapkit/_pygdefer.py": "Analytical review",
+    "src/crapkit/analyze.py": "Analytical review",
+    "src/crapkit/cache.py": "Analytical review",
+    "src/crapkit/churn.py": "Analytical review",
+    "src/crapkit/churn_cache.py": "Analytical review",
+    "src/crapkit/churn_log.py": "Analytical review",
+    "src/crapkit/cli/__init__.py": "Execution review",
+    "src/crapkit/cli/_shared.py": "Execution review",
+    "src/crapkit/cli/admin.py": "Execution review",
+    "src/crapkit/cli/analyses.py": "Execution review",
+    "src/crapkit/cli/claude_hook.py": "Execution review",
+    "src/crapkit/cli/parser.py": "Execution review",
+    "src/crapkit/cli/queue.py": "Execution review",
+    "src/crapkit/cli/ratchet_cmds.py": "Execution review",
+    "src/crapkit/cli/reports.py": "Execution review",
+    "src/crapkit/cli/scoring.py": "Execution review",
+    "src/crapkit/cli/verifying.py": "Execution review",
+    "src/crapkit/config.py": "Execution review",
+    "src/crapkit/coupling.py": "Analytical review",
+    "src/crapkit/coupling_cache.py": "Analytical review",
+    "src/crapkit/coverage_istanbul.py": "Analytical review",
+    "src/crapkit/coverage_py.py": "Analytical review",
+    "src/crapkit/covstream.py": "Analytical review",
+    "src/crapkit/diffparse.py": "Analytical review",
+    "src/crapkit/digest.py": "State review",
+    "src/crapkit/doctor.py": "Execution review",
+    "src/crapkit/dup.py": "Analytical review",
+    "src/crapkit/errors.py": "State review",
+    "src/crapkit/gitio.py": "Analytical review",
+    "src/crapkit/hook.py": "Execution review",
+    "src/crapkit/invocation.py": "Execution review",
+    "src/crapkit/junitparse.py": "Execution review",
+    "src/crapkit/keys.py": "Analytical review",
+    "src/crapkit/lanes.py": "Execution review",
+    "src/crapkit/lizardcognitive.py": "Analytical review",
+    "src/crapkit/lizardpowershell.py": "Analytical review",
+    "src/crapkit/lizardrust.py": "Analytical review",
+    "src/crapkit/lizardshell.py": "Analytical review",
+    "src/crapkit/lizardtypescript.py": "Analytical review",
+    "src/crapkit/mcp_server.py": "Execution review",
+    "src/crapkit/merge.py": "State review",
+    "src/crapkit/mutate.py": "Execution review",
+    "src/crapkit/mutate_pool.py": "Execution review",
+    "src/crapkit/override.py": "State review",
+    "src/crapkit/packet.py": "State review",
+    "src/crapkit/procs.py": "Execution review",
+    "src/crapkit/ratchet.py": "State review",
+    "src/crapkit/ratchet_report.py": "State review",
+    "src/crapkit/report.py": "State review",
+    "src/crapkit/repotext.py": "Analytical review",
+    "src/crapkit/rootfind.py": "Execution review",
+    "src/crapkit/sarif.py": "State review",
+    "src/crapkit/sarifio.py": "State review",
+    "src/crapkit/scaffold.py": "Execution review",
+    "src/crapkit/score.py": "Analytical review",
+    "src/crapkit/snapshot.py": "State review",
+    "src/crapkit/store.py": "State review",
+    "src/crapkit/uncovered.py": "Analytical review",
+    "src/crapkit/universe.py": "Analytical review",
+    "src/crapkit/verify.py": "State review",
+    "src/crapkit/watch.py": "Execution review",
+    "src/crapkit/worklist.py": "State review"
+  },
+  "inventory": {
+    "tracked_files": 647,
+    "production_modules": 64,
+    "production_lines": 23194,
+    "production_functions": 1599,
+    "python_test_support_files": 305,
+    "test_support_lines": 52272,
+    "test_support_functions": 4471,
+    "historical_architecture_files": 167
+  },
+  "fresh_checks": {
+    "focused_contract_tests": 16,
+    "full_suite_rerun": false,
+    "wheel_build_and_extracted_import": "passed",
+    "independent_replays": [
+      "analysis cache",
+      "ratchet concurrent writes",
+      "override pruning",
+      "packet age",
+      "empty marks query",
+      "trend snapshot"
+    ]
+  },
+  "candidates": [
+    {
+      "id": "EX1",
+      "title": "Make automatic artifact reuse account for test inputs",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 443,
+          "role": "Artifact stamp records commit, lane name, and duration"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 577,
+          "role": "Changed files are filtered through scored source scopes"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 627,
+          "role": "Automatic reuse treats no scoped changes as fresh measurement"
+        },
+        {
+          "path": "src/crapkit/cli/scoring.py",
+          "line": 129,
+          "role": "Public coverage and verify flow enables reuse"
+        }
+      ],
+      "problem": "Automatic reuse treats source ownership as the complete set of measurement inputs. A changed tracked test input outside src disappears from the freshness check. Verify then records a passing result from old coverage and JUnit even though a fresh lane fails on the same tree.",
+      "proposed_change": "Give the lane code ownership of measurement validity. Changed tests, runner configuration, commands, and other unproven repository inputs must prevent automatic reuse. Use a conservative check until narrower dependency evidence exists. Keep explicit reuse-artifacts as a deliberate request to consume an existing artifact.",
+      "evidence": {
+        "kind": "Observed public CLI replay on a disposable synthetic repository",
+        "observed": [
+          "Initial coverage invoked the configured runner once and recorded one passing test.",
+          "After editing tracked tests/state.txt from pass to fail, verify --reuse-unchanged --no-tighten --json exited 0 with ok=true, no new failures, run_id=2, and runner count still 1.",
+          "Fresh verify --no-tighten --json on the identical tree exited 8 with tests.test_app::test_f in new_failures, run_id=3, and runner count 2."
+        ],
+        "inference": "The same source-scope filter also cannot establish validity after runner or configuration changes outside the scored corpus. A commit plus changed-path names does not identify repeated edits to already-dirty inputs.",
+        "replay_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; $env:PYTHONDONTWRITEBYTECODE='1'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\execution-reuse-probe.py'",
+        "artifacts": [
+          "execution-reuse-probe.py",
+          "execution-reuse-probe.txt",
+          "execution-reuse-result.json"
+        ],
+        "existing_tests": [
+          "tests/e2e/test_lanes_scope_gaps.py:178 retains docs-only reuse",
+          "tests/e2e/test_lane_reuse_e2e.py covers source-scoped reuse",
+          "tests/unit/test_cli_scoring_inproc.py:229 covers reuse decisions"
+        ]
+      },
+      "before": "Tracked test changes outside src -> source ownership filter drops change -> old coverage and JUnit -> passing verify ledger entry",
+      "after": "Measurement input changes or validity is unknown -> automatic reuse refused -> lane executes -> current coverage and JUnit decide verdict",
+      "deletion_test": "Remove the scope-only predicate as the authority for measurement freshness. Keep scope ownership for corpus admission and warnings. Do not copy new freshness checks into each CLI command.",
+      "leverage": "One lane-level decision protects both coverage and verify, including future callers.",
+      "locality": "The module that creates and consumes artifacts also decides whether its previous measurement still applies.",
+      "test_benefits": "A public fixture can compare automatic reuse with a fresh run after source, test, command, and configuration edits. Assert runner calls, verdict, and ledger content together.",
+      "cost": "More lane executions when input relevance is unknown. No speed improvement was measured or claimed.",
+      "risk": "Arbitrary shell commands can depend on inputs outside the repository. Do not promise complete dependency inference. Preserve safe docs-only reuse only where the measurement contract supports it.",
+      "adr_conflict": null,
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "EX3",
+      "title": "Give each measurement exclusive ownership of its artifact paths",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/config.py",
+          "line": 752,
+          "role": "Rejects shared paths only among lanes in one configuration"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 42,
+          "role": "Lane log path is shared across invocations"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 175,
+          "role": "Lane command writes the shared log and configured artifacts"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 411,
+          "role": "Freshness check proves a file changed, not which invocation wrote it"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 458,
+          "role": "Shared artifact stamp update"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "line": 1068,
+          "role": "Execution and parsing consume the same configured artifact path"
+        },
+        {
+          "path": "src/crapkit/cli/scoring.py",
+          "line": 268,
+          "role": "Measurement pipeline has no cross-process artifact owner"
+        }
+      ],
+      "problem": "Separate CLI processes can execute the same lane and overwrite each other's configured artifacts between execution and parsing. Path uniqueness within one config does not protect overlapping invocations. A successful run can persist another invocation's measurement and digest without a warning.",
+      "proposed_change": "Keep declared artifact and log paths under one measurement's ownership through execution, parsing, and stamping. Serialize or refuse conflicting invocations, or use private outputs where the configured command supports them. Keep parallel lanes within one run and independent worktrees independent.",
+      "evidence": {
+        "kind": "Observed two-process public coverage replay with a deterministic barrier and synthetic lane output",
+        "observed": [
+          "Invocation A wrote coverage with hits=1 and expected CRAP load 1, then waited.",
+          "Invocation B overwrote the same artifact with hits=0 and expected CRAP load 2 before A parsed.",
+          "Both coverage commands exited 0 and reported CRAP load 2 with the same B artifact SHA256, although A's own measured output recorded load 1."
+        ],
+        "inference": "Shared lane logs and read-modify-write stamps have the same cross-process ownership gap. Their corruption was not separately measured.",
+        "replay_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; $env:PYTHONDONTWRITEBYTECODE='1'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\execution-concurrent-probe.py'",
+        "artifacts": [
+          "execution-concurrent-probe.py",
+          "execution-concurrent-probe.txt",
+          "execution-concurrent-result.json"
+        ],
+        "artifact_sha256_b": "1e16fd186d9af40d0d851b3f9ae6b2ea698a35a54e6629d043f4d82052970e86"
+      },
+      "before": "A writes artifact -> B overwrites artifact -> A and B parse B bytes -> both persist B measurement",
+      "after": "Measurement owns artifact paths through parse and stamp -> conflicting run waits or refuses -> each stored result belongs to its invocation",
+      "deletion_test": "Remove the assumption that per-config path uniqueness establishes process-wide ownership. Concentrate execution, parse, and stamp lifetime under one owner; keep freshness checks for interrupted or failed runs.",
+      "leverage": "One ownership rule protects coverage, verify, automatic reuse, logs, and artifact stamps.",
+      "locality": "Ownership surrounds the existing measurement lifecycle rather than adding separate lock checks to every command.",
+      "test_benefits": "Use two real CLI processes with a barrier. Assert result content and artifact digest, then cover coverage/verify overlap, conflicting reuse, crash cleanup, and Windows/POSIX release behavior.",
+      "cost": "Conflicting measurements in one checkout must wait or refuse. No timing benefit was measured.",
+      "risk": "A blanket command lock would block read-only operations and useful within-run parallelism. Keep the scope limited to conflicting artifact lifetimes and ensure ownership releases after process failure.",
+      "adr_conflict": null,
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "AN1",
+      "title": "Bind analysis cache records to the bytes actually parsed",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/analyze.py",
+          "lines": "362-367,389-390,557-577,671-688"
+        },
+        {
+          "path": "src/crapkit/cache.py",
+          "lines": "31-40"
+        },
+        {
+          "path": "src/crapkit/cli/scoring.py",
+          "lines": "61-94"
+        }
+      ],
+      "problem": "The analysis cache hashes a source file before the parser opens it again. An edit or deletion between the reads stores later records under the earlier bytes' identity. The wrong answer survives cache serialization and a normal restoration of the original source.",
+      "proposed_change": "Concentrate ownership of source bytes, their digest and their parsed records in the analysis operation. Never store records against a hash obtained from different bytes. Refuse or retry an interrupted source read, and invalidate caches that can already contain mismatched records. Keep current metric rules, path restamping and the settled-file fast path.",
+      "evidence": {
+        "observation": "The controlled edit replay returns CCN2/end4 on a warm hit for current source whose independent analysis returns CCN1/end2. The deletion replay saves and reloads cache.json, restores the original source normally, then gets one cache hit with zero functions instead of one. No restored timestamps or source changes in the reviewed checkout.",
+        "inference": "Editors, generators or another command can cause this interleaving. Its frequency on user repositories is not measured. Inventory, coverage, verify and rescore consume the affected cached records.",
+        "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\analysis-probe.py'",
+        "artifacts": [
+          "analysis-probe.py",
+          "analysis-probe.json"
+        ],
+        "caller_flow": "cli.scoring._build_inventory -> _analyzed_corpus -> analyze_files -> _hash_paths -> analyze_jobs -> analyze_one -> updated_cache -> save_cache; later load_cache repeats the wrong metrics."
+      },
+      "before_after_schematic": {
+        "before": "path -> read A -> hash A -> queue path -> read B -> records B -> cache[hash A]",
+        "after": "one owned source input -> matching digest and records -> cache; changed or incomplete input cannot publish a mismatched entry"
+      },
+      "deletion_test": "Remove the handoff that couples an earlier path read's identity to a later independent parse. This is a deeper existing module, not a new cache wrapper.",
+      "leverage": "One correction covers every analyze_files caller and every supported reader.",
+      "locality": "Byte identity and parsing belong together in analyze.py; cache.py can retain its pure partition/update role.",
+      "test_benefits": "The existing analyze_files interface is the seam. Add controlled edit and delete interleavings, persisted cache round trips, warm/cold equality and spawned-worker variants. Preserve the existing cross-reader and typed-cache fixtures.",
+      "cost_risk": "Medium. Source ownership can affect worker memory and IPC, so compare reading in the worker with retaining input bytes before choosing. Existing cache fingerprints need invalidation. Do not change ANALYSIS_VERSION solely for this cache correction.",
+      "adr_conflict": "None. Neither ADR0001 nor ADR0002 governs source cache ownership.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "ST4",
+      "rank": 2,
+      "title": "Give ratchet file updates one concurrency rule",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "line": 630,
+          "end_line": 634,
+          "role": "Verify loads the prior marks separately from settlement."
+        },
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "line": 369,
+          "end_line": 391,
+          "role": "The writer rereads disk only for byte equality and overwrites it with a result derived from stale input."
+        },
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "line": 394,
+          "end_line": 412,
+          "role": "Settlement computes a tighten from the earlier marks."
+        },
+        {
+          "path": "src/crapkit/cli/ratchet_cmds.py",
+          "line": 116,
+          "end_line": 129,
+          "role": "Move owns another read/write sequence."
+        },
+        {
+          "path": "src/crapkit/cli/ratchet_cmds.py",
+          "line": 243,
+          "end_line": 253,
+          "role": "Seed and prune publish through a separate direct file write."
+        },
+        {
+          "path": "src/crapkit/override.py",
+          "line": 99,
+          "end_line": 108,
+          "role": "Override owns another read/modify/write sequence."
+        }
+      ],
+      "problem": "Two writers can each tighten their own prior snapshot while the second raises the mark already on disk. The current writer treats a fresh disk read as an equality optimization, not a check that the input being replaced is still the input that was judged.",
+      "proposed_change": "Concentrate ratchet file mutation and stale-input handling in one owner. Apply each operation against the marks it is allowed to replace, preserving tighter marks and separately audited grants. Publish a complete file and report the actual change made. Keep test runs and analysis outside file coordination.",
+      "evidence": {
+        "observed": "Two real subprocesses each load mark 50, call update_ratchet for fresh 10 and 20, and pause before the actual verify writer. Releasing the 10 writer then the 20 writer changes disk 50 ->10 ->20. Both returned receipts say tightened:1.",
+        "inferred": "The probe exercises the pure update and internal file-publication seam, not two full verify commands. It proves the allowed stale-write ordering; it does not measure how often that ordering occurs. Abrupt file truncation and other writer pairs were inspected but not fault-injected.",
+        "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+        "probe": "state-probes.py:stale_ratchet_write and marks_worker",
+        "result": "state-probes.json:stale_ratchet_write"
+      },
+      "before_after_schematic": {
+        "before": "verify / seed / prune / move / override -> separate read-modify-write sequences -> one shared TSV",
+        "after": "operation intent + checked prior state -> one ratchet file owner -> complete publication + truthful receipt"
+      },
+      "deletion_test": "Delete independent file-publication decisions from the command families. Moving their write_text calls into a shared wrapper without stale-input handling does not pass.",
+      "leverage": "All ratchet writers gain one rule for concurrency, complete publication and receipts.",
+      "locality": "Keep pure seed, update, move and merge policy in ratchet.py; concentrate filesystem coordination beside that policy rather than in each CLI family.",
+      "test_benefits": "Test two writers after a shared prior read, both writer orders, disjoint marks, dropped marks, an intervening audited grant, and interruptions during publication. Preserve merge-driver semantics and metric/key stamps.",
+      "cost": "Medium. Several existing writers and their distinct allowed operations must move together.",
+      "risk": "A blanket minimum operation would erase legitimate override behavior. A rename-only atomic write would still lose concurrent updates. Do not lock across lane execution or alerts.",
+      "adr_conflict": "None. Preserve marks-only-tighten outside audited grants, explicit prune/move semantics, and three-way merge behavior.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "ST1",
+      "rank": 1,
+      "title": "Keep override publication and run retention under one owner",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "line": 863,
+          "end_line": 871,
+          "role": "The hook commits its placeholder run before sending the alert."
+        },
+        {
+          "path": "src/crapkit/override.py",
+          "line": 34,
+          "end_line": 45,
+          "role": "Alert, audit insertion and mark grant are separate steps."
+        },
+        {
+          "path": "src/crapkit/cli/reports.py",
+          "line": 264,
+          "end_line": 270,
+          "role": "Retention observes the run before its audit exists."
+        },
+        {
+          "path": "src/crapkit/store.py",
+          "line": 956,
+          "end_line": 961,
+          "role": "Audit insertion does not require a surviving run."
+        },
+        {
+          "path": "src/crapkit/store.py",
+          "line": 1107,
+          "end_line": 1112,
+          "role": "The public audit joins through runs and hides orphan rows."
+        },
+        {
+          "path": "src/crapkit/store.py",
+          "line": 1262,
+          "end_line": 1282,
+          "role": "Deletion uses the earlier retention decision."
+        }
+      ],
+      "problem": "Prune can delete a hook run while its override alert is in progress. The alert then succeeds, the store accepts an audit row for the deleted run, and the ratchet grants debt. The public override history shows no record. Protecting runs added after selection does not protect a run already selected while its audit is incomplete.",
+      "proposed_change": "Make the store preserve the relationship between an override and its run throughout publication and pruning. Keep the alert outside database locks. Refuse a grant when its audit cannot remain attached to a surviving run, and make retention honor an override that is being completed.",
+      "evidence": {
+        "observed": "The probe creates two coverage runs, starts a hook override in a subprocess, pauses its harmless alert, and calls the actual prune handler. Prune deletes hook run 3. After the alert resumes, record_override returns normally, read_overrides(3) returns one row, the TSV grants 90, and public overrides --json returns an empty list.",
+        "inferred": "The production hook has the same ordering. The full hook command and git staging were not run. Frequency in ordinary concurrent use was not measured.",
+        "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+        "probe": "state-probes.py:prune_during_override and override_worker",
+        "result": "state-probes.json:prune_override"
+      },
+      "before_after_schematic": {
+        "before": "hook writes run -> alert waits | prune sees no audit -> deletes run | audit inserts -> mark grants -> audit listing loses the record",
+        "after": "override publication + retention -> one store-owned run/audit rule; alert remains outside the short write transaction"
+      },
+      "deletion_test": "Remove the caller-owned assumption that an earlier run insertion guarantees later audit retention. A helper that merely wraps the existing three calls leaves the defect intact.",
+      "leverage": "Hook overrides, verify overrides, runs prune and overrides history share the same durable rule.",
+      "locality": "Keep SQLite relationship and retention decisions in the store; keep alert execution and committed file handling with their existing owners.",
+      "test_benefits": "One subprocess interleaving test covers the run/audit contract through prune and the public audit reader. Include failed alerts, failed audits, interrupted publication and already completed overrides.",
+      "cost": "Medium. Coordinate the override lifecycle with retention and existing legacy stores.",
+      "risk": "Do not hold SQLite locks while an external alert runs, delete existing audit history, or change failed/crashed verify trust. Cleanup of abandoned work needs an explicit rule.",
+      "adr_conflict": "None. Accepted ADRs 0001 and 0002 concern MCP argument errors and configuration discovery. Preserve the existing three-record override contract.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "RT1",
+      "title": "Admit configuration once, before it can change the corpus",
+      "strength": "Strong",
+      "category": "in-process",
+      "files": [
+        "src/crapkit/config.py:660",
+        "src/crapkit/config.py:784",
+        "src/crapkit/doctor.py:10",
+        "crapkit.schema.json:9",
+        "tests/unit/test_schema_contract.py:16"
+      ],
+      "problem": "The runtime, doctor and editor schema own different fragments of the configuration contract; malformed string collections can silently remove the scored corpus.",
+      "proposed_change": "Give the configuration module one complete admission contract for collection, string, numeric and boolean fields; derive the editor and diagnostic field facts from that contract.",
+      "evidence": [
+        "Disposable CLI replay: paths=\"src\" yields inventory exit 0 with zero files and zero functions.",
+        "Five in-memory inputs rejected by the published schema are accepted by load_config_text; exclude.globs=\"tests/**\" becomes eight one-character patterns, including '*'.",
+        "Sixteen existing schema, CLI-documentation and subprocess-coverage contract tests still pass."
+      ],
+      "before": [
+        "TOML values",
+        "Runtime coercion + schema + doctor",
+        "Malformed values reach corpus selection"
+      ],
+      "after": [
+        "TOML values",
+        "One typed admission module",
+        "Valid corpus inputs + derived field facts"
+      ],
+      "deletion_test": "Delete repeated field declarations and coercions; preserve one admission implementation instead of moving validation into every command.",
+      "leverage": "Every command receives admitted values.",
+      "locality": "A field changes in one module.",
+      "test_benefits": "Check invalid shapes through load_config_text and inventory; compare generated schema semantics.",
+      "cost_risk": "Medium. Preserve current supported TOML and nearest-root behavior; avoid adding a runtime schema framework.",
+      "adr": "No conflict; preserve ADR 0002.",
+      "evidence_files": [
+        "root-evidence/config-shapes.json",
+        "execution-reuse-result.json",
+        "probe-project-contracts.py"
+      ],
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "AN2",
+      "title": "Preserve Git path bytes before history and dirty-file joins",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/gitio.py",
+          "lines": "87-90,152-155,199-216"
+        },
+        {
+          "path": "src/crapkit/churn.py",
+          "lines": "85-104"
+        },
+        {
+          "path": "src/crapkit/coupling.py",
+          "lines": "22-46"
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "lines": "130-155"
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "lines": "577-590"
+        }
+      ],
+      "problem": "Git path lists and two history consumers remove surrounding whitespace. A valid tracked top-level path named ' leading.py' becomes 'leading.py'. Path identity now depends on which Git reader supplied it.",
+      "proposed_change": "Make Git transport preserve path spelling. Use NUL-delimited path-list output where Git provides it, and remove record terminators without trimming path content in history. Concentrate the shared history path decoding rule so churn and coupling cannot reinterpret names independently. Refresh derived history caches after changing the path contract.",
+      "evidence": {
+        "observation": "In a real disposable Windows Git repository, ls_files returns ' leading.py', while status_names and unstaged_paths return 'leading.py'. Churn records the wrong key. Coupling produces a pair under the wrong name, then drops it when given the real tracked set. Mutation input capture records 'leading.py': null and omits the dirty dependency's actual bytes.",
+        "inference": "This misses dirty-file joins and can seed committed dependency bytes into a mutation worker. An exact-file lane scope can also miss the changed path. The probe does not claim a full verify or mutation verdict.",
+        "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\git-path-probe.py'",
+        "artifacts": [
+          "git-path-probe.py",
+          "git-path-probe.json"
+        ],
+        "caller_flow": "gitio._diff_names -> status_names -> GitFacts, lanes._scope_changes, cli.verifying dirty attribution and mutate_pool._input_snapshot; git log -> churn._collect/coupling._commit_file_sets -> tracked/scored path joins."
+      },
+      "before_after_schematic": {
+        "before": "Git path -> generic strip -> altered name -> lookup misses; churn and coupling each decode history paths",
+        "after": "Git record framing -> unchanged path -> all joins use the tracked-file spelling; one shared history decoding rule"
+      },
+      "deletion_test": "Delete generic whitespace trimming from path interpretation and duplicate history decoding knowledge. Retain separate consumers for churn weights and coupling counts.",
+      "leverage": "Dirty-state checks, mutation snapshots, churn risk and coupling rankings share the corrected path contract.",
+      "locality": "Git transport owns delimiters and spelling; analytical consumers own counts and weights.",
+      "test_benefits": "Real Git fixtures should cover leading spaces, ordinary names, Unicode, nested roots and renames. On platforms that support them, include tabs/newlines and literal backslashes. Check tracked paths against status/history keys and actual captured snapshot bytes.",
+      "cost_risk": "Small to medium. Preserve Git C quoting where line-oriented output remains. Invalidate derived caches carrying changed spellings; keep the existing raw compressed history schema unless its framing changes.",
+      "adr_conflict": "None. Preserve the nested-root behavior required by ADR0002.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "EX2",
+      "title": "Use one scope ownership rule for inventory and init",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "line": 553,
+          "role": "Ancestor ownership guard before init writes"
+        },
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "line": 570,
+          "role": "Private scope rule says root scope claims nothing"
+        },
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "line": 579,
+          "role": "Duplicate overlap and prefix rules"
+        },
+        {
+          "path": "src/crapkit/universe.py",
+          "line": 114,
+          "role": "Actual scope matcher admits root scope"
+        },
+        {
+          "path": "src/crapkit/universe.py",
+          "line": 168,
+          "role": "Corpus ownership uses normalized matchers"
+        }
+      ],
+      "problem": "Init has a second interpretation of scope paths. Inventory treats paths=['.'] as ownership of the repository, while init's private prefix rule treats it as no ownership. Init can create a nested configuration that shadows an ancestor already owning the same source files.",
+      "proposed_change": "Concentrate scope meaning in the existing scope module and make init use that meaning when checking an overlapping ancestor scope. Remove admin's separate root-path interpretation. Preserve the bidirectional overlap check and repository discovery boundaries.",
+      "evidence": {
+        "kind": "Observed public init replay plus public corpus assignment on a disposable repository",
+        "observed": [
+          "With ancestor scope paths=['.'], assign_files admitted child/src/app.py. Init --repo child exited 0 and wrote child/crapkit.toml.",
+          "With ancestor scope paths=['child'], assign_files admitted the same file. Init --repo child exited 3 and wrote no nested configuration."
+        ],
+        "inference": "Deleting the duplicate interpretation reduces future drift whenever scope normalization changes.",
+        "replay_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; $env:PYTHONDONTWRITEBYTECODE='1'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\execution-init-probe.py'",
+        "artifacts": [
+          "execution-init-probe.py",
+          "execution-init-probe.txt",
+          "execution-init-result.json"
+        ]
+      },
+      "before": "Inventory root-aware matcher and init private prefix matcher -> different owners for child/src/app.py -> nested config shadows parent",
+      "after": "One scope meaning -> ancestor overlap recognized -> actionable refusal before init writes",
+      "deletion_test": "Delete admin's separate root and prefix interpretation. Retain the question of overlap in both directions, since an ancestor scope can lie below the proposed config directory.",
+      "leverage": "Every scope-path normalization change reaches corpus admission and init refusal together.",
+      "locality": "Scope rules stay with scope ownership. Init handles discovery, refusal, and writing.",
+      "test_benefits": "Compare inventory admission and init refusal for root, named prefix, nested scope, nested repository, linked worktree, and explicit --repo cases. Assert no writes on refusal.",
+      "cost": "Small change to the shared ownership rule and its callers. No performance claim.",
+      "risk": "A one-way prefix replacement would miss scopes below the proposed directory. Preserve valid independent nested configurations and .git discovery stops.",
+      "adr_conflict": "None. This repairs the implementation to preserve ADR 0002: init must refuse a nested configuration when an ancestor already claims that subtree.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "ST2",
+      "rank": 4,
+      "title": "Use one ratchet history interpretation for report and packet age",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/packet.py",
+          "line": 87,
+          "end_line": 100,
+          "role": "Packet age clears the entry date for any event other than added."
+        },
+        {
+          "path": "src/crapkit/ratchet_report.py",
+          "line": 38,
+          "end_line": 53,
+          "role": "History emits updated events for changed values."
+        },
+        {
+          "path": "src/crapkit/ratchet_report.py",
+          "line": 84,
+          "end_line": 100,
+          "role": "The report correctly preserves entry date on an update."
+        },
+        {
+          "path": "src/crapkit/cli/queue.py",
+          "line": 661,
+          "end_line": 673,
+          "role": "Brief and next-item packets feed those same events to the separate age replay."
+        },
+        {
+          "path": "src/crapkit/cli/ratchet_cmds.py",
+          "line": 199,
+          "end_line": 204,
+          "role": "Ratchet report uses the other replay."
+        }
+      ],
+      "problem": "A committed tightening erases packet mark age even though the mark remains open. The current ratchet report says the debt is 90 days old while a packet for the same history says its age is unknown. Two modules interpret the same event vocabulary independently.",
+      "proposed_change": "Let ratchet history own replay and entry dates. Have packet age use that interpretation, retaining its per-key answer and the existing rule that an unmarked function does not read Git history.",
+      "evidence": {
+        "observed": "Real mark_events over an addition 50 and update 20 ninety days later produces an updated event. report_from_events returns age_days:90; packet.mark_age_days returns null.",
+        "inferred": "The CLI caller flow is verified in source. This probe uses the shared pure event seam; it does not create commits or run full brief/ratchet CLI commands.",
+        "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+        "probe": "state-probes.py:packet_age",
+        "result": "state-probes.json:packet_age"
+      },
+      "before_after_schematic": {
+        "before": "mark_events -> report replay keeps update age | packet replay discards update age",
+        "after": "mark_events -> one history replay -> report ages + per-function packet age"
+      },
+      "deletion_test": "Delete packet's separate event-state machine. Adding an updated branch there repairs this case but leaves event ownership duplicated.",
+      "leverage": "Ratchet report, brief and next-item agree when history gains or changes an event kind.",
+      "locality": "Debt entry, update and repayment semantics remain in ratchet_report; packet keeps payload shaping.",
+      "test_benefits": "One history fixture should feed both views and cover additions, tightenings, raised audited marks, drops, re-additions and comment-only history clock changes.",
+      "cost": "Small. Reuse the existing replay without moving unrelated packet functions.",
+      "risk": "Preserve null for absent marks and the entry date after repayment and re-entry. Do not add a Git read for unmarked packets.",
+      "adr_conflict": "None. Retain deterministic history time instead of wall-clock age.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "ST5",
+      "rank": 3,
+      "title": "Read report history from one store snapshot",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/cli/reports.py",
+          "line": 120,
+          "end_line": 133,
+          "role": "Trend combines three independent reads and substitutes zero for a missing whole-run total."
+        },
+        {
+          "path": "src/crapkit/cli/reports.py",
+          "line": 173,
+          "end_line": 182,
+          "role": "The HTML collector adds another independently selected worklist run."
+        },
+        {
+          "path": "src/crapkit/store.py",
+          "line": 889,
+          "end_line": 920,
+          "role": "Whole and scoped totals each fetch the rollup separately."
+        },
+        {
+          "path": "src/crapkit/store.py",
+          "line": 944,
+          "end_line": 954,
+          "role": "Run metadata is read after those aggregates."
+        }
+      ],
+      "problem": "A run committed between report reads can appear with zero whole-run totals but nonzero scope totals. The CLI coordinates a result that requires one snapshot, although only the store can keep the reads consistent.",
+      "proposed_change": "Have the store own the run set and the aggregate values used for one history answer. Derive whole-run and per-scope totals from that same data, then render the result without rereading the live run list or substituting zero for a run not measured by that read.",
+      "evidence": {
+        "observed": "A transparent wrapper around run_totals inserts one real run through a second SQLite connection after returning the real totals. The actual _trend_payload then reports new run 2 with functions:0 and crap_load:0, while by_scope.src reports functions:1 and crap_load:6.",
+        "inferred": "This is a deterministic internal-seam interleaving using two connections. It is not a timing-based full CLI concurrency test. Additional HTML, digest and prune/read races were traced but not separately reproduced.",
+        "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+        "probe": "state-probes.py:mixed_trend_read",
+        "result": "state-probes.json:mixed_trend_read"
+      },
+      "before_after_schematic": {
+        "before": "trend -> whole totals at A + scope totals at B + run list at C -> inconsistent row",
+        "after": "trend/report -> one store-owned history snapshot -> whole and scoped views of the same rows"
+      },
+      "deletion_test": "Delete the report collector's joins across independently fetched aggregates and run metadata. An extra formatting helper would only move those decisions.",
+      "leverage": "Trend and HTML report already share this collector. The same snapshot discipline can then be checked at digest and packet readers without building a generic query framework.",
+      "locality": "The store owns data consistency and rollup reuse; report code owns presentation.",
+      "test_benefits": "Assert whole totals equal the sum of scope totals when a new run lands between reads and when pruning overlaps a read. Keep best-effort rollup publication tests and legacy empty-run behavior.",
+      "cost": "Medium. Change collection ownership while retaining existing JSON and cached aggregates.",
+      "risk": "Long read transactions can delay writers under SQLite's current journal mode. Keep collection short, and do not include Git, source reads or HTML rendering in the snapshot lifetime.",
+      "adr_conflict": "None. Preserve the existing shared trend/report payload and read-only command behavior.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "ST6",
+      "rank": 6,
+      "title": "Give the GitHub annotation adapter its own property encoding",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/sarif.py",
+          "line": 22,
+          "end_line": 31,
+          "role": "The result carries a source path as its artifact uri."
+        },
+        {
+          "path": "src/crapkit/sarif.py",
+          "line": 89,
+          "end_line": 97,
+          "role": "Only the message is escaped; the file property is emitted verbatim."
+        },
+        {
+          "path": "src/crapkit/cli/_shared.py",
+          "line": 222,
+          "end_line": 230,
+          "role": "The shared findings emitter prints this directly to workflow stdout."
+        }
+      ],
+      "problem": "A source filename is inserted into the GitHub workflow-command property grammar without encoding. A comma splits the filename into properties, a literal percent escape decodes to a different path, and a newline creates another command line. Message escaping does not protect properties.",
+      "proposed_change": "Keep filename interpretation inside the GitHub output adapter. Encode every workflow property using the runner's property rules, while retaining the separate message rules. Do not treat a SARIF artifact value as ready-to-print workflow syntax.",
+      "evidence": {
+        "observed": "The actual builder emits file=src/a,b.py for src/a,b.py and file=src/a%2Cb.py for a filename containing a literal percent sequence. A source path containing a newline produces two output lines. The probe only captures strings; it sends no workflow commands or network writes.",
+        "inferred": "The official runner splits properties on commas and decodes percent escapes, so those first two paths resolve incorrectly. A second workflow-command line is possible on filesystems that admit newline filenames. No GitHub runner was launched and no downstream exploit or privilege impact is claimed.",
+        "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+        "probe": "state-probes.py:annotation_paths",
+        "result": "state-probes.json:annotation_paths",
+        "sources": [
+          {
+            "url": "https://raw.githubusercontent.com/actions/toolkit/main/packages/core/src/command.ts",
+            "lines": "104-110",
+            "supports": "Properties escape percent, carriage return, newline, colon and comma."
+          },
+          {
+            "url": "https://raw.githubusercontent.com/actions/runner/main/src/Runner.Common/ActionCommand.cs",
+            "lines": "85-99 and 206-218",
+            "supports": "The runner splits properties before decoding their escaped values."
+          }
+        ]
+      },
+      "before_after_schematic": {
+        "before": "source path -> SARIF-shaped result -> raw GitHub file property",
+        "after": "source path -> GitHub property encoder -> one faithful workflow command"
+      },
+      "deletion_test": "Delete the assumption that a path already carried by another output format needs no GitHub encoding. Keep this a local adapter repair; no general output framework is needed.",
+      "leverage": "Coverage and verify share the findings emitter, including changed uncovered-line annotations.",
+      "locality": "All GitHub command syntax stays in sarif.py's existing annotation adapter.",
+      "test_benefits": "Round-trip comma, colon, percent, carriage-return and newline properties against the published parsing rule. Assert one emitted command line per finding and unchanged ordinary paths/messages.",
+      "cost": "Small. Add the missing property rule and focused adapter regressions.",
+      "risk": "Do not apply message escaping twice or pass percent-encoded SARIF URIs as filesystem paths. Broader SARIF URI compliance was not validated against a schema or consumer in this review.",
+      "adr_conflict": "None. Preserve existing rule IDs, levels, result locations and ordinary annotation text.",
+      "review_kind": "Reproduced defect"
+    },
+    {
+      "id": "RT2",
+      "title": "Make hosted CI judge the full CRAP verdict",
+      "strength": "Strong",
+      "category": "local-substitutable",
+      "files": [
+        ".github/workflows/ci.yml:47",
+        ".github/workflows/ci.yml:102",
+        "crapkit.toml:40",
+        "action.yml:133"
+      ],
+      "problem": "The hosted matrix enforces changed-function CCN, while the self-Action disables gate and delta; it never proves a baseline-aware CRAP verdict on the pull request.",
+      "proposed_change": "Build and install the base and candidate wheels in separate hosted test environments, bind each artifact to its source, then run the actual CRAP verdict against the event base.",
+      "evidence": [
+        "ci.yml invokes hook-precommit --base on Ubuntu/Python 3.12, then configures the dogfood Action with gate=false and delta=false.",
+        "The workflow records why an editable candidate installation makes a base worktree import the candidate source; the missing isolation is known in current source.",
+        "The current wheel builds and imports successfully in a disposable archive, but CI only tests editable installations."
+      ],
+      "before": [
+        "Editable candidate installation",
+        "CCN gate + Action without delta/gate",
+        "No hosted CRAP comparison"
+      ],
+      "after": [
+        "Owned base and candidate environments",
+        "Coverage artifacts bound to each tree",
+        "One hosted baseline-aware verdict"
+      ],
+      "deletion_test": "Replace the non-gating self-run with verified artifact ownership; retain the platform matrix and reuse its evidence only when inputs are proven.",
+      "leverage": "One proof covers installation and verdict.",
+      "locality": "One path owns source provenance.",
+      "test_benefits": "A disposable coverage-only regression must fail hosted verification while unchanged code passes.",
+      "cost_risk": "Medium. Base setup adds runner time; preserve subprocess measurement and never reuse artifacts across installations without proof.",
+      "adr": "No conflict.",
+      "evidence_files": [
+        "root-evidence/wheel-proof.json",
+        "root-evidence/wheel-build.log",
+        "probe-wheel.py"
+      ],
+      "review_kind": "Verified CI gap"
+    },
+    {
+      "id": "ST3",
+      "rank": 5,
+      "title": "Let optional ratchet admission decide whether it needs rows",
+      "strength": "Strong",
+      "files": [
+        {
+          "path": "src/crapkit/cli/queue.py",
+          "line": 1030,
+          "end_line": 1041,
+          "role": "Worklist pushes its floor and scopes into its initial reads."
+        },
+        {
+          "path": "src/crapkit/cli/queue.py",
+          "line": 1051,
+          "end_line": 1061,
+          "role": "The optional marks read immediately materializes the complete run."
+        },
+        {
+          "path": "src/crapkit/cli/_shared.py",
+          "line": 310,
+          "end_line": 333,
+          "role": "The marks reader checks whether the file exists only after the caller supplied all rows."
+        },
+        {
+          "path": "src/crapkit/store.py",
+          "line": 667,
+          "end_line": 688,
+          "role": "The unconditional call builds every inventory tuple and identity string."
+        },
+        {
+          "path": "src/crapkit/cli/reports.py",
+          "line": 149,
+          "end_line": 161,
+          "role": "The HTML report uses the same worklist path."
+        }
+      ],
+      "problem": "Worklist and report scan the entire run for a marks file that may not exist. This undoes their earlier SQL floor and scope filtering. Current-version marks also do not require the legacy whole-run identity proof, but callers must pay before the marks reader can decide.",
+      "proposed_change": "Make the marks reader decide which identity evidence it needs after admitting the file and key version. Read no inventory for absent marks, and request only the existing proof needed for legacy marks. Preserve complete-file twin numbering wherever marks actually require it.",
+      "evidence": {
+        "observed": "A synthetic run with 100000 ccn 1 rows and no marks file causes one unrestricted joined functions scan. _worklist_ratchet returns zero marks after allocating 22388342 peak traced bytes. The saved run took 0.660 seconds with tracemalloc enabled.",
+        "inferred": "This is an instrumented synthetic measurement of the internal optional-marks seam, not end-to-end command latency or a production speedup. Removing the absent-file scan should remove that allocation; the proposed path was not implemented or timed.",
+        "repro_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python -B work/architecture-rerun/state-probes.py",
+        "probe": "state-probes.py:full_worklist_read",
+        "result": "state-probes.json:full_worklist_read"
+      },
+      "before_after_schematic": {
+        "before": "filtered worklist read -> full run read -> optional TSV check -> no marks",
+        "after": "optional TSV admission -> no rows when absent/current proof suffices; legacy proof only when required"
+      },
+      "deletion_test": "Delete the eager full-run materialization and the caller's decision about legacy identity evidence. Replacing the scan with a differently named full-run helper would not pass.",
+      "leverage": "Worklist and HTML report lose the same avoidable scan. The existing shared marks reader becomes the place to prevent other optional callers from repeating it.",
+      "locality": "The ratchet admission module decides what its file format requires; the store retains precise identity queries.",
+      "test_benefits": "Trace actual SQL for absent, current-version and legacy marks. Assert zero inventory scans for absent marks, identical output, and continued refusal for ambiguous legacy groups and unknown expression-reader identities.",
+      "cost": "Small. Change when existing evidence is read, while keeping the established identity policy.",
+      "risk": "Skipping evidence based only on file presence would weaken legacy identity admission. Tests must include same-line twins and scope/floor cuts.",
+      "adr_conflict": "None. Preserve exact twin semantics and legacy key refusals.",
+      "review_kind": "Measured avoidable work"
+    },
+    {
+      "id": "AN3",
+      "title": "Decode each large coverage member once",
+      "strength": "Worth exploring",
+      "files": [
+        {
+          "path": "src/crapkit/covstream.py",
+          "lines": "53-84,114-132,151-171,350-385"
+        },
+        {
+          "path": "src/crapkit/uncovered.py",
+          "lines": "91-99"
+        }
+      ],
+      "problem": "The streaming JSON reader retries raw_decode from a member's beginning after every chunk refill. A large per-file member is decoded repeatedly even though the reader bounds memory by that member.",
+      "proposed_change": "Keep enough framing state across refills to recognize a complete JSON value before decoding it. Preserve the existing reader interface, one-pass digest, bounded window, strict JSON completion rules and format projections.",
+      "evidence": {
+        "observation": "A 16,777,204-byte synthetic member causes 16 raw_decode attempts that receive 142,606,116 characters in total. A valid coverage.py artifact with a 16MiB per-file contexts member takes median 0.4825s through the public parse_coveragepy_both_file entry point across three samples. Reading that same artifact in one chunk takes 0.0782s and returns identical coverage, missing lines and digest.",
+        "inference": "The repeated-prefix mechanism has quadratic work in member size relative to fixed chunk size. The timings are local synthetic measurements, not a measured end-user regression; the frequency of very large per-file members is unknown.",
+        "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\analysis-probe.py'",
+        "artifacts": [
+          "analysis-probe.py",
+          "analysis-probe.json"
+        ],
+        "caller_flow": "lanes._read_and_parse or uncovered readers -> covstream public reader -> walk_report/split_window -> _decode_value -> _whole_value -> raw_decode on each refill."
+      },
+      "before_after_schematic": {
+        "before": "1MiB prefix decode fails -> 2MiB prefix decode fails -> ... -> full member decode",
+        "after": "each chunk advances framing once -> one completed member decode -> projection"
+      },
+      "deletion_test": "Remove repeated whole-prefix decode attempts. Keep covstream as the shared adapter and make its window own completion; do not add a second public parser.",
+      "leverage": "Both coverage formats, dead-line readers and context lookup share the same window.",
+      "locality": "JSON framing stays in covstream; per-format meaning stays in coverage_py and coverage_istanbul.",
+      "test_benefits": "Existing chunk-boundary, UTF-8, separator, finite-number and trailing-garbage contracts remain the seam. Add a large-member scaling probe and output/digest equivalence, including strings containing escaped delimiters.",
+      "cost_risk": "Medium. A framing scanner must handle strings, escapes, arrays, objects, numbers and incomplete input without weakening refusal. A larger fixed chunk alone trades away the memory gain and does not remove repeated work.",
+      "adr_conflict": "None. Metric and artifact output semantics stay unchanged.",
+      "review_kind": "Measured scaling cost"
+    },
+    {
+      "id": "AN4",
+      "title": "Parse each distinct cold analysis input once",
+      "strength": "Worth exploring",
+      "files": [
+        {
+          "path": "src/crapkit/analyze.py",
+          "lines": "398-402,590-605,639-688"
+        },
+        {
+          "path": "src/crapkit/cache.py",
+          "lines": "13-40"
+        }
+      ],
+      "problem": "The warm cache shares records for equivalent reader/content identities, but a cold run schedules every path independently. The cache collapses duplicate inputs only after all of them were parsed.",
+      "proposed_change": "Group equivalent cold inputs before parsing and reuse their records with the existing path restamping behavior. Keep reader class, extension chain and typed-language mode in the identity, and combine this work with the source ownership correction so grouping never trusts mismatched bytes.",
+      "evidence": {
+        "observation": "Twelve identical Python files containing 100 functions each schedule 12 real parser calls and create 1 cache entry. The fixture returns 1200 correctly stamped records. The cold run takes 0.2122s; a warm run takes 0.00274s with 12 hits and equal output.",
+        "inference": "Repeated source files increase parser work and can start extra workers. Actual duplicate-content prevalence and savings on large consumer repositories were not measured; the recorded timing is not a promised speedup for the proposed change.",
+        "reproducible_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\analysis-probe.py'",
+        "artifacts": [
+          "analysis-probe.py",
+          "analysis-probe.json"
+        ],
+        "caller_flow": "analyze_files -> partition_by_cache returns every cold path -> analyze_jobs parses each -> updated_cache retains one record set per identity."
+      },
+      "before_after_schematic": {
+        "before": "12 paths with1identity ->12 parser jobs ->1cache entry ->12path-specific results",
+        "after": "12paths with1identity ->1parser job ->12path-specific results and1cache entry"
+      },
+      "deletion_test": "Remove duplicate parser jobs and their worker serialization. Reuse the current identity and restamping owners; no new abstraction layer.",
+      "leverage": "Cold inventory, coverage and rescore benefit when their selected corpus repeats source bytes.",
+      "locality": "Group misses beside existing cache partitioning; preserve pure cache logic and path-specific output.",
+      "test_benefits": "Count actual parser calls at analyze_files while asserting full row equality, empty-file behavior, path restamping, deterministic order and no cross-reader reuse.",
+      "cost_risk": "Small after AN1. Benefit depends on repeated content. Handle parser diagnostics per path and preserve worker registration; do not confuse equal bytes across distinct readers.",
+      "adr_conflict": "None. No metric or public record change.",
+      "review_kind": "Measured repeated work"
+    },
+    {
+      "id": "RT5",
+      "title": "Use the same suite schedule for development and self-verification",
+      "strength": "Worth exploring",
+      "category": "local-substitutable",
+      "files": [
+        "crapkit.toml:4",
+        "crapkit.toml:40",
+        ".github/workflows/ci.yml:34",
+        "pyproject.toml:86"
+      ],
+      "problem": "The repo asks for serial in-process tests and eight parallel CLI workers, but its own coverage/verify lane runs every test serially.",
+      "proposed_change": "Let one test-run module run in-process tests serially and isolated CLI tests in parallel, then combine coverage and JUnit evidence into the single lane's artifacts.",
+      "evidence": [
+        "crapkit.toml:4 names both schedules; the lane at line 40 invokes bare pytest with no -n or suite split.",
+        "CI separately runs tests/unit and tests/e2e -n 8; pyproject deliberately defaults to serial.",
+        "This review did not benchmark a combined coverage implementation; no speedup figure is claimed."
+      ],
+      "before": [
+        "Developer and CI split suites",
+        "Self-verify uses bare pytest",
+        "CLI subprocess tests run serially"
+      ],
+      "after": [
+        "One suite schedule",
+        "Serial in-process + parallel CLI tests",
+        "One complete artifact pair"
+      ],
+      "deletion_test": "Delete duplicated execution schedules; retain the distinction between state-sharing tests and isolated CLI tests.",
+      "leverage": "One schedule serves CI and verify.",
+      "locality": "Coverage aggregation has one owner.",
+      "test_benefits": "Assert both suites contribute counts and branches, and either failing suite makes the lane fail.",
+      "cost_risk": "Medium. JUnit IDs, coverage contexts and subprocess measurements must survive aggregation; benchmark before adopting.",
+      "adr": "No conflict.",
+      "evidence_files": [
+        "root-review.md"
+      ],
+      "review_kind": "Unmeasured optimization"
+    },
+    {
+      "id": "RT3",
+      "title": "Build once and resume release publication by surface",
+      "strength": "Worth exploring",
+      "category": "ports & adapters",
+      "files": [
+        "tools/release/release.py:291",
+        "tools/release/release.py:430",
+        "tools/release/release.py:455",
+        "tools/release/release.py:540"
+      ],
+      "problem": "stage2b pushes the tag before building artifacts and restarts the whole publication stage without completion checks, even after an earlier surface succeeded.",
+      "proposed_change": "Have the release module build and check immutable artifacts before publishing, record their digests, and resume incomplete surfaces after reading back completed ones.",
+      "evidence": [
+        "The current plan orders push, remove-dist/build/check/upload, GitHub release, plugin update, Pages build.",
+        "An in-memory success adapter records two stage2b calls requesting all five steps in the same order; real execution stops at its first failure. No external command was executed.",
+        "The receipt records contract and verify proof but no artifact digests or completed publication surfaces; current remote readback checks version presence, not artifact identity."
+      ],
+      "before": [
+        "Verify source",
+        "Push + build + publish every surface",
+        "Retry repeats the whole stage"
+      ],
+      "after": [
+        "Verify source + build fixed artifacts",
+        "Publish missing surfaces",
+        "Receipt binds digests and completion"
+      ],
+      "deletion_test": "Replace operator reconstruction of partial releases with one owned release state; keep the existing surface table and live readback adapters.",
+      "leverage": "One retry handles partial publication.",
+      "locality": "Artifact identity stays with release state.",
+      "test_benefits": "Inject a failure after each surface and prove retry neither rebuilds nor republishes confirmed bytes.",
+      "cost_risk": "Medium. Add digest-based remote artifact readback to existing version-presence checks. Real external outcomes can be uncertain; confirm artifact identity before marking a surface complete.",
+      "adr": "No conflict.",
+      "evidence_files": [
+        "root-evidence/release-replay.json",
+        "probe-project-contracts.py"
+      ],
+      "review_kind": "Replayed release plan"
+    },
+    {
+      "id": "RT4",
+      "title": "Keep operational guidance attached to its behavior",
+      "strength": "Worth exploring",
+      "category": "in-process",
+      "files": [
+        "docs/configuration.md:48",
+        "crapkit.schema.json:23",
+        "SECURITY.md:9",
+        "SECURITY.md:48",
+        "CONTRIBUTING.md:28",
+        "pyproject.toml:86",
+        "tools/release/release.py:55"
+      ],
+      "problem": "Operational guidance drifts independently across pages: current references still describe live-tree mutation, support only 0.4.x and recommend parallel unit tests against the contributor contract.",
+      "proposed_change": "Generate version-support and test-command snippets from their owners, retain authored behavior explanations, and link those explanations to behavioral contracts. RT1 owns configuration-field and schema generation.",
+      "evidence": [
+        "docs/configuration.md:48, SECURITY.md:48 and the schema describe single-worker live-tree mutation after the implementation moved it to a disposable snapshot.",
+        "SECURITY.md lists 0.4.x as supported while pyproject.toml and the package declare 0.6.0.",
+        "CONTRIBUTING.md:29 recommends tests/unit -n 8; pyproject.toml:86 and AGENTS.md require serial in-process tests."
+      ],
+      "before": [
+        "Runtime behavior and commands",
+        "README + handbook + policy copies",
+        "Selected phrase checks miss drift"
+      ],
+      "after": [
+        "Owned commands and version facts",
+        "Generated snippets + authored behavior",
+        "Behavior and freshness checks"
+      ],
+      "deletion_test": "Delete duplicate command/version maintenance and corresponding phrase checks. Keep authored behavior prose and verify its claims; do not generate all prose or add another runtime registry.",
+      "leverage": "One fact refreshes every reference.",
+      "locality": "Explanations stay beside their topic.",
+      "test_benefits": "Check generated fragments are current and documented examples exercise the supported behavior.",
+      "cost_risk": "Small to medium. Agree which facts are generated; preserve stable anchors and human explanations.",
+      "adr": "No conflict.",
+      "evidence_files": [
+        "root-review.md"
+      ],
+      "review_kind": "Verified reference drift"
+    }
+  ]
+}

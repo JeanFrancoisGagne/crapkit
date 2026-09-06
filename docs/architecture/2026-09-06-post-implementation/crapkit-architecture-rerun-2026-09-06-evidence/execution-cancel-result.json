@@ -1,0 +1,7 @@
+{
+  "bounded_timeout_seconds": 0.5,
+  "interrupt_requested_after_seconds": 0.1,
+  "keyboard_interrupt_returned_after_seconds": 2.077999999979511,
+  "child_wrote_after_cancellation": true,
+  "child_pid": 25444
+}

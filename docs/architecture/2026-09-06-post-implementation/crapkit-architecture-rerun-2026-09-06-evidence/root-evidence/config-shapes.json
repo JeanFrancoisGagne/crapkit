@@ -1,0 +1,81 @@
+[
+  {
+    "case": "ratchet_file_boolean",
+    "toml": "[crapkit]\nratchet_file=false\n\n[[scope]]\nname=\"src\"\npaths=[\"src\"]\nlanguages=[\"python\"]\n",
+    "schema": "rejected",
+    "runtime": "accepted",
+    "value": {
+      "ratchet_file": false,
+      "exclude_globs": [],
+      "scoped_tests": [],
+      "mutation_command": "",
+      "alert_command": ""
+    }
+  },
+  {
+    "case": "exclude_globs_string",
+    "toml": "[exclude]\nglobs=\"tests/**\"\n\n[[scope]]\nname=\"src\"\npaths=[\"src\"]\nlanguages=[\"python\"]\n",
+    "schema": "rejected",
+    "runtime": "accepted",
+    "value": {
+      "ratchet_file": "crapkit-ratchet.tsv",
+      "exclude_globs": [
+        "t",
+        "e",
+        "s",
+        "t",
+        "s",
+        "/",
+        "*",
+        "*"
+      ],
+      "scoped_tests": [],
+      "mutation_command": "",
+      "alert_command": ""
+    }
+  },
+  {
+    "case": "scoped_tests_number",
+    "toml": "[crapkit.scoped_tests]\nsrc=123\n\n[[scope]]\nname=\"src\"\npaths=[\"src\"]\nlanguages=[\"python\"]\n",
+    "schema": "rejected",
+    "runtime": "accepted",
+    "value": {
+      "ratchet_file": "crapkit-ratchet.tsv",
+      "exclude_globs": [],
+      "scoped_tests": [
+        [
+          "src",
+          "123"
+        ]
+      ],
+      "mutation_command": "",
+      "alert_command": ""
+    }
+  },
+  {
+    "case": "mutation_command_number",
+    "toml": "[crapkit]\nmutation_command=123\n\n[[scope]]\nname=\"src\"\npaths=[\"src\"]\nlanguages=[\"python\"]\n",
+    "schema": "rejected",
+    "runtime": "accepted",
+    "value": {
+      "ratchet_file": "crapkit-ratchet.tsv",
+      "exclude_globs": [],
+      "scoped_tests": [],
+      "mutation_command": 123,
+      "alert_command": ""
+    }
+  },
+  {
+    "case": "alert_command_boolean",
+    "toml": "[crapkit]\nalert_command=false\n\n[[scope]]\nname=\"src\"\npaths=[\"src\"]\nlanguages=[\"python\"]\n",
+    "schema": "rejected",
+    "runtime": "accepted",
+    "value": {
+      "ratchet_file": "crapkit-ratchet.tsv",
+      "exclude_globs": [],
+      "scoped_tests": [],
+      "mutation_command": "",
+      "alert_command": false
+    }
+  }
+]

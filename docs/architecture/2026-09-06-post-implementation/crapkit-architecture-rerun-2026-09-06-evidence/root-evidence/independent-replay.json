@@ -1,0 +1,113 @@
+{
+  "analysis_cache": {
+    "first_records": [
+      [
+        "m.py",
+        "f( x )",
+        1,
+        4,
+        2,
+        2,
+        2,
+        4,
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "second_records": [
+      [
+        "m.py",
+        "f( x )",
+        1,
+        4,
+        2,
+        2,
+        2,
+        4,
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "expected_records": [
+      [
+        "m.py",
+        "f( x )",
+        1,
+        2,
+        1,
+        1,
+        1,
+        2,
+        1,
+        0,
+        0,
+        1
+      ]
+    ],
+    "second_cache_hits": 1,
+    "wrong_metrics": true
+  },
+  "ratchet_writers": [
+    {
+      "read_mark": 50.0,
+      "fresh": 10,
+      "receipt": {
+        "dropped": 0,
+        "tightened": 1
+      },
+      "disk_mark": 10.0
+    },
+    {
+      "read_mark": 50.0,
+      "fresh": 20,
+      "receipt": {
+        "dropped": 0,
+        "tightened": 1
+      },
+      "disk_mark": 20.0
+    }
+  ],
+  "trend_snapshot": {
+    "target": 6,
+    "runs": [
+      {
+        "run_id": 1,
+        "commit": "old",
+        "created_at": "2026-09-06T23:06:41Z",
+        "functions": 1,
+        "over_target": 0,
+        "crap_load": 6.0,
+        "avg": 6.0,
+        "by_scope": {
+          "src": {
+            "functions": 1,
+            "over_target": 0,
+            "crap_load": 6.0,
+            "grade": "A+"
+          }
+        }
+      },
+      {
+        "run_id": 2,
+        "commit": "new",
+        "created_at": "2026-09-06T23:06:41Z",
+        "functions": 0,
+        "over_target": 0,
+        "crap_load": 0.0,
+        "avg": 0.0,
+        "by_scope": {
+          "src": {
+            "functions": 1,
+            "over_target": 0,
+            "crap_load": 6.0,
+            "grade": "A+"
+          }
+        }
+      }
+    ]
+  }
+}

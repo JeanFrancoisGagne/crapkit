@@ -1,0 +1,41 @@
+{
+  "tracked": [
+    " leading.py",
+    "ordinary.py"
+  ],
+  "raw_diff_names": " leading.py\n",
+  "unstaged_paths": [
+    "leading.py"
+  ],
+  "status_names": [
+    "leading.py"
+  ],
+  "raw_log": "\u0001Probe\u00021788735983\n\n leading.py\nordinary.py\n",
+  "churn": {
+    "leading.py": [
+      1,
+      1,
+      1.0
+    ],
+    "ordinary.py": [
+      1,
+      1,
+      1.0
+    ]
+  },
+  "coupling_unfiltered": [
+    {
+      "files": [
+        "leading.py",
+        "ordinary.py"
+      ],
+      "support": 1,
+      "confidence": 1.0
+    }
+  ],
+  "coupling_tracked": [],
+  "snapshot": {
+    "leading.py": null,
+    "ordinary.py": "def f():\r\n    return 1\r\n"
+  }
+}

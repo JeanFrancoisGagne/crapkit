@@ -1,0 +1,138 @@
+{
+  "baseline": "499d9db4f9ff4d212fb94ea3975c7477b6b1c968",
+  "repository": "C:/Users/jfgag/crapkit",
+  "review_scope": "Fresh command, execution, configuration, and delivery review",
+  "candidates": [
+    {
+      "id": "EX1",
+      "title": "Make automatic artifact reuse account for test inputs",
+      "strength": "Strong",
+      "files": [
+        {"path": "src/crapkit/lanes.py", "line": 443, "role": "Artifact stamp records commit, lane name, and duration"},
+        {"path": "src/crapkit/lanes.py", "line": 577, "role": "Changed files are filtered through scored source scopes"},
+        {"path": "src/crapkit/lanes.py", "line": 627, "role": "Automatic reuse treats no scoped changes as fresh measurement"},
+        {"path": "src/crapkit/cli/scoring.py", "line": 129, "role": "Public coverage and verify flow enables reuse"}
+      ],
+      "problem": "Automatic reuse treats source ownership as the complete set of measurement inputs. A changed tracked test input outside src disappears from the freshness check. Verify then records a passing result from old coverage and JUnit even though a fresh lane fails on the same tree.",
+      "proposed_change": "Give the lane code ownership of measurement validity. Changed tests, runner configuration, commands, and other unproven repository inputs must prevent automatic reuse. Use a conservative check until narrower dependency evidence exists. Keep explicit reuse-artifacts as a deliberate request to consume an existing artifact.",
+      "evidence": {
+        "kind": "Observed public CLI replay on a disposable synthetic repository",
+        "observed": [
+          "Initial coverage invoked the configured runner once and recorded one passing test.",
+          "After editing tracked tests/state.txt from pass to fail, verify --reuse-unchanged --no-tighten --json exited 0 with ok=true, no new failures, run_id=2, and runner count still 1.",
+          "Fresh verify --no-tighten --json on the identical tree exited 8 with tests.test_app::test_f in new_failures, run_id=3, and runner count 2."
+        ],
+        "inference": "The same source-scope filter also cannot establish validity after runner or configuration changes outside the scored corpus. A commit plus changed-path names does not identify repeated edits to already-dirty inputs.",
+        "replay_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; $env:PYTHONDONTWRITEBYTECODE='1'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\execution-reuse-probe.py'",
+        "artifacts": ["execution-reuse-probe.py", "execution-reuse-probe.txt", "execution-reuse-result.json"],
+        "existing_tests": ["tests/e2e/test_lanes_scope_gaps.py:178 retains docs-only reuse", "tests/e2e/test_lane_reuse_e2e.py covers source-scoped reuse", "tests/unit/test_cli_scoring_inproc.py:229 covers reuse decisions"]
+      },
+      "before": "Tracked test changes outside src -> source ownership filter drops change -> old coverage and JUnit -> passing verify ledger entry",
+      "after": "Measurement input changes or validity is unknown -> automatic reuse refused -> lane executes -> current coverage and JUnit decide verdict",
+      "deletion_test": "Remove the scope-only predicate as the authority for measurement freshness. Keep scope ownership for corpus admission and warnings. Do not copy new freshness checks into each CLI command.",
+      "leverage": "One lane-level decision protects both coverage and verify, including future callers.",
+      "locality": "The module that creates and consumes artifacts also decides whether its previous measurement still applies.",
+      "test_benefits": "A public fixture can compare automatic reuse with a fresh run after source, test, command, and configuration edits. Assert runner calls, verdict, and ledger content together.",
+      "cost": "More lane executions when input relevance is unknown. No speed improvement was measured or claimed.",
+      "risk": "Arbitrary shell commands can depend on inputs outside the repository. Do not promise complete dependency inference. Preserve safe docs-only reuse only where the measurement contract supports it.",
+      "adr_conflict": null
+    },
+    {
+      "id": "EX2",
+      "title": "Use one scope ownership rule for inventory and init",
+      "strength": "Strong",
+      "files": [
+        {"path": "src/crapkit/cli/admin.py", "line": 553, "role": "Ancestor ownership guard before init writes"},
+        {"path": "src/crapkit/cli/admin.py", "line": 570, "role": "Private scope rule says root scope claims nothing"},
+        {"path": "src/crapkit/cli/admin.py", "line": 579, "role": "Duplicate overlap and prefix rules"},
+        {"path": "src/crapkit/universe.py", "line": 114, "role": "Actual scope matcher admits root scope"},
+        {"path": "src/crapkit/universe.py", "line": 168, "role": "Corpus ownership uses normalized matchers"}
+      ],
+      "problem": "Init has a second interpretation of scope paths. Inventory treats paths=['.'] as ownership of the repository, while init's private prefix rule treats it as no ownership. Init can create a nested configuration that shadows an ancestor already owning the same source files.",
+      "proposed_change": "Concentrate scope meaning in the existing scope module and make init use that meaning when checking an overlapping ancestor scope. Remove admin's separate root-path interpretation. Preserve the bidirectional overlap check and repository discovery boundaries.",
+      "evidence": {
+        "kind": "Observed public init replay plus public corpus assignment on a disposable repository",
+        "observed": [
+          "With ancestor scope paths=['.'], assign_files admitted child/src/app.py. Init --repo child exited 0 and wrote child/crapkit.toml.",
+          "With ancestor scope paths=['child'], assign_files admitted the same file. Init --repo child exited 3 and wrote no nested configuration."
+        ],
+        "inference": "Deleting the duplicate interpretation reduces future drift whenever scope normalization changes.",
+        "replay_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; $env:PYTHONDONTWRITEBYTECODE='1'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\execution-init-probe.py'",
+        "artifacts": ["execution-init-probe.py", "execution-init-probe.txt", "execution-init-result.json"]
+      },
+      "before": "Inventory root-aware matcher and init private prefix matcher -> different owners for child/src/app.py -> nested config shadows parent",
+      "after": "One scope meaning -> ancestor overlap recognized -> actionable refusal before init writes",
+      "deletion_test": "Delete admin's separate root and prefix interpretation. Retain the question of overlap in both directions, since an ancestor scope can lie below the proposed config directory.",
+      "leverage": "Every scope-path normalization change reaches corpus admission and init refusal together.",
+      "locality": "Scope rules stay with scope ownership. Init handles discovery, refusal, and writing.",
+      "test_benefits": "Compare inventory admission and init refusal for root, named prefix, nested scope, nested repository, linked worktree, and explicit --repo cases. Assert no writes on refusal.",
+      "cost": "Small change to the shared ownership rule and its callers. No performance claim.",
+      "risk": "A one-way prefix replacement would miss scopes below the proposed directory. Preserve valid independent nested configurations and .git discovery stops.",
+      "adr_conflict": "None. This repairs the implementation to preserve ADR 0002: init must refuse a nested configuration when an ancestor already claims that subtree."
+    },
+    {
+      "id": "EX3",
+      "title": "Give each measurement exclusive ownership of its artifact paths",
+      "strength": "Strong",
+      "files": [
+        {"path": "src/crapkit/config.py", "line": 752, "role": "Rejects shared paths only among lanes in one configuration"},
+        {"path": "src/crapkit/lanes.py", "line": 42, "role": "Lane log path is shared across invocations"},
+        {"path": "src/crapkit/lanes.py", "line": 175, "role": "Lane command writes the shared log and configured artifacts"},
+        {"path": "src/crapkit/lanes.py", "line": 411, "role": "Freshness check proves a file changed, not which invocation wrote it"},
+        {"path": "src/crapkit/lanes.py", "line": 458, "role": "Shared artifact stamp update"},
+        {"path": "src/crapkit/lanes.py", "line": 1068, "role": "Execution and parsing consume the same configured artifact path"},
+        {"path": "src/crapkit/cli/scoring.py", "line": 268, "role": "Measurement pipeline has no cross-process artifact owner"}
+      ],
+      "problem": "Separate CLI processes can execute the same lane and overwrite each other's configured artifacts between execution and parsing. Path uniqueness within one config does not protect overlapping invocations. A successful run can persist another invocation's measurement and digest without a warning.",
+      "proposed_change": "Keep declared artifact and log paths under one measurement's ownership through execution, parsing, and stamping. Serialize or refuse conflicting invocations, or use private outputs where the configured command supports them. Keep parallel lanes within one run and independent worktrees independent.",
+      "evidence": {
+        "kind": "Observed two-process public coverage replay with a deterministic barrier and synthetic lane output",
+        "observed": [
+          "Invocation A wrote coverage with hits=1 and expected CRAP load 1, then waited.",
+          "Invocation B overwrote the same artifact with hits=0 and expected CRAP load 2 before A parsed.",
+          "Both coverage commands exited 0 and reported CRAP load 2 with the same B artifact SHA256, although A's own measured output recorded load 1."
+        ],
+        "inference": "Shared lane logs and read-modify-write stamps have the same cross-process ownership gap. Their corruption was not separately measured.",
+        "replay_command": "$env:PYTHONPATH='C:\\Users\\jfgag\\crapkit\\src'; $env:PYTHONDONTWRITEBYTECODE='1'; python 'C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\execution-concurrent-probe.py'",
+        "artifacts": ["execution-concurrent-probe.py", "execution-concurrent-probe.txt", "execution-concurrent-result.json"],
+        "artifact_sha256_b": "1e16fd186d9af40d0d851b3f9ae6b2ea698a35a54e6629d043f4d82052970e86"
+      },
+      "before": "A writes artifact -> B overwrites artifact -> A and B parse B bytes -> both persist B measurement",
+      "after": "Measurement owns artifact paths through parse and stamp -> conflicting run waits or refuses -> each stored result belongs to its invocation",
+      "deletion_test": "Remove the assumption that per-config path uniqueness establishes process-wide ownership. Concentrate execution, parse, and stamp lifetime under one owner; keep freshness checks for interrupted or failed runs.",
+      "leverage": "One ownership rule protects coverage, verify, automatic reuse, logs, and artifact stamps.",
+      "locality": "Ownership surrounds the existing measurement lifecycle rather than adding separate lock checks to every command.",
+      "test_benefits": "Use two real CLI processes with a barrier. Assert result content and artifact digest, then cover coverage/verify overlap, conflicting reuse, crash cleanup, and Windows/POSIX release behavior.",
+      "cost": "Conflicting measurements in one checkout must wait or refuse. No timing benefit was measured.",
+      "risk": "A blanket command lock would block read-only operations and useful within-run parallelism. Keep the scope limited to conflicting artifact lifetimes and ensure ownership releases after process failure.",
+      "adr_conflict": null
+    }
+  ],
+  "coverage": [
+    {"area": "CLI bootstrap, parser, and shared helpers", "modules": ["src/crapkit/cli/__init__.py", "src/crapkit/cli/parser.py", "src/crapkit/cli/_shared.py"], "method": "Read dispatch, argument registration, error and output helpers", "disposition": "Retain lazy handler dispatch and the public main seam. No file split recommended."},
+    {"area": "Scoring and verify orchestration", "modules": ["src/crapkit/cli/scoring.py", "src/crapkit/cli/verifying.py"], "method": "Trace inventory, lane reuse, parallel collection, coverage persistence, rescore, and verify verdict paths; public CLI replays", "disposition": "EX1 and EX3. Retain typed scored-run results and collection in declaration order."},
+    {"area": "Queue, reports, and ratchet command adapters", "modules": ["src/crapkit/cli/queue.py", "src/crapkit/cli/reports.py", "src/crapkit/cli/ratchet_cmds.py"], "method": "Read command entrypoints, batch loading, identity handle use, history/context loading, and output adapters", "disposition": "Retain batch reads and existing owning modules. State engine review belongs to the parallel state reviewer."},
+    {"area": "Config, root discovery, scaffold, doctor, and admin", "modules": ["src/crapkit/config.py", "src/crapkit/rootfind.py", "src/crapkit/scaffold.py", "src/crapkit/doctor.py", "src/crapkit/cli/admin.py"], "method": "Read config admission, init discovery and overlap guard, pytest config readers, interpreter probes, tune and watch paths; public init replay", "disposition": "EX2. Runtime shape evidence contributed to the root reviewer's config candidate. Retain root discovery ADR, shared pytest parsing, and framed bounded interpreter probe. Another admin file split would move lines without proving new rule ownership."},
+    {"area": "Processes and lanes", "modules": ["src/crapkit/procs.py", "src/crapkit/lanes.py"], "method": "Read process capture, template transport, deadlines, lane execution, freshness, stamp, reuse, parsing, retries, and diagnostics", "disposition": "EX1 and EX3. Retain bounded capture, timeout cleanup, literal argument transport, and lane progress signals. Cancellation probe was inconclusive and is not a finding."},
+    {"area": "JUnit results", "modules": ["src/crapkit/junitparse.py"], "method": "Read the full small module and its lane result role", "disposition": "Retain pure parsing, combined summary result, unfinished-suite refusal, and positive retry evidence with duplicate failure/skip precedence. No new change recommended. Existing source performance comments were not remeasured."},
+    {"area": "Mutation", "modules": ["src/crapkit/mutate.py", "src/crapkit/mutate_pool.py", "src/crapkit/cli/analyses.py"], "method": "Read eligibility, type-angle refusal, input snapshots, pool locking, worker setup, shard collection, restoration, and cleanup", "disposition": "Retain private worktrees at every worker count, dirty/untracked/deleted input capture, per-pool lock, and refusal of ambiguous token contexts. No additional confirmed candidate."},
+    {"area": "Watch and invocation", "modules": ["src/crapkit/watch.py", "src/crapkit/invocation.py"], "method": "Read full core modules and CLI watch loop", "disposition": "Retain directory-batched polling and explicit start-time tracked-file contract. No event dependency recommended."},
+    {"area": "MCP", "modules": ["src/crapkit/mcp_server.py"], "method": "Read tool registry/schema construction, argument validation, root resolution, CLI spawn, and transport loop", "disposition": "Retain thin CLI adapter and ADR 0001 tool-error semantics. No new confirmed transport candidate. Schema ownership overlaps the root review."},
+    {"area": "GitHub action", "modules": ["action.yml", "tools/action/comment.py"], "method": "Read workflow steps, renderer inputs, status/base-change handling, and output core", "disposition": "Retain per-invocation state directory and JSON comment transport. Root reviewer owns CI verdict, package smoke, and release lifecycle findings."},
+    {"area": "Plugin and hook", "modules": ["plugin/.claude-plugin/plugin.json", "plugin/.mcp.json", "plugin/hooks/hooks.json", "src/crapkit/cli/claude_hook.py"], "method": "Read manifests, 50 PostToolUse handler entries, recovery skill exit guidance, hook early admission and staged diff path", "disposition": "Retain protocol guard, early exits, and store avoidance. No actual host installation or external hook execution performed."}
+  ],
+  "coordinated_evidence": {
+    "owner": "root config candidate",
+    "finding": "A bare scope paths='src' string is admitted as characters and public inventory exits 0 with zero files/functions.",
+    "artifact": "execution-reuse-result.json",
+    "reason_not_separate_candidate": "Root already owns runtime/schema/doctor rule consolidation and other demonstrated admitted-type failures."
+  },
+  "exclusions": [
+    "No root suite, root configured verify, install, commit, push, or network write was performed.",
+    "No new performance benchmark supports these three cards. Runtime cost statements are design tradeoffs, not measured gains.",
+    "Disposable synthetic lane outputs establish command behavior and artifact ownership; they do not estimate real adopter suite duration.",
+    "Windows cancellation probe did not prove a child survives after the API returns. Preserve it as negative or inconclusive evidence, not an orphan-process finding.",
+    "State/ratchet internals, analysis/parser internals, CI verdict, package smoke, and release lifecycle are assigned to parallel reviewers.",
+    "No cross-platform execution, external runner matrix, MCP client session, or installed plugin host conformance run was performed in this bounded review."
+  ]
+}

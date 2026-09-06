@@ -1,0 +1,23 @@
+VERIFIED_IMPORT C:\Users\jfgag\crapkit\src\crapkit\__init__.py
+[
+  {
+    "ancestor_scope_path": ".",
+    "parent_inventory_admits": [
+      "child/src/app.py"
+    ],
+    "init_returncode": 0,
+    "wrote_nested_config": true,
+    "stdout": "wrote crapkit.toml with 1 scope(s): src\nnext: declare a [[lane]] per coverage command (see the commented template), then run `C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe -m crapkit coverage`\nadded to .gitignore: .crapkit/\n",
+    "stderr": ""
+  },
+  {
+    "ancestor_scope_path": "child",
+    "parent_inventory_admits": [
+      "child/src/app.py"
+    ],
+    "init_returncode": 3,
+    "wrote_nested_config": false,
+    "stdout": "",
+    "stderr": "crapkit: crapkit.toml at C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\architecture-rerun\\init-scope-qo_vyz03 already claims child (scope 'all'); edit that configuration instead\n"
+  }
+]

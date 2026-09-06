@@ -1,0 +1,155 @@
+{
+  "source": "C:\\Users\\jfgag\\crapkit\\src",
+  "packet_age": {
+    "events": [
+      [
+        1000,
+        [
+          "a.py",
+          "f( )"
+        ],
+        "added",
+        50.0
+      ],
+      [
+        7777000,
+        [
+          "a.py",
+          "f( )"
+        ],
+        "updated",
+        20.0
+      ]
+    ],
+    "packet_age_days": null,
+    "ratchet_report": {
+      "open": 1,
+      "dropped_total": 0,
+      "anchor_ts": 7777000,
+      "uncommitted": 0,
+      "oldest": [
+        {
+          "path": "a.py",
+          "long_name": "f( )",
+          "age_days": 90
+        }
+      ],
+      "dropped_last_30d": 0,
+      "dropped_last_90d": 0
+    }
+  },
+  "prune_override": {
+    "before_runs": [
+      [
+        1,
+        "coverage"
+      ],
+      [
+        2,
+        "coverage"
+      ],
+      [
+        3,
+        "hook"
+      ]
+    ],
+    "prune": {
+      "freed_bytes": 0,
+      "kept_runs": 2,
+      "pruned_runs": 1,
+      "schema": 1
+    },
+    "override_worker": {
+      "run_id": 3,
+      "audit_rows_by_id": 1
+    },
+    "ratchet_granted": true,
+    "public_overrides": {
+      "overrides": [],
+      "schema": 1
+    }
+  },
+  "stale_ratchet_write": [
+    {
+      "read_mark": 50.0,
+      "fresh": 10,
+      "receipt": {
+        "dropped": 0,
+        "tightened": 1
+      },
+      "disk_mark": 10.0
+    },
+    {
+      "read_mark": 50.0,
+      "fresh": 20,
+      "receipt": {
+        "dropped": 0,
+        "tightened": 1
+      },
+      "disk_mark": 20.0
+    }
+  ],
+  "mixed_trend_read": {
+    "target": 6,
+    "runs": [
+      {
+        "run_id": 1,
+        "commit": "old",
+        "created_at": "2026-09-06T23:15:41Z",
+        "functions": 1,
+        "over_target": 0,
+        "crap_load": 6.0,
+        "avg": 6.0,
+        "by_scope": {
+          "src": {
+            "functions": 1,
+            "over_target": 0,
+            "crap_load": 6.0,
+            "grade": "A+"
+          }
+        }
+      },
+      {
+        "run_id": 2,
+        "commit": "new",
+        "created_at": "2026-09-06T23:15:41Z",
+        "functions": 0,
+        "over_target": 0,
+        "crap_load": 0.0,
+        "avg": 0.0,
+        "by_scope": {
+          "src": {
+            "functions": 1,
+            "over_target": 0,
+            "crap_load": 6.0,
+            "grade": "A+"
+          }
+        }
+      }
+    ]
+  },
+  "annotation_paths": [
+    {
+      "path": "src/a,b.py",
+      "annotation": "::warning file=src/a,b.py,line=12,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it"
+    },
+    {
+      "path": "src/a%2Cb.py",
+      "annotation": "::warning file=src/a%2Cb.py,line=12,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it"
+    },
+    {
+      "path": "src/a.py\n::warning::injected.py",
+      "annotation": "::warning file=src/a.py\n::warning::injected.py,line=12,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it"
+    }
+  ],
+  "full_worklist_read": {
+    "rows": 100000,
+    "ratchet_exists": false,
+    "result_marks": 0,
+    "seconds_with_tracemalloc": 0.6603682999848388,
+    "peak_bytes": 22388342,
+    "queries": [
+      "SELECT i.scope, i.path, i.long_name, f.start, f.end, f.ccn_std, f.ccn_mod, f.ccn, f.nloc, f.params, f.nesting, f.cognitive, f.occurrence FROM functions f JOIN identities i ON i.id = f.identity_id WHERE f.run_id = 1 AND f.ccn >= 0  ORDER BY i.scope, i.path, f.start, f.occurrence, f.end, i.long_name"
+    ]
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "method": "In-memory adapters replace preflight and all external execution; no command executed",
+  "calls": [
+    {
+      "step": "push",
+      "commands": [
+        [
+          "git",
+          "push",
+          "-q",
+          "origin",
+          "main",
+          "v9.9.9"
+        ]
+      ]
+    },
+    {
+      "step": "pypi",
+      "commands": [
+        [
+          "@remove-dist"
+        ],
+        [
+          "C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "-m",
+          "build",
+          "-q"
+        ],
+        [
+          "C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "-m",
+          "twine",
+          "check",
+          "dist/*"
+        ],
+        [
+          "C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "-m",
+          "twine",
+          "upload",
+          "--non-interactive",
+          "dist/*"
+        ]
+      ]
+    },
+    {
+      "step": "github release",
+      "commands": [
+        [
+          "gh",
+          "release",
+          "create",
+          "v9.9.9",
+          "dist/*",
+          "--title",
+          "crapkit 9.9.9",
+          "--notes-file",
+          ".crapkit/release-notes-9.9.9.md"
+        ]
+      ]
+    },
+    {
+      "step": "plugin",
+      "commands": [
+        [
+          "claude",
+          "plugin",
+          "update",
+          "crapkit@crapkit"
+        ]
+      ]
+    },
+    {
+      "step": "pages",
+      "commands": [
+        [
+          "gh",
+          "api",
+          "-X",
+          "POST",
+          "repos/JeanFrancoisGagne/crapkit/pages/builds",
+          "--jq",
+          ".status"
+        ]
+      ]
+    },
+    {
+      "step": "push",
+      "commands": [
+        [
+          "git",
+          "push",
+          "-q",
+          "origin",
+          "main",
+          "v9.9.9"
+        ]
+      ]
+    },
+    {
+      "step": "pypi",
+      "commands": [
+        [
+          "@remove-dist"
+        ],
+        [
+          "C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "-m",
+          "build",
+          "-q"
+        ],
+        [
+          "C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "-m",
+          "twine",
+          "check",
+          "dist/*"
+        ],
+        [
+          "C:\\Users\\jfgag\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "-m",
+          "twine",
+          "upload",
+          "--non-interactive",
+          "dist/*"
+        ]
+      ]
+    },
+    {
+      "step": "github release",
+      "commands": [
+        [
+          "gh",
+          "release",
+          "create",
+          "v9.9.9",
+          "dist/*",
+          "--title",
+          "crapkit 9.9.9",
+          "--notes-file",
+          ".crapkit/release-notes-9.9.9.md"
+        ]
+      ]
+    },
+    {
+      "step": "plugin",
+      "commands": [
+        [
+          "claude",
+          "plugin",
+          "update",
+          "crapkit@crapkit"
+        ]
+      ]
+    },
+    {
+      "step": "pages",
+      "commands": [
+        [
+          "gh",
+          "api",
+          "-X",
+          "POST",
+          "repos/JeanFrancoisGagne/crapkit/pages/builds",
+          "--jq",
+          ".status"
+        ]
+      ]
+    }
+  ]
+}

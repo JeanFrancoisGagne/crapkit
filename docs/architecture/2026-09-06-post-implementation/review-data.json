@@ -1,0 +1,208 @@
+{
+  "reviewed_commit": "499d9db4f9ff4d212fb94ea3975c7477b6b1c968",
+  "created_at": "2026-09-06T23:19:05.413077+00:00",
+  "review_type": "Fresh whole-project architecture review; no product changes",
+  "candidate_order": [
+    "EX1",
+    "EX3",
+    "AN1",
+    "ST4",
+    "ST1",
+    "RT1",
+    "AN2",
+    "EX2",
+    "ST2",
+    "ST5",
+    "ST6",
+    "RT2",
+    "ST3",
+    "AN3",
+    "AN4",
+    "RT5",
+    "RT3",
+    "RT4"
+  ],
+  "evidence_classes": {
+    "EX1": "Reproduced defect",
+    "EX3": "Reproduced defect",
+    "AN1": "Reproduced defect",
+    "ST4": "Reproduced defect",
+    "ST1": "Reproduced defect",
+    "RT1": "Reproduced defect",
+    "AN2": "Reproduced defect",
+    "EX2": "Reproduced defect",
+    "ST2": "Reproduced defect",
+    "ST5": "Reproduced defect",
+    "ST6": "Reproduced defect",
+    "ST3": "Measured avoidable work",
+    "AN3": "Measured scaling cost",
+    "AN4": "Measured repeated work",
+    "RT2": "Verified CI gap",
+    "RT3": "Replayed release plan",
+    "RT4": "Verified reference drift",
+    "RT5": "Unmeasured optimization"
+  },
+  "coverage": [
+    {
+      "area": "Production module graph and depth",
+      "disposition": "All 64 modules assigned to the three independent source walks; findings require a concrete caller or state invariant, not a file-size split."
+    },
+    {
+      "area": "Configuration and schema",
+      "disposition": "RT1: five schema/runtime admission mismatches reproduced; string paths can produce an empty inventory."
+    },
+    {
+      "area": "CLI and agent ergonomics",
+      "disposition": "Preserve the public lazy main entry point, per-family imports, structured errors and stable handles. Dedicated execution review covers command orchestration, init, doctor, watch and MCP."
+    },
+    {
+      "area": "Analysis, language support and coverage",
+      "disposition": "Dedicated analytical review covers all readers, cache identity, format projection, complexity semantics, source joins and scaling."
+    },
+    {
+      "area": "State, audit, ratchet and reports",
+      "disposition": "Dedicated state review covers store schema, reads/writes, retention, claims, reports, history interpretation and serialization."
+    },
+    {
+      "area": "Execution and recovery",
+      "disposition": "Dedicated execution review covers lane reuse, parallel command ownership, cancellation and mutation snapshots."
+    },
+    {
+      "area": "CI and self-verification",
+      "disposition": "RT2: full hosted CRAP comparison absent; RT5: self-verification uses a different suite schedule."
+    },
+    {
+      "area": "Packaging and installation",
+      "disposition": "Wheel build and import/version smoke pass from a disposable Git archive. Existing interpreter dependencies are reused; this is not a clean dependency-resolution test. CI exercises editable installations only."
+    },
+    {
+      "area": "Release lifecycle",
+      "disposition": "RT3: in-memory execution adapters show whole-stage replay; source proof is present, artifact digests and per-surface completion are absent. No release command ran."
+    },
+    {
+      "area": "Documentation and policy",
+      "disposition": "RT4: reference drift includes mutation ownership, supported versions and unit-test scheduling. Preserve editorial explanations and stable page anchors."
+    },
+    {
+      "area": "Test architecture",
+      "disposition": "Inspected representative public CLI, private helper, schema and documentation contracts. Sixteen focused contract tests pass despite the reproduced admission mismatches. 186 imports reference 132 private production names; counts alone do not justify rewriting them."
+    },
+    {
+      "area": "Performance",
+      "disposition": "Measured analytical decoding and state-read probes are supplied by the independent walks. Suite aggregation and release changes remain design proposals without measured speedup."
+    },
+    {
+      "area": "Portability",
+      "disposition": "Windows disposable CLI/process/Git probes; static review of POSIX process and shell paths. No fresh Linux execution in this pass."
+    },
+    {
+      "area": "Security and output handling",
+      "disposition": "Reviewed trusted repository-command assumption, local state ownership, Docker mount access and output encoders. This is not a full adversarial audit or secret scan."
+    },
+    {
+      "area": "Plugin, marketplace, Action and MCP",
+      "disposition": "Dedicated execution review plus root installation/CI review. Keep ADR 0001's invalid-tool-argument result behavior."
+    },
+    {
+      "area": "Demo and reproduction tools",
+      "disposition": "Read build/capture/render ownership and deterministic fixture/font design. Keep these existing modules; their interfaces own distinct work. No image regeneration was needed."
+    },
+    {
+      "area": "Dependencies and extensibility",
+      "disposition": "Keep the small Python package and real format adapters. No new framework or dependency proposed merely to reduce visible function counts."
+    },
+    {
+      "area": "Architecture history",
+      "disposition": "Preserve previous report and evidence bytes. The new review uses a separate directory and source SHA."
+    }
+  ],
+  "module_owners": {
+    "src/crapkit/__init__.py": "Root review",
+    "src/crapkit/__main__.py": "Root review",
+    "src/crapkit/_pygdefer.py": "Analytical review",
+    "src/crapkit/analyze.py": "Analytical review",
+    "src/crapkit/cache.py": "Analytical review",
+    "src/crapkit/churn.py": "Analytical review",
+    "src/crapkit/churn_cache.py": "Analytical review",
+    "src/crapkit/churn_log.py": "Analytical review",
+    "src/crapkit/cli/__init__.py": "Execution review",
+    "src/crapkit/cli/_shared.py": "Execution review",
+    "src/crapkit/cli/admin.py": "Execution review",
+    "src/crapkit/cli/analyses.py": "Execution review",
+    "src/crapkit/cli/claude_hook.py": "Execution review",
+    "src/crapkit/cli/parser.py": "Execution review",
+    "src/crapkit/cli/queue.py": "Execution review",
+    "src/crapkit/cli/ratchet_cmds.py": "Execution review",
+    "src/crapkit/cli/reports.py": "Execution review",
+    "src/crapkit/cli/scoring.py": "Execution review",
+    "src/crapkit/cli/verifying.py": "Execution review",
+    "src/crapkit/config.py": "Execution review",
+    "src/crapkit/coupling.py": "Analytical review",
+    "src/crapkit/coupling_cache.py": "Analytical review",
+    "src/crapkit/coverage_istanbul.py": "Analytical review",
+    "src/crapkit/coverage_py.py": "Analytical review",
+    "src/crapkit/covstream.py": "Analytical review",
+    "src/crapkit/diffparse.py": "Analytical review",
+    "src/crapkit/digest.py": "State review",
+    "src/crapkit/doctor.py": "Execution review",
+    "src/crapkit/dup.py": "Analytical review",
+    "src/crapkit/errors.py": "State review",
+    "src/crapkit/gitio.py": "Analytical review",
+    "src/crapkit/hook.py": "Execution review",
+    "src/crapkit/invocation.py": "Execution review",
+    "src/crapkit/junitparse.py": "Execution review",
+    "src/crapkit/keys.py": "Analytical review",
+    "src/crapkit/lanes.py": "Execution review",
+    "src/crapkit/lizardcognitive.py": "Analytical review",
+    "src/crapkit/lizardpowershell.py": "Analytical review",
+    "src/crapkit/lizardrust.py": "Analytical review",
+    "src/crapkit/lizardshell.py": "Analytical review",
+    "src/crapkit/lizardtypescript.py": "Analytical review",
+    "src/crapkit/mcp_server.py": "Execution review",
+    "src/crapkit/merge.py": "State review",
+    "src/crapkit/mutate.py": "Execution review",
+    "src/crapkit/mutate_pool.py": "Execution review",
+    "src/crapkit/override.py": "State review",
+    "src/crapkit/packet.py": "State review",
+    "src/crapkit/procs.py": "Execution review",
+    "src/crapkit/ratchet.py": "State review",
+    "src/crapkit/ratchet_report.py": "State review",
+    "src/crapkit/report.py": "State review",
+    "src/crapkit/repotext.py": "Analytical review",
+    "src/crapkit/rootfind.py": "Execution review",
+    "src/crapkit/sarif.py": "State review",
+    "src/crapkit/sarifio.py": "State review",
+    "src/crapkit/scaffold.py": "Execution review",
+    "src/crapkit/score.py": "Analytical review",
+    "src/crapkit/snapshot.py": "State review",
+    "src/crapkit/store.py": "State review",
+    "src/crapkit/uncovered.py": "Analytical review",
+    "src/crapkit/universe.py": "Analytical review",
+    "src/crapkit/verify.py": "State review",
+    "src/crapkit/watch.py": "Execution review",
+    "src/crapkit/worklist.py": "State review"
+  },
+  "inventory": {
+    "tracked_files": 647,
+    "production_modules": 64,
+    "production_lines": 23194,
+    "production_functions": 1599,
+    "python_test_support_files": 305,
+    "test_support_lines": 52272,
+    "test_support_functions": 4471,
+    "historical_architecture_files": 167
+  },
+  "fresh_checks": {
+    "focused_contract_tests": 16,
+    "full_suite_rerun": false,
+    "wheel_build_and_extracted_import": "passed",
+    "independent_replays": [
+      "analysis cache",
+      "ratchet concurrent writes",
+      "override pruning",
+      "packet age",
+      "empty marks query",
+      "trend snapshot"
+    ]
+  }
+}

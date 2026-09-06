@@ -1,0 +1,9 @@
+ts	phase	decision	why	evidence	result
+2026-09-06T23:19:05.413077+00:00	scope	Recorded fresh whole-project baseline	User asked for another complete review	499d9db4f9ff4d212fb94ea3975c7477b6b1c968;64 production modules	source unchanged
+2026-09-06T23:19:05.413077+00:00	admission	Promoted complete configuration admission	Malformed collections can remove the corpus	root-evidence/config-shapes.json;5 schema/runtime mismatches	reproduced
+2026-09-06T23:19:05.413077+00:00	proof	Independently replayed cache and state findings	Separate reader checks the demonstrated interleavings	root-evidence/independent-replay.json;cache hit1;marks10to20;trend0versus1	reproduced
+2026-09-06T23:19:05.413077+00:00	validation	Built a wheel in a disposable archive	Check distribution contents without changing editable installation	root-evidence/wheel-proof.json;build0;import0	passed with existing dependencies
+2026-09-06T23:19:05.413077+00:00	tests	Kept whole-suite testing out of this review	No production test or configuration edit was made	root-review.md;16 focused contract tests passed	limited checks complete
+2026-09-06T23:19:05.413077+00:00	ranking	Prioritized false verdicts and shared-state correctness	Metric counts do not expose these ownership failures	execution-reuse-result.json;reuse0;fresh8	EX1 first
+2026-09-06T23:19:05.413077+00:00	design	Retained useful existing modules	Deletion must reduce the knowledge callers need	analysis-review.md;state-review.md;root-review.md	no size-only splits
+2026-09-06T23:23:11.0468414Z	publication	Verified rendered header and cache diagram	Check readable report before delivery	localhost:8770;18 cards;13 Strong;0 broken links	passed
