@@ -948,10 +948,27 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 | Flag | Behavior |
 |---|---|
 | `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
-| `--reuse-unchanged` | Rerun only the lanes whose scopes moved. A lane is reused when its stamp commit is an ancestor of HEAD **and** nothing under its scope paths changed since, working-tree edits included. A lane whose last attempt failed to write its artifact reruns whatever the stamp commit says. |
+| `--reuse-unchanged` | Reuse a lane only at the same clean HEAD, with unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. Otherwise run it again. A failed attempt that wrote no artifact always reruns. |
+
+Automatic reuse covers the whole tracked tree, including tests and shared helpers.
+Any tracked or untracked change, or a new commit, reruns the lane. Measurements
+made from a dirty tree and older stamps without this proof cannot be reused
+automatically. Environment values are hashed together; stamps do not store them.
+
+Ignored inputs other than `crapkit.toml`, files outside the repository, installed
+dependencies and services are outside that proof. Run fresh coverage when those
+inputs change. `--reuse-artifacts` remains an explicit request to read saved
+artifacts and keeps its warning about stale source coverage.
+
+Concurrent commands cannot own the same measurement outputs. Ownership covers
+execution, coverage/JUnit parsing and artifact stamps, including absolute artifact
+paths shared by different checkouts. A conflicting command refuses before it
+runs. Independent output paths can run in parallel. Coordination files remain in
+`.crapkit` beside the artifacts, so those directories must be writable. If the CLI
+dies, its helper stops registered test processes before releasing ownership.
 
 **Passing both makes `--reuse-artifacts` win.** It is checked first, so nothing reruns
-whatever changed, and the `artifact still matches its scopes; reusing without rerun` line
+whatever changed, and the `measurement inputs unchanged; reusing without rerun` line
 never prints. Live, on a tree with an edited source file:
 
 ```
@@ -1000,9 +1017,8 @@ as the python lane under the [container guard](#containers), records nothing, an
 its artifact (a junit that says the run did not finish, an artifact from another tree)
 records nothing either: that file is this run's, and reuse judges it on its own terms.
 
-`--reuse-unchanged` reads the same stamp, so a lane whose last attempt wrote nothing reruns
-even when nothing under its scopes moved: the stamp commit alone said the scopes were
-unchanged, which was true, and the lane had still not measured them.
+`--reuse-unchanged` reads the same refusal stamp, so a lane whose last attempt wrote
+nothing reruns even when every other input still matches.
 
 ---
 

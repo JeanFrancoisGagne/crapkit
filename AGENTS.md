@@ -38,7 +38,8 @@ which is the spelling that resolves from an activated venv on Windows: bare `pyt
 there can reach the WindowsApps stub or the base interpreter the venv wraps.
 
 `commands.refresh` is the fourth string and the only one that writes: it is a `coverage`
-run, reusing the artifacts of every lane whose scope files have not moved. That is what
+run. Automatic reuse requires the same clean HEAD and unchanged configuration,
+environment and coverage/JUnit bytes; every other lane reruns. That is what
 `stale: true` asks for. Nothing else clears it, because nothing else lands a run on the
 current commit. `commands.refresh_writes_run: true` marks it, so a session with a
 read-only checkout can tell the one command it must not run from the three it may.
@@ -649,13 +650,17 @@ injects its own git identity, so no global git config is required.
 `src/crapkit/` is the pure core: analysis, scoring, the store, git, the ratchet, the
 report renderers. One module per concern, and none of them knows about argparse.
 
-Four of them answer a question the whole tree asks, so nothing reimplements the answer:
+Shared rules belong to these modules:
 
 | Module | What it answers |
 |---|---|
 | `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins |
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
+| `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
 | `procs.py` | how a spawn with a deadline dies. `run_bounded` kills the whole process tree and reaps it |
+| `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
+| `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
+| `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time
@@ -663,6 +668,9 @@ something asks and pruned with its run. `trend` and `report` read it instead of
 rescanning every scored row of every run, which makes both of them writers. The fill is
 best effort, because two crapkit processes on one store can collide on it: losing the
 cache is a cost, losing the command is a bug.
+`history_totals` reads metadata and totals from one snapshot, then fills missing
+rollups after that read ends. Override audits and pruning take the same write
+transaction rule so retention cannot delete a run receiving an audit.
 
 `src/crapkit/cli/` is the command layer, split into ten family modules. `cli/__init__.py`
 exports only `main` and loads the parser when called. The parser names each handler's

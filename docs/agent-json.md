@@ -434,7 +434,7 @@ session need not read the config to learn which number it is aiming at.
 | `scoped_tests` | string or null | This scope's own `[crapkit.scoped_tests]` template, with `{files}` already replaced by the packet's file, double-quoted. Not a `crapkit test-scoped` call: the packet hands you the runner the scope declared. `null` when the scope declares no template, and then there is no step 4; `doctor` warns about the gap. |
 | `scoped_tests_note` | string | Present **only** when `scoped_tests` is `null`, naming the scope that declares no template. |
 | `verify` | string | The `verify` call. Step 5, the only authoritative one. |
-| `refresh` | string | The `coverage --reuse-unchanged` call that makes this packet current: it reruns the lanes whose scope files have moved and parses the rest off the artifacts they already have. Run it first when `stale` is `true`. |
+| `refresh` | string | The `coverage --reuse-unchanged` call that refreshes this packet. It reuses a lane only at the same clean HEAD with unchanged configuration, inherited environment and coverage/JUnit bytes; otherwise it runs the lane. Run it first when `stale` is `true`. |
 | `refresh_writes_run` | bool | Always `true`. `refresh` is the only one of the four that writes: it appends a scored run to `.crapkit/crap.sqlite`. A read-only session runs the other three and stops here. |
 
 Each one is a whole command line. Run them as given: a retyped `scoped_tests` loses whatever
@@ -893,7 +893,7 @@ $ crapkit coverage --json
 | `crap_load` | Sum of every function's CRAP, rounded to 2dp. |
 | `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
-| `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. |
+| `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `results_artifact_sha256`, `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. The digests bind coverage and JUnit to the bytes read for this run. |
 | `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed, and then the payload is the [error object](#errors). |
 | `kind` | `coverage` for a full run, `partial` when a lane was skipped (`--lane`) or failed: the word `runs` lists it under. A partial run is never a baseline. |
 | `unmeasured_scopes` | Scopes a declared lane measures that no succeeding lane reached this run, in declaration order; `[]` on a full run. A scope no lane declares at all is not listed: that is a configuration `doctor` names, not this run's shape. |
