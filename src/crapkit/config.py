@@ -5,7 +5,6 @@ own configuration in a lane's working directory, and only when the lane's
 pytest command carries a positional to judge against `testpaths`."""
 from __future__ import annotations
 
-import math
 import os
 import re
 import shlex
@@ -15,15 +14,14 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .errors import ConfigError
+from .config_contract import admit, enum_values
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
 # suffixes to a single CLikeReader, so a `c` label beside this one could never
 # measure differently — and `.h` is the header both dialects share, which no rule
 # could assign to one of them.
-SUPPORTED_LANGUAGES = frozenset({"typescript", "tsx", "javascript", "python", "swift",
-                                 "go", "rust", "shell", "cpp", "objectivec", "vue",
-                                 "java", "zig", "powershell"})
-SUPPORTED_PARSERS = frozenset({"istanbul", "coveragepy"})
+SUPPORTED_LANGUAGES = frozenset(enum_values("scope", "languages"))
+SUPPORTED_PARSERS = frozenset(enum_values("lane", "parser"))
 DEFAULT_TARGET = 6
 
 # Only what a vitest command line can carry: this tuple guards istanbul lane
@@ -616,6 +614,7 @@ def load_config_text(text: str, *, root: str | os.PathLike | None = None) -> Con
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"crapkit.toml does not parse: {exc}") from exc
     try:
+        admit(raw)
         return _build_config(raw, root)
     except KeyError as exc:
         raise ConfigError(f"crapkit.toml is missing a required key: {exc}") from exc
@@ -659,27 +658,12 @@ def _scope_path(name, raw: str) -> str:
 
 def _parse_scope(row: dict) -> Scope:
     languages = tuple(row.get("languages", ()))
-    unknown = set(languages) - SUPPORTED_LANGUAGES
-    if unknown:
-        raise ConfigError(f"unsupported language(s) {sorted(unknown)} in scope {row.get('name')!r}")
-    scope_target = _positive_int(row, "target", DEFAULT_TARGET) if "target" in row else None
+    scope_target = row.get("target")
     return Scope(name=row["name"],
                  paths=tuple(_scope_path(row.get("name"), p) for p in row["paths"]),
                  languages=languages,
                  target=scope_target,
-                 coverage_optional=_boolean(row, "coverage_optional", False))
-
-
-def _notes(row: dict, where: str) -> tuple[str, ...]:
-    """The `notes` list, rejected unless every entry is a string.
-
-    A bare `notes = "..."` is the trap TOML sets: it is iterable, so it would
-    load as one note per letter and every reader would print them that way.
-    """
-    raw = row.get("notes", [])
-    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
-        raise ConfigError(f"{where}: notes must be a list of strings, got {raw!r}")
-    return tuple(raw)
+                 coverage_optional=row.get("coverage_optional", False))
 
 
 def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
@@ -696,7 +680,7 @@ def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
         if scope.name in scopes:
             raise ConfigError(f"duplicate scope name {scope.name!r}; each scope needs its own name")
         scopes[scope.name] = scope
-        row_notes = _notes(row, f"scope {scope.name!r}")
+        row_notes = tuple(row.get("notes", ()))
         if row_notes:
             notes[scope.name] = row_notes
     return tuple(scopes.values()), notes
@@ -720,33 +704,23 @@ def _lane_dir(root: str | os.PathLike | None, cwd: str) -> Path | None:
 
 def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = None) -> Lane:
     parser = row["parser"]
-    if parser not in SUPPORTED_PARSERS:
-        raise ConfigError(f"lane {row.get('name')!r}: unsupported parser {parser!r}")
     lane_scopes = tuple(row.get("scopes", ()))
     unknown_scopes = set(lane_scopes) - scope_names
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
-    full_suite = _boolean(row, "full_suite", True)
+    full_suite = row.get("full_suite", True)
     _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"],
                            _lane_dir(root, row.get("cwd", "")))
     return Lane(name=row["name"], command=row["command"], artifact=row["artifact"],
                 parser=parser, scopes=lane_scopes,
                 cwd=row.get("cwd", ""), path_prefix=row.get("path_prefix", ""),
-                env=tuple(sorted((str(k), str(v)) for k, v in row.get("env", {}).items())),
-                full_suite=full_suite, container_ok=_boolean(row, "container_ok", False),
+                env=tuple(sorted(row.get("env", {}).items())),
+                full_suite=full_suite, container_ok=row.get("container_ok", False),
                 results_artifact=row.get("results_artifact", ""),
-                timeout_seconds=_nonneg_int(row, "timeout_seconds"),
-                no_progress_seconds=_nonneg_int(row, "no_progress_seconds"),
-                retries=_nonneg_int(row, "retries"),
+                timeout_seconds=row.get("timeout_seconds", 0),
+                no_progress_seconds=row.get("no_progress_seconds", 0),
+                retries=row.get("retries", 0),
                 retest_command=row.get("retest_command", ""))
-
-
-def _nonneg_int(row: dict, key: str) -> int:
-    value = row.get(key, 0)
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ConfigError(
-            f"lane {row.get('name', '?')!r}: {key} must be a non-negative int, got {value!r}")
-    return value
 
 
 def _reject_shared_artifacts(lanes: list, root=None) -> None:
@@ -772,75 +746,32 @@ def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
 
 
 def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
-    scope_rows = raw.get("scope", [])
-    if not scope_rows:
-        raise ConfigError("crapkit.toml declares no [[scope]] — nothing to analyze")
-    scopes, scope_notes = _parse_scopes(scope_rows)
+    scopes, scope_notes = _parse_scopes(raw["scope"])
     scope_names = {s.name for s in scopes}
     lanes = _unique_lanes(raw.get("lane", []), scope_names, root)
     _reject_shared_artifacts(lanes, root)
     main = raw.get("crapkit", {})
     return Config(
-        target=_positive_int(main, "target", DEFAULT_TARGET),
+        target=main.get("target", DEFAULT_TARGET),
         scopes=scopes,
         exclude_globs=tuple(raw.get("exclude", {}).get("globs", ())),
-        max_file_bytes=_optional_int(raw.get("exclude", {}), "max_file_bytes"),
-        churn_window_months=_positive_int(main, "churn_window_months", 12),
-        worklist_floor=_positive_int(main, "worklist_floor", 5),
-        worklist_top=_positive_int(main, "worklist_top", 50),
+        max_file_bytes=raw.get("exclude", {}).get("max_file_bytes"),
+        churn_window_months=main.get("churn_window_months", 12),
+        worklist_floor=main.get("worklist_floor", 5),
+        worklist_top=main.get("worklist_top", 50),
         lanes=tuple(lanes),
         ratchet_file=main.get("ratchet_file", "crapkit-ratchet.tsv"),
         alert_command=main.get("alert_command", ""),
-        scoped_tests=tuple(sorted((str(k), str(v)) for k, v in main.get("scoped_tests", {}).items())),
+        scoped_tests=tuple(sorted(main.get("scoped_tests", {}).items())),
         mutation_command=main.get("mutation_command", ""),
-        mutation_timeout_seconds=_positive_int(main, "mutation_timeout_seconds", 300),
-        mutation_workers=_positive_int(main, "mutation_workers", 1),
-        diff_uncovered_max=_optional_int(main, "diff_uncovered_max"),
-        tighten_max_jump=_factor(main, "tighten_max_jump", 2.0),
-        debt_max_age_months=_optional_int(main, "debt_max_age_months"),
-        repayment_min_per_30d=_optional_int(main, "repayment_min_per_30d"),
-        max_parallel_lanes=_bounded_int(main, "max_parallel_lanes", default=1, minimum=1),
-        analysis_workers=_bounded_int(main, "analysis_workers", default=0, minimum=0),
-        notes=_notes(main, "[crapkit]"),
+        mutation_timeout_seconds=main.get("mutation_timeout_seconds", 300),
+        mutation_workers=main.get("mutation_workers", 1),
+        diff_uncovered_max=main.get("diff_uncovered_max"),
+        tighten_max_jump=float(main.get("tighten_max_jump", 2.0)),
+        debt_max_age_months=main.get("debt_max_age_months"),
+        repayment_min_per_30d=main.get("repayment_min_per_30d"),
+        max_parallel_lanes=main.get("max_parallel_lanes", 1),
+        analysis_workers=main.get("analysis_workers", 0),
+        notes=tuple(main.get("notes", ())),
         scope_notes=scope_notes,
     )
-
-
-def _boolean(row: dict, key: str, default: bool) -> bool:
-    value = row.get(key, default)
-    if not isinstance(value, bool):
-        raise ConfigError(f"{key} must be a boolean, got {value!r}")
-    return value
-
-
-def _bounded_int(main: dict, key: str, *, default: int, minimum: int) -> int:
-    value = main.get(key, default)
-    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
-        raise ConfigError(f"{key} must be an int >= {minimum}, got {value!r}")
-    return value
-
-
-def _factor(main: dict, key: str, default: float) -> float:
-    """A ratio knob: any number at or above 1. Below 1 would refuse a tighten
-    where nothing moved, which stops the ratchet falling and says nothing."""
-    value = main.get(key, default)
-    if (isinstance(value, bool) or not isinstance(value, (int, float))
-            or value < 1 or not math.isfinite(value)):
-        raise ConfigError(f"{key} must be a number >= 1, got {value!r}")
-    return float(value)
-
-
-def _positive_int(main: dict, key: str, default: int) -> int:
-    value = main.get(key, default)
-    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ConfigError(f"{key} must be a positive int, got {value!r}")
-    return value
-
-
-def _optional_int(main: dict, key: str) -> int | None:
-    value = main.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ConfigError(f"{key} must be a non-negative int, got {value!r}")
-    return value

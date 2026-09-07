@@ -4,10 +4,12 @@
 
 Fixes land on the latest minor only. There are no maintenance branches.
 
+<!-- generated:version-support -->
 | Version | Supported |
-| ------- | --------- |
-| 0.4.x   | Yes       |
-| < 0.4   | No. Upgrade. |
+| --- | --- |
+| 0.6.x | Yes |
+| < 0.6 | No. Upgrade. |
+<!-- /generated:version-support -->
 
 ## Reporting a vulnerability
 
@@ -46,11 +48,15 @@ whole process tree, not just the shell it started (`taskkill /T` on Windows,
 gets data from your source: the override line reaches it on stdin, never
 interpolated into the shell string, because function names are not shell-safe.
 
-`mutate` writes mutated source. With one worker, the default, it writes into
-your working tree and puts the original file back when the mutant finishes.
-With `mutation_workers = N` it writes into the pool worktrees below instead. A
-second `mutate` in the same repo finds the pool lock held and falls back to
-throwaway worktrees under the system temp directory.
+`mutate` writes mutated source in a detached worktree at every worker count,
+including the default of one worker. It copies dirty, untracked and deleted
+inputs into that worktree before applying mutants. A second `mutate` in the
+same repo finds the pool lock held and uses throwaway worktrees under the
+system temp directory. The user's working tree stays unchanged.
+
+[Mutation isolation tests](tests/e2e/test_mutate_e2e.py) exercise this behavior
+through the CLI. [Pool tests](tests/unit/test_mutate_pool.py) check preparation
+and restoration.
 
 ## What crapkit writes
 

@@ -31,16 +31,7 @@ jobs:
       # all four with no test failure, so this line is the test.
       - name: the console script resolves
         run: crapkit --version
-      # Two commands, not one `pytest`: the suites want different settings.
-      # tests/unit is in-process and serial, so a failure reproduces where it
-      # fell.
-      - run: python -m pytest tests/unit
-      # tests/e2e drives the CLI against a throwaway git repo per test, which is
-      # subprocess time that parallelises: about 8 minutes serial against about
-      # 1m30 at `-n 8`, same 595 tests, same result. Those are developer-machine
-      # numbers, not this runner's; the PR template and pyproject.toml quote the
-      # same pair. pytest-xdist comes from the dev extra above.
-      - run: python -m pytest -n 8 tests/e2e
+      - run: python tools/testing/run.py
       # The checkout's index holds HEAD. Comparing it with the event's base
       # gates the actual changed functions without running the suites again.
       - name: gate changed functions against the event base
@@ -49,6 +40,31 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python -m crapkit hook-precommit --base "$BASE_REF"
+
+  verdict:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - name: compare installed base and candidate wheels
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python tools/testing/ci.py --base "$BASE_REF"
+      - name: retain the verdict and wheel provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crapkit-verdict
+          path: .crapkit/ci-verdict
+          if-no-files-found: warn
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
   # test can schema-check: a malformed handler fails here with exit 1. The two
@@ -81,9 +97,8 @@ jobs:
   # runner. Without them the lane writes no artifact and the comment has no run
   # to describe.
   #
-  # gate stays false: crapkit's gate on crapkit is `hook-precommit` in the test
-  # job above, and this job's job is to prove the action, not to judge the tree
-  # twice.
+  # The verdict job compares isolated wheel installations. This job exercises
+  # the composite action with its existing editable installation contract.
   dogfood:
     runs-on: ubuntu-latest
     permissions:

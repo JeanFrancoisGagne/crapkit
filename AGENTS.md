@@ -621,16 +621,19 @@ rejected in review.
 
 ## Tests
 
-    python -m pytest                      # both suites
-    python -m pytest tests/unit           # in-process suite, run serially
-    python -m pytest tests/e2e -n 8       # CLI tests in isolated repositories
+<!-- generated:test-schedule -->
+```sh
+python tools/testing/run.py
+python -m pytest tests/unit -p no:randomly
+python -m pytest tests/e2e -n 8 -p no:randomly
+```
+<!-- /generated:test-schedule -->
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
-`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else: no xdist and no
-randomization, so the `-n 8` above is yours to pass and no `-n 0` is needed to isolate a
-failure. Pass it: the e2e suite runs about 1m30 at `-n 8` against about 8 minutes
-serially, the pair CI, the PR template and pyproject.toml quote. If you have
-pytest-randomly installed globally, add `-p no:randomly` to pin the order.
+`addopts = "-q --tb=short -p no:cacheprovider"`. The shared runner owns the
+serial unit and parallel CLI schedule used by development, CI and self-verification.
+Use `--coverage` to combine both suites' branch coverage, test contexts and JUnit
+results. Either suite failing makes the runner fail.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives

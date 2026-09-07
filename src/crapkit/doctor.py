@@ -6,20 +6,9 @@ from typing import NamedTuple
 
 from .universe import scopes_with_tests
 
-_KNOWN = {
-    "": {"crapkit", "scope", "lane", "exclude"},
-    "crapkit": {"target", "churn_window_months", "worklist_floor", "worklist_top",
-                "ratchet_file", "alert_command", "scoped_tests", "notes",
-                "mutation_command", "mutation_timeout_seconds", "mutation_workers",
-                "diff_uncovered_max", "debt_max_age_months", "repayment_min_per_30d",
-                "max_parallel_lanes", "analysis_workers", "tighten_max_jump"},
-    "scope": {"name", "paths", "languages", "target", "coverage_optional", "notes"},
-    "lane": {"name", "command", "artifact", "parser", "scopes", "cwd", "path_prefix", "env",
-             "full_suite", "container_ok", "results_artifact", "timeout_seconds",
-             "no_progress_seconds", "retries",
-             "retest_command"},
-    "exclude": {"globs", "max_file_bytes"},
-}
+from .config_contract import known_keys
+
+_KNOWN = known_keys()
 
 
 _ARRAY_TABLES = frozenset({"scope", "lane"})

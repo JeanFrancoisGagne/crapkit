@@ -24,21 +24,26 @@ pass locally and get rejected in review.
 
 ## Tests
 
+<!-- generated:test-schedule -->
+```sh
+python tools/testing/run.py
+python -m pytest tests/unit -p no:randomly
+python -m pytest tests/e2e -n 8 -p no:randomly
 ```
-python -m pytest                   # both suites, serially
-python -m pytest tests/unit -n 8   # 2,688 tests, 16 s (about a minute serially)
-python -m pytest tests/e2e -n 8    # 626 tests, about 1m30 (2m on Windows)
-```
+<!-- /generated:test-schedule -->
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
-`addopts = "-q --tb=short -p no:cacheprovider"`. Nothing else, so a bare run is serial and
-`-n 8` is yours to add. Add it while you work and drop it (`-n 0`) to isolate a failure:
-xdist reorders, which hides which test left the state behind. With pytest-randomly
-installed globally, add `-p no:randomly` to pin the order too.
+`addopts = "-q --tb=short -p no:cacheprovider"`. The shared runner runs `tests/unit`
+serially and `tests/e2e` with eight workers. In-process tests share imported state;
+the CLI tests run in isolated repositories. Both suites disable a globally installed
+pytest-randomly plugin to preserve their test order.
 
-Both halves parallelize because every test owns its own tmp dir. The e2e half spawns
-`python -m crapkit` against a real git repo per test, which is wall clock nobody's CPU is
-using.
+Add `--coverage` to the shared runner to combine branch coverage, subprocess
+measurements, test contexts and JUnit results into `.crapkit/cov/`. Either suite
+failing makes the runner fail. Crapkit's own lane uses that same command.
+
+`python tools/docs/generate.py` updates the marked version and command facts and
+the editor schema. CI checks these generated sections through the unit suite.
 
 `tests/unit` covers pure seams, including `cli/verifying.py` and `cli/scoring.py`, which it
 drives in process rather than through a subprocess. `tests/e2e` drives `python -m crapkit`

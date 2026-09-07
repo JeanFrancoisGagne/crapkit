@@ -37,7 +37,7 @@ coverage_optional = true
 
 [[lane]]
 name = "py"
-command = "python -m pytest --cov=crapkit --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit.xml"
+command = "python tools/testing/run.py --coverage"
 artifact = ".crapkit/cov/py.json"
 parser = "coveragepy"
 scopes = ["src"]
