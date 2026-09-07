@@ -13,14 +13,15 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/testing/run.py"
 
 
-def fixture_repo(tmp_path, failure):
+def fixture_repo(tmp_path, failure, *, contexts=True):
     for directory in ("src/crapkit", "tests/unit", "tests/e2e"):
         (tmp_path / directory).mkdir(parents=True)
     (tmp_path / "src/crapkit/__init__.py").write_text(
         "def choose(value):\n    if value:\n        return 11\n    return 22\n")
     (tmp_path / "pyproject.toml").write_text(
         '[tool.coverage.run]\npatch=["subprocess"]\n'
-        '[tool.pytest.ini_options]\ntestpaths=["tests"]\n')
+        '[tool.pytest.ini_options]\ntestpaths=["tests"]\n'
+        f'addopts="{"--cov-context=test" if contexts else ""}"\n')
     (tmp_path / "tests/unit/test_one.py").write_text(
         "from crapkit import choose\ndef test_unit():\n"
         f"    assert choose(True) == {0 if failure == 'unit' else 11}\n")
@@ -31,9 +32,11 @@ def fixture_repo(tmp_path, failure):
         f"    assert result.stdout.strip() == '{0 if failure == 'e2e' else 22}'\n")
 
 
-@pytest.mark.parametrize("failure", ["", "unit", "e2e"])
-def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure):
-    fixture_repo(tmp_path, failure)
+@pytest.mark.parametrize(("failure", "contexts"), [
+    ("", True), ("unit", True), ("e2e", True),
+    pytest.param("", False, id="no-contexts")])
+def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure, contexts):
+    fixture_repo(tmp_path, failure, contexts=contexts)
     env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
     for key in ("COVERAGE_PROCESS_START", "COVERAGE_FILE", "COV_CORE_SOURCE",
                 "COV_CORE_CONFIG", "COV_CORE_DATAFILE", "COVERAGE_RCFILE"):
@@ -50,8 +53,11 @@ def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure
     files = {name.replace("\\", "/"): data for name, data in coverage["files"].items()}
     measured = files["src/crapkit/__init__.py"]
     assert measured["executed_branches"] == [[2, 3], [2, 4]]
-    contexts = {context for items in measured["contexts"].values() for context in items}
-    assert any("test_unit" in context for context in contexts)
+    saved_contexts = {context for items in measured["contexts"].values() for context in items}
+    if contexts:
+        assert any("test_unit|run" in context for context in saved_contexts)
+    else:
+        assert saved_contexts == {""}
     for suite in ("unit", "e2e"):
         assert (tmp_path / ".crapkit/cov" / (suite + ".xml")).is_file()
         assert (tmp_path / ".crapkit/cov" / (suite + ".coverage")).is_file()

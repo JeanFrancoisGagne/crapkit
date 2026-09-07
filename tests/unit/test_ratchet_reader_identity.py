@@ -54,7 +54,7 @@ def test_advisory_warns_when_the_saved_mark_has_no_proved_callback_identity(tmp_
     event = {'hook_event_name': 'PostToolUse', 'tool_name': 'Edit', 'cwd': str(tmp_path),
              'tool_input': {'file_path': str(tmp_path / 'app.ts')}}
     monkeypatch.setattr('sys.stdin', io.StringIO(json.dumps(event)))
-    monkeypatch.setattr('sqlite3.connect', lambda *a, **k: pytest.fail('advisory opened a store'))
+    monkeypatch.setattr(SnapshotStore, '__init__', lambda *a, **k: pytest.fail('advisory opened a store'))
     assert main(['claude-hook', '--protocol', '1']) == expected
     output = capsys.readouterr()
     assert not output.out

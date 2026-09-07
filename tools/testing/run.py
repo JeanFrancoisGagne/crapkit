@@ -25,8 +25,10 @@ def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: b
     environment = dict(os.environ)
     command = [*command, f"--junitxml={scratch / (name + '.xml')}"]
     if coverage:
-        environment["COVERAGE_FILE"] = str(scratch / (".coverage." + name))
-        command += ["--cov=crapkit", "--cov-branch", "--cov-context=test", "--cov-report="]
+        # Nested pytest resolves this in its own cwd. Coverage's subprocess
+        # startup keeps the absolute outer path for ordinary CLI children.
+        environment["COVERAGE_FILE"] = str((scratch / (".coverage." + name)).relative_to(root))
+        command += ["--cov=crapkit", "--cov-branch", "--cov-report="]
     return subprocess.run(command, cwd=root, env=environment).returncode
 
 
