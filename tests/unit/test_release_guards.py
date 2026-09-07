@@ -4,6 +4,7 @@ import shlex
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -93,7 +94,7 @@ def contracts(root, monkeypatch):
 def ledger(root, *, head=None, kind="verify", ok=1, findings=0):
     path = root / ".crapkit" / "crap.sqlite"
     path.parent.mkdir(exist_ok=True)
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY, "
                    "commit_sha TEXT, kind TEXT, verdict_ok INTEGER, findings INTEGER)")
         cursor = db.execute("INSERT INTO runs (commit_sha,kind,verdict_ok,findings) VALUES (?,?,?,?)",
@@ -137,11 +138,12 @@ def verified(root, monkeypatch):
 
 
 def test_publish_accepts_only_the_recorded_full_verify_run(tmp_path, monkeypatch):
+    from test_release_recovery import publish_adapter
     root = repo(tmp_path, bumped=True)
     verified(root, monkeypatch)
-    commands = capture(monkeypatch)
+    adapter = publish_adapter(root, monkeypatch)
     release.run("stage2b", "0.5.2", root)
-    assert commands
+    assert "push" in adapter.events
 
 
 @pytest.mark.parametrize("state", ["failed-later", "head-moved", "dirty", "tag-moved"])
@@ -217,40 +219,29 @@ def test_failed_contracts_remove_only_the_tag_the_stage_created(tmp_path, monkey
     assert not (root / ".crapkit" / "release-receipt.json").exists()
 
 
-def test_distribution_arguments_expand_only_built_archives(tmp_path):
-    dist = tmp_path / "dist"
-    dist.mkdir()
-    for name in ("pkg with spaces.whl", "pkg.tar.gz", "notes.txt"):
+def test_distribution_arguments_expand_checked_files_literally(tmp_path):
+    dist = tmp_path / ".crapkit/release-dist"
+    dist.mkdir(parents=True)
+    for name in ("pkg with spaces.whl", "pkg.tar.gz"):
         (dist / name).write_text("fixture", encoding="utf-8")
     script = "import json,sys; from pathlib import Path; Path('args.json').write_text(json.dumps(sys.argv[1:]))"
-    release._execute((sys.executable, "-c", script, "dist/*"), tmp_path, False)
+    release._execute((sys.executable, "-c", script, ".crapkit/release-dist/*"), tmp_path, False)
     actual = json.loads((tmp_path / "args.json").read_text())
     assert [Path(path).name for path in actual] == ["pkg with spaces.whl", "pkg.tar.gz"]
 
 
-def test_distribution_cleanup_is_portable_and_limited_to_dist(tmp_path):
-    dist = tmp_path / "dist"
-    dist.mkdir()
-    (dist / "old.whl").write_bytes(b"old")
-    keep = tmp_path / "keep.txt"
-    keep.write_bytes(b"keep")
-    release._execute(("@remove-dist",), tmp_path, False)
-    release._execute(("@remove-dist",), tmp_path, False)
-    assert not dist.exists()
-    assert keep.read_bytes() == b"keep"
-
-
-def test_distribution_cleanup_refuses_a_redirected_directory(tmp_path):
+def test_distribution_reads_refuse_a_redirected_directory(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     keep = outside / "keep.txt"
     keep.write_bytes(b"keep")
     try:
-        (tmp_path / "dist").symlink_to(outside, target_is_directory=True)
+        (tmp_path / ".crapkit").mkdir()
+        (tmp_path / ".crapkit/release-dist").symlink_to(outside, target_is_directory=True)
     except OSError:
         pytest.skip("this account cannot create directory symlinks")
     with pytest.raises(release.ReleaseError):
-        release._execute(("@remove-dist",), tmp_path, False)
+        release._execute((sys.executable, "-c", "pass", ".crapkit/release-dist/*"), tmp_path, False)
     assert keep.read_bytes() == b"keep"
 
 

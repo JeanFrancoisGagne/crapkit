@@ -14,8 +14,8 @@ The version to release is an argument, never inferred: whether a change is a
 patch or a minor is a judgment on visible behaviour, and it belongs to the
 person shipping.
 
-Stdlib only. Nothing here talks to the network except `verify` and the stage
-commands `run` spawns.
+Stdlib only. `verify` and publishing stages read remote state. Only explicit
+stage commands publish; `plan` and dry runs make no requests or writes.
 """
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ DASH = chr(0x2014)
 NL = chr(10)
 PACKAGE = "crapkit"
 REPO_SLUG = "JeanFrancoisGagne/crapkit"
+RELEASE_DIST = ".crapkit/release-dist"
 REGISTRY_SEARCH = "https://registry.modelcontextprotocol.io/v0/servers?search=crapkit"
 REGISTRY_META = "io.modelcontextprotocol.registry/official"
 
@@ -309,13 +310,15 @@ def plan(version: str) -> list:
         Step("contracts", "stage2a", (contracts,), note=f"red: git tag -d v{version} and stop"),
         Step("verify", "verify", ((PY, "-m", "crapkit", "verify"),), background=True,
              note="its own background command: a foreground tool call dies at 600 s"),
+        Step("artifacts", "stage2b", ((PY, "-m", "build", "-q", "--outdir", RELEASE_DIST),
+                                      (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
+             note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
         Step("push", "stage2b", (("git", "push", "-q", "origin", "main", f"v{version}"),)),
-        Step("pypi", "stage2b", (("@remove-dist",), (PY, "-m", "build", "-q"),
-                                 (PY, "-m", "twine", "check", "dist/*"),
-                                 (PY, "-m", "twine", "upload", "--non-interactive", "dist/*"))),
+        Step("pypi", "stage2b", ((PY, "-m", "twine", "upload", "--non-interactive", f"{RELEASE_DIST}/*"),)),
         Step("github release", "stage2b", (
-            ("gh", "release", "create", f"v{version}", "dist/*", "--title", f"crapkit {version}",
-             "--notes-file", f".crapkit/release-notes-{version}.md"),),
+            ("gh", "release", "create", f"v{version}", "--verify-tag", "--title", f"crapkit {version}",
+             "--notes-file", f".crapkit/release-notes-{version}.md"),
+            ("gh", "release", "upload", f"v{version}", f"{RELEASE_DIST}/*")),
             note="the notes file is the changelog section, written by `notes` first"),
         Step("plugin", "stage2b", (("claude", "plugin", "update", "crapkit@crapkit"),)),
         Step("pages", "stage2b", (("gh", "api", "-X", "POST", f"repos/{REPO_SLUG}/pages/builds", "--jq", ".status"),)),
@@ -464,44 +467,291 @@ def _finish_stage(stage: str, root: Path, version: str, receipt: dict, before: i
     _write_receipt(root, receipt)
 
 
-def _dist_path(root: Path) -> Path:
-    expected = root.resolve() / "dist"
-    if expected.resolve() != expected:
-        raise ReleaseError("dist must be a directory inside the release repository")
-    return expected
-
-
-def _remove_dist(root: Path) -> None:
-    target = _dist_path(root)
-    if target.exists():
-        shutil.rmtree(target)
-
-
-def _dist_artifacts(root: Path) -> list[str]:
-    artifacts = sorted(path for path in _dist_path(root).glob("*")
-                       if path.name.endswith((".whl", ".tar.gz")))
-    _check_artifacts(artifacts)
-    return [str(path.relative_to(root.resolve())) for path in artifacts]
-
-
 def _check_artifacts(artifacts: list[Path]) -> None:
     if not artifacts:
-        raise ReleaseError("dist contains no wheel or source archive")
+        raise ReleaseError("release-dist contains no wheel or source archive")
     if any(path.is_symlink() or not path.is_file() for path in artifacts):
-        raise ReleaseError("release artifacts must be regular files inside dist")
+        raise ReleaseError("release artifacts must be regular files inside release-dist")
 
 
 def _arguments(command: tuple, root: Path) -> list[str]:
     return [value for arg in command for value in
-            (_dist_artifacts(root) if arg == "dist/*" else [arg])]
+            (_release_files(root) if arg == f"{RELEASE_DIST}/*" else [arg])]
+
+
+def _release_dist(root: Path) -> Path:
+    expected = root.resolve() / RELEASE_DIST
+    if expected.resolve() != expected:
+        raise ReleaseError("release-dist must be a directory inside the release repository")
+    return expected
+
+
+def _release_files(root: Path) -> list[str]:
+    paths = sorted(_release_dist(root).glob("*"))
+    _check_artifacts(paths)
+    return [str(path.relative_to(root)) for path in paths]
+
+
+def _artifact_manifest(root: Path, version: str) -> dict:
+    paths = [root / rel for rel in _release_files(root)]
+    _release_names([path.name for path in paths], version)
+    return {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+
+
+def _release_names(names: list[str], version: str) -> None:
+    wheels = [name for name in names if re.fullmatch(rf"{PACKAGE}-{re.escape(version)}-.+\.whl", name)]
+    if len(names) != 2 or len(wheels) != 1 or f"{PACKAGE}-{version}.tar.gz" not in names:
+        raise ReleaseError(f"release-dist must contain one {version} wheel and its source archive")
+
+
+def _local_artifacts(root: Path, receipt: dict) -> dict:
+    current = _artifact_manifest(root, receipt["version"])
+    if current != receipt.get("artifacts"):
+        raise ReleaseError("local release artifact digests differ from the receipt; restore the confirmed bytes")
+    return current
+
+
+def _prepare_artifacts(root: Path, receipt: dict, step: Step) -> None:
+    if "artifacts" in receipt:
+        _local_artifacts(root, receipt)
+        return
+    target = _release_dist(root)
+    if target.exists():
+        shutil.rmtree(target)
+    _run_or_untag(step._replace(commands=step.commands[:1]), root, receipt["version"], False)
+    manifest = _artifact_manifest(root, receipt["version"])
+    _run_or_untag(step._replace(commands=step.commands[1:]), root, receipt["version"], False)
+    if _artifact_manifest(root, receipt["version"]) != manifest:
+        raise ReleaseError("release artifacts changed during twine check; nothing was published")
+    _guard_publish(root, receipt["version"])
+    receipt["artifacts"] = manifest
+    _write_receipt(root, receipt)
+
+
+def _remote_json(url: str, *, absent: bool = False) -> dict | None:
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as exc:
+        if absent and exc.code == 404:
+            return None
+        raise ReleaseError(f"cannot confirm {url}: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        raise ReleaseError(f"cannot confirm {url}: {exc}") from exc
+    if not isinstance(result, dict):
+        raise ReleaseError(f"cannot confirm {url}: expected a JSON object")
+    return result
+
+
+def _sha256(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", value):
+        raise ReleaseError("published artifact has no valid SHA256 digest")
+    return value.lower()
+
+
+def _remote_items(data: dict, key: str) -> list:
+    items = data[key]
+    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+        raise ReleaseError(f"cannot confirm publication metadata: {key} must be a list of objects")
+    return items
+
+
+def _digest_map(items: list, name_key: str, digest: Callable) -> dict:
+    result = {}
+    for item in items:
+        name = item[name_key]
+        if not isinstance(name, str) or name in result:
+            raise ReleaseError("cannot confirm publication metadata: invalid or duplicate filename")
+        result[name] = digest(item)
+    return result
+
+
+def _pypi_files(version: str) -> dict:
+    data = _remote_json(f"https://pypi.org/pypi/{PACKAGE}/{version}/json", absent=True)
+    if data is None:
+        return {}
+    try:
+        if data["info"]["version"] != version:
+            raise ReleaseError("PyPI returned another version")
+        return _digest_map(_remote_items(data, "urls"), "filename", lambda item: _sha256(item["digests"]["sha256"]))
+    except (KeyError, TypeError) as exc:
+        raise ReleaseError("cannot confirm PyPI artifact metadata") from exc
+
+
+def _github_release(version: str) -> dict | None:
+    data = _remote_json(f"https://api.github.com/repos/{REPO_SLUG}/releases/tags/v{version}", absent=True)
+    if data is not None and (data.get("tag_name"), data.get("draft")) != (f"v{version}", False):
+        raise ReleaseError("GitHub release is a draft or names another tag")
+    return data
+
+
+def _download_sha256(url: str) -> str:
+    digest = hashlib.sha256()
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            while chunk := response.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ReleaseError(f"cannot confirm asset bytes at {url}: {exc}") from exc
+    return digest.hexdigest()
+
+
+def _github_digest(asset: dict) -> str:
+    digest = asset.get("digest")
+    if digest is None:
+        return _download_sha256(asset["browser_download_url"])
+    if not isinstance(digest, str) or not digest.startswith("sha256:"):
+        raise ReleaseError("GitHub asset has an unsupported digest")
+    return _sha256(digest.removeprefix("sha256:"))
+
+
+def _github_files(version: str) -> dict:
+    data = _github_release(version)
+    if data is None:
+        return {}
+    try:
+        return _digest_map(_remote_items(data, "assets"), "name", _github_digest)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ReleaseError("cannot confirm GitHub asset metadata") from exc
+
+
+def _matching_files(expected: dict, observed: dict, surface: str) -> set:
+    for name in expected.keys() & observed.keys():
+        if expected[name] != observed[name]:
+            raise ReleaseError(f"{surface} digest mismatch for {name}; no artifact was overwritten")
+    return expected.keys() & observed.keys()
+
+
+def _file_confirmed(receipt: dict, surface: str, name: str) -> bool:
+    readers = {"pypi": _pypi_files, "github": _github_files}
+    observed = readers[surface](receipt["version"])
+    return name in _matching_files(receipt["artifacts"], observed, surface)
+
+
+def _pending(receipt: dict) -> list:
+    value = receipt.get("pending", [])
+    if not isinstance(value, list) or not all(isinstance(key, str) for key in value):
+        raise ReleaseError("release receipt pending actions must be a list of names")
+    return value
+
+
+def _clear_pending(root: Path, receipt: dict, key: str) -> None:
+    receipt["pending"] = [name for name in _pending(receipt) if name != key]
+    _write_receipt(root, receipt)
+
+
+def _record_publication(root: Path, receipt: dict, key: str) -> None:
+    if key == "push":
+        receipt["push_confirmed"] = receipt["head"]
+    _clear_pending(root, receipt, key)
+
+
+def _attempt(root: Path, command: tuple) -> Exception | None:
+    try:
+        _execute(command, root, False)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        return exc
+    return None
+
+
+def _publish_action(root: Path, receipt: dict, key: str, command: tuple, confirm: Callable) -> None:
+    if confirm():
+        _record_publication(root, receipt, key)
+        return
+    if key in _pending(receipt):
+        raise ReleaseError(f"{key}: prior publication is still unconfirmed; see tools/release/README.md for recovery")
+    _guard_publish(root, receipt["version"])
+    _local_artifacts(root, receipt)
+    receipt["pending"] = [*_pending(receipt), key]
+    _write_receipt(root, receipt)
+    failure = _attempt(root, command)
+    if not confirm():
+        raise ReleaseError(f"{key}: publication outcome is unconfirmed; rerun only after remote readback settles")
+    _record_publication(root, receipt, key)
+    if failure:
+        raise ReleaseError(f"{key}: command failed but publication is confirmed; rerun stage2b to continue") from failure
+
+
+def _pushed(root: Path, receipt: dict) -> bool:
+    tag = f"refs/tags/v{receipt['version']}"
+    text = _git(root, "ls-remote", "origin", "refs/heads/main", tag, tag + "^{}")
+    refs = dict(line.split()[::-1] for line in text.splitlines())
+    target = refs.get(tag + "^{}", refs.get(tag))
+    if target is not None and target != receipt["head"]:
+        raise ReleaseError("remote release tag points to another commit")
+    main = refs.get("refs/heads/main")
+    published = receipt.get("push_confirmed") == receipt["head"]
+    return target == receipt["head"] and (main == receipt["head"] or published)
+
+
+def _publish_push(root: Path, receipt: dict) -> None:
+    command = ("git", "push", "-q", "origin", "main", f"v{receipt['version']}")
+    _publish_action(root, receipt, "push", command, lambda: _pushed(root, receipt))
+
+
+def _publish_files(root: Path, receipt: dict, surface: str) -> None:
+    prefixes = {"pypi": (PY, "-m", "twine", "upload", "--non-interactive"),
+                "github": ("gh", "release", "upload", f"v{receipt['version']}")}
+    for name in sorted(receipt["artifacts"]):
+        command = (*prefixes[surface], f"{RELEASE_DIST}/{name}")
+        _publish_action(root, receipt, f"{surface}:{name}", command,
+                        lambda: _file_confirmed(receipt, surface, name))
+
+
+def _publish_github(root: Path, receipt: dict, step: Step) -> None:
+    version = receipt["version"]
+    out = root / ".crapkit" / f"release-notes-{version}.md"
+    out.write_text(notes(root, version), encoding="utf-8", newline=NL)
+    _publish_action(root, receipt, "github:create", step.commands[0],
+                    lambda: _github_release(version) is not None)
+    _publish_files(root, receipt, "github")
+
+
+def _publish_plugin(root: Path, receipt: dict, step: Step) -> None:
+    if receipt.get("plugin_updated") is True:
+        return
+    _run_or_untag(step, root, receipt["version"], False)
+    receipt["plugin_updated"] = True
+    _write_receipt(root, receipt)
+
+
+def _pages_state(receipt: dict) -> str:
+    data = _remote_json(f"https://api.github.com/repos/{REPO_SLUG}/pages/builds/latest", absent=True)
+    if data is None:
+        return "absent"
+    if not isinstance(data.get("commit"), str) or data.get("status") not in ("built", "building", "queued", "errored"):
+        raise ReleaseError("cannot confirm Pages build commit and status")
+    if data["commit"] != receipt["head"]:
+        return "other commit"
+    return data["status"]
+
+
+def _pages_built(receipt: dict) -> bool:
+    status = _pages_state(receipt)
+    if status in ("building", "queued"):
+        raise ReleaseError("Pages build is pending at this commit; wait, then rerun stage2b")
+    return status == "built"
+
+
+def _publish_pages(root: Path, receipt: dict, step: Step) -> None:
+    if _pages_state(receipt) == "errored":
+        _clear_pending(root, receipt, "pages")
+    _publish_action(root, receipt, "pages", step.commands[0], lambda: _pages_built(receipt))
+
+
+def _publish_step(step: Step, root: Path, receipt: dict) -> None:
+    handlers = {"artifacts": lambda: _prepare_artifacts(root, receipt, step),
+                "push": lambda: _publish_push(root, receipt),
+                "pypi": lambda: _publish_files(root, receipt, "pypi"),
+                "github release": lambda: _publish_github(root, receipt, step),
+                "plugin": lambda: _publish_plugin(root, receipt, step),
+                "pages": lambda: _publish_pages(root, receipt, step)}
+    handlers[step.name]()
 
 
 def _execute(command: tuple, root: Path, dry_run: bool) -> None:
     print(f"$ {subprocess.list2cmdline(command)}")
     if dry_run:
-        return
-    if command == ("@remove-dist",):
-        _remove_dist(root)
         return
     subprocess.run(_arguments(command, root), cwd=root, check=True)
 
@@ -514,11 +764,7 @@ def _stage1_files(root: Path) -> None:
         raise ReleaseError("unexpected release edits: " + ", ".join(sorted(unexpected)))
 
 
-def _run_step(step: Step, root: Path, version: str, dry_run: bool) -> None:
-    if step.name == "github release" and not dry_run:
-        out = root / ".crapkit" / f"release-notes-{version}.md"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(notes(root, version), encoding="utf-8", newline=NL)
+def _run_step(step: Step, root: Path, dry_run: bool) -> None:
     for command in step.commands:
         if step.stage == "stage1" and not dry_run:
             _stage1_files(root)
@@ -530,7 +776,7 @@ def _run_or_untag(step: Step, root: Path, version: str, dry_run: bool,
     """A red contract run deletes the tag it just made, so the tree never
     carries a tag the contracts refused."""
     try:
-        _run_step(step, root, version, dry_run)
+        _run_step(step, root, dry_run)
     except subprocess.CalledProcessError as exc:
         if step.name == "contracts":
             subprocess.run(["git", "update-ref", "-d", f"refs/tags/v{version}", head], cwd=root)
@@ -544,7 +790,10 @@ def _run_guarded(stage: str, steps: list, version: str, root: Path) -> None:
         receipt.pop("verify_run", None)
         _write_receipt(root, receipt)
     for step in steps:
-        _run_or_untag(step, root, version, False, receipt.get("head", ""))
+        if stage == "stage2b":
+            _publish_step(step, root, receipt)
+        else:
+            _run_or_untag(step, root, version, False, receipt.get("head", ""))
     _finish_stage(stage, root, version, receipt, before)
 
 
@@ -556,7 +805,7 @@ def run(stage: str, version: str, root: Path, *, dry_run: bool = False) -> None:
         raise ReleaseError(f"no stage {stage!r}; stages: stage1, stage2a, verify, stage2b, registry, surfaces")
     if dry_run:
         for step in steps:
-            _run_step(step, root, version, True)
+            _run_step(step, root, True)
         return
     _run_guarded(stage, steps, version, root)
 
