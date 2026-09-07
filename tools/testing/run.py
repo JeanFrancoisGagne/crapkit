@@ -42,14 +42,20 @@ def _incomplete_suite(name: str, code: int, reason: str) -> ET.Element:
     return suite
 
 
+def _completed_pytest(suite: ET.Element, code: int) -> bool:
+    return code == 0 or (code == 1 and any(
+        node.tag in {"failure", "error"} for node in suite.iter()))
+
+
 def _suite_xml(scratch: Path, name: str, code: int) -> tuple[list, bool]:
     try:
         suite = ET.parse(scratch / (name + ".xml")).getroot()
     except (OSError, ET.ParseError) as exc:
         return [_incomplete_suite(name, code, str(exc))], False
     parts = list(suite) if suite.tag == "testsuites" else [suite]
-    if code and not any(node.tag in {"failure", "error"} for node in suite.iter()):
-        return [*parts, _incomplete_suite(name, code, "JUnit recorded no failure")], False
+    if not _completed_pytest(suite, code):
+        reason = "JUnit did not record a completed pytest run"
+        return [*parts, _incomplete_suite(name, code, reason)], False
     return parts, True
 
 
