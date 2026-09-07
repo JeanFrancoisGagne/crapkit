@@ -1,8 +1,8 @@
 """Minimal MCP stdio server. JSON-RPC 2.0, newline-delimited, no SDK dependency.
 
-Read-side only: every tool shells to the CLI's own --json surface, so the MCP
-view can never drift from what the CLI reports, and nothing here writes a
-baseline, a ratchet, or a mutant. Runs that mutate state stay in the CLI.
+Every tool shells to the CLI's own --json surface. Calls can write caches and
+store metadata; coverage runs, verification, ratchet changes and mutations stay
+in the CLI.
 """
 from __future__ import annotations
 
@@ -1437,10 +1437,8 @@ TOOLS: tuple[dict, ...] = (
     },
 )
 
-# Every tool shells to a read-only CLI command against a store on this machine:
-# nothing writes, reruns answer the same, and no call leaves the repo. Declared
-# once, in the field clients read, so the module docstring's promise reaches the
-# model that plans with these tools.
+# These annotations describe score and source inspection. Cache, store migration
+# and rollup writes are documented in the initialization response.
 _ANNOTATIONS = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
                 "openWorldHint": False}
 
@@ -1631,9 +1629,11 @@ def _call_tool(root: Path, name: str, arguments: dict) -> dict:
 # protocol reserves for it. The ten error results a model would otherwise
 # collect from an unmeasured repo teach the same thing ten times, slower.
 _INSTRUCTIONS = (
-    "crapkit scores every function as ccn^2 x (1 - coverage)^3 + ccn; these twelve tools read "
-    "the newest scored run and every one is read-only: nothing here runs a test suite or "
-    "writes to the repo. They need a repo measured once (crapkit init, then crapkit "
+    "crapkit scores every function as ccn^2 x (1 - coverage)^3 + ccn; these twelve tools "
+    "read scores and source without running test suites or editing source files. Calls can "
+    "write caches, initialize or migrate the snapshot store, and fill rollups. "
+    "get_next_item takes no claim; check_gate runs rescore and records no verification run. "
+    "They need a repo measured once (crapkit init, then crapkit "
     "coverage); an unmeasured repo answers with a one-line pointer instead of data. Start "
     "with get_next_item for one function to fix, list_worklist for the whole ranking, "
     "get_function_brief for everything about one function, and check_gate after an edit to "

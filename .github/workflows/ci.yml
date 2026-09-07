@@ -130,9 +130,21 @@ jobs:
       - name: require the action's complete passing test suite
         run: >-
           python -c "from pathlib import Path; from crapkit.junitparse import failed_test_ids;
-          raise SystemExit(bool(failed_test_ids(Path('.crapkit/cov/junit.xml').read_text(encoding='utf-8'))))"
+          failed = sorted(failed_test_ids(Path('.crapkit/cov/junit.xml').read_text(encoding='utf-8')));
+          print('\n'.join(failed)); raise SystemExit(bool(failed))"
       - name: gate changed functions against the event base
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python -m crapkit hook-precommit --base "$BASE_REF"
+      - name: retain the action's test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crapkit-dogfood-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .crapkit/cov/*.xml
+            .crapkit/cov/**/*.log
+            .crapkit/lane-*.log
+          include-hidden-files: true
+          if-no-files-found: warn

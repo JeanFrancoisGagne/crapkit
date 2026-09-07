@@ -4,6 +4,13 @@ All 18 improvements are implemented. Normal configured verification and the
 final clean-wheel comparison passed at `802257c`. Each candidate run passed
 4,403 tests with three skips; both actual verify ledgers record zero findings.
 
+The [public evidence copy](focused-evidence-public.zip) omits ten historical
+source/wheel inputs for repository anonymity. Its [publication manifest](focused-evidence-public.json)
+records every retained and omitted member's original hash. Retained member bytes
+are unchanged; the complete original archive remains preserved privately.
+[Publication scope and checks](../publication-evidence.md) distinguish this copy
+from the original verification archive and its historical receipts.
+
 The user authorized the improvements on 2026-09-06. The review and clean-wheel
 comparison use starting commit `47629ea14ddea38e55ce2332d08297c31888acb9`.
 Candidate evidence remains in `../2026-09-06-post-implementation/`. External
@@ -213,17 +220,20 @@ measure coverage 1.0, CCN 6 and CRAP 6. Baseline run 1 has no stored JUnit diges
 its retained JUnit counts and failed test IDs match the stored lane, and its
 coverage digest matches exactly.
 
-The exact base and candidate wheels are retained beside
-`state-evidence/review/wheel-contract/acceptance-802257c-wheel-artifacts.json`.
-That manifest records their SHA256 hashes, sizes and original filenames;
+The exact base and candidate wheels are retained in the private original archive.
+The public copy retains
+`state-evidence/review/wheel-contract/acceptance-802257c-wheel-artifacts.json`,
+which records their SHA256 hashes, sizes and original filenames;
 `acceptance-802257c-source-check.json` records zero source mismatches across
 64 baseline and 69 candidate Python files. The completed comparison preserves
 the earlier refused attempts and does not use their results as passing evidence.
 
 ## Evidence layout
 
-`collect-evidence.py --work <workspace>/work/implementation` builds
-`focused-evidence.zip`. Its manifest records each input's bytes and SHA256.
+`collect-evidence.py --work <workspace>/work/implementation --output <private-path>`
+builds the complete original archive. Its manifest records each input's bytes and
+SHA256. The published `focused-evidence-public.zip` is a separate derivative;
+`PUBLICATION.json` and the external publication manifest identify its omissions.
 Paths beginning `work/implementation` in early decision rows refer to that
 workspace; remove that prefix to find the same file inside the archive.
 The archive includes before/after probes, focused logs, paired benchmark scripts
@@ -231,8 +241,9 @@ and raw measurements. It also retains the earlier root unit run's one stale
 schema-import failure, which was followed by fresh passing schema checks.
 The collector selects named evidence groups and retained CI files rather than
 recursing through scratch checkouts, test repositories or virtual environments.
-The startup source-A/source-B Python copies are included as the exact compared
-inputs. CI coverage databases, including incomplete failed-attempt data, remain
+The startup source-A/source-B Python copies remain the exact compared inputs in
+the private original. The public copy withholds three files from each tree and
+retains the rest unchanged. CI coverage databases, including incomplete failed-attempt data, remain
 beside their JUnit, ledger and proof records. `self-refused/` preserves the refused
 `9e08454` root run; `self-final/` holds the passing configured run's input hashes,
 prior ledger backup, raw results and completed audits. Top-level `configured-runtime/`

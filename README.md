@@ -158,7 +158,7 @@ files. Review those commands before running Crapkit in a repository you do not t
 
 ```
 $ crapkit --version
-crapkit 0.6.0
+crapkit 0.7.0
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
@@ -210,8 +210,17 @@ any function an edit pushed over its ceiling. Claude reaches two of the skills b
 wiring a repo up happens once and its description has no business in every turn's window.
 It adds no files to your repo, and it needs the crapkit CLI on PATH.
 
-A repo with no `crapkit.toml` costs a silent sub-50 ms no-op per edit. Other agent
-runtimes have no marketplace: copy `plugin/skills/*` into their skills directory instead.
+A repo with no `crapkit.toml` costs a silent sub-50 ms no-op per edit. After upgrading
+the CLI, refresh the marketplace before updating the installed plugin:
+
+```
+claude plugin marketplace update crapkit
+claude plugin update crapkit@crapkit --scope user
+crapkit doctor --plugin-root
+```
+
+Restart existing Claude Code sessions to apply the plugin update. The check above
+compares installed files with the CLI on PATH; it does not reload a running session.
 
 The hook registers on `Edit|Write`, which is every write that names a file. An agent that
 writes its source through a shell heredoc names none, so a `Bash` event is judged off the
@@ -239,6 +248,31 @@ per shell call in any git repo, whether or not crapkit measures it: about 30 ms 
 on crapkit's own checkout, and more on a bigger tree. What comes back is the dirty or
 untracked `*.py` files written in the last 12 seconds, 25 at most, each judged the way an
 edit is. Python only, so a TypeScript or Go repo pays the two spawns and hears nothing.
+
+### Codex
+
+Codex can install the same marketplace's plugin through its own manager:
+
+```
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin add crapkit@crapkit
+```
+
+Use the three skills and MCP server in Codex. The advisory hook instructions above
+configure Claude Code's PostToolUse event.
+To refresh an existing Codex installation:
+
+```
+codex plugin marketplace upgrade crapkit
+codex plugin add crapkit@crapkit
+codex plugin list --marketplace crapkit --json
+```
+
+Check the installed Codex plugin with an explicit `crapkit doctor --plugin-root PATH`.
+See [plugin upgrades](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients)
+for choosing that path and starting a fresh MCP session. A runtime with a skills
+directory but no compatible marketplace can copy `plugin/skills/*` instead; other
+MCP clients use the [stdio setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server).
 
 ## Languages
 
@@ -380,7 +414,7 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
     # crapkit's release step rewrites this line to the tag it just cut
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: crapkit-gate
 ```
@@ -488,7 +522,7 @@ to a workflow, and every input has a default:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: JeanFrancoisGagne/crapkit@v0.6.0
+      - uses: JeanFrancoisGagne/crapkit@v0.7.0
 ```
 
 The whole job those four lines sit in:
@@ -508,7 +542,7 @@ jobs:
         with:
           python-version: "3.12"       # the interpreter the install below lands in
       - run: pip install -e ".[dev]"   # whatever your lanes need to run
-      - uses: JeanFrancoisGagne/crapkit@v0.6.0
+      - uses: JeanFrancoisGagne/crapkit@v0.7.0
         with:
           gate: "false"
 ```
@@ -1270,7 +1304,7 @@ with no debt.
 | [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
 | [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md) | Where crapkit sits next to radon, xenon, wily, coverage.py and SonarQube, and how they run together. |
 | [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md) | The burn-down loop an agent runs, and the rules for changing crapkit itself. |
-| [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | The Claude Code plugin: three skills, the read-side MCP server, and the advisory PostToolUse hook. |
+| [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | Three skills and the MCP server for Claude Code and Codex, with advisory PostToolUse hook instructions for Claude Code. |
 
 [crapkit.schema.json](https://github.com/JeanFrancoisGagne/crapkit/blob/main/crapkit.schema.json) is the authority on the config file shape.
 

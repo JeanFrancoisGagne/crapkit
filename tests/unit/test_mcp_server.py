@@ -331,6 +331,17 @@ def test_gate_needs_a_path_and_takes_nothing_else(monkeypatch, tmp_path):
         "check_gate does not take 'top'; accepted: repo, path"
 
 
+def test_initialize_explains_the_tools_side_effect_boundary(monkeypatch, tmp_path):
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "initialize", {})])
+    instructions = replies[1]["result"]["instructions"]
+
+    assert "without running test suites or editing source files" in instructions
+    assert "write caches, initialize or migrate the snapshot store, and fill rollups" in instructions
+    assert "get_next_item takes no claim" in instructions
+    assert "check_gate runs rescore and records no verification run" in instructions
+    assert "writes to the repo" not in instructions
+
+
 def test_the_instructions_count_twelve_tools_and_name_the_gate():
     assert "twelve tools" in mcp_server._INSTRUCTIONS and "ten tools" not in mcp_server._INSTRUCTIONS
     assert "check_gate" in mcp_server._INSTRUCTIONS

@@ -2,6 +2,8 @@
 
 The version is always an explicit argument. Run one stage at a time from the release checkout. Stage 1 requires clean `main` already pushed to `origin`; stage 2a creates the local tag and runs the contract tests. Publishing requires that tag at the same clean HEAD and a new passing full `verify` row recorded by the verify stage. A zero process exit without that ledger row is refused.
 
+Stage 1 regenerates documentation after reinstalling the bumped version and before measuring coverage. It includes the generated `SECURITY.md` support table in the release commit. Stage 2a checks generated guidance against the tagged version.
+
 ```
 python tools/release/release.py check VERSION
 python tools/release/release.py plan VERSION
@@ -74,9 +76,39 @@ After stage 2b and the MCP Registry stage, check every distribution route:
 | Website | Pages built the release commit from `main:/docs`; open the landing page and handbook. |
 | GitHub Action and pre-commit | The release tag includes `action.yml` and `.pre-commit-hooks.yaml`; README examples use that tag. |
 | Local CLI | Stage 1 updates only its selected Python environment. Upgrade the intended user CLI with its owning installer, read its resolved executable and version, and run `crapkit doctor --plugin-root` against installed plugins. |
-| Plugin marketplace | The published marketplace points at the versioned plugin manifest. Update installed clients through their supported plugin manager and read back the version. |
+| Claude Code plugin | Refresh its registered marketplace, update the user-scope plugin, read back its version and check `doctor --plugin-root`. Existing sessions need a restart to apply the update. |
+| Codex plugin | Refresh its registered marketplace, install the current plugin with the supported manager, and check its listed version and explicit installed plugin root. Verify its three skills and MCP configuration. |
 | MCP Registry | The canonical server name has the new version and matching PyPI package. |
 | Glama | Use the existing server's Repository admin **Sync Server** action after the GitHub release exists. Confirm its release version, build and tool schema, and correct stale profile text separately. |
+
+After publication, refresh the clients' marketplace snapshots before updating their
+installed copies. Stage 2b invokes Claude's plugin update; it does not perform the
+Codex commands below:
+
+```sh
+claude plugin marketplace update crapkit
+claude plugin update crapkit@crapkit --scope user
+claude plugin list --json
+
+codex plugin marketplace upgrade crapkit --json
+codex plugin add crapkit@crapkit --json
+codex plugin list --marketplace crapkit --json
+```
+
+The Codex marketplace is registered once with
+`codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`.
+Use the supported managers to refresh installations; do not edit their caches.
+Check that the registered source is the canonical repository and that its current
+revision and installed version match the release. Run `crapkit doctor --plugin-root PATH`
+against each installed plugin using the intended global CLI, then start a fresh MCP
+session and confirm initialize reports the release version and tools/list returns
+twelve tools. Doctor's no-path default checks Claude Code's cache, so pass the Codex
+installed root explicitly. See the [client upgrade guide](../../docs/upgrading.md#plugin-and-mcp-clients).
+
+These checks do not reload existing clients. Restart existing Claude Code sessions
+to apply its plugin update, and start a new Codex task to load updated skills and
+tools. The advisory hook instructions configure Claude Code's
+PostToolUse event; the Codex installation check covers skills and MCP.
 
 Glama profile text does not necessarily follow the README. Check its tool count
 and write behavior against the current MCP definitions. Do not use **Build and

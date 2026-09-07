@@ -859,13 +859,27 @@ python -m pip install --upgrade crapkit   # in the environment holding a pip ins
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
 claude plugin install crapkit@crapkit</code></pre>
-<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a <strong>machine-wide</strong> install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
+<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
 <p>A CLI installed from a clone wants its plugin from that same clone. <code>claude plugin marketplace add</code> takes a path as well as a GitHub slug, and the clone root already carries the <code>.claude-plugin/marketplace.json</code> that names <code>./plugin</code> as its source, so the same pair of commands installs the plugin sitting beside the CLI:</p>
 <pre><code>claude plugin marketplace add /path/to/your/crapkit-clone
 claude plugin install crapkit@crapkit</code></pre>
 <p>Take that route whenever the CLI came from <code>pip install .</code> or from the git tip. A CLI from the tip and a plugin from the marketplace are the pair that drift, and the next paragraph is how you find out. Both marketplaces answer to the name <code>crapkit</code>, since it is the same file either way, so drop the GitHub one with <code>claude plugin marketplace remove crapkit</code> before adding the clone.</p>
 <p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> compares an installed plugin against the <code>crapkit</code> on PATH on two things, its version and the hook protocol it asks for, and prints one line per disagreement at exit 1. Agreement prints nothing at all, at exit 0.</p>
 <p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it reads Claude Code's own plugin cache. A root it picked for you is named first, as <code>crapkit doctor: checking PATH</code>, so a wrong guess is visible rather than silent. A root you typed exactly is checked in silence.</p>
+
+<h3>Codex: install the three skills and MCP server</h3>
+<pre><code>codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin add crapkit@crapkit</code></pre>
+<p>Codex uses its own plugin manager with the same repository marketplace. Use its three skills and MCP server in Codex. The advisory hook instructions here configure Claude Code's PostToolUse event.</p>
+
+<h3>Update installed plugins after the CLI</h3>
+<pre><code>claude plugin marketplace update crapkit
+claude plugin update crapkit@crapkit --scope user
+
+codex plugin marketplace upgrade crapkit
+codex plugin add crapkit@crapkit
+codex plugin list --marketplace crapkit --json</code></pre>
+<p>Refresh the marketplace before updating the installed copy. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. Pass the installed Codex plugin directory explicitly because doctor's default cache is Claude Code's. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv

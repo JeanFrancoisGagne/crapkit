@@ -5,7 +5,6 @@ closing the owner's last handle also stops the Job if the owner crashes.
 """
 import ctypes
 from ctypes import wintypes
-import time
 
 
 class _Limits(ctypes.Structure):
@@ -22,16 +21,15 @@ class _ExtendedLimits(ctypes.Structure):
                 ('peak_process_memory', ctypes.c_size_t), ('peak_job_memory', ctypes.c_size_t)]
 
 
-class _Accounting(ctypes.Structure):
-    _fields_ = [('times', ctypes.c_longlong * 4), ('page_faults', wintypes.DWORD),
-                ('total', wintypes.DWORD), ('active', wintypes.DWORD),
-                ('terminated', wintypes.DWORD)]
+class _CompletionPort(ctypes.Structure):
+    _fields_ = [('key', wintypes.HANDLE), ('port', wintypes.HANDLE)]
 
 
 def _kernel():
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.CreateJobObjectW.restype = wintypes.HANDLE
     kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.CreateIoCompletionPort.restype = wintypes.HANDLE
     return kernel
 
 
@@ -47,11 +45,13 @@ class Job:
     def __init__(self, pid: int):
         self.kernel = _kernel()
         self.handle = wintypes.HANDLE(_checked(self.kernel.CreateJobObjectW(None, None)))
+        self.port = None
         try:
             self._configure()
+            self._connect()
             self._assign(pid)
         except BaseException:
-            self.kernel.CloseHandle(self.handle)
+            self._close()
             raise
 
     def _configure(self):
@@ -68,15 +68,31 @@ class Job:
         finally:
             self.kernel.CloseHandle(process)
 
-    def _active(self):
-        counts = _Accounting()
-        _checked(self.kernel.QueryInformationJobObject(
-            self.handle, 1, ctypes.byref(counts), ctypes.sizeof(counts), None))
-        return counts.active
+    def _connect(self):
+        self.port = wintypes.HANDLE(_checked(self.kernel.CreateIoCompletionPort(
+            wintypes.HANDLE(-1), None, 0, 1)))
+        connection = _CompletionPort(self.handle, self.port)
+        _checked(self.kernel.SetInformationJobObject(
+            self.handle, 7, ctypes.byref(connection), ctypes.sizeof(connection)))
+
+    def _wait_stopped(self):
+        # A missing notification keeps ownership held. The accounting count resets
+        # before process exit and cannot safely replace the completion notice.
+        message, key, process = wintypes.DWORD(), ctypes.c_size_t(), wintypes.HANDLE()
+        while True:
+            _checked(self.kernel.GetQueuedCompletionStatus(
+                self.port, ctypes.byref(message), ctypes.byref(key),
+                ctypes.byref(process), wintypes.DWORD(0xffffffff)))
+            if message.value == 4 and key.value == self.handle.value:
+                return  # JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
+
+    def _close(self):
+        if self.port is not None:
+            self.kernel.CloseHandle(self.port)
+        self.kernel.CloseHandle(self.handle)
 
     def stop(self):
-        """Do not release a resource while a terminated process still owns it."""
+        """Wait for process exit, not the earlier accounting-count reset."""
         _checked(self.kernel.TerminateJobObject(self.handle, 1))
-        while self._active():
-            time.sleep(.01)
-        self.kernel.CloseHandle(self.handle)
+        self._wait_stopped()
+        self._close()

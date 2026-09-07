@@ -75,6 +75,7 @@ CONTRACT_FILES = (
     "tests/unit/test_precommit_contract.py", "tests/unit/test_schema_contract.py",
     "tests/unit/test_json_schema_version.py", "tests/unit/test_action_contract.py",
     "tests/unit/test_demo_docs_contract.py", "tests/unit/test_registry_manifest.py",
+    "tests/unit/test_generated_guidance.py",
 )
 
 
@@ -289,7 +290,7 @@ class Step(NamedTuple):
 
 PY = sys.executable
 RELEASE_FILES = tuple(sorted({surface.path for surface in SURFACES}
-                            | {"CHANGELOG.md", "crapkit-ratchet.tsv"}))
+                            | {"CHANGELOG.md", "SECURITY.md", "crapkit-ratchet.tsv"}))
 
 
 def _upload_prefix(surface: str, version: str) -> tuple:
@@ -309,6 +310,7 @@ def plan(version: str) -> list:
         Step("stage1", "stage1", (
             (*tool, "check", version), (*tool, "bump", version),
             (PY, "-m", "pip", "install", "-e", ".", "--no-deps", "-q"),
+            (PY, "tools/docs/generate.py"),
             (PY, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", "tests/unit/test_version_surface.py"),
             (PY, "-m", "crapkit", "coverage"), (PY, "-m", "crapkit", "ratchet", "seed"),
             (PY, "-m", "crapkit", "ratchet", "prune"),

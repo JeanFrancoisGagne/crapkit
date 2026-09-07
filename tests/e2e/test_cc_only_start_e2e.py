@@ -157,10 +157,11 @@ def go_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_the_readme_start_is_still_the_four_calls_this_test_runs():
+def test_the_readme_start_matches_the_commands_this_test_runs():
     """A guard on the extractor, not on crapkit: a README rewrite that changes
     the sequence must change this list, not silently narrow what runs below."""
-    assert start_commands() == [["crapkit", "init"], ["crapkit", "coverage"],
+    assert start_commands() == [["crapkit", "init"], ["crapkit", "doctor"],
+                                ["crapkit", "coverage"],
                                 ["crapkit", "worklist"], ["crapkit", "ratchet", "seed"]]
 
 

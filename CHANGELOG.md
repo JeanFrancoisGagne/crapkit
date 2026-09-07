@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — unreleased
+## 0.7.0 — 2026-09-07
 
 This release makes scoring, verification and concurrent work more reliable. It
 preserves literal file paths, separates same-line callbacks, requires complete
@@ -63,6 +63,8 @@ and JSON schema version remain compatible with 0.6.0.
 - Own command descendants with process groups on POSIX and Job Objects on Windows.
   Retain ownership through completion, timeout and caller termination. Untimed
   commands remain untimed, and launch errors retain their original meaning.
+  Wait for Windows process completion before releasing output locks; a zero Job
+  accounting count can arrive before the processes finish exiting.
 - Give mutation workers one captured source, test and configuration snapshot,
   including dirty files and deletions. Refuse linked source files before writing,
   isolate worker copies, and preserve active workers during cleanup. Generate
@@ -84,9 +86,15 @@ and JSON schema version remain compatible with 0.6.0.
 - Gate CI changes against the event base and isolate each composite Action run.
   Establish cleanup fixture readiness before measuring its deadline, while
   keeping separate tests for startup and whole-call deadlines.
+  Release ownership test fixtures explicitly so slow competitor startup cannot
+  turn correct lock acquisition into a test failure.
 - Bind release publication to a clean tagged HEAD and a passing verification ledger
   row. Build wheel and source archives once, record their hashes, publish only
   missing matching artifacts, and confirm PyPI, GitHub and Pages through readback.
+  Regenerate supported-version guidance before release coverage and check it on
+  the tagged tree.
+- Document marketplace installation and upgrades for Claude Code and Codex,
+  including checks against the CLI used by each installed plugin.
 - Remove unused discovery code and production copies of reference algorithms.
   CLI helpers live with their owning command families; `crapkit.cli.main` remains
   the public entry point.
@@ -95,7 +103,7 @@ and JSON schema version remain compatible with 0.6.0.
 
 The [implementation report](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.7.0/docs/architecture/2026-09-07-implementation/REPORT.md)
 contains the architecture findings, measured costs and gains, test results and
-reproducible evidence.
+retained evidence.
 
 ## 0.6.0 — 2026-09-05
 

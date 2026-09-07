@@ -77,17 +77,38 @@ JSON stays at `schema: 1`; consumers must accept added fields.
 
 ## Plugin and MCP clients
 
-Update the Claude Code plugin alongside the CLI, then run:
+After upgrading the intended CLI, refresh Claude Code's marketplace before updating
+its user-scope plugin:
 
 ```sh
+claude plugin marketplace update crapkit
+claude plugin update crapkit@crapkit --scope user
 crapkit doctor --plugin-root
 ```
 
-This checks the installed plugin against the `crapkit` launcher on PATH. A failed,
-malformed or undecodable launcher probe is a failure, not a version match. An
-explicit plugin path can be passed after `--plugin-root`.
+Restart existing Claude Code sessions to apply the plugin update. The doctor check
+compares the installed plugin with the `crapkit` launcher on PATH. It does not reload
+an existing session. A failed, malformed or undecodable launcher probe is a failure,
+not a version match.
 
-Restart MCP clients after upgrading so their server uses the installed code. Other
+For an installed Codex plugin, refresh its marketplace and install the current copy:
+
+```sh
+codex plugin marketplace upgrade crapkit
+codex plugin add crapkit@crapkit
+codex plugin list --marketplace crapkit --json
+crapkit doctor --plugin-root PATH
+```
+
+Use the installed Codex plugin directory for `PATH`, not the marketplace's source
+checkout. In the default cache this is
+`~/.codex/plugins/cache/crapkit/crapkit/VERSION`, using the installed version from
+the listing. With no explicit path, doctor checks Claude Code's cache instead.
+Use the three skills and MCP server in Codex. The advisory hook instructions in
+the README configure Claude Code's PostToolUse event. Start a new Codex task to
+load updated plugin skills and tools.
+
+Start fresh MCP sessions after upgrading so their server uses the installed code. Other
 MCP clients use the [stdio setup](agent-json.md#mcp-server); skill copies and custom
 hook entries need their own update. Run packet commands as supplied, in the
 environment that owns the intended CLI, to retain literal arguments and exit codes.

@@ -4,6 +4,14 @@ All 17 audited candidates and the separate CI optimization are implemented. **Co
 
 The audit used `b11e2c1`; implementation started from `c2d3515`. The canonical report is `docs/architecture/2026-09-07-implementation/REPORT.md`. Repository paths below are relative to `C:/Users/jfgag/crapkit`; evidence paths are relative to the packaged evidence root. `completion-matrix.json` maps every candidate to production files, tests, red/green evidence and compatibility limits. `evidence-manifest.json` records curated file hashes.
 
+The [public evidence copy](evidence-public.zip) withholds only the historical
+`measurements/duplication-self-input.json` for repository anonymity. Its
+[publication manifest](evidence-public.json) records original hashes for retained
+and omitted members. All retained member bytes are unchanged. The original
+archive, original manifest and verification receipts remain preserved; those
+receipts describe the full original archive, not this public derivative.
+[Publication scope and checks](../publication-evidence.md) explain the distinction.
+
 ## Candidate disposition
 
 Each row is implemented and has focused passing evidence. The later integration repairs are listed separately below. Counts from overlapping batches must not be added into a unique suite total.

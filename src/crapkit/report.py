@@ -7,10 +7,9 @@ something `crapkit worklist --json` and `crapkit trend --json` do not.
 
 Three decisions are load-bearing.
 
-The page renders the worklist AT ITS DEFAULT, `worklist_top` rows. Rendering
-every admitted row was measured: 46,567 rows of openclaw came to 9.85 MB of HTML
-and 46,567 DOM rows, which is a page that hangs the tab rather than one a
-teammate opens. `report_top` refuses anything past REPORT_ROW_CEILING.
+The page renders the worklist at its default, `worklist_top` rows. Rendering
+every admitted row makes the HTML and DOM grow with the full corpus.
+`report_top` refuses anything past REPORT_ROW_CEILING.
 
 Every row carries the function's CRAP and coverage off the worklist payload,
 and no more than that: dark lines, history and marks stay one `crapkit explain
@@ -346,18 +345,18 @@ _DOC_OPEN = ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\
 # compares every colour token here against that page.
 _STYLE = """
   :root {
-    --paper: #FAF8F4; --ink: #211C17; --muted: #6E6459; --faint: #94897C;
+    --paper: #FAF8F4; --ink: #211C17; --muted: #6E6459; --faint: #766B5E;
     --line: #E5DFD5; --card: #FFFFFF; --card-line: #EAE4DA;
     --accent: #A6391F; --accent-soft: #F7E9E4;
-    --ok: #2E7D46; --ok-soft: #E7F2EA;
-    --warn: #A66A00; --warn-soft: #F8EFDC;
+    --ok: #276B3D; --ok-soft: #E7F2EA;
+    --warn: #8A5900; --warn-soft: #F8EFDC;
     --info: #3B5B8C; --info-soft: #E8EEF7;
     --data1: #A6391F; --data2: #B8860B; --data3: #3E6B8F; --data4: #2E7D46;
     --code-bg: #F1EDE5; --grid: #E9E3D8;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --paper: #17140F; --ink: #EAE4DB; --muted: #A79C8D; --faint: #7E7466;
+      --paper: #17140F; --ink: #EAE4DB; --muted: #A79C8D; --faint: #A79C8D;
       --line: #322C24; --card: #1F1B15; --card-line: #373128;
       --accent: #E0714F; --accent-soft: #33211B;
       --ok: #6FBF8A; --ok-soft: #1E2E23;

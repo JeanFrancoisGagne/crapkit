@@ -887,11 +887,9 @@ def _split_marked(violations: list, entries: list) -> tuple[list, list]:
     CRAP to compare against a mark. So the question the hook can answer is the
     only one it asks — did the repo already sign for this function?
 
-    Without it, touching signed debt is a wall. A comment inside one of
-    openclaw's 40,303 marked rows refused the commit while `rescore --gate` on
-    the same tree passed, so a session of green advisories ended at a red
-    commit. `verify` keeps the numeric check and is what catches a mark that
-    actually rose.
+    Without this exemption, a comment inside a marked function can refuse the
+    commit while `rescore --gate` on the same tree passes. `verify` keeps the
+    numeric check and catches a mark that actually rose.
     """
     from ..keys import stated_key
 

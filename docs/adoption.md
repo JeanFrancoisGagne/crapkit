@@ -238,13 +238,24 @@ does not cover that entry: it reads the plugin's own `hooks/hooks.json` and noth
 a protocol bump shows up for the shipped matcher and stays silent for the one you wrote.
 Re-check it by hand after a CLI upgrade.
 
-Every other harness takes one of the two surfaces under it. The table is the whole list; no
-adapter beyond it exists yet.
+Codex users can install the three skills and MCP server through its own plugin manager:
+
+```
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin add crapkit@crapkit
+```
+
+The advisory hook instructions above configure Claude Code's PostToolUse event.
+After a CLI upgrade, follow
+[plugin and MCP client updates](upgrading.md#plugin-and-mcp-clients): refresh the
+marketplace first, update the installed plugin, then check its version and start a
+fresh client session.
 
 | Harness | What it gets |
 |---|---|
 | Claude Code | the plugin: three skills, the MCP server, the advisory hook |
-| any MCP client (Codex, Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
+| Codex | the plugin: three skills and the MCP server |
+| other MCP clients (Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
 
 A runtime with a skills directory but no marketplace can copy `plugin/skills/*` into it and

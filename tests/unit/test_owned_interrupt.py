@@ -1,5 +1,7 @@
 """Cancellation stops live command trees before returning their output locks."""
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
+import ctypes
+from ctypes import wintypes
 import json
 import os
 import signal
@@ -37,7 +39,21 @@ def _wait_until_ready(path):
     assert path.exists(), "both fixture processes must acquire locks before interruption"
 
 
-def _interrupt_at_wait(monkeypatch, ready, script):
+def _native_exit_checks(path, handles):
+    if os.name != "nt":
+        return []
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    checks = []
+    for pid in json.loads(path.read_text(encoding="utf-8")):
+        handle = wintypes.HANDLE(kernel.OpenProcess(0x100000, False, pid))
+        assert handle.value, "observe each live fixture process before interruption"
+        handles.callback(kernel.CloseHandle, handle)
+        checks.append(lambda handle=handle: kernel.WaitForSingleObject(handle, 0))
+    return checks
+
+
+def _interrupt_at_wait(monkeypatch, ready, script, handles, exit_checks):
     original = procs._wait_command
     interrupted = []
 
@@ -45,6 +61,7 @@ def _interrupt_at_wait(monkeypatch, ready, script):
         if not interrupted and script.name in str(process.args):
             _wait_until_ready(ready)
             assert process.poll() is None
+            exit_checks.extend(_native_exit_checks(ready, handles))
             interrupted.append(process.pid)
             raise KeyboardInterrupt
         return original(process, *args, **kwargs)
@@ -68,16 +85,18 @@ def test_interrupt_stops_the_parent_and_grandchild_before_returning(tmp_path, mo
     script = tmp_path / "tree.py"
     script.write_text(TREE, encoding="utf-8")
     ready = tmp_path / "ready.json"
-    # Inject before the native wait. Windows defers interrupt_main during its wait.
-    interrupted = _interrupt_at_wait(monkeypatch, ready, script)
     ownership = own_processes([tmp_path / "output.lock"]) if owned else nullcontext(None)
     released = False
     try:
-        with ownership as owner, (tmp_path / "command.log").open("w+b") as log:
+        with ExitStack() as handles, ownership as owner, (tmp_path / "command.log").open("w+b") as log:
+            # Windows defers interrupt_main during its native wait.
+            exit_checks = []
+            interrupted = _interrupt_at_wait(monkeypatch, ready, script, handles, exit_checks)
             with pytest.raises(KeyboardInterrupt):
                 run_bounded(f'"{sys.executable}" "{script}" "{tmp_path}"', None,
                             stream=log, owner=owner)
             assert ready.exists(), "the cancellation must follow both processes acquiring their locks"
+            assert all(check() == 0 for check in exit_checks), "cleanup must wait for native process exit"
             with exclusive_lock(tmp_path / "parent.lock", label="parent"):
                 with exclusive_lock(tmp_path / "child.lock", label="child"):
                     released = True

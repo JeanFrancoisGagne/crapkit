@@ -273,13 +273,11 @@ def _start_probe(word: str) -> int | None:
     asks; only the shell's own could-not-run code answers no.
 
     Memoized on the word, which is the whole question: no cwd, no env, so two
-    lanes starting with `pnpm` cannot get different answers. A repo with N
-    lanes over K distinct first words spawned N shells to learn K things —
-    openclaw declares 14 lanes over 2 words, and doctor spent 5.6 of its 6.9
-    seconds waiting on the 12 duplicates. None is cached on purpose: it is the
-    answer for OSError and for the 15 s deadline alike, and caching it turns a
-    hung runner from 14 timeouts into 1. Whoever gives the probe a cwd or an
-    env has to put it in the key in the same commit."""
+    lanes starting with `pnpm` cannot get different answers. Probe each distinct
+    first word once, including when it returns None after OSError or the 15 s
+    deadline. Repeated lanes then share the answer without repeating a hung
+    runner's timeout. Whoever gives the probe a cwd or an env has to put it in
+    the key in the same commit."""
     from ..procs import run_bounded
 
     try:

@@ -1,4 +1,5 @@
 """Two CLI processes cannot publish each other's measurement artifacts."""
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -6,13 +7,22 @@ import shutil
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from test_measurement_inputs_e2e import measured_repo, run_cli  # noqa: F401
 
 
-PAUSED = '''import sys, time
+PAUSE = """
+def pause_measurement(folder):
+    (folder/'ready').write_text('ready')
+    while not (folder/'release').exists():
+        time.sleep(.02)
+"""
+
+PAUSED = PAUSE + '''import sys, time
 from pathlib import Path
 import crapkit.lanes as lanes
 import crapkit.cli.scoring as scoring
@@ -21,22 +31,21 @@ root = Path(sys.argv[1])
 module, name = (lanes, '_read_and_parse') if sys.argv[2] == 'parse' else (scoring, '_collect_lanes')
 original = getattr(module, name)
 def pause(*args, **kwargs):
-    (root/'.crapkit/ready').write_text('ready')
-    until = time.monotonic() + 20
-    while not (root/'.crapkit/release').exists() and time.monotonic() < until:
-        time.sleep(.02)
+    pause_measurement(root/'.crapkit')
     return original(*args, **kwargs)
 setattr(module, name, pause)
 raise SystemExit(main(['coverage', '--repo', str(root), '--json']))
 '''
 WAIT = '''
+import time
+from crapkit.locks import exclusive_lock
 if os.environ.get('CRAPKIT_PAUSE_MEASUREMENT'):
-    import time
-    (folder/'ready').write_text('ready')
-    until = time.monotonic() + 4
-    while not (folder/'release').exists() and time.monotonic() < until:
-        time.sleep(.02)
-    (folder/'late-write').write_text('suite was still alive')
+    with exclusive_lock(folder/'suite-writer.lock', label='old suite'):
+        pause_measurement(folder)
+        (folder/'late-write').write_text('suite was still alive')
+if (folder/'check-writer').exists():
+    with exclusive_lock(folder/'suite-writer.lock', label='old suite'):
+        (folder/'writer-released').write_text('released before measurement')
 '''
 RETEST = '''import json, sys
 from pathlib import Path
@@ -56,6 +65,15 @@ def wait_for(path, process):
     assert path.exists(), process.communicate(timeout=10)
 
 
+def drain(process):
+    try:
+        process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate(timeout=10)
+        raise
+
+
 @pytest.fixture
 def paused_measurement(measured_repo):
     processes = []
@@ -63,7 +81,7 @@ def paused_measurement(measured_repo):
         environment = dict(os.environ)
         if phase in ('execute', 'retest'):
             script = measured_repo / 'measure.py'
-            script.write_text(script.read_text().replace("count = folder /", WAIT + "\ncount = folder /"))
+            script.write_text(PAUSE + script.read_text().replace("count = folder /", WAIT + "\ncount = folder /"))
             environment['CRAPKIT_PAUSE_MEASUREMENT'] = '1'
             command = [sys.executable, '-m', 'crapkit', 'coverage', '--repo', str(measured_repo), '--json']
             if phase == 'retest':
@@ -78,8 +96,9 @@ def paused_measurement(measured_repo):
         return process
     yield start
     (measured_repo / '.crapkit/release').touch()
-    for process in processes:
-        process.communicate(timeout=30)
+    with ExitStack() as cleanup:
+        for process in processes:
+            cleanup.callback(drain, process)
 
 
 @pytest.mark.parametrize('phase', ['execute', 'parse', 'stamp'])
@@ -92,6 +111,8 @@ def test_one_owner_spans_execution_parsing_and_stamp_publication(measured_repo, 
     out, err = first.communicate(timeout=30)
     assert first.returncode == 0, out + err
     assert json.loads(out)['crap_load'] == 1
+    if phase == 'execute':
+        assert (measured_repo/'.crapkit/late-write').exists()
 
 
 @pytest.mark.parametrize('different_temp', [False, True])
@@ -133,11 +154,41 @@ def test_retest_owns_the_same_junit_that_measurement_reads(measured_repo, paused
     assert json.loads(out) == ['tests.test_app::test_f']
 
 
+def coverage_after_owner_exit(root):
+    until = time.monotonic() + 15
+    while True:
+        result = run_cli(root, 'coverage', '--json')
+        if result.returncode != 5:
+            return result
+        expected = 'measurement already in use; wait for its owner to finish'
+        assert json.loads(result.stdout)['error']['message'] == expected, result.stdout + result.stderr
+        assert time.monotonic() < until, result.stdout + result.stderr
+        time.sleep(.02)
+
+
 def test_a_killed_cli_stops_its_suite_before_releasing_ownership(measured_repo, paused_measurement):
     first = paused_measurement('execute')
+    (measured_repo/'.crapkit/check-writer').touch()
     first.kill()
     first.wait(timeout=10)
-    time.sleep(4.5)
-    assert not (measured_repo / '.crapkit/late-write').exists(), 'the suite outlived its measurement owner'
-    second = run_cli(measured_repo, 'coverage', '--json')
+    second = coverage_after_owner_exit(measured_repo)
     assert second.returncode == 0, second.stdout + second.stderr
+    assert json.loads(second.stdout)['lane_failures'] == {}
+    assert (measured_repo/'.crapkit/writer-released').exists(), 'old suite still owns its writer lock'
+    assert not (measured_repo/'.crapkit/late-write').exists(), 'the suite outlived its measurement owner'
+
+
+def test_a_clock_deadline_cannot_release_the_fixture(tmp_path):
+    class WaitingForRelease(Exception):
+        pass
+
+    ticks = iter((0, 3600))
+    sleep = Mock(side_effect=WaitingForRelease)
+    namespace = {'time': SimpleNamespace(monotonic=lambda: next(ticks), sleep=sleep)}
+    exec(PAUSE, namespace)
+    with pytest.raises(WaitingForRelease):
+        namespace['pause_measurement'](tmp_path)
+    assert (tmp_path/'ready').exists()
+    (tmp_path/'release').touch()
+    namespace['pause_measurement'](tmp_path)
+    sleep.assert_called_once_with(.02)

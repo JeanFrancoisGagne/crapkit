@@ -1,5 +1,7 @@
 """Exercise foreign OS decisions beside the real native lifecycle regressions."""
+from concurrent.futures import ThreadPoolExecutor
 import ctypes
+from threading import Event
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import Mock, call
@@ -125,6 +127,7 @@ def job_kernel(monkeypatch):
     kernel = Mock()
     kernel.CreateJobObjectW.return_value = 100
     kernel.OpenProcess.return_value = 200
+    kernel.CreateIoCompletionPort.return_value = 300
     kernel.SetInformationJobObject.return_value = 1
     kernel.AssignProcessToJobObject.return_value = 1
     kernel.TerminateJobObject.return_value = 1
@@ -140,7 +143,7 @@ def test_job_owns_launcher_before_it_can_create_children(monkeypatch):
     windows.ctypes.WinDLL.assert_called_once_with('kernel32', use_last_error=True)
     assert kernel.CreateJobObjectW.restype is windows.wintypes.HANDLE
     assert kernel.OpenProcess.restype is windows.wintypes.HANDLE
-    configured = kernel.SetInformationJobObject.call_args.args
+    configured = kernel.SetInformationJobObject.call_args_list[0].args
     assert configured[0].value == 100
     assert configured[1] == 9
     assert configured[2]._obj.basic.flags == 0x2000
@@ -149,12 +152,20 @@ def test_job_owns_launcher_before_it_can_create_children(monkeypatch):
     assigned = kernel.AssignProcessToJobObject.call_args.args
     assert [handle.value for handle in assigned] == [100, 200]
     assert [entry.args[0].value for entry in kernel.CloseHandle.call_args_list] == [200]
+    connection = kernel.SetInformationJobObject.call_args_list[1].args
+    assert connection[1] == 7
+    assert connection[2]._obj.key == 100
+    assert connection[2]._obj.port == 300
+    assert [entry[0] for entry in kernel.mock_calls] == [
+        'CreateJobObjectW', 'SetInformationJobObject', 'CreateIoCompletionPort',
+        'SetInformationJobObject', 'OpenProcess', 'AssignProcessToJobObject', 'CloseHandle']
     assert job.handle.value == 100
 
 
 @pytest.mark.parametrize(('failure', 'closed'), [
     ('CreateJobObjectW', []), ('SetInformationJobObject', [100]),
-    ('OpenProcess', [100]), ('AssignProcessToJobObject', [200, 100]),
+    ('CreateIoCompletionPort', [100]), ('OpenProcess', [300, 100]),
+    ('AssignProcessToJobObject', [200, 300, 100]),
 ])
 def test_job_setup_failure_closes_handles_and_refuses_ownership(monkeypatch, failure, closed):
     kernel = job_kernel(monkeypatch)
@@ -162,31 +173,40 @@ def test_job_setup_failure_closes_handles_and_refuses_ownership(monkeypatch, fai
     with pytest.raises(OSError, match='denied'):
         windows.Job(71)
     assert [entry.args[0].value for entry in kernel.CloseHandle.call_args_list] == closed
+    kernel.GetQueuedCompletionStatus.assert_not_called()
 
 
-def test_job_waits_for_every_active_process_before_closing(monkeypatch):
+def test_job_connection_failure_closes_handles_before_refusing(monkeypatch):
     kernel = job_kernel(monkeypatch)
-    active = iter([2, 1, 0])
+    kernel.SetInformationJobObject.side_effect = [1, 0]
+    with pytest.raises(OSError, match='denied'):
+        windows.Job(71)
+    kernel.AssignProcessToJobObject.assert_not_called()
+    assert [entry.args[0].value for entry in kernel.CloseHandle.call_args_list] == [300, 100]
+    kernel.GetQueuedCompletionStatus.assert_not_called()
 
-    def accounting(handle, kind, record, size, needed):
-        assert handle.value == 100
-        assert kind == 1
-        assert size == ctypes.sizeof(windows._Accounting)
-        record._obj.active = next(active)
+
+def test_job_waits_for_its_completion_notice_before_closing(monkeypatch):
+    kernel = job_kernel(monkeypatch)
+    notices = iter([(6, 100), (4, 999), (4, 100)])
+
+    def completion(port, message, key, process, timeout):
+        assert port.value == 300
+        assert timeout.value == 0xffffffff
+        message._obj.value, key._obj.value = next(notices)
         return 1
 
-    kernel.QueryInformationJobObject.side_effect = accounting
+    kernel.GetQueuedCompletionStatus.side_effect = completion
     job = windows.Job(71)
     kernel.reset_mock()
-    monkeypatch.setattr(windows, 'time', SimpleNamespace(sleep=kernel.sleep))
     job.stop()
     assert [entry[0] for entry in kernel.mock_calls] == [
-        'TerminateJobObject', 'QueryInformationJobObject', 'sleep',
-        'QueryInformationJobObject', 'sleep', 'QueryInformationJobObject', 'CloseHandle']
-    assert kernel.CloseHandle.call_args.args[0].value == 100
+        'TerminateJobObject', 'GetQueuedCompletionStatus', 'GetQueuedCompletionStatus',
+        'GetQueuedCompletionStatus', 'CloseHandle', 'CloseHandle']
+    assert [entry.args[0].value for entry in kernel.CloseHandle.call_args_list] == [300, 100]
 
 
-@pytest.mark.parametrize('failure', ['TerminateJobObject', 'QueryInformationJobObject'])
+@pytest.mark.parametrize('failure', ['TerminateJobObject', 'GetQueuedCompletionStatus'])
 def test_job_cleanup_failure_does_not_confirm_release(monkeypatch, failure):
     kernel = job_kernel(monkeypatch)
     job = windows.Job(71)
@@ -195,3 +215,28 @@ def test_job_cleanup_failure_does_not_confirm_release(monkeypatch, failure):
     with pytest.raises(OSError, match='denied'):
         job.stop()
     kernel.CloseHandle.assert_not_called()
+
+
+def test_a_missing_completion_keeps_ownership_held(monkeypatch):
+    kernel = job_kernel(monkeypatch)
+    waiting, release = Event(), Event()
+
+    def completion(port, message, key, process, timeout):
+        waiting.set()
+        assert release.wait(5), "the test must release the native completion stub"
+        message._obj.value, key._obj.value = 4, 100
+        return 1
+
+    kernel.GetQueuedCompletionStatus.side_effect = completion
+    job = windows.Job(71)
+    kernel.reset_mock()
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        stopped = worker.submit(job.stop)
+        try:
+            assert waiting.wait(5), "cleanup must reach the native completion wait"
+            assert not stopped.done()
+            kernel.CloseHandle.assert_not_called()
+            kernel.QueryInformationJobObject.assert_not_called()
+        finally:
+            release.set()
+        stopped.result(timeout=5)

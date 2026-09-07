@@ -583,13 +583,14 @@ CLI exited 0; a `doctor` that finds a FAIL exits 1 and answers its JSON text wit
 an answer: exit 6 (a breach) comes back with `isError: false`, `structuredContent` and
 `gate.ok` false; exits 3, 4 and 5 stay tool errors, as does 1 (no scored run yet).
 
-The server is read-only. Every tool shells to a read command, so nothing it exposes
-writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`,
-`mutate` and `claims` stay in the CLI.
+The tools inspect scores and source without running test suites or editing source files.
+Calls can write caches, initialize or migrate the snapshot store, and fill rollups.
+`get_next_item` takes no claim; `check_gate` runs `rescore` and records no verification run.
+`list_claims` lists existing claims. Claim acquisition and release stay in the CLI,
+along with coverage runs, verification, ratchet changes and mutations.
 
-`brief`, `worklist` and `coupling` do fill the ranked-pairs cache under `.crapkit/` on a
-cold run, and the store fills a per-run rollup the first time `trend` or `report` asks.
-Those are caches: deleting one costs a walk, never a verdict.
+`brief`, `worklist` and `coupling` fill the ranked-pairs cache under `.crapkit/` on a cold
+run. The store fills missing per-run rollups when `trend` or `report` asks for them.
 `commands.refresh_writes_run` distinguishes a new coverage run from these cache writes.
 
 ---

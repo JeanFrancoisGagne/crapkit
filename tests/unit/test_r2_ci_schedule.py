@@ -99,3 +99,34 @@ def test_dogfood_cannot_admit_old_junit_when_the_coverage_launcher_never_starts(
     assert result.returncode != 0
     action_index = steps.index(step(steps, "uses", "./"))
     assert steps.index(cleanup) < action_index < steps.index(check)
+
+
+def test_dogfood_prints_the_sorted_failed_test_ids_before_refusing(tmp_path):
+    check = step(workflow()["dogfood"]["steps"], "name", "require the action's complete passing test suite")
+    output = tmp_path / ".crapkit/cov/junit.xml"
+    output.parent.mkdir(parents=True)
+    output.write_text('<testsuite tests="2"><testcase classname="z" name="last"><failure/>'
+                      '</testcase><testcase classname="a" name="first"><error/></testcase></testsuite>')
+    command = shlex.split(check["run"])
+    result = subprocess.run([sys.executable, *command[1:]], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == ["a::first", "z::last"]
+
+
+def test_dogfood_retains_junit_and_test_logs_even_when_a_prior_step_failed(tmp_path):
+    upload = step(workflow()["dogfood"]["steps"], "uses", "actions/upload-artifact@v4")
+    assert upload is not None, "failed action suites need retained JUnit and logs"
+    assert upload["if"] == "always()"
+    settings = upload["with"]
+    assert settings["include-hidden-files"] is True
+    assert settings["if-no-files-found"] == "warn"
+    assert settings["name"] == "crapkit-dogfood-${{ github.run_id }}-${{ github.run_attempt }}"
+    expected = [".crapkit/cov/junit.xml", ".crapkit/cov/unit.xml", ".crapkit/cov/e2e.xml",
+                ".crapkit/cov/incomplete/run/pytest.log", ".crapkit/lane-py.log"]
+    for name in expected:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("test evidence")
+    selected = {path.relative_to(tmp_path).as_posix() for pattern in settings["path"].splitlines()
+                for path in tmp_path.glob(pattern)}
+    assert selected == set(expected)
