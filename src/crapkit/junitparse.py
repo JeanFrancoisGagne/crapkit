@@ -69,6 +69,12 @@ def _session_notes(root: ET.Element) -> list[str]:
             for e in root.iter("error") if id(e) not in in_case]
 
 
+def _collection_notes(root: ET.Element) -> list[str]:
+    """xdist can return exit 1 after collection stopped, with this case error."""
+    return [f"collection error: {_error_text(error)}" for error in root.iter("error")
+            if error.get("message") == "collection failure"]
+
+
 def _refuse_unfinished(root: ET.Element) -> None:
     """A report that admits the run stopped early is not a measurement.
 
@@ -78,7 +84,7 @@ def _refuse_unfinished(root: ET.Element) -> None:
     a quarter of the scope scores cov 0. Reported on a 15,300-test lane where
     one dead worker left 4,626 tests unexecuted (#21).
     """
-    notes = _crash_notes(root) + _session_notes(root)
+    notes = _crash_notes(root) + _session_notes(root) + _collection_notes(root)
     if notes:
         raise ToolError("junit reports a run that did not finish, so its coverage measures "
                         f"a partial suite: {'; '.join(notes)}")

@@ -79,20 +79,16 @@ def test_real_verdict_compares_baseline_coverage_and_preserves_ledger(tmp_path, 
     assert (candidate / ".crapkit/crap.sqlite").is_file()
 
 
-def test_installed_source_is_verified_before_coverage_paths_are_mapped(tmp_path):
+def test_installed_source_is_verified_before_coverage_paths_are_mapped(tmp_path, dependency_venv):
     from test_suite_schedule import fixture_repo
 
     ci = driver()
     root = tmp_path / "checkout"
     root.mkdir()
     fixture_repo(root, "")
-    venv = tmp_path / "venv"
-    subprocess.run([sys.executable, "-m", "venv", "--without-pip", "--system-site-packages", str(venv)], check=True)
-    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python, site = dependency_venv(tmp_path / "venv")
     env = ci._environment(python)
-    site = subprocess.run([str(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
-                          env=env, capture_output=True, text=True, check=True).stdout.strip()
-    package = Path(site) / "crapkit"
+    package = site / "crapkit"
     shutil.copytree(root / "src/crapkit", package)
     proof = ci.installed_source(root, python, env)
     assert ci._measure(root, python, env, proof) == 0

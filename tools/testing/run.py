@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -48,8 +49,28 @@ def _incomplete_suite(name: str, code: int, reason: str) -> ET.Element:
 
 
 def _completed_pytest(suite: ET.Element, code: int) -> bool:
+    if _unfinished_pytest(suite):
+        return False
     return code == 0 or (code == 1 and any(
         node.tag in {"failure", "error"} for node in suite.iter()))
+
+
+def _unfinished_pytest(suite: ET.Element) -> bool:
+    return _session_error(suite) or any(_interrupted_error(error) for error in suite.iter("error"))
+
+
+def _session_error(suite: ET.Element) -> bool:
+    in_case = {id(error) for case in suite.iter("testcase") for error in case.iter("error")}
+    return any(id(error) not in in_case for error in suite.iter("error"))
+
+
+def _interrupted_error(error: ET.Element) -> bool:
+    # These are pytest producer records, not failures of completed test cases.
+    message = error.get("message", "")
+    if message == "collection failure":
+        return True
+    text = message + " " + (error.text or "")
+    return re.search(r"worker '[^']+' crashed while running '[^']+'", text) is not None
 
 
 def _suite_xml(scratch: Path, name: str, code: int) -> tuple[list, bool]:

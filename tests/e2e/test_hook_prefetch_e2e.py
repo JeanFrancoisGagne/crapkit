@@ -101,7 +101,16 @@ def test_a_failing_git_read_still_reaches_the_caller_as_a_git_error(tmp_path, ca
         cmd_hook_precommit(hook_args(loose))
 
     assert exc.value.exit_code == 4
-    assert "git diff --cached" in str(exc.value)
+    assert "diff --cached" in str(exc.value)
+    assert f"failed in {loose}" in str(exc.value)
+    assert "gate:" not in capsys.readouterr().out
+
+    res = run_cli(loose, "hook-precommit")
+
+    assert res.returncode == 4, res.stdout + res.stderr
+    assert "diff --cached" in res.stderr
+    assert f"failed in {loose}" in res.stderr
+    assert "gate:" not in res.stdout
 
 
 def test_a_missing_lizard_still_exits_five_with_the_same_sentence(staged):

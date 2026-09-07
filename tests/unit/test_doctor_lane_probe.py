@@ -201,12 +201,9 @@ def test_interpreter_startup_warnings_do_not_change_its_report(monkeypatch, tmp_
     assert report[0].lower() == sys.executable.lower()
 
 
-def test_the_probe_controls_its_output_encoding(monkeypatch, tmp_path):
-    import venv
-
+def test_the_probe_controls_its_output_encoding(monkeypatch, tmp_path, dependency_venv):
     environment = tmp_path / 'Jos\u00e9'
-    venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)
-    executable = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    executable, _ = dependency_venv(environment)
     monkeypatch.setenv('PYTHONIOENCODING', 'cp1252')
 
     report = admin._runner_report(str(executable))

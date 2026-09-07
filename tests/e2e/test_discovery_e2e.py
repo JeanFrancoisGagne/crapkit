@@ -8,6 +8,7 @@ wrote a second configuration claiming the same files. Every case drives
 `python -m crapkit` from the directory the user stands in.
 """
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -188,15 +189,33 @@ def test_a_path_climbing_out_of_the_root_is_refused(mono: Path):
 
 
 def test_at_the_root_every_spelling_of_a_path_names_the_same_file(mono: Path):
-    """The `./` and backslash forms shells and agents produce read as before."""
+    """Dot-relative, host-native and absolute paths name the same file."""
     _scored(mono)
     _breach(mono)
 
-    for spelling in ("./web/src/grade.py", "web\\src\\grade.py"):
+    relative = Path("web") / "src" / "grade.py"
+    for spelling in ("./web/src/grade.py", str(relative), str(mono / relative)):
         res = run_cli(mono, "rescore", "--gate", spelling)
 
         assert res.returncode == 6, spelling + res.stdout + res.stderr
         assert "web/src/grade.py:1" in res.stdout, spelling
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Backslash is a Windows path separator")
+def test_r2_a_posix_backslash_filename_does_not_alias_a_directory_path(mono: Path):
+    literal = mono / "web" / "src\\grade.py"
+    literal.write_text(_source(2), encoding="utf-8")
+    _git(mono, "add", "web/src\\grade.py")
+    _git(mono, "commit", "-q", "-m", "add literal backslash filename")
+    _scored(mono)
+    _breach(mono)
+    literal.write_text(_source(3), encoding="utf-8")
+
+    res = run_cli(mono, "rescore", "--gate", "web/src\\grade.py")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "web/src\\grade.py:1" in res.stdout
+    assert "gate: 1 changed function(s) judged, 0 over ceiling 6" in res.stdout
 
 
 @pytest.mark.parametrize("stand, repo", [("web", ".."), ("..", "mono")])

@@ -210,26 +210,14 @@ def test_doctor_notes_a_manager_headed_lane_it_does_not_probe(tmp_path: Path):
     assert "no problems found" in res.stdout
 
 
-def _venv_python(tmp_path: Path) -> Path:
-    """Another python than the one running the suite, seeing the same
-    site-packages, so pytest and pytest-cov import from it too."""
-    import subprocess as sp
-    import sys
-
-    venv = tmp_path / "venv"
-    sp.run([sys.executable, "-m", "venv", "--system-site-packages", "--without-pip", str(venv)],
-           check=True, capture_output=True)
-    return venv / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
-
-
-def test_doctor_warns_when_the_lane_runs_another_python_than_doctor(tmp_path: Path):
+def test_doctor_warns_when_the_lane_runs_another_python_than_doctor(tmp_path: Path, dependency_venv):
     """A package installed in one python is invisible to the other, which is
     how a lane ran the system python while the repo's venv held pytest-cov."""
     import subprocess as sp
 
     repo = _layout_repo(tmp_path)
     assert run_cli(repo, "init").returncode == 0
-    venv_python = _venv_python(tmp_path)
+    venv_python, _ = dependency_venv(tmp_path / "venv")
     _relaunch_lane(repo, venv_python.as_posix())
     resolved = sp.run([str(venv_python), "-c", "import sys; print(sys.executable)"],
                       check=True, capture_output=True, text=True).stdout.strip()

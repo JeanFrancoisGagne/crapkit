@@ -3,12 +3,12 @@ from contextlib import nullcontext
 import json
 import os
 import signal
-import subprocess
 import sys
 import time
 
 import pytest
 
+from crapkit import procs
 from crapkit.locks import exclusive_lock
 from crapkit.procs import own_processes, run_bounded
 
@@ -38,7 +38,7 @@ def _wait_until_ready(path):
 
 
 def _interrupt_at_wait(monkeypatch, ready, script):
-    original = subprocess.Popen.wait
+    original = procs._wait_command
     interrupted = []
 
     def wait(process, *args, **kwargs):
@@ -49,7 +49,7 @@ def _interrupt_at_wait(monkeypatch, ready, script):
             raise KeyboardInterrupt
         return original(process, *args, **kwargs)
 
-    monkeypatch.setattr(subprocess.Popen, "wait", wait)
+    monkeypatch.setattr(procs, "_wait_command", wait)
     return interrupted
 
 
@@ -68,7 +68,7 @@ def test_interrupt_stops_the_parent_and_grandchild_before_returning(tmp_path, mo
     script = tmp_path / "tree.py"
     script.write_text(TREE, encoding="utf-8")
     ready = tmp_path / "ready.json"
-    # Inject at the OS wait boundary. Windows defers interrupt_main during its wait.
+    # Inject before the native wait. Windows defers interrupt_main during its wait.
     interrupted = _interrupt_at_wait(monkeypatch, ready, script)
     ownership = own_processes([tmp_path / "output.lock"]) if owned else nullcontext(None)
     released = False

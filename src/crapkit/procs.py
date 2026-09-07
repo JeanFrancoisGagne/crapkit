@@ -9,6 +9,7 @@ setsid daemon is outside that ownership. Untimed commands have no deadline.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from contextlib import contextmanager, nullcontext
 import json
 import re
@@ -17,6 +18,7 @@ import shlex
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 from typing import IO
 
@@ -156,7 +158,10 @@ class _ProcessOwner:
 def own_processes(paths, *, optional: bool = False, label: str = "measurement"):
     """Own measurement outputs across caller crashes and command cleanup."""
     options = {"paths": list(map(str, paths)), "optional": optional, "label": label}
-    process = subprocess.Popen([sys.executable, "-m", "crapkit._process_owner", json.dumps(options)],
+    bootstrap = ("import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
+                 "runpy.run_module('crapkit._process_owner', run_name='__main__')")
+    package_root = str(Path(__file__).resolve().parent.parent)
+    process = subprocess.Popen([sys.executable, "-c", bootstrap, package_root, json.dumps(options)],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     owner = _ProcessOwner(process)
@@ -177,25 +182,34 @@ def _close_input(process) -> None:
         pass
 
 
-_OWNED_LAUNCH = """import os, sys
+_OWNED_LAUNCH = """import json, os, sys
 if sys.stdin.buffer.readline() != b'go\\n':
     raise SystemExit(1)
-if os.name != 'nt':
-    with open(os.devnull, 'rb') as source:
-        os.dup2(source.fileno(), 0)
-    os.execl('/bin/sh', '/bin/sh', '-c', sys.argv[1])
-import subprocess
-raise SystemExit(subprocess.call(sys.argv[1], shell=True, stdin=subprocess.DEVNULL))
+with os.fdopen(os.dup(2), 'w', encoding='utf-8') as errors:
+    os.dup2(1, 2)
+    try:
+        if os.name != 'nt':
+            with open(os.devnull, 'rb') as source:
+                os.dup2(source.fileno(), 0)
+            os.execl('/bin/sh', '/bin/sh', '-c', sys.argv[1])
+        import subprocess
+        code = subprocess.call(sys.argv[1], shell=True, stdin=subprocess.DEVNULL,
+                               stderr=subprocess.STDOUT)
+    except OSError as error:
+        json.dump([error.errno, error.strerror, error.filename,
+                   getattr(error, 'winerror', None), error.filename2], errors)
+        code = 1
+raise SystemExit(code)
 """
 
 
-def _spawn(command: str, out, owner, kwargs) -> subprocess.Popen:
+def _spawn(command: str, out, errors, owner, kwargs) -> subprocess.Popen:
     # A Windows venv executable redirects into another process before Python
     # reaches the start gate. Use the base interpreter with startup hooks off,
     # so Job assignment precedes every child the launcher can create.
     launcher = getattr(sys, "_base_executable", sys.executable)
     process = subprocess.Popen([launcher, "-I", "-S", "-c", _OWNED_LAUNCH, command],
-                               stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT,
+                               stdin=subprocess.PIPE, stdout=out, stderr=errors,
                                **_OWN_GROUP, **kwargs)
     try:
         owner.request("add", process.pid)
@@ -281,7 +295,29 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
 
 def _run_owned(command, timeout, stream, no_progress, owner, popen_kwargs):
     out = subprocess.DEVNULL if stream is None else stream
-    proc = _spawn(command, out, owner, popen_kwargs)
+    # A private file carries launch errors without an exit-code sentinel or a
+    # pipe whose unread payload could block command completion.
+    with tempfile.TemporaryFile() as errors:
+        proc = _spawn(command, out, errors, owner, popen_kwargs)
+        code = _complete_command(proc, timeout, stream, no_progress, owner)
+        _raise_launch_error(errors)
+        return code
+
+
+def _raise_launch_error(errors):
+    from .errors import ToolError
+    errors.seek(0)
+    payload = errors.read()
+    if not payload:
+        return
+    try:
+        arguments = json.loads(payload)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise ToolError("command launcher failed: " + payload.decode("utf-8", "replace")) from error
+    raise OSError(*arguments)
+
+
+def _complete_command(proc, timeout, stream, no_progress, owner):
     try:
         return _wait_bounded(proc, timeout, no_progress, stream)
     finally:
