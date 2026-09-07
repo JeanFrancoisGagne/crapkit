@@ -4,8 +4,8 @@ These three commands were 43% covered by tests/unit: every rule they enforce was
 pinned one layer down (score_rows, lane_order, overlay_stale_coverage) and the
 commands that compose those rules were reached only from tests/e2e, at a process
 each. `main(argv)` is the same entry point `python -m crapkit` uses, so the
-assertions here are the ones an e2e test makes — exit code, stdout, stderr,
-store rows — for a hundredth of the wall time.
+assertions here are the ones an e2e test makes â€” exit code, stdout, stderr,
+store rows â€” for a hundredth of the wall time.
 
 Every test asserts through the command. Nothing here reaches into a helper's
 return value.
@@ -19,7 +19,6 @@ import pytest
 
 from crapkit.cli import main
 from crapkit.invocation import _self
-from crapkit.lanes import write_stamps
 from crapkit.store import SnapshotStore
 
 
@@ -226,42 +225,33 @@ def test_the_summary_labels_every_ceiling_in_force(repo, capsys):
     assert json.loads(as_json)["ceilings"] == {"default": 6, "web": 4}
 
 
-def test_reuse_unchanged_skips_the_lane_whose_scopes_have_not_moved(repo, capsys):
-    """The stamp says which commit the artifact describes. Nothing under either
-    scope moved since, so neither command needs to run again."""
+def _stamp_real_measurement(repo, capsys) -> None:
     seed_artifacts(repo)
-    commit = head(repo)
-    write_stamps(repo, {"coverage/unit.json": {"commit": commit, "lane": "unit", "seconds": 1.0},
-                        "coverage/ui.json": {"commit": commit, "lane": "ui", "seconds": 1.0}})
-
-    code, _, err = run(["coverage", "--reuse-unchanged"], repo, capsys)
-
-    assert code == 0
-    assert err.count("artifact still matches its scopes; reusing without rerun") == 2, err
-
-
-def _ui_lane_writes_its_artifact(repo) -> None:
-    """The template's `python -c pass` writes nothing, and a lane that leaves
-    the previous run's artifact where it found it is refused. A rerun this test
-    calls a rerun has to write the file it declares."""
     text = (repo / "crapkit.toml").read_text(encoding="utf-8")
-    head_text, marker, tail = text.partition('name = "ui"\n')
-    writes = 'command = "python -c \\"import os; os.utime(\'coverage/ui.json\')\\""'
-    (repo / "crapkit.toml").write_text(
-        head_text + marker + tail.replace('command = "python -c pass"', writes, 1),
-        encoding="utf-8")
+    for name in ("unit", "ui"):
+        command = json.dumps(f'python -c "import os; os.utime(\'coverage/{name}.json\')"')
+        text = text.replace('command = "python -c pass"\nartifact',
+                            f'command = {command}\nartifact', 1)
+    (repo / "crapkit.toml").write_text(text, encoding="utf-8")
+    commit_all(repo, "measurement commands")
+    code, _, err = run(["coverage"], repo, capsys)
+    assert code == 0, err
 
 
-def test_reuse_unchanged_reruns_the_lane_whose_scope_moved(repo, capsys):
-    """The one test that runs a lane command. `ui` has no stamp, so it reruns
-    and records one; `unit` is reused and records nothing."""
-    seed_artifacts(repo)
-    _ui_lane_writes_its_artifact(repo)
-    write_stamps(repo, {"coverage/unit.json": {"commit": head(repo), "lane": "unit",
-                                               "seconds": 1.0}})
-
+def test_reuse_unchanged_skips_identical_clean_measurements(repo, capsys):
+    _stamp_real_measurement(repo, capsys)
     code, _, err = run(["coverage", "--reuse-unchanged"], repo, capsys)
+    assert code == 0
+    assert err.count("measurement inputs unchanged; reusing without rerun") == 2, err
 
+
+def test_reuse_unchanged_reruns_only_the_lane_without_a_valid_stamp(repo, capsys):
+    _stamp_real_measurement(repo, capsys)
+    path = repo / ".crapkit/artifacts.json"
+    entries = json.loads(path.read_text())
+    del entries["coverage/ui.json"]
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    code, _, err = run(["coverage", "--reuse-unchanged"], repo, capsys)
     assert code == 0
     assert err.count("reusing without rerun") == 1, err
     assert "lane 'unit'" in err and "lane 'ui'" not in err
@@ -378,7 +368,7 @@ def test_a_ratchet_mark_the_repo_already_signed_for_passes_the_gate(scored, caps
 
 def test_an_untracked_file_is_gated_in_full_and_says_so(scored, capsys):
     """git diff sees nothing of a file git tracks nothing of, so without this
-    its violations print and the command still exits 0 — the gate lying."""
+    its violations print and the command still exits 0 â€” the gate lying."""
     (scored / "src" / "extra.ts").write_text(
         "export function loops(n: number): number {\n"
         + "".join(f"  if (n > {i}) {{ return {i}; }}\n" for i in range(1, 8))

@@ -1,4 +1,4 @@
-"""End-to-end: --reuse-unchanged skips lanes whose scopes didn't move, and
+"""End-to-end: --reuse-unchanged skips lanes with identical clean inputs, and
 --reuse-artifacts warns when the artifact went stale. Real git, real CLI.
 
 The unit lane's command is swapped for a counting wrapper so each test can
@@ -37,7 +37,7 @@ def counting_repo(tmp_path: Path) -> Path:
     # like any real repo: generated output is ignored, so a later `git add -A`
     # commits source changes only, not run 1's coverage droppings
     (repo / ".gitignore").write_text(
-        ".crapkit/\ncoverage/\ncoverage-py.json\njunit.xml\nruns.txt\n__pycache__/\n",
+        ".crapkit/\n.coverage*\ncoverage/\ncoverage-py.json\njunit.xml\nruns.txt\n__pycache__/\n",
         encoding="utf-8")
     toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
     toml = toml.replace('command = "python make_cov.py"', 'command = "python run_counted.py"')
@@ -75,7 +75,7 @@ def test_reuse_unchanged_reruns_a_lane_whose_scope_moved(counting_repo: Path):
     res = run_cli(counting_repo, "coverage", "--reuse-unchanged", "--json")
     assert res.returncode == 0, res.stderr
     assert _run_count(counting_repo) == 2, "a changed scope must rerun its lane"
-    assert "lane 'py': artifact still matches" in res.stderr, "the untouched lane is still reused"
+    assert "reusing without rerun" not in res.stderr, "a different commit reruns every lane"
 
 
 def test_reuse_artifacts_warns_when_the_artifact_went_stale(counting_repo: Path):

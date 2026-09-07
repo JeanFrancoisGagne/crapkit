@@ -175,21 +175,20 @@ def test_a_commit_after_the_stamp_makes_the_lane_changed(repo: Path):
     assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
 
 
-def test_changes_outside_the_scopes_leave_the_lane_unchanged(repo: Path):
+def test_a_new_commit_outside_scopes_still_requires_measurement(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     (repo / "docs" / "notes.md").write_text("edited\n", encoding="utf-8")
     _commit(repo, "docs only")
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is True
+    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
 
 
 @pytest.mark.parametrize("scope_paths", [{}, {"src": ()}, {"other": ("src",)}])
-def test_a_lane_with_no_scope_prefixes_has_nothing_to_go_stale(repo: Path, scope_paths):
-    """No prefixes to compare against means no file can fall inside them."""
+def test_a_lane_with_no_scope_prefixes_still_observes_changed_inputs(repo: Path, scope_paths):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     _touch_scope_file(repo)
-    assert lane_unchanged(repo, lane, scope_paths) is True
+    assert lane_unchanged(repo, lane, scope_paths) is False
 
 
 def test_a_file_valued_scope_path_still_marks_its_lane_changed(repo: Path):

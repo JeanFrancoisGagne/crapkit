@@ -11,6 +11,7 @@ process. Timeouts and retries are lane config (timeout_seconds, retries).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -440,7 +441,7 @@ def read_stamps(root: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _stamp_entry(git: GitFacts, lane: Lane, seconds: float) -> dict:
+def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict) -> dict:
     """What produced this artifact: the commit reuse judges staleness against,
     plus the wall seconds the parallel scheduler starts the slowest lane on.
 
@@ -452,7 +453,44 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float) -> dict:
         commit = git.head_commit()
     except GitError:
         return {}
-    return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1)}
+    clean = bool(measured) and measured == _measurement_key(git.root, lane)
+    return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
+            "inputs": measured if clean else "", "artifacts": _artifact_digests(lane, provenance)}
+
+
+def _artifact_digests(lane: Lane, provenance: dict) -> dict:
+    digests = {lane.artifact: provenance["artifact_sha256"]}
+    if lane.results_artifact:
+        digests[lane.results_artifact] = provenance["results_artifact_sha256"]
+    return digests
+
+
+def _measurement_commit(root: Path) -> str:
+    """The current clean commit, or no proof that repository inputs are fixed."""
+    facts = GitFacts(root)
+    try:
+        return "" if facts.status_names() else facts.head_commit()
+    except GitError:
+        return ""
+
+
+def _measurement_key(root: Path, lane: Lane) -> str:
+    """Hash declared execution inputs without persisting environment values.
+
+    Only clean repository inputs qualify. Ignored or absent configuration is
+    covered separately because callers can supply a lane without a tracked
+    crapkit.toml. External files and services remain outside this proof.
+    """
+    commit = _measurement_commit(root)
+    if not commit:
+        return ""
+    payload = json.dumps((commit, lane, dict(os.environ)), sort_keys=True).encode("utf-8")
+    config = root / "crapkit.toml"
+    try:
+        content = config.read_bytes() if config.is_file() else b""
+    except OSError:
+        return ""
+    return hashlib.sha256(payload + content).hexdigest()
 
 
 def write_stamps(root: Path, entries: dict[str, dict]) -> None:
@@ -619,24 +657,38 @@ def _reusable_commit(root: Path, lane: Lane) -> str:
     lane had still not measured them."""
     stamp = _stamp_dict(read_stamps(root), lane.artifact)
     path = root / lane.artifact
-    if not path.is_file() or _refused_on_disk(stamp, path):
+    if not stamp.get("inputs") or not path.is_file() or _refused_on_disk(stamp, path):
         return ""
     return _stamp_commit(stamp)
 
 
 def lane_unchanged(root: Path, lane: Lane, scope_paths: dict, git: GitFacts | None = None) -> bool:
-    """True when the recorded artifact still describes this lane's scopes exactly:
-    the stamp commit reached HEAD and nothing under the scopes moved since."""
-    facts = _facts(root, git)
+    """Automatic reuse requires the same clean repository, not just source scopes.
+
+    A lane command can read tests, configuration or any other repository input.
+    Source ownership cannot prove that a changed path leaves its measurement
+    intact. Explicit artifact reuse remains a separate deliberate request.
+    """
     commit = _reusable_commit(root, lane)
     if not commit:
         return False
-    try:
-        if not facts.is_ancestor(commit):
-            return False
-        return not _scope_changes(facts, lane, scope_paths, commit)
-    except GitError:
+    stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    return stamp["inputs"] == _measurement_key(root, lane) and _same_artifacts(root, lane, stamp)
+
+
+def _same_artifacts(root: Path, lane: Lane, stamp: dict) -> bool:
+    expected = stamp.get("artifacts")
+    if not isinstance(expected, dict):
         return False
+    return all(_file_digest(root / name) == expected.get(name) for name in _declared_files(lane))
+
+
+def _file_digest(path: Path) -> str:
+    try:
+        with path.open("rb") as source:
+            return hashlib.file_digest(source, "sha256").hexdigest()
+    except OSError:
+        return ""
 
 
 def _read_and_parse(lane: Lane, root: Path,
@@ -878,7 +930,7 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
 
 
-def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict]:
+def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict, str]:
     """The lane junit's failing ids and counts, or a ToolError saying why the
     report cannot be read. The message names the report and not the lane: one
     caller, two paths out of it, and each supplies the lane itself. The re-raise
@@ -889,7 +941,9 @@ def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict]:
     results_path = root / lane.results_artifact
     if not results_path.is_file():
         raise ToolError(f"results_artifact {lane.results_artifact} is missing")
-    return suite_summary(results_path.read_text(encoding="utf-8"))
+    raw = results_path.read_bytes()
+    failed, counts = suite_summary(raw.decode("utf-8"))
+    return failed, counts, hashlib.sha256(raw).hexdigest()
 
 
 def _warn_unreadable_results(lane: Lane, reason: ToolError) -> None:
@@ -913,14 +967,15 @@ def _results_provenance(root: Path, lane: Lane, *, reuse_artifact: bool = False)
     instead lands the lane on the no-counts path verify already documents.
     """
     try:
-        failed, counts = _results_summary(root, lane)
+        failed, counts, digest = _results_summary(root, lane)
     except ToolError as reason:
         if not reuse_artifact:
             raise
         _warn_unreadable_results(lane, reason)
         return {}
     return {"failures": sorted(failed),
-            "tests_total": counts["tests"], "tests_skipped": counts["skipped"]}
+            "tests_total": counts["tests"], "tests_skipped": counts["skipped"],
+            "results_artifact_sha256": digest}
 
 
 SUITE_DROP_FRACTION = 0.1
@@ -1069,6 +1124,7 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
              scope_paths: dict | None = None, git: GitFacts | None = None,
              dead_lines=None) -> LaneOutcome:
     facts = _facts(root, git)
+    measured = "" if reuse_artifact else _measurement_key(root, lane)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
     _judge_artifact_scope(lane, coverage, scope_paths, root)
@@ -1080,5 +1136,5 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
     }
     if lane.results_artifact:
         provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
-    stamp = {} if reuse_artifact else _stamp_entry(facts, lane, seconds)
+    stamp = {} if reuse_artifact else _stamp_entry(facts, lane, seconds, measured, provenance)
     return LaneOutcome(coverage, provenance, stamp)

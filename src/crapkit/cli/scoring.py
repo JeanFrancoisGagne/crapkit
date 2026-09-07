@@ -133,7 +133,7 @@ def _lane_reuse(root: Path, lane, scope_paths: dict, reuse_artifacts: bool, reus
     if reuse_artifacts:
         return True
     if reuse_unchanged and lane_unchanged(root, lane, scope_paths, git):
-        print(f"crapkit: lane {lane.name!r}: artifact still matches its scopes; reusing without rerun",
+        print(f"crapkit: lane {lane.name!r}: measurement inputs unchanged; reusing without rerun",
               file=sys.stderr)
         return True
     return False
