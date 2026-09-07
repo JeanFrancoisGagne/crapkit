@@ -89,6 +89,53 @@ def test_legacy_lane_stamps_do_not_qualify_as_measurement_proof(tmp_path, counte
     assert counted == {"head": 0, "status": 0, "diff": 0, "ancestor": 0}
 
 
+def test_line_display_shares_git_facts_without_requiring_measurement_reuse(tmp_path, counted):
+    from types import SimpleNamespace
+    from crapkit.uncovered import lane_states
+
+    lanes = [_stamped_lane(tmp_path, name, f"{name}.json", "beef" * 10)
+             for name in ("first", "second")]
+    cfg = SimpleNamespace(lanes=lanes, scope_paths={"src": ("src",)})
+
+    assert lane_states(tmp_path, cfg, GitFacts(tmp_path)) == [("first", ""), ("second", "")]
+    assert counted == {"head": 0, "status": 1, "diff": 1, "ancestor": 1}
+    assert all(not lane_unchanged(tmp_path, lane) for lane in lanes)
+
+
+@pytest.mark.parametrize("reason", ["missing-stamp", "refused-write", "lost-history", "git-error"])
+def test_line_display_withholds_unproved_artifact_locations(tmp_path, counted, monkeypatch, reason):
+    from types import SimpleNamespace
+    from crapkit.uncovered import lane_states
+
+    lane = _stamped_lane(tmp_path, "unit", "a.json", "beef" * 10)
+    if reason == "missing-stamp":
+        (tmp_path / ".crapkit" / "artifacts.json").unlink()
+    elif reason == "refused-write":
+        write_stamps(tmp_path, {lane.artifact: {"commit": "beef" * 10,
+                     "refused_mtime_ns": (tmp_path / lane.artifact).stat().st_mtime_ns}})
+    elif reason == "lost-history":
+        monkeypatch.setattr(gitio, "is_ancestor", lambda *_args: False)
+    else:
+        def unavailable(*_args):
+            raise GitError("git unavailable")
+        monkeypatch.setattr(gitio, "diff_names_since", unavailable)
+    cfg = SimpleNamespace(lanes=[lane], scope_paths={"src": ("src",)})
+
+    assert lane_states(tmp_path, cfg, GitFacts(tmp_path))[0][1]
+
+
+@pytest.mark.parametrize("changed, stale", [("src/a.py", True), ("src/b.py", False)])
+def test_line_display_obeys_an_exact_file_scope(tmp_path, counted, monkeypatch, changed, stale):
+    from types import SimpleNamespace
+    from crapkit.uncovered import lane_states
+
+    lane = _stamped_lane(tmp_path, "unit", "a.json", "beef" * 10)
+    cfg = SimpleNamespace(lanes=[lane], scope_paths={"src": ("src/a.py",)})
+    monkeypatch.setattr(gitio, "status_names", lambda *_args: [changed])
+
+    assert bool(lane_states(tmp_path, cfg, GitFacts(tmp_path))[0][1]) is stale
+
+
 def test_ancestry_is_cached_per_commit_not_globally(tmp_path, counted):
     """The same shape the diffs have: a verify asks about the baseline commit,
     every open claim's commit and every lane stamp, and repeats are the rule."""

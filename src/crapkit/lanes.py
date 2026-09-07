@@ -650,17 +650,31 @@ def _facts(root: Path, git: GitFacts | None) -> GitFacts:
     return git if git is not None else GitFacts(root)
 
 
-def _reusable_commit(root: Path, lane: Lane) -> str:
-    """The commit the artifact on disk was built at, or "" when there is no
-    artifact, no stamp for it, or the file is the one the last attempt failed
-    to write. That last case makes `--reuse-unchanged` rerun the lane: the
-    stamp commit alone said the scopes had not moved, which was true, and the
-    lane had still not measured them."""
+def _artifact_commit(root: Path, lane: Lane) -> str:
+    """The recorded commit of an existing artifact with no pending write refusal."""
     stamp = _stamp_dict(read_stamps(root), lane.artifact)
     path = root / lane.artifact
-    if not stamp.get("inputs") or not path.is_file() or _refused_on_disk(stamp, path):
+    if not path.is_file() or _refused_on_disk(stamp, path):
         return ""
     return _stamp_commit(stamp)
+
+
+def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict,
+                           git: GitFacts | None = None) -> bool:
+    """Whether source edits made this artifact's line locations stale.
+
+    Tests, runner settings and environment changes require a new measurement
+    but leave source locations intact. This read-side check accepts legacy
+    commit stamps and shares Git facts across lanes; it cannot authorize reuse.
+    """
+    commit = _artifact_commit(root, lane)
+    if not commit:
+        return False
+    facts = _facts(root, git)
+    try:
+        return facts.is_ancestor(commit) and not _scope_changes(facts, lane, scope_paths, commit)
+    except GitError:
+        return False
 
 
 def lane_unchanged(root: Path, lane: Lane) -> bool:
@@ -670,10 +684,9 @@ def lane_unchanged(root: Path, lane: Lane) -> bool:
     Source ownership cannot prove that a changed path leaves its measurement
     intact. Explicit artifact reuse remains a separate deliberate request.
     """
-    commit = _reusable_commit(root, lane)
-    if not commit:
-        return False
     stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    if not stamp.get("inputs") or not _artifact_commit(root, lane):
+        return False
     return stamp["inputs"] == _measurement_key(root, lane) and _same_artifacts(root, lane, stamp)
 
 

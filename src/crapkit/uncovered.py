@@ -187,11 +187,11 @@ def missing_by_path(root: Path, cfg, *, folded: DeadLineFold | None = None) -> d
 
 def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
     """What stops this lane's artifact from naming line numbers, or "" when nothing does."""
-    from .lanes import lane_unchanged
+    from .lanes import lane_sources_unchanged
 
     if not (root / lane.artifact).is_file():
         return f"lane {lane.name!r}: no artifact at {lane.artifact}"
-    if not lane_unchanged(root, lane):
+    if not lane_sources_unchanged(root, lane, scope_paths, git):
         return (f"lane {lane.name!r}: files in its scopes changed since {lane.artifact} "
                 "was written (uncommitted edits count), so its line numbers are stale — "
                 f"commit or revert them, then rerun `{_self()} coverage`")

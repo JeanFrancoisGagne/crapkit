@@ -232,6 +232,55 @@ def test_cli_reuse_unchanged_reruns_after_an_uncommitted_scope_edit(repo: Path):
     assert "reusing without rerun" not in res.stderr
 
 
+@pytest.mark.parametrize("rel", ["docs/notes.md", "run_counted.py", "crapkit.toml"])
+@pytest.mark.parametrize("committed", [False, True])
+def test_uncovered_lines_survive_other_input_changes_that_require_a_rerun(repo, rel, committed):
+    assert _run_cli(repo, "coverage", "--json").returncode == 0
+    path = repo / rel
+    path.write_text(path.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+    if committed:
+        _commit(repo, "change measurement input")
+
+    shown = _run_cli(repo, "brief", "src/app.ts", "dispatch", "--json")
+
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout)["uncovered_lines"] == [], "the artifact has no dark statements"
+    assert _lane_runs(repo) == 1, "reading lines must not execute the lane"
+    measured = _run_cli(repo, "coverage", "--reuse-unchanged", "--json")
+    assert measured.returncode == 0, measured.stderr
+    assert _lane_runs(repo) == 2, "display freshness must not authorize measurement reuse"
+
+
+def test_uncovered_lines_survive_an_environment_change_that_requires_a_rerun(repo):
+    assert _run_cli(repo, "coverage", "--json").returncode == 0
+    environment = {"CRAPKIT_TEST_LINE_DISPLAY": "different"}
+
+    shown = _run_cli(repo, "brief", "src/app.ts", "dispatch", "--json", env_extra=environment)
+
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout)["uncovered_lines"] == [], "the artifact has no dark statements"
+    assert _lane_runs(repo) == 1
+    measured = _run_cli(repo, "coverage", "--reuse-unchanged", "--json", env_extra=environment)
+    assert measured.returncode == 0, measured.stderr
+    assert _lane_runs(repo) == 2
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_uncovered_lines_are_withheld_after_source_changes(repo, committed):
+    assert _run_cli(repo, "coverage", "--json").returncode == 0
+    _touch_scope_file(repo)
+    if committed:
+        _commit(repo, "change source")
+
+    shown = _run_cli(repo, "brief", "src/app.ts", "dispatch", "--json")
+
+    assert shown.returncode == 0, shown.stderr
+    packet = json.loads(shown.stdout)
+    assert packet["uncovered_lines"] is None
+    assert "files in its scopes changed" in packet["uncovered_lines_note"]
+    assert _lane_runs(repo) == 1
+
+
 def test_cli_reuse_unchanged_reruns_when_the_stamp_commit_left_history(repo: Path):
     first = _git(repo, "rev-parse", "HEAD").strip()
     _touch_scope_file(repo)
