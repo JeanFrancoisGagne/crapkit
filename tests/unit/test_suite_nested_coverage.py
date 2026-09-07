@@ -72,7 +72,7 @@ def test_real_nested_pytest_and_parallel_cli_sibling_keep_separate_data(tmp_path
             environment.pop(key)
 
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--coverage", "--workers", "2"], env=environment,
+                             "--coverage", "--workers", "2", "--output", ".crapkit/cov"], env=environment,
                             capture_output=True, text=True)
 
     assert result.returncode == 0, result.stdout + result.stderr
