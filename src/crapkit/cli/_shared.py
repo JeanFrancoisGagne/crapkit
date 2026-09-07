@@ -296,7 +296,8 @@ def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None) 
             return KEY_VERSION
         if not read_ratchet(text)[0]:
             return KEY_VERSION
-        return checked_key_version(text, rows, historical=_identity_history(root, store))
+        proof = rows() if callable(rows) else rows
+        return checked_key_version(text, proof, historical=_identity_history(root, store))
     except ValueError as exc:
         raise ConfigError(f"{name}: {exc}") from exc
 
@@ -311,7 +312,8 @@ def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
     """The committed marks, or None when the repo carries no marks file yet.
 
     Lenient, because every caller here only READS the marks: `explain`, `brief`
-    and `rescore --gate`. A line crapkit cannot parse carries no mark, so
+    and `rescore --gate`. Rows may be deferred until legacy identity needs them.
+    A line crapkit cannot parse carries no mark, so
     dropping it can only make the gate stricter, never let a regression through.
     One hand-edited short line used to reach explain and brief, which are also
     two of the MCP tools an agent calls, as a raw ValueError traceback, with the

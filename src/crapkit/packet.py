@@ -14,7 +14,7 @@ what was added around it.
 """
 from __future__ import annotations
 
-from .ratchet_report import DAY
+from .ratchet_report import DAY, mark_age_days
 from .keys import lookup, position, require_unambiguous
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
@@ -82,22 +82,6 @@ def gate_rule(*, ceiling: int, mark: float | None, mark_age_days: int | None,
     """The rule this function will be judged by, spelled out rather than implied."""
     return {"ceiling": ceiling, "binds": GATE_BINDS, "ratchet_mark": mark,
             "mark_age_days": mark_age_days, "diff_uncovered_max": diff_uncovered_max}
-
-
-def mark_age_days(events: list[tuple], key: tuple) -> int | None:
-    """How long this function's mark has stood, in the ratchet history's own time.
-
-    Anchored on the newest commit in the history, never the wall clock, so a
-    fixed history reports the same age forever. A mark that was repaid and later
-    re-added is aged from its return: the debt is the one standing now.
-    """
-    entered = None
-    anchor = 0
-    for ts, event_key, kind, _ in events:
-        anchor = max(anchor, ts)
-        if event_key == key:
-            entered = ts if kind == "added" else None
-    return None if entered is None else (anchor - entered) // DAY
 
 
 def lane_for(scope: str | None, lanes):

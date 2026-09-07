@@ -121,16 +121,9 @@ def _trend_payload(cfg, store: SnapshotStore) -> dict:
     """The whole series, shaped once. `trend --json` prints it and `report`
     renders it, so the page and the payload cannot describe the same run
     differently."""
-    from ..store import trusted_runs
-
-    # one GROUP BY for the whole history; this used to build every ScoredRow of
-    # every trusted run to add up three numbers per run
-    agg = store.run_totals(target=cfg.target, scope_targets=cfg.scope_targets)
-    by_scope = store.run_scope_totals(target=cfg.target, scope_targets=cfg.scope_targets)
     return {"target": cfg.target,
-            "runs": [_trend_row(run, agg.get(run["id"], (0, 0, 0.0)),
-                                by_scope.get(run["id"], {}))
-                     for run in trusted_runs(store)]}
+            "runs": [_trend_row(*parts) for parts in store.history_totals(
+                target=cfg.target, scope_targets=cfg.scope_targets)]}
 
 
 def cmd_trend(args: argparse.Namespace) -> int:

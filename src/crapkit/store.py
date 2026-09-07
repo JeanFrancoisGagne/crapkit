@@ -860,6 +860,15 @@ class SnapshotStore:
         numbers back rather than re-reading them is what lets the write fail
         without failing the command.
         """
+        scored, pending = self._rollup_values(key, run_ids, target, scope_targets)
+        self._store_rollup(pending)
+        return _by_run(scored)
+
+    def _rollup_values(self, key: str, run_ids: list[int], target: int,
+                       scope_targets: dict[str, int] | None) -> tuple[list, list]:
+        """Compute missing values without publishing during a read snapshot."""
+        if not run_ids:
+            return [], []
         ceiling = _ceiling_expr(target, scope_targets)
         holes = ",".join("?" * len(run_ids))
         cur = self._conn.execute(
@@ -869,10 +878,10 @@ class SnapshotStore:
             (*ceiling.params, *run_ids))
         scored = cur.fetchall()
         # the marker first, so a run that scored nothing still reads as filled
-        self._store_rollup([(rid, key, "", 0, 0, 0.0) for rid in run_ids]
-                           + [(rid, key, scope, n, over, load)
-                              for rid, scope, n, over, load in scored])
-        return _by_run(scored)
+        pending = ([(rid, key, "", 0, 0, 0.0) for rid in run_ids]
+                   + [(rid, key, scope, n, over, load)
+                      for rid, scope, n, over, load in scored])
+        return scored, pending
 
     def _store_rollup(self, rows: list[tuple]) -> None:
         """Best effort. trend and report WRITE now, and two crapkit processes
@@ -881,8 +890,9 @@ class SnapshotStore:
         try:
             with self._conn:
                 self._conn.executemany(
-                    f"INSERT OR REPLACE INTO run_rollup ({_ROLLUP_COLS}) VALUES (?, ?, ?, ?, ?, ?)",
-                    rows)
+                    f"INSERT OR REPLACE INTO run_rollup ({_ROLLUP_COLS}) "
+                    "SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)",
+                    ((*row, row[0]) for row in rows))
         except sqlite3.OperationalError:
             pass  # another process holds the write lock
 
@@ -918,6 +928,25 @@ class SnapshotStore:
         """run_totals cut one level finer: (functions, over_target, crap_load) per
         (run, scope). The grain the rollup is stored at, so this is the raw read."""
         return self._rollup(target, scope_targets)
+
+    def history_totals(self, *, target: int, scope_targets: dict | None = None) -> list[tuple]:
+        """Trusted run metadata and both totals from one short read snapshot.
+
+        Cache publication follows the read, so it cannot end the snapshot
+        between metadata and sums or turn a reader into a blocking writer.
+        """
+        key = _ceiling_key(target, scope_targets)
+        self._conn.execute("SAVEPOINT history_totals")
+        try:
+            runs = self.list_runs()
+            totals = _by_run(self._conn.execute(_ROLLUP_READ, (key,)))
+            scored, pending = self._rollup_values(key, self._unrolled(key), target, scope_targets)
+            totals.update(_by_run(scored))
+        finally:
+            self._conn.execute("RELEASE history_totals")
+        self._store_rollup(pending)
+        return [(run, _summed(totals.get(run["id"], {})), totals.get(run["id"], {}))
+                for run in runs if is_trusted(run)]
 
     def function_span(self, run_id: int, path: str, long_name: str) -> tuple | None:
         """One keyed function's span; duplicate scopes count as one twin."""
@@ -955,6 +984,9 @@ class SnapshotStore:
 
     def write_overrides(self, run_id: int, rows: list[tuple[str, str, float, str]]) -> None:
         with self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            if self._conn.execute("SELECT 1 FROM runs WHERE id = ?", (run_id,)).fetchone() is None:
+                raise ToolError(f"override run {run_id} no longer exists; rerun before granting debt")
             self._conn.executemany(
                 "INSERT INTO overrides (run_id, path, long_name, crap, reason) VALUES (?,?,?,?,?)",
                 [(run_id, *r) for r in rows],
@@ -1255,7 +1287,8 @@ class SnapshotStore:
         return {rid for (rid,) in self._conn.execute("SELECT DISTINCT run_id FROM overrides")}
 
     def _doomed_ids(self, keep_ids: set[int], observed_ids: set[int] | None) -> list[tuple]:
-        cur = self._conn.execute("SELECT id FROM runs ORDER BY id")
+        cur = self._conn.execute(
+            "SELECT id FROM runs WHERE id NOT IN (SELECT run_id FROM overrides) ORDER BY id")
         return [(rid,) for (rid,) in cur if rid not in keep_ids
                 and (observed_ids is None or rid in observed_ids)]
 
@@ -1274,8 +1307,9 @@ class SnapshotStore:
         """
         # A concurrent writer may add a run after the caller selected retention.
         # Only runs that selection observed can be candidates for deletion.
-        doomed = self._doomed_ids(keep_ids, observed_ids)
         with self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            doomed = self._doomed_ids(keep_ids, observed_ids)
             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM runs WHERE id = ?", doomed)

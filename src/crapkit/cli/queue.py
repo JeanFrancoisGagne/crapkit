@@ -655,7 +655,7 @@ class _BriefLoader:
     def mark(self, row) -> float | None:
         return _brief_mark(self._once("marks",
                                       lambda: _ratchet_entries(self.root, self.cfg,
-                                                               self.rows(), self.store)),
+                                                               self.rows, self.store)),
                            self.key(row))
 
     def mark_age(self, row, mark: float | None) -> int | None:
@@ -1051,7 +1051,7 @@ def _worklist_handles(wl: Worklist, handles: _Handles) -> Worklist:
 def _worklist_ratchet(root: Path, cfg, store, run_id: int) -> RatchetMarks:
     """The committed marks keyed for the run's rows, or nothing when the repo
     carries no marks file. The first mark under a key wins, as `mark_for`."""
-    entries = _ratchet_entries(root, cfg, store.read_rows(run_id), store)
+    entries = _ratchet_entries(root, cfg, lambda: store.read_rows(run_id), store)
     if not entries:
         return NO_RATCHET
     marks: dict = {}

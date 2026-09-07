@@ -6,7 +6,6 @@ question at different moments: does this change hold?"""
 from __future__ import annotations
 
 import argparse
-import hashlib
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -219,15 +218,7 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _ratchet_sha256(path: Path) -> str | None:
-    """The ratchet's bytes as the verdict saw them — hashed before a clean pass
-    tightens the file, so the receipt names the input, not the output."""
-    if not path.is_file():
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _guard_ratchet_stamp(ratchet_path: Path, name: str) -> None:
+def _guard_ratchet_stamp(saved, name: str) -> None:
     """Refuse to weigh fresh scores against marks another metric produced.
 
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
@@ -235,9 +226,9 @@ def _guard_ratchet_stamp(ratchet_path: Path, name: str) -> None:
     """
     from ..ratchet import metric_version, read_stamp, stamp_conflict
 
-    if not ratchet_path.is_file():
+    if saved.text is None:
         return
-    recorded = read_stamp(repo_text(ratchet_path, name))
+    recorded = read_stamp(saved.text)
     if not recorded:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
               f"re-baseline with `{_self()} ratchet seed` to stamp it", file=sys.stderr)
@@ -301,7 +292,8 @@ def _refuse_override(verdict, reason: str | None) -> None:
 
 
 def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, verdict, reason,
-                            *, key_version: int | None = None, identity_rows=None):
+                            *, key_version: int | None = None, identity_rows=None,
+                            ratchet_input=None):
     """Grant --override for pure gate violations; regressions and new failures
     never qualify (`_refuse_override` says so once the verdict is printed)."""
     from ..override import record_override
@@ -310,7 +302,8 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
         return verdict, []
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=verdict.gate_violations,
-                    reason=reason, key_version=key_version, identity_rows=identity_rows)
+                    reason=reason, key_version=key_version, identity_rows=identity_rows,
+                    ratchet_input=ratchet_input)
     overridden = verdict.gate_violations
     return verdict._replace(ok=True, gate_violations=[]), overridden
 
@@ -366,7 +359,7 @@ def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
     return frozenset((r.path, r.long_name) for r in refusals)
 
 
-def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
+def _write_marks_if_changed(saved, prior: list[RatchetEntry],
                             updated: list[RatchetEntry], *, key_version: int | None = None) -> RatchetDelta | None:
     """Rewrite the marks file only when its text would change, and never create
     one to hold zero marks. Returns what the write did, or None when the file
@@ -380,19 +373,18 @@ def _write_marks_if_changed(ratchet_path: Path, prior: list[RatchetEntry],
     """
     from ..ratchet import dump_ratchet, ratchet_delta, read_key_version
 
-    if not ratchet_path.is_file():
+    if saved.text is None:
         return None
-    before = repo_text(ratchet_path, ratchet_path.name)
+    before = saved.text
     version = read_key_version(before) if key_version is None else key_version
     text = dump_ratchet(updated, key_version=version)
-    if before == text:
+    if not saved.publish(text):
         return None
-    ratchet_path.write_text(text, encoding="utf-8", newline="\n")
     return ratchet_delta(prior, updated)
 
 
 def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
-                   ratchet_path: Path, ratchet, scored, cfg, *, args,
+                   saved, ratchet, scored, cfg, *, args,
                    commit: str, key_version: int | None = None) -> RatchetDelta | None:
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
     Returns the tighten's counts, or None when the tighten wrote nothing.
@@ -403,13 +395,14 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
     from ..ratchet import update_ratchet
     from ..verify import dirty_counts
 
+    changes = None
+    if verdict.ok and not overridden and not args.no_tighten:
+        hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
+        updated = update_ratchet(ratchet, scored, target=cfg.target,
+                                 scope_targets=cfg.scope_targets, hold=hold)
+        changes = _write_marks_if_changed(saved, ratchet, updated, key_version=key_version)
     store.set_verdict_ok(run_id, verdict.ok, findings=sum(dirty_counts(verdict)))
-    if not verdict.ok or overridden or args.no_tighten:
-        return None
-    hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
-    updated = update_ratchet(ratchet, scored, target=cfg.target,
-                             scope_targets=cfg.scope_targets, hold=hold)
-    return _write_marks_if_changed(ratchet_path, ratchet, updated, key_version=key_version)
+    return changes
 
 
 def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
@@ -602,12 +595,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
     from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling
+    from ..ratchetfile import RatchetFile
+    from ._shared import _check_ratchet_identity
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     _refuse_lane_less_verify(cfg)
     store = _verify_store(root, args.baseline_tsv)
-    _guard_ratchet_stamp(root / cfg.ratchet_file, cfg.ratchet_file)
+    saved = RatchetFile.read(root / cfg.ratchet_file)
+    _guard_ratchet_stamp(saved, cfg.ratchet_file)
     # One context for the whole command: the ancestry checks, the lane runner and
     # this attribution all used to spawn their own git. Asking here also FIXES the
     # dirty set before any lane command runs, so a lane writing into a tracked file
@@ -626,10 +622,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
 
     ranges = changed_ranges(diff_since(root, basis))
-    ratchet_path = root / cfg.ratchet_file
-    ratchet = _load_ratchet_or_die(ratchet_path, cfg.ratchet_file)
-    key_version = _ratchet_key_version(root, cfg, scored, store)
-    ratchet_sha256 = _ratchet_sha256(ratchet_path)
+    ratchet = saved.entries
+    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store)
 
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
@@ -649,8 +643,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=provenance, kind="verify")
     verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
-                                                 key_version=key_version, identity_rows=scored)
-    changes = _settle_verify(store, run_id, verdict, overridden, ratchet_path, ratchet, scored,
+                                                 key_version=key_version, identity_rows=scored,
+                                                 ratchet_input=saved)
+    changes = _settle_verify(store, run_id, verdict, overridden, saved, ratchet, scored,
                              cfg, args=args, commit=commit, key_version=key_version)
     _release_claims(store, git, cfg, scored)
     _emit_verify_findings(root, args, verdict, uncovered)
@@ -658,7 +653,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, ratchet_sha256, changes)},
+                    **_receipt(tool_versions, saved.sha256, changes)},
                    verdict, overridden, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict, breach)
@@ -854,12 +849,15 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     pending commit), and a snapshot record — all three or nothing."""
     from ..gitio import head_commit, stage_path
     from ..override import record_override
+    from ..ratchetfile import RatchetFile
     from ..verify import GateViolation
+    from ._shared import _check_ratchet_identity
 
     db_path = root / ".crapkit" / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
-    key_version = _ratchet_key_version(root, cfg, records, store)
+    saved = RatchetFile.read(root / cfg.ratchet_file)
+    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, records, store)
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
     gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
@@ -867,7 +865,8 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
-                    raise_marks=False, key_version=key_version, identity_rows=records)
+                    raise_marks=False, key_version=key_version, identity_rows=records,
+                    ratchet_input=saved)
     stage_path(root, cfg.ratchet_file)  # the debt must be IN the commit, not dangling
     print(f"crapkit: override granted with full audit ({reason}).")
     _print_clear_the_reason()

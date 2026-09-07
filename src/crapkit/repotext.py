@@ -28,7 +28,11 @@ def repo_text(path: Path, what: str) -> str:
     refusal prints: `crapkit.toml`, the marks file as configured, a merge side
     as git spelled it.
     """
-    data = path.read_bytes()
+    return repo_bytes_text(path.read_bytes(), what)
+
+
+def repo_bytes_text(data: bytes, what: str) -> str:
+    """Decode already captured repository bytes under the same shell rules."""
     try:
         return data.decode("utf-8-sig")
     except UnicodeDecodeError as exc:

@@ -109,6 +109,14 @@ def _open_marks(entered: dict, working: dict | None, anchor: int) -> dict:
     return {key: entered.get(key, anchor) for key in working}
 
 
+def mark_age_days(events: list[tuple], key: tuple) -> int | None:
+    """One surviving mark's age, using the report's committed history rules."""
+    entered, _, _ = _replay(events)
+    since = entered.get(key)
+    anchor = max((ts for ts, *_ in events), default=0)
+    return None if since is None else (anchor - since) // DAY
+
+
 def _uncommitted(crap: dict, working: dict | None) -> int:
     """Marks the working tree and the newest committed version disagree on:
     added, repaid or tightened on disk and not committed yet."""
