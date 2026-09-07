@@ -67,7 +67,7 @@ def test_cache_reloads_occurrences_and_same_reader_rename(tmp_path):
 def test_old_cache_fingerprint_cannot_supply_unknown_positions(tmp_path):
     (tmp_path / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
     _, _, old = analyze_files(tmp_path, ["a.py"], cache={})
-    old["fp"] = fingerprint().replace("cache=3", "cache=2")
+    old["fp"] = fingerprint().rsplit(";cache=", 1)[0] + ";cache=2"
     _, hits, _ = analyze_files(tmp_path, ["a.py"], cache=old)
     assert hits == 0
 
