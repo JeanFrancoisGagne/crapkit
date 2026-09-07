@@ -214,10 +214,10 @@ def _child_overrides() -> dict:
             "CRAPKIT_OVERRIDE_REASON": None}
 
 
-def run_hook(golden: dict, repo: Path, cwd: Path) -> subprocess.CompletedProcess:
+def run_hook(golden: dict, repo: Path, cwd: Path, *, env_extra=None) -> subprocess.CompletedProcess:
     return run_cli(cwd, *golden["argv"], stdin=_stdin_text(golden, str(repo)),
                    timeout=300, encoding="utf-8", errors="replace",
-                   env_extra=_child_overrides())
+                   env_extra={**_child_overrides(), **(env_extra or {})})
 
 
 def _built(golden: dict, tmp_path: Path) -> Path:
@@ -360,13 +360,18 @@ def _best_ms(call, reps: int = 5) -> float:
 def _warm_ms(name: str, tmp_path: Path) -> float:
     golden = _case(name)
     repo = _built(golden, tmp_path)
-    return _best_ms(lambda: run_hook(golden, repo, tmp_path))
+    return _best_ms(lambda: run_hook(golden, repo, tmp_path, env_extra=_timing_overrides()))
+
+
+def _timing_overrides() -> dict:
+    """Measure shipped startup cost; golden cases separately collect coverage."""
+    return {key: None for key in os.environ if key.startswith(("COVERAGE_", "COV_CORE_"))}
 
 
 def _floor_ms() -> float:
     """What a spawned interpreter costs here before crapkit exists at all."""
     return _best_ms(lambda: subprocess.run([PY, "-c", "pass"], capture_output=True,
-                                           timeout=300))
+                                           timeout=300, env=child_env(_timing_overrides())))
 
 
 @pytest.mark.parametrize("name", sorted(BUDGETS))
