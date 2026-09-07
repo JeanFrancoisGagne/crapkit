@@ -37,7 +37,7 @@ coverage_optional = true
 
 [[lane]]
 name = "py"
-command = "python tools/testing/run.py --coverage"
+command = "python tools/testing/run.py --coverage --output .crapkit/cov"
 artifact = ".crapkit/cov/py.json"
 parser = "coveragepy"
 scopes = ["src"]

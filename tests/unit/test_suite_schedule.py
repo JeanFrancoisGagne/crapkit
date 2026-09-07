@@ -42,7 +42,7 @@ def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure
                 "COV_CORE_CONFIG", "COV_CORE_DATAFILE", "COVERAGE_RCFILE"):
         env.pop(key, None)
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--coverage", "--workers", "2"], env=env,
+                             "--coverage", "--workers", "2", "--output", ".crapkit/cov"], env=env,
                             capture_output=True, text=True)
     assert result.returncode == bool(failure), result.stdout + result.stderr
     junit = ET.parse(tmp_path / ".crapkit/cov/junit.xml")
@@ -70,7 +70,7 @@ def test_startup_failure_replaces_old_passing_evidence_and_keeps_the_other_suite
         if key.startswith(("COVERAGE_", "COV_CORE_")):
             env.pop(key)
     command = [sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-               "--coverage", "--workers", "2"]
+               "--coverage", "--workers", "2", "--output", ".crapkit/cov"]
     first = subprocess.run(command, env=env, capture_output=True, text=True)
     assert first.returncode == 0, first.stdout + first.stderr
     output = tmp_path / ".crapkit/cov"
@@ -95,7 +95,8 @@ def test_empty_suite_records_an_infrastructure_failure_with_its_exit(tmp_path):
     env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
 
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--workers", "2"], env=env, capture_output=True, text=True)
+                             "--workers", "2", "--output", ".crapkit/cov"],
+                            env=env, capture_output=True, text=True)
 
     assert result.returncode == 1
     current = ET.parse(tmp_path / ".crapkit/cov/junit.xml")

@@ -39,8 +39,16 @@ the CLI tests run in isolated repositories. Both suites disable a globally insta
 pytest-randomly plugin to preserve their test order.
 
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
-measurements, configured test contexts and JUnit results into `.crapkit/cov/`. Either suite
-failing makes the runner fail. Crapkit's own lane uses that same command.
+measurements, configured test contexts and JUnit results. Every direct run retains its
+evidence in a unique `.crapkit/test-runs/run-*` directory and prints the absolute path
+before starting. Either suite failing makes the runner fail. Remove old run directories
+when their evidence is no longer needed.
+
+`--output DIR` replaces evidence in a caller-managed directory inside `--repo`; relative
+paths resolve from that repository. Crapkit's own lane supplies `--output .crapkit/cov`
+while it owns those measurement artifacts, and the CI verdict driver uses that location
+in its private checkout. A direct run should keep the default destination so it cannot
+change an active lane's evidence.
 
 `python tools/docs/generate.py` updates the marked version and command facts and
 the editor schema. CI checks these generated sections through the unit suite.

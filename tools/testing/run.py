@@ -107,11 +107,24 @@ def _clear_outputs(output: Path) -> None:
         (output / name).unlink(missing_ok=True)
 
 
-def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS) -> int:
+def _output_directory(root: Path, selected: Path | None) -> Path:
+    if selected is None:
+        parent = root / ".crapkit/test-runs"
+        parent.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="run-", dir=parent))
+    output = (root / selected).resolve()
+    if not output.is_relative_to(root):
+        raise ValueError(f"test output must be inside {root}: {output}")
+    output.mkdir(parents=True, exist_ok=True)
+    return output
+
+
+def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS,
+               output: Path | None = None) -> int:
     """Always run both suites; preserve either failure and combine their evidence."""
     root = root.resolve()
-    output = root / ".crapkit/cov"
-    output.mkdir(parents=True, exist_ok=True)
+    output = _output_directory(root, output)
+    print(f"test evidence: {output}", flush=True)
     _clear_outputs(output)
     with tempfile.TemporaryDirectory(prefix="suites-", dir=output) as directory:
         scratch = Path(directory)
@@ -126,10 +139,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--coverage", action="store_true")
     parser.add_argument("--workers", type=int, default=E2E_WORKERS)
+    parser.add_argument("--output", type=Path,
+                        help="replace evidence in this directory inside --repo; caller owns it "
+                             "(default: a unique retained .crapkit/test-runs directory)")
     args = parser.parse_args(argv)
     try:
-        return run_suites(args.repo, coverage=args.coverage, workers=args.workers)
-    except (OSError, ET.ParseError, subprocess.CalledProcessError) as exc:
+        return run_suites(args.repo, coverage=args.coverage, workers=args.workers, output=args.output)
+    except (OSError, ET.ParseError, subprocess.CalledProcessError, ValueError) as exc:
         print(f"test evidence is incomplete: {exc}", file=sys.stderr)
         return 1
 

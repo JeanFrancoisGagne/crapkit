@@ -78,7 +78,8 @@ def _measure(root: Path, python: Path, environment: dict, proof: dict) -> int:
     config.write_text("[run]\nbranch = true\npatch = subprocess\n"
                       "source = crapkit\n[paths]\nsource =\n" + mapped + "\n", encoding="utf-8")
     measured_env = dict(environment, COVERAGE_RCFILE=str(config))
-    return subprocess.run([str(python), str(SCHEDULE), "--repo", str(root), "--coverage"],
+    return subprocess.run([str(python), str(SCHEDULE), "--repo", str(root), "--coverage",
+                           "--output", ".crapkit/cov"],
                           cwd=root, env=measured_env).returncode
 
 
