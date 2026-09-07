@@ -39,7 +39,7 @@ the CLI tests run in isolated repositories. Both suites disable a globally insta
 pytest-randomly plugin to preserve their test order.
 
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
-measurements, test contexts and JUnit results into `.crapkit/cov/`. Either suite
+measurements, configured test contexts and JUnit results into `.crapkit/cov/`. Either suite
 failing makes the runner fail. Crapkit's own lane uses that same command.
 
 `python tools/docs/generate.py` updates the marked version and command facts and
