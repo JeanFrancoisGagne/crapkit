@@ -13,6 +13,7 @@ importlib.metadata and take its answer.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -70,10 +71,12 @@ def test_a_disagreeing_distribution_still_wins_and_pays_for_it(tmp_path):
     assert imported is True
 
 
-def test_a_source_tree_with_nothing_installed_falls_back_to_the_package():
-    """-S drops site-packages, so no distribution is reachable at all: the
-    merge driver's situation, and the package constant is all there is."""
-    line, imported = _run([_src_root()], "-S")
+def test_a_source_tree_with_nothing_installed_falls_back_to_the_package(tmp_path):
+    """Copy the imported package without its distribution metadata. With -S,
+    only these package files and the standard library remain reachable."""
+    shutil.copytree(Path(crapkit.__file__).resolve().parent, tmp_path / "crapkit",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    line, imported = _run([str(tmp_path)], "-S")
 
     assert line == f"crapkit {__version__}"
     assert imported is True

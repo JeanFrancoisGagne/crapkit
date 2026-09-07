@@ -271,7 +271,7 @@ def _documented_pester_globs() -> tuple[str, ...]:
     """
     import tomllib
 
-    text = (Path(crapkit.__file__).resolve().parents[2]
+    text = (Path(__file__).resolve().parents[2]
             / "docs" / "configuration.md").read_text(encoding="utf-8")
     block = next(b for b in text.split("```toml")[1:] if ".Tests.ps1" in b)
     return tuple(tomllib.loads(block.split("```")[0])["exclude"]["globs"])

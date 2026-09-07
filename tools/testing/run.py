@@ -29,6 +29,9 @@ def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: b
         # startup keeps the absolute outer path for ordinary CLI children.
         environment["COVERAGE_FILE"] = str((scratch / (".coverage." + name)).relative_to(root))
         command += ["--cov=crapkit", "--cov-branch", "--cov-report="]
+        config = environment.pop("COVERAGE_RCFILE", None)
+        if config:
+            command.append("--cov-config=" + config)
     return subprocess.run(command, cwd=root, env=environment).returncode
 
 

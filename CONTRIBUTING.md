@@ -135,7 +135,7 @@ against separate base and candidate wheel installations.
 | Job | Runs | What fails the job |
 |---|---|---|
 | `test` | Editable dev install, console-script check and `python tools/testing/run.py` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows. Ubuntu/Python 3.12 also runs `hook-precommit --base "$BASE_REF"`. | A test failure or event-base complexity breach. |
-| `verdict` | `python tools/testing/ci.py --base "$BASE_REF"` builds and verifies separate base/candidate wheels, measures both suites, transfers the complete baseline ledger and runs `verify --no-tighten`. | Either suite failing, incomplete evidence, a refused measurement or a failing CRAP verdict. |
+| `verdict` | `python tools/testing/ci.py --base "$BASE_REF"` builds and verifies separate base/candidate wheels, measures both suites, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
 | `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit. | Action execution errors. Its `gate: false` setting leaves score enforcement to `verdict`. |
 
@@ -143,6 +143,12 @@ The verdict job checks installed source bytes before mapping coverage paths and
 compares its JSON verdict with the actual run ledger. Its evidence is uploaded
 from `.crapkit/ci-verdict`. Repository branch protection controls which checks
 are required for merging.
+
+An older baseline can have existing test failures. CI keeps its exit code,
+failed test IDs and counts, and requires complete JUnit evidence from both
+revisions before scoring. The candidate must pass its suites and the real CRAP
+verdict. Missing, empty or unfinished baseline evidence refuses the comparison;
+an existing baseline failure is never rewritten as a passing test.
 
 ## Adding a language
 

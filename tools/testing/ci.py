@@ -15,6 +15,11 @@ import tempfile
 
 
 SCHEDULE = Path(__file__).with_name("run.py")
+JUNIT_PROBE = (
+    "from pathlib import Path\nimport json\n"
+    "from crapkit.junitparse import suite_summary\n"
+    "failed, counts = suite_summary(Path('.crapkit/cov/junit.xml').read_text(encoding='utf-8'))\n"
+    "print(json.dumps(dict(counts, failures=sorted(failed))))\n")
 
 
 def _git(root: Path, *args: str) -> str:
@@ -105,9 +110,20 @@ def _ledger(root: Path) -> dict:
                                "FROM runs ORDER BY id DESC LIMIT 1").fetchone())
 
 
+def _test_evidence(root: Path, python: Path, environment: dict) -> dict:
+    """Use that revision's JUnit admission before explicit artifact reuse."""
+    result = subprocess.run([str(python), "-c", JUNIT_PROBE], cwd=root, env=environment,
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError(f"{root.name} test evidence is incomplete: {result.stderr.strip()}")
+    return json.loads(result.stdout)
+
+
 def verify_pair(base: Path, candidate: Path, base_python: Path, candidate_python: Path,
                 base_env: dict, candidate_env: dict) -> tuple[int, dict]:
     """Carry the complete baseline ledger into the candidate's real verdict."""
+    tests = {"base": _test_evidence(base, base_python, base_env),
+             "candidate": _test_evidence(candidate, candidate_python, candidate_env)}
     code, baseline = _crapkit(base, base_python, base_env, "coverage", "--reuse-artifacts")
     if code:
         raise ValueError(f"base coverage failed: {baseline}")
@@ -120,7 +136,7 @@ def verify_pair(base: Path, candidate: Path, base_python: Path, candidate_python
     if (ledger["id"], ledger["kind"], bool(ledger["verdict_ok"]), ledger["commit_sha"]) != (
             verdict["run_id"], "verify", verdict["ok"], _git(candidate, "rev-parse", "HEAD")):
         raise ValueError("verification output disagrees with the runs ledger")
-    return code, {**verdict, "ledger": ledger}
+    return code, {**verdict, "ledger": ledger, "tests": tests}
 
 
 def _checkout(repo: Path, directory: Path, ref: str) -> Path:
@@ -165,7 +181,7 @@ def _compare_checkouts(repo: Path, base_ref: str, scratch: Path, evidence: dict)
     evidence["phase"] = "verify"
     code, evidence["verdict"] = verify_pair(base, candidate, bp, cp, be, ce)
     evidence["phase"] = "complete"
-    return code or int(any(results))
+    return code or int(bool(results[1]))
 
 
 def compare(repo: Path, base_ref: str, output: Path) -> int:
