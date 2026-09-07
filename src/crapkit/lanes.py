@@ -25,7 +25,7 @@ from .config import Lane, shell_segments, shell_words
 from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_both_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
-from .gitio import GitFacts
+from .gitio import GitFacts, worktree_root
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -468,8 +468,8 @@ def _artifact_digests(lane: Lane, provenance: dict) -> dict:
 
 def _measurement_commit(root: Path) -> str:
     """The current clean commit, or no proof that repository inputs are fixed."""
-    facts = GitFacts(root)
     try:
+        facts = GitFacts(worktree_root(root))
         return "" if facts.status_names() else facts.head_commit()
     except GitError:
         return ""

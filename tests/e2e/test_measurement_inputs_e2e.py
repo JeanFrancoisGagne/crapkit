@@ -133,3 +133,52 @@ def test_automatic_reuse_requires_the_artifacts_that_measurement_produced(measur
     assert report["crap_load"] == 1
     assert report["lanes"]["js"]["failures"] == []
     assert (measured_repo / ".crapkit/counter.txt").read_text() == "3"
+
+
+@pytest.fixture
+def nested_repo(tmp_path: Path) -> Path:
+    git_init_repo(tmp_path)
+    app = tmp_path / "app"
+    (app / "src").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (app / "src/app.js").write_text("function f() {\n  return 1;\n}\n", encoding="utf-8")
+    (tmp_path / "tests/state.txt").write_text("pass", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".crapkit/\n__pycache__/\n", encoding="utf-8")
+    runner = RUNNER.replace("Path('tests/state.txt')", "Path('../tests/state.txt')")
+    runner = runner.replace("hit = int(state == 'pass')",
+                            "added = Path('../tests/new_case.txt')\n"
+                            "if added.exists():\n    state = added.read_text().strip()\n"
+                            "hit = int(state == 'pass')")
+    (app / "measure.py").write_text(runner, encoding="utf-8")
+    command = json.dumps(f'"{sys.executable}" measure.py')
+    (app / "crapkit.toml").write_text(
+        '[[scope]]\nname="src"\npaths=["src"]\nlanguages=["javascript"]\n'
+        '[[lane]]\nname="js"\nparser="istanbul"\nscopes=["src"]\n'
+        f'command={command}\nartifact=".crapkit/cov.json"\n'
+        'results_artifact=".crapkit/junit.xml"\n', encoding="utf-8")
+    git_commit_all(tmp_path, "nested project")
+    return app
+
+
+@pytest.mark.parametrize("path", ["state.txt", "new_case.txt"], ids=["tracked", "untracked"])
+def test_nested_root_reuse_measures_changed_inputs_above_the_config(nested_repo, path):
+    first = run_cli(nested_repo, "coverage", "--json")
+    assert first.returncode == 0, first.stdout + first.stderr
+    (nested_repo.parent / "tests" / path).write_text("fail", encoding="utf-8")
+
+    result = run_cli(nested_repo, "verify", "--reuse-unchanged", "--no-tighten", "--json")
+
+    assert result.returncode == 8, result.stdout + result.stderr
+    assert json.loads(result.stdout)["new_failures"] == ["tests.test_app::test_f"]
+    assert (nested_repo / ".crapkit/counter.txt").read_text() == "2"
+
+
+def test_unchanged_nested_root_reuses_its_measurement(nested_repo):
+    first = run_cli(nested_repo, "coverage", "--json")
+    assert first.returncode == 0, first.stdout + first.stderr
+
+    reused = run_cli(nested_repo, "coverage", "--reuse-unchanged", "--json")
+
+    assert reused.returncode == 0, reused.stdout + reused.stderr
+    assert json.loads(reused.stdout)["lanes"]["js"]["exit_code"] is None
+    assert (nested_repo / ".crapkit/counter.txt").read_text() == "1"
