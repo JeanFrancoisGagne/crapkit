@@ -29,10 +29,11 @@ def test_a_dead_owner_cannot_confirm_publication(tmp_path):
 
 def test_a_failed_command_releases_the_same_output_for_another_run(tmp_path):
     path = tmp_path / "owner.lock"
+    # This checks exit codes and lock release. test_procs owns deadline checks.
     with own_processes([path]) as owner:
-        assert run_bounded(f'"{sys.executable}" -c "raise SystemExit(7)"', 5, owner=owner) == 7
+        assert run_bounded(f'"{sys.executable}" -c "raise SystemExit(7)"', None, owner=owner) == 7
     with own_processes([path]) as owner:
-        assert run_bounded(f'"{sys.executable}" -c "pass"', 5, owner=owner) == 0
+        assert run_bounded(f'"{sys.executable}" -c "pass"', None, owner=owner) == 0
 
 
 def test_an_operation_exception_releases_ownership(tmp_path):
