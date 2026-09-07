@@ -1,0 +1,17 @@
+{
+  "commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+  "candidates": 17,
+  "strong": 14,
+  "tracked_inputs": 744,
+  "python_modules": 69,
+  "root_run_records": 77,
+  "tests": {
+    "passed": 348,
+    "skipped": 1
+  },
+  "archive": {
+    "files": 96,
+    "bytes": 192920,
+    "sha256": "ed93a77c5696079ffeae097dbdef7be47b049cdc0cd03bda5cb16f5426fda457"
+  }
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crapkit · Architecture review · 7 September 2026</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true,theme:'neutral',securityLevel:'strict',flowchart:{htmlLabels:false,curve:'linear'},themeVariables:{fontFamily:'Segoe UI, sans-serif',fontSize:'13px'}});
+</script>
+<style>{{style}}
+main h1{font-size:clamp(48px,7vw,82px);margin:10px 0 20px}
+main h2{font-size:31px;margin:9px 0 0}
+main h3{font-size:29px;margin:0 0 18px}
+main h4{font-size:12px;margin:20px 0 8px;font-weight:600}
+main h1,main h2,main h3{font-family:Georgia,serif;line-height:1.1;font-weight:normal;letter-spacing:-.025em}
+main ul{list-style:disc}
+@media(max-width:700px){main h2{font-size:27px}}
+</style>
+</head>
+<body><main>
+<header><div class="eyebrow">Whole-project review · frozen source b11e2c1</div>
+<div class="header-row"><h1>Crapkit,<br>one review further.</h1><div class="date">7 September 2026<br>Correctness · performance · maintenance<br>Execution · delivery · agent workflow</div></div>
+<div class="legend"><span>Module</span><span class="seam">Seam</span><span class="leak">Leaked rule</span><span class="deep">Deep module</span></div>
+</header>
+<div class="metrics">{{metrics}}</div>
+<details class="contents" open><summary>Choose a candidate</summary><table><thead><tr><th>No.</th><th>Opportunity</th><th>Recommendation</th></tr></thead><tbody>{{index}}</tbody></table></details>
+<section id="candidates">{{cards}}</section>
+<section class="chapter" id="verification"><h3>What was checked</h3>
+<div class="verified"><div><h4>Crapkit ran on Crapkit</h4><ul>
+<li>Frozen source: <code>b11e2c165411b5ff9caa6b4b8486aafe477dfeb8</code>.</li>
+<li>Inventory, worklist, duplication, coupling and verify all exited 0 in a separate checkout.</li>
+<li>Inventory found 1,867 functions in 79 measured files. Verify run 78 recorded <code>ok=true</code>, zero dirty findings and zero committed findings.</li>
+<li>The self-check used the existing complete coverage artifacts. No new full suite ran during this review.</li>
+<li>23 changed lines remain uncovered; <code>diff_uncovered_max=null</code>. A passing self-check does not exercise the new failure cases.</li>
+</ul></div><div><h4>Focused verification</h4><ul>
+<li>Core: 180 passed. Execution: 58 passed, 1 POSIX-only skip. State and packet contracts: 110 passed.</li>
+<li>New defects were reproduced in disposable repositories, real processes or explicitly labeled pure seams.</li>
+<li>Windows behavior was exercised here. POSIX process behavior and the literal-backslash filename still require runtime checks on POSIX.</li>
+<li>Duplication allocation figures use synthetic clone-heavy inputs. They do not establish normal production cost.</li>
+<li>Source and the root ledger were frozen: {{input_count}} tracked input hashes and all 77 run records remained unchanged.</li>
+</ul></div></div></section>
+<section class="chapter" id="coverage"><h3>Coverage of the review</h3>
+<p>The review assigned all {{source_count}} Python modules, maintainer tools, Action/plugin delivery, configuration, CI and current user guidance. Test selection followed those contracts. Historical reports, binary demo assets and external hosted behavior were not re-audited. Detailed file lists and individual dispositions are in <a href="report-data.json">the report data</a>.</p>
+<table><thead><tr><th>Area</th><th>Disposition</th></tr></thead><tbody>{{coverage}}</tbody></table></section>
+<section class="chapter" id="keep"><h3>Changes that would not pay for themselves</h3>
+<table><thead><tr><th>Idea considered</th><th>Why it was set aside</th></tr></thead><tbody>{{dismissed}}</tbody></table></section>
+<section class="top-pick" id="top-recommendation"><div class="eyebrow" style="color:#c6dfcc">Top recommendation</div>
+<h3>Make Git diff format an owned rule.</h3><p>Ordinary Git display preferences can make the gate miss a staged function. Correcting the existing Git adapter protects every consumer of changed ranges.</p><a href="#CORE-01">Start with candidate 01 →</a></section>
+<footer class="footer"><p>Review complete. Recommendations describe ownership and test direction; they do not specify new interfaces or apply fixes.</p>
+<p>Source: <code>docs/architecture/2026-09-07-re-audit/</code> · <a href="README.md">Audit notes</a> · <a href="report-data.json">Findings data</a> · <a href="evidence.zip">Replay evidence</a> · <a href="decisions.tsv">Decision log</a></p>
+<p>The report is static. Tailwind and Mermaid load from CDNs; the embedded CSS preserves the document layout without Tailwind. Open with network access for rendered Mermaid diagrams.</p></footer>
+</main></body></html>

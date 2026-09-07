@@ -1,0 +1,1699 @@
+{
+  "title": "Fresh whole-codebase architecture review",
+  "commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+  "date": "2026-09-07",
+  "candidates": [
+    {
+      "id": "CORE-01",
+      "title": "Make the Git diff module own the format its consumers parse",
+      "strength": "Strong",
+      "category": "Verdict correctness",
+      "files": [
+        {
+          "path": "src/crapkit/gitio.py",
+          "start": 34,
+          "end": 38
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "start": 138,
+          "end": 162
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "start": 375,
+          "end": 380
+        },
+        {
+          "path": "src/crapkit/diffparse.py",
+          "start": 41,
+          "end": 49
+        },
+        {
+          "path": "src/crapkit/hook.py",
+          "start": 143,
+          "end": 156
+        }
+      ],
+      "problem": "Git display preferences change diff text consumed as a fixed machine format. Color hides changed ranges; mnemonic or missing prefixes change paths, so the staged gate misses a CCN 8 function.",
+      "solution": "Have every parsed diff request a fixed, machine-readable format, independent of user display preferences. Apply that rule to both ordinary reads and prestarted reads. Keep configuration inspection able to read the actual user setting.",
+      "evidence": [
+        "Real Git and gate_staged, ordinary and prestarted reads: default settings produce one violation.",
+        "color.ui=always produces no changed ranges or violations. mnemonicPrefix and noprefix produce wrong paths and zero violations.",
+        "The noprefix case requires the real path to begin b/. No user Git configuration needs changing."
+      ],
+      "evidence_paths": [
+        "core/findings.json",
+        "core/probe_admission_and_diff.py",
+        "core/admission-and-diff.json",
+        "core/diff-default.txt",
+        "core/diff-color_always.txt",
+        "core/diff-mnemonic.txt",
+        "core/diff-noprefix.txt"
+      ],
+      "deletion_test": "Deleting gitio would scatter process flags and record framing across the gate, verify, rescore, mutation selection and history readers. The module earns its place. Deepen its current interface by keeping the diff-format requirements inside the adapter.",
+      "benefits": [
+        "Git owns parsed diff format",
+        "Protects gate and changed-file consumers",
+        "Real Git settings share one fixture"
+      ],
+      "tests": [
+        "Add real-Git tests that pass the same staged ccn=8 source through gate_staged with normal and prestarted reads under color, mnemonic-prefix and no-prefix settings.",
+        "Preserve nested-root paths, C-quoted paths, Unicode separators, renamed-file handling, literal added +++ source lines and config_value tests.",
+        "Check diff_since callers against the same pinned format and cover user-defined diff prefixes/output settings before declaring the family fixed."
+      ],
+      "cost": "Small change across every diff-producing adapter. Preserve actual configuration inspection and nested-root behavior; do not modify repository or global Git settings.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "User display settings",
+        "Variable Git diff",
+        "Fixed parser assumptions",
+        "Missed gate"
+      ],
+      "after": [
+        "Git diff module",
+        "Fixed parsed format",
+        "Exact changed paths",
+        "Gate judges source"
+      ]
+    },
+    {
+      "id": "STATE-01",
+      "title": "Let the verdict module own every refusal",
+      "strength": "Strong",
+      "category": "Verdict correctness",
+      "files": [
+        {
+          "path": "src/crapkit/verify.py",
+          "start": 92,
+          "end": 99
+        },
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "start": 321,
+          "end": 336
+        },
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "start": 389,
+          "end": 411
+        },
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "start": 631,
+          "end": 659
+        }
+      ],
+      "problem": "A diff-coverage breach and an eligible gate override take separate decision paths. The override records a successful verdict while the exit adapter still refuses the run.",
+      "solution": "Have the verdict module settle all refusal kinds and exemptions before JSON, exit status, ratchet publication and stored-run trust consume that decision.",
+      "evidence": [
+        "Public verify control: exit 6, JSON ok=false, stored verdict=0 and one finding.",
+        "With a gate override: exit 9, JSON ok=true, stored verdict=1 and zero findings, despite 13 uncovered changed lines against a maximum of 0."
+      ],
+      "evidence_paths": [
+        "root-findings.json",
+        "probe_verdict.py",
+        "verdict-result.json",
+        "verdict-control.stdout.json",
+        "verdict-override.stdout.json"
+      ],
+      "deletion_test": "Deleting Verdict would spread gate and ratchet rules into more callers. Keep it and absorb the independent breach boolean and final exemption decision into its implementation.",
+      "benefits": [
+        "One owner settles every refusal",
+        "Outputs and baseline trust agree",
+        "Test all decisions through public verify"
+      ],
+      "tests": [
+        "Drive public verify with a gate violation plus a diff-coverage breach, both with and without an override; assert exit, JSON, stored verdict and the next trusted baseline together."
+      ],
+      "cost": "Preserve exit priorities, dirty attribution, storage compatibility and override limits. New test failures and ratchet regressions must remain ineligible for a gate exemption.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Independent refusal rules",
+        "Gate override",
+        "JSON and ledger pass",
+        "Exit still refuses"
+      ],
+      "after": [
+        "Verdict module",
+        "All refusals and exemptions",
+        "One final decision",
+        "Consistent consumers"
+      ]
+    },
+    {
+      "id": "EX1",
+      "title": "Keep execution ownership until every writing process stops",
+      "strength": "Strong",
+      "category": "Execution safety",
+      "files": [
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 65,
+          "end": 66
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 103,
+          "end": 108
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 178,
+          "end": 189
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 284,
+          "end": 301
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 333,
+          "end": 350
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "start": 129,
+          "end": 174
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "start": 195,
+          "end": 211
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "start": 257,
+          "end": 300
+        },
+        {
+          "path": "src/crapkit/_process_owner.py",
+          "start": 21,
+          "end": 68
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "start": 1142,
+          "end": 1154
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "start": 1174,
+          "end": 1181
+        }
+      ],
+      "problem": "Mutation locks end with their caller while suites can keep writing. Lane root registration also ends when the root exits, even if descendants remain. A later owner can reuse resources while old processes still write.",
+      "solution": "Deepen the execution ownership module so process completion, surviving descendants and resource release share one lifecycle. Lane and mutation adapters should receive the same ownership guarantee, while their measurement and worktree policies remain local. Choose detached-command semantics during design rather than silently changing them.",
+      "evidence": [
+        "Real Windows run_mutants: terminate the caller, acquire its pool again, then the old suite overwrites the new owner's source.",
+        "Real Windows run_lane returns after a valid artifact; its descendant later overwrites cov.json under another measurement owner.",
+        "Both late writes are proved. Wrong future scores, pool-removal collisions and POSIX behavior were not measured."
+      ],
+      "evidence_paths": [
+        "execution/findings.json",
+        "execution/probe_mutation_crash.py",
+        "execution/mutation-crash-result.json",
+        "execution/probe_owned_descendant.py",
+        "execution/owned-descendant-result.json",
+        "execution/bounded-checks.json"
+      ],
+      "deletion_test": "Deleting procs or the helper moves deadline handling, process registration and lock retention back into lanes and mutation callers, so both modules earn their depth. The opportunity is to delete caller-owned lifetime coordination and the mutation-specific parallel ownership rule by concentrating that behavior at the execution seam.",
+      "benefits": [
+        "Execution owns process and resource lifetime",
+        "Lanes and mutation share cleanup guarantees",
+        "Real crash tests assert resource exclusion"
+      ],
+      "tests": [
+        "Kill a real mutation caller, then retry while its previous suite is alive; prove no reused pool receives a late write.",
+        "Run a lane whose test runner exits before a child; prove the chosen ownership completion rule through run_lane.",
+        "Repeat lifetime probes on Windows and POSIX, preserving shell exit codes, deadlines, live-peer temporary fallback, and pool cleanup.",
+        "Preserve tests/e2e/test_measurement_ownership_e2e.py; tests/unit/test_measurement_owner.py; tests/unit/test_procs.py; tests/unit/test_mutate_pool_kept.py; tests/unit/test_mutate_nested.py; tests/unit/test_mutate_pool.py."
+      ],
+      "cost": "Requires Windows and POSIX adapters and PID-reuse safety. Decide detached-child semantics explicitly. Preserve caller-crash protection, fail-fast lane conflicts and mutation's private-tree fallback; longer ownership changes recovery timing.",
+      "adr": "None. ADR 0001 concerns MCP argument results; ADR 0002 concerns repository-root selection. Nested mutation roots must still follow ADR 0002.",
+      "before": [
+        "Caller-held lock",
+        "Independent writing processes",
+        "Caller or root exits",
+        "Old writer overlaps reuse"
+      ],
+      "after": [
+        "Execution ownership module",
+        "Writing lifetime settled",
+        "Resource release",
+        "Safe next owner"
+      ]
+    },
+    {
+      "id": "EX2",
+      "title": "Make mutation workspace isolation include filesystem identity",
+      "strength": "Strong",
+      "category": "Execution safety",
+      "files": [
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 86,
+          "end": 108
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 130,
+          "end": 157
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 333,
+          "end": 350
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "start": 453,
+          "end": 475
+        }
+      ],
+      "problem": "Mutation snapshots follow symlinks, and detached workers preserve their destinations. Writes to a worker path can therefore modify source outside the worker.",
+      "solution": "Deepen the mutation workspace module to own filesystem admission and materialization together. Establish how tracked and dirty symlinks participate before any worker write, and make source isolation a guarantee callers can rely on. Choose refusal versus safe local materialization during design.",
+      "evidence": [
+        "Real Windows Git with core.symlinks=true records mode 120000 and preserves the link in the kept worker.",
+        "During run_mutants, the suite observes an outside source change from return True to return False; finally restores it.",
+        "Caller-death residue, hard links and other reparse points are follow-up cases, not measured outcomes."
+      ],
+      "evidence_paths": [
+        "execution/findings.json",
+        "execution/probe_mutation_symlink.py",
+        "execution/mutation-symlink-result.json"
+      ],
+      "deletion_test": "Removing the mutation snapshot moves dirty-test/configuration/deletion capture back to worker callers, so it earns its depth. Deleting an extra helper would not solve the defect. The deepening is to concentrate input identity and safe worker materialization behind the workspace interface, removing the assumption that a path under a worktree implies an isolated file.",
+      "benefits": [
+        "Workspace owns filesystem identity and writes",
+        "Every worker inherits source isolation",
+        "Real links test writes before cleanup"
+      ],
+      "tests": [
+        "Track a symlink to an outside scratch source and assert through run_mutants that the outside source never changes.",
+        "Exercise relative and absolute links, dirty links, ordinary files and nested roots on platforms that support them.",
+        "Assert the selected refusal or materialization behavior before any suite starts, and preserve source bytes across exceptions.",
+        "Preserve tests/unit/test_mutate_pool_kept.py: test_every_worker_measures_dirty_tests_config_dependencies_and_deletions; tests/unit/test_mutate_nested.py; tests/unit/test_mutate_pool.py: worktree preparation and cleanup checks."
+      ],
+      "cost": "Refusal restricts link-using repos; materialization can change build semantics. Choose that policy before implementation. Preserve dirty inputs outside nested config roots and address identity changes between validation and write.",
+      "adr": "None. Preserve ADR 0002 nested-root behavior.",
+      "before": [
+        "Source symlink",
+        "Worker preserves destination",
+        "Mutation writes worker path",
+        "Outside source changes"
+      ],
+      "after": [
+        "Workspace admission",
+        "Safe input materialization",
+        "Private mutant writes",
+        "Source remains isolated"
+      ]
+    },
+    {
+      "id": "CORE-02",
+      "title": "Admit coverage measurements before they become scoring facts",
+      "strength": "Strong",
+      "category": "Artifact admission",
+      "files": [
+        {
+          "path": "src/crapkit/coverage_py.py",
+          "start": 22,
+          "end": 32
+        },
+        {
+          "path": "src/crapkit/coverage_istanbul.py",
+          "start": 17,
+          "end": 33
+        },
+        {
+          "path": "src/crapkit/covstream.py",
+          "start": 39,
+          "end": 46
+        },
+        {
+          "path": "src/crapkit/score.py",
+          "start": 22,
+          "end": 23
+        }
+      ],
+      "problem": "Malformed finite coverage counters become trusted measurements. Covered branches can exceed total branches, producing coverage above one and negative CRAP.",
+      "solution": "Give artifact admission responsibility for valid coverage counts and relationships. Reject impossible measurements with the artifact path and function named, then let scoring keep its simple arithmetic. Check both adapter formats for the same domain promises, while preserving their different attribution rules.",
+      "evidence": [
+        "Public file reader -> score: covered=1,total=2 yields coverage 0.5 and CRAP 10.5 at CCN 6.",
+        "covered=4,total=2 yields coverage 2.0, CRAP -30 and remedy=ok. Negative totals can select full statement coverage.",
+        "Boolean, fractional and negative counts are admitted. These are malformed fixtures, not evidence that normal coverage producers emit them."
+      ],
+      "evidence_paths": [
+        "core/findings.json",
+        "core/probe_admission_and_diff.py",
+        "core/admission-and-diff.json",
+        "core/focused-checks.txt"
+      ],
+      "deletion_test": "The coverage adapters earn their place by hiding artifact shape and attribution. Removing them would put format rules into the scorer and lane callers. Remove the unchecked passage from decoded JSON to trusted measurement instead of adding checks to each downstream consumer.",
+      "benefits": [
+        "Reader owns measurement validity",
+        "All score consumers inherit valid facts",
+        "Public artifact-to-score regressions protect fallbacks"
+      ],
+      "tests": [
+        "Add public-file-reader-to-score tests for covered greater than total, negative counters, booleans and fractional counters, for branch and statement totals.",
+        "Preserve legitimate zero-branch statement fallback, zero-statement invocation fallback, branchless-report warnings and regionless-file salvage.",
+        "Keep nonfinite JSON, streaming chunk framing, artifact digests and same-span refusal checks."
+      ],
+      "cost": "Preserve valid branch, statement and invocation fallbacks; do not clamp corruption into plausible scores. Review ANALYSIS_VERSION implications if accepted measurement semantics change.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Valid JSON numbers",
+        "Unchecked coverage counters",
+        "Impossible ratio",
+        "False healthy score"
+      ],
+      "after": [
+        "Artifact admission",
+        "Valid counts and relationships",
+        "Simple scoring",
+        "Named refusal on corruption"
+      ]
+    },
+    {
+      "id": "MEASURE-01",
+      "title": "Apply the JUnit completeness rule before admitting a lane measurement",
+      "strength": "Strong",
+      "category": "Artifact admission",
+      "files": [
+        {
+          "path": "src/crapkit/junitparse.py",
+          "start": 87,
+          "end": 105
+        },
+        {
+          "path": "src/crapkit/junitparse.py",
+          "start": 118,
+          "end": 136
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "start": 947,
+          "end": 960
+        },
+        {
+          "path": "src/crapkit/lanes.py",
+          "start": 970,
+          "end": 991
+        },
+        {
+          "path": "tests/unit/test_lane_abort.py",
+          "start": 66,
+          "end": 77
+        },
+        {
+          "path": "tests/unit/test_retest_evidence.py",
+          "start": 38,
+          "end": 40
+        }
+      ],
+      "problem": "A normal lane accepts a report declaring ten tests but containing one passing testcase. Retry evidence rejects the same XML, so completeness depends on which reader the adapter calls.",
+      "solution": "Give the JUnit module ownership of consistent report admission before extracting counts or outcomes. Keep explicit artifact-reuse policy at the lane seam.",
+      "evidence": [
+        "Real run_lane with fresh valid coverage and testsuite tests='10' containing one testcase returns exit 0, one coverage entry, tests_total=1 and no failures.",
+        "passed_test_ids rejects the exact XML as an incomplete retry.",
+        "Only explicit declared-count mismatch is proved. No full coverage CLI or baseline write ran; missing or consistently false counts remain outside this check."
+      ],
+      "evidence_paths": [
+        "execution/integration-review.json",
+        "execution/probe_junit_admission.py",
+        "execution/junit-admission-result.json"
+      ],
+      "deletion_test": "Keep normal result admission and the retry guard. Remove the duplicate choice of completeness checks in each reader; deleting either protection loses measurement evidence.",
+      "benefits": [
+        "JUnit owns report admission",
+        "Normal lanes and retries agree",
+        "Fresh artifact tests cross lane admission"
+      ],
+      "tests": [
+        "Refuse a fresh normal lane report declaring ten tests with one testcase.",
+        "Preserve nested suites, absent count attributes, failed and skipped cases, worker crashes and session errors.",
+        "Preserve one-DOM parsing, retry refusal, literal test IDs and explicit artifact-reuse warnings."
+      ],
+      "cost": "Small local correction can supply the value without a new public interface. Inconsistent producers will begin refusing. Keep absent counts accepted and check deep nested-report cost before reusing repeated descendant walks.",
+      "adr": "No ADR conflict. Preserve ADR 0001 tool-result refusals and ADR 0002 root discovery.",
+      "before": [
+        "Fresh report",
+        "Reader-specific checks",
+        "Normal lane accepts",
+        "Retry rejects"
+      ],
+      "after": [
+        "Fresh or retry report",
+        "JUnit admission",
+        "Consistent counts and outcomes"
+      ]
+    },
+    {
+      "id": "STATE-03",
+      "title": "Make packet commands use the execution module",
+      "strength": "Strong",
+      "category": "Command transport",
+      "files": [
+        {
+          "path": "src/crapkit/packet.py",
+          "start": 107,
+          "end": 131
+        },
+        {
+          "path": "src/crapkit/cli/queue.py",
+          "start": 727,
+          "end": 731
+        },
+        {
+          "path": "src/crapkit/cli/verifying.py",
+          "start": 788,
+          "end": 805
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "start": 37,
+          "end": 56
+        },
+        {
+          "path": "AGENTS.md",
+          "start": 25,
+          "end": 39
+        }
+      ],
+      "problem": "Packet commands use independent shell substitution. A real brief command on Windows expands percent-delimited filename text, targeting a different file than direct test-scoped.",
+      "solution": "Delete the packet's second template renderer and publish commands whose execution retains the same exact-argument contract as test-scoped.",
+      "evidence": [
+        "Executing commands.scoped_tests from brief passes src/expanded.py for the literal src/%CRAPKIT_AUDIT_ONLY%.py.",
+        "Direct test-scoped passes the original filename. Both commands exit 0.",
+        "The packet gate command also contains raw interpolation; that command was inspected, not executed."
+      ],
+      "evidence_paths": [
+        "root-findings.json",
+        "probe_records.py",
+        "records-result.json",
+        "records-packet-brief.stdout.txt"
+      ],
+      "deletion_test": "Deleting scoped_test_command's independent substitution concentrates quoting in the execution module. Keep the useful packet interface and its four workflow commands.",
+      "benefits": [
+        "Execution owns literal argument handling",
+        "Packets inherit direct-command guarantees",
+        "Execute packet and direct command controls"
+      ],
+      "tests": [
+        "Execute emitted commands through the intended shell against a capture program. Compare received paths with direct commands for spaces, percent signs and supported platform metacharacters."
+      ],
+      "cost": "Preserve standalone command strings and configured shell semantics. Consumers must not need undisclosed environment setup. Compare actual shell arguments, not rendered text alone.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Packet template renderer",
+        "Host shell expansion",
+        "Different filename"
+      ],
+      "after": [
+        "Shared execution rules",
+        "Usable packet command",
+        "Exact intended filename"
+      ]
+    },
+    {
+      "id": "STATE-02",
+      "title": "Give portable records a lossless format owner",
+      "strength": "Strong",
+      "category": "Portable records",
+      "files": [
+        {
+          "path": "src/crapkit/score.py",
+          "start": 72,
+          "end": 100
+        },
+        {
+          "path": "src/crapkit/ratchet.py",
+          "start": 166,
+          "end": 185
+        },
+        {
+          "path": "src/crapkit/ratchet.py",
+          "start": 212,
+          "end": 224
+        },
+        {
+          "path": "src/crapkit/verify.py",
+          "start": 48,
+          "end": 66
+        }
+      ],
+      "problem": "Portable writers emit path characters that their readers treat as record separators. A baseline exported for a valid U+2028 filename cannot be read back.",
+      "solution": "Concentrate record framing and field escaping in the portable-record implementation, preserving exact repository paths through export and import.",
+      "evidence": [
+        "Public emit/read control for src/a.py succeeds.",
+        "A real Windows src/a<U+2028>b.py baseline exports successfully, then import exits 3: scored row has 2 fields, expected 17.",
+        "Ratchet dump/load of the same path fails with one field instead of three."
+      ],
+      "evidence_paths": [
+        "root-findings.json",
+        "probe_records.py",
+        "records-result.json",
+        "records-separator-export.stdout.txt",
+        "records-separator-verify.stdout.txt"
+      ],
+      "deletion_test": "The portable baseline and ratchet remain useful independent artifacts. Delete duplicated assumptions about raw lines and tabs, not the artifacts themselves.",
+      "benefits": [
+        "Record adapter owns framing and escaping",
+        "Exports preserve repository identities",
+        "Public roundtrips cover compatibility"
+      ],
+      "tests": [
+        "Roundtrip through the public emit/read commands, then ratchet dump/load, using Unicode separators and platform-valid control characters; retain legacy 16/17-column and byte-stability checks."
+      ],
+      "cost": "Choose backward-read rules before changing writers. Preserve existing baselines, ratchet marks, merge-driver behavior, external TSV consumers and legacy 16/17-column support.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Raw path fields",
+        "Portable export",
+        "Reader splits field content",
+        "Import refusal"
+      ],
+      "after": [
+        "Portable record owner",
+        "Lossless export",
+        "Compatible import",
+        "Exact path identity"
+      ]
+    },
+    {
+      "id": "CORE-03",
+      "title": "Give duplicate ranking a complete deterministic order",
+      "strength": "Strong",
+      "category": "Deterministic output",
+      "files": [
+        {
+          "path": "src/crapkit/dup.py",
+          "start": 29,
+          "end": 30
+        },
+        {
+          "path": "src/crapkit/dup.py",
+          "start": 89,
+          "end": 125
+        },
+        {
+          "path": "src/crapkit/dup.py",
+          "start": 233,
+          "end": 242
+        }
+      ],
+      "problem": "Duplicate pairs inherit hash-dependent insertion order. The final sort does not fully order both functions, so a tied top cut selects different pairs across processes.",
+      "solution": "Make pair ordering total over both functions and the relevant identity fields before applying the requested cut. Keep randomized shingles internal to matching; they must not decide which pair a caller sees.",
+      "evidence": [
+        "Same three source strings, default similarity 0.8 and top=1: seeds 1,3,9,10 select a.py+b.py; seeds 2,4,5,6,7,8 select a.py+c.py.",
+        "Both pairs score 0.8095. Only PYTHONHASHSEED changes."
+      ],
+      "evidence_paths": [
+        "core/findings.json",
+        "core/probe_duplication.py",
+        "core/duplication-results.json",
+        "core/duplication-stdout.json"
+      ],
+      "deletion_test": "Keep the duplication module's normalization, containment and pairing rules. Add complete ranking inside that module; deleting it would spread these rules across callers.",
+      "benefits": [
+        "Duplicate module owns complete ranking",
+        "Top results remain repeatable across processes",
+        "Hash-seed tests expose unresolved ties"
+      ],
+      "tests": [
+        "Run the same tied-pair fixture in fresh Python processes with several hash seeds, and assert identical ordered payloads at top=1 and without an intersecting cut.",
+        "Preserve containment scoring, nested-span exclusion, min_lines admission, twins, process-local index reuse and released source-text behavior.",
+        "Include both function identities in tests so equal start lines and same-named functions cannot form another unresolved tie."
+      ],
+      "cost": "Small ranking correction; a tied result may change once after repair. Similarity values and verdicts are not shown to change. Include full source identities when settling ties.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Randomized shingle order",
+        "Partial pair sort",
+        "Process-dependent top pair"
+      ],
+      "after": [
+        "Shingle matching",
+        "Complete pair ranking",
+        "Stable requested results"
+      ]
+    },
+    {
+      "id": "UI1",
+      "title": "Make the MCP child adapter read the UTF-8 stream the CLI writes",
+      "strength": "Strong",
+      "category": "Agent interfaces",
+      "files": [
+        {
+          "path": "src/crapkit/mcp_server.py",
+          "start": 1524,
+          "end": 1524
+        },
+        {
+          "path": "src/crapkit/mcp_server.py",
+          "start": 1533,
+          "end": 1533
+        },
+        {
+          "path": "src/crapkit/mcp_server.py",
+          "start": 1506,
+          "end": 1506
+        },
+        {
+          "path": "src/crapkit/cli/parser.py",
+          "start": 460,
+          "end": 460
+        }
+      ],
+      "problem": "The CLI writes UTF-8, but the MCP child adapter uses the Windows locale codec. A refusal containing U+0101 becomes text:null instead of a readable tool result.",
+      "solution": "Give the MCP child adapter explicit ownership of decoding the CLI's UTF-8 output and preserve refusals as readable tool results.",
+      "evidence": [
+        "Real Windows CLI prints the no-snapshot refusal and exits 1.",
+        "With PYTHONUTF8=0, real MCP emits text:null, writes a cp1252 UnicodeDecodeError traceback, then answers ping.",
+        "No hosted MCP client was used."
+      ],
+      "evidence_paths": [
+        "experience/findings.json",
+        "experience/probe_interfaces.py",
+        "experience/probe_interfaces.json"
+      ],
+      "deletion_test": "Delete the implicit locale-codec decision at this adapter seam. Deleting the subprocess adapter would duplicate the CLI or introduce retained process state; keep it.",
+      "benefits": [
+        "MCP adapter owns child decoding",
+        "All twelve tools retain readable output",
+        "Real child transport tests the codec"
+      ],
+      "tests": [
+        "Real MCP child under a non-UTF-8 Windows locale with a U+0101 repo path; require string text with the CLI refusal, no reader traceback, and a following ping response.",
+        "Success payload with non-ASCII source paths.",
+        "Preserve tests/unit/test_mcp_server.py:57 invalid arguments remain tool results; tests/unit/test_mcp_server.py:277 gate breach remains a result; tests/unit/test_mcp_server.py:350 nearest configuration root."
+      ],
+      "cost": "Small adapter change and real-process regression. Mocked subprocess results cannot prove decoding. Preserve gate verdict results and argument-refusal behavior.",
+      "adr": "None. Restores ADR 0001's readable tool-result refusal contract; preserves ADR 0002 root discovery.",
+      "before": [
+        "CLI UTF-8 bytes",
+        "Host codec mismatch",
+        "MCP text:null"
+      ],
+      "after": [
+        "CLI UTF-8 bytes",
+        "Matching adapter decoder",
+        "Readable tool result"
+      ]
+    },
+    {
+      "id": "UI2",
+      "title": "Keep Git path records intact through the Action comment adapter",
+      "strength": "Strong",
+      "category": "Action path transport",
+      "files": [
+        {
+          "path": "action.yml",
+          "start": 208,
+          "end": 208
+        },
+        {
+          "path": "tools/action/comment.py",
+          "start": 64,
+          "end": 64
+        },
+        {
+          "path": "tools/action/comment.py",
+          "start": 254,
+          "end": 254
+        },
+        {
+          "path": "tools/action/comment.py",
+          "start": 275,
+          "end": 275
+        }
+      ],
+      "problem": "The Action's changed-path reader strips names and splits Unicode line separators. Its worklist join drops valid changed files.",
+      "solution": "Carry NUL-delimited Git paths through the composite Action and its comment reader without changing their spelling.",
+      "evidence": [
+        "Real Git emits three paths: leading-space name, U+2028 name and plain.py.",
+        "The public comment CLI exits 0, reports four changed files and displays only plain.py.",
+        "This is a local Git/comment replay, not a hosted Action run."
+      ],
+      "evidence_paths": [
+        "experience/findings.json",
+        "experience/probe_interfaces.py",
+        "experience/probe_interfaces.json"
+      ],
+      "deletion_test": "Remove strip, splitlines and backslash rewriting from the Git record transport. Keep presentation escaping separate from the path used to join results.",
+      "benefits": [
+        "Action adapter owns exact Git records",
+        "Counts and worklist joins stay aligned",
+        "Real path bytes reach rendered comments"
+      ],
+      "tests": [
+        "Actual changed-file record bytes through comment CLI for a leading space and U+2028.",
+        "POSIX-only tab, newline and literal backslash paths where the filesystem supports them.",
+        "No-base behavior remains separate from an empty changed set.",
+        "Preserve tests/unit/test_action_unicode_paths.py:17 ordinary non-ASCII paths; Action comment tests for missing base, missing verdict, finding priority and comment marker."
+      ],
+      "cost": "Change the producer and reader together and update saved-payload guidance. Keep display escaping separate from join keys; preserve missing-base behavior.",
+      "adr": "None.",
+      "before": [
+        "Git path records",
+        "Strip and splitlines",
+        "Changed names",
+        "Missing rows"
+      ],
+      "after": [
+        "Exact Git records",
+        "Action reader",
+        "Correct worklist join",
+        "Display escaping"
+      ]
+    },
+    {
+      "id": "UI3",
+      "title": "Separate SARIF URI locations from GitHub annotation filenames",
+      "strength": "Strong",
+      "category": "Output locations",
+      "files": [
+        {
+          "path": "src/crapkit/sarif.py",
+          "start": 22,
+          "end": 22
+        },
+        {
+          "path": "src/crapkit/sarif.py",
+          "start": 27,
+          "end": 27
+        },
+        {
+          "path": "src/crapkit/sarif.py",
+          "start": 98,
+          "end": 98
+        }
+      ],
+      "problem": "A raw filename is used as both a SARIF URI and a GitHub annotation filename. URI parsing changes names containing # or literal percent escapes.",
+      "solution": "Make each output adapter encode the same source location for its own format: a valid URI for SARIF and the correct filename for GitHub annotations.",
+      "evidence": [
+        "Public SARIF builder: src/a#b.py resolves to path src/a with fragment b.py.",
+        "src/a%20b.py resolves to a different filename containing a space.",
+        "OASIS SARIF 2.1.0 section 3.4.3 requires a URI reference. No hosted upload; the '?' case is synthetic on Windows."
+      ],
+      "evidence_paths": [
+        "experience/findings.json",
+        "experience/probe_interfaces.py",
+        "experience/probe_interfaces.json"
+      ],
+      "deletion_test": "Remove the assumption that one location string is both a URI and a workflow filename. Keep the shared finding builders and streamed SARIF writer.",
+      "benefits": [
+        "Each output adapter owns location encoding",
+        "All SARIF rules share correct locations",
+        "Paired formats prevent encoding regressions"
+      ],
+      "tests": [
+        "Round-trip a SARIF URI to the exact original path for '#', literal '%20', spaces and Unicode.",
+        "Build the GitHub annotation from the same finding and assert it still names the original file after workflow-property decoding.",
+        "Check separator handling for each supported platform.",
+        "Preserve tests/unit/test_sarif.py:27 function locations and :53 changed-line findings; tests/unit/test_sarif_writer.py byte equality, stable ordering and LF output; tests/unit/test_github_annotation_properties.py delimiter and percent escaping."
+      ],
+      "cost": "Fix both formats together: URI encoding alone changes GitHub file properties. Preserve workflow delimiter escaping, streamed byte ordering and newline behavior.",
+      "adr": "None.",
+      "before": [
+        "Raw source path",
+        "Shared location string",
+        "URI misidentifies file"
+      ],
+      "after": [
+        "Source location",
+        "Format-specific output adapter",
+        "Correct URI and annotation"
+      ]
+    },
+    {
+      "id": "UI4",
+      "title": "Let plugin doctor report a failed launcher probe",
+      "strength": "Strong",
+      "category": "Installation recovery",
+      "files": [
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "start": 1480,
+          "end": 1480
+        },
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "start": 1501,
+          "end": 1501
+        },
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "start": 1503,
+          "end": 1503
+        },
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "start": 1507,
+          "end": 1507
+        },
+        {
+          "path": "src/crapkit/cli/admin.py",
+          "start": 1549,
+          "end": 1549
+        },
+        {
+          "path": "src/crapkit/doctor.py",
+          "start": 380,
+          "end": 380
+        }
+      ],
+      "problem": "Plugin doctor replaces a failed launcher probe with its own version. It reports a healthy installation while the launcher used by hooks and MCP cannot start.",
+      "solution": "Keep failed launcher execution distinct from an observed version, and let plugin doctor report the executable and its failed probe as an actionable health finding.",
+      "evidence": [
+        "Real disposable Windows PATH shim exits 7 with no version output.",
+        "python -m crapkit doctor --plugin-root <plugin> exits 0 and prints nothing.",
+        "Existing low-level tests explicitly expect the fallback, so the regression belongs at the public doctor seam."
+      ],
+      "evidence_paths": [
+        "experience/findings.json",
+        "experience/probe_interfaces.py",
+        "experience/probe_interfaces.json"
+      ],
+      "deletion_test": "Delete the successful-version fallback for failed or empty probes. Keep discovery and version comparison; deleting them would stop checking what the plugin actually launches.",
+      "benefits": [
+        "Launcher adapter owns probe success",
+        "Hooks and MCP share truthful health",
+        "Public doctor distinguishes failure from version"
+      ],
+      "tests": [
+        "Public doctor with a real failing launcher must exit nonzero and name the launcher.",
+        "Empty successful output, timeout and unreadable executable must not become a matching version.",
+        "Keep a real successful launcher control.",
+        "Preserve tests/unit/test_doctor_plugin_root.py:397 compares PATH version; tests/unit/test_doctor_plugin_root.py:410 missing executable is a failure; tests/unit/test_doctor_plugin_root.py:475 successful version output; Manifest, protocol and installed-root selection tests."
+      ],
+      "cost": "A formerly silent doctor result becomes a failure. Distinguish launcher failure from version mismatch; preserve discovery and successful-version controls.",
+      "adr": "None. MCP tool calls to doctor still return an ordinary tool result under ADR 0001.",
+      "before": [
+        "Failed launcher",
+        "Substitute local version",
+        "Matching manifest",
+        "False success"
+      ],
+      "after": [
+        "Launcher probe",
+        "Observed version or failure",
+        "Comparison or actionable finding"
+      ]
+    },
+    {
+      "id": "CORE-S01",
+      "title": "Preserve exact Git filenames through scope assignment",
+      "strength": "Strong",
+      "category": "Repository path identity",
+      "files": [
+        {
+          "path": "src/crapkit/universe.py",
+          "start": 224,
+          "end": 237
+        },
+        {
+          "path": "src/crapkit/universe.py",
+          "start": 153,
+          "end": 165
+        },
+        {
+          "path": "tests/unit/test_universe.py",
+          "start": 60,
+          "end": 62
+        },
+        {
+          "path": "tests/unit/test_gitio_renames.py",
+          "start": 28,
+          "end": 29
+        },
+        {
+          "path": "tests/unit/test_churn.py",
+          "start": 24,
+          "end": 26
+        }
+      ],
+      "problem": "Scope assignment rewrites literal backslashes already decoded from Git. Inventory and churn then name different files and the worklist loses activity.",
+      "solution": "Keep repository paths exact after the Git record adapter decodes them. Convert user-entered path spellings only at the CLI/config adapter that accepts those spellings, and test the distinction through both callers.",
+      "evidence": [
+        "Pure Windows seam: scan_files rewrites src/a\\b.py to src/a/b.py; Git-log decoding preserves the original name.",
+        "The resulting worklist row is dormant with commits=0 and risk=0 despite one commit on the original path.",
+        "The filename is POSIX-only. No POSIX filesystem or runtime replay was performed."
+      ],
+      "evidence_paths": [
+        "core/root-supplement.json",
+        "core/probe_root_paths.py",
+        "core/root-path-results.json",
+        "core/root-path-stdout.json"
+      ],
+      "deletion_test": "The universe module earns its place by centralizing scope ownership and exclusions. Delete its extra interpretation of already-decoded Git path characters, not the module. Removing the module would scatter ownership again.",
+      "benefits": [
+        "Git decoding establishes repository identity",
+        "Inventory and churn join exact paths",
+        "Cross-module path tests replace obsolete premises"
+      ],
+      "tests": [
+        "Add an end-to-end path test joining exact Git record decoding, scan_files and churn/worklist selection.",
+        "On POSIX, add a real tracked literal-backslash filename test; do not claim the current pure probe supplies that evidence.",
+        "Preserve Windows user-argument and configuration normalization at their own adapters.",
+        "Replace the obsolete test premise that Git itself emits Windows path separators."
+      ],
+      "cost": "Needs a real POSIX path test. Preserve supported Windows user-entered spellings at CLI/config seams; removing every normalization rule would break those inputs.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Exact Git filename",
+        "Scope separator rewrite",
+        "Different inventory identity",
+        "Missed churn join"
+      ],
+      "after": [
+        "Git record decoding",
+        "Exact repository path",
+        "Scope and history joins"
+      ]
+    },
+    {
+      "id": "CORE-04",
+      "title": "Let the duplicate result limit bound retained pair work",
+      "strength": "Worth exploring",
+      "category": "Performance",
+      "files": [
+        {
+          "path": "src/crapkit/dup.py",
+          "start": 118,
+          "end": 125
+        },
+        {
+          "path": "src/crapkit/dup.py",
+          "start": 233,
+          "end": 242
+        }
+      ],
+      "problem": "A top=1 duplicate query retains pair counts and payloads for the full qualifying set before discarding nearly all results.",
+      "solution": "Explore bounded candidate retention and delayed payload creation inside the duplicate module, preserving exact scores and total ordering. Measure consumer corpora before choosing a broader algorithm change.",
+      "evidence": [
+        "Synthetic clone corpus, one tracemalloc-instrumented sample per size: 150 functions / 11,175 pairs / 8.824 MiB / 0.135 s.",
+        "300 functions / 44,850 pairs / 35.353 MiB / 0.567 s; 600 / 179,700 / 140.880 MiB / 2.655 s. Each returns one pair.",
+        "Normal-corpus frequency and production latency were not measured. Timings include tracing overhead."
+      ],
+      "evidence_paths": [
+        "core/findings.json",
+        "core/probe_duplication.py",
+        "core/duplication-results.json"
+      ],
+      "deletion_test": "Removing the result limit would remove a promise callers need. Removing the inverted index would move cost to broad pair comparisons. Keep both concepts, but make the module retain only the ranking state needed for the requested answer where exact matching permits it.",
+      "benefits": [
+        "Duplicate module owns result-limit cost",
+        "Avoid payloads callers never receive",
+        "Compare bounded and exhaustive results"
+      ],
+      "tests": [
+        "Compare bounded results with the current exhaustive result on small random corpora, ties, containment and multiple top values.",
+        "Retain clone-heavy peak-allocation and runtime probes; timings currently include tracemalloc overhead and are not production latency figures.",
+        "Preserve early source-text release and singleton-owner optimization."
+      ],
+      "cost": "Prototype and measure before a broad algorithm change. Dense exact matching may still require quadratic comparisons; lower retained memory is the narrower objective. CORE-03 complete ordering is a prerequisite.",
+      "adr": "No ADR conflict.",
+      "before": [
+        "Admitted functions",
+        "All pair counts and payloads",
+        "Sort all",
+        "Return one"
+      ],
+      "after": [
+        "Exact matching",
+        "Bounded retained ranking",
+        "Selected payloads",
+        "Requested results"
+      ]
+    },
+    {
+      "id": "UI5",
+      "title": "Remove conflicting copies of mutation storage guidance",
+      "strength": "Worth exploring",
+      "category": "Documentation ownership",
+      "files": [
+        {
+          "path": "docs/adoption.md",
+          "start": 187,
+          "end": 187
+        },
+        {
+          "path": "docs/adoption.md",
+          "start": 191,
+          "end": 191
+        },
+        {
+          "path": "docs/handbook.html",
+          "start": 815,
+          "end": 815
+        },
+        {
+          "path": "plugin/skills/crapkit/SKILL.md",
+          "start": 34,
+          "end": 34
+        },
+        {
+          "path": "docs/configuration.md",
+          "start": 48,
+          "end": 48
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "start": 353,
+          "end": 353
+        }
+      ],
+      "problem": "Current adoption, handbook and installed-skill guidance limit retained mutation worktrees to multiple workers; adoption says a single worker mutates the live tree. The current pool and configuration reference cover all workers.",
+      "solution": "Keep the worker isolation, input snapshot and pool lifetime rules in the mutation configuration reference. Shorten the handbook, adoption guide and skill to the action the reader needs plus that link.",
+      "evidence": [
+        "docs/adoption.md:191 claims live-tree single-worker mutation; docs/handbook.html:815 and the skill cleanup row carry the old worker-count distinction.",
+        "docs/configuration.md:48 and run_mutants describe the all-worker pool.",
+        "Source-backed comparison only; no mutation campaign ran for this documentation finding."
+      ],
+      "evidence_paths": [
+        "experience/findings.json",
+        "experience/docs-drift.md"
+      ],
+      "deletion_test": "Delete repeated worker-count implementation details from adoption and plugin workflow prose. Retain the cleanup command and link to one current configuration explanation.",
+      "benefits": [
+        "One reference owns pool lifetime rules",
+        "Workflow pages retain only needed actions",
+        "Link contracts replace duplicated prose"
+      ],
+      "tests": [
+        "Check that current workflow guides point to the canonical pool rule and do not assert the retired live-tree behavior.",
+        "Do not replace behavior tests with tests that merely pin a new sentence.",
+        "Preserve CLI command-table and plugin command contracts; Mutation isolation tests across worker counts; Documentation links and rendered command examples."
+      ],
+      "cost": "Small prose reduction. Preserve clearly dated release history and useful cleanup commands; do not add a documentation framework for one rule.",
+      "adr": "None.",
+      "before": [
+        "One pool rule",
+        "Several copied explanations",
+        "Conflicting guidance"
+      ],
+      "after": [
+        "One configuration reference",
+        "Short workflow actions",
+        "Links to current rule"
+      ]
+    },
+    {
+      "id": "CORE-S02",
+      "title": "Route claim-release paths through the existing CLI path adapter",
+      "strength": "Worth exploring",
+      "category": "CLI path consistency",
+      "files": [
+        {
+          "path": "src/crapkit/cli/queue.py",
+          "start": 371,
+          "end": 383
+        },
+        {
+          "path": "src/crapkit/cli/queue.py",
+          "start": 392,
+          "end": 406
+        },
+        {
+          "path": "src/crapkit/cli/_shared.py",
+          "start": 92,
+          "end": 129
+        },
+        {
+          "path": "docs/adr/0002-configuration-is-found-upward-nearest-wins.md",
+          "start": 5,
+          "end": 9
+        }
+      ],
+      "problem": "Claims release compares the user's raw path with stored repository paths. Unlike sibling commands, it does not rebase the argument after upward root discovery.",
+      "solution": "Resolve the release target through the existing command-root and user-working-directory rule before looking up a claim. Preserve the function selector and release-all behavior.",
+      "evidence": [
+        "Handler replay with a read-only fake store: root/src + app.py fails although the shared adapter resolves src/app.py.",
+        "Exact src/app.py requests release; ./src/app.py and Windows separator spelling fail.",
+        "No real claim was written or released; this is not a subprocess replay."
+      ],
+      "evidence_paths": [
+        "core/root-supplement.json",
+        "core/probe_root_paths.py",
+        "core/root-path-results.json",
+        "core/root-path-stdout.json"
+      ],
+      "deletion_test": "The shared CLI path adapter already earns its place across several commands. Removing it recreates exactly this per-command omission. The solution is to use the existing seam in the missing caller.",
+      "benefits": [
+        "Existing CLI adapter owns path spelling",
+        "Release matches sibling command behavior",
+        "Nested-directory tests preserve discovery rules"
+      ],
+      "tests": [
+        "Add public claims-release tests from the root and a nested directory, including ./ and Windows separator spellings.",
+        "Preserve explicit --repo semantics and refusal for paths outside that root.",
+        "Keep exact twin handles, legacy claim handling, ambiguous identities and --all release checks."
+      ],
+      "cost": "Small correction in an existing caller. Preserve explicit --repo, outside-root refusal, exact handles, legacy ambiguity and --all behavior.",
+      "adr": "The correction implements ADR 0002. The current omission does not rebase relative path arguments after upward root discovery.",
+      "before": [
+        "Release raw path",
+        "Stored-path comparison",
+        "False missing claim"
+      ],
+      "after": [
+        "Release path",
+        "Shared CLI adapter",
+        "Correct claim selection"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "area": "Analysis and cache",
+      "paths": [
+        "src/crapkit/analyze.py",
+        "src/crapkit/cache.py"
+      ],
+      "disposition": "Retain reader-aware cache identity, same-byte hashing and parsing, cold-content sharing and corrupt-row rebuilding. No further cache module change is supported by this review."
+    },
+    {
+      "area": "Inventory and repository text",
+      "paths": [
+        "src/crapkit/snapshot.py",
+        "src/crapkit/repotext.py"
+      ],
+      "disposition": "Retain occurrence-aware inventory ordering and the shared text decoder. STATE-02 covers portable path framing."
+    },
+    {
+      "area": "Coverage readers",
+      "paths": [
+        "src/crapkit/coverage_py.py",
+        "src/crapkit/coverage_istanbul.py",
+        "src/crapkit/covstream.py",
+        "src/crapkit/score.py"
+      ],
+      "disposition": "CORE-02 covers finite counter admission; STATE-02 covers portable score records. Retain one artifact walk, strict JSON grammar, nonfinite-token rejection, same-byte digests and same-span refusal."
+    },
+    {
+      "area": "Language readers and registration",
+      "paths": [
+        "src/crapkit/lizardcognitive.py",
+        "src/crapkit/lizardtypescript.py",
+        "src/crapkit/lizardrust.py",
+        "src/crapkit/lizardshell.py",
+        "src/crapkit/lizardpowershell.py",
+        "src/crapkit/_pygdefer.py"
+      ],
+      "disposition": "Retain reader-specific token ordering, module-scope registration for spawned workers and explicit TypeScript syntax refusals. Pygments deferral has a startup purpose and restores its import state."
+    },
+    {
+      "area": "Git records and diffs",
+      "paths": [
+        "src/crapkit/gitio.py",
+        "src/crapkit/gitpaths.py",
+        "src/crapkit/diffparse.py"
+      ],
+      "disposition": "CORE-01 covers parsed diff formatting. Retain exact NUL path records, framed staged bodies, nested-root adapters and guarded worktree cleanup."
+    },
+    {
+      "area": "Churn and coupling",
+      "paths": [
+        "src/crapkit/churn.py",
+        "src/crapkit/churn_cache.py",
+        "src/crapkit/churn_log.py",
+        "src/crapkit/coupling.py",
+        "src/crapkit/coupling_cache.py"
+      ],
+      "disposition": "Retain operation-owned log publication with size/CRC checks and tracked-index cache invalidation. Large-commit filtering and removal of dead paths keep coupling results relevant."
+    },
+    {
+      "area": "Duplicate matching",
+      "paths": [
+        "src/crapkit/dup.py"
+      ],
+      "disposition": "CORE-03 and CORE-04 cover deterministic ranking and retained pair work. Retain early source release, single-target twins, batch index reuse and nested-span exclusion."
+    },
+    {
+      "area": "src/crapkit/config.py",
+      "paths": [
+        "src/crapkit/config.py"
+      ],
+      "disposition": "Retain shared config admission, duplicate-name refusals and normalized artifact-alias checks. Scope ownership and lane command policy have distinct rules."
+    },
+    {
+      "area": "src/crapkit/config_contract.py",
+      "paths": [
+        "src/crapkit/config_contract.py"
+      ],
+      "disposition": "Retain strict runtime shapes, numeric ranges and rejection of boolean numeric values. Unknown keys intentionally remain doctor findings to support version skew."
+    },
+    {
+      "area": "src/crapkit/keys.py",
+      "paths": [
+        "src/crapkit/keys.py"
+      ],
+      "disposition": "Retain centralized occurrence, twin and claim identity rules. Refusal of unprovable legacy identities protects scopes, marks and claims from silent merging."
+    },
+    {
+      "area": "src/crapkit/merge.py",
+      "paths": [
+        "src/crapkit/merge.py"
+      ],
+      "disposition": "Retain the shared FunctionRecord declaration and compatibility defaults. Its small size does not justify moving the declaration into callers."
+    },
+    {
+      "area": "src/crapkit/ratchet_report.py",
+      "paths": [
+        "src/crapkit/ratchet_report.py"
+      ],
+      "disposition": "STATE-02 covers portable path framing. Retain entry-age preservation, working-tree open-mark selection and committed-history repayment calculations, including the documented commit-based clock."
+    },
+    {
+      "area": "src/crapkit/worklist.py",
+      "paths": [
+        "src/crapkit/worklist.py"
+      ],
+      "disposition": "CORE-S01 affects the path join feeding ranking. Retain debt admission below the floor, evidence-based claim closure and whole-file coupled batches."
+    },
+    {
+      "area": "src/crapkit/universe.py",
+      "paths": [
+        "src/crapkit/universe.py"
+      ],
+      "disposition": "CORE-S01 covers exact Git filenames through scope assignment. Retain one ownership rule for scoring and packet routing, including language fallback and open-extension matching."
+    },
+    {
+      "area": "src/crapkit/cli/queue.py",
+      "paths": [
+        "src/crapkit/cli/queue.py"
+      ],
+      "disposition": "CORE-S02 covers claim-release paths; STATE-03 covers emitted packet commands. Retain whole-file handles, claim-race fallback and shared batch reads."
+    },
+    {
+      "area": "Lane measurement and reuse",
+      "paths": [
+        "src/crapkit/lanes.py",
+        "src/crapkit/cli/scoring.py"
+      ],
+      "disposition": "EX1 covers writing-process lifetime and MEASURE-01 covers JUnit admission. Retain ownership across execution, parsing and stamping, exact reuse inputs and refusal stamps."
+    },
+    {
+      "area": "Processes, locks and self invocation",
+      "paths": [
+        "src/crapkit/procs.py",
+        "src/crapkit/_process_owner.py",
+        "src/crapkit/locks.py",
+        "src/crapkit/invocation.py"
+      ],
+      "disposition": "EX1 covers the remaining lifetime gap. Retain platform process adapters, OS locks and explicit console-versus-module invocation rules."
+    },
+    {
+      "area": "Mutation generation",
+      "paths": [
+        "src/crapkit/mutate.py"
+      ],
+      "disposition": "Retain language-aware tokenization and explicit syntax ambiguity refusals. Helper counts and file length do not establish another module opportunity."
+    },
+    {
+      "area": "Mutation worker state",
+      "paths": [
+        "src/crapkit/mutate_pool.py",
+        "src/crapkit/gitio.py"
+      ],
+      "disposition": "EX1 and EX2 cover late writers and symlink escape. Retain ordinary-file isolation at every worker count, captured dirty inputs, stable pool locking and private fallback trees."
+    },
+    {
+      "area": "Watch",
+      "paths": [
+        "src/crapkit/watch.py",
+        "src/crapkit/cli/admin.py"
+      ],
+      "disposition": "Retain the narrow filesystem-snapshot and polling seam. Selection of the initial corpus remains a stated limit; no measured regression supports replacing polling."
+    },
+    {
+      "area": "Test schedule and CI verdict",
+      "paths": [
+        "tools/testing/run.py",
+        "tools/testing/ci.py",
+        ".github/workflows/ci.yml",
+        "crapkit.toml",
+        "tests/e2e/conftest.py"
+      ],
+      "disposition": "Retain the shared suite schedule, installed-source checks and stored-verdict readback. Complete baseline failures, candidate failures and project coverage-context policy remain distinct."
+    },
+    {
+      "area": "Release",
+      "paths": [
+        "tools/release/release.py",
+        "tools/release/README.md"
+      ],
+      "disposition": "Retain one owner for release versions, artifact identity and retry obligations. The one-active-stage constraint remains documented; no remote release or publication was exercised."
+    },
+    {
+      "area": "Build, container and dependencies",
+      "paths": [
+        "pyproject.toml",
+        "Dockerfile",
+        ".dockerignore"
+      ],
+      "disposition": "Static package and container checks establish no new defect. Docker execution and dependency-resolution reproducibility remain unmeasured in this review."
+    },
+    {
+      "area": "Generated docs",
+      "paths": [
+        "tools/docs/generate.py"
+      ],
+      "disposition": "Retain generation of operational facts from their owning modules. Deleting the generator would restore duplicated definitions."
+    },
+    {
+      "area": "Demo generation",
+      "paths": [
+        "tools/demo/generate.py",
+        "tools/demo/demo_repo.py",
+        "tools/demo/demo_run.py",
+        "tools/demo/demo_render.py",
+        "tools/demo/fixture/*",
+        "tools/demo/history/*",
+        "tools/demo/steps/heredoc_body.txt",
+        "tools/demo/README.md"
+      ],
+      "disposition": "Retain real transcript capture and separate GIF/SVG rendering adapters. Demo generation and bundled-font visual fidelity were not revalidated."
+    },
+    {
+      "area": "Historical coverage reproduction",
+      "paths": [
+        "tools/notes/pytest_cov7_repro.py",
+        "tools/notes/pytest_cov7_repro.json"
+      ],
+      "disposition": "Retain the version-pinned coverage reproduction as historical evidence. Its installations and measurements were not repeated or presented as current results."
+    },
+    {
+      "area": "CLI dispatch and root admission",
+      "paths": [
+        "src/crapkit/cli/__init__.py",
+        "src/crapkit/cli/parser.py",
+        "src/crapkit/cli/_shared.py",
+        "src/crapkit/rootfind.py"
+      ],
+      "disposition": "Retain lazy CLI dispatch and nearest-config discovery. UI1 covers UTF-8 transport, CORE-S02 covers a missing path-adapter caller and STATE-03 covers emitted command quoting."
+    },
+    {
+      "area": "Administration and scaffolding",
+      "paths": [
+        "src/crapkit/cli/admin.py",
+        "src/crapkit/scaffold.py",
+        "src/crapkit/doctor.py"
+      ],
+      "disposition": "UI4 covers the false launcher-health result. Retain shared scope ownership, framed runner reports and pure doctor comparisons."
+    },
+    {
+      "area": "Analysis commands",
+      "paths": [
+        "src/crapkit/cli/analyses.py"
+      ],
+      "disposition": "Retain lazy analysis imports, command-family routing and explicit target refusals. The underlying analysis and execution findings belong in their existing modules."
+    },
+    {
+      "area": "Scoring and verification command interfaces",
+      "paths": [
+        "src/crapkit/cli/scoring.py",
+        "src/crapkit/cli/verifying.py",
+        "src/crapkit/cli/ratchet_cmds.py"
+      ],
+      "disposition": "STATE-01 covers final verdict ownership and STATE-02 covers portable records. Retain command-family dispatch and stable output shaping around those rules."
+    },
+    {
+      "area": "Queue and report command interfaces",
+      "paths": [
+        "src/crapkit/cli/queue.py",
+        "src/crapkit/cli/reports.py"
+      ],
+      "disposition": "STATE-03 covers packet commands and CORE-S02 covers claim-release paths. Retain exact identity selection, bounded source/context reads and shared budgeting fields."
+    },
+    {
+      "area": "MCP interface",
+      "paths": [
+        "src/crapkit/mcp_server.py"
+      ],
+      "disposition": "UI1 covers child-output decoding. Retain CLI reuse and ADR 0001 tool-result refusals."
+    },
+    {
+      "area": "Edit and commit hooks",
+      "paths": [
+        "src/crapkit/cli/claude_hook.py",
+        "src/crapkit/hook.py",
+        ".pre-commit-hooks.yaml"
+      ],
+      "disposition": "CORE-01 covers the staged gate's diff input. Retain quiet advisory behavior and the cheap no-config path; linked-worktree sequencing behavior remains an unproved lead."
+    },
+    {
+      "area": "Report and finding serializers",
+      "paths": [
+        "src/crapkit/report.py",
+        "src/crapkit/sarif.py",
+        "src/crapkit/sarifio.py"
+      ],
+      "disposition": "UI3 covers location encoding across SARIF and annotations. Retain HTML escaping, the report row cap, workflow delimiter escaping and streamed SARIF output."
+    },
+    {
+      "area": "Uncovered lines and digest presentation",
+      "paths": [
+        "src/crapkit/uncovered.py",
+        "src/crapkit/digest.py"
+      ],
+      "disposition": "Retain per-run missing-line ownership and narrow digest values. No additional interface change is supported by this review."
+    },
+    {
+      "area": "Composite GitHub Action",
+      "paths": [
+        "action.yml",
+        "tools/action/comment.py"
+      ],
+      "disposition": "UI2 covers changed-path transport. Retain explicit missing-verdict and missing-base reporting; no hosted Action run was exercised."
+    },
+    {
+      "area": "Plugin packaging and agent guidance",
+      "paths": [
+        "plugin/.claude-plugin/plugin.json",
+        "plugin/.mcp.json",
+        "plugin/hooks/hooks.json",
+        "plugin/skills/crapkit/SKILL.md",
+        "plugin/skills/crapkit/cuts.md",
+        "plugin/skills/crapkit-onboard/SKILL.md",
+        "plugin/skills/crapkit-recover/SKILL.md"
+      ],
+      "disposition": "UI4 and UI5 cover launcher health and conflicting guidance. Retain static manifests and the hook matrix required by the plugin host."
+    },
+    {
+      "area": "Current documentation and installation examples",
+      "paths": [
+        "README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "AGENTS.md",
+        "CONTEXT.md",
+        "docs/agent-json.md",
+        "docs/adoption.md",
+        "docs/configuration.md",
+        "docs/lanes.md",
+        "docs/ratchet.md",
+        "docs/comparison.md",
+        "docs/index.html",
+        "docs/handbook.html",
+        "docs/adr/0001-mcp-invalid-arguments-are-tool-results.md",
+        "docs/adr/0002-configuration-is-found-upward-nearest-wins.md"
+      ],
+      "disposition": "UI5 covers conflicting current mutation guidance. Retain documented trust, discovery and recovery rules; historical narratives remain separate from current behavior evidence."
+    },
+    {
+      "area": "Repository contribution surfaces",
+      "paths": [
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        ".github/ISSUE_TEMPLATE/field_report.yml",
+        ".github/ISSUE_TEMPLATE/language_request.yml"
+      ],
+      "disposition": "Retain diagnostic prompts and links in contribution templates. PR timing examples are illustrative, not current benchmark guarantees."
+    },
+    {
+      "area": "Historical and hosted limits",
+      "paths": [
+        ".github/workflows/ci.yml",
+        "tools/release/*",
+        "tools/ci/*",
+        "docs/architecture/*",
+        "docs/specs/2026-09-03-release-0.5.0.md",
+        "docs/notes/pytest-cov-7-subprocess-coverage.html",
+        "docs/demo.gif",
+        "docs/demo.svg"
+      ],
+      "disposition": "Workflow, release and testing tools were reviewed in their execution roles; historical reports, specifications and demo assets were not re-audited as current behavior evidence. Hosted uploads and external publication were not exercised."
+    },
+    {
+      "area": "Verdict and override",
+      "paths": [
+        "src/crapkit/verify.py",
+        "src/crapkit/override.py",
+        "src/crapkit/cli/verifying.py"
+      ],
+      "disposition": "STATE-01 covers final refusal ownership. Preserve dirty attribution, named baselines, flake retries and alert/audit-before-grant ordering."
+    },
+    {
+      "area": "Stored runs and claims",
+      "paths": [
+        "src/crapkit/store.py"
+      ],
+      "disposition": "Retain transaction ownership for migrations, claims, overrides and prune protection, plus read-only current-schema opens. STATE-01 covers the verdict fact those trust decisions consume."
+    },
+    {
+      "area": "Ratchet publication and commands",
+      "paths": [
+        "src/crapkit/ratchet.py",
+        "src/crapkit/ratchetfile.py",
+        "src/crapkit/cli/ratchet_cmds.py"
+      ],
+      "disposition": "STATE-02 covers portable record identity. Retain captured-byte compare-and-swap, atomic replacement and refusal on incomplete marks."
+    },
+    {
+      "area": "Packet workflow",
+      "paths": [
+        "src/crapkit/packet.py",
+        "src/crapkit/cli/queue.py"
+      ],
+      "disposition": "STATE-03 covers emitted commands. Retain packet context, source attribution, queue admission and transactional claim fallback."
+    },
+    {
+      "area": "Entry and error modules",
+      "paths": [
+        "src/crapkit/_pygdefer.py",
+        "src/crapkit/errors.py",
+        "src/crapkit/__main__.py",
+        "src/crapkit/__init__.py"
+      ],
+      "disposition": "Retain narrow entry/error definitions and deferred Pygments imports. No further module change is supported by this review."
+    },
+    {
+      "area": "JUnit measurement",
+      "paths": [
+        "src/crapkit/junitparse.py"
+      ],
+      "disposition": "MEASURE-01 covers explicit declared-count mismatch between normal and retry admission. Retain absent-count compatibility, one-DOM parsing, nested suites and explicit reuse policy; the probe did not run a full coverage CLI or write a baseline."
+    }
+  ],
+  "dismissed": [
+    {
+      "idea": "Replace the cache partition module solely because it is small.",
+      "reason": "Fingerprint invalidation and partial-run merging have one owner. Removing the module would move those rules into callers without an established benefit."
+    },
+    {
+      "idea": "Cold duplicate inputs are parsed independently.",
+      "reason": "Cold identical content already shares one parse while retaining reader/type identity and separate path records. Keep that behavior."
+    },
+    {
+      "idea": "Hashing and parser reads publish records under mismatched source bytes.",
+      "reason": "Analysis workers already hash and parse verified captured bytes. Existing edit/delete race checks protect that contract."
+    },
+    {
+      "idea": "The streaming reader repeatedly decodes an incomplete large JSON member.",
+      "reason": "The framing state already waits for a complete value before decoding it. Keep the large-member regression checks."
+    },
+    {
+      "idea": "Same-line measured functions silently share coverage.",
+      "reason": "The same-span guard already refuses this ambiguity. Retain its contracts."
+    },
+    {
+      "idea": "Remove Pygments deferral or reader registration adapters.",
+      "reason": "Deferral avoids startup cost, and reader adapters supply behavior absent or incorrect upstream. Deleting them would restore cost or wrong measurements."
+    },
+    {
+      "idea": "Treat known PowerShell casing/parameter limits, UTF-16 source handling, Rust macro arms and shell substitutions as newly discovered defects.",
+      "reason": "These are documented reader limits. This review supplies no new consumer case or measured parser design that changes their disposition."
+    },
+    {
+      "idea": "Persist builtin-hash duplicate shingles for faster warm queries.",
+      "reason": "Python hashes make the index process-local. Persistence would require a stable representation and evidence that it helps."
+    },
+    {
+      "idea": "Reopen compressed churn-log concurrent publication.",
+      "reason": "Operation-owned temporary files and size/CRC binding address the known publication race. Retain concurrent-writer regression checks."
+    },
+    {
+      "idea": "Claim dense duplicate memory cost occurs in ordinary consumer repos.",
+      "reason": "CORE-04 measures a synthetic clone-heavy corpus. Consumer frequency remains unknown and must inform any broader redesign."
+    },
+    {
+      "idea": "Split lanes or release because each has many helpers",
+      "reason": "Removing these modules would distribute policy and failure handling. Function count and file length alone do not establish a missing rule owner."
+    },
+    {
+      "idea": "Always force pytest per-test contexts",
+      "reason": "Coverage contexts belong to project policy. Existing contracts cover both configured contexts and their absence, so no default instrumentation change is justified."
+    },
+    {
+      "idea": "Treat every nonzero lane exit as an invalid measurement",
+      "reason": "Completed brownfield test failures can still provide valid coverage and JUnit evidence. Measurement admission and the final verdict are separate decisions."
+    },
+    {
+      "idea": "Make mutation and file-publication locks identical solely because code is similar",
+      "reason": "Mutation deliberately falls back to private worktrees while shared artifact operations refuse peers. EX1 concerns process lifetime, not cosmetic lock deduplication."
+    },
+    {
+      "idea": "Treat release concurrency as a new proved failure",
+      "reason": "The release guide requires one active stage per checkout. No concurrent-stage failure or usage evidence supports revisiting that constraint."
+    },
+    {
+      "idea": "Replace watch polling with filesystem events",
+      "reason": "The scandir snapshot has a small portable interface. No measured polling regression supports adding an event dependency."
+    },
+    {
+      "idea": "Reject every partially overlapping artifact",
+      "reason": "The current scope check diagnoses zero overlap. No concrete partial-overlap case establishes a separate defect in this review."
+    },
+    {
+      "idea": "Claim container delivery or dependency resolution is broken",
+      "reason": "Static checks establish no defect, and no Docker image build was performed. Possible upstream dependency drift remains a risk rather than a reproduced failure."
+    },
+    {
+      "idea": "Split cli/admin.py because it is large",
+      "reason": "Administration already delegates root discovery, scaffolding, doctor comparisons and runner parsing. UI4 removes a false-success rule at an existing seam; a size-based split would only move lines."
+    },
+    {
+      "idea": "Replace MCP CLI subprocesses with a kept process or SDK",
+      "reason": "CLI reuse avoids duplicated command behavior and retained source/state. UI1 needs a decoder correction; no measured latency case supports replacing the process seam."
+    },
+    {
+      "idea": "Add a generalized output framework",
+      "reason": "UI2 and UI3 concern specific Git record and URI rules. A general framework would add an interface while each format still needs its own encoding."
+    },
+    {
+      "idea": "Remove the row-based doctor scan used by tests",
+      "reason": "The row-based scan supplies an independent oracle for the counted production path. Moving it offers no established benefit beyond fewer production lines."
+    },
+    {
+      "idea": "Rewrite the static plugin hook matrix",
+      "reason": "The plugin host requires individual manifest entries. Their repetition does not create a removable runtime module."
+    },
+    {
+      "idea": "Flag linked-worktree sequencing detection as proved",
+      "reason": "The advisory reads .git markers directly, but no public linked-worktree merge replay established a failure. Keep this as an unproved lead."
+    },
+    {
+      "idea": "Treat every historical single-worker statement as current documentation",
+      "reason": "Dated upgrade notes can describe old behavior accurately. UI5 targets current adoption, handbook and skill instructions while preserving release history."
+    },
+    {
+      "idea": "Split store.py or cli/verifying.py by function count",
+      "reason": "STATE-01 identifies a specific verdict rule to concentrate. A generic file split would leave the same coordination spread across callers."
+    },
+    {
+      "idea": "Replace SQLite or add a repository abstraction",
+      "reason": "Current state operations use transactions and named queries. No measured storage limit or second storage backend justifies another interface."
+    },
+    {
+      "idea": "Replace ratchet CAS with a long command lock",
+      "reason": "Captured input and a short publication lock detect stale writes while measurement continues concurrently. Retain that separation."
+    }
+  ]
+}
