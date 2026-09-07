@@ -8,6 +8,7 @@ a probe that cannot run is doctor's finding (a dead interpreter), not this one's
 """
 import os
 import shutil
+import subprocess
 import sys
 import time
 import types
@@ -697,7 +698,7 @@ def _gone(token: str) -> bool:
     return not _alive(token)
 
 
-def _long_sleeper(tmp_path) -> tuple:
+def _long_sleeper(tmp_path, startup_delay=0) -> tuple:
     """A command that reports it started and then outlives any timeout. Run
     through the shell, so the interpreter is the shell's child: the orphan.
 
@@ -707,6 +708,7 @@ def _long_sleeper(tmp_path) -> tuple:
     """
     script = tmp_path / f"orphan_{uuid.uuid4().hex}.py"
     script.write_text("import pathlib, time\n"
+                      f"time.sleep({startup_delay})\n"
                       "pathlib.Path(__file__).with_suffix('.started').touch()\n"
                       f"time.sleep({_ORPHAN_SLEEP})\n", encoding="utf-8")
     return f'"{sys.executable}" "{script}"', script.name, script.with_suffix(".started")
@@ -732,15 +734,41 @@ def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path):
     assert _gone(token), "the mutation command outlived the timeout that killed it"
 
 
+def _probe_timeout_after_start(monkeypatch, started):
+    """Establish the cleanup fixture before starting its unchanged deadline."""
+    original = procs._wait_command
+    timed_out = []
+
+    def wait(process, timeout):
+        deadline = time.monotonic() + _ORPHAN_SLEEP
+        while not started.is_file() and time.monotonic() < deadline:
+            assert process.poll() is None, "the launcher exited before fixture startup"
+            time.sleep(0.01)
+        assert started.is_file(), "the interpreter never became ready for cleanup"
+        assert process.poll() is None
+        assert timeout == _TIMEOUT
+        try:
+            return original(process, timeout)
+        except subprocess.TimeoutExpired as exc:
+            timed_out.append(exc.timeout)
+            raise
+
+    monkeypatch.setattr(procs, "_wait_command", wait)
+    return timed_out
+
+
 @pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
-def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkeypatch):
+@pytest.mark.parametrize("startup_delay", [0, _TIMEOUT + 1], ids=["ready", "delayed"])
+def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkeypatch, startup_delay):
     """Same leak on init's side: one interpreter per timed-out probe, left
     running under an init that already printed its summary and returned."""
-    command, token, started = _long_sleeper(tmp_path)
+    command, token, started = _long_sleeper(tmp_path, startup_delay)
     _sleeping_interpreter(tmp_path, monkeypatch, command)
     monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
+    timed_out = _probe_timeout_after_start(monkeypatch, started)
 
     assert _pytest_cov_probe("python -m pytest --cov") is True
+    assert timed_out == [_TIMEOUT], "cleanup must follow the real probe timeout"
     assert started.is_file(), "the interpreter never started: this proved nothing"
     assert _gone(token), "the probe left its interpreter running"
 
