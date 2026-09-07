@@ -260,13 +260,25 @@ def _scalar(value, rule: dict, label: str) -> None:
         raise ConfigError(f"{label} must be {kind}, got {value!r}")
     if "enum" in rule and value not in rule["enum"]:
         raise ConfigError(f"{label}: unsupported value {value!r}; expected {rule['enum']}")
+    _finite_number(value, kind, label)
     _minimum(value, rule, label)
+
+
+def _finite_number(value, kind: str | None, label: str) -> None:
+    if kind != "number":
+        return
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise ConfigError(f"{label} must fit a finite number, got {value!r}")
 
 
 def _minimum(value, rule: dict, label: str) -> None:
     if "minimum" not in rule:
         return
-    if value < rule["minimum"] or (isinstance(value, float) and not math.isfinite(value)):
+    if value < rule["minimum"]:
         raise ConfigError(f"{label} must be >= {rule['minimum']}, got {value!r}")
 
 
