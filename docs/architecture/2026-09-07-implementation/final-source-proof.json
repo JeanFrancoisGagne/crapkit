@@ -1,0 +1,274 @@
+{
+  "schema": 1,
+  "status": "complete; Windows source verification passed",
+  "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "production_bytes_unchanged_since": "0082379e350aa0eed44eeec50514023a573f61df",
+  "result": {
+    "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+    "seconds": 1840.7831145,
+    "exit": 0,
+    "started_utc": "2026-09-07T19:09:11.4097507Z",
+    "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e"
+  },
+  "verdict": {
+    "baseline_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+    "baseline_run": 77,
+    "changed_files": 95,
+    "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+    "committed_findings": 0,
+    "diff_uncovered": [
+      {
+        "line": 56,
+        "path": "src/crapkit/_process_owner.py"
+      },
+      {
+        "line": 414,
+        "path": "src/crapkit/gitio.py"
+      },
+      {
+        "line": 522,
+        "path": "src/crapkit/gitio.py"
+      },
+      {
+        "line": 163,
+        "path": "src/crapkit/mutate_pool.py"
+      },
+      {
+        "line": 327,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 328,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 329,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 78,
+        "path": "src/crapkit/score.py"
+      },
+      {
+        "line": 79,
+        "path": "src/crapkit/score.py"
+      },
+      {
+        "line": 84,
+        "path": "src/crapkit/score.py"
+      }
+    ],
+    "diff_uncovered_count": 10,
+    "diff_uncovered_max": null,
+    "dirty_failures": [],
+    "dirty_findings": 0,
+    "gate_violations": [],
+    "new_failures": [],
+    "ok": true,
+    "overridden": [],
+    "ratchet_changes": null,
+    "ratchet_regressions": [],
+    "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+    "run_id": 81,
+    "schema": 1,
+    "tool_versions": {
+      "analysis_version": "10",
+      "crapkit": "0.6.0",
+      "lizard": "1.24.0"
+    },
+    "unmarked_over_target": 0
+  },
+  "ledger": [
+    {
+      "id": 77,
+      "commit_sha": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+      "kind": "verify",
+      "verdict_ok": 1,
+      "findings": 0
+    },
+    {
+      "id": 81,
+      "commit_sha": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "kind": "verify",
+      "verdict_ok": 1,
+      "findings": 0
+    }
+  ],
+  "suites": {
+    "unit": {
+      "tests": 3915,
+      "passed": 3912,
+      "skipped": 3,
+      "failures": [],
+      "junit_suite_seconds": 820.016
+    },
+    "e2e": {
+      "tests": 801,
+      "passed": 795,
+      "skipped": 6,
+      "failures": [],
+      "junit_suite_seconds": 995.115
+    }
+  },
+  "pytest_summary_seconds": {
+    "unit": 820.06,
+    "e2e": 995.69
+  },
+  "invocation": {
+    "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+    "pythonpath": "C:\\Users\\jfgag\\crapkit\\src",
+    "command": "python -m crapkit verify --no-tighten --base c2d3515581d410d8c14849063dac27af843a3729 --json",
+    "replay": "run-source-final.ps1",
+    "trusted_baseline_run": 77
+  },
+  "source_identity": {
+    "wheel_proof": "final-wheel-proof.json",
+    "python_source_files": 71,
+    "candidate_git_blobs_match_installed_wheel": true,
+    "local_package_source_clean": true,
+    "local_source_diff_from_measured_commit_empty": true,
+    "production_diff_from_0082379_empty": true
+  },
+  "coverage": {
+    "sha256": "c8d27c2c75a25fc092ac4d3f5d04ccddd5d5e92886a3484ffe567ce15a7c4ea3",
+    "populations": {
+      "raw_paths": 140,
+      "checkout_paths": 71,
+      "installed_runtime_paths": 69,
+      "installed_runtime_paths_with_executed_lines": 26,
+      "installed_runtime_executed_line_entries": 1261,
+      "scored_checkout_rows": 1709
+    },
+    "population_proof": "final-source-join-proof.json",
+    "source_executed_lines": 10245,
+    "source_missing_lines": 155,
+    "procs_317_executed": true,
+    "windows_job_lines_54_55_executed": true
+  },
+  "windows_counterparts_of_linux_unmarked": [
+    {
+      "path": "src/crapkit/procs.py",
+      "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+      "start": 34,
+      "end": 54,
+      "ccn": 6,
+      "cov": 1.0,
+      "crap": 6.0
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+      "start": 62,
+      "end": 69,
+      "ccn": 4,
+      "cov": 1.0,
+      "crap": 4.0
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+      "start": 80,
+      "end": 84,
+      "ccn": 4,
+      "cov": 1.0,
+      "crap": 4.0
+    }
+  ],
+  "cross_host": {
+    "linux_proof": "final-wheel-proof.json",
+    "shared_uncovered": [
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 414
+      },
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 522
+      },
+      {
+        "path": "src/crapkit/mutate_pool.py",
+        "line": 163
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 327
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 328
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 329
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 78
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 79
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 84
+      }
+    ],
+    "windows_only_missing": [
+      {
+        "path": "src/crapkit/_process_owner.py",
+        "line": 56
+      }
+    ],
+    "linux_only_missing": [
+      {
+        "path": "src/crapkit/_process_owner.py",
+        "line": 54
+      },
+      {
+        "path": "src/crapkit/_process_owner.py",
+        "line": 55
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 317
+      }
+    ]
+  },
+  "inputs": {
+    "result.json": {
+      "sha256": "8d7021eb81424d1d98eaa7e47126a30f02ffece772f3f44ab0a1d973bb827c45",
+      "bytes": 320
+    },
+    "verdict.json": {
+      "sha256": "bb9f0b17175e7ab055197ad7ab44ce52c3dec7bab45c197e918802b10e42b743",
+      "bytes": 1135
+    },
+    "unit.xml": {
+      "sha256": "b57060d9c689a53aa3da26eac757ef93ffcd4081d410385d89a5bea42842a967",
+      "bytes": 543652
+    },
+    "e2e.xml": {
+      "sha256": "e9940477a1657c38f0ea9586dc97de6784d45e42537aebfb06af3849a32298fa",
+      "bytes": 110817
+    },
+    "junit.xml": {
+      "sha256": "e05db6a5f6778bf7ebeed1f8552aaf0abf11aec79d08457a147011250181a896",
+      "bytes": 654404
+    },
+    "crap.sqlite": {
+      "sha256": "359705523d4e7d5598138d0aa8e34d5dd3857f6befc95694908cb65bb7e53e04",
+      "bytes": 5959680
+    },
+    "py.json": {
+      "sha256": "c8d27c2c75a25fc092ac4d3f5d04ccddd5d5e92886a3484ffe567ce15a7c4ea3",
+      "bytes": 12663801
+    }
+  },
+  "limits": [
+    "Windows source coverage includes separate installed-runtime paths. The real reader/scorer probe proves they cannot contribute to checkout scores.",
+    "Nine guard/API/cleanup lines remain unmeasured on both hosts; no wrong behavior was observed.",
+    "No raw coverage JSON or SQLite copy is added to the curated archive; compact proofs retain hashes and relevant rows.",
+    "macOS and hosted CI/Action dispatch were not executed."
+  ]
+}

@@ -1,0 +1,3110 @@
+{
+  "schema": 1,
+  "audited_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+  "implementation_base": "c2d3515581d410d8c14849063dac27af843a3729",
+  "implementation_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "source_root": "C:/Users/jfgag/crapkit",
+  "evidence_root": "C:/Users/jfgag/Documents/Codex/2026-09-06/c-users-jfgag-appdata-local-temp/work/implementation-round2",
+  "audited_candidate_count": 17,
+  "extra_row_count": 1,
+  "integration_verification": {
+    "windows_full_source_verify": {
+      "status": "passed",
+      "note": "Complete run81 passed at the measured4ef commit; saved ledger matches and trusted baseline77 remains passing.",
+      "first_attempt": {
+        "result": {
+          "seconds": 1648.3005658,
+          "exit": 8,
+          "commit": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+          "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+          "started_utc": "2026-09-07T17:21:38.5216109Z"
+        },
+        "verdict": {
+          "baseline_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+          "baseline_run": 77,
+          "changed_files": 81,
+          "commit": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+          "committed_findings": 5,
+          "diff_uncovered": [
+            {
+              "line": 56,
+              "path": "src/crapkit/_process_owner.py"
+            },
+            {
+              "line": 414,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 522,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 163,
+              "path": "src/crapkit/mutate_pool.py"
+            },
+            {
+              "line": 291,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 292,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 293,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 78,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 79,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 84,
+              "path": "src/crapkit/score.py"
+            }
+          ],
+          "diff_uncovered_count": 10,
+          "diff_uncovered_max": null,
+          "dirty_failures": [],
+          "dirty_findings": 0,
+          "gate_violations": [],
+          "new_failures": [
+            "tests.e2e.test_hook_prefetch_e2e::test_a_failing_git_read_still_reaches_the_caller_as_a_git_error",
+            "tests.unit.test_init_probe::test_a_probe_the_shell_itself_cannot_start_says_yes",
+            "tests.unit.test_init_probe::test_the_probe_says_no_where_the_import_fails",
+            "tests.unit.test_init_probe::test_the_probed_segment_is_the_one_that_runs_pytest",
+            "tests.unit.test_suite_collection_failure::test_collection_error_keeps_other_suite_and_refuses_final_coverage"
+          ],
+          "ok": false,
+          "overridden": [],
+          "ratchet_changes": null,
+          "ratchet_regressions": [],
+          "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+          "run_id": 78,
+          "schema": 1,
+          "tool_versions": {
+            "analysis_version": "10",
+            "crapkit": "0.6.0",
+            "lizard": "1.24.0"
+          },
+          "unmarked_over_target": 0
+        },
+        "ledger": [
+          {
+            "id": 78,
+            "commit_sha": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+            "tool_versions": "{\"analysis_version\": \"10\", \"crapkit\": \"0.6.0\", \"lizard\": \"1.24.0\"}",
+            "kind": "verify",
+            "verdict_ok": 0,
+            "created_at": "2026-09-07T17:49:06Z",
+            "findings": 5
+          },
+          {
+            "id": 77,
+            "commit_sha": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+            "tool_versions": "{\"analysis_version\": \"10\", \"crapkit\": \"0.6.0\", \"lizard\": \"1.24.0\"}",
+            "kind": "verify",
+            "verdict_ok": 1,
+            "created_at": "2026-09-07T14:59:23Z",
+            "findings": 0
+          }
+        ],
+        "suites": {
+          "unit": {
+            "tests": 3892,
+            "failed": 4,
+            "errors": 0,
+            "skipped": 3,
+            "passed": 3885
+          },
+          "e2e": {
+            "tests": 800,
+            "failed": 1,
+            "errors": 0,
+            "skipped": 5,
+            "passed": 794
+          }
+        },
+        "evidence": [
+          "full-source-result.json",
+          "full-source-verdict.json",
+          "followup-check-summary.json"
+        ]
+      },
+      "second_attempt": {
+        "status": "deliberately interrupted before E2E; no verdict",
+        "result": {
+          "seconds": 644.7637209,
+          "commit": "0082379e350aa0eed44eeec50514023a573f61df",
+          "exit": -1,
+          "started_utc": "2026-09-07T17:56:04.0076267Z",
+          "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe"
+        },
+        "reason": "Avoid the known fake-package coverage-export failure; root confirmed owner cleanup drained.",
+        "evidence": [
+          "source-attempt2/result.json",
+          "source-attempt2/lane-py.log"
+        ]
+      },
+      "third_attempt": {
+        "status": "completed; refused one startup fixture",
+        "result": {
+          "started_utc": "2026-09-07T18:09:48.2714631Z",
+          "seconds": 1701.0134933,
+          "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+          "exit": 8,
+          "commit": "0009a6776f7e260046589954d98e035918f89439"
+        },
+        "verdict": {
+          "baseline_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+          "baseline_run": 77,
+          "changed_files": 93,
+          "commit": "0009a6776f7e260046589954d98e035918f89439",
+          "committed_findings": 1,
+          "diff_uncovered": [
+            {
+              "line": 56,
+              "path": "src/crapkit/_process_owner.py"
+            },
+            {
+              "line": 414,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 522,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 163,
+              "path": "src/crapkit/mutate_pool.py"
+            },
+            {
+              "line": 327,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 328,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 329,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 78,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 79,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 84,
+              "path": "src/crapkit/score.py"
+            }
+          ],
+          "diff_uncovered_count": 10,
+          "diff_uncovered_max": null,
+          "dirty_failures": [],
+          "dirty_findings": 0,
+          "gate_violations": [],
+          "new_failures": [
+            "tests.unit.test_init_probe::test_the_probe_kills_the_interpreter_it_stopped_waiting_for"
+          ],
+          "ok": false,
+          "overridden": [],
+          "ratchet_changes": null,
+          "ratchet_regressions": [],
+          "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+          "run_id": 79,
+          "schema": 1,
+          "tool_versions": {
+            "analysis_version": "10",
+            "crapkit": "0.6.0",
+            "lizard": "1.24.0"
+          },
+          "unmarked_over_target": 0
+        },
+        "ledger": [
+          {
+            "id": 77,
+            "commit_sha": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+            "kind": "verify",
+            "verdict_ok": 1,
+            "findings": 0
+          },
+          {
+            "id": 79,
+            "commit_sha": "0009a6776f7e260046589954d98e035918f89439",
+            "kind": "verify",
+            "verdict_ok": 0,
+            "findings": 1
+          }
+        ],
+        "suites": {
+          "unit": {
+            "tests": 3910,
+            "passed": 3906,
+            "skipped": 3,
+            "failures": [
+              "tests.unit.test_init_probe::test_the_probe_kills_the_interpreter_it_stopped_waiting_for"
+            ],
+            "seconds": 819.267
+          },
+          "e2e": {
+            "tests": 801,
+            "passed": 795,
+            "skipped": 6,
+            "failures": [],
+            "seconds": 856.48
+          }
+        },
+        "evidence": "source-attempt3-proof.json"
+      },
+      "fourth_attempt": {
+        "status": "completed; refused two no-progress fixture cases",
+        "result": {
+          "seconds": 1469.8584049,
+          "exit": 8,
+          "started_utc": "2026-09-07T18:41:31.9569434Z",
+          "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+          "commit": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7"
+        },
+        "verdict": {
+          "baseline_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+          "baseline_run": 77,
+          "changed_files": 94,
+          "commit": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+          "committed_findings": 2,
+          "diff_uncovered": [
+            {
+              "line": 56,
+              "path": "src/crapkit/_process_owner.py"
+            },
+            {
+              "line": 414,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 522,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 163,
+              "path": "src/crapkit/mutate_pool.py"
+            },
+            {
+              "line": 327,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 328,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 329,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 78,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 79,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 84,
+              "path": "src/crapkit/score.py"
+            }
+          ],
+          "diff_uncovered_count": 10,
+          "diff_uncovered_max": null,
+          "dirty_failures": [],
+          "dirty_findings": 0,
+          "gate_violations": [],
+          "new_failures": [
+            "tests.unit.test_procs::test_a_command_that_keeps_writing_outlives_the_progress_deadline",
+            "tests.unit.test_procs::test_a_lane_that_stops_writing_dies_at_the_progress_deadline"
+          ],
+          "ok": false,
+          "overridden": [],
+          "ratchet_changes": null,
+          "ratchet_regressions": [],
+          "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+          "run_id": 80,
+          "schema": 1,
+          "tool_versions": {
+            "analysis_version": "10",
+            "crapkit": "0.6.0",
+            "lizard": "1.24.0"
+          },
+          "unmarked_over_target": 0
+        },
+        "ledger": [
+          {
+            "id": 77,
+            "commit_sha": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+            "kind": "verify",
+            "verdict_ok": 1,
+            "findings": 0
+          },
+          {
+            "id": 80,
+            "commit_sha": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+            "kind": "verify",
+            "verdict_ok": 0,
+            "findings": 2
+          }
+        ],
+        "suites": {
+          "unit": {
+            "tests": 3911,
+            "passed": 3906,
+            "skipped": 3,
+            "failures": [
+              "tests.unit.test_procs::test_a_lane_that_stops_writing_dies_at_the_progress_deadline",
+              "tests.unit.test_procs::test_a_command_that_keeps_writing_outlives_the_progress_deadline"
+            ],
+            "junit_suite_seconds": 587.898
+          },
+          "e2e": {
+            "tests": 801,
+            "passed": 795,
+            "skipped": 6,
+            "failures": [],
+            "junit_suite_seconds": 854.202
+          }
+        },
+        "evidence": "source-attempt4-proof.json"
+      },
+      "final_attempt": {
+        "schema": 1,
+        "status": "complete; Windows source verification passed",
+        "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+        "production_bytes_unchanged_since": "0082379e350aa0eed44eeec50514023a573f61df",
+        "result": {
+          "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+          "seconds": 1840.7831145,
+          "exit": 0,
+          "started_utc": "2026-09-07T19:09:11.4097507Z",
+          "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e"
+        },
+        "verdict": {
+          "baseline_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+          "baseline_run": 77,
+          "changed_files": 95,
+          "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+          "committed_findings": 0,
+          "diff_uncovered": [
+            {
+              "line": 56,
+              "path": "src/crapkit/_process_owner.py"
+            },
+            {
+              "line": 414,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 522,
+              "path": "src/crapkit/gitio.py"
+            },
+            {
+              "line": 163,
+              "path": "src/crapkit/mutate_pool.py"
+            },
+            {
+              "line": 327,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 328,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 329,
+              "path": "src/crapkit/procs.py"
+            },
+            {
+              "line": 78,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 79,
+              "path": "src/crapkit/score.py"
+            },
+            {
+              "line": 84,
+              "path": "src/crapkit/score.py"
+            }
+          ],
+          "diff_uncovered_count": 10,
+          "diff_uncovered_max": null,
+          "dirty_failures": [],
+          "dirty_findings": 0,
+          "gate_violations": [],
+          "new_failures": [],
+          "ok": true,
+          "overridden": [],
+          "ratchet_changes": null,
+          "ratchet_regressions": [],
+          "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+          "run_id": 81,
+          "schema": 1,
+          "tool_versions": {
+            "analysis_version": "10",
+            "crapkit": "0.6.0",
+            "lizard": "1.24.0"
+          },
+          "unmarked_over_target": 0
+        },
+        "ledger": [
+          {
+            "id": 77,
+            "commit_sha": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+            "kind": "verify",
+            "verdict_ok": 1,
+            "findings": 0
+          },
+          {
+            "id": 81,
+            "commit_sha": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+            "kind": "verify",
+            "verdict_ok": 1,
+            "findings": 0
+          }
+        ],
+        "suites": {
+          "unit": {
+            "tests": 3915,
+            "passed": 3912,
+            "skipped": 3,
+            "failures": [],
+            "junit_suite_seconds": 820.016
+          },
+          "e2e": {
+            "tests": 801,
+            "passed": 795,
+            "skipped": 6,
+            "failures": [],
+            "junit_suite_seconds": 995.115
+          }
+        },
+        "pytest_summary_seconds": {
+          "unit": 820.06,
+          "e2e": 995.69
+        },
+        "invocation": {
+          "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+          "pythonpath": "C:\\Users\\jfgag\\crapkit\\src",
+          "command": "python -m crapkit verify --no-tighten --base c2d3515581d410d8c14849063dac27af843a3729 --json",
+          "replay": "run-source-final.ps1",
+          "trusted_baseline_run": 77
+        },
+        "source_identity": {
+          "wheel_proof": "final-wheel-proof.json",
+          "python_source_files": 71,
+          "candidate_git_blobs_match_installed_wheel": true,
+          "local_package_source_clean": true,
+          "local_source_diff_from_measured_commit_empty": true,
+          "production_diff_from_0082379_empty": true
+        },
+        "coverage": {
+          "sha256": "c8d27c2c75a25fc092ac4d3f5d04ccddd5d5e92886a3484ffe567ce15a7c4ea3",
+          "populations": {
+            "raw_paths": 140,
+            "checkout_paths": 71,
+            "installed_runtime_paths": 69,
+            "installed_runtime_paths_with_executed_lines": 26,
+            "installed_runtime_executed_line_entries": 1261,
+            "scored_checkout_rows": 1709
+          },
+          "population_proof": "final-source-join-proof.json",
+          "source_executed_lines": 10245,
+          "source_missing_lines": 155,
+          "procs_317_executed": true,
+          "windows_job_lines_54_55_executed": true
+        },
+        "windows_counterparts_of_linux_unmarked": [
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 34,
+            "end": 54,
+            "ccn": 6,
+            "cov": 1.0,
+            "crap": 6.0
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 62,
+            "end": 69,
+            "ccn": 4,
+            "cov": 1.0,
+            "crap": 4.0
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+            "start": 80,
+            "end": 84,
+            "ccn": 4,
+            "cov": 1.0,
+            "crap": 4.0
+          }
+        ],
+        "cross_host": {
+          "linux_proof": "final-wheel-proof.json",
+          "shared_uncovered": [
+            {
+              "path": "src/crapkit/gitio.py",
+              "line": 414
+            },
+            {
+              "path": "src/crapkit/gitio.py",
+              "line": 522
+            },
+            {
+              "path": "src/crapkit/mutate_pool.py",
+              "line": 163
+            },
+            {
+              "path": "src/crapkit/procs.py",
+              "line": 327
+            },
+            {
+              "path": "src/crapkit/procs.py",
+              "line": 328
+            },
+            {
+              "path": "src/crapkit/procs.py",
+              "line": 329
+            },
+            {
+              "path": "src/crapkit/score.py",
+              "line": 78
+            },
+            {
+              "path": "src/crapkit/score.py",
+              "line": 79
+            },
+            {
+              "path": "src/crapkit/score.py",
+              "line": 84
+            }
+          ],
+          "windows_only_missing": [
+            {
+              "path": "src/crapkit/_process_owner.py",
+              "line": 56
+            }
+          ],
+          "linux_only_missing": [
+            {
+              "path": "src/crapkit/_process_owner.py",
+              "line": 54
+            },
+            {
+              "path": "src/crapkit/_process_owner.py",
+              "line": 55
+            },
+            {
+              "path": "src/crapkit/procs.py",
+              "line": 317
+            }
+          ]
+        },
+        "inputs": {
+          "result.json": {
+            "sha256": "8d7021eb81424d1d98eaa7e47126a30f02ffece772f3f44ab0a1d973bb827c45",
+            "bytes": 320
+          },
+          "verdict.json": {
+            "sha256": "bb9f0b17175e7ab055197ad7ab44ce52c3dec7bab45c197e918802b10e42b743",
+            "bytes": 1135
+          },
+          "unit.xml": {
+            "sha256": "b57060d9c689a53aa3da26eac757ef93ffcd4081d410385d89a5bea42842a967",
+            "bytes": 543652
+          },
+          "e2e.xml": {
+            "sha256": "e9940477a1657c38f0ea9586dc97de6784d45e42537aebfb06af3849a32298fa",
+            "bytes": 110817
+          },
+          "junit.xml": {
+            "sha256": "e05db6a5f6778bf7ebeed1f8552aaf0abf11aec79d08457a147011250181a896",
+            "bytes": 654404
+          },
+          "crap.sqlite": {
+            "sha256": "359705523d4e7d5598138d0aa8e34d5dd3857f6befc95694908cb65bb7e53e04",
+            "bytes": 5959680
+          },
+          "py.json": {
+            "sha256": "c8d27c2c75a25fc092ac4d3f5d04ccddd5d5e92886a3484ffe567ce15a7c4ea3",
+            "bytes": 12663801
+          }
+        },
+        "limits": [
+          "Windows source coverage includes separate installed-runtime paths. The real reader/scorer probe proves they cannot contribute to checkout scores.",
+          "Nine guard/API/cleanup lines remain unmeasured on both hosts; no wrong behavior was observed.",
+          "No raw coverage JSON or SQLite copy is added to the curated archive; compact proofs retain hashes and relevant rows.",
+          "macOS and hosted CI/Action dispatch were not executed."
+        ]
+      }
+    },
+    "linux_installed_wheel_base_candidate": {
+      "status": "passed",
+      "note": "Complete candidate wheel suites and comparison passed at the same4ef commit; actual historical base failures remain recorded.",
+      "first_attempt": {
+        "status": "completed; refused",
+        "evidence": "wheels/attempt-t3vh2liu/verdict.json",
+        "phase": "complete",
+        "suite_exits": [
+          1,
+          1
+        ],
+        "verdict_ok": false,
+        "ledger": {
+          "id": 2,
+          "commit_sha": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+          "kind": "verify",
+          "verdict_ok": 0,
+          "findings": 3
+        },
+        "new_failures": [
+          "tests.e2e.test_discovery_e2e::test_at_the_root_every_spelling_of_a_path_names_the_same_file",
+          "tests.e2e.test_hook_prefetch_e2e::test_a_failing_git_read_still_reaches_the_caller_as_a_git_error",
+          "tests.unit.test_suite_collection_failure::test_collection_error_keeps_other_suite_and_refuses_final_coverage"
+        ],
+        "diff_uncovered_count": 11,
+        "gate_violations": [],
+        "ratchet_regressions": [],
+        "revisions": {
+          "base": {
+            "commit": "c2d3515581d410d8c14849063dac27af843a3729",
+            "package": "/tmp/crapkit-ci-zfuwrz4_/base-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "5f414bdd829ddd867d6086e5fd781cd1f1732e76c9865ebc40d91dee61333ea8",
+            "installed_python_sources_checked": 69,
+            "suites": {
+              "unit": {
+                "tests": 3655,
+                "failed": 4,
+                "errors": 0,
+                "skipped": 25,
+                "passed": 3626
+              },
+              "e2e": {
+                "tests": 761,
+                "failed": 1,
+                "errors": 0,
+                "skipped": 2,
+                "passed": 758
+              }
+            }
+          },
+          "candidate": {
+            "commit": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+            "package": "/tmp/crapkit-ci-zfuwrz4_/candidate-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "f9a5ec1acaeba26b3aa62357cbe64b157ae0c9dc758d0a16799625f3842b61f6",
+            "installed_python_sources_checked": 71,
+            "suites": {
+              "unit": {
+                "tests": 3902,
+                "failed": 5,
+                "errors": 0,
+                "skipped": 25,
+                "passed": 3872
+              },
+              "e2e": {
+                "tests": 784,
+                "failed": 3,
+                "errors": 0,
+                "skipped": 4,
+                "passed": 777
+              }
+            }
+          }
+        }
+      },
+      "second_attempt": {
+        "status": "tests passed; coverage export refused; no final verdict",
+        "commit": "0082379e350aa0eed44eeec50514023a573f61df",
+        "phase": "verify",
+        "error": "candidate verification refused: {'error': {'exit': 5, 'kind': 'tool', 'message': 'every lane failed (1 of 1); the errors are above'}, 'schema': 1}",
+        "verdict": null,
+        "suites": {
+          "unit": {
+            "tests": 3920,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 26,
+            "passed": 3894
+          },
+          "e2e": {
+            "tests": 785,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 4,
+            "passed": 781
+          }
+        },
+        "cause": "Fake-package provenance fixture was traced as crapkit; later cleanup removed its temporary source before coverage JSON export.",
+        "evidence": [
+          "wheels-attempt2/verdict.json",
+          "full-wheels-attempt2.log"
+        ]
+      },
+      "third_attempt": {
+        "status": "Historical 0009 Linux wheel verification passed; Windows run 79 refused one startup fixture.",
+        "candidate_commit": "0009a6776f7e260046589954d98e035918f89439",
+        "base_commit": "c2d3515581d410d8c14849063dac27af843a3729",
+        "verdict": "wheels-attempt3/verdict.json",
+        "attempt": "wheels-attempt3/attempt-trblq3gd",
+        "process_exit": 0,
+        "suite_exits": [
+          1,
+          0
+        ],
+        "candidate_ok": true,
+        "source_proofs": {
+          "base": {
+            "commit": "c2d3515581d410d8c14849063dac27af843a3729",
+            "package": "/tmp/crapkit-ci-hjlphfq7/base-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "dc9ff2f0d519633743938fae93a2947b366336d0945de2fbef289837662cc49e",
+            "python_source_files": 69,
+            "source_map_sha256": "86ecaf8dfbe18a5e475836c28856cea0ebc0c219d3d8d6c2eb61af823107fb16"
+          },
+          "candidate": {
+            "commit": "0009a6776f7e260046589954d98e035918f89439",
+            "package": "/tmp/crapkit-ci-hjlphfq7/candidate-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "c62fe17b0193a552ac6a60ab5b18a327b85dc98a45fc11509b4103fd505e2c90",
+            "python_source_files": 71,
+            "source_map_sha256": "7bbb05689de869e021e126424e3d1940e43d063560bef18de6145122e5b4ac4b",
+            "committed_git_blob_bytes_equal": true,
+            "current_source_names_equal": true,
+            "local_tracked_source_git_diff_empty": true,
+            "local_raw_byte_mismatches": [
+              {
+                "path": "config.py",
+                "current": "ceace540d78c780ca0f68b310721b4b183a1795e4340326ee9186cbedbacbb6e",
+                "wheel": "e0c59ee78250472c9b9324076fedc8c036c95c61e329e64de4dc01a81df67462",
+                "current_crlf": 773,
+                "lf_normalized_matches": true
+              },
+              {
+                "path": "doctor.py",
+                "current": "d42dea1b09e2dd75356e3a5e5a3caf428ff8c1f90c307c0ff9a6ae90f8b495df",
+                "wheel": "232589aed72b28f01cb5b7fc922a28c828489082fa8289025665db0237df824e",
+                "current_crlf": 393,
+                "lf_normalized_matches": true
+              }
+            ]
+          }
+        },
+        "revisions": {
+          "base": {
+            "suites": {
+              "unit": {
+                "tests": 3655,
+                "passed": 3626,
+                "skipped": 25,
+                "failures": [
+                  "tests.unit.test_ci_verdict::test_installed_source_is_verified_before_coverage_paths_are_mapped",
+                  "tests.unit.test_doctor_lane_probe::test_the_probe_controls_its_output_encoding",
+                  "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[plain]",
+                  "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[owned]"
+                ]
+              },
+              "e2e": {
+                "tests": 761,
+                "passed": 758,
+                "skipped": 2,
+                "failures": [
+                  "tests.e2e.test_init_scoped_tests_e2e::test_doctor_warns_when_the_lane_runs_another_python_than_doctor"
+                ]
+              }
+            },
+            "ledger": [
+              {
+                "id": 1,
+                "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+                "kind": "coverage",
+                "verdict_ok": null,
+                "findings": 0
+              }
+            ],
+            "coverage_sha256": "229d36049b26d6c02da23ff436407e026305ba97b1f64d8b3a5872bff1b9ddb9",
+            "coverage_totals": {
+              "covered_lines": 9894,
+              "num_statements": 10066,
+              "percent_covered": 97.98139094780004,
+              "percent_covered_display": "98",
+              "missing_lines": 172,
+              "excluded_lines": 6,
+              "percent_statements_covered": 98.29127756805086,
+              "percent_statements_covered_display": "98",
+              "num_branches": 2616,
+              "num_partial_branches": 80,
+              "covered_branches": 2532,
+              "missing_branches": 84,
+              "percent_branches_covered": 96.78899082568807,
+              "percent_branches_covered_display": "97"
+            },
+            "coverage_files": 69,
+            "unexpected_coverage_paths": []
+          },
+          "candidate": {
+            "suites": {
+              "unit": {
+                "tests": 3920,
+                "passed": 3894,
+                "skipped": 26,
+                "failures": []
+              },
+              "e2e": {
+                "tests": 785,
+                "passed": 781,
+                "skipped": 4,
+                "failures": []
+              }
+            },
+            "ledger": [
+              {
+                "id": 1,
+                "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+                "kind": "coverage",
+                "verdict_ok": null,
+                "findings": 0
+              },
+              {
+                "id": 2,
+                "commit_sha": "0009a6776f7e260046589954d98e035918f89439",
+                "kind": "verify",
+                "verdict_ok": 1,
+                "findings": 0
+              }
+            ],
+            "coverage_sha256": "6af8697d6db22b1cafc6622a5c58cf75fa626817a22d8990c06f82e664c8dfa7",
+            "coverage_totals": {
+              "covered_lines": 10232,
+              "num_statements": 10400,
+              "percent_covered": 98.1127750611247,
+              "percent_covered_display": "98",
+              "missing_lines": 168,
+              "excluded_lines": 6,
+              "percent_statements_covered": 98.38461538461539,
+              "percent_statements_covered_display": "98",
+              "num_branches": 2688,
+              "num_partial_branches": 77,
+              "covered_branches": 2609,
+              "missing_branches": 79,
+              "percent_branches_covered": 97.0610119047619,
+              "percent_branches_covered_display": "97"
+            },
+            "coverage_files": 71,
+            "unexpected_coverage_paths": []
+          }
+        },
+        "unmarked_over_target": [
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+            "start": 80,
+            "end": 84,
+            "ccn": 4,
+            "cov": 0.0,
+            "crap": 20.0
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 62,
+            "end": 69,
+            "ccn": 4,
+            "cov": 0.25,
+            "crap": 10.75
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 34,
+            "end": 54,
+            "ccn": 6,
+            "cov": 0.6666666666666666,
+            "crap": 7.333333333333334
+          }
+        ],
+        "diff_uncovered": [
+          {
+            "line": 54,
+            "path": "src/crapkit/_process_owner.py"
+          },
+          {
+            "line": 55,
+            "path": "src/crapkit/_process_owner.py"
+          },
+          {
+            "line": 414,
+            "path": "src/crapkit/gitio.py"
+          },
+          {
+            "line": 522,
+            "path": "src/crapkit/gitio.py"
+          },
+          {
+            "line": 163,
+            "path": "src/crapkit/mutate_pool.py"
+          },
+          {
+            "line": 317,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 327,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 328,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 329,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 78,
+            "path": "src/crapkit/score.py"
+          },
+          {
+            "line": 79,
+            "path": "src/crapkit/score.py"
+          },
+          {
+            "line": 84,
+            "path": "src/crapkit/score.py"
+          }
+        ],
+        "diff_uncovered_max": null,
+        "gate_violations": [],
+        "ratchet_regressions": [],
+        "new_failures": [],
+        "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+        "limits": [
+          "Base suite exit 1 retains five historical failures. Candidate unit and E2E have no failures; comparison and matching candidate ledger pass.",
+          "All 71 installed source hashes equal exact Git blobs at the measured commit. Local tracked source has no Git diff. Local config.py and doctor.py use CRLF; their raw Windows bytes differ from Linux wheel bytes. Normalization is recorded as a diagnostic, not used to establish canonical identity.",
+          "Coverage JSON and SQLite remain in the preserved attempt and are read-only inputs. They are not duplicated in the curated archive; compact counts, exact rows and hashes are retained here.",
+          "The same-commit Windows run 79 refused one startup fixture. Both new 72b full runs remain pending."
+        ]
+      },
+      "fourth_attempt": {
+        "status": "Historical 72b Linux wheel verification passed; same-commit Windows run 80 refused two no-progress fixture cases.",
+        "candidate_commit": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+        "base_commit": "c2d3515581d410d8c14849063dac27af843a3729",
+        "verdict": "wheels-attempt4/verdict.json",
+        "attempt": "wheels-attempt4/attempt-okvbrp8t",
+        "process_exit": 0,
+        "suite_exits": [
+          1,
+          0
+        ],
+        "candidate_ok": true,
+        "source_proofs": {
+          "base": {
+            "commit": "c2d3515581d410d8c14849063dac27af843a3729",
+            "package": "/tmp/crapkit-ci-uffidwjz/base-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "0e3676264fcadaec83d8390e78fad60d9de6390aad391c2db9a00f85fa5ce9e1",
+            "python_source_files": 69,
+            "source_map_sha256": "86ecaf8dfbe18a5e475836c28856cea0ebc0c219d3d8d6c2eb61af823107fb16"
+          },
+          "candidate": {
+            "commit": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+            "package": "/tmp/crapkit-ci-uffidwjz/candidate-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "9e37501cb3fa7eca84d9cc514479759f36a6f3f2802d081ae8d8cd71f1f85014",
+            "python_source_files": 71,
+            "source_map_sha256": "7bbb05689de869e021e126424e3d1940e43d063560bef18de6145122e5b4ac4b",
+            "committed_git_blob_bytes_equal": true,
+            "current_source_names_equal": true,
+            "local_tracked_source_git_diff_empty": true,
+            "local_raw_byte_mismatches": [
+              {
+                "path": "config.py",
+                "current": "ceace540d78c780ca0f68b310721b4b183a1795e4340326ee9186cbedbacbb6e",
+                "wheel": "e0c59ee78250472c9b9324076fedc8c036c95c61e329e64de4dc01a81df67462",
+                "current_crlf": 773,
+                "lf_normalized_matches": true
+              },
+              {
+                "path": "doctor.py",
+                "current": "d42dea1b09e2dd75356e3a5e5a3caf428ff8c1f90c307c0ff9a6ae90f8b495df",
+                "wheel": "232589aed72b28f01cb5b7fc922a28c828489082fa8289025665db0237df824e",
+                "current_crlf": 393,
+                "lf_normalized_matches": true
+              }
+            ]
+          }
+        },
+        "revisions": {
+          "base": {
+            "suites": {
+              "unit": {
+                "tests": 3655,
+                "passed": 3627,
+                "skipped": 25,
+                "failures": [
+                  "tests.unit.test_doctor_lane_probe::test_the_probe_controls_its_output_encoding",
+                  "tests.unit.test_ci_verdict::test_installed_source_is_verified_before_coverage_paths_are_mapped",
+                  "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[plain]"
+                ]
+              },
+              "e2e": {
+                "tests": 761,
+                "passed": 758,
+                "skipped": 2,
+                "failures": [
+                  "tests.e2e.test_init_scoped_tests_e2e::test_doctor_warns_when_the_lane_runs_another_python_than_doctor"
+                ]
+              }
+            },
+            "ledger": [
+              {
+                "id": 1,
+                "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+                "kind": "coverage",
+                "verdict_ok": null,
+                "findings": 0
+              }
+            ],
+            "coverage_sha256": "ba4a882bd5078cb690c77553a5903913cce611245a660f5d3ab4941cced4620c",
+            "coverage_totals": {
+              "covered_lines": 9894,
+              "num_statements": 10066,
+              "percent_covered": 97.98139094780004,
+              "percent_covered_display": "98",
+              "missing_lines": 172,
+              "excluded_lines": 6,
+              "percent_statements_covered": 98.29127756805086,
+              "percent_statements_covered_display": "98",
+              "num_branches": 2616,
+              "num_partial_branches": 80,
+              "covered_branches": 2532,
+              "missing_branches": 84,
+              "percent_branches_covered": 96.78899082568807,
+              "percent_branches_covered_display": "97"
+            },
+            "coverage_files": 69,
+            "unexpected_coverage_paths": []
+          },
+          "candidate": {
+            "suites": {
+              "unit": {
+                "tests": 3921,
+                "passed": 3895,
+                "skipped": 26,
+                "failures": []
+              },
+              "e2e": {
+                "tests": 785,
+                "passed": 781,
+                "skipped": 4,
+                "failures": []
+              }
+            },
+            "ledger": [
+              {
+                "id": 1,
+                "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+                "kind": "coverage",
+                "verdict_ok": null,
+                "findings": 0
+              },
+              {
+                "id": 2,
+                "commit_sha": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+                "kind": "verify",
+                "verdict_ok": 1,
+                "findings": 0
+              }
+            ],
+            "coverage_sha256": "bda8c4746b087c6f712c280f5a62e6b5b71f5268185a447c2b2e5efcfd0f4d1f",
+            "coverage_totals": {
+              "covered_lines": 10232,
+              "num_statements": 10400,
+              "percent_covered": 98.1127750611247,
+              "percent_covered_display": "98",
+              "missing_lines": 168,
+              "excluded_lines": 6,
+              "percent_statements_covered": 98.38461538461539,
+              "percent_statements_covered_display": "98",
+              "num_branches": 2688,
+              "num_partial_branches": 77,
+              "covered_branches": 2609,
+              "missing_branches": 79,
+              "percent_branches_covered": 97.0610119047619,
+              "percent_branches_covered_display": "97"
+            },
+            "coverage_files": 71,
+            "unexpected_coverage_paths": []
+          }
+        },
+        "unmarked_over_target": [
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+            "start": 80,
+            "end": 84,
+            "ccn": 4,
+            "cov": 0.0,
+            "crap": 20.0
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 62,
+            "end": 69,
+            "ccn": 4,
+            "cov": 0.25,
+            "crap": 10.75
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 34,
+            "end": 54,
+            "ccn": 6,
+            "cov": 0.6666666666666666,
+            "crap": 7.333333333333334
+          }
+        ],
+        "diff_uncovered": [
+          {
+            "line": 54,
+            "path": "src/crapkit/_process_owner.py"
+          },
+          {
+            "line": 55,
+            "path": "src/crapkit/_process_owner.py"
+          },
+          {
+            "line": 414,
+            "path": "src/crapkit/gitio.py"
+          },
+          {
+            "line": 522,
+            "path": "src/crapkit/gitio.py"
+          },
+          {
+            "line": 163,
+            "path": "src/crapkit/mutate_pool.py"
+          },
+          {
+            "line": 317,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 327,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 328,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 329,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 78,
+            "path": "src/crapkit/score.py"
+          },
+          {
+            "line": 79,
+            "path": "src/crapkit/score.py"
+          },
+          {
+            "line": 84,
+            "path": "src/crapkit/score.py"
+          }
+        ],
+        "diff_uncovered_max": null,
+        "gate_violations": [],
+        "ratchet_regressions": [],
+        "new_failures": [],
+        "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+        "limits": [
+          "Base suite exit 1 retains 4 historical failures in this attempt; the exact IDs are recorded above. Candidate unit and E2E have no failures; comparison and matching candidate ledger pass.",
+          "All 71 installed source hashes equal exact Git blobs at the measured commit. Local tracked source has no Git diff. Local config.py and doctor.py use CRLF; their raw Windows bytes differ from Linux wheel bytes. Normalization is recorded as a diagnostic, not used to establish canonical identity.",
+          "Coverage JSON and SQLite remain in the preserved attempt and are read-only inputs. They are not duplicated in the curated archive; compact counts, exact rows and hashes are retained here.",
+          "The same-commit Windows run 80 refused two no-progress fixture cases. A later candidate and complete reruns await the reviewed test repair."
+        ]
+      },
+      "final_attempt": {
+        "status": "Linux wheel verification passed; matching Windows run81 also passed",
+        "candidate_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+        "base_commit": "c2d3515581d410d8c14849063dac27af843a3729",
+        "verdict": "wheels-final/verdict.json",
+        "attempt": "wheels-final/attempt-bfgbev0l",
+        "process_exit": 0,
+        "suite_exits": [
+          1,
+          0
+        ],
+        "candidate_ok": true,
+        "source_proofs": {
+          "base": {
+            "commit": "c2d3515581d410d8c14849063dac27af843a3729",
+            "package": "/tmp/crapkit-ci-1qwj1ou9/base-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "8fb991739ed2216d5721fd17bf64bf3e9894b5f04b1a2da207b351c2137b53a6",
+            "python_source_files": 69,
+            "source_map_sha256": "86ecaf8dfbe18a5e475836c28856cea0ebc0c219d3d8d6c2eb61af823107fb16"
+          },
+          "candidate": {
+            "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+            "package": "/tmp/crapkit-ci-1qwj1ou9/candidate-install/venv/lib/python3.11/site-packages/crapkit",
+            "wheel_sha256": "0c9603490af69afc339e8f3bbcc4c172973b683c87f89069ea70a5d3a956e0a6",
+            "python_source_files": 71,
+            "source_map_sha256": "7bbb05689de869e021e126424e3d1940e43d063560bef18de6145122e5b4ac4b",
+            "committed_git_blob_bytes_equal": true,
+            "current_source_names_equal": true,
+            "local_tracked_source_git_diff_empty": true,
+            "local_raw_byte_mismatches": [
+              {
+                "path": "config.py",
+                "current": "ceace540d78c780ca0f68b310721b4b183a1795e4340326ee9186cbedbacbb6e",
+                "wheel": "e0c59ee78250472c9b9324076fedc8c036c95c61e329e64de4dc01a81df67462",
+                "current_crlf": 773,
+                "lf_normalized_matches": true
+              },
+              {
+                "path": "doctor.py",
+                "current": "d42dea1b09e2dd75356e3a5e5a3caf428ff8c1f90c307c0ff9a6ae90f8b495df",
+                "wheel": "232589aed72b28f01cb5b7fc922a28c828489082fa8289025665db0237df824e",
+                "current_crlf": 393,
+                "lf_normalized_matches": true
+              }
+            ]
+          }
+        },
+        "revisions": {
+          "base": {
+            "suites": {
+              "unit": {
+                "tests": 3655,
+                "passed": 3626,
+                "skipped": 25,
+                "failures": [
+                  "tests.unit.test_doctor_lane_probe::test_the_probe_controls_its_output_encoding",
+                  "tests.unit.test_ci_verdict::test_installed_source_is_verified_before_coverage_paths_are_mapped",
+                  "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[plain]",
+                  "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[owned]"
+                ]
+              },
+              "e2e": {
+                "tests": 761,
+                "passed": 758,
+                "skipped": 2,
+                "failures": [
+                  "tests.e2e.test_init_scoped_tests_e2e::test_doctor_warns_when_the_lane_runs_another_python_than_doctor"
+                ]
+              }
+            },
+            "ledger": [
+              {
+                "id": 1,
+                "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+                "kind": "coverage",
+                "verdict_ok": null,
+                "findings": 0
+              }
+            ],
+            "coverage_sha256": "5b03546da2e469824f9f48d77907d4eb3766a0e5ec4532975fe6648a93fcfdac",
+            "coverage_totals": {
+              "covered_lines": 9894,
+              "num_statements": 10066,
+              "percent_covered": 97.98139094780004,
+              "percent_covered_display": "98",
+              "missing_lines": 172,
+              "excluded_lines": 6,
+              "percent_statements_covered": 98.29127756805086,
+              "percent_statements_covered_display": "98",
+              "num_branches": 2616,
+              "num_partial_branches": 80,
+              "covered_branches": 2532,
+              "missing_branches": 84,
+              "percent_branches_covered": 96.78899082568807,
+              "percent_branches_covered_display": "97"
+            },
+            "coverage_files": 69,
+            "unexpected_coverage_paths": []
+          },
+          "candidate": {
+            "suites": {
+              "unit": {
+                "tests": 3925,
+                "passed": 3899,
+                "skipped": 26,
+                "failures": []
+              },
+              "e2e": {
+                "tests": 785,
+                "passed": 781,
+                "skipped": 4,
+                "failures": []
+              }
+            },
+            "ledger": [
+              {
+                "id": 1,
+                "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+                "kind": "coverage",
+                "verdict_ok": null,
+                "findings": 0
+              },
+              {
+                "id": 2,
+                "commit_sha": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+                "kind": "verify",
+                "verdict_ok": 1,
+                "findings": 0
+              }
+            ],
+            "coverage_sha256": "e57f5128862445c5263573ff23e865310b54eab05c02384ad3d956900560f7a4",
+            "coverage_totals": {
+              "covered_lines": 10232,
+              "num_statements": 10400,
+              "percent_covered": 98.1127750611247,
+              "percent_covered_display": "98",
+              "missing_lines": 168,
+              "excluded_lines": 6,
+              "percent_statements_covered": 98.38461538461539,
+              "percent_statements_covered_display": "98",
+              "num_branches": 2688,
+              "num_partial_branches": 77,
+              "covered_branches": 2609,
+              "missing_branches": 79,
+              "percent_branches_covered": 97.0610119047619,
+              "percent_branches_covered_display": "97"
+            },
+            "coverage_files": 71,
+            "unexpected_coverage_paths": []
+          }
+        },
+        "unmarked_over_target": [
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+            "start": 80,
+            "end": 84,
+            "ccn": 4,
+            "cov": 0.0,
+            "crap": 20.0
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 62,
+            "end": 69,
+            "ccn": 4,
+            "cov": 0.25,
+            "crap": 10.75
+          },
+          {
+            "path": "src/crapkit/procs.py",
+            "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+            "start": 34,
+            "end": 54,
+            "ccn": 6,
+            "cov": 0.6666666666666666,
+            "crap": 7.333333333333334
+          }
+        ],
+        "diff_uncovered": [
+          {
+            "line": 54,
+            "path": "src/crapkit/_process_owner.py"
+          },
+          {
+            "line": 55,
+            "path": "src/crapkit/_process_owner.py"
+          },
+          {
+            "line": 414,
+            "path": "src/crapkit/gitio.py"
+          },
+          {
+            "line": 522,
+            "path": "src/crapkit/gitio.py"
+          },
+          {
+            "line": 163,
+            "path": "src/crapkit/mutate_pool.py"
+          },
+          {
+            "line": 317,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 327,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 328,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 329,
+            "path": "src/crapkit/procs.py"
+          },
+          {
+            "line": 78,
+            "path": "src/crapkit/score.py"
+          },
+          {
+            "line": 79,
+            "path": "src/crapkit/score.py"
+          },
+          {
+            "line": 84,
+            "path": "src/crapkit/score.py"
+          }
+        ],
+        "diff_uncovered_max": null,
+        "gate_violations": [],
+        "ratchet_regressions": [],
+        "new_failures": [],
+        "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+        "limits": [
+          "Base suite exit 1 retains 5 historical failures in this attempt; the exact IDs are recorded above. Candidate unit and E2E have no failures; comparison and matching candidate ledger pass.",
+          "All 71 installed source hashes equal exact Git blobs at the measured commit. Local tracked source has no Git diff. Local config.py and doctor.py use CRLF; their raw Windows bytes differ from Linux wheel bytes. Normalization is recorded as a diagnostic, not used to establish canonical identity.",
+          "Coverage JSON and SQLite remain in the preserved attempt and are read-only inputs. They are not duplicated in the curated archive; compact counts, exact rows and hashes are retained here.",
+          "Matching Windows source run81 passed. Its separate source and population proofs are final-source-proof.json and final-source-join-proof.json."
+        ]
+      }
+    },
+    "hosted_dispatch": {
+      "status": "not_performed"
+    },
+    "note": "Focused batches overlap. Their test counts must not be summed as a unique full-suite total.",
+    "final_artifacts": {
+      "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "status": "complete",
+      "windows_source": "source-final/",
+      "linux_wheels": "wheels-final/",
+      "commands": [
+        "run-source-final.ps1",
+        "run-wheels-final.sh"
+      ],
+      "hook": "passed on commit; root confirmed clean worktree",
+      "focused_integrated": {
+        "cases": 65,
+        "passed": 64,
+        "failures": [],
+        "skipped": 1
+      },
+      "last_committed_candidate": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "pending_test_changes": [],
+      "note": "Both complete runs passed at4ef. Production bytes remain unchanged from0082379; later documentation commits do not change the measured revision.",
+      "linux_wheels_status": "passed",
+      "windows_source_status": "passed"
+    }
+  },
+  "candidates": [
+    {
+      "id": "CORE-01",
+      "title": "Make the Git diff module own the format its consumers parse",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "One source-patch adapter fixes Git display/environment settings for normal, prestarted and advisory reads. Exact metadata selects binary-marked source for literal-path text fallback. Ratchet history recognizes physical commit headers while preserving NUL and other field bytes.",
+      "production_paths": [
+        "src/crapkit/gitio.py",
+        "src/crapkit/gitpaths.py",
+        "src/crapkit/cli/claude_hook.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_git_patch_contract.py",
+        "tests/unit/test_r2_git_source_patch.py",
+        "tests/unit/test_ratchet_report.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "git-patch-red.txt",
+            "note": "User display settings hide or misattribute source"
+          },
+          {
+            "path": "git-env-red.txt",
+            "note": "Both staged readers blame untouched debt under GIT_DIFF_OPTS",
+            "counts": {
+              "failed": 2
+            }
+          },
+          {
+            "path": "measurements/git-source-red.txt",
+            "note": "Binary attributes hide source from seven public/seam cases",
+            "counts": {
+              "failed": 7
+            }
+          },
+          {
+            "path": "measurements/git-history-framing-red.txt",
+            "note": "Legacy U+0001 field collides with old history marker",
+            "counts": {
+              "failed": 1,
+              "passed": 1
+            }
+          },
+          {
+            "path": "measurements/git-history-nul-red.txt",
+            "note": "Naive NUL splitting corrupts a codec-produced function name",
+            "counts": {
+              "failed": 1
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/git-source-final-green.xml",
+            "note": "Focused Git, advisory, path, blob and history batch",
+            "counts": {
+              "tests": 155,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 1
+            }
+          },
+          {
+            "path": "measurements/git-history-final-green.xml",
+            "note": "Final physical history framing and Git protocol batch",
+            "counts": {
+              "tests": 47,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 1
+            }
+          },
+          {
+            "path": "git-source-posix.xml",
+            "note": "Root's Ubuntu source-path and history checks",
+            "counts": {
+              "tests": 22,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Strict UTF-8 path identity remains; source bodies use lossless surrogateescape and the analyzer retains UTF-8/cp1252 decoding.",
+        "Nested member roots exclude an outside source change; normal/prestarted and explicit comparison bases are covered.",
+        "Ordinary PNG/ZIP payloads stay binary. UTF-16 source remains outside the existing decoder policy.",
+        "The U+0001 history probe names a POSIX-only path in committed TSV content; it does not create that source filename on Windows."
+      ],
+      "measurable_tradeoffs": [
+        {
+          "scope": "Git process count",
+          "normal_patch_processes": 1,
+          "binary_summary_extra_reads": "one numstat read; one forced patch only when supported source paths are present",
+          "evidence": "measurements/git-followup-result.json"
+        }
+      ],
+      "integration_followups": [
+        "INTEGRATION-PATH-TESTS"
+      ],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "STATE-01",
+      "title": "Let the verdict module own every refusal",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Verdict owns uncovered findings with dirty attribution. settle_verdict derives success after grants and retries. JSON, exit, ledger trust, finding count and tightening read the same final state.",
+      "production_paths": [
+        "src/crapkit/verify.py",
+        "src/crapkit/cli/verifying.py"
+      ],
+      "test_paths": [
+        "tests/e2e/test_r2_measurements_verdict.py",
+        "tests/unit/test_cli_verifying_inproc.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "measurements/state1-red.txt",
+            "note": "Focused regression on the prior implementation",
+            "counts": {
+              "failed": 1
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/state1-green.txt",
+            "note": "Focused candidate checks",
+            "counts": {
+              "passed": 107,
+              "skipped": 2
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "schema:1 unchanged. Exit priority 6,7,8,9 unchanged. Ratchet regressions and new failures remain ineligible for overrides."
+      ],
+      "measurable_tradeoffs": [],
+      "observed_public_outcome": "Gate override: exit9, ok=false, gate_violations=[], overridden=1, diff_uncovered_count=13, dirty_findings=13. Explicit selection of refused run exits1; ordinary later verify retains original coverage baseline.",
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "EX1",
+      "title": "Keep execution ownership until every writing process stops",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Execution ownership lasts until writing descendants stop. Normal lane completion, caller death, mutation baseline and worker shards share the same owner; resource locks release afterward.",
+      "production_paths": [
+        "src/crapkit/procs.py",
+        "src/crapkit/_process_owner.py",
+        "src/crapkit/_windows_job.py",
+        "src/crapkit/locks.py",
+        "src/crapkit/mutate_pool.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_execution_lifetime.py",
+        "tests/unit/test_r2_execution_mutation.py",
+        "tests/unit/test_r2_execution_adapters.py",
+        "tests/unit/test_mutate_pool_kept.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "execution/base-regressions.xml",
+            "note": "Six original lifetime/link regressions fail",
+            "counts": {
+              "tests": 6,
+              "failed": 6,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "execution/focused-posix.xml",
+            "note": "Ubuntu process, lock, link, deadline and fallback batch",
+            "counts": {
+              "tests": 74,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/green-fallback.xml",
+            "note": "Corrected Windows fallback, lock and link cases",
+            "counts": {
+              "tests": 10,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/adapters-windows.xml",
+            "note": "Windows/POSIX adapter branches on Windows",
+            "counts": {
+              "tests": 29,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/adapters-posix.xml",
+            "note": "Windows/POSIX adapter branches on Ubuntu",
+            "counts": {
+              "tests": 29,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Declared command completion stops remaining descendants. Untimed commands still have no deadline.",
+        "Windows Job assignment failure refuses launch. POSIX commands must keep the inherited process group; explicit setsid escape is outside ownership.",
+        "Ubuntu and Windows are tested; macOS runtime was unavailable. Hard-killed commands cannot run shutdown hooks.",
+        "The earlier Windows batch had 70 passes, one POSIX skip and two lock-fallback failures; the corrected ten-case batch passes."
+      ],
+      "measurable_tradeoffs": [
+        {
+          "evidence": "execution/command-cost.json",
+          "scope": "Contended command-cost samples during POSIX test I/O; not a quiet performance comparison",
+          "warm_medians_seconds": {
+            "standalone": {
+              "base": 0.18745490000583231,
+              "candidate": 0.45731520000845194
+            },
+            "shared": {
+              "base": 0.3401413999963552,
+              "candidate": 0.7206440000445582
+            }
+          },
+          "note": "Five interleaved warm pairs per mode record added lifetime work. Do not present these as isolated overhead estimates."
+        }
+      ],
+      "integration_followups": [
+        "INTEGRATION-FIXTURES",
+        "INTEGRATION-HELPER-PROVENANCE"
+      ],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "EX2",
+      "title": "Make mutation workspace isolation include filesystem identity",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Mutation refuses linked source paths, linked worker components and multiply linked worker files before dirty replay or restoration can write outside private input.",
+      "production_paths": [
+        "src/crapkit/mutate_pool.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_execution_links.py",
+        "tests/unit/test_mutate_pool_kept.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "execution/base-regressions.xml",
+            "note": "Original source/replay/restoration link failures",
+            "counts": {
+              "tests": 6,
+              "failed": 6,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "execution/focused-posix.xml",
+            "note": "Ubuntu isolation and ownership batch",
+            "counts": {
+              "tests": 74,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/green-fallback.xml",
+            "note": "Windows replay, restoration and hardlink checks",
+            "counts": {
+              "tests": 10,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Links are refused rather than followed or materialized.",
+        "Regular files, dirty tests/configuration, deletions, nested roots and private concurrent fallback remain covered.",
+        "macOS runtime was unavailable; Windows and Ubuntu results are separate."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "CORE-02",
+      "title": "Admit coverage measurements before they become scoring facts",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Coverage adapters reject invalid counts and covered/total relationships before scoring. Integral finite exponents remain counts. Artifact errors identify the input file.",
+      "production_paths": [
+        "src/crapkit/coverage_istanbul.py",
+        "src/crapkit/coverage_py.py",
+        "src/crapkit/covstream.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_measurements_coverage.py",
+        "tests/unit/test_coverage_py.py",
+        "tests/unit/test_covstream.py",
+        "tests/unit/test_cli_verifying_inproc.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "measurements/core-red.txt",
+            "note": "Focused regression on the prior implementation",
+            "counts": {
+              "failed": 23,
+              "passed": 3
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/core-green.txt",
+            "note": "Focused candidate checks",
+            "counts": {
+              "passed": 317
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "No valid measurement arithmetic or ANALYSIS_VERSION change. Two old no-data fixtures now declare zero covered lines instead of an impossible 1 covered / 0 total."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "MEASURE-01",
+      "title": "Apply the JUnit completeness rule before admitting a lane measurement",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Normal and retry readers share explicit testsuite/testsuites declaration admission through one postorder count traversal.",
+      "production_paths": [
+        "src/crapkit/junitparse.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_measurements_junit.py",
+        "tests/unit/test_lane_abort.py",
+        "tests/unit/test_retest_evidence.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "measurements/junit-red.txt",
+            "note": "Focused regression on the prior implementation",
+            "counts": {
+              "failed": 12,
+              "passed": 4
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/junit-green.txt",
+            "note": "Focused candidate checks",
+            "counts": {
+              "passed": 49
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Absent counts, nested aggregates, completed failures, session crash detection, zero-case refusal and explicit reuse warning policy remain."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [
+        "INTEGRATION-COLLECTION"
+      ],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "STATE-03",
+      "title": "Make packet commands use the execution module",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Packet scoped commands delegate to test-scoped. One formatter preserves literal filenames for scoped tests and rescore gates. Simple paths remain readable. Windows expansion characters use an encoded PowerShell command that resolves the native console application before calling it and preserves its exit status.",
+      "production_paths": [
+        "src/crapkit/packet.py",
+        "src/crapkit/cli/queue.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_packet.py",
+        "tests/e2e/test_brief_packet_e2e.py",
+        "tests/e2e/test_r2_packet_commands.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "execution/red-packet.xml",
+            "note": "Public packet command targets the wrong expanded filename",
+            "counts": {
+              "tests": 2,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/red-packet-gate.xml",
+            "note": "Printed gate command fails its literal target",
+            "counts": {
+              "tests": 1,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/red-packet-missing.xml",
+            "note": "Missing native launcher does not preserve failure",
+            "counts": {
+              "tests": 1,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "execution/packet-final-windows.xml",
+            "note": "Final Windows shell commands",
+            "counts": {
+              "tests": 69,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "execution/packet-final-posix.xml",
+            "note": "Final Ubuntu shell commands",
+            "counts": {
+              "tests": 53,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 2
+            }
+          },
+          {
+            "path": "execution/packet-newline-posix-green.xml",
+            "note": "Real LF filename after reader-selector integration",
+            "counts": {
+              "tests": 1,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "packet-interface-integration.xml",
+            "note": "Root packet/schema integration checks",
+            "counts": {
+              "tests": 50,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Packet JSON field types remain unchanged. Scoped commands call test-scoped with the configured template and inherited environment.",
+        "Tested cmd.exe with ordinary/delayed expansion, Windows PowerShell 5.1 and Ubuntu /bin/sh. macOS was unavailable.",
+        "Windows expansion characters use standard PowerShell and resolve a native crapkit console application on PATH.",
+        "Correctness batches ran concurrently; their elapsed times are not benchmarks."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "STATE-02",
+      "title": "Give portable records a lossless format owner",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Shared records module preserves ordinary TSV bytes and uses self-described @crapkit-record-v1 plus JSON string array for delimiter-bearing rows. Scored, baseline, inventory and ratchet writers use it. Scored and ratchet readers preserve raw Unicode separators and literal backslashes. Historical patch readers use physical LF/CRLF framing too.",
+      "production_paths": [
+        "src/crapkit/records.py",
+        "src/crapkit/score.py",
+        "src/crapkit/snapshot.py",
+        "src/crapkit/ratchet.py",
+        "src/crapkit/verify.py",
+        "src/crapkit/ratchet_report.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_measurements_records.py",
+        "tests/e2e/test_r2_measurements_portable.py",
+        "tests/unit/test_r2_ratchet_history_records.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "measurements/state2-red.txt",
+            "note": "Focused regression on the prior implementation",
+            "counts": {
+              "failed": 31,
+              "passed": 6
+            }
+          },
+          {
+            "path": "measurements/portable-red.txt",
+            "note": "Real Windows U+2028 filename export succeeds; baseline import fails",
+            "counts": {
+              "failed": 1,
+              "skipped": 2
+            }
+          },
+          {
+            "path": "history-red.txt",
+            "note": "Two legacy separator-bearing history rows fail"
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/state2-green.txt",
+            "note": "Focused candidate checks",
+            "counts": {
+              "passed": 123
+            }
+          },
+          {
+            "path": "measurements/records-followup-green.txt",
+            "note": "Final format-first codec checks",
+            "counts": {
+              "passed": 124,
+              "skipped": 2
+            }
+          },
+          {
+            "path": "history-green.txt",
+            "note": "Historical raw and encoded records pass"
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Legacy scored 16/17 columns, ratchet three columns, metric stamp, key stamp, raw leading-# path, merge, diagnostics and ordinary byte equality pass. Unknown/malformed marked rows refuse or yield read-only salvage complaints.",
+        "Windows public export/import uses a real U+2028 filename. Tab/newline filesystem tests skip on Windows; pure codec cases cover all Python splitlines separators.",
+        "The later source-name and packet checks include Ubuntu filesystem coverage; do not relabel pure filename seams as filesystem tests."
+      ],
+      "measurable_tradeoffs": [
+        {
+          "evidence": "measurements/records-benchmark.json",
+          "scope": "140,922 ordinary export rows; five interleaved warm rounds",
+          "rows": 140922,
+          "bytes": 11626551,
+          "seconds": {
+            "base": 0.10218789998907596,
+            "final": 0.21118440001737326
+          },
+          "same_output": true,
+          "note": "Lossless admission adds about 109 ms. The first codec loop measured 373 ms; format-first checking cut that cost."
+        }
+      ],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "CORE-03",
+      "title": "Give duplicate ranking a complete deterministic order",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Pair and twin ordering use every visible function identity field after rounded similarity. Equal top pairs remain the same across six process hash seeds and all input permutations of the tie fixture.",
+      "production_paths": [
+        "src/crapkit/dup.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_measurements_duplication.py",
+        "tests/unit/test_duplication.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "measurements/duplication-base-final.txt",
+            "note": "Focused regression on the prior implementation",
+            "counts": {
+              "failed": 4,
+              "passed": 35
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/duplication-green.txt",
+            "note": "Exhaustive string-shingle oracle, six process hash seeds and tie-fixture permutations pass.",
+            "counts": {
+              "passed": 64
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Similarity arithmetic, raw threshold comparison, four-decimal display values and nested-span filtering are unchanged. Process-local shingles remain process-local."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "UI1",
+      "title": "Make the MCP child adapter read the UTF-8 stream the CLI writes",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "The MCP child adapter explicitly decodes the UTF-8 stream produced by the CLI, including non-ASCII refusals.",
+      "production_paths": [
+        "src/crapkit/mcp_server.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_interface_paths.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "interfaces-red.txt",
+            "note": "Legacy-locale child transport test fails"
+          }
+        ],
+        "green": [
+          {
+            "path": "interfaces-green.txt",
+            "note": "Shared interface batch passed"
+          },
+          {
+            "path": "final-interface-check.txt",
+            "note": "Final shared interface check passed"
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Tool result shape and existing verdict-exit mapping remain unchanged."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "UI2",
+      "title": "Keep Git path records intact through the Action comment adapter",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "The Action carries NUL-delimited UTF-8 Git paths into exact worklist membership; Markdown cells escape line separators, pipes and backticks.",
+      "production_paths": [
+        "action.yml",
+        "tools/action/comment.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_action_unicode_paths.py",
+        "tests/unit/test_r2_interface_paths.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "action-red.txt",
+            "note": "Four non-ASCII/whitespace path cases fail"
+          },
+          {
+            "path": "interfaces-red.txt",
+            "note": "Exact path and display adapter regressions"
+          }
+        ],
+        "green": [
+          {
+            "path": "interfaces-green.txt",
+            "note": "Shared interface batch passed"
+          },
+          {
+            "path": "final-interface-check.txt",
+            "note": "Final shared interface check passed"
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "The new --changed-z option preserves Git spelling. Legacy --changed keeps its previous line format.",
+        "No hosted Action dispatch was performed; workflow and renderer checks are local."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "UI3",
+      "title": "Separate SARIF URI locations from GitHub annotation filenames",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "SARIF emits percent-encoded URI locations; GitHub annotations decode the URI once and then apply property escaping to the original filename.",
+      "production_paths": [
+        "src/crapkit/sarif.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_sarif.py",
+        "tests/unit/test_r2_interface_paths.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "interfaces-red.txt",
+            "note": "Four fragment, percent, query and literal-backslash cases fail"
+          }
+        ],
+        "green": [
+          {
+            "path": "interfaces-green.txt",
+            "note": "Shared interface batch passed"
+          },
+          {
+            "path": "final-interface-check.txt",
+            "note": "Final shared interface check passed"
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Literal percent signs and POSIX backslashes remain distinct from URI syntax."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "UI4",
+      "title": "Let plugin doctor report a failed launcher probe",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Plugin doctor reports a failed, malformed or undecodable launcher probe as failure instead of substituting the running module's version.",
+      "production_paths": [
+        "src/crapkit/cli/admin.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_doctor_plugin_root.py",
+        "tests/unit/test_r2_interface_paths.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "interfaces-red.txt",
+            "note": "Broken launcher is incorrectly treated as healthy"
+          }
+        ],
+        "green": [
+          {
+            "path": "interfaces-green.txt",
+            "note": "Shared interface batch passed"
+          },
+          {
+            "path": "final-interface-check.txt",
+            "note": "Final shared interface check passed"
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Valid launcher/version handshakes remain unchanged; the failing executable is named."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "CORE-S01",
+      "title": "Preserve exact Git filenames through scope assignment",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Scope assignment preserves exact Git filenames. The later reader-selector fix aliases LF only for library reader choice; file reads, records and cache identity keep the actual path.",
+      "production_paths": [
+        "src/crapkit/universe.py",
+        "src/crapkit/analyze.py",
+        "src/crapkit/cli/_shared.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_universe.py",
+        "tests/unit/test_r2_interface_paths.py",
+        "tests/unit/test_r2_analysis_literal_names.py",
+        "tests/e2e/test_r2_literal_path_identity.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "interfaces-red.txt",
+            "note": "Pure POSIX backslash scope identity case fails"
+          },
+          {
+            "path": "posix-path-red.txt",
+            "note": "Real Ubuntu inventory/rescore/claims path round trip fails"
+          },
+          {
+            "path": "analysis-names-red.xml",
+            "note": "LF filename chooses the wrong reader",
+            "counts": {
+              "tests": 21,
+              "failed": 8,
+              "errors": 0,
+              "skipped": 1
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "posix-path-green.txt",
+            "note": "Real Ubuntu path workflow passes"
+          },
+          {
+            "path": "analysis-names-green.xml",
+            "note": "Windows reader/name checks",
+            "counts": {
+              "tests": 67,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 1
+            }
+          },
+          {
+            "path": "analysis-names-posix.xml",
+            "note": "Ubuntu literal-name checks",
+            "counts": {
+              "tests": 21,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "User-entered spellings are converted only at the CLI adapter, according to the host OS.",
+        "Pure POSIX filename seams are labelled separately from actual Ubuntu filesystem tests.",
+        "Reader-class cache identity changes invalidate prior fallback rows without changing the source filename."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [
+        "INTEGRATION-PATH-TESTS"
+      ],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "CORE-04",
+      "title": "Let the duplicate result limit bound retained pair work",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "One owner's neighbor counter replaces the global pair-count dictionary. Bounded selection retains positive top candidates and only returned pairs allocate payloads.",
+      "production_paths": [
+        "src/crapkit/dup.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_measurements_duplication.py",
+        "tests/unit/test_duplication.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "measurements/duplication-base-final.txt",
+            "note": "Focused regression on the prior implementation"
+          }
+        ],
+        "green": [
+          {
+            "path": "measurements/duplication-green.txt",
+            "note": "Focused candidate checks",
+            "counts": {
+              "passed": 64
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "An exhaustive string-shingle oracle covers missing sources, nested spans, zero, positive and negative top slicing, and finite/nonfinite threshold behavior. Negative top retains legacy full-sort slicing and cannot have a bounded output buffer.",
+        "The 1,652-function self corpus uses about 63 KB more peak memory, with both measured medians near 10 ms."
+      ],
+      "measurable_tradeoffs": [
+        {
+          "evidence": "measurements/duplication-after.json",
+          "scope": "Same interpreter and immutable inputs; five interleaved warm rounds, tracemalloc measured separately",
+          "inputs": {
+            "self": {
+              "median_seconds": {
+                "base": 0.010209200030658394,
+                "candidate": 0.010054199956357479
+              },
+              "peak_bytes": {
+                "base": 1281032,
+                "candidate": 1344088
+              },
+              "same_returned_payload": true
+            },
+            "clones300": {
+              "median_seconds": {
+                "base": 0.13195299997460097,
+                "candidate": 0.05274650000501424
+              },
+              "peak_bytes": {
+                "base": 37065116,
+                "candidate": 431164
+              },
+              "same_returned_payload": true
+            },
+            "clones600": {
+              "median_seconds": {
+                "base": 0.5983417999814264,
+                "candidate": 0.20433239999692887
+              },
+              "peak_bytes": {
+                "base": 147713356,
+                "candidate": 870916
+              },
+              "same_returned_payload": true
+            }
+          },
+          "note": "At 600 clones/top1, peak retained memory falls from 147,713,356 to 870,916 bytes. Dense pair arithmetic remains quadratic; all-result and negative-top outputs cannot be bounded by a small positive limit."
+        }
+      ],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "UI5",
+      "title": "Remove conflicting copies of mutation storage guidance",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "The mutation configuration reference owns worktree preparation, private input, pool lifetime, concurrency and cleanup. Adoption, handbook and plugin guidance link to that reference.",
+      "production_paths": [],
+      "test_paths": [
+        "tests/unit/test_fresh_user_docs_contract.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "repo:docs/architecture/2026-09-07-re-audit/report-data.json",
+            "note": "Audit documents conflicting storage guidance; no runtime red test applies"
+          },
+          {
+            "path": "docs-adapters.xml",
+            "note": "Integration catches two relative-link documentation failures",
+            "counts": {
+              "tests": 199,
+              "failed": 2,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "docs-links-green.xml",
+            "note": "Corrected documentation links",
+            "counts": {
+              "tests": 21,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "ci-docs-integration.xml",
+            "note": "Shared CI and documentation contracts",
+            "counts": {
+              "tests": 129,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Documentation-only correction; mutation runtime policy remains owned by its execution modules."
+      ],
+      "measurable_tradeoffs": [],
+      "documentation_paths": [
+        "docs/configuration.md",
+        "docs/adoption.md",
+        "docs/handbook.html",
+        "plugin/skills/crapkit/SKILL.md"
+      ],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    },
+    {
+      "id": "CORE-S02",
+      "title": "Route claim-release paths through the existing CLI path adapter",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": "Claim release rebases its filename through the shared command-root and invocation-directory adapter before matching the existing function selector.",
+      "production_paths": [
+        "src/crapkit/cli/queue.py",
+        "src/crapkit/cli/_shared.py"
+      ],
+      "test_paths": [
+        "tests/unit/test_r2_interface_paths.py",
+        "tests/e2e/test_r2_literal_path_identity.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "interfaces-red.txt",
+            "note": "Implicit and explicit repository roots fail to find the requested claim"
+          }
+        ],
+        "green": [
+          {
+            "path": "interfaces-green.txt",
+            "note": "Shared interface batch passed"
+          },
+          {
+            "path": "final-interface-check.txt",
+            "note": "Final shared interface check passed"
+          },
+          {
+            "path": "posix-path-green.txt",
+            "note": "Real Ubuntu claim release retains literal backslash identity"
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "Release-all and function selectors retain their previous behavior. Explicit --repo and implicit nested-root commands use the established cwd rule."
+      ],
+      "measurable_tradeoffs": [],
+      "integration_followups": [],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    }
+  ],
+  "extra_work": [
+    {
+      "id": "CI-OPT",
+      "title": "Reduce repeated test preparation and duplicate source-suite work",
+      "status": "complete; focused and full checks passed",
+      "complete_suite_status": "passed",
+      "final_behavior": [
+        "Prepare pristine release input once per worker/state, then copy private checkout and bare remote. Keep real release proof and publication retry tests.",
+        "Prepare pristine inventory Git input once per worker, then copy private source, index and refs. Keep CLI, nested lane and measurement work real.",
+        "Publish fixture seeds only after complete preparation. Injected init failures can retry without poisoning following cases.",
+        "Use four unit workers and eight E2E workers; preserve an explicit serial unit mode and all test IDs.",
+        "Give Ubuntu/Python 3.12 source testing to dogfood; retain all six OS/Python owners, console smoke, event-base hook, other five matrix jobs and both noneditable wheels.",
+        "Clear stale dogfood JUnit, then require the actual new passing complete report. Missing or invalid evidence fails even though the action remains advisory."
+      ],
+      "production_paths": [
+        ".github/workflows/ci.yml",
+        "crapkit.toml",
+        "pyproject.toml",
+        "tools/testing/run.py"
+      ],
+      "test_paths": [
+        "tests/e2e/test_inventory_e2e.py",
+        "tests/unit/test_r2_ci_fixtures.py",
+        "tests/unit/test_r2_ci_runner.py",
+        "tests/unit/test_r2_ci_schedule.py",
+        "tests/unit/test_release_guards.py",
+        "tests/unit/test_suite_schedule.py"
+      ],
+      "focused_evidence": {
+        "red": [
+          {
+            "path": "tests-ci/fixture-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 2,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/inventory-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 1,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/schedule-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 7,
+              "failed": 7,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/runner-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 2,
+              "failed": 2,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/cleanup-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 1,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/seed-release-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 1,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/seed-inventory-red.xml",
+            "note": "Focused pre-change or interrupted-setup regression",
+            "counts": {
+              "tests": 1,
+              "failed": 1,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ],
+        "green": [
+          {
+            "path": "tests-ci/focused-unit.xml",
+            "note": "Focused candidate checks",
+            "counts": {
+              "tests": 99,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/schedule-final.xml",
+            "note": "Focused candidate checks",
+            "counts": {
+              "tests": 9,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/inventory-replay.xml",
+            "note": "Focused candidate checks",
+            "counts": {
+              "tests": 13,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/seed-release-green.xml",
+            "note": "Focused candidate checks",
+            "counts": {
+              "tests": 3,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          },
+          {
+            "path": "tests-ci/seed-inventory-green.xml",
+            "note": "Focused candidate checks",
+            "counts": {
+              "tests": 2,
+              "failed": 0,
+              "errors": 0,
+              "skipped": 0
+            }
+          }
+        ]
+      },
+      "compatibility_platform_limits": [
+        "All original collected test IDs remain. CI workstream collection adds 14 unit and two E2E cases; this is not the final whole-repository test count.",
+        "One Ubuntu/Python 3.12 source owner moves to dogfood with strict fresh JUnit admission. All six OS/interpreter owners and both installed-wheel revisions remain.",
+        "No hosted dispatch was performed. Historical duplicate work of 101 unit seconds plus 69 E2E seconds is runner work, not a 170-second critical-path saving.",
+        "The first inventory invocation has 43 passes and 13 setup-related failures. The same 13 cases pass under corrected rootless basetemp and runner-relative coverage settings.",
+        "No timeout, expected test assertion or coverage requirement was relaxed. Bare pytest stays serial and --unit-workers 1 remains available."
+      ],
+      "measurable_tradeoffs": [
+        {
+          "scope": "release_fixture",
+          "evidence": "tests-ci/fixture-timings.json",
+          "warm_samples": 7,
+          "warm_median_seconds": {
+            "base": 2.6972620000015013,
+            "candidate": 0.15691550000337884
+          },
+          "cold_seconds": {
+            "base": 1.9340997000108473,
+            "candidate": 2.261662899982184
+          },
+          "limit": "Windows 3.11.2, fixture setup only, uninstrumented, same-host interleaved samples; production release admission remains unchanged."
+        },
+        {
+          "scope": "inventory_fixture",
+          "evidence": "tests-ci/inventory-timings.json",
+          "warm_samples": 7,
+          "warm_median_seconds": {
+            "base": 0.6505665000295267,
+            "candidate": 0.0468006000155583
+          },
+          "cold_seconds": {
+            "base": 0.3039240000071004,
+            "candidate": 0.7557945000007749
+          },
+          "limit": "Windows 3.11.2; fixture setup only, no CLI or lane time; pytest-xdist creates a seed per worker."
+        },
+        {
+          "scope": "Public release retry case, invoked directly",
+          "evidence": "tests-ci/retry-timings.json",
+          "warm_samples": 5,
+          "warm_median_seconds": {
+            "base": 12.67941730003804,
+            "candidate": 8.332478999975137
+          },
+          "cold_seconds": {
+            "base": 12.984645700023975,
+            "candidate": 11.513363300007768
+          },
+          "limit": "Windows 3.11.2; unchanged existing test body invoked directly with MonkeyPatch; real Git/local remote writes and production release guards, fake network/build adapter; no pytest/coverage startup in timed region. Measured before atomic seed publication; final warm copy path is unchanged."
+        },
+        {
+          "scope": "32-case mixed unit subset",
+          "evidence": "tests-ci/unit-worker-summary.json",
+          "warm_samples_per_worker_count": 5,
+          "warm_median_seconds": {
+            "1": 46.932279800006654,
+            "2": 39.320566300011706,
+            "4": 33.915162099990994
+          },
+          "cold_seconds": {
+            "1": 43.72214139997959,
+            "2": 42.147021499986295,
+            "4": 30.537143900000956
+          },
+          "executed_lines": 3467,
+          "executed_branches": 466,
+          "case_ids_equal": true,
+          "note": "All 18 runs pass. Four workers improve this subset by 27.7%; no full-suite gain is claimed. Small correctness probes overlapped some samples."
+        }
+      ],
+      "benchmark_limits": [
+        "Final fixture comparisons each contain one cold pair and seven interleaved warm pairs, Windows CPython 3.11.2, uninstrumented fixture setup only. Cold setup became slower; each xdist worker pays it separately.",
+        "Public release retry comparison used five warm pairs before atomic seed publication. It executes the existing push-failure retry case directly with real Git/source/receipt checks and fake external build/publication adapters; it excludes pytest startup. The final warm copy path is unchanged.",
+        "Worker comparison used 32 fixed cases, one cold and five interleaved warm rounds at one, two and four workers. All 18 runs passed. Identical coverage unions contain 3467 lines and 466 branches. Four workers were 27.7% faster on this subset, with no whole-suite gain asserted.",
+        "Small correctness probes overlapped some worker samples; no competing broad suite ran. Samples and source hashes are retained. Early overlong Windows Git fixture paths are preserved as setup errors, not product failures."
+      ],
+      "collection": {
+        "scope": "CI workstream only",
+        "unit": {
+          "base": 3645,
+          "candidate": 3659,
+          "removed": 0,
+          "added": 14
+        },
+        "e2e": {
+          "base": 761,
+          "candidate": 763,
+          "removed": 0,
+          "added": 2
+        }
+      },
+      "integration_followups": [
+        "INTEGRATION-FIXTURES",
+        "INTEGRATION-COLLECTION"
+      ],
+      "complete_suite_platforms": {
+        "linux_installed_wheels": "passed",
+        "windows_source": "passed"
+      },
+      "implemented": true
+    }
+  ],
+  "report_draft": "report-draft.md",
+  "final_verified_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "integration_followups": [
+    {
+      "id": "INTEGRATION-PATH-TESTS",
+      "candidates": [
+        "CORE-S01",
+        "CORE-01"
+      ],
+      "status": "committed; focused checks and final complete runs passed",
+      "behavior": "Host-native path forms and distinct actual POSIX backslash filenames; preserve real GitError and public CLI exit 4 without binding global flag order.",
+      "files": [
+        "tests/e2e/test_discovery_e2e.py",
+        "tests/e2e/test_hook_prefetch_e2e.py"
+      ],
+      "evidence": "measurements/e2e-followup/result.json",
+      "commit": "0082379e350aa0eed44eeec50514023a573f61df"
+    },
+    {
+      "id": "INTEGRATION-FIXTURES",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "status": "committed; focused checks and final complete runs passed",
+      "behavior": "Private child package precedence with dependency startup hooks; interruption occurs after real process and lock readiness. Installed-byte checks and both subprocess coverage branches remain.",
+      "files": [
+        "tests/conftest.py",
+        "tests/unit/test_ci_verdict.py",
+        "tests/unit/test_doctor_lane_probe.py",
+        "tests/unit/test_owned_interrupt.py",
+        "tests/e2e/test_init_scoped_tests_e2e.py"
+      ],
+      "evidence": "execution/fixture-result.json",
+      "commit": "0082379e350aa0eed44eeec50514023a573f61df"
+    },
+    {
+      "id": "INTEGRATION-COLLECTION",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "status": "committed; focused checks and final complete runs passed",
+      "behavior": "Reject collection, crashed-worker and session interruption records before coverage publication. Preserve original failed JUnit and incomplete suite artifacts. Keep ordinary completed fixture/test failures measurable. JUnit readers also reject collection failure, so a newly run lane refuses and a retry cannot forgive a recorded pass from that partial report.",
+      "files": [
+        "tools/testing/run.py",
+        "src/crapkit/junitparse.py",
+        "tests/unit/test_suite_collection_failure.py",
+        "tests/unit/test_r2_collection_admission.py"
+      ],
+      "evidence": "tests-ci/collection-followup.json",
+      "commit": "0082379e350aa0eed44eeec50514023a573f61df"
+    },
+    {
+      "id": "INTEGRATION-HELPER-PROVENANCE",
+      "candidates": [
+        "EX1"
+      ],
+      "status": "committed; focused checks and final complete runs passed",
+      "behavior": "Pin owner helper to the running package without changing target environment. Transport shell-launch OSError separately from valid command exits and rethrow after owned-tree cleanup.",
+      "files": [
+        "src/crapkit/procs.py"
+      ],
+      "evidence": [
+        "procs-red.xml",
+        "procs-green.xml",
+        "followup-check-summary.json"
+      ],
+      "source": "Root final follow-up commit and focused results; complete rerun pending.",
+      "commit": "0082379e350aa0eed44eeec50514023a573f61df"
+    },
+    {
+      "id": "INTEGRATION-PROBE-READINESS",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "commit": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+      "status": "committed; focused checks and final complete runs passed",
+      "behavior": "Wait for bounded fixture readiness before starting the unchanged two-second adapter wait. Capture the real TimeoutExpired value 2, re-raise it, and retain started/gone checks. Exercise ready and synthetic three-second delayed startup. The separate unwrapped probe retains its five-second wall-clock ceiling.",
+      "files": [
+        "tests/unit/test_init_probe.py"
+      ],
+      "evidence": [
+        "tests-ci/probe-readiness/result.json",
+        "execution/probe-readiness-review.json"
+      ],
+      "production_changed": false,
+      "max_changed_function_ccn": 4,
+      "measured_tradeoff": "No performance claim; the delayed variant deliberately adds three seconds of fixture startup."
+    },
+    {
+      "id": "INTEGRATION-PROGRESS-FIXTURES",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "status": "committed; focused checks and final complete runs passed",
+      "behavior": "Establish real child readiness before unchanged cleanup waits. Use module-local controlled time and real file growth for periodic progress, exact idle expiry and total deadline precedence. Keep unwrapped real startup-silence and total-deadline controls.",
+      "files": [
+        "tests/unit/test_init_probe.py",
+        "tests/unit/test_procs.py"
+      ],
+      "production_changed": false,
+      "max_changed_function_ccn": 4,
+      "evidence": [
+        "tests-ci/progress-deadline/result.json",
+        "tests-ci/progress-deadline/green.xml",
+        "tests-ci/progress-deadline/posix.xml",
+        "execution/progress-deadline-review.json"
+      ],
+      "red": "Two original failures plus two related cleanup fixtures fail with delayed startup.",
+      "green": "20 passed on each host, identical IDs, no failures/errors/skips.",
+      "negative_control": "Tests fail when growth no longer resets the idle clock or the total deadline is disabled.",
+      "measured_tradeoff": "No latency gain claimed. Controlled-clock checks measure watcher rules; real subprocess checks retain output, errors and descendant cleanup."
+    }
+  ],
+  "initial_implementation_commit": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+  "coverage_disposition": "coverage-disposition.json",
+  "helper_independent_review": {
+    "status": "complete; no findings",
+    "evidence": "execution/launcher-review.json",
+    "source_sha256": "a8222c6aad552b15e8c1a3f6513b5165e793525f9495f2806fc3d4b615adf4ed",
+    "lifecycle_disposition": [
+      "Windows: 11 passed and one existing POSIX signal skip.",
+      "POSIX: 10 passed and two stale interrupt fixture failures. The integration worktree retained the original Popen.wait injection at that time.",
+      "The two POSIX interrupt cases passed against the same production source when selected from the repaired test module. Combined disposition is 12 POSIX passes.",
+      "The first Windows invocation had no basetemp parent directory and executed no test bodies. Its 11 setup errors and one skip remain in launcher-lifecycle-windows-invalid-basetemp.xml. Creating the private parent directory fixed the invocation."
+    ],
+    "timing": {
+      "replay": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation-round2\\execution\\measure_launcher_change.py",
+      "method": "Same interpreter and no-op command; separate processes with explicit source PYTHONPATH; one cold pair and five alternating warm pairs per mode. Hosts measured in sequence during a coordinated quiet window.",
+      "meaning": "The comparison measures the combined source-identity and launch-error patch, not TemporaryFile alone.",
+      "results": {
+        "windows": {
+          "path": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation-round2\\execution\\launcher-cost-windows.json",
+          "modes": {
+            "standalone": {
+              "medians": {
+                "base": 0.5957431999850087,
+                "candidate": 0.5590412999736145
+              },
+              "delta_seconds": -0.03670190001139417
+            },
+            "shared": {
+              "medians": {
+                "base": 0.234609899984207,
+                "candidate": 0.2808655999833718
+              },
+              "delta_seconds": 0.04625569999916479
+            }
+          }
+        },
+        "posix": {
+          "path": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation-round2\\execution\\launcher-cost-posix.json",
+          "modes": {
+            "standalone": {
+              "medians": {
+                "base": 0.16214529701392166,
+                "candidate": 0.2849102890177164
+              },
+              "delta_seconds": 0.12276499200379476
+            },
+            "shared": {
+              "medians": {
+                "base": 0.014885651995427907,
+                "candidate": 0.023084547981852666
+              },
+              "delta_seconds": 0.008198895986424759
+            }
+          }
+        }
+      },
+      "conclusion": "Shared-owner medians increased by 46ms on Windows and 8ms on POSIX. Standalone medians changed by -37ms on Windows and +123ms on POSIX. This small sample does not support a speed claim.",
+      "excluded": "launcher-cost-windows-overlapped.json ran during the root focused suite. Its deltas are not used."
+    },
+    "limits": [
+      "Each launch opens one temporary file and keeps it until tree cleanup finishes. This adds filesystem work and requires a writable temporary directory.",
+      "The parent reads the whole trusted diagnostic payload after cleanup. Long errors therefore use memory but cannot fill an unread pipe and stall the launcher.",
+      "Normal OSError, exit-code, stderr and source-identity regression tests belong to root. This independent check covered real lifecycle behavior and native startup failures.",
+      "No production code was edited during this review. Root owns the final full source and installed-wheel schedules."
+    ]
+  },
+  "production_commit": "0082379e350aa0eed44eeec50514023a573f61df",
+  "fake_target_isolation_review": {
+    "status": "complete; both-host product coverage preserved",
+    "evidence": "execution/fake-target-isolation-review.json",
+    "commit": "0009a6776f7e260046589954d98e035918f89439",
+    "observations": [
+      "On each host, plain Python imports the fake package and removing its source makes coverage export exit 1.",
+      "On each host, target-only -S preserves target package output, leaves no fake path in combined coverage, and makes export exit 0.",
+      "Executed line counts for the real parent procs module and owner module are identical before and after adding -S on each host.",
+      "The current root POSIX focused report contains only src/crapkit paths and measures both real modules."
+    ]
+  },
+  "probe_readiness_review": {
+    "status": "complete; no findings",
+    "evidence": "execution/probe-readiness-review.json"
+  },
+  "artifact_path_aliases": {
+    "policy": "Preserved attempt files moved without changing bytes. Resolve original internal locators by the proof's measured commit, not by a global final-path replacement.",
+    "by_measured_commit": {
+      "0009a6776f7e260046589954d98e035918f89439": {
+        "wheels-final/": "wheels-attempt3/",
+        "full-wheels-final.": "full-wheels-attempt3.",
+        "final-wheel-proof.json": "wheel-attempt3-proof.json"
+      },
+      "72b1125d07904f8f41c465e4fe79aba2a1db5fa7": {
+        "wheels-final/": "wheels-attempt4/",
+        "full-wheels-final.": "full-wheels-attempt4.",
+        "final-wheel-proof.json": "wheel-attempt4-proof.json"
+      }
+    }
+  },
+  "finalizer_review": {
+    "status": "closed; scratch packaging admission repaired",
+    "evidence": "measurements/manifest-finalizer/result.json",
+    "standalone_archive": "measurements/manifest-finalizer/companions-result.json"
+  },
+  "progress_deadline_review": {
+    "status": "complete; no findings",
+    "evidence": "execution/progress-deadline-review.json"
+  },
+  "canonical_report_path": "docs/architecture/2026-09-07-implementation/REPORT.md"
+}

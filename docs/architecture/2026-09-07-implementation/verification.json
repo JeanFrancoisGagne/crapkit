@@ -1,0 +1,352 @@
+{
+  "production_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "source_result": {
+    "python": "C:\\Users\\jfgag\\Documents\\Codex\\2026-09-06\\c-users-jfgag-appdata-local-temp\\work\\implementation\\configured-runtime\\venv\\Scripts\\python.exe",
+    "seconds": 1840.7831145,
+    "exit": 0,
+    "started_utc": "2026-09-07T19:09:11.4097507Z",
+    "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e"
+  },
+  "source_verdict": {
+    "baseline_commit": "b11e2c165411b5ff9caa6b4b8486aafe477dfeb8",
+    "baseline_run": 77,
+    "changed_files": 95,
+    "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+    "committed_findings": 0,
+    "diff_uncovered": [
+      {
+        "line": 56,
+        "path": "src/crapkit/_process_owner.py"
+      },
+      {
+        "line": 414,
+        "path": "src/crapkit/gitio.py"
+      },
+      {
+        "line": 522,
+        "path": "src/crapkit/gitio.py"
+      },
+      {
+        "line": 163,
+        "path": "src/crapkit/mutate_pool.py"
+      },
+      {
+        "line": 327,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 328,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 329,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 78,
+        "path": "src/crapkit/score.py"
+      },
+      {
+        "line": 79,
+        "path": "src/crapkit/score.py"
+      },
+      {
+        "line": 84,
+        "path": "src/crapkit/score.py"
+      }
+    ],
+    "diff_uncovered_count": 10,
+    "diff_uncovered_max": null,
+    "dirty_failures": [],
+    "dirty_findings": 0,
+    "gate_violations": [],
+    "new_failures": [],
+    "ok": true,
+    "overridden": [],
+    "ratchet_changes": null,
+    "ratchet_regressions": [],
+    "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+    "run_id": 81,
+    "schema": 1,
+    "tool_versions": {
+      "analysis_version": "10",
+      "crapkit": "0.6.0",
+      "lizard": "1.24.0"
+    },
+    "unmarked_over_target": 0
+  },
+  "source_tests": {
+    "unit": {
+      "tests": 3915,
+      "passed": 3912,
+      "skipped": 3,
+      "failures": []
+    },
+    "e2e": {
+      "tests": 801,
+      "passed": 795,
+      "skipped": 6,
+      "failures": []
+    }
+  },
+  "wheel_verdict": {
+    "baseline_commit": "c2d3515581d410d8c14849063dac27af843a3729",
+    "baseline_run": 1,
+    "changed_files": 95,
+    "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+    "committed_findings": 0,
+    "diff_uncovered": [
+      {
+        "line": 54,
+        "path": "src/crapkit/_process_owner.py"
+      },
+      {
+        "line": 55,
+        "path": "src/crapkit/_process_owner.py"
+      },
+      {
+        "line": 414,
+        "path": "src/crapkit/gitio.py"
+      },
+      {
+        "line": 522,
+        "path": "src/crapkit/gitio.py"
+      },
+      {
+        "line": 163,
+        "path": "src/crapkit/mutate_pool.py"
+      },
+      {
+        "line": 317,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 327,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 328,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 329,
+        "path": "src/crapkit/procs.py"
+      },
+      {
+        "line": 78,
+        "path": "src/crapkit/score.py"
+      },
+      {
+        "line": 79,
+        "path": "src/crapkit/score.py"
+      },
+      {
+        "line": 84,
+        "path": "src/crapkit/score.py"
+      }
+    ],
+    "diff_uncovered_count": 12,
+    "diff_uncovered_max": null,
+    "dirty_failures": [],
+    "dirty_findings": 0,
+    "gate_violations": [],
+    "new_failures": [],
+    "ok": true,
+    "overridden": [],
+    "ratchet_changes": null,
+    "ratchet_regressions": [],
+    "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+    "run_id": 2,
+    "schema": 1,
+    "tool_versions": {
+      "analysis_version": "10",
+      "crapkit": "0.6.0",
+      "lizard": "1.24.0"
+    },
+    "unmarked_over_target": 3,
+    "ledger": {
+      "id": 2,
+      "commit_sha": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "kind": "verify",
+      "verdict_ok": 1,
+      "findings": 0
+    },
+    "tests": {
+      "base": {
+        "tests": 4416,
+        "skipped": 27,
+        "failures": [
+          "tests.e2e.test_init_scoped_tests_e2e::test_doctor_warns_when_the_lane_runs_another_python_than_doctor",
+          "tests.unit.test_ci_verdict::test_installed_source_is_verified_before_coverage_paths_are_mapped",
+          "tests.unit.test_doctor_lane_probe::test_the_probe_controls_its_output_encoding",
+          "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[owned]",
+          "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[plain]"
+        ]
+      },
+      "candidate": {
+        "tests": 4710,
+        "skipped": 30,
+        "failures": []
+      }
+    }
+  },
+  "installed_packages": {
+    "base": {
+      "package": "/tmp/crapkit-ci-1qwj1ou9/base-install/venv/lib/python3.11/site-packages/crapkit",
+      "source_sha256": {
+        "verify.py": "c6af8e2d67131ac37c141fb0727a65754c683b27fac837d98994de3d8fa80c0a",
+        "lanes.py": "c5216bb800b40af931cf8f0997cb115961ea3ff2138843b733f20b348965477e",
+        "hook.py": "511f9e4e57a22f4bb2afba5ea2f957fd82203566b59ecdaf6e48452abe40b03e",
+        "coverage_istanbul.py": "8a266abe9e9d5efdaa76e2138ba6af5a4322b810282bda1715fbdbe486ebdc6f",
+        "__init__.py": "6619808f365d4917ab9c992d6ad184b7070c166381b5c6e3a8ca8e68da48ca93",
+        "coupling.py": "4636a5e7a8b3d0033afba35f91abe963820bfedbc567b85b5f6a81f9fdcb17a3",
+        "__main__.py": "13a1a5b340cdcfc1902b62be90e508c7c71886000d5bf087e7854aadf09fb35e",
+        "lizardrust.py": "b77efcc7691184cd786ddb18b0bd5aae3adcf4d2e07f5f59defb93699b8271ed",
+        "watch.py": "0d033d3a4dc34381bc747421c4bb7acd3491b89eb4fbfd7fa9327215262efa85",
+        "merge.py": "fe0cfc7b721b2c2566755e270986a3781d7cae03581c8c7cd6b239a0d2653c96",
+        "scaffold.py": "3309f3f213ae59289fad6bd0842212551e6c9a72e98acdd5f85b725eef88727e",
+        "churn_cache.py": "05278d0bb38365ff5340794f9c37f81fcda4fa153f31b4d5c3e8906ed330bd22",
+        "digest.py": "44a41d96951b205e9eb75589a4afa97110c2713006e12ef1d2b6ddbb64c369b5",
+        "snapshot.py": "9df39f3a1c6925a5b8ffd9eb39210112f3decc61a450edf552a0e0a08f380759",
+        "doctor.py": "232589aed72b28f01cb5b7fc922a28c828489082fa8289025665db0237df824e",
+        "dup.py": "bd018b6977dfe72bdb4ba7fc30db9bed51328abd49f3aa3e8808788a9ce054fd",
+        "universe.py": "11a2fc5d2c3c88e4cca859a073dba6013b5415fe9643a125e7bc3920c1b10b7a",
+        "rootfind.py": "302fe9955dcfd65e4924a69f0a6cf711b12e700ee0f7f5c24a796476024d5625",
+        "repotext.py": "e9a78fdb5ce98a4a4a27db8c21e5ebb491e5b6e7bdc8273b6fd209876a372dd2",
+        "sarif.py": "29d3acba42b9f97629e88d76478c1f78c10f73b62b915ecb083d1705b61d8729",
+        "churn_log.py": "f79e0df49bcd9b1168241c9ab039f7daf692f7ea671d53b0644428c48a69e5d3",
+        "gitio.py": "f23816fbdd7b9da02c4cf50dde7e28babd869e0fb91b8213eacb4d324a995dc1",
+        "ratchet.py": "1f97deef7123c3be8ab1de3c8a0a9c375c0a036908952658de4c5244d9c64067",
+        "lizardtypescript.py": "8b39dd2d24148bd32f28da9a0f0866b2c69800ca5787e858f79121493774e846",
+        "gitpaths.py": "96e8c1d5469023fc1e37624d2cdc37818e5ef6df213b756d54a6b8252903841d",
+        "mutate_pool.py": "6903b4a597bb7c72da72770649a1eca4469daf4eca7631584b97bb4f41388c4c",
+        "packet.py": "aa23e45b823daa08f979c84130ea1ee053eb4b1f7a66af922b2c9702707ccdf1",
+        "locks.py": "df84cac326ce032456a40d48af9a7192b17f7515f2f2dd971f2dbcf9425c7808",
+        "errors.py": "b128fec2c9e0ad0a76f136e8eec8c09bd607b4e28d08d6d0cc239b9f80a46927",
+        "lizardpowershell.py": "e9f2229675d51cf7370fef25e35f24635aa9a8fa88ae9e5f1614bbe6be878bb2",
+        "sarifio.py": "542585a8c6256073cca79096a2d21affe4179a54b2badbefaa1a50392efd4043",
+        "covstream.py": "eb312eeb43f12a24f74ef5bb79ce1370f5779d4cd606358a296d216b54215228",
+        "score.py": "6ca7a904d129272cbf5f3e3e75df4bd0c5c2b2fe1e4d77f3446b0ff0e50c9972",
+        "invocation.py": "b571316313f5df9deeb552be00f3b3898f0459a530307b7c5ebfd4c13887c780",
+        "lizardcognitive.py": "d185cd33d31454a63872b7f9b895c6516d67096995b6a280be4f8ee4a8667ef7",
+        "cache.py": "1464f1aefde9306c11be073f594fba1a2d1297976aa149169ae80fc8f92ccdce",
+        "worklist.py": "6fa7c2ad225bec40db29bf8cc7d260eb1405355fc6c55f7440b6240dc5e9ed6b",
+        "store.py": "2293701f090027c405761f5cdfc8f93ff65c1c2256eb548ca75a90fd2652ed7b",
+        "coverage_py.py": "3e230567114723981b4d961a4e9e15ed338928321eb168cf1a85965fc0194cf0",
+        "junitparse.py": "ca8f00ed6e77376f16d17cb9854c94f5d6108d779da765accce71e3cea3ec3ac",
+        "lizardshell.py": "da4d88a4bda8c791ff4c3b53b76caf9f1a8729b533a99354dce7576f280c356a",
+        "_pygdefer.py": "15b27e857a8efe8121715f1256deff5f5d5a7eeebc1c3a7934259136452a2c1c",
+        "ratchet_report.py": "f984f7cc399f5311d9f77aa19c41c31a7811922d0f742d0131bdb97b42759fea",
+        "_process_owner.py": "e7fc0fe1066f92daa04bbf15178dd2cbbbd0ce9cee197c99d79a8395c0c9a752",
+        "ratchetfile.py": "c3cc3f1b1e9a1a9bdb4621cda58eb8b498242dc84c765bff0a53d582bd8c8c97",
+        "config.py": "e0c59ee78250472c9b9324076fedc8c036c95c61e329e64de4dc01a81df67462",
+        "mutate.py": "c8460a3b0ab167343263f1c33cbddaea604194f1c0b27b8c7bfec24c26ec39b4",
+        "diffparse.py": "4d8e77aa55e96fe3a20890664ea0c0f848d4b27f18b9b6179618117a8a3fbec6",
+        "uncovered.py": "600d87ac6a2ef1ab74c773d7c3f8e4571d28a6a3be05c37e5e5fa6ef60e84a50",
+        "keys.py": "929442441475df1b48f0cc53af516f4a16f6861554e1cee44cd55033198bdbb2",
+        "coupling_cache.py": "a2da6a8ae42bc4dc673ffb0219e1304023ddca3a6745452320566bc9440599c4",
+        "override.py": "e378a3fa599bbee9b99bf00038e60b39182c118a9c0628f4878a8435cdf05a5e",
+        "config_contract.py": "b30919dc2cf8fa5f39c2668a91f6cbc60b13cfc957f81ce57c90eef34d7693f9",
+        "churn.py": "2cf5ccf4f1e4aa0e15566fe7d63674bdcd976b37ba7117c42a4e63d39b8afe82",
+        "report.py": "c87800a651473ae7f9a31bbca0b77faa3666e547455ac7d83023c7b6f9051d49",
+        "procs.py": "63e8864dffe81beecffdf642757629c8ca5c42ba1082ce07e43099056f60aa5b",
+        "analyze.py": "465d3d92bc398b5b6f627bb9da74b535744ce95cfec1908278fb7d68c742a468",
+        "mcp_server.py": "a7601987e77fc4b55c3c2988553609ac8611075c1311249f080382570078941c",
+        "cli/_shared.py": "4b35a5d3a8c2f76899d5c9dcef74292cb80188031be7a9df8cf421039e822f0c",
+        "cli/admin.py": "a794f5450f48484d67c6cb90225dd47f81935cbd8176da5c93dee030941f7ec2",
+        "cli/__init__.py": "5fcd7e713b7963406c4406dc4d5ba6c58780b2b247c059a0e49afa827aa69a8b",
+        "cli/verifying.py": "82e64adfff9a7d00dff54ae29b2f097b3861374f2c8eb9337fdfd07ee0176f1b",
+        "cli/analyses.py": "64a43e393944c371fa59ce9ae81cdde9d9ea6c6f52e5f9699ae7c1478c955684",
+        "cli/scoring.py": "0b4f7bae984d299f5c018592a41c1147dde6f38f4dd26bcdd50a1f2c6d2713b7",
+        "cli/parser.py": "fe2d5582b257bdc7b983e1d7e0734a3f70c7b3fe25a2bd8958799fe3be382714",
+        "cli/queue.py": "4e817240cfae8587aa1c8d9ab41f7341d22963687fedc0c22243226192c4cca0",
+        "cli/ratchet_cmds.py": "1cdfc8dfb905cbd780d2648f659466f61b0c0d44d0da72568af1d6ad246191de",
+        "cli/reports.py": "8181815151f9151d95d85242eeee4166fd846dac3a96a932c81b0593663908e4",
+        "cli/claude_hook.py": "563de7e89af55a524fad02535b6142865956f59396d7b75e0697e6202a43c1f4"
+      },
+      "wheel": "crapkit-0.6.0-py3-none-any.whl",
+      "wheel_sha256": "8fb991739ed2216d5721fd17bf64bf3e9894b5f04b1a2da207b351c2137b53a6",
+      "commit": "c2d3515581d410d8c14849063dac27af843a3729"
+    },
+    "candidate": {
+      "package": "/tmp/crapkit-ci-1qwj1ou9/candidate-install/venv/lib/python3.11/site-packages/crapkit",
+      "source_sha256": {
+        "verify.py": "88063f8a745d64032b0a153ac8abaff1f1cd8ced002033e7cbd605406b84708a",
+        "lanes.py": "c5216bb800b40af931cf8f0997cb115961ea3ff2138843b733f20b348965477e",
+        "hook.py": "511f9e4e57a22f4bb2afba5ea2f957fd82203566b59ecdaf6e48452abe40b03e",
+        "coverage_istanbul.py": "277eca5ffa0ddaa8fac5b7b3f04f97c2f736b718901e7d4c28e178386e141a69",
+        "__init__.py": "6619808f365d4917ab9c992d6ad184b7070c166381b5c6e3a8ca8e68da48ca93",
+        "coupling.py": "4636a5e7a8b3d0033afba35f91abe963820bfedbc567b85b5f6a81f9fdcb17a3",
+        "__main__.py": "13a1a5b340cdcfc1902b62be90e508c7c71886000d5bf087e7854aadf09fb35e",
+        "lizardrust.py": "b77efcc7691184cd786ddb18b0bd5aae3adcf4d2e07f5f59defb93699b8271ed",
+        "watch.py": "0d033d3a4dc34381bc747421c4bb7acd3491b89eb4fbfd7fa9327215262efa85",
+        "merge.py": "fe0cfc7b721b2c2566755e270986a3781d7cae03581c8c7cd6b239a0d2653c96",
+        "scaffold.py": "3309f3f213ae59289fad6bd0842212551e6c9a72e98acdd5f85b725eef88727e",
+        "churn_cache.py": "05278d0bb38365ff5340794f9c37f81fcda4fa153f31b4d5c3e8906ed330bd22",
+        "digest.py": "44a41d96951b205e9eb75589a4afa97110c2713006e12ef1d2b6ddbb64c369b5",
+        "snapshot.py": "d4fc13a30f978f7df7343b5227ed24d1a3c8266d9201389a0c2cb88155060ea3",
+        "doctor.py": "232589aed72b28f01cb5b7fc922a28c828489082fa8289025665db0237df824e",
+        "dup.py": "6adf65f610143295e00e53780ec1706c16dedf8f75bc15e2248f5517757f12a7",
+        "universe.py": "9b66c1583919c49ba0a9382ef6f11547cc88f94382350f803eb3c8f3fefe6f8f",
+        "rootfind.py": "302fe9955dcfd65e4924a69f0a6cf711b12e700ee0f7f5c24a796476024d5625",
+        "_windows_job.py": "6d66f7d0079b59a52f95c98e032e112e78d1d0cfb93444edcb7117f170e11e58",
+        "repotext.py": "e9a78fdb5ce98a4a4a27db8c21e5ebb491e5b6e7bdc8273b6fd209876a372dd2",
+        "sarif.py": "3a578b24a650e559126aeaf28652378ef594e7a61002b3146616141bce1234b1",
+        "churn_log.py": "f79e0df49bcd9b1168241c9ab039f7daf692f7ea671d53b0644428c48a69e5d3",
+        "gitio.py": "71977e45d73044e1123faae80d8571a787b58a6e5d78011e140238dc29045af3",
+        "ratchet.py": "f758ab27e80f65e0169bb6fe063ea2da8d94565dbd70ff79d0eec046992a7a3d",
+        "lizardtypescript.py": "8b39dd2d24148bd32f28da9a0f0866b2c69800ca5787e858f79121493774e846",
+        "gitpaths.py": "189a8f98dec6a8100741742b43d6ecb6069008269a9ef6b8e7dd7435f666261c",
+        "mutate_pool.py": "d444d19a84bce3d0646d7951693d66ab3e1c3fa4a8a13223f41410ccc83e90b6",
+        "packet.py": "60b2a0a55d44d1b45da0cc61db74293693103eaf5a189ff7b357b55e2b59b64c",
+        "locks.py": "f9001fa596acfe7d00f26ab7946fdaae88d1ae79e2eebf2cde5313324a1edc98",
+        "errors.py": "b128fec2c9e0ad0a76f136e8eec8c09bd607b4e28d08d6d0cc239b9f80a46927",
+        "lizardpowershell.py": "e9f2229675d51cf7370fef25e35f24635aa9a8fa88ae9e5f1614bbe6be878bb2",
+        "sarifio.py": "542585a8c6256073cca79096a2d21affe4179a54b2badbefaa1a50392efd4043",
+        "covstream.py": "ae02095ca284848d1c9c84fa7584f4f2262efd2f6f3c0a1e865ca914844f0191",
+        "score.py": "d96f56d56cc4309778930a76b1430c766952addc15ee5d0b35ad09ba40841035",
+        "invocation.py": "b571316313f5df9deeb552be00f3b3898f0459a530307b7c5ebfd4c13887c780",
+        "lizardcognitive.py": "d185cd33d31454a63872b7f9b895c6516d67096995b6a280be4f8ee4a8667ef7",
+        "cache.py": "1464f1aefde9306c11be073f594fba1a2d1297976aa149169ae80fc8f92ccdce",
+        "worklist.py": "6fa7c2ad225bec40db29bf8cc7d260eb1405355fc6c55f7440b6240dc5e9ed6b",
+        "store.py": "2293701f090027c405761f5cdfc8f93ff65c1c2256eb548ca75a90fd2652ed7b",
+        "coverage_py.py": "b6ef928b5ef5e7e18fb8ea42e59c953f6926b9be91e503b1d3b8e3e8b56a7c9c",
+        "junitparse.py": "86fa6f5d73b461cfd0534055525b11dff0424388cb6f3c3a3827a91f354d32f9",
+        "lizardshell.py": "da4d88a4bda8c791ff4c3b53b76caf9f1a8729b533a99354dce7576f280c356a",
+        "_pygdefer.py": "15b27e857a8efe8121715f1256deff5f5d5a7eeebc1c3a7934259136452a2c1c",
+        "ratchet_report.py": "ee78582d183a4b49fc741341ccf3e951afaf3309f7b5b90f39ec50a78f936003",
+        "_process_owner.py": "91e4cdaf1fffb0cfa024c6dd5e329c158fddae105ef8739db6fb0396e4ca4813",
+        "ratchetfile.py": "c3cc3f1b1e9a1a9bdb4621cda58eb8b498242dc84c765bff0a53d582bd8c8c97",
+        "config.py": "e0c59ee78250472c9b9324076fedc8c036c95c61e329e64de4dc01a81df67462",
+        "mutate.py": "c8460a3b0ab167343263f1c33cbddaea604194f1c0b27b8c7bfec24c26ec39b4",
+        "diffparse.py": "4d8e77aa55e96fe3a20890664ea0c0f848d4b27f18b9b6179618117a8a3fbec6",
+        "uncovered.py": "600d87ac6a2ef1ab74c773d7c3f8e4571d28a6a3be05c37e5e5fa6ef60e84a50",
+        "records.py": "015fc649c44da0045042c8630b9052dfd7896728f8131a3432c7223301981378",
+        "keys.py": "929442441475df1b48f0cc53af516f4a16f6861554e1cee44cd55033198bdbb2",
+        "coupling_cache.py": "a2da6a8ae42bc4dc673ffb0219e1304023ddca3a6745452320566bc9440599c4",
+        "override.py": "e378a3fa599bbee9b99bf00038e60b39182c118a9c0628f4878a8435cdf05a5e",
+        "config_contract.py": "b30919dc2cf8fa5f39c2668a91f6cbc60b13cfc957f81ce57c90eef34d7693f9",
+        "churn.py": "2cf5ccf4f1e4aa0e15566fe7d63674bdcd976b37ba7117c42a4e63d39b8afe82",
+        "report.py": "c87800a651473ae7f9a31bbca0b77faa3666e547455ac7d83023c7b6f9051d49",
+        "procs.py": "a8222c6aad552b15e8c1a3f6513b5165e793525f9495f2806fc3d4b615adf4ed",
+        "analyze.py": "9dcfbfa31d86290f2942ecc7bf84f563250f2d95e5b3be756f768a326f45d5c5",
+        "mcp_server.py": "e384f64a08c80b4afa23cb340cef429388280e66496c4d85dfe4e1f793d07e65",
+        "cli/_shared.py": "f1310351e9cd1af6ac321a2ef8302e1ac2cf68c918a3fb5c99527a858e89e102",
+        "cli/admin.py": "ddbee47dae496554508656ad52cc19b8bce1b2df4bc57a8bf9f1cd6c590f6246",
+        "cli/__init__.py": "5fcd7e713b7963406c4406dc4d5ba6c58780b2b247c059a0e49afa827aa69a8b",
+        "cli/verifying.py": "8563a5b3e7e06bd9616c049459da84692a7e4b41d84946f9bf7e14df708848fc",
+        "cli/analyses.py": "64a43e393944c371fa59ce9ae81cdde9d9ea6c6f52e5f9699ae7c1478c955684",
+        "cli/scoring.py": "0b4f7bae984d299f5c018592a41c1147dde6f38f4dd26bcdd50a1f2c6d2713b7",
+        "cli/parser.py": "fe2d5582b257bdc7b983e1d7e0734a3f70c7b3fe25a2bd8958799fe3be382714",
+        "cli/queue.py": "bd7df34f28faaf13218df227032404185304828fa62eb686eeac41beda914631",
+        "cli/ratchet_cmds.py": "1cdfc8dfb905cbd780d2648f659466f61b0c0d44d0da72568af1d6ad246191de",
+        "cli/reports.py": "8181815151f9151d95d85242eeee4166fd846dac3a96a932c81b0593663908e4",
+        "cli/claude_hook.py": "2487ca01130fdacb1475a8a18d431a3296e14a6be442b8bddf81b5e23c563100"
+      },
+      "wheel": "crapkit-0.6.0-py3-none-any.whl",
+      "wheel_sha256": "0c9603490af69afc339e8f3bbcc4c172973b683c87f89069ea70a5d3a956e0a6",
+      "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e"
+    }
+  },
+  "ratchet_unchanged": true
+}

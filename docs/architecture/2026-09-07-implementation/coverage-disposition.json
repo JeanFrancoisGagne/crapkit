@@ -1,0 +1,946 @@
+{
+  "schema": 1,
+  "status": "complete; final Windows source and Linux installed-wheel coverage reconciled",
+  "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "latest_committed_candidate_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "method": "Read-only saved run81/run2 ledgers, exact current Git source identity, actual final JUnit and coverage, and real scorer equivalence for separate Windows coverage populations.",
+  "evidence": {
+    "source_proof": "final-source-proof.json",
+    "wheel_proof": "final-wheel-proof.json",
+    "population_proof": "final-source-join-proof.json",
+    "source_verdict": "source-final/verdict.json",
+    "source_sqlite": "source-final/crap.sqlite",
+    "source_coverage": "source-final/py.json",
+    "linux_verdict": "wheels-final/verdict.json",
+    "linux_attempt": "wheels-final/attempt-bfgbev0l",
+    "replay": [
+      "measurements/reconcile_final_source.py",
+      "measurements/probe_final_source_join.py"
+    ]
+  },
+  "unmarked_over_target": {
+    "linux_count": 3,
+    "windows_count": 0,
+    "functions": [
+      {
+        "path": "src/crapkit/procs.py",
+        "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+        "start": 80,
+        "end": 84,
+        "ccn": 4,
+        "cov": 0.0,
+        "crap": 20.0,
+        "windows_cov": 1.0,
+        "windows_crap": 4.0,
+        "base_linux_measurement_unchanged": true,
+        "body_unchanged_from_base": true,
+        "has_ratchet_mark": false
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+        "start": 62,
+        "end": 69,
+        "ccn": 4,
+        "cov": 0.25,
+        "crap": 10.75,
+        "windows_cov": 1.0,
+        "windows_crap": 4.0,
+        "base_linux_measurement_unchanged": true,
+        "body_unchanged_from_base": true,
+        "has_ratchet_mark": false
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+        "start": 34,
+        "end": 54,
+        "ccn": 6,
+        "cov": 0.6666666666666666,
+        "crap": 7.333333333333334,
+        "windows_cov": 1.0,
+        "windows_crap": 6.0,
+        "base_linux_measurement_unchanged": true,
+        "body_unchanged_from_base": true,
+        "has_ratchet_mark": false
+      }
+    ],
+    "disposition": "All three helpers retain unchanged base Linux scores and complete final Windows coverage. No ratchet marks were added."
+  },
+  "changed_line_summary": {
+    "linux_missing": 12,
+    "windows_missing": 10,
+    "shared_missing": 9,
+    "linux_platform_only": 2,
+    "linux_host_trigger": 1,
+    "windows_platform_only": 1,
+    "classification": "Nine guard/API/cleanup lines remain unmeasured on both hosts. Windows measures both Job lines and native OSError rethrow; Linux measures the POSIX process-group line."
+  },
+  "changed_line_groups": [
+    {
+      "path": "src/crapkit/_process_owner.py",
+      "function": "_command_tree",
+      "measured_start": 52,
+      "linux_missing_lines": [
+        54,
+        55
+      ],
+      "windows_missing_lines": [
+        56
+      ],
+      "classification": "platform_only",
+      "evidence": "Windows executed lines 54 and 55; Linux executed line 56. Both retained reports agree with the explicit os.name branch.",
+      "disposition": "Covered by the other host; no new verification gap.",
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_end": 56
+    },
+    {
+      "path": "src/crapkit/gitio.py",
+      "function": "SourcePatch.result",
+      "measured_start": 408,
+      "linux_missing_lines": [
+        414
+      ],
+      "windows_missing_lines": [
+        414
+      ],
+      "classification": "material_normal_case_test_gap",
+      "trigger": "A patch contains a binary summary but its exact metadata names no supported source file, such as an image-only change.",
+      "evidence": "Current binary tests change a PNG alongside a binary-marked Python file, so supported source always exists. The no-extra-process test restores the PNG and therefore skips metadata selection entirely.",
+      "disposition": "Normal behavior is implemented but the binary-only return is unmeasured on both hosts. A staged/source-patch test containing only a true binary should assert empty changed source ranges and no forced text patch.",
+      "test_paths": [
+        "tests/unit/test_r2_git_source_patch.py"
+      ],
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e"
+    },
+    {
+      "path": "src/crapkit/gitio.py",
+      "function": "_history_patches",
+      "measured_start": 512,
+      "linux_missing_lines": [
+        522
+      ],
+      "windows_missing_lines": [
+        522
+      ],
+      "classification": "defensive_protocol_guard",
+      "trigger": "Nonempty Git history output contains no owned timestamp header.",
+      "evidence": "file_log_patches fixes the header format and reports process failure before parsing. Valid successful output contains headers or is empty. Malformed launcher output can still reach this refusal.",
+      "disposition": "No missing valid-history behavior. A corrupt-output seam check can cover refusal; do not call the guard globally unreachable or remove it based on this report.",
+      "test_paths": [
+        "tests/unit/test_ratchet_report.py",
+        "tests/unit/test_r2_git_source_patch.py"
+      ],
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_end": 523
+    },
+    {
+      "path": "src/crapkit/mutate_pool.py",
+      "function": "_unlinked_path",
+      "measured_start": 158,
+      "linux_missing_lines": [
+        163
+      ],
+      "windows_missing_lines": [
+        163
+      ],
+      "classification": "defensive_input_guard",
+      "trigger": "A replay, target or pool path resolves lexically outside its expected workspace.",
+      "evidence": "Normal CLI targets come from the analyzed Git corpus and pool paths are generated under the root. The public run_mutants Python entry still accepts supplied mutant paths, so malformed callers can reach the guard.",
+      "disposition": "Link and hardlink cases do not exercise lexical escape. A mutation entry test with an escaping target should assert refusal before snapshot/replay. No outside write is observed in the retained measurements.",
+      "test_paths": [
+        "tests/unit/test_r2_execution_links.py"
+      ],
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_end": 169
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "function": "_complete_command",
+      "measured_start": 320,
+      "linux_missing_lines": [
+        327,
+        328,
+        329
+      ],
+      "windows_missing_lines": [
+        327,
+        328,
+        329
+      ],
+      "classification": "material_cleanup_failure_test_gap",
+      "trigger": "The owner request to remove a completed or interrupted command fails; fallback must kill/reap the tree before propagating that error.",
+      "evidence": "Normal lifecycle, timeout, interruption and Job-stop tests cover cleanup through a functioning owner. They do not drive the parent remove-request failure path in the retained full reports.",
+      "disposition": "This shared failure path protects output ownership and remains a material verification gap if the final reports still miss it. Inject owner removal failure around a real registered command and assert reaping plus lock release before the error returns.",
+      "test_paths": [
+        "tests/unit/test_r2_execution_lifetime.py",
+        "tests/unit/test_owned_interrupt.py"
+      ],
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_end": 330
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "function": "parse_scored_row",
+      "measured_start": 75,
+      "linux_missing_lines": [
+        78,
+        79
+      ],
+      "windows_missing_lines": [
+        78,
+        79
+      ],
+      "classification": "retained_public_api_test_gap",
+      "trigger": "Direct Python caller parses one exported scored row.",
+      "evidence": "Repository-wide source/test search finds its definition but no caller. Public CLI and current regression tests use parse_scored_tsv, whose decode_record and _scored_parts path is measured.",
+      "disposition": "No missing CLI export/import path. parse_scored_row is a retained named public API, and its direct-call compatibility remains required. Ordinary and encoded single-row calls are unmeasured in these full artifacts; no evidence shows wrong behavior.",
+      "test_paths": [
+        "tests/unit/test_r2_measurements_records.py"
+      ],
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_end": 79
+    },
+    {
+      "path": "src/crapkit/score.py",
+      "function": "_scored_parts",
+      "measured_start": 82,
+      "linux_missing_lines": [
+        84
+      ],
+      "windows_missing_lines": [
+        84
+      ],
+      "classification": "input_refusal_test_gap",
+      "trigger": "A headerless scored record has neither 16 nor 17 fields, or a direct single-row parse supplies that width.",
+      "evidence": "Header-bearing wrong-width input refuses earlier in _scored_line. Headerless input reaches this guard, so it is reachable through the bulk parser as well as the unused single-row function.",
+      "disposition": "The refusal exists but its headerless compatibility case is unmeasured. Add an invalid-width headerless export/import test; this is separate from delimiter and marked-format admission.",
+      "test_paths": [
+        "tests/unit/test_r2_measurements_records.py"
+      ],
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_end": 88
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "function": "_raise_launch_error",
+      "measured_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "measured_start": 307,
+      "measured_end": 317,
+      "linux_missing_lines": [
+        317
+      ],
+      "windows_missing_lines": [],
+      "classification": "host-specific regression trigger; measured by Windows",
+      "trigger": "A native shell-launch OSError is transported back after cleanup; the existing missing-COMSPEC regression triggers it on Windows.",
+      "evidence": "Windows run81 executes line317. Linux uses fixed /bin/sh and leaves the same cross-platform statement unmeasured.",
+      "disposition": "Covered on Windows; not globally unreachable."
+    }
+  ],
+  "final_reconciliation": {
+    "status": "complete; both hosts passed",
+    "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+    "source_proof": "final-source-proof.json",
+    "wheel_proof": "final-wheel-proof.json",
+    "windows": {
+      "run_id": 81,
+      "verdict_ok": true,
+      "findings": 0,
+      "uncovered_count": 10,
+      "unmarked_over_target": 0
+    },
+    "linux": {
+      "run_id": 2,
+      "verdict_ok": true,
+      "findings": 0,
+      "uncovered_count": 12,
+      "unmarked_over_target": 3
+    },
+    "shared_uncovered": [
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 414
+      },
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 522
+      },
+      {
+        "path": "src/crapkit/mutate_pool.py",
+        "line": 163
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 327
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 328
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 329
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 78
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 79
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 84
+      }
+    ],
+    "rules": [
+      "Keep host populations and ledgers separate.",
+      "Retain nine measured guard/API/cleanup gaps and the named parse_scored_row compatibility API.",
+      "No ratchet marks or coverage gates were changed to conceal these diagnostics."
+    ]
+  },
+  "prior_0009_reconciliation": {
+    "status": "Historical 0009 coverage reconciled: Linux passed; Windows refused one startup fixture.",
+    "commit": "0009a6776f7e260046589954d98e035918f89439",
+    "proof": "wheel-attempt3-proof.json",
+    "linux": {
+      "unmarked_over_target": [
+        {
+          "path": "src/crapkit/procs.py",
+          "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+          "start": 80,
+          "end": 84,
+          "ccn": 4,
+          "cov": 0.0,
+          "crap": 20.0
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+          "start": 62,
+          "end": 69,
+          "ccn": 4,
+          "cov": 0.25,
+          "crap": 10.75
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+          "start": 34,
+          "end": 54,
+          "ccn": 6,
+          "cov": 0.6666666666666666,
+          "crap": 7.333333333333334
+        }
+      ],
+      "uncovered_count": 12,
+      "groups": [
+        {
+          "path": "src/crapkit/_process_owner.py",
+          "function": "_command_tree",
+          "linux_missing_lines": [
+            54,
+            55
+          ],
+          "classification": "platform_only"
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "function": "SourcePatch.result",
+          "linux_missing_lines": [
+            414
+          ],
+          "classification": "material_normal_case_test_gap"
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "function": "_history_patches",
+          "linux_missing_lines": [
+            522
+          ],
+          "classification": "defensive_protocol_guard"
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "function": "_unlinked_path",
+          "linux_missing_lines": [
+            163
+          ],
+          "classification": "defensive_input_guard"
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "function": "_complete_command",
+          "linux_missing_lines": [
+            327,
+            328,
+            329
+          ],
+          "classification": "material_cleanup_failure_test_gap"
+        },
+        {
+          "path": "src/crapkit/score.py",
+          "function": "parse_scored_row",
+          "linux_missing_lines": [
+            78,
+            79
+          ],
+          "classification": "retained_public_api_test_gap"
+        },
+        {
+          "path": "src/crapkit/score.py",
+          "function": "_scored_parts",
+          "linux_missing_lines": [
+            84
+          ],
+          "classification": "input_refusal_test_gap"
+        }
+      ]
+    },
+    "new_launch_error_line": {
+      "path": "src/crapkit/procs.py",
+      "line": 317,
+      "function": "_raise_launch_error",
+      "statement": "raise OSError(*arguments)",
+      "classification": "host-specific regression trigger; executed by preserved Windows run 79",
+      "reason": "The Windows missing-COMSPEC regression executes line 317. Linux uses fixed /bin/sh and leaves it unmeasured. The OSError rethrow itself is cross-platform, not globally unreachable.",
+      "test": "tests/unit/test_process_launch.py::test_shell_launch_os_error_reaches_caller_after_cleanup",
+      "windows_executed": true,
+      "windows_evidence": "source-attempt3-proof.json"
+    },
+    "conclusion": "The nine shared guard/API/cleanup lines remain missing in final Linux coverage. The two Windows Job lines remain Linux-only gaps. OSError rethrow adds one line to reconcile with final Windows coverage. The three unmarked functions retain their earlier Linux measurements.",
+    "rules": [
+      "Use final commit source and function identity because procs cleanup moved into _complete_command.",
+      "Keep host measurements separate; pair platform-only execution evidence without merging run trust or claiming a single cross-platform coverage run.",
+      "Recount unmarked functions from each final SQLite using its ratchet keys and score; do not infer them from changed-line coverage.",
+      "Do not treat diagnostic diff_uncovered counts as a failure when diff_uncovered_max is null. Record their actual remaining scope.",
+      "No ratchet seeding, source edit or new test run was performed for this disposition."
+    ],
+    "windows_proof": "source-attempt3-proof.json",
+    "windows": {
+      "verdict_ok": false,
+      "run_id": 79,
+      "findings": 1,
+      "unmarked_over_target": 0,
+      "uncovered_count": 10,
+      "diff_uncovered": [
+        {
+          "line": 56,
+          "path": "src/crapkit/_process_owner.py"
+        },
+        {
+          "line": 414,
+          "path": "src/crapkit/gitio.py"
+        },
+        {
+          "line": 522,
+          "path": "src/crapkit/gitio.py"
+        },
+        {
+          "line": 163,
+          "path": "src/crapkit/mutate_pool.py"
+        },
+        {
+          "line": 327,
+          "path": "src/crapkit/procs.py"
+        },
+        {
+          "line": 328,
+          "path": "src/crapkit/procs.py"
+        },
+        {
+          "line": 329,
+          "path": "src/crapkit/procs.py"
+        },
+        {
+          "line": 78,
+          "path": "src/crapkit/score.py"
+        },
+        {
+          "line": 79,
+          "path": "src/crapkit/score.py"
+        },
+        {
+          "line": 84,
+          "path": "src/crapkit/score.py"
+        }
+      ]
+    },
+    "shared_uncovered": [
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 414
+      },
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 522
+      },
+      {
+        "path": "src/crapkit/mutate_pool.py",
+        "line": 163
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 327
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 328
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 329
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 78
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 79
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 84
+      }
+    ]
+  },
+  "prior_72b_reconciliation": {
+    "status": "72b coverage reconciled: Linux passed; Windows run 80 refused two fixture cases.",
+    "commit": "72b1125d07904f8f41c465e4fe79aba2a1db5fa7",
+    "proof": "wheel-attempt4-proof.json",
+    "linux": {
+      "unmarked_over_target": [
+        {
+          "path": "src/crapkit/procs.py",
+          "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+          "start": 80,
+          "end": 84,
+          "ccn": 4,
+          "cov": 0.0,
+          "crap": 20.0
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+          "start": 62,
+          "end": 69,
+          "ccn": 4,
+          "cov": 0.25,
+          "crap": 10.75
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+          "start": 34,
+          "end": 54,
+          "ccn": 6,
+          "cov": 0.6666666666666666,
+          "crap": 7.333333333333334
+        }
+      ],
+      "uncovered_count": 12,
+      "groups": [
+        {
+          "path": "src/crapkit/_process_owner.py",
+          "function": "_command_tree",
+          "linux_missing_lines": [
+            54,
+            55
+          ],
+          "classification": "platform_only"
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "function": "SourcePatch.result",
+          "linux_missing_lines": [
+            414
+          ],
+          "classification": "material_normal_case_test_gap"
+        },
+        {
+          "path": "src/crapkit/gitio.py",
+          "function": "_history_patches",
+          "linux_missing_lines": [
+            522
+          ],
+          "classification": "defensive_protocol_guard"
+        },
+        {
+          "path": "src/crapkit/mutate_pool.py",
+          "function": "_unlinked_path",
+          "linux_missing_lines": [
+            163
+          ],
+          "classification": "defensive_input_guard"
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "function": "_complete_command",
+          "linux_missing_lines": [
+            327,
+            328,
+            329
+          ],
+          "classification": "material_cleanup_failure_test_gap"
+        },
+        {
+          "path": "src/crapkit/score.py",
+          "function": "parse_scored_row",
+          "linux_missing_lines": [
+            78,
+            79
+          ],
+          "classification": "retained_public_api_test_gap"
+        },
+        {
+          "path": "src/crapkit/score.py",
+          "function": "_scored_parts",
+          "linux_missing_lines": [
+            84
+          ],
+          "classification": "input_refusal_test_gap"
+        }
+      ]
+    },
+    "new_launch_error_line": {
+      "path": "src/crapkit/procs.py",
+      "line": 317,
+      "function": "_raise_launch_error",
+      "statement": "raise OSError(*arguments)",
+      "classification": "host-specific regression trigger; executed by Windows run 80",
+      "reason": "Windows run 80 executes the native OSError rethrow. Linux uses fixed /bin/sh and leaves this line unmeasured; the statement is cross-platform, not globally unreachable.",
+      "test": "tests/unit/test_process_launch.py::test_shell_launch_os_error_reaches_caller_after_cleanup",
+      "windows_executed": true,
+      "windows_evidence": "source-attempt4-proof.json"
+    },
+    "conclusion": "Nine guard/API/cleanup lines remain missing on both hosts. The three platform ownership lines are measured by the other host. Windows also measures OSError rethrow line 317. Linux retains three unchanged host-specific unmarked scores. No ratchet mark was added.",
+    "rules": [
+      "Use final commit source and function identity because procs cleanup moved into _complete_command.",
+      "Keep host measurements separate; pair platform-only execution evidence without merging run trust or claiming a single cross-platform coverage run.",
+      "Recount unmarked functions from each final SQLite using its ratchet keys and score; do not infer them from changed-line coverage.",
+      "Do not treat diagnostic diff_uncovered counts as a failure when diff_uncovered_max is null. Record their actual remaining scope.",
+      "No ratchet seeding, source edit or new test run was performed for this disposition."
+    ],
+    "windows_proof": "source-attempt4-proof.json",
+    "windows": {
+      "verdict_ok": false,
+      "run_id": 80,
+      "findings": 2,
+      "unmarked_over_target": 0,
+      "uncovered_count": 10,
+      "diff_uncovered": [
+        {
+          "line": 56,
+          "path": "src/crapkit/_process_owner.py"
+        },
+        {
+          "line": 414,
+          "path": "src/crapkit/gitio.py"
+        },
+        {
+          "line": 522,
+          "path": "src/crapkit/gitio.py"
+        },
+        {
+          "line": 163,
+          "path": "src/crapkit/mutate_pool.py"
+        },
+        {
+          "line": 327,
+          "path": "src/crapkit/procs.py"
+        },
+        {
+          "line": 328,
+          "path": "src/crapkit/procs.py"
+        },
+        {
+          "line": 329,
+          "path": "src/crapkit/procs.py"
+        },
+        {
+          "line": 78,
+          "path": "src/crapkit/score.py"
+        },
+        {
+          "line": 79,
+          "path": "src/crapkit/score.py"
+        },
+        {
+          "line": 84,
+          "path": "src/crapkit/score.py"
+        }
+      ]
+    },
+    "shared_uncovered": [
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 414
+      },
+      {
+        "path": "src/crapkit/gitio.py",
+        "line": 522
+      },
+      {
+        "path": "src/crapkit/mutate_pool.py",
+        "line": 163
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 327
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 328
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "line": 329
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 78
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 79
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "line": 84
+      }
+    ]
+  },
+  "historical_first_attempt": {
+    "measured_commit": "e99403f9865a0c6b5fece928696a0afa029e91ea",
+    "method": "Read-only SQLite connections, saved coverage JSON, exact git-show source at the measured commit, AST comparison to c2d3515, and source/test caller inspection. No ratchet, source or measurement was changed.",
+    "evidence": {
+      "replay": "measurements/probe_first_coverage.py",
+      "facts": "measurements/first-coverage-facts.json",
+      "linux_verdict": "wheels/attempt-t3vh2liu/verdict.json",
+      "linux_sqlite": "wheels/attempt-t3vh2liu/candidate/crap.sqlite",
+      "linux_coverage": "wheels/attempt-t3vh2liu/candidate/cov/py.json",
+      "base_linux_sqlite": "wheels/attempt-t3vh2liu/base/crap.sqlite",
+      "windows_verdict": "full-source-verdict.json",
+      "windows_sqlite": "source-attempt1/crap.sqlite",
+      "windows_coverage": "source-attempt1/py.json"
+    },
+    "unmarked_over_target": {
+      "linux_count": 3,
+      "windows_count": 0,
+      "disposition": "All three functions are unchanged from c2d3515 and retain exactly the base Linux coverage and CRAP scores. Windows measured all three at coverage 1. These are existing host-specific coverage results, not new complexity or coverage regressions. Do not seed ratchet marks to hide the host difference.",
+      "functions": [
+        {
+          "path": "src/crapkit/procs.py",
+          "name": "_windows_arguments",
+          "measured_start": 78,
+          "measured_end": 82,
+          "ccn": 4,
+          "linux_coverage": 0,
+          "linux_crap": 20,
+          "windows_coverage": 1,
+          "windows_crap": 4,
+          "linux_missing_lines": [
+            79,
+            80,
+            81,
+            82
+          ],
+          "classification": "Windows-only argument formatter",
+          "body_unchanged_from_base": true,
+          "base_linux_measurement_unchanged": true,
+          "has_ratchet_mark": false
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "name": "_multiline_mode",
+          "measured_start": 60,
+          "measured_end": 67,
+          "ccn": 4,
+          "linux_coverage": 0.25,
+          "linux_crap": 10.75,
+          "windows_coverage": 1,
+          "windows_crap": 4,
+          "linux_missing_lines": [
+            63,
+            64,
+            65,
+            67
+          ],
+          "classification": "Windows multiline branch behind an early POSIX return",
+          "body_unchanged_from_base": true,
+          "base_linux_measurement_unchanged": true,
+          "has_ratchet_mark": false
+        },
+        {
+          "path": "src/crapkit/procs.py",
+          "name": "prepare_template",
+          "measured_start": 32,
+          "measured_end": 52,
+          "ccn": 6,
+          "linux_coverage": 0.6666666666666666,
+          "linux_crap": 7.333333333333334,
+          "windows_coverage": 1,
+          "windows_crap": 6,
+          "linux_missing_lines": [
+            47,
+            48,
+            51
+          ],
+          "classification": "Windows delayed-expansion branches inside a cross-platform function",
+          "body_unchanged_from_base": true,
+          "base_linux_measurement_unchanged": true,
+          "has_ratchet_mark": false
+        }
+      ]
+    },
+    "changed_line_summary": {
+      "linux_missing": 11,
+      "windows_missing": 10,
+      "linux_platform_only": 2,
+      "windows_platform_only": 1,
+      "shared_missing": 9,
+      "classification": "Two Linux gaps are Windows Job construction. The Windows-only gap is POSIX process-group construction. Nine lines are missing on both hosts. None of those nine is proven globally unreachable; they include normal binary handling, failure cleanup, input/protocol guards and an unused single-row adapter."
+    },
+    "changed_line_groups": [
+      {
+        "path": "src/crapkit/_process_owner.py",
+        "function": "_command_tree",
+        "measured_start": 52,
+        "linux_missing_lines": [
+          54,
+          55
+        ],
+        "windows_missing_lines": [
+          56
+        ],
+        "classification": "platform_only",
+        "evidence": "Windows executed lines 54 and 55; Linux executed line 56. Both retained reports agree with the explicit os.name branch.",
+        "disposition": "Covered by the other host; no new verification gap."
+      },
+      {
+        "path": "src/crapkit/gitio.py",
+        "function": "SourcePatch.result",
+        "measured_start": 408,
+        "linux_missing_lines": [
+          414
+        ],
+        "windows_missing_lines": [
+          414
+        ],
+        "classification": "material_normal_case_test_gap",
+        "trigger": "A patch contains a binary summary but its exact metadata names no supported source file, such as an image-only change.",
+        "evidence": "Current binary tests change a PNG alongside a binary-marked Python file, so supported source always exists. The no-extra-process test restores the PNG and therefore skips metadata selection entirely.",
+        "disposition": "Normal behavior is implemented but the binary-only return is unmeasured on both hosts. A staged/source-patch test containing only a true binary should assert empty changed source ranges and no forced text patch.",
+        "test_paths": [
+          "tests/unit/test_r2_git_source_patch.py"
+        ],
+        "final_anchor": "SourcePatch.result at line 408; return at 414"
+      },
+      {
+        "path": "src/crapkit/gitio.py",
+        "function": "_history_patches",
+        "measured_start": 512,
+        "linux_missing_lines": [
+          522
+        ],
+        "windows_missing_lines": [
+          522
+        ],
+        "classification": "defensive_protocol_guard",
+        "trigger": "Nonempty Git history output contains no owned timestamp header.",
+        "evidence": "file_log_patches fixes the header format and reports process failure before parsing. Valid successful output contains headers or is empty. Malformed launcher output can still reach this refusal.",
+        "disposition": "No missing valid-history behavior. A corrupt-output seam check can cover refusal; do not call the guard globally unreachable or remove it based on this report.",
+        "test_paths": [
+          "tests/unit/test_ratchet_report.py",
+          "tests/unit/test_r2_git_source_patch.py"
+        ],
+        "final_anchor": "_history_patches at line 512; refusal at 522"
+      },
+      {
+        "path": "src/crapkit/mutate_pool.py",
+        "function": "_unlinked_path",
+        "measured_start": 158,
+        "linux_missing_lines": [
+          163
+        ],
+        "windows_missing_lines": [
+          163
+        ],
+        "classification": "defensive_input_guard",
+        "trigger": "A replay, target or pool path resolves lexically outside its expected workspace.",
+        "evidence": "Normal CLI targets come from the analyzed Git corpus and pool paths are generated under the root. The public run_mutants Python entry still accepts supplied mutant paths, so malformed callers can reach the guard.",
+        "disposition": "Link and hardlink cases do not exercise lexical escape. A mutation entry test with an escaping target should assert refusal before snapshot/replay. No outside write is observed in the retained measurements.",
+        "test_paths": [
+          "tests/unit/test_r2_execution_links.py"
+        ],
+        "final_anchor": "_unlinked_path at line 158; refusal at 163"
+      },
+      {
+        "path": "src/crapkit/procs.py",
+        "function": "_run_owned",
+        "measured_start": 282,
+        "linux_missing_lines": [
+          291,
+          292,
+          293
+        ],
+        "windows_missing_lines": [
+          291,
+          292,
+          293
+        ],
+        "classification": "material_cleanup_failure_test_gap",
+        "trigger": "The owner request to remove a completed or interrupted command fails; fallback must kill/reap the tree before propagating that error.",
+        "evidence": "Normal lifecycle, timeout, interruption and Job-stop tests cover cleanup through a functioning owner. They do not drive the parent remove-request failure path in the retained full reports.",
+        "disposition": "This shared failure path protects output ownership and remains a material verification gap if the final reports still miss it. Inject owner removal failure around a real registered command and assert reaping plus lock release before the error returns.",
+        "test_paths": [
+          "tests/unit/test_r2_execution_lifetime.py",
+          "tests/unit/test_owned_interrupt.py"
+        ],
+        "final_anchor": "Moved without semantic change into _complete_command at line 320; reconcile by function and statement, not old line number"
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "function": "parse_scored_row",
+        "measured_start": 75,
+        "linux_missing_lines": [
+          78,
+          79
+        ],
+        "windows_missing_lines": [
+          78,
+          79
+        ],
+        "classification": "retained_public_api_test_gap",
+        "trigger": "Direct Python caller parses one exported scored row.",
+        "evidence": "Repository-wide source/test search finds its definition but no caller. Public CLI and current regression tests use parse_scored_tsv, whose decode_record and _scored_parts path is measured.",
+        "disposition": "No missing CLI export/import path. parse_scored_row is a retained named public API, and its direct-call compatibility remains required. Ordinary and encoded single-row calls are unmeasured in these full artifacts; no evidence shows wrong behavior.",
+        "test_paths": [
+          "tests/unit/test_r2_measurements_records.py"
+        ],
+        "final_anchor": "parse_scored_row at line 75"
+      },
+      {
+        "path": "src/crapkit/score.py",
+        "function": "_scored_parts",
+        "measured_start": 82,
+        "linux_missing_lines": [
+          84
+        ],
+        "windows_missing_lines": [
+          84
+        ],
+        "classification": "input_refusal_test_gap",
+        "trigger": "A headerless scored record has neither 16 nor 17 fields, or a direct single-row parse supplies that width.",
+        "evidence": "Header-bearing wrong-width input refuses earlier in _scored_line. Headerless input reaches this guard, so it is reachable through the bulk parser as well as the unused single-row function.",
+        "disposition": "The refusal exists but its headerless compatibility case is unmeasured. Add an invalid-width headerless export/import test; this is separate from delimiter and marked-format admission.",
+        "test_paths": [
+          "tests/unit/test_r2_measurements_records.py"
+        ],
+        "final_anchor": "_scored_parts at line 82; refusal at 84"
+      }
+    ]
+  }
+}

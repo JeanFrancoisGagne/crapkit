@@ -1,0 +1,148 @@
+# Architecture implementation, 7 September 2026
+
+All 17 audited candidates and the separate CI optimization are implemented. **Complete Windows source and Linux wheel verification passed at `4ef04cab`.** The measured commit is `4ef04cab273629eae28755fccbfbd934aa098f7e`; production bytes remain unchanged from `0082379`. Earlier passing, refusing and incomplete attempts remain in the evidence.
+
+The audit used `b11e2c1`; implementation started from `c2d3515`. The canonical report is `docs/architecture/2026-09-07-implementation/REPORT.md`. Repository paths below are relative to `C:/Users/jfgag/crapkit`; evidence paths are relative to the packaged evidence root. `completion-matrix.json` maps every candidate to production files, tests, red/green evidence and compatibility limits. `evidence-manifest.json` records curated file hashes.
+
+## Candidate disposition
+
+Each row is implemented and has focused passing evidence. The later integration repairs are listed separately below. Counts from overlapping batches must not be added into a unique suite total.
+
+| Candidate | Before | Implemented behavior and owner | Focused evidence |
+|---|---|---|---|
+| CORE-01 | Git display settings, external transforms and binary attributes could change or hide parsed source. | `gitio.py` owns the patch protocol for normal, prestarted and advisory reads. Exact metadata selects binary-marked source for literal-path fallback; history framing preserves field bytes. | `measurements/git-followup-result.json`; `git-source-posix.xml` |
+| STATE-01 | Overrides could leave the exit, JSON and stored verdict describing different outcomes. | `verify.py` settles one verdict after grants and retries; uncovered findings retain dirty attribution. | `measurements/state1-red.txt`; `measurements/state1-green.txt` |
+| EX1 | Descendants could keep writing after command completion or caller death released ownership. | `procs.py`, `_process_owner.py`, `_windows_job.py` and `mutate_pool.py` keep process ownership and resource locks until writing descendants stop. | `execution/base-regressions.xml`; `execution/focused-posix.xml`; `execution/green-fallback.xml` |
+| EX2 | Mutation replay or restoration could follow links into shared files. | `mutate_pool.py` refuses linked source paths, worker components and multiply linked worker files before writing. | `execution/base-regressions.xml`; `execution/green-fallback.xml` |
+| CORE-02 | Invalid coverage counts could enter scoring as facts. | Coverage adapters reject invalid numeric counts and impossible covered/total relationships, with the artifact named in the error. | `measurements/core-red.txt`; `measurements/core-green.txt` |
+| MEASURE-01 | Declared JUnit counts did not consistently establish completeness. | `junitparse.py` admits normal and retry reports through one postorder count traversal. Collection/worker-crash admission received a further integration fix below. | `measurements/junit-red.txt`; `measurements/junit-green.txt` |
+| STATE-03 | Printed packet commands could expand a filename or fail differently from execution. | `packet.py` delegates scoped tests to `test-scoped`; one formatter preserves literal test and gate arguments and native launcher exit status. | `execution/packet-result.json`; `execution/packet-final-windows.xml`; `execution/packet-final-posix.xml` |
+| STATE-02 | Delimiters and Unicode line separators could corrupt exported rows and history. | `records.py` preserves ordinary TSV bytes and marks exceptional JSON string-array rows. Score, baseline, inventory, ratchet and historical readers share physical record framing. | `measurements/state2-red.txt`; `measurements/records-followup-green.txt`; `history-green.txt` |
+| CORE-03 | Equal duplication pairs could move across hash seeds or input order. | `dup.py` uses a total order over visible function identity after rounded similarity. | `measurements/duplication-base-final.txt`; `measurements/duplication-green.txt` |
+| CORE-04 | Small `top` retained a global quadratic pair map and allocated discarded payloads. | `dup.py` counts one owner's neighbors at a time, retains bounded positive-top candidates and allocates only returned pair payloads. | `measurements/duplication-after.json`; exhaustive-oracle tests in `tests/unit/test_r2_measurements_duplication.py` |
+| UI1 | MCP decoded a UTF-8 child stream through the host locale. | `mcp_server.py` decodes the producer's UTF-8 explicitly, including refusals. | `interfaces-red.txt`; `final-interface-check.txt` |
+| UI2 | Action line framing and Markdown rendering changed valid filenames. | `action.yml` and `tools/action/comment.py` carry NUL-delimited Git paths into exact membership, then escape Markdown display. | `action-red.txt`; `final-interface-check.txt` |
+| UI3 | Raw filenames were emitted where SARIF requires URIs. | `sarif.py` encodes URI locations and decodes once before GitHub property escaping. | `interfaces-red.txt`; `final-interface-check.txt` |
+| UI4 | Doctor could substitute its own version after a launcher probe failed. | `cli/admin.py` reports failed, malformed and undecodable launcher probes as failures. | `interfaces-red.txt`; `final-interface-check.txt` |
+| UI5 | Mutation lifecycle guidance had competing owners. | `docs/configuration.md` owns preparation, private input, pool lifetime, concurrency and cleanup; other publishing surfaces link there. | `docs-links-green.xml`; `ci-docs-integration.xml` |
+| CORE-S01 | Scope and path adapters rewrote literal Git names; LF selected the wrong library reader. | `universe.py`, `analyze.py` and `cli/_shared.py` preserve exact identity. Only reader selection receives an LF-free alias; CLI separator conversion follows the host OS. | `analysis-names-posix.xml`; `posix-path-green.txt`; `measurements/e2e-followup/result.json` |
+| CORE-S02 | Claim release did not apply the root/cwd rule used by other file commands. | `cli/queue.py` uses the existing path adapter before matching the function selector. | `interfaces-red.txt`; `posix-path-green.txt` |
+
+The changes put format, measurement and lifetime rules in their existing module owners. Callers retain narrow interfaces. This gives the Git, verdict, record and execution modules more depth and keeps tests at the public seams where bad state entered. No runtime dependency was added.
+
+## CI optimization, separate from the 17 candidates
+
+Pristine release and inventory inputs are prepared once per worker and copied into private cases. Seed publication occurs only after successful setup. Original test bodies and collected IDs remain; the CI workstream added 14 unit and two E2E cases before other integration work. The configured runner uses four unit workers and eight E2E workers; explicit serial unit reproduction remains available.
+
+Ubuntu/Python 3.12 source testing moves to dogfood, which removes stale JUnit and requires a fresh complete passing report. The other five OS/Python matrix owners, console smoke, event-base gate and both noneditable wheel measurements remain. No hosted workflow was dispatched. Removing historical duplicate work of 101 unit seconds plus 69 E2E seconds is a runner-work reduction, not a measured critical-path saving.
+
+Evidence: `tests-ci/result.json`, `tests-ci/collection-summary.json`, `tests-ci/schedule-final.xml`, `execution/ci-review.json`. The later integration fix adds runner and parser refusal for collection errors and worker crashes.
+
+## Measured costs and gains
+
+| Workload | Before | After | Samples and limits |
+|---|---:|---:|---|
+| Duplication, 1,652-function self corpus | 10.21 ms; 1.281 MB peak | 10.05 ms; 1.344 MB peak | Five interleaved warm rounds; identical payload. Timing and tracemalloc measured separately. |
+| Duplication, 300 clones, top 1 | 131.95 ms; 37.065 MB peak | 52.75 ms; 0.431 MB peak | Same interpreter and immutable synthetic input; five warm rounds. |
+| Duplication, 600 clones, top 1 | 598.34 ms; 147.713 MB peak | 204.33 ms; 0.871 MB peak | Same protocol; dense pair arithmetic still grows quadratically. |
+| Ordinary scored export, 140,922 rows | 102.19 ms | 211.18 ms | Five warm rounds; all 11,626,551 output bytes identical. Lossless admission costs about 109 ms. The initial per-field codec took 373 ms before format-first checking. |
+| Release fixture setup | 2.697 s warm; 1.934 s cold | 0.157 s warm; 2.262 s cold | Windows 3.11.2; seven interleaved warm pairs plus one cold pair; setup only, without coverage instrumentation. |
+| Inventory fixture setup | 0.651 s warm; 0.304 s cold | 0.047 s warm; 0.756 s cold | Same seven-pair protocol; excludes CLI and lane work. Each worker pays cold seed setup. |
+| Existing public release retry case | 12.679 s warm | 8.332 s warm | Five warm pairs; real Git/source/receipt checks, fake external build/publication adapters, direct test-body invocation without pytest startup. Measured before atomic seed publication; warm copy path unchanged. |
+| Fixed 32-case unit subset | 46.932 s, one worker | 39.321 s, two; 33.915 s, four | Five warm rounds per mode plus cold runs. All 18 runs passed with identical case IDs and the same 3,467 lines/466 branches. Four workers saved 27.7% on this subset only. |
+| Process ownership, standalone/shared commands | 187/340 ms | 457/721 ms | Five interleaved warm pairs, contended by POSIX test I/O. These samples record added lifetime work; they do not isolate its overhead. Later helper-launch changes require their own comparison. |
+| Helper follow-up, Windows standalone/shared | 596/235 ms | 559/281 ms | Separate quiet comparison of source identity plus launch-error handling; one cold and five alternating warm pairs per mode. |
+| Helper follow-up, Linux standalone/shared | 162/15 ms | 285/23 ms | Same protocol, hosts measured in sequence. Shared-owner cost increased by 46 ms on Windows and 8 ms on Linux; no speed claim. |
+
+Memory values use decimal MB. Sources: `measurements/duplication-after.json`, `measurements/records-benchmark.json`, `tests-ci/{fixture,inventory,retry}-timings.json`, `tests-ci/unit-worker-summary.json`, `execution/command-cost.json`, `execution/launcher-cost-{windows,posix}.json`. The helper comparison measures the combined patch, not TemporaryFile alone; its earlier overlapping Windows attempt is excluded. Small correctness probes overlapped some worker samples; no competing broad suite ran during that comparison. No full-suite speedup is claimed.
+
+## Verification provenance and results
+
+Both final measurements passed at `4ef04cab`. Their counts remain separate because host-specific cases and skips differ.
+
+| Final measurement | Unit passed / skipped | E2E passed / skipped | Stored verdict |
+|---|---:|---:|---|
+| Windows source | 3,912 / 3 | 795 / 6 | Run 81: passed, zero findings |
+| Linux installed candidate wheel | 3,899 / 26 | 781 / 4 | Run 2: passed, zero findings |
+
+Windows passed 4,707 cases with nine skips and no failures. Pytest reported 820.06 seconds for unit and 995.69 seconds for E2E; the full source wrapper took 1,840.783 seconds and exited 0. Saved run 81 and the JSON verdict agree. Trusted baseline 77 at `b11e2c1` remains passing. No new failures, gate violations or ratchet regressions remain; the ratchet hash is unchanged. Evidence: `source-final/{result,verdict}.json`, `source-final/{unit,e2e,junit}.xml`, `final-source-proof.json`.
+
+Linux passed 4,680 candidate cases with 30 skips and no failures. Pytest reported 101.98 seconds for unit and 99.03 seconds for E2E. The actual base has four unit failures and one E2E failure, with 3,626 and 758 passes. Suite exits are `[1, 0]`; the wrapper exited 0 and the comparison verdict is `ok=true`. Saved candidate run 2 agrees. These times are observations, not a paired full-suite speed comparison.
+
+`final-wheel-proof.json` reconciles the actual final JUnit, ledger and coverage. All 71 installed Python source hashes equal exact Git blobs at `4ef04cab`; local package source is clean and has no Git diff from that candidate. Evidence: `wheels-final/verdict.json`, `wheels-final/attempt-bfgbev0l/{base,candidate}/cov/{unit,e2e,junit}.xml`, `full-wheels-final.log` and `full-wheels-final.exit`. Coverage remains separate from the Windows source measurement.
+
+The combined Windows coverage artifact contains 71 checkout paths and 69 installed-runtime paths. Twenty-six installed paths have executed lines; the artifact is not exclusively checkout-source execution. The real reader and scorer reproduce all 1,709 checkout rows exactly from either the full artifact or its checkout-only keys. Installed-only keys leave every checkout row untested. No path alias can transfer that coverage into candidate scores. The independently installed Linux candidate has 71 source paths and no outside coverage paths. Evidence: `final-source-join-proof.json`.
+
+The preserved Linux comparison at `72b1125` passed 4,676 cases with 30 skips and no candidate failures. Its base had three unit failures and one E2E failure; its passing comparison and matching ledger remain historical proof. The complete same-commit Windows result follows.
+
+Windows run 80 at `72b1125` completed with two unit failures, 3,906 unit passes and three skips in 588.17 seconds. E2E passed 795 cases with six skips in 854.40 seconds. The wrapper took 1,469.858 seconds and exited 8; its saved ledger records `verdict_ok=0` and two findings. One no-progress fixture missed its startup marker; a chatty-command fixture raised `NoProgress` with interval 1. Trusted baseline 77, the ratchet hash and the absence of gate/ratchet regressions remain unchanged. Evidence: `source-attempt4/{result,verdict}.json`, `source-attempt4/{unit,e2e,junit}.xml` and `source-attempt4-proof.json`. The committed repair and its independent review are listed below.
+
+`wheel-attempt4-proof.json` independently reconciles the completed `72b1125` JUnit, ledger and coverage. All 71 installed Python source hashes equal exact Git blobs at that measured commit. The local package source was clean and had no Git diff from that candidate. Two local files, `config.py` and `doctor.py`, use CRLF; the Linux wheel uses the matching LF Git blobs. Their raw local-byte difference is recorded rather than hidden by a normalization-based identity check. Evidence: `wheels-attempt4/verdict.json`, the six base/candidate JUnit files indexed in the manifest, `full-wheels-attempt4.log` and `full-wheels-attempt4.exit`. The moved files retain their original bytes; internal locators are mapped by measured commit.
+
+The prior Linux comparison at `0009a677` remains a separate passing result: 4,675 passed, 30 skipped, no candidate failures. That attempt had five historical base failures; one old interruption case is timing-dependent, so the `72b1125` attempt's base failure count is four. Evidence: `wheel-attempt3-proof.json`, `wheels-attempt3/verdict.json`, `wheels-attempt3/attempt-trblq3gd/{base,candidate}/cov/{unit,e2e,junit}.xml`, `full-wheels-attempt3.log` and `full-wheels-attempt3.exit`. Those files moved without changing their bytes; the manifest maps the original proof's internal locators to preserved paths.
+
+The same-commit Windows source run 79 completed with 3,906 unit passes, one startup-fixture failure and three skips, followed by 795 E2E passes and six skips. Pytest reported 819.42 seconds for unit and 857.20 seconds for E2E. It exited 8 with `verdict_ok=0` and one finding; no gate violation or ratchet regression occurred. Its saved ledger confirms trusted baseline 77 remains passing. Evidence: `source-attempt3/{result,verdict}.json`, `source-attempt3/{unit,e2e,junit}.xml` and `source-attempt3-proof.json`. The retained coverage can establish executed lines but cannot turn this refusal into a pass.
+
+The Windows source command selects the configured CPython 3.11.2 interpreter and the main checkout's `src` through `PYTHONPATH`, then runs `verify --no-tighten --base c2d3515 --json`. The first complete run at `e99403f` exited 8 and recorded run 78 with `verdict_ok=0` and five findings. Trusted coverage baseline 77 at `b11e2c1` remains unchanged; the explicit Git comparison base is `c2d3515`.
+
+The Linux comparison uses WSL Ubuntu CPython 3.11.16. `tools/testing/ci.py` builds and installs separate noneditable wheels from the base and candidate, clears Python/coverage overrides, checks installed Python source hashes before path mapping, measures both revisions, then compares using their own evidence. It does not substitute source-run coverage for wheel coverage. The first attempt records 69 base source files and 71 candidate source files, distinct wheel hashes, separate package paths, complete JUnit and a matching refusing ledger row.
+
+For reproduction, the local Windows wrapper requires preserved trusted ledger baseline 77; a fresh clone alone cannot reproduce that comparison. The portable route is `python tools/testing/ci.py --repo <checkout> --base c2d3515581d410d8c14849063dac27af843a3729 --output <evidence-directory>`, with the checkout at the measured candidate. It constructs both wheel measurements and its comparison ledger itself. Both comprehensive runs measured `4ef04cab`; production bytes have not changed since `0082379`. `finalize_evidence.py` requires successful verdicts, exact candidate Git-blob source hashes, clean local source and source-ledger agreement before packaging. It also requires the manifest and completed matrix to name that measured commit, with all 17 candidates and CI implemented and passing on both hosts. A later documentation commit may differ. `snapshot_ledger.py` uses SQLite backup to preserve a consistent ledger without overwriting an earlier snapshot.
+
+| First attempt | Passed | Failed | Skipped | Disposition |
+|---|---:|---:|---:|---|
+| Windows candidate source, unit | 3,885 | 4 | 3 | Three probe failures and one collection-admission failure. |
+| Windows candidate source, E2E | 794 | 1 | 5 | Stale hook error-message assertion. |
+| Linux base wheel, unit | 3,626 | 4 | 25 | Historical base failures retained. |
+| Linux base wheel, E2E | 758 | 1 | 2 | Historical base failure retained. |
+| Linux candidate wheel, unit | 3,872 | 5 | 25 | One new collection-admission failure; four failures also present at base. |
+| Linux candidate wheel, E2E | 777 | 3 | 4 | Two new stale test assumptions; one failure also present at base. |
+
+The first Linux verdict is `ok=false`, with three new failures, no gate violations or ratchet regressions, and 11 uncovered changed lines. Ledger run 2 records `verdict_ok=0` and three findings. This is a completed refusing comparison, not a pass. Evidence: `wheels/attempt-t3vh2liu/verdict.json`, its `base/cov/{unit,e2e}.xml` and `candidate/cov/{unit,e2e}.xml`, and `full-wheels.log`. Windows evidence: `full-source-{result,verdict}.json`, `source-attempt1/{unit,e2e}.xml` and `followup-check-summary.json`; its verdict reports 10 uncovered changed lines and no gate or ratchet regression.
+
+The second Linux candidate at `0082379` passed 3,894 unit cases and 781 E2E cases, with 26 and four skips. Coverage export then refused a temporary fake `crapkit` package recorded by the provenance test and removed by later test cleanup. It produced no final candidate verdict. The equivalent Windows run was deliberately stopped before E2E to avoid the known invalid export; it records exit -1 and no verdict. Evidence: `wheels-attempt2/verdict.json`, `wheels-attempt2/attempt-okqiovb5/candidate/cov/{unit,e2e}.xml`, `full-wheels-attempt2.log`, `source-attempt2/result.json`.
+
+The committed correction adds `-S` only to the deliberately fake target interpreter. Independent paired probes on Windows and Linux preserve target output and identical real owner/process line counts, remove the fake coverage path, and make export succeed after fake-source deletion. Two miniature nested-run tests also request serial unit execution while retaining two E2E workers, unchanged assertions, identical child IDs and four lines/two branches on both hosts. Their receipt claims no latency gain. These three corrections were absent from both earlier attempts. Evidence: `execution/fake-target-isolation-review.json`, `tests-ci/miniature-workers.json`.
+
+The three Linux unmarked functions are `procs._windows_arguments`, `_multiline_mode` and `prepare_template`. Final Linux measurements retain their base scores; final Windows coverage is complete for each. They are host-specific standing results, not new debt. Final Linux reports 12 uncovered changed lines and Windows reports 10. Nine guard/API/cleanup lines remain uncovered on both hosts. Windows measures both Job construction lines and the OSError rethrow at `procs.py:317`; Linux measures the POSIX process-group line. The rethrow itself is cross-platform. `parse_scored_row` remains a named public API with required compatibility; no wrong behavior was observed. `coverage-disposition.json` makes the final `4ef04cab` measurement primary and retains earlier attempts as named history. No ratchet marks were seeded; `diff_uncovered_max` is unset, so these are measured limits rather than gate refusals.
+
+| Shared coverage gap | Lines | Unmeasured behavior |
+|---|---|---|
+| `src/crapkit/gitio.py` | `414`, `522` | Binary-only return and malformed history-header refusal |
+| `src/crapkit/mutate_pool.py` | `163` | Outside-root input refusal |
+| `src/crapkit/procs.py` | `327–329` | Cleanup failure fallback and rethrow |
+| `src/crapkit/score.py` | `78`, `79`, `84` | Retained single-row API and malformed row-width refusal |
+
+## Integration repair evidence
+
+| Failure | Repair and preserved assertion | Focused status |
+|---|---|---|
+| POSIX path-spelling E2E test | Use dot-relative, host-native and absolute spellings; add real distinct slash and literal-backslash filenames. | Two original failures reproduced with the hook test; final Linux 7 passed, Windows 6 passed/1 POSIX-only skip. `measurements/e2e-followup/result.json` |
+| Hook error E2E test | GitError already propagated with exit 4. Stop requiring `git diff` before global flags; assert operation, directory, error type and public CLI exit 4 with no verdict. | Same focused batch; production unchanged. |
+| Wheel child-environment and interrupt fixtures | Process dependency sites with `site.addsitedir` while retaining private package precedence; inject interruption after real process/lock readiness. Preserve installed-byte checks and both subprocess coverage branches. | Five cases pass on both Windows and Ubuntu. Intermediate failures are retained. `execution/fixture-result.json` |
+| Collection errors and xdist worker crashes | Runner admits JUnit completion instead of equating exit 1 with complete test failure; normal and retry JUnit readers reject collection markers. | Runner: Linux 6 passed, Windows 14 passed. Parser: 5 failed/1 passed before; 39 passed on each host after. Gate passed; changed functions at most CCN 6. `tests-ci/collection-followup.json` |
+| Windows probe/helper provenance and launch errors | Pin the owner helper to the running package while leaving target environment intact; use a private file to transport shell-launch OSError separately from command exit codes, and rethrow after owned-tree cleanup. | Three original probe failures reproduced and passed; expanded batch: Windows 108 passed, Linux 105 passed/3 skipped. Separate lifecycle: Windows 11 passed/1 skip; Linux 10 passed plus two stale-fixture failures, then both passed with repaired fixtures. `followup-check-summary.json`; `execution/launcher-review.json` |
+| Cleanup-fixture startup race under full-run load | Wait for bounded fixture readiness before calling the real adapter with its unchanged two-second timeout. Record the actual `TimeoutExpired.timeout=2`, re-raise it, and retain startup and process-gone assertions. Ready and synthetic three-second delayed-start variants pass; the separate unwrapped deadline test retains its five-second wall-clock ceiling. | Delayed-start red reproduced the missing marker. Five focused cases pass on each host, no skips. Changed functions at most CCN 4; hook passed; independent review has no findings. `tests-ci/probe-readiness/result.json`; `execution/probe-readiness-review.json` |
+| No-progress and related cleanup fixtures under full-run load | Establish readiness before real cleanup waits. Use controlled monotonic time with actual file growth to check repeated progress, exact idle expiry and total-deadline precedence. Keep real output/cleanup checks and unwrapped startup-silence and total-deadline controls. | Two original and two related delayed-start cases fail before repair. Twenty cases pass on each host after repair, no skips; two injected watcher defects fail their tests. Changed functions at most CCN 4; hook passed; independent review has no findings. `tests-ci/progress-deadline/result.json`; `execution/progress-deadline-review.json` |
+
+The first repair set is in `0082379e350aa0eed44eeec50514023a573f61df`. Its integrated focused batch passed 64 cases with one POSIX-only skip; the commit hook passed. The second-attempt corrections are committed in `0009a6776f7e260046589954d98e035918f89439`; the later probe-readiness repair is in `72b1125d07904f8f41c465e4fe79aba2a1db5fa7`. The progress-fixture repair changes `tests/unit/test_procs.py` and `tests/unit/test_init_probe.py` in `4ef04cab273629eae28755fccbfbd934aa098f7e`. Complete source and wheel verification passed at that revision. Final evidence belongs to `source-final/` and `wheels-final/`; all four prior attempts remain preserved.
+
+## Independent review
+
+Review of other owners' modules traced process cleanup and lock/link ordering, path rebasing, MCP, SARIF, doctor, Action framing, and LF reader selection. It found and closed three Git gaps: inherited diff context, source hidden by binary attributes, and historical record framing. The final source/test inspection reports no additional findings in that reviewed scope. Root reviewed verdict, measurement, records, duplication, packet and CI integration; execution independently reviewed the CI schedule and fixture isolation.
+
+Evidence: `measurements/integration-review.json`, `execution/ci-review.json`, `integration-review.json`, and the focused Git repair results. Historical handoff receipts retain their original status; the completion matrix records final integration evidence. The completed helper-launch review reports no findings and checks cleanup ordering, private diagnostic-file lifetime, native startup failure, and target environment preservation. It includes real lifecycle replay and the separate quiet cost comparison in `execution/launcher-review.json`. The fake-target, readiness and progress-fixture reviews preserve real product coverage and deadline/cleanup assertions. Both complete runs passed; source review and execution evidence remain separately identified.
+
+The packaging review found that file hashes alone did not reject stale manifest commits or incomplete matrix rows. The scratch finalizer now checks those fields before creating output. Its synthetic package-seam probe first accepted 15 invalid cases; after the repair, all 17 cases produce the expected result, including two valid controls. The finalizer's highest CCN is 6. Evidence: `measurements/manifest-finalizer/result.json`. This checks packaging admission only; it does not establish a full-run pass.
+
+The archive follow-up requires the report, completion matrix and decision log as hashed entries, and includes the manifest itself separately without self-hashing. Four companion probes and all 17 metadata cases pass. `add_report_companions.py` rejects incomplete metadata and indexes the actual companion bytes after completion. Final companion hashes accompany this report. `check_package.py` checks archive CRC, unique members, internal manifest hashes and matching measured verdicts. Evidence: `measurements/manifest-finalizer/companions-result.json`.
+
+## Compatibility and remaining limits
+
+- `schema:1`, verdict exit priority, existing valid measurement arithmetic, ratchet stamp/key admission, ordinary TSV bytes and legacy scored columns remain. Unknown or malformed marked records refuse rather than silently lose fields.
+- Git paths require valid UTF-8; source bodies remain lossless and retain the existing UTF-8/cp1252 reader policy. UTF-16 source is outside that policy. Ordinary binary artifacts stay out of text decoding. The normal patch path adds no process; binary summaries add a metadata read and, only for supported source, one forced patch.
+- Windows and Ubuntu have real process, filesystem and shell checks. Pure POSIX filename seams are labelled separately from actual Ubuntu filenames. macOS had no runtime in this task. Local workflow checks do not establish hosted behavior; no hosted CI or Action dispatch occurred.
+- Windows Job assignment refuses before launching a command if ownership cannot be established. POSIX ownership assumes descendants keep the inherited process group; deliberate `setsid` escape is outside that contract. Hard termination cannot run shutdown hooks.
+- Each command launch now needs one writable temporary file until cleanup completes. Trusted launch diagnostics are read after cleanup; long diagnostics consume memory without an unread-pipe deadlock.
+- Positive duplication `top` bounds retained candidates, but full-result and legacy negative-top requests retain output proportional to their results. Dense comparisons still require quadratic arithmetic.
+- Nine guard/API/cleanup lines remain uncovered on both hosts. No production timeout, coverage requirement or baseline-failure safeguard was relaxed. Full verification passed at the measured `4ef04cab` commit; later documentation commits do not change that provenance.

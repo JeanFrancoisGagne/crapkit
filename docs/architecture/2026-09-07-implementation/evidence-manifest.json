@@ -1,0 +1,3103 @@
+{
+  "schema": 1,
+  "implementation_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "completion_matrix": "completion-matrix.json",
+  "roots": {
+    "implementation_round2": "C:/Users/jfgag/Documents/Codex/2026-09-06/c-users-jfgag-appdata-local-temp/work/implementation-round2",
+    "repository": "C:/Users/jfgag/crapkit"
+  },
+  "path_rule": "repo: paths resolve under repository; all other paths resolve under implementation_round2.",
+  "integration_verification": "Complete Windows source and Linux installed-wheel verification passed at4ef04cab; saved ledgers agree.",
+  "curation": {
+    "file_count": 298,
+    "total_bytes": 17694604,
+    "included": "Focused red/green logs and JUnit, owner results, compact summaries, repeatable probes, immutable duplication input, all preserved prior attempts, passing current Linux JUnit/provenance, and reviewed fixture repairs.",
+    "excluded": [
+      "Temporary Git repositories, worktrees and runtime environments",
+      "Raw coverage databases, consistent SQLite snapshots and large source coverage JSON files; compact proofs retain exact hashes and relevant rows",
+      "Repeated full-coverage benchmark payloads; compact summaries and replay scripts remain",
+      "Obsolete setup files and transient scratch outputs"
+    ],
+    "benchmark_note": "Duplication input is a specific 1.3 MB immutable fixture. CI timings are fixture-only or a 32-case mixed subset, and execution cost samples were contended. No hosted dispatch occurred."
+  },
+  "entries": [
+    {
+      "path": "action-red.txt",
+      "candidates": [
+        "UI2"
+      ],
+      "kind": "red",
+      "purpose": "Four non-ASCII/whitespace path cases fail",
+      "bytes": 2167,
+      "sha256": "2a0490fc44f918c236dc64bd8c7919a39cd1d7145eee83b1db9e91550275f225"
+    },
+    {
+      "path": "add_report_companions.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Add final report, matrix and decision-log hashes only after complete metadata passes admission",
+      "bytes": 2174,
+      "sha256": "ca73eb717fd939880046fe7d4a430496b618b72e83bd1d5193fe65412a5d94dd"
+    },
+    {
+      "path": "analysis-names-green.xml",
+      "candidates": [
+        "CORE-S01"
+      ],
+      "kind": "green",
+      "purpose": "Windows reader/name checks",
+      "bytes": 11465,
+      "sha256": "f5b2de33518b784e692634079e226d8778b7337e4b168d509ee5d10083697bff"
+    },
+    {
+      "path": "analysis-names-posix.xml",
+      "candidates": [
+        "CORE-S01"
+      ],
+      "kind": "green",
+      "purpose": "Ubuntu literal-name checks",
+      "bytes": 4588,
+      "sha256": "1ca372a872a8a0294caa389d026557edb91f02ed008aa0f843397b82dcb81cf7"
+    },
+    {
+      "path": "analysis-names-red.xml",
+      "candidates": [
+        "CORE-S01"
+      ],
+      "kind": "red",
+      "purpose": "LF filename chooses the wrong reader",
+      "bytes": 13446,
+      "sha256": "c3a255cfbac99d4728fc8e2ee308cfa4a4a89b3d47737f1ef29084680ebfe6c5"
+    },
+    {
+      "path": "check_package.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "archive check",
+      "purpose": "Check actual archive CRC, internal manifest hashes, unique members and matching measured verdicts",
+      "bytes": 1269,
+      "sha256": "6c6396cebad4fa8762b1a972a0fcf98d519c20d193e800ab1be1b1fd0c269c47"
+    },
+    {
+      "path": "ci-docs-integration.xml",
+      "candidates": [
+        "UI5"
+      ],
+      "kind": "green",
+      "purpose": "Shared CI and documentation contracts",
+      "bytes": 19486,
+      "sha256": "83b0aa5de4592d9ec7d458fd185ff8a5ff487c4719b7ad0b5959b815e9924d90"
+    },
+    {
+      "path": "completion-matrix.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "final report companion",
+      "purpose": "Source-of-truth report, completion state or decision chronology",
+      "bytes": 120034,
+      "sha256": "3d393a6ecd98224d004c7cb2b5e19f2f35fcad0c6e8c5c0d92fabc8c1f73b8c6"
+    },
+    {
+      "path": "coverage-disposition.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "final coverage disposition",
+      "purpose": "Primary facts at4ef; nine shared gaps retained and earlier attempts named as history",
+      "bytes": 36422,
+      "sha256": "2ef07e1d89ae6034022728aabeb7d662db04289e7f1d0d7a91771b78f5d88a38"
+    },
+    {
+      "path": "decisions.tsv",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "final report companion",
+      "purpose": "Source-of-truth report, completion state or decision chronology",
+      "bytes": 5960,
+      "sha256": "a0746d91092d7a944bb3f24dd349444aff5bf2eb6dc2cbc3f19a51c8977e44b4"
+    },
+    {
+      "path": "docs-adapters.xml",
+      "candidates": [
+        "UI5"
+      ],
+      "kind": "red",
+      "purpose": "Integration catches two relative-link documentation failures",
+      "bytes": 31901,
+      "sha256": "b572ed82cb5e4794633d29baba3323894c2f0bc7b0b55e96da4d63fe8c5b91a9"
+    },
+    {
+      "path": "docs-links-green.xml",
+      "candidates": [
+        "UI5"
+      ],
+      "kind": "green",
+      "purpose": "Corrected documentation links",
+      "bytes": 3238,
+      "sha256": "465f8872caba608a5dca777e4fb6ada4bfdb439577e937d21622a8c574f9a739"
+    },
+    {
+      "path": "execution/adapter-coverage-summary.json",
+      "candidates": [
+        "EX1",
+        "EX2"
+      ],
+      "kind": "coverage_summary",
+      "purpose": "Compact execution adapter coverage summary",
+      "bytes": 13883,
+      "sha256": "35259055c1a39b7848e0b5651682904b6bfa75301e4c1a1c8f269bb6d80d5cfe"
+    },
+    {
+      "path": "execution/adapters-posix.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Windows/POSIX adapter branches on Ubuntu",
+      "bytes": 4457,
+      "sha256": "c89b88b381b706b093db6d246aaa599cefba7a7d47fcd30d97e9b10ab79c039d"
+    },
+    {
+      "path": "execution/adapters-windows.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Windows/POSIX adapter branches on Windows",
+      "bytes": 4456,
+      "sha256": "9159650188abb747601105ec8ec852d3d292cf6f2d33a4231a7d47707a1adb0e"
+    },
+    {
+      "path": "execution/base-regressions.xml",
+      "candidates": [
+        "EX1",
+        "EX2"
+      ],
+      "kind": "red",
+      "purpose": "Six original lifetime/link regressions fail",
+      "bytes": 5761,
+      "sha256": "1201ce0c553bba824a0cc2d1a60f09e53748262d23e5b37a182a64ce654edd9a"
+    },
+    {
+      "path": "execution/check_fake_target_coverage.py",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "replay",
+      "purpose": "Paired fake-target coverage runs and export checks",
+      "bytes": 2858,
+      "sha256": "e2807eee6de7da541ee87dbaba8176128842045dea2120f5031f509e5177ddcc"
+    },
+    {
+      "path": "execution/ci-review.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "review",
+      "purpose": "Independent test/CI review",
+      "bytes": 6330,
+      "sha256": "f2bc643bfe905a91a366866d36c4073c64c49f1944cb4808604039a1e90f315e"
+    },
+    {
+      "path": "execution/command-cost.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "measurement",
+      "purpose": "Contended command-cost samples during POSIX test I/O; not a quiet performance comparison",
+      "bytes": 6344,
+      "sha256": "72baa16a408dd17e915b4a853accd68ee38e46b0a7c86075415cf62a9d38d345"
+    },
+    {
+      "path": "execution/fake-target-isolation-review.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "review",
+      "purpose": "Target-only -S preserves product measurement and target behavior on both hosts",
+      "bytes": 2114,
+      "sha256": "0d72d4bc462275337de1ed0f21f53c2d34f75034c9d686b468f006f760d634d6"
+    },
+    {
+      "path": "execution/fake-target-posix-result.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "probe-result",
+      "purpose": "Paired Linux fake-package output and real product coverage comparison",
+      "bytes": 4318,
+      "sha256": "fbf4af40d0bff44952c1c808357750aef6ca237b1ba6dfb82672891cae7ec84f"
+    },
+    {
+      "path": "execution/fake-target-windows-result.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "probe-result",
+      "purpose": "Paired Windows fake-package output and real product coverage comparison",
+      "bytes": 5389,
+      "sha256": "f0800b301b9379d659363fb2f2904a00d52465358aef71186c7769a114fe2175"
+    },
+    {
+      "path": "execution/fixture-e2e-red-posix.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Child dependency and live interrupt fixture repair",
+      "bytes": 2730,
+      "sha256": "30b2532d49617124f6074cffebb95efcfcccd4c0ca737f3e512e7ec095ca6680"
+    },
+    {
+      "path": "execution/fixture-final-posix.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Child dependency and live interrupt fixture repair",
+      "bytes": 948,
+      "sha256": "93ee81859a65a08fb5842e4321dfe8c928258ea0c62f8d93a1dc5d9c5d3d4975"
+    },
+    {
+      "path": "execution/fixture-final-windows.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Child dependency and live interrupt fixture repair",
+      "bytes": 950,
+      "sha256": "617cefea2ac2f3d0e6a23b509668ddac81d9c34f3c210bd37c4686a0d644b21c"
+    },
+    {
+      "path": "execution/fixture-red-posix.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Child dependency and live interrupt fixture repair",
+      "bytes": 3546,
+      "sha256": "75da664ba18f45017ff4be9de62de1d2c21d79b6501621b01c1c38ba240b08aa"
+    },
+    {
+      "path": "execution/fixture-result.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "followup",
+      "purpose": "Private child dependency and interrupt fixture repairs",
+      "bytes": 11043,
+      "sha256": "809d4bcd7aedb8e80ed75f61beb205ed8af02420081a919bd9d189def5b7045e"
+    },
+    {
+      "path": "execution/focused-posix.xml",
+      "candidates": [
+        "EX1",
+        "EX2"
+      ],
+      "kind": "green",
+      "purpose": "Ubuntu process, lock, link, deadline and fallback batch",
+      "bytes": 10133,
+      "sha256": "58a0ae7710682404616aee7f561075db170b558828335f116e2b7cc21ced3b4a"
+    },
+    {
+      "path": "execution/focused-windows.xml",
+      "candidates": [
+        "EX1",
+        "EX2"
+      ],
+      "kind": "intermediate_failure",
+      "purpose": "70 passes/one skip/two lock-fallback failures, followed by green-fallback.xml",
+      "bytes": 12608,
+      "sha256": "1986d00744a208bc0a8adba16e9a8bd6379cb5f4eba00f6520a6bd01da21b7d2"
+    },
+    {
+      "path": "execution/green-fallback.xml",
+      "candidates": [
+        "EX1",
+        "EX2"
+      ],
+      "kind": "green",
+      "purpose": "Corrected Windows fallback, lock and link cases",
+      "bytes": 1580,
+      "sha256": "63d2793674ad1d4661e24d4408233b60140188f71dc9efaa0f2de86d57e88cf4"
+    },
+    {
+      "path": "execution/launcher-cost-posix.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "benchmark",
+      "purpose": "Quiet Linux combined helper patch comparison; five warm pairs",
+      "bytes": 5722,
+      "sha256": "58394b0aa1b6ce8bd31513418e3d657c26c7358751f99bc308794dc74379167a"
+    },
+    {
+      "path": "execution/launcher-cost-windows.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "benchmark",
+      "purpose": "Quiet Windows combined helper patch comparison; five warm pairs",
+      "bytes": 6064,
+      "sha256": "038b654cba6ba5accf9a2624113c94211cacf1d793121db281b69658b0872d62"
+    },
+    {
+      "path": "execution/launcher-fixed-interrupt-posix.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Both Linux interrupt cases pass against repaired fixtures and same production source",
+      "bytes": 542,
+      "sha256": "e0d77f85928f99ffe937f428dbc415aeb1e20ded15b9a21e45553eb29717175e"
+    },
+    {
+      "path": "execution/launcher-lifecycle-posix.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "focused-attempt",
+      "purpose": "Ten passes and two stale interrupt-fixture failures; repaired replay retained separately",
+      "bytes": 4081,
+      "sha256": "17416f6c3cd590e873b29e33c4657d6dbfa7df6adeb810dad138202a3ae8cc67"
+    },
+    {
+      "path": "execution/launcher-lifecycle-windows.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Independent Windows lifecycle checks",
+      "bytes": 2104,
+      "sha256": "db457eb0115d2800f0f43ce03e2b12095c7b4c3bf8159172fc5918e694cad489"
+    },
+    {
+      "path": "execution/launcher-review.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "review",
+      "purpose": "Completed independent helper source, lifecycle and startup review; no findings",
+      "bytes": 6954,
+      "sha256": "cb0c31f8c70964a283b983f942d6addf0b51861275f00490d92e7debd7acc6ff"
+    },
+    {
+      "path": "execution/launcher-startup-posix.json",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "probe-result",
+      "purpose": "Native startup and descriptor-limit failures preserve ToolError/OSError",
+      "bytes": 620,
+      "sha256": "56c1a69da4623b7498368658bf57de1d00f242a63bfe07f0b233bff05cf393a3"
+    },
+    {
+      "path": "execution/measure_command_cost.py",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "reproduction",
+      "purpose": "Contended execution cost measurements",
+      "bytes": 1978,
+      "sha256": "3ba618d34bf156714090d340c60ce359121f34b98787d37d7f902c8d6fe9f8a6"
+    },
+    {
+      "path": "execution/measure_launcher_change.py",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "probe",
+      "purpose": "Repeatable helper cost comparison with source selection proof",
+      "bytes": 2314,
+      "sha256": "814454005c209eb07053959e9a34ccce52e5faaad40fa79ee5a395de6ad1fd1a"
+    },
+    {
+      "path": "execution/packet-final-posix.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "green",
+      "purpose": "Final Ubuntu shell commands",
+      "bytes": 7659,
+      "sha256": "447332d596773e30285ae2807028ee4f56df0f363408884fe668bd02e224ce3a"
+    },
+    {
+      "path": "execution/packet-final-windows.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "green",
+      "purpose": "Final Windows shell commands",
+      "bytes": 9770,
+      "sha256": "011b790723d048de802632c15314c434bb7ff0c1b82f913cec748f23b7f8c0b4"
+    },
+    {
+      "path": "execution/packet-newline-posix-green.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "green",
+      "purpose": "Real LF filename after reader-selector integration",
+      "bytes": 408,
+      "sha256": "0d71041ce1b1dd593afb1f64c80045ad46d3eaed9718bf5d03441688d796e719"
+    },
+    {
+      "path": "execution/packet-result.json",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "owner_result",
+      "purpose": "Shell/path matrix and resolved packet integration failures",
+      "bytes": 23912,
+      "sha256": "f94ee5231f3a54c94803bfedd9c254cad9368134ba448bdbe3937e44b305eaa6"
+    },
+    {
+      "path": "execution/probe-readiness-review.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "independent review",
+      "purpose": "Read-only review finds no defect in the readiness repair",
+      "bytes": 3570,
+      "sha256": "777bbc23fc74a4edf1830d8c9c819d4bac04baa12ddab9ff510daa9825b1406d"
+    },
+    {
+      "path": "execution/probe_fake_target.py",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "replay",
+      "purpose": "Fake target behavior and product measurement reproduction",
+      "bytes": 1066,
+      "sha256": "ecadb27f97e13589c97e63692f24189c435b6eca53def385c4e2acb43456ad5b"
+    },
+    {
+      "path": "execution/probe_launcher_startup.py",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "probe",
+      "purpose": "Repeatable native startup failure probe",
+      "bytes": 789,
+      "sha256": "295605854e214673819d7eaa247ec788ff1b2ac4b495a80465a2f44eac025030"
+    },
+    {
+      "path": "execution/progress-deadline-full-failures.txt",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full-run failures",
+      "purpose": "72b unit-phase traces underlying the two fixture repairs",
+      "bytes": 2403,
+      "sha256": "bf4af078b65b4dcc3fcceec07c40324bf2e41aeb513280c3e37aaf959c2d00c7"
+    },
+    {
+      "path": "execution/progress-deadline-review.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "independent review",
+      "purpose": "Final fixture repair has no findings; deadline and cleanup assertions remain",
+      "bytes": 9015,
+      "sha256": "71835d1a89ab6a349356cdda820b683df35c484649ba45bbb16c4324d639005c"
+    },
+    {
+      "path": "execution/red-packet-gate.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "red",
+      "purpose": "Printed gate command fails its literal target",
+      "bytes": 1670,
+      "sha256": "95a5280869b5857828ffbdfe7ef4a9216b53f7eadf40ecbcc6579fd2f773d600"
+    },
+    {
+      "path": "execution/red-packet-missing.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "red",
+      "purpose": "Missing native launcher does not preserve failure",
+      "bytes": 5019,
+      "sha256": "4ea9d4536aa7a223c7e0f43e291a86397a0bab215daef231379882de3f608e39"
+    },
+    {
+      "path": "execution/red-packet.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "red",
+      "purpose": "Public packet command targets the wrong expanded filename",
+      "bytes": 1404,
+      "sha256": "499eddc7e622f8f14816106710864dad378d1e0086efcc47962ebd8331becc47"
+    },
+    {
+      "path": "execution/result.json",
+      "candidates": [
+        "EX1",
+        "EX2"
+      ],
+      "kind": "owner_result",
+      "purpose": "Execution and filesystem-isolation results",
+      "bytes": 15835,
+      "sha256": "832d440da99e13b3ac14c500e9bb237923cd58bae77143f372d3acad63df5be0"
+    },
+    {
+      "path": "execution/summarize_fake_target.py",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "replay",
+      "purpose": "Compact product coverage comparison extraction",
+      "bytes": 2488,
+      "sha256": "18220106a607191eb29f9e57f0a32453502e77feccea794102bbac70219c0c38"
+    },
+    {
+      "path": "final-interface-check.txt",
+      "candidates": [
+        "CORE-S02",
+        "UI1",
+        "UI2",
+        "UI3",
+        "UI4"
+      ],
+      "kind": "green",
+      "purpose": "Final shared interface check passed",
+      "bytes": 162,
+      "sha256": "cc7fd9f8f7dcdcf593e8add05af6aa3452df8d899e8256071c16092a741516ae"
+    },
+    {
+      "path": "final-source-join-proof.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete measured proof",
+      "purpose": "Exact final verdict/ledger/source/coverage reconciliation with distinct populations",
+      "bytes": 15851,
+      "sha256": "8c2f65a8c524b95affcee29d8361cacfa11b1bd395b7a336af708ae5ad9289cc"
+    },
+    {
+      "path": "final-source-proof.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete measured proof",
+      "purpose": "Exact final verdict/ledger/source/coverage reconciliation with distinct populations",
+      "bytes": 7789,
+      "sha256": "0c422565a7d1bce65de7217c8afc544bf028754e0ec4cf2e3d36d3b6b705153a"
+    },
+    {
+      "path": "final-wheel-proof.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete measured proof",
+      "purpose": "Exact final verdict/ledger/source/coverage reconciliation with distinct populations",
+      "bytes": 8293,
+      "sha256": "f0c311a535406dc55b49217c404ef3af9124a9bb9ae49c5632e9e69efe16e5f2"
+    },
+    {
+      "path": "finalize_evidence.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Require complete matching metadata and report companions; archive the manifest separately without self-hashing",
+      "bytes": 6596,
+      "sha256": "859bdade8c21b856e880986e389bd54e1cb412031f29fb69c255fc026fe89c8b"
+    },
+    {
+      "path": "followup-check-summary.json",
+      "candidates": [],
+      "kind": "followup",
+      "purpose": "First source ledger and focused repair counts",
+      "bytes": 2395,
+      "sha256": "1caa71f3d18efd6be850dd3876e3a8763fec58d93f3e30c8f21808bf0b068a15"
+    },
+    {
+      "path": "followup-integrated.xml",
+      "candidates": [],
+      "kind": "followup",
+      "purpose": "Integrated repair batch: 64 passes and one skip",
+      "bytes": 9545,
+      "sha256": "7f13b90e5de1cdd2bd5e99b2fe9dea34c52c8154f42f88545b6349baa2824242"
+    },
+    {
+      "path": "full-source-result.json",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "Completed first Windows source attempt, exit 8",
+      "bytes": 320,
+      "sha256": "7f72b95e44e89d65ad8d1f5f5c03ff7aa62b1378d6c877622096faec82613c72"
+    },
+    {
+      "path": "full-source-verdict.json",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "Five new findings and unchanged baseline selection",
+      "bytes": 1590,
+      "sha256": "61ca5244e32ee930884a81356356a7f3b37744400387ab040ae4e2158a2b4edc"
+    },
+    {
+      "path": "full-source.stderr",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First Windows source changed-line coverage diagnostics",
+      "bytes": 1140,
+      "sha256": "ac2d6065c61ea6728d36cc8a5c530e6bbb796f44b21f5627721ba5447474a9c7"
+    },
+    {
+      "path": "full-wheels-attempt2.exit",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "Refusing second wheel comparison exit",
+      "bytes": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "path": "full-wheels-attempt2.log",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "All candidate tests pass but fake-package source prevents coverage export",
+      "bytes": 64219,
+      "sha256": "b41863ec9eadbf22ef0ff8b724125d52c4462d2028ceeae48e23dddb326b5468"
+    },
+    {
+      "path": "full-wheels-attempt3.exit",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Final wheel comparison exit 0",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "full-wheels-attempt3.log",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final base/candidate wheel build, tests, coverage and comparison",
+      "bytes": 64144,
+      "sha256": "1c82f93f25ed0702b83df282b07b27cff4a85bd0896a1123b8cd673080f8bc56"
+    },
+    {
+      "path": "full-wheels-attempt4.exit",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "full-wheels-attempt4.log",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 62846,
+      "sha256": "3483742a4b867bd41eacde95d761e33942a83bd914f82d189c850703019b4fec"
+    },
+    {
+      "path": "full-wheels-final.exit",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel result",
+      "purpose": "4ef04cab comparison passed; saved candidate ledger has verdict_ok=1 and findings=0",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "full-wheels-final.log",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel result",
+      "purpose": "4ef04cab comparison passed; saved candidate ledger has verdict_ok=1 and findings=0",
+      "bytes": 64091,
+      "sha256": "ca7d8cef014be2041bcf24b06d682820de8ca622fb895ce9860eb51de2917471"
+    },
+    {
+      "path": "full-wheels.exit",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First Linux comparison process exit; ledger and verdict also retained",
+      "bytes": 2,
+      "sha256": "aa67a169b0bba217aa0aa88a65346920c84c42447c36ba5f7ea65f422c1fe5d8"
+    },
+    {
+      "path": "full-wheels.log",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "Complete first Linux comparison output; refused",
+      "bytes": 75491,
+      "sha256": "309366b0d0fbc505a154c1585c5bf5af2829b77958e1c6f7429de1141e5f4d1c"
+    },
+    {
+      "path": "git-env-red.txt",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "Both staged readers blame untouched debt under GIT_DIFF_OPTS",
+      "bytes": 1412,
+      "sha256": "bae9fdcb8e2b78305dfb38df34c98024c891bb8f5947d08d4a2026adbffc0976"
+    },
+    {
+      "path": "git-patch-red.txt",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "User display settings hide or misattribute source",
+      "bytes": 6007,
+      "sha256": "292e6ae144821241f94888c662ea6d6aa4b869a747ce80d82550a03fdc048eb0"
+    },
+    {
+      "path": "git-source-posix.xml",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "green",
+      "purpose": "Root's Ubuntu source-path and history checks",
+      "bytes": 3476,
+      "sha256": "46f8ba1b4d996cee5b2f68981e2c076b25ca57f7be6312d6223f37c94f04919c"
+    },
+    {
+      "path": "history-green.txt",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "green",
+      "purpose": "Historical raw and encoded records pass",
+      "bytes": 81,
+      "sha256": "cb18da0b6f22f66dcc3b91519f2731f34b02c843e4e4517d002e65d87a1ecdaf"
+    },
+    {
+      "path": "history-red.txt",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "red",
+      "purpose": "Two legacy separator-bearing history rows fail",
+      "bytes": 1455,
+      "sha256": "5021ff6ba4bb12f793ea50b73d3e749d740b220275539977c99881571447f34b"
+    },
+    {
+      "path": "integration-gate-final.txt",
+      "candidates": [
+        "CORE-01",
+        "CORE-02",
+        "CORE-03",
+        "CORE-04",
+        "CORE-S01",
+        "CORE-S02",
+        "EX1",
+        "EX2",
+        "MEASURE-01",
+        "STATE-01",
+        "STATE-02",
+        "STATE-03",
+        "UI1",
+        "UI2",
+        "UI3",
+        "UI4",
+        "UI5"
+      ],
+      "kind": "gate",
+      "purpose": "Root's focused integration gate; not a full-suite result",
+      "bytes": 646,
+      "sha256": "7c54987bc1fad776e4403e059f7800b4ef664bff0d22c2295d2331fe9196b5cd"
+    },
+    {
+      "path": "integration-review.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "final integration review",
+      "purpose": "Closed findings and matching passing full runs; no current pending review",
+      "bytes": 6317,
+      "sha256": "15c2ecd837173ce63b56d5510041dfcebe7fb14669518d055d56a9f591f3973f"
+    },
+    {
+      "path": "interfaces-green.txt",
+      "candidates": [
+        "CORE-S02",
+        "UI1",
+        "UI2",
+        "UI3",
+        "UI4"
+      ],
+      "kind": "green",
+      "purpose": "Shared interface batch passed",
+      "bytes": 162,
+      "sha256": "a1922c829b8e2da75ada21a471caa47eda9b573df88fb9aee71ca716f55405d5"
+    },
+    {
+      "path": "interfaces-red.txt",
+      "candidates": [
+        "CORE-S01",
+        "CORE-S02",
+        "UI1",
+        "UI2",
+        "UI3",
+        "UI4"
+      ],
+      "kind": "red",
+      "purpose": "Legacy-locale child transport test fails",
+      "bytes": 5919,
+      "sha256": "00caeb892ff240b19f216952451beeb2440bf45e1481c29d1371cee89af014de"
+    },
+    {
+      "path": "measurements/benchmark_duplication.py",
+      "candidates": [
+        "CORE-03",
+        "CORE-04"
+      ],
+      "kind": "reproduction",
+      "purpose": "Duplication time/memory and payload comparison",
+      "bytes": 3823,
+      "sha256": "54b42e5123a197dc116e31b8cd6878af35f0caf6532dfd4e2c5574b07acca279"
+    },
+    {
+      "path": "measurements/benchmark_records.py",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "reproduction",
+      "purpose": "Ordinary record export comparison",
+      "bytes": 2394,
+      "sha256": "2be3523f1866b9f585b8b509212ebeeef6db52f95b182da9cea3efe3d7d9e9ef"
+    },
+    {
+      "path": "measurements/core-green.txt",
+      "candidates": [
+        "CORE-02"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 426,
+      "sha256": "ae63b220fef34dcc65b6162e813859617854e81d10ba35716150678b21f74eed"
+    },
+    {
+      "path": "measurements/core-red.txt",
+      "candidates": [
+        "CORE-02"
+      ],
+      "kind": "red",
+      "purpose": "Focused regression on the prior implementation",
+      "bytes": 21693,
+      "sha256": "2347ecfc65584321aac11cc2545d5c131ca7ab5400a554ed946e16112e6ed699"
+    },
+    {
+      "path": "measurements/duplication-after.json",
+      "candidates": [
+        "CORE-04"
+      ],
+      "kind": "measurement",
+      "purpose": "Same interpreter and immutable inputs; five interleaved warm rounds, tracemalloc measured separately",
+      "bytes": 33555,
+      "sha256": "1c99b555dc963574a08950aff145e81aada8ad766bf19fa3ae525198e4f63b24"
+    },
+    {
+      "path": "measurements/duplication-base-final.txt",
+      "candidates": [
+        "CORE-03",
+        "CORE-04"
+      ],
+      "kind": "red",
+      "purpose": "Focused regression on the prior implementation",
+      "bytes": 5493,
+      "sha256": "82708ede0a41daee4a8f40f40cfd8fc1ff8040417734d033a963473e77ee6417"
+    },
+    {
+      "path": "measurements/duplication-before.json",
+      "candidates": [
+        "CORE-03",
+        "CORE-04"
+      ],
+      "kind": "measurement",
+      "purpose": "Separate baseline and preliminary timing evidence",
+      "bytes": 17247,
+      "sha256": "2527ff47730d141ccf95ed73c7057d6d8bf620f9b91dc1f4a5b6d2f595e64620"
+    },
+    {
+      "path": "measurements/duplication-green.txt",
+      "candidates": [
+        "CORE-03",
+        "CORE-04"
+      ],
+      "kind": "green",
+      "purpose": "Exhaustive string-shingle oracle, six process hash seeds and tie-fixture permutations pass.",
+      "bytes": 101,
+      "sha256": "248242fb4b201d015938019c04239cbcad965ade7a9256e9eb587aa85f596b49"
+    },
+    {
+      "path": "measurements/duplication-self-input.json",
+      "candidates": [
+        "CORE-03",
+        "CORE-04"
+      ],
+      "kind": "benchmark_input",
+      "purpose": "Immutable 1,652-function input; specific benchmark data, not source coverage",
+      "bytes": 1306033,
+      "sha256": "724e6dca9cf91dcdda9131e0448b992acfdb84c4a1602ae4000003898839b634"
+    },
+    {
+      "path": "measurements/e2e-followup/final-green-linux.xml",
+      "candidates": [
+        "CORE-S01",
+        "CORE-01"
+      ],
+      "kind": "focused-test",
+      "purpose": "Path spelling and Git error test repair",
+      "bytes": 1208,
+      "sha256": "1d41192139c973b5d6c59d83c983c7c1a37e4b739c828207ea831a65d6fc54c9"
+    },
+    {
+      "path": "measurements/e2e-followup/green-windows.xml",
+      "candidates": [
+        "CORE-S01",
+        "CORE-01"
+      ],
+      "kind": "focused-test",
+      "purpose": "Path spelling and Git error test repair",
+      "bytes": 1439,
+      "sha256": "e3707b83fbbcdc8c51d73c0429e670e04fc3e1502d49d071495311ba5b64818d"
+    },
+    {
+      "path": "measurements/e2e-followup/red-linux.xml",
+      "candidates": [
+        "CORE-S01",
+        "CORE-01"
+      ],
+      "kind": "focused-test",
+      "purpose": "Path spelling and Git error test repair",
+      "bytes": 5810,
+      "sha256": "95166e247a972da80c5308786a07b0893efceae89e7b8ae82a12d727d2c4edd2"
+    },
+    {
+      "path": "measurements/e2e-followup/result.json",
+      "candidates": [
+        "CORE-S01",
+        "CORE-01"
+      ],
+      "kind": "followup",
+      "purpose": "Two test-only repairs and platform proof",
+      "bytes": 4453,
+      "sha256": "814171b9ae3aea35a8311e0e9a5b554beffe12a387e97300eb8dac07fe529d1d"
+    },
+    {
+      "path": "measurements/e2e-followup/run-linux.sh",
+      "candidates": [
+        "CORE-S01",
+        "CORE-01"
+      ],
+      "kind": "probe",
+      "purpose": "Repeatable focused Linux test invocation",
+      "bytes": 695,
+      "sha256": "61b94ed811d977e1ca5a99c7233fc8cca9e83febd9006240327a460de6962cbf"
+    },
+    {
+      "path": "measurements/first-coverage-facts.json",
+      "candidates": [],
+      "kind": "read-only-probe",
+      "purpose": "Saved SQLite measurements, AST identity and cross-host executed lines",
+      "bytes": 14659,
+      "sha256": "9dac41683f394dde4a4439fd3b495148cf095fd3b7008e0f951ed645fc4eca12"
+    },
+    {
+      "path": "measurements/git-followup-gate.txt",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "gate",
+      "purpose": "Staged Git follow-up gate exits zero",
+      "bytes": 273,
+      "sha256": "01302cb2a1bce424271ac06c6982f9a8acf4f5e4f73863e5825f41a919585f26"
+    },
+    {
+      "path": "measurements/git-followup-result.json",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "measurement",
+      "purpose": "Git process count",
+      "bytes": 7630,
+      "sha256": "17768e3535cd7f5bfe97f693392c297b815036f05a4db4c6757c81e22ab62264"
+    },
+    {
+      "path": "measurements/git-history-final-green.xml",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "green",
+      "purpose": "Final physical history framing and Git protocol batch",
+      "bytes": 7036,
+      "sha256": "2dc2e1ee02a4f4a23dcdc19677cbc150d831294b4633caef38b779375232ffd8"
+    },
+    {
+      "path": "measurements/git-history-framing-red.txt",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "Legacy U+0001 field collides with old history marker",
+      "bytes": 3222,
+      "sha256": "1ff043fcfdd7905d1cc7d4fe9e263785051701c10f4206a98b67361852375f94"
+    },
+    {
+      "path": "measurements/git-history-nul-red.txt",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "Naive NUL splitting corrupts a codec-produced function name",
+      "bytes": 2813,
+      "sha256": "62e1338af5344ce92e0378fbfd964ec220affb6ce2feb09e7def2065026c61f6"
+    },
+    {
+      "path": "measurements/git-source-final-green.xml",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "green",
+      "purpose": "Focused Git, advisory, path, blob and history batch",
+      "bytes": 21107,
+      "sha256": "d70b4824a969782048dd22735691c608bc4b792b46f62a6c4d52d1825fc2178b"
+    },
+    {
+      "path": "measurements/git-source-red.txt",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "Binary attributes hide source from seven public/seam cases",
+      "bytes": 4206,
+      "sha256": "ed5e37e9bd428c3679b5cf0c6960e1c07acfe1187db29def61586ebc7c0ce6f2"
+    },
+    {
+      "path": "measurements/integration-review.json",
+      "candidates": [
+        "CORE-01",
+        "CORE-02",
+        "CORE-03",
+        "CORE-04",
+        "CORE-S01",
+        "CORE-S02",
+        "EX1",
+        "EX2",
+        "MEASURE-01",
+        "STATE-01",
+        "STATE-02",
+        "STATE-03",
+        "UI1",
+        "UI2",
+        "UI3",
+        "UI4",
+        "UI5"
+      ],
+      "kind": "review",
+      "purpose": "Independent review dispositions; Git findings and repairs",
+      "bytes": 9136,
+      "sha256": "a9c2250a309c81621ccd0b5e55afeec6b7e8068156db41dc8b459422fb9536a2"
+    },
+    {
+      "path": "measurements/junit-green.txt",
+      "candidates": [
+        "MEASURE-01"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 102,
+      "sha256": "783084ebef935539c7f3341652a77c1674f8ff8c022ee4876b701676c01453a3"
+    },
+    {
+      "path": "measurements/junit-red.txt",
+      "candidates": [
+        "MEASURE-01"
+      ],
+      "kind": "red",
+      "purpose": "Focused regression on the prior implementation",
+      "bytes": 11344,
+      "sha256": "be0aa0d579d077863820ddd7e7b9c01c31ea41b35fb360212397465f9e5e7842"
+    },
+    {
+      "path": "measurements/manifest-finalizer/before-companions.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 6114,
+      "sha256": "ef4b6bf2349ad6eb3500396955f69a462fa261c002ee0f583488720d343a9e57"
+    },
+    {
+      "path": "measurements/manifest-finalizer/before.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "packaging admission repair",
+      "purpose": "Synthetic package-seam red/green with exact source hashes and complexity receipt",
+      "bytes": 4471,
+      "sha256": "c678757072655436985e0dccc735ae2d043f2eacd243a402205a6fad4b49e30e"
+    },
+    {
+      "path": "measurements/manifest-finalizer/companions-green.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 1629,
+      "sha256": "147b10a51d6409e5ff32e276eb96e8c47fcf88025ae34da7f1f49835f80631ed"
+    },
+    {
+      "path": "measurements/manifest-finalizer/companions-red.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 1796,
+      "sha256": "1a57262f73da4493ec813f6c25317bf4370d424bc9303a2c155feda9faba3416"
+    },
+    {
+      "path": "measurements/manifest-finalizer/companions-result.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 3103,
+      "sha256": "3145f8517791e04d875964753763bde8817de862c5aeecc44dd4f15709e95adc"
+    },
+    {
+      "path": "measurements/manifest-finalizer/companions.patch",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 1706,
+      "sha256": "42276139199eab62709299425d17abf2fdfbdb443bf2a328a66a1a4391d1b1d7"
+    },
+    {
+      "path": "measurements/manifest-finalizer/finalizer-admission.patch",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "packaging admission repair",
+      "purpose": "Synthetic package-seam red/green with exact source hashes and complexity receipt",
+      "bytes": 2247,
+      "sha256": "1d626e80db123244dfca8ba3444c6134125f47b9d86ad3310dc106b6113c532e"
+    },
+    {
+      "path": "measurements/manifest-finalizer/green.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "packaging admission repair",
+      "purpose": "Synthetic package-seam red/green with exact source hashes and complexity receipt",
+      "bytes": 4242,
+      "sha256": "44d3951a1810c39c2887ca18c79ef5750e9b5fc05873647fb2c348df0d6e3681"
+    },
+    {
+      "path": "measurements/manifest-finalizer/index-pending.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 1149,
+      "sha256": "ad84840004414592b448e645605562c863b89d2ba47b2eb93708d322401b8284"
+    },
+    {
+      "path": "measurements/manifest-finalizer/index-replay.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 583,
+      "sha256": "46331c1e4451e4ed7eb5620c2f89d1a064c40dbd4b33412703574a19ed547f15"
+    },
+    {
+      "path": "measurements/manifest-finalizer/metadata-probe-before-companions.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 5531,
+      "sha256": "5a147388d0b25682eb089962588d2a6c9351d6184863f16b777cddbbaec4c439"
+    },
+    {
+      "path": "measurements/manifest-finalizer/metadata-with-companions-green.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "standalone archive evidence",
+      "purpose": "Exact ZIP contents, missing-companion refusal, preserved metadata admission and guarded indexing",
+      "bytes": 4242,
+      "sha256": "82f6d94ef33ff3d615470a45cb4df5745ae01b1e2511261fd2e6f642fc30147f"
+    },
+    {
+      "path": "measurements/manifest-finalizer/red.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "packaging admission repair",
+      "purpose": "Synthetic package-seam red/green with exact source hashes and complexity receipt",
+      "bytes": 3765,
+      "sha256": "5730760e47edcc8fa9f33c4bfd10f57fa0e0c6c64d31839c78e13cf2d0b96c18"
+    },
+    {
+      "path": "measurements/manifest-finalizer/result.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "packaging admission repair",
+      "purpose": "Synthetic package-seam red/green with exact source hashes and complexity receipt",
+      "bytes": 3038,
+      "sha256": "255d8f11ca4f32f5c7b8c29cd6e2cf4ec392316b2dcf63ae76b582416ef95582"
+    },
+    {
+      "path": "measurements/portable-red.txt",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "red",
+      "purpose": "Real Windows U+2028 filename export succeeds; baseline import fails",
+      "bytes": 2303,
+      "sha256": "6ac227b56570b43180e9b7b328cfdeb681a19c339dbe3cf6666a7cd173264261"
+    },
+    {
+      "path": "measurements/probe_companion_index.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Private synthetic admission and archive probes without full runs or repository edits",
+      "bytes": 3432,
+      "sha256": "a1e917bc24508c494fe2ee113c97cf2f8ac9ef966472d3a8ac7f3115355b230c"
+    },
+    {
+      "path": "measurements/probe_final_source_join.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Prove installed-runtime coverage keys cannot affect1709 checkout scores",
+      "bytes": 4832,
+      "sha256": "da7317886e81f6aae4413de9ff067e7f5fb411062262d616011b1cf069d8e421"
+    },
+    {
+      "path": "measurements/probe_finalizer_companions.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Private synthetic admission and archive probes without full runs or repository edits",
+      "bytes": 4234,
+      "sha256": "c77d464cfd48c2a35fd854c28d018d1fa4375949dcb2ecd896232bc79fe40718"
+    },
+    {
+      "path": "measurements/probe_finalizer_metadata.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Private synthetic admission and archive probes without full runs or repository edits",
+      "bytes": 5915,
+      "sha256": "746cc0c1fbcef3c97f7c13b8cf4aa796b5c1675fdd31d0dd688d6df577113529"
+    },
+    {
+      "path": "measurements/probe_first_coverage.py",
+      "candidates": [],
+      "kind": "probe",
+      "purpose": "Repeatable read-only first-coverage extraction",
+      "bytes": 4562,
+      "sha256": "ac2850dc9febe1ff45b256dbfd75334b83f3e59e2f492552d29122c1f59024ad"
+    },
+    {
+      "path": "measurements/probe_review_git_binary.py",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "reproduction",
+      "purpose": "Binary display attribute false-negative probe",
+      "bytes": 1839,
+      "sha256": "e9cac33c84e0c6e231d728c14d6c8b8186cd0152db20f164e6dde6fd039c3dd5"
+    },
+    {
+      "path": "measurements/probe_review_git_framing.py",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "reproduction",
+      "purpose": "Inherited display context false-positive probe",
+      "bytes": 2060,
+      "sha256": "ffba61f62aea4124601818af7058145b5614970fc93465e78ec650b907b10778"
+    },
+    {
+      "path": "measurements/reconcile_final_source.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Reconcile saved Windows run81, current coverage and final completion metadata",
+      "bytes": 16772,
+      "sha256": "8d28a0f506b139e754e2c73f1ef8ae9a87d746d523a7cbc610a4bcadd719f3d8"
+    },
+    {
+      "path": "measurements/reconcile_final_wheel.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Read-only JUnit, ledger and canonical source proof; count actual base failures",
+      "bytes": 10143,
+      "sha256": "2c6f4eff7175d81d445992acb81ef41921a61af723c72696c997608c80d31b04"
+    },
+    {
+      "path": "measurements/record_attempt3.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "replay",
+      "purpose": "Reconcile preserved 0009 artifacts without reading active 72b outputs",
+      "bytes": 13750,
+      "sha256": "fdd13909a3e52bd6123f7199fe336f008a3558d8d9a95e5fb9098bcf85d95707"
+    },
+    {
+      "path": "measurements/record_attempt4.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Reconcile preserved 72b source and wheel artifacts without reading later active outputs",
+      "bytes": 12908,
+      "sha256": "f0b3646ef71808b01bd84d782bf963058fd1d0fb797a21c2713762d89f03bd95"
+    },
+    {
+      "path": "measurements/record_companion_review.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Private synthetic admission and archive probes without full runs or repository edits",
+      "bytes": 8141,
+      "sha256": "1284f0fbf700afeb9c5f66d323689d89fdaf1bf2e845faa4ec683ba5056eb3b2"
+    },
+    {
+      "path": "measurements/record_final_linux.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Index final Linux evidence while retaining pending Windows and historical attempt paths",
+      "bytes": 5403,
+      "sha256": "2821d33c2ece1d093e1601287524b82e358acea6c0cd56736337994129b6d6ac"
+    },
+    {
+      "path": "measurements/record_finalizer_review.py",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "replay",
+      "purpose": "Record packaging repair and current failed-unit/incomplete Windows status",
+      "bytes": 10870,
+      "sha256": "7d8734316eb8c3d06a521ef97f534496e287e9173ca02204e6e321bc2bd2bee4"
+    },
+    {
+      "path": "measurements/record_progress_candidate.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "replay",
+      "purpose": "Index repaired fixtures and reset full-run fields to pending for the measured 4ef commit",
+      "bytes": 8749,
+      "sha256": "d0bbb15bd344bbb744c4c6c133309bd90374d5511fabfb6c9a1d958f72750d05"
+    },
+    {
+      "path": "measurements/records-before-followup.json",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "measurement",
+      "purpose": "First codec cost before format-first scan",
+      "bytes": 3500,
+      "sha256": "acf7dce28fbc3f54b800d034c617782591d241660759755dd24f82570dc6af06"
+    },
+    {
+      "path": "measurements/records-benchmark.json",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "measurement",
+      "purpose": "140,922 ordinary export rows; five interleaved warm rounds",
+      "bytes": 3504,
+      "sha256": "0143df38fc62c6206dcf579e82ffecec66acbacde2ab13a2e9b0fb2bd400e442"
+    },
+    {
+      "path": "measurements/records-followup-green.txt",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "green",
+      "purpose": "Final format-first codec checks",
+      "bytes": 194,
+      "sha256": "797c70bcd738a75e43081b97d535b3771d9760074e33492842f652a8928425ed"
+    },
+    {
+      "path": "measurements/result.json",
+      "candidates": [
+        "CORE-02",
+        "CORE-03",
+        "CORE-04",
+        "MEASURE-01",
+        "STATE-01",
+        "STATE-02"
+      ],
+      "kind": "owner_result",
+      "purpose": "Measurements/state implementation, tests and measured tradeoffs",
+      "bytes": 10584,
+      "sha256": "1cd9abbd3bfb49f396cc1991dc5ac0b690fed46bd58196cdde8e183a4124c490"
+    },
+    {
+      "path": "measurements/review-git-binary-result.json",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "Control and binary-marked source verdicts",
+      "bytes": 1034,
+      "sha256": "d5cfc658678ea2efc75fd4bcadc3ef61a30e1ffb1eff43b9b0294e3c21b7222d"
+    },
+    {
+      "path": "measurements/review-git-framing-result.json",
+      "candidates": [
+        "CORE-01"
+      ],
+      "kind": "red",
+      "purpose": "Actual old/new ranges and staged verdicts",
+      "bytes": 873,
+      "sha256": "1ada4da648250a1f45fbc2cc011f20794e475e35e30e7d471cc07a2cd058fe2b"
+    },
+    {
+      "path": "measurements/state1-green.txt",
+      "candidates": [
+        "STATE-01"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 206,
+      "sha256": "1af98854e6d809e3268885c7bf5ee2fa04fa07bb07ad204df7d1d4668443bf58"
+    },
+    {
+      "path": "measurements/state1-red.txt",
+      "candidates": [
+        "STATE-01"
+      ],
+      "kind": "red",
+      "purpose": "Focused regression on the prior implementation",
+      "bytes": 1702,
+      "sha256": "d495e49a5c5054d02a339b7963798a6aee57ae7d1efdc306e5d41719ecfda4c9"
+    },
+    {
+      "path": "measurements/state2-green.txt",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 183,
+      "sha256": "c632510b9c68b350b08f8e6450a502533a2ce35501c306d27782efd4cf09660c"
+    },
+    {
+      "path": "measurements/state2-red.txt",
+      "candidates": [
+        "STATE-02"
+      ],
+      "kind": "red",
+      "purpose": "Focused regression on the prior implementation",
+      "bytes": 41567,
+      "sha256": "90fdd6975057f784c2ee0e9e5044f7ffded06f398cea3b93dc7e979c0dd86d9f"
+    },
+    {
+      "path": "packet-interface-integration.xml",
+      "candidates": [
+        "STATE-03"
+      ],
+      "kind": "green",
+      "purpose": "Root packet/schema integration checks",
+      "bytes": 6513,
+      "sha256": "d7e1a34e2f3cda8946f641fbd61bb007b470c19d5b4164f423c62ebf48aedcac"
+    },
+    {
+      "path": "posix-path-green.txt",
+      "candidates": [
+        "CORE-S01",
+        "CORE-S02"
+      ],
+      "kind": "green",
+      "purpose": "Real Ubuntu path workflow passes",
+      "bytes": 81,
+      "sha256": "55cf85556f9212aec3cf3688ddb048b901ad2536966113215358784c657a7532"
+    },
+    {
+      "path": "posix-path-red.txt",
+      "candidates": [
+        "CORE-S01"
+      ],
+      "kind": "red",
+      "purpose": "Real Ubuntu inventory/rescore/claims path round trip fails",
+      "bytes": 4198,
+      "sha256": "883985e261092555e915365283cfbde6deed7025be0a1e750ae7c694a7751413"
+    },
+    {
+      "path": "procs-focused-posix-corrected.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Expanded process/probe batch: 105 passes, three skips",
+      "bytes": 15315,
+      "sha256": "9a88e809860c08ae2b472151e0882aebd048e800def799aa845c99469a3a978d"
+    },
+    {
+      "path": "procs-focused-windows.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Expanded process/probe batch: 108 passes",
+      "bytes": 14582,
+      "sha256": "f2e95267aabeb2eb13a13c09411427ca2ad4919c82e740957c36ac435f8accc7"
+    },
+    {
+      "path": "procs-green.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "green",
+      "purpose": "Original three Windows helper/probe regressions pass",
+      "bytes": 611,
+      "sha256": "6c15613f90fa64222233bd28e3c4cea7de9245f8c05b0b975859c778afbd47b1"
+    },
+    {
+      "path": "procs-red.xml",
+      "candidates": [
+        "EX1"
+      ],
+      "kind": "red",
+      "purpose": "Three Windows helper/probe regressions",
+      "bytes": 3674,
+      "sha256": "b0a0fbe88a9683feb3f9347ae12ad8c569485798cedeec2ea9556df8b1a5c65d"
+    },
+    {
+      "path": "repo:docs/architecture/2026-09-07-re-audit/report-data.json",
+      "candidates": [
+        "CORE-01",
+        "CORE-02",
+        "CORE-03",
+        "CORE-04",
+        "CORE-S01",
+        "CORE-S02",
+        "EX1",
+        "EX2",
+        "MEASURE-01",
+        "STATE-01",
+        "STATE-02",
+        "STATE-03",
+        "UI1",
+        "UI2",
+        "UI3",
+        "UI4",
+        "UI5"
+      ],
+      "kind": "red",
+      "purpose": "Audit documents conflicting storage guidance; no runtime red test applies",
+      "bytes": 75755,
+      "sha256": "d4f2dcfd12b63f142cdb66cddaedac2ba7ad12860472a84b7e0f26b1663c38b2"
+    },
+    {
+      "path": "report-draft.md",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "final report companion",
+      "purpose": "Source-of-truth report, completion state or decision chronology",
+      "bytes": 29636,
+      "sha256": "4742c9a32b91868e04eb628a80ccee4f0466f2c9e43f23fb5adce2b1f0171882"
+    },
+    {
+      "path": "run-source-final.ps1",
+      "candidates": [],
+      "kind": "command",
+      "purpose": "Final source verification wrapper; outcome pending",
+      "bytes": 1399,
+      "sha256": "fa2cefb44ca6845bacaab7a24aea5fef4e2b8fb610452f44f29d2dbcb0efb7cd"
+    },
+    {
+      "path": "run-wheels-final.sh",
+      "candidates": [],
+      "kind": "command",
+      "purpose": "Final separate wheel comparison wrapper; outcome pending",
+      "bytes": 499,
+      "sha256": "778014a1d97c7aa83defc74b63b09238de7307b4ae4f6c17484c00ad1ff027e5"
+    },
+    {
+      "path": "snapshot_ledger.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "replay",
+      "purpose": "Preserve SQLite through its backup API without overwriting an earlier snapshot",
+      "bytes": 397,
+      "sha256": "cf4ad92b89a55e7b63cecdaaf630c85f24f6f2ec2bae938dc6263463158dccd7"
+    },
+    {
+      "path": "source-attempt1/e2e.xml",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First Windows source e2e cases, including failures",
+      "bytes": 113298,
+      "sha256": "a36b0796fea74d28f8844942a9a183a1fe78f4e9098767bbe7faf3122269052a"
+    },
+    {
+      "path": "source-attempt1/unit.xml",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First Windows source unit cases, including failures",
+      "bytes": 544130,
+      "sha256": "0e57fe03ca9b0009b1e2461e8eba5f286acfa861da97361ffb4741d400d1427f"
+    },
+    {
+      "path": "source-attempt2/lane-py.log",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "Partial Windows progress; no complete source verdict",
+      "bytes": 4536,
+      "sha256": "4d3525791632989a484517e21a371efbdfe161e0ffb4edb88e2e3e2b65c208e6"
+    },
+    {
+      "path": "source-attempt2/result.json",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "Deliberately interrupted Windows attempt, exit -1",
+      "bytes": 320,
+      "sha256": "4b58f11800aa8e1a1ffa3edcebf2786787b097ab22b921ce659151c66bcdf41a"
+    },
+    {
+      "path": "source-attempt3-proof.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical source proof",
+      "purpose": "Run 79 refusal, baseline 77 trust, full JUnit counts and compact cross-host coverage reconciliation",
+      "bytes": 6040,
+      "sha256": "4ccc29b8ae47e64f1e7b1bc86453871cbd57b25f603354747c15e1a54eb28c92"
+    },
+    {
+      "path": "source-attempt3/e2e.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 110768,
+      "sha256": "02f493b77f6e600808029ee6d0f99c82324cb8b38793d71afe10934084a62b6e"
+    },
+    {
+      "path": "source-attempt3/junit.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 654508,
+      "sha256": "210e161b2003cfcae824f05d8d1de7dc1b437290cec6b88085a8ed9f2b74f697"
+    },
+    {
+      "path": "source-attempt3/lane-py.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 6867,
+      "sha256": "5569e3b176958e715f8242a88726f71e768e5a720852e46ec28b33e67bb3313d"
+    },
+    {
+      "path": "source-attempt3/result.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 320,
+      "sha256": "0accbe05ee577219932132c3945efb0563e100c46b04fe1e8a29a7a7e825a00b"
+    },
+    {
+      "path": "source-attempt3/stderr.txt",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 494,
+      "sha256": "a5b283e138b5d7e47118bb15249e5a0743aad5cd653389b7324c1f304b23ec01"
+    },
+    {
+      "path": "source-attempt3/unit.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 543805,
+      "sha256": "1f5ac494d7340d788c95c42e49031de4cf9dcd6b7f3ff4da9349cda8048c21fc"
+    },
+    {
+      "path": "source-attempt3/verdict.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "historical full source run",
+      "purpose": "0009 source run 79: one startup-fixture failure; retained original bytes",
+      "bytes": 1225,
+      "sha256": "2ef613bb9dc607886f039ecfffb2de90df6a8f2eb0decef985822fbf5fafae9a"
+    },
+    {
+      "path": "source-attempt4-proof.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical source proof",
+      "purpose": "Run 80 refusal, trusted baseline 77, complete JUnit counts and compact cross-host coverage",
+      "bytes": 6287,
+      "sha256": "fc4f8b593fde5bf2c1face3e79ce23da05eb2e76a913865663474b3241a398fa"
+    },
+    {
+      "path": "source-attempt4/e2e.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 110757,
+      "sha256": "fd1f2a3a667b174c94c9c8e61bba85ded9115ef6129481b6ac8ab65ee6c57312"
+    },
+    {
+      "path": "source-attempt4/junit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 655760,
+      "sha256": "7e44f156d96fc565653ae829f33a2102f57759d60975c29749de0b243c590be0"
+    },
+    {
+      "path": "source-attempt4/lane-py.log",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 8251,
+      "sha256": "ef8a9dd285ce14144f94b376dc6546a06b984423ec24fc0bc60d986c83d0c751"
+    },
+    {
+      "path": "source-attempt4/result.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 320,
+      "sha256": "ac966de8883b279ebc4cce9e81416c9bf08118d587391196e589eebcb4a59363"
+    },
+    {
+      "path": "source-attempt4/stderr.txt",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 494,
+      "sha256": "a5b283e138b5d7e47118bb15249e5a0743aad5cd653389b7324c1f304b23ec01"
+    },
+    {
+      "path": "source-attempt4/unit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 545068,
+      "sha256": "037c3a73e3f908ad4f84c3d4da6f7a1096e9880a49aa9be12f9d14aed104944a"
+    },
+    {
+      "path": "source-attempt4/verdict.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical full source run",
+      "purpose": "72b run 80 refused two unit fixture cases; complete E2E passed",
+      "bytes": 1312,
+      "sha256": "d67389fa53e0c4029fe009079c5c29a429f01ce66b4db20a71115711a513cf29"
+    },
+    {
+      "path": "source-final/e2e.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 110817,
+      "sha256": "e9940477a1657c38f0ea9586dc97de6784d45e42537aebfb06af3849a32298fa"
+    },
+    {
+      "path": "source-final/junit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 654404,
+      "sha256": "e05db6a5f6778bf7ebeed1f8552aaf0abf11aec79d08457a147011250181a896"
+    },
+    {
+      "path": "source-final/lane-py.log",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 5838,
+      "sha256": "e070a41aa82a802e783244369a02d4a48dd382a73785910bddc4f5779db05e0c"
+    },
+    {
+      "path": "source-final/result.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 320,
+      "sha256": "8d7021eb81424d1d98eaa7e47126a30f02ffece772f3f44ab0a1d973bb827c45"
+    },
+    {
+      "path": "source-final/stderr.txt",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 494,
+      "sha256": "a5b283e138b5d7e47118bb15249e5a0743aad5cd653389b7324c1f304b23ec01"
+    },
+    {
+      "path": "source-final/unit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 543652,
+      "sha256": "b57060d9c689a53aa3da26eac757ef93ffcd4081d410385d89a5bea42842a967"
+    },
+    {
+      "path": "source-final/verdict.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Windows source evidence",
+      "purpose": "Run81 passed at4ef; original complete JUnit, verdict, result and logs",
+      "bytes": 1135,
+      "sha256": "bb9f0b17175e7ab055197ad7ab44ce52c3dec7bab45c197e918802b10e42b743"
+    },
+    {
+      "path": "tests-ci/benchmark_fixture.py",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "reproduction",
+      "purpose": "Release fixture benchmark",
+      "bytes": 2364,
+      "sha256": "3ed744598e86bd6168b661ec33dcdfb9e8f7ad6c5ca112f48878a9800c7e3d71"
+    },
+    {
+      "path": "tests-ci/benchmark_inventory.py",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "reproduction",
+      "purpose": "Inventory fixture benchmark",
+      "bytes": 2107,
+      "sha256": "7e041c858f6348ef380a4fcdb8cdcfffcf8211ea4231756856413b2d8a2f84b8"
+    },
+    {
+      "path": "tests-ci/benchmark_retry.py",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "reproduction",
+      "purpose": "Existing public release retry case comparison",
+      "bytes": 2208,
+      "sha256": "97d181016b6bcec265c3358dc70395316838ef64d7595bc0377aee35ef1cd6f9"
+    },
+    {
+      "path": "tests-ci/benchmark_unit_workers.py",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "reproduction",
+      "purpose": "Fixed mixed-subset worker comparison",
+      "bytes": 3653,
+      "sha256": "ab7a783b28906cc1dd3b904a8ee70a417036ca6c4d3f52cf3b4fc7b7aa91e659"
+    },
+    {
+      "path": "tests-ci/check_miniature_workers.py",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "replay",
+      "purpose": "Miniature suite worker selection and coverage proof",
+      "bytes": 3263,
+      "sha256": "87dbaa80eaa65039ad85d78745d18adc3c8ccbcc7e4ae582bf5b6021aa738dcf"
+    },
+    {
+      "path": "tests-ci/cleanup-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 883,
+      "sha256": "5287854414f8f10021f630dff7d3142ea0b24e17906590afd6975ae4933255ac"
+    },
+    {
+      "path": "tests-ci/collection-followup.json",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "followup",
+      "purpose": "Collection/worker admission repair with focused counts and hashes",
+      "bytes": 11800,
+      "sha256": "57431fe3bc9dfcdbf2c9a14b595fbe4bb0f250ba3140487f5fc5cc793a8f7c1e"
+    },
+    {
+      "path": "tests-ci/collection-posix-expanded-red.xml",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Collection and worker-crash measurement admission",
+      "bytes": 3957,
+      "sha256": "6302eb055f2dbb4b4ca64e3c8ed4110f7de5039a91fccb491928cfeaf8509c30"
+    },
+    {
+      "path": "tests-ci/collection-posix-green.xml",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Collection and worker-crash measurement admission",
+      "bytes": 1215,
+      "sha256": "067f43667bb08bb4e40f2abf4f931754e5e5f4abf8a50f3db2adde443a4971d9"
+    },
+    {
+      "path": "tests-ci/collection-reader-green.xml",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Collection and worker-crash measurement admission",
+      "bytes": 5824,
+      "sha256": "6357765d0079a3dded440f41a57d73543ffc5d62555bbde9939cf58c9879dd4b"
+    },
+    {
+      "path": "tests-ci/collection-reader-posix.xml",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Collection and worker-crash measurement admission",
+      "bytes": 5824,
+      "sha256": "b4a38768acab0f2ed556ab590ee8b41149b9bfdb0a94ce4d4e7871071585fe01"
+    },
+    {
+      "path": "tests-ci/collection-reader-red.xml",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Collection and worker-crash measurement admission",
+      "bytes": 2790,
+      "sha256": "3044fc84f9a561794bb14f177c8bcc863ff95a4d58791fb30f5cc6820d162a48"
+    },
+    {
+      "path": "tests-ci/collection-summary.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "collection",
+      "purpose": "CI workstream preserves all collected case IDs",
+      "bytes": 2416,
+      "sha256": "b4d2129a647f342dffea6a59fa5e3ef37db480bdd1d9f609b1412cae8560b1f8"
+    },
+    {
+      "path": "tests-ci/collection-windows-green.xml",
+      "candidates": [
+        "MEASURE-01",
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Collection and worker-crash measurement admission",
+      "bytes": 2388,
+      "sha256": "38cfe122b7f6bb5271daf13f0eca08718a17dd696b6c413cc7d4333ba5e83eda"
+    },
+    {
+      "path": "tests-ci/complexity.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "complexity",
+      "purpose": "Touched runner/test function complexity",
+      "bytes": 17319,
+      "sha256": "120a090ad3ad4d0d9927ee39238d66ba51f23f31c6b98c5c2b0d0cb0dcd518d4"
+    },
+    {
+      "path": "tests-ci/design.md",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "design",
+      "purpose": "Benchmark scope, schedule and environment limits",
+      "bytes": 6766,
+      "sha256": "b185b32c64081e62e9a7321863369bfb240422a4cf1d91a3fc48a867ff6fc4a5"
+    },
+    {
+      "path": "tests-ci/fixture-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 1460,
+      "sha256": "b1a50ed34c2609b7d7986f22db631944ba8eab96c5679cc5e31e28f90619b547"
+    },
+    {
+      "path": "tests-ci/fixture-timings.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "measurement",
+      "purpose": "release_fixture",
+      "bytes": 886,
+      "sha256": "17f630069d982c0b4d8b6d5fc879a95aa2267e51978bfbcfef7f39841eda3fb5"
+    },
+    {
+      "path": "tests-ci/focused-unit.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 14982,
+      "sha256": "c2c40175b80118267f929e12d0be3180b149a59f9dc01c1eb27e465fc3621aca"
+    },
+    {
+      "path": "tests-ci/full-source-unit-tail.log",
+      "candidates": [],
+      "kind": "partial-full-run",
+      "purpose": "Completed first Windows unit leg; source run still pending",
+      "bytes": 9626,
+      "sha256": "dccc49168d9b3f0664f613459b1310dc79acdcd202c29a150b5970ce059b764b"
+    },
+    {
+      "path": "tests-ci/hosted-jobs.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "historical_measurement",
+      "purpose": "Prior hosted job durations; this wave made no hosted dispatch",
+      "bytes": 16257,
+      "sha256": "173c88565301a5ae4da8ce8743c0da339766081917c44339dc197a02b5c38402"
+    },
+    {
+      "path": "tests-ci/inventory-final.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "intermediate_failure",
+      "purpose": "Initial invocation: 43 pass/13 setup failures; do not label it green",
+      "bytes": 27164,
+      "sha256": "a041818dd5965a82961e75d3c7fc6ff93b350acff1e3100de78a579cfa030e8a"
+    },
+    {
+      "path": "tests-ci/inventory-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 1322,
+      "sha256": "c8b133e783631d09a96e0db5f060b18c74d3debf5e6fc7c1f5ba835be7e964ea"
+    },
+    {
+      "path": "tests-ci/inventory-replay-command.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "reproduction",
+      "purpose": "Corrected replay of exactly the 13 failed cases",
+      "bytes": 1883,
+      "sha256": "da7d8e9f4845ca59dc307cce17478d278c20d738e60cf01d1512fbf8e791f66a"
+    },
+    {
+      "path": "tests-ci/inventory-replay.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 1897,
+      "sha256": "04d270f71344488bdd68dac5a13035c8c8df190fa3e6c46cf100a93d71b7068d"
+    },
+    {
+      "path": "tests-ci/inventory-timings.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "measurement",
+      "purpose": "inventory_fixture",
+      "bytes": 853,
+      "sha256": "2d3bcc8c7bc61d5d94e2d9c7a2aee29de6dbf75e084b677c9943191ea8c91a39"
+    },
+    {
+      "path": "tests-ci/miniature-posix-after.log",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Two miniature nested-suite cases, before and after serial unit selection",
+      "bytes": 81,
+      "sha256": "e39c7c8495c11b3781a4116112e8edaad58e79f9e534b4818722b9eae3cfa6a2"
+    },
+    {
+      "path": "tests-ci/miniature-posix-before.log",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Two miniature nested-suite cases, before and after serial unit selection",
+      "bytes": 100,
+      "sha256": "2532e40e5cc21195bf98405a4d9d9a6b5cceab00d1fbcf2d950f7a0168a187fd"
+    },
+    {
+      "path": "tests-ci/miniature-windows-after.log",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Two miniature nested-suite cases, before and after serial unit selection",
+      "bytes": 81,
+      "sha256": "e39c7c8495c11b3781a4116112e8edaad58e79f9e534b4818722b9eae3cfa6a2"
+    },
+    {
+      "path": "tests-ci/miniature-windows-before.log",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "focused-test",
+      "purpose": "Two miniature nested-suite cases, before and after serial unit selection",
+      "bytes": 101,
+      "sha256": "37f60a272c4e0b32b1d980e24dfc42b6085d40535324edece11838b290069c65"
+    },
+    {
+      "path": "tests-ci/miniature-workers.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "followup",
+      "purpose": "Two small test fixtures retain assertions and coverage while requesting serial unit work; committed in 0009a677",
+      "bytes": 15243,
+      "sha256": "f69cdecf020fa6720407889d63ced5573fb4f63495c080e649a93b209d487dc5"
+    },
+    {
+      "path": "tests-ci/probe-readiness/README.md",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 5113,
+      "sha256": "b79e772e76005bbd36961bb8ecf61bbda4856554d2294fb63c7353db37c895a3"
+    },
+    {
+      "path": "tests-ci/probe-readiness/before.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 47204,
+      "sha256": "b7aaa78c786b86051d09591d3f509e89d5d21d90e1e94d3a082ba66a1ba564a7"
+    },
+    {
+      "path": "tests-ci/probe-readiness/green-test.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 48418,
+      "sha256": "9c93bcc5a7f20793394c0945820137d63aa785a3f89454de1e4a98d67ffddb28"
+    },
+    {
+      "path": "tests-ci/probe-readiness/green.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 101,
+      "sha256": "430482866918b4353cd9c3ff7fc99727b89f8d9e87726368bf8c5fe7a858be62"
+    },
+    {
+      "path": "tests-ci/probe-readiness/green.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 910,
+      "sha256": "6212ed496d303898561ee8f33f1bce7a5debdc1713ec782693c259a706982389"
+    },
+    {
+      "path": "tests-ci/probe-readiness/posix-check.sh",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 1129,
+      "sha256": "dd626c6a35fc3b24f7cde1aedc56aa377b308a36c652e5ab861d515a5f1690ee"
+    },
+    {
+      "path": "tests-ci/probe-readiness/posix.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 99,
+      "sha256": "3fd28ca25dc91b77afeefa8376d1925c7ef4b4a97d78a8218f7e75fb05a9378c"
+    },
+    {
+      "path": "tests-ci/probe-readiness/posix.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 910,
+      "sha256": "f289ff611be7c4a77d309f9599ed3002357e6e538c9837f999b8822d60967ac6"
+    },
+    {
+      "path": "tests-ci/probe-readiness/precommit.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tests-ci/probe-readiness/probe-readiness.patch",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 3380,
+      "sha256": "eae3a4e6a1668619774c903d4d4e259791564bb7fa1b27cb624050de5717e83c"
+    },
+    {
+      "path": "tests-ci/probe-readiness/record.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 4703,
+      "sha256": "0c4561ed0c1b9767bc6a5b5ab45d3f21472b36141c5f197288c0528e1e070b9c"
+    },
+    {
+      "path": "tests-ci/probe-readiness/red-test.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 48454,
+      "sha256": "6e41d6e33bafc19fa2ff9a33d180e7fc3f488dd5be3a5166db4778cc68b86bdd"
+    },
+    {
+      "path": "tests-ci/probe-readiness/red.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 968,
+      "sha256": "8e22bd83311f8f4e09b03fdd7e3c9cd25a289b3a6cf9275ff169e2bd4dd894a1"
+    },
+    {
+      "path": "tests-ci/probe-readiness/red.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 1267,
+      "sha256": "ac98afad2994033d82fac5476fe5295ce851c82419733a0275cedc724bef50dd"
+    },
+    {
+      "path": "tests-ci/probe-readiness/result.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "readiness repair",
+      "purpose": "Deterministic startup red and five focused green cases on each host; actual deadline unchanged",
+      "bytes": 12621,
+      "sha256": "77ca946e992a7a65e53d5f5ace57bfd4dee861186b3ce5a4fc0f50f9e998c336"
+    },
+    {
+      "path": "tests-ci/progress-deadline/before-test_init_probe.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 48418,
+      "sha256": "9c93bcc5a7f20793394c0945820137d63aa785a3f89454de1e4a98d67ffddb28"
+    },
+    {
+      "path": "tests-ci/progress-deadline/before-test_procs.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 11872,
+      "sha256": "4fbf367d782e540978e8690ca988d99148b50d88c5db85177376656084d3fb52"
+    },
+    {
+      "path": "tests-ci/progress-deadline/complexity.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 912,
+      "sha256": "5163f9550c5e3c131bb831e034ed757cbf8e93c768494bc2c079ccbd20762d43"
+    },
+    {
+      "path": "tests-ci/progress-deadline/family-red.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 1484,
+      "sha256": "1c148a97fcb60e40c2b30156ba1290041200bbd0f41b33c57c74d0c1f0b5b0c4"
+    },
+    {
+      "path": "tests-ci/progress-deadline/family-red.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 1988,
+      "sha256": "34b075bd91cc5eeabcd94effabb6934b712e03a0f2557b20bc5cba5f80578522"
+    },
+    {
+      "path": "tests-ci/progress-deadline/green-test_init_probe.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 48705,
+      "sha256": "09a8780f7593263b9ab1762aba878d1744f797400af5e98364af519ba3f98bdb"
+    },
+    {
+      "path": "tests-ci/progress-deadline/green-test_procs.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 14417,
+      "sha256": "108219fe31524f3103d2ba97a9346937388cf6aeadf712ae26804595f4d0e93e"
+    },
+    {
+      "path": "tests-ci/progress-deadline/green.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 112,
+      "sha256": "e74ce5379071d5d6bae46e21bc20e30e3762e988bc7f4425ae1f18b3eb0f6274"
+    },
+    {
+      "path": "tests-ci/progress-deadline/green.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 2858,
+      "sha256": "47435715142700ff294819c86623a7ef9a3b1056e16a6a78b73b6d1a51e79ccc"
+    },
+    {
+      "path": "tests-ci/progress-deadline/posix-check.sh",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 1162,
+      "sha256": "24606e075fc780a7cdd5264606a7fed13d367bc6d1db2673c4ee0411af09aa9d"
+    },
+    {
+      "path": "tests-ci/progress-deadline/posix.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 100,
+      "sha256": "6ead8440d47fe5cf975316b63b9cc7dc9290637cae36c2f00d5c9e660a30f7b7"
+    },
+    {
+      "path": "tests-ci/progress-deadline/posix.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 2858,
+      "sha256": "fd274254a1e97adb34afb3d4877f44e8bf858f67e4e563b26665224192b4dcdf"
+    },
+    {
+      "path": "tests-ci/progress-deadline/precommit.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tests-ci/progress-deadline/progress-deadline.patch",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 13386,
+      "sha256": "d93562b89a93a0e559e0024ec3f47ad444169a00d00e71ed7577d1967b2f5d33"
+    },
+    {
+      "path": "tests-ci/progress-deadline/record.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 4190,
+      "sha256": "f2f3505cfc7b3e0736aa795a362ed970572090d845d502feabbb9c667f935436"
+    },
+    {
+      "path": "tests-ci/progress-deadline/red-family-test.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 12335,
+      "sha256": "c9d6f9b2f4b6dec17930fa42b5e52b18a9aa161e69c694ee9417c20622f67e2e"
+    },
+    {
+      "path": "tests-ci/progress-deadline/red-init-test.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 48535,
+      "sha256": "f8d4f2757c1fb55093e0497b4bb072dc81d27380cff00cc03ef55309dec289f5"
+    },
+    {
+      "path": "tests-ci/progress-deadline/red-test.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 12218,
+      "sha256": "e3efd8a02a3d82fd506b9962aa473410e3cc279ed90da095bf9e3fea12a3a9dd"
+    },
+    {
+      "path": "tests-ci/progress-deadline/red.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 2195,
+      "sha256": "694db7fc476d56f133aa74908c90e68daa4dda8655b926772272b99d09bd2793"
+    },
+    {
+      "path": "tests-ci/progress-deadline/red.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 2532,
+      "sha256": "cffec09f9b2b95435b7b7a2953c3ce3cc268279fd9ab0ce08d2544dc5d4a858b"
+    },
+    {
+      "path": "tests-ci/progress-deadline/result.json",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 25903,
+      "sha256": "3fcf16ea96bf253a1fcc28e165556f48d0799cd3e6bf317e40d351a3e6bd6623"
+    },
+    {
+      "path": "tests-ci/progress-deadline/watch-negative.log",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 2186,
+      "sha256": "995197d2b2fa6deac7929c95bdc8a75895bf2d69c659ac23104cdd07bceee09d"
+    },
+    {
+      "path": "tests-ci/progress-deadline/watch-negative.xml",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 1808,
+      "sha256": "7501c576b875612fbaaa88cfa00ce5fc7a9b6524f963216c86fbbd731ee5434e"
+    },
+    {
+      "path": "tests-ci/progress-deadline/watch_negative.py",
+      "candidates": [
+        "EX1",
+        "CI-OPT"
+      ],
+      "kind": "progress fixture repair",
+      "purpose": "Delayed-start red, 20 passing cases per host and negative controls for watcher rules",
+      "bytes": 574,
+      "sha256": "f062e48bb6df1c44d1ace481dde11a21c24a10fa4f1daf9cf2c267114ce6a860"
+    },
+    {
+      "path": "tests-ci/result.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "owner_result",
+      "purpose": "Authoritative focused test and CI results",
+      "bytes": 22069,
+      "sha256": "2ab45262e09d644999f0609233e646b714b64a10d92b2d2eb5b2d1f2f86629ac"
+    },
+    {
+      "path": "tests-ci/retry-timings.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "measurement",
+      "purpose": "Public release retry case, invoked directly",
+      "bytes": 931,
+      "sha256": "08bda80bc05a06467041c3b3c0811c406029717f530e6a660cadf290f20af3b8"
+    },
+    {
+      "path": "tests-ci/runner-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 2896,
+      "sha256": "805bd95ea7cd4c130945c7dfc91350823a2ee3371fa9d6d003e4e22f78e2d0ea"
+    },
+    {
+      "path": "tests-ci/schedule-final.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 2055,
+      "sha256": "1a4b3d40cbd7d5541dda38797a487dc1680b8c08ebe9a3dd114fc915b3721524"
+    },
+    {
+      "path": "tests-ci/schedule-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 5595,
+      "sha256": "4d78932c4e31ffbdeb61263fc1c2b26b77124825b1eb0cb285ecd4072258bd87"
+    },
+    {
+      "path": "tests-ci/seed-inventory-green.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 542,
+      "sha256": "338446b0ad2d2830237049f20e81ca90288844a3f48f4bde28fe9fe110a1f2f5"
+    },
+    {
+      "path": "tests-ci/seed-inventory-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 2030,
+      "sha256": "a16f282d59133e07b908c1bce940e0e970de761bcf9519b0e4ad9e9a0a8491cf"
+    },
+    {
+      "path": "tests-ci/seed-release-green.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "green",
+      "purpose": "Focused candidate checks",
+      "bytes": 683,
+      "sha256": "1595f16356e8d424b2271176688378a1f5a19ff493e006445bf0e53f3575483e"
+    },
+    {
+      "path": "tests-ci/seed-release-red.xml",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "red",
+      "purpose": "Focused pre-change or interrupted-setup regression",
+      "bytes": 1396,
+      "sha256": "645be3c8f57e59d68e151969255a1b592c90b450d424edfe26ae2c7d301a34f0"
+    },
+    {
+      "path": "tests-ci/summarize_miniature_workers.py",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "replay",
+      "purpose": "Before/after miniature worker receipt extraction",
+      "bytes": 4152,
+      "sha256": "78136e2b280c2ab0bdba1f11bb1e7464b8cebffc4ddcbe2bda68b307422af164"
+    },
+    {
+      "path": "tests-ci/unit-worker-summary.json",
+      "candidates": [
+        "CI-OPT"
+      ],
+      "kind": "measurement",
+      "purpose": "32-case mixed unit subset",
+      "bytes": 8276,
+      "sha256": "021f4d45f49649a64f2c075d757c27101b26d242d617246479dc96d348b3c306"
+    },
+    {
+      "path": "wheel-attempt3-proof.json",
+      "candidates": [],
+      "kind": "final-proof",
+      "purpose": "Compact exact Git-source, JUnit, ledger and coverage reconciliation; no large coverage JSON duplicate",
+      "bytes": 8194,
+      "sha256": "44706c7c473c2ca82b03143c3049dd0b4ecf0425eb6dffa21abc9dd2b0d038e3"
+    },
+    {
+      "path": "wheel-attempt4-proof.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 8121,
+      "sha256": "d9066fff9949a3689bac0624b45d47045e2fc1b6879d4cc124f51ddb3cb565e5"
+    },
+    {
+      "path": "wheels-attempt2/attempt-okqiovb5/candidate/cov/e2e.xml",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "Passing second candidate e2e cases; coverage export still refused",
+      "bytes": 107430,
+      "sha256": "11dd64682fc495e6f5269a19982c43f682fef3fb5b557b7b2d9301472bed0a9a"
+    },
+    {
+      "path": "wheels-attempt2/attempt-okqiovb5/candidate/cov/unit.xml",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "Passing second candidate unit cases; coverage export still refused",
+      "bytes": 549001,
+      "sha256": "10c4d457e3dbf6ab305fbdc26e27b1c84c7c959c8a09b13ccb042da9eff107d7"
+    },
+    {
+      "path": "wheels-attempt2/verdict.json",
+      "candidates": [],
+      "kind": "second-full-attempt",
+      "purpose": "Installed-wheel proof and coverage-export refusal; no final verdict",
+      "bytes": 13546,
+      "sha256": "a9935ba9278736f5441f5513148f81d0d3856451c458eb43d41cc1ad65d93e51"
+    },
+    {
+      "path": "wheels-attempt3/attempt-trblq3gd/base/cov/e2e.xml",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final base wheel e2e JUnit",
+      "bytes": 105767,
+      "sha256": "938b0ae8aec668a50a08d31182733e61611494ec09449ec8e3a7bbc1e0fa7d4b"
+    },
+    {
+      "path": "wheels-attempt3/attempt-trblq3gd/base/cov/junit.xml",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final base wheel junit JUnit",
+      "bytes": 616792,
+      "sha256": "552989daa23b3f5b87b532ad4e533086056752a2842565015ec2db7b4d3e4f5c"
+    },
+    {
+      "path": "wheels-attempt3/attempt-trblq3gd/base/cov/unit.xml",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final base wheel unit JUnit",
+      "bytes": 511089,
+      "sha256": "35341b74110d8ca579af1f650cbb747822aedd14bdb16585710681a9f7c3184a"
+    },
+    {
+      "path": "wheels-attempt3/attempt-trblq3gd/candidate/cov/e2e.xml",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final candidate wheel e2e JUnit",
+      "bytes": 107430,
+      "sha256": "04495386de4849219185ea8dfff356cf4af44245b47f5ea469d4fcbda6f3811e"
+    },
+    {
+      "path": "wheels-attempt3/attempt-trblq3gd/candidate/cov/junit.xml",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final candidate wheel junit JUnit",
+      "bytes": 656368,
+      "sha256": "977d050ab21327fc5b082193091c19379cb40e8a239941fa554c26643c9e3c22"
+    },
+    {
+      "path": "wheels-attempt3/attempt-trblq3gd/candidate/cov/unit.xml",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Complete final candidate wheel unit JUnit",
+      "bytes": 549002,
+      "sha256": "b93dfc3c221d20616be166e087e8c41eeb51697fdc4a45df0456421c7b31dd55"
+    },
+    {
+      "path": "wheels-attempt3/verdict.json",
+      "candidates": [],
+      "kind": "final-full-run",
+      "purpose": "Successful final wheel comparison, installed hashes and passing ledger",
+      "bytes": 16034,
+      "sha256": "9af0cccb93224422f9626a5c139e8a2c675952a8aac796e7e796974c8a206f10"
+    },
+    {
+      "path": "wheels-attempt4/attempt-okvbrp8t/base/cov/e2e.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 105766,
+      "sha256": "c60f6f1fb5fb182940f9c5b75009510136b34613f6d4c74e791699da76ba65df"
+    },
+    {
+      "path": "wheels-attempt4/attempt-okvbrp8t/base/cov/junit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 615660,
+      "sha256": "cacd36d7cf236242557a69403486de7a1c9cc5ebc2e2ef337764e4ed350fd593"
+    },
+    {
+      "path": "wheels-attempt4/attempt-okvbrp8t/base/cov/unit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 509958,
+      "sha256": "8f4a14b58f4880af5f0e855c83506a99d0eef3231cc1e0feeaab9cb3db384fef"
+    },
+    {
+      "path": "wheels-attempt4/attempt-okvbrp8t/candidate/cov/e2e.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 107429,
+      "sha256": "7f211df19b5bf2b1067604e14fd1c8e597a6d7f2b87f420e353805173185fd17"
+    },
+    {
+      "path": "wheels-attempt4/attempt-okvbrp8t/candidate/cov/junit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 656513,
+      "sha256": "70780279d9f557a1c29a1c9cd02198212239405276deb58e487f997257cafaa6"
+    },
+    {
+      "path": "wheels-attempt4/attempt-okvbrp8t/candidate/cov/unit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 549148,
+      "sha256": "cf7a5c1083bbfa1f1f512a0d9e3295a6a75758fc0483e28b18217ed96ffac3d7"
+    },
+    {
+      "path": "wheels-attempt4/verdict.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "historical passing Linux attempt",
+      "purpose": "72b Linux comparison passed; same-commit Windows run 80 refused. Original bytes retained.",
+      "bytes": 15917,
+      "sha256": "faa61b658a78a635cac1fbc97bdaa86ad928ab44fc7f7a2004a3c528c585613a"
+    },
+    {
+      "path": "wheels-final/attempt-bfgbev0l/base/cov/e2e.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel JUnit",
+      "purpose": "Current noneditable wheel comparison; candidate passes and actual historical base failures remain recorded",
+      "bytes": 105767,
+      "sha256": "b67ea1c73f06c0391d2a9b184a7924313b4d2165604ccdd9b2a5393fbd09f0dc"
+    },
+    {
+      "path": "wheels-final/attempt-bfgbev0l/base/cov/junit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel JUnit",
+      "purpose": "Current noneditable wheel comparison; candidate passes and actual historical base failures remain recorded",
+      "bytes": 616688,
+      "sha256": "5aac0b1541143c834111f9641ba177f232ad7bb9d4117f22887deeabc47c5cfa"
+    },
+    {
+      "path": "wheels-final/attempt-bfgbev0l/base/cov/unit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel JUnit",
+      "purpose": "Current noneditable wheel comparison; candidate passes and actual historical base failures remain recorded",
+      "bytes": 510985,
+      "sha256": "a007d756f7d0f1dcc5678781c4c64a7fec234c6203a3438f7d6d34737de4ab9c"
+    },
+    {
+      "path": "wheels-final/attempt-bfgbev0l/candidate/cov/e2e.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel JUnit",
+      "purpose": "Current noneditable wheel comparison; candidate passes and actual historical base failures remain recorded",
+      "bytes": 107429,
+      "sha256": "9b2f77a914ee5c4920311d4f564b2dcc714062418e737741b8e47826dd4a2b12"
+    },
+    {
+      "path": "wheels-final/attempt-bfgbev0l/candidate/cov/junit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel JUnit",
+      "purpose": "Current noneditable wheel comparison; candidate passes and actual historical base failures remain recorded",
+      "bytes": 657071,
+      "sha256": "f6d418e9e696e830512ed8e0fc719047d403acc3e91b210996da7f115ef6fd15"
+    },
+    {
+      "path": "wheels-final/attempt-bfgbev0l/candidate/cov/unit.xml",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel JUnit",
+      "purpose": "Current noneditable wheel comparison; candidate passes and actual historical base failures remain recorded",
+      "bytes": 549706,
+      "sha256": "078defef5fbd22523659d3e1ddbccd0248d393a4add0ebc30c2c5d367ba2242d"
+    },
+    {
+      "path": "wheels-final/verdict.json",
+      "candidates": [
+        "ALL"
+      ],
+      "kind": "complete Linux wheel result",
+      "purpose": "4ef04cab comparison passed; saved candidate ledger has verdict_ok=1 and findings=0",
+      "bytes": 16034,
+      "sha256": "982f12bc0e731ad3ae83a58199ab5f5b4d3f0628d88c4a4a41c5a2677dfda64b"
+    },
+    {
+      "path": "wheels/attempt-t3vh2liu/base/cov/e2e.xml",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First base installed-wheel e2e cases, including failures",
+      "bytes": 105761,
+      "sha256": "6e3eb7b2526312e779788865b1ac18ec2f456ecd9cba4221118f848fb31579fb"
+    },
+    {
+      "path": "wheels/attempt-t3vh2liu/base/cov/unit.xml",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First base installed-wheel unit cases, including failures",
+      "bytes": 511066,
+      "sha256": "de8095725e2e864269959016b5b1151d948c6cb956cff9fc49876e16d77724d6"
+    },
+    {
+      "path": "wheels/attempt-t3vh2liu/candidate/cov/e2e.xml",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First candidate installed-wheel e2e cases, including failures",
+      "bytes": 113788,
+      "sha256": "f7e9645ce7723e3c7fe1378b031d404dfd475aae3b6d3506aa8feeb1dc9f2838"
+    },
+    {
+      "path": "wheels/attempt-t3vh2liu/candidate/cov/unit.xml",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "First candidate installed-wheel unit cases, including failures",
+      "bytes": 551002,
+      "sha256": "ce9ce4f400ba30f70ad684c8c605ee485ab6999fa8efc7a2010ea3aac65ed56f"
+    },
+    {
+      "path": "wheels/attempt-t3vh2liu/verdict.json",
+      "candidates": [],
+      "kind": "first-full-run",
+      "purpose": "Installed-byte proof, distinct wheels, test failures and refusing ledger",
+      "bytes": 17183,
+      "sha256": "bf43a3dbfcba24b8ec3ff9b3f2a32ba73169723421edb1dc77bc01069250446f"
+    }
+  ],
+  "report_draft": "report-draft.md",
+  "artifact_path_aliases": {
+    "policy": "Preserved attempt files moved without changing bytes. Resolve original internal locators by the proof's measured commit, not by a global final-path replacement.",
+    "by_measured_commit": {
+      "0009a6776f7e260046589954d98e035918f89439": {
+        "wheels-final/": "wheels-attempt3/",
+        "full-wheels-final.": "full-wheels-attempt3.",
+        "final-wheel-proof.json": "wheel-attempt3-proof.json"
+      },
+      "72b1125d07904f8f41c465e4fe79aba2a1db5fa7": {
+        "wheels-final/": "wheels-attempt4/",
+        "full-wheels-final.": "full-wheels-attempt4.",
+        "final-wheel-proof.json": "wheel-attempt4-proof.json"
+      }
+    }
+  },
+  "required_companions": [
+    "report-draft.md",
+    "completion-matrix.json",
+    "decisions.tsv"
+  ],
+  "companion_status": "Final report, matrix and decision log indexed. The manifest is archived separately without hashing itself."
+}

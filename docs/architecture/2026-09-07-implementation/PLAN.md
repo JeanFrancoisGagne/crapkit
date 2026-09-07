@@ -49,6 +49,6 @@ The final verdict owns every refusal before output or persistence applies it.
 - [x] Every candidate has an implemented result and regression evidence.
 - [x] Test/CI bottlenecks have measured remedies and case/coverage parity.
 - [x] Independent review covers the integrated changes and cross-owner calls.
-- [ ] Complete source and installed-wheel checks pass with full JUnit evidence.
-- [ ] Crapkit analyzes and verifies the integrated project against the preserved baseline.
-- [ ] Results, remaining platform limits and reproduction commands are committed.
+- [x] Complete source and installed-wheel checks pass with full JUnit evidence.
+- [x] Crapkit analyzes and verifies the integrated project against the preserved baseline.
+- [x] Results, remaining platform limits and reproduction commands are committed.

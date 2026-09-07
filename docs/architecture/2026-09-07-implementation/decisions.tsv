@@ -1,0 +1,29 @@
+time_utc	area	decision	evidence
+2026-09-07	ownership	Use three isolated worktrees for execution, measurements, and tests/CI; root integrates disjoint path/interface fixes	PREP/OWNERSHIP.tsv; ownership-plan.json; PLAN.md
+2026-09-07	verification	Run focused red/green checks per owner; coordinate final source and installed-wheel suites once integrated	COMMON.md
+2026-09-07	CORE-01	Pin parsed Git patch options for normal/prestarted staged reads, changed ranges, and ratchet history; preserve actual Git configuration	git-patch-red.txt; git-patch-green.txt
+2026-09-07	UI1,UI3,UI4,CORE-S01,CORE-S02	Preserve UTF-8 transport and exact Git paths; encode SARIF URI separately from annotation path; refuse failed launchers; rebase claim release at the CLI boundary	interfaces-red.txt; interfaces-green.txt
+2026-09-07	UI2	Use NUL-framed changed-file records in Action and explicit --changed-z consumer; retain --changed for existing saved-payload callers	action-red.txt; test_r2_interface_paths.py
+2026-09-07	ownership	After initial tasks finish, measurement agent owns dup.py; execution agent owns packet.py and narrow queue._packet_commands patch	Agent coordination messages
+2026-09-07	EX1,EX2	Keep OS resource locks until owned commands and descendants stop; refuse worker links and source reparse traversal	 execution/result.json; execution/adapter-coverage-summary.json
+2026-09-07	STATE-01	Settle final success from all remaining refusals after overrides and retries; preserve stored baseline trust	measurements/result.json
+2026-09-07	CORE-02,MEASURE-01	Reject impossible coverage counts and incomplete declared JUnit populations before scoring	measurements/result.json
+2026-09-07	STATE-02	Preserve ordinary TSV bytes; version exceptional rows; replay physical LF/CRLF records in Git history	measurements/records-followup.patch; history-green.txt
+2026-09-07	CORE-03,CORE-04	Retain one duplication owner's neighbors and only top result payloads with complete tie ordering	measurements/result.json
+2026-09-07	STATE-03	Emit test-scoped through host shell quoting; require encoded Windows fallback to propagate missing-command and CLI failures	execution/packet.patch
+2026-09-07	UI5	Consolidate mutation storage policy and correct coverage-run versus filesystem-write documentation	docs/configuration.md; docs/lanes.md; docs/agent-json.md
+2026-09-07	review	Remove GIT_DIFF_OPTS only from owned Git subprocess environments; preserve parent environment	git-env-red.txt; git-env-green.txt
+2026-09-07	tests-ci	Select four unit workers from 18 runs with identical 32 cases and line/branch sets; retain explicit serial override	tests-ci/unit-worker-summary.json
+2026-09-07	tests-ci	Publish pristine fixture seeds atomically after successful setup so interrupted preparation cannot poison later cases	tests-ci/seed-release-green.xml; tests-ci/seed-inventory-green.xml
+2026-09-07	full-verification	Preserve failed source run 78 and both wheel attempts; repair all genuine failures without changing ratchet or coverage ceilings	full-source-verdict.json; wheels/verdict.json
+2026-09-07	process-launch	Pin helper to running source; transport launch errors through an anonymous file and raise after owned-tree cleanup	procs-red.xml; procs-green.xml; execution/launcher-startup-posix.json
+2026-09-07	ci-admission	Refuse collection and worker-interrupted runs in both runner publication and normal/retry JUnit admission	tests-ci/collection-followup.json
+2026-09-07	portable-tests	Retain private venv source precedence while processing dependency coverage hooks; align path and Git assertions with actual contracts	execution/fixture-result.json; measurements/e2e-followup/result.json
+2026-09-07	coverage-fixture	All candidate wheel cases passed but temporary fake package contaminated source coverage; preserve failed export and stop the equivalent source run before spending its E2E leg	full-wheels-attempt2.log; source-attempt2/result.json
+2026-09-07	coverage-fixture	Use -S only for the deliberately fake target; actual parent and owner remain measured; verify exported paths contain only product sources	procs-fixture-cov-posix.json
+2026-09-07	final-wheels	Accept complete fresh-wheel comparison at0009a677:4675passed30skipped, source hashes verified, ledger run2 verdict1 findings0; preserve five historical base failures	 wheels-final/verdict.json; full-wheels-final.exit
+2026-09-07	startup-readiness	Preserve source run79 refusal for one cleanup-fixture startup race; all795WindowsE2E cases passed. Establish readiness before the same2s test deadline and assert actualTimeoutExpired without modifying production code	source-attempt3/verdict.json; tests-ci/probe-readiness/result.json; execution/probe-readiness-review.json
+2026-09-07	progress-fixtures	Preserve72b Linux passing comparison; Windows units found2startup-sensitive progress tests. KeepE2Erunning and diagnose fixture admission in isolated checkout without changing productiondeadline	 source-final/verdict.json; tests-ci/progress-deadline
+2026-09-07	progress-readiness	Commit4ef04ca preserves real startup-silence and deadline controls while separating child readiness from cleanup; controlled real-file watcher tests reject removed growth/total-deadline behavior. 20focusedcases pass on eachhost; fullWindowsandLinux restarted	 tests-ci/progress-deadline/result.json; execution/progress-deadline-review.json; source-attempt4/verdict.json
+2026-09-07	full-linux	Fresh4ef04ca wheel comparisonpassed:4680passed30skipped,verdicttrue and no newfailures/gateviolations/ratchetregressions; preserve5historicalbasefailures. Windowsfullsourcecontinues	 wheels-final/verdict.json; full-wheels-final.log
+2026-09-07	full-windows	Complete4ef04ca sourceverificationpassed:3912unit+795E2Epasses,9skips;1840.783stotal. PreservecoverageJUnitandconsistentledger snapshot. Bothplatforms nowpassed; finalizeall17andCI evidence for localcommit	 source-final/verdict.json; source-final/result.json; final-wheel-proof.json

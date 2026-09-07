@@ -1,0 +1,242 @@
+{
+  "status": "Linux wheel verification passed; matching Windows run81 also passed",
+  "candidate_commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+  "base_commit": "c2d3515581d410d8c14849063dac27af843a3729",
+  "verdict": "wheels-final/verdict.json",
+  "attempt": "wheels-final/attempt-bfgbev0l",
+  "process_exit": 0,
+  "suite_exits": [
+    1,
+    0
+  ],
+  "candidate_ok": true,
+  "source_proofs": {
+    "base": {
+      "commit": "c2d3515581d410d8c14849063dac27af843a3729",
+      "package": "/tmp/crapkit-ci-1qwj1ou9/base-install/venv/lib/python3.11/site-packages/crapkit",
+      "wheel_sha256": "8fb991739ed2216d5721fd17bf64bf3e9894b5f04b1a2da207b351c2137b53a6",
+      "python_source_files": 69,
+      "source_map_sha256": "86ecaf8dfbe18a5e475836c28856cea0ebc0c219d3d8d6c2eb61af823107fb16"
+    },
+    "candidate": {
+      "commit": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+      "package": "/tmp/crapkit-ci-1qwj1ou9/candidate-install/venv/lib/python3.11/site-packages/crapkit",
+      "wheel_sha256": "0c9603490af69afc339e8f3bbcc4c172973b683c87f89069ea70a5d3a956e0a6",
+      "python_source_files": 71,
+      "source_map_sha256": "7bbb05689de869e021e126424e3d1940e43d063560bef18de6145122e5b4ac4b",
+      "committed_git_blob_bytes_equal": true,
+      "current_source_names_equal": true,
+      "local_tracked_source_git_diff_empty": true,
+      "local_raw_byte_mismatches": [
+        {
+          "path": "config.py",
+          "current": "ceace540d78c780ca0f68b310721b4b183a1795e4340326ee9186cbedbacbb6e",
+          "wheel": "e0c59ee78250472c9b9324076fedc8c036c95c61e329e64de4dc01a81df67462",
+          "current_crlf": 773,
+          "lf_normalized_matches": true
+        },
+        {
+          "path": "doctor.py",
+          "current": "d42dea1b09e2dd75356e3a5e5a3caf428ff8c1f90c307c0ff9a6ae90f8b495df",
+          "wheel": "232589aed72b28f01cb5b7fc922a28c828489082fa8289025665db0237df824e",
+          "current_crlf": 393,
+          "lf_normalized_matches": true
+        }
+      ]
+    }
+  },
+  "revisions": {
+    "base": {
+      "suites": {
+        "unit": {
+          "tests": 3655,
+          "passed": 3626,
+          "skipped": 25,
+          "failures": [
+            "tests.unit.test_doctor_lane_probe::test_the_probe_controls_its_output_encoding",
+            "tests.unit.test_ci_verdict::test_installed_source_is_verified_before_coverage_paths_are_mapped",
+            "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[plain]",
+            "tests.unit.test_owned_interrupt::test_interrupt_stops_the_parent_and_grandchild_before_returning[owned]"
+          ]
+        },
+        "e2e": {
+          "tests": 761,
+          "passed": 758,
+          "skipped": 2,
+          "failures": [
+            "tests.e2e.test_init_scoped_tests_e2e::test_doctor_warns_when_the_lane_runs_another_python_than_doctor"
+          ]
+        }
+      },
+      "ledger": [
+        {
+          "id": 1,
+          "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+          "kind": "coverage",
+          "verdict_ok": null,
+          "findings": 0
+        }
+      ],
+      "coverage_sha256": "5b03546da2e469824f9f48d77907d4eb3766a0e5ec4532975fe6648a93fcfdac",
+      "coverage_totals": {
+        "covered_lines": 9894,
+        "num_statements": 10066,
+        "percent_covered": 97.98139094780004,
+        "percent_covered_display": "98",
+        "missing_lines": 172,
+        "excluded_lines": 6,
+        "percent_statements_covered": 98.29127756805086,
+        "percent_statements_covered_display": "98",
+        "num_branches": 2616,
+        "num_partial_branches": 80,
+        "covered_branches": 2532,
+        "missing_branches": 84,
+        "percent_branches_covered": 96.78899082568807,
+        "percent_branches_covered_display": "97"
+      },
+      "coverage_files": 69,
+      "unexpected_coverage_paths": []
+    },
+    "candidate": {
+      "suites": {
+        "unit": {
+          "tests": 3925,
+          "passed": 3899,
+          "skipped": 26,
+          "failures": []
+        },
+        "e2e": {
+          "tests": 785,
+          "passed": 781,
+          "skipped": 4,
+          "failures": []
+        }
+      },
+      "ledger": [
+        {
+          "id": 1,
+          "commit_sha": "c2d3515581d410d8c14849063dac27af843a3729",
+          "kind": "coverage",
+          "verdict_ok": null,
+          "findings": 0
+        },
+        {
+          "id": 2,
+          "commit_sha": "4ef04cab273629eae28755fccbfbd934aa098f7e",
+          "kind": "verify",
+          "verdict_ok": 1,
+          "findings": 0
+        }
+      ],
+      "coverage_sha256": "e57f5128862445c5263573ff23e865310b54eab05c02384ad3d956900560f7a4",
+      "coverage_totals": {
+        "covered_lines": 10232,
+        "num_statements": 10400,
+        "percent_covered": 98.1127750611247,
+        "percent_covered_display": "98",
+        "missing_lines": 168,
+        "excluded_lines": 6,
+        "percent_statements_covered": 98.38461538461539,
+        "percent_statements_covered_display": "98",
+        "num_branches": 2688,
+        "num_partial_branches": 77,
+        "covered_branches": 2609,
+        "missing_branches": 79,
+        "percent_branches_covered": 97.0610119047619,
+        "percent_branches_covered_display": "97"
+      },
+      "coverage_files": 71,
+      "unexpected_coverage_paths": []
+    }
+  },
+  "unmarked_over_target": [
+    {
+      "path": "src/crapkit/procs.py",
+      "long_name": "_windows_arguments( arguments : list [ str ] , variable : str , environment : dict , delayed : bool )",
+      "start": 80,
+      "end": 84,
+      "ccn": 4,
+      "cov": 0.0,
+      "crap": 20.0
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "long_name": "_multiline_mode( template : str , values : dict [ str , list [ str ] ] )",
+      "start": 62,
+      "end": 69,
+      "ccn": 4,
+      "cov": 0.25,
+      "crap": 10.75
+    },
+    {
+      "path": "src/crapkit/procs.py",
+      "long_name": "prepare_template( template : str , values : dict [ str , list [ str ] ] )",
+      "start": 34,
+      "end": 54,
+      "ccn": 6,
+      "cov": 0.6666666666666666,
+      "crap": 7.333333333333334
+    }
+  ],
+  "diff_uncovered": [
+    {
+      "line": 54,
+      "path": "src/crapkit/_process_owner.py"
+    },
+    {
+      "line": 55,
+      "path": "src/crapkit/_process_owner.py"
+    },
+    {
+      "line": 414,
+      "path": "src/crapkit/gitio.py"
+    },
+    {
+      "line": 522,
+      "path": "src/crapkit/gitio.py"
+    },
+    {
+      "line": 163,
+      "path": "src/crapkit/mutate_pool.py"
+    },
+    {
+      "line": 317,
+      "path": "src/crapkit/procs.py"
+    },
+    {
+      "line": 327,
+      "path": "src/crapkit/procs.py"
+    },
+    {
+      "line": 328,
+      "path": "src/crapkit/procs.py"
+    },
+    {
+      "line": 329,
+      "path": "src/crapkit/procs.py"
+    },
+    {
+      "line": 78,
+      "path": "src/crapkit/score.py"
+    },
+    {
+      "line": 79,
+      "path": "src/crapkit/score.py"
+    },
+    {
+      "line": 84,
+      "path": "src/crapkit/score.py"
+    }
+  ],
+  "diff_uncovered_max": null,
+  "gate_violations": [],
+  "ratchet_regressions": [],
+  "new_failures": [],
+  "ratchet_sha256": "a30319ff0282306906d8da2df982084025f9e647d999b9e158697778214b03ac",
+  "limits": [
+    "Base suite exit 1 retains 5 historical failures in this attempt; the exact IDs are recorded above. Candidate unit and E2E have no failures; comparison and matching candidate ledger pass.",
+    "All 71 installed source hashes equal exact Git blobs at the measured commit. Local tracked source has no Git diff. Local config.py and doctor.py use CRLF; their raw Windows bytes differ from Linux wheel bytes. Normalization is recorded as a diagnostic, not used to establish canonical identity.",
+    "Coverage JSON and SQLite remain in the preserved attempt and are read-only inputs. They are not duplicated in the curated archive; compact counts, exact rows and hashes are retained here.",
+    "Matching Windows source run81 passed. Its separate source and population proofs are final-source-proof.json and final-source-join-proof.json."
+  ]
+}
