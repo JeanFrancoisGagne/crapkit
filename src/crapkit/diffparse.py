@@ -3,7 +3,7 @@
 Ranges are new-side. A pure deletion (zero new lines) still marks the line it
 happened at, so a function shrunk by an edit is still a touched function.
 Paths come from the +++ header (the new side survives renames) and decode
-git's C-style quoting via the churn module's helper.
+git's C-style quoting through the shared path decoder.
 
 Hunk body lines are consumed by the counts the @@ header declares, never
 pattern-matched: an added source line whose text starts with "++ " arrives as
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from .churn import _unquote_git_path
+from .gitpaths import unquote_path
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -40,12 +40,11 @@ def _spend_body_line(line: str, rem_old: int, rem_new: int) -> tuple[int, int] |
 
 def _open_file(line: str, ranges: dict[str, list[tuple[int, int]]]) -> str | None:
     """Point the parser at the file a `+++ ` header names; None for /dev/null."""
-    target = line[4:].strip()
+    target = line[4:].removesuffix("\t")
     if target == "/dev/null":
         return None
-    target = _unquote_git_path(target)
+    target = unquote_path(target)
     path = target[2:] if target.startswith("b/") else target
-    path = path.replace("\\", "/")
     ranges.setdefault(path, [])
     return path
 
@@ -83,7 +82,7 @@ def changed_ranges(diff_text: str) -> dict[str, list[tuple[int, int]]]:
     ranges: dict[str, list[tuple[int, int]]] = {}
     current: str | None = None
     rem_old = rem_new = 0
-    for line in diff_text.splitlines():
+    for line in diff_text.split("\n"):
         owed = _spend_body_line(line, rem_old, rem_new)
         if owed is not None:
             rem_old, rem_new = owed

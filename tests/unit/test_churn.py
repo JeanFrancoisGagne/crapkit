@@ -21,9 +21,9 @@ def test_empty_log_gives_empty_churn():
     assert parse_git_log("") == {}
 
 
-def test_backslash_paths_normalize():
+def test_literal_backslashes_remain_filename_content():
     churn = parse_git_log("\x01a\nsrc\\win.ts\n")
-    assert "src/win.ts" in churn
+    assert "src\\win.ts" in churn
 
 
 def test_c_style_quoted_paths_decode_to_real_paths():
@@ -39,7 +39,7 @@ def test_c_style_quoted_paths_decode_to_real_paths():
 def test_quoted_path_with_escaped_quote_and_backslash():
     log = '\x01a\n' + r'"we\"ird\\name.py"' + '\n'
     churn = parse_git_log(log)
-    assert churn['we"ird/name.py'].commits == 1
+    assert churn['we"ird\\name.py'].commits == 1
 
 
 def test_timestamped_log_weights_recent_commits_heavier():

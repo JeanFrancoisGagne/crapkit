@@ -392,7 +392,7 @@ def content_hash(path: Path) -> str:
 
 def fingerprint() -> str:
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=3"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=4"
 
 
 def _analysis_key(path: str, digest: str) -> str:
@@ -554,6 +554,14 @@ def _stamp(fresh: dict, rel: str, stat: tuple[int, int] | None, digest: str, now
         fresh[rel] = [stat[0], stat[1], digest]
 
 
+def _path_hash(path: Path, prior) -> tuple[str, tuple[int, int] | None]:
+    stat = _stat_of(path)
+    if _unmoved(stat, prior):
+        return prior[2], stat
+    digest = content_hash(path)
+    return digest, stat if stat == _stat_of(path) else None
+
+
 def _hash_paths(root: Path, rel_paths: list[str], stamps: dict) -> tuple[dict[str, str], dict]:
     """Content hash per path, plus the stat index the next run should keep.
 
@@ -570,9 +578,7 @@ def _hash_paths(root: Path, rel_paths: list[str], stamps: dict) -> tuple[dict[st
     hashes: dict[str, str] = {}
     fresh: dict = {}
     for rel in rel_paths:
-        stat = _stat_of(root / rel)
-        prior = stamps.get(rel)
-        hashes[rel] = prior[2] if _unmoved(stat, prior) else content_hash(root / rel)
+        hashes[rel], stat = _path_hash(root / rel, stamps.get(rel))
         _stamp(fresh, rel, stat, hashes[rel], now)
     return hashes, fresh
 
@@ -636,12 +642,36 @@ def _memory_bounded(workers: int | None) -> int | None:
     return min(workers or os.cpu_count() or 1, max(1, budget // _WORKER_PEAK_MB))
 
 
+def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionRecord]]:
+    """Read one worker-owned input, verify its identity, then parse those bytes."""
+    absolute, relative, expected = job
+    try:
+        raw = Path(absolute).read_bytes()
+    except OSError as exc:
+        raise ToolError(f"{relative}: source cannot be read; rerun analysis: {exc}") from exc
+    if hashlib.sha256(raw).hexdigest() != expected:
+        raise ToolError(f"{relative}: source changed during analysis; rerun analysis")
+    try:
+        analyzer = lizard.FileAnalyzer(_extensions_for(relative))
+        analysis = analyzer.analyze_source_code(relative, decode_source(raw))
+        return relative, _file_records(relative, analysis.function_list)
+    except Exception as exc:
+        raise ToolError(f"lizard failed on {relative}: {exc}") from exc
+
+
+def _job_inputs(jobs: list, hashes: dict[str, str] | None):
+    if hashes is None:
+        return analyze_one, jobs
+    return _analyze_verified, [(absolute, relative, hashes[relative]) for absolute, relative in jobs]
+
+
 def analyze_jobs(
     jobs: list[tuple[str, str]],
     *,
     workers: int | None = None,
     pool_threshold: int = _POOL_THRESHOLD,
     chunksize: int = 32,
+    hashes: dict[str, str] | None = None,
 ) -> dict[str, list[FunctionRecord]]:
     """Run lizard over (abs_path, rel_path) jobs, pooled once there are enough.
 
@@ -651,14 +681,15 @@ def analyze_jobs(
     different worker (a chunksize above the job count leaves one worker doing
     all of them, serially, after paying for the pool).
     """
+    worker, inputs = _job_inputs(jobs, hashes)
     fresh: dict[str, list[FunctionRecord]] = {}
     if len(jobs) >= pool_threshold:
         with ProcessPoolExecutor(max_workers=_memory_bounded(workers)) as pool:
-            for rel_path, records in pool.map(analyze_one, jobs, chunksize=chunksize):
+            for rel_path, records in pool.map(worker, inputs, chunksize=chunksize):
                 fresh[rel_path] = records
     else:
-        for job in jobs:
-            rel_path, records = analyze_one(job)
+        for job in inputs:
+            rel_path, records = worker(job)
             fresh[rel_path] = records
     # The parent says things; a worker only measures. A spawned child's stderr
     # never saw `_reconfigure_streams`, so a note printed from analyze_one
@@ -666,6 +697,23 @@ def analyze_jobs(
     for rel_path, records in fresh.items():
         _note_twin_keys(rel_path, records)
     return fresh
+
+
+def _miss_origins(misses: list[str], identities: dict[str, str]) -> dict[str, str]:
+    """Each cold path's first equivalent reader/content input, in path order."""
+    origins: dict[str, str] = {}
+    return {path: origins.setdefault(identities[path], path) for path in misses}
+
+
+def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dict, workers) -> dict:
+    origins = _miss_origins(misses, identities)
+    jobs = [(str(root / path), path) for path in dict.fromkeys(origins.values())]
+    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes)
+    records = {path: _rows_for(path, parsed[origin]) for path, origin in origins.items()}
+    for path, origin in origins.items():
+        if path != origin:
+            _note_twin_keys(path, records[path])
+    return records
 
 
 def analyze_files(
@@ -681,7 +729,7 @@ def analyze_files(
     hits, misses = partition_by_cache(identities, cache, fingerprint=fp)
     hits = _restamped(hits)
 
-    fresh = analyze_jobs([(str(root / rel), rel) for rel in misses], workers=workers)
+    fresh = _analyze_misses(root, misses, identities, hashes, workers)
 
     all_records = {**hits, **fresh}
     new_cache = updated_cache(identities, all_records, fingerprint=fp)

@@ -25,5 +25,5 @@ def test_a_diff_with_no_renames_is_an_empty_map():
     assert _rename_pairs("M\0a.py\0A\0b.py\0D\0c.py\0".split("\0")) == {}
 
 
-def test_windows_separators_are_normalized_to_the_path_form_marks_use():
-    assert _rename_pairs("R100\0src\\a.py\0lib\\a.py\0".split("\0")) == {"src/a.py": "lib/a.py"}
+def test_literal_backslashes_in_git_paths_are_preserved():
+    assert _rename_pairs("R100\0src\\a.py\0lib\\a.py\0".split("\0")) == {"src\\a.py": "lib\\a.py"}

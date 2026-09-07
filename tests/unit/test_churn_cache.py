@@ -115,24 +115,33 @@ def _old_cache(tmp_path, head: str):
     old = tmp_path / ".crapkit" / churn_cache.LEGACY_NAME
     old.parent.mkdir(parents=True, exist_ok=True)
     doc = {"key": {"head": head, "months": 12, "date": churn_cache._utc_date(),
-                   "paths": churn_cache.RELATIVE_PATHS},
+                   "paths": "root-relative"},
            "files": {"src/old.ts": [9, 9, 9.0]}}
     old.write_text(json.dumps(doc), encoding="utf-8")
     return old
 
 
-def test_a_warm_cache_under_the_old_name_is_adopted_not_rewalked(tmp_path, git):
-    """0.4.4 wrote this exact key shape under the unversioned name. Renaming the
-    file without reading it made every upgrade pay one full `git log
-    --name-only` walk for a map already on disk."""
+def test_a_legacy_map_rebuilds_before_reusing_its_path_keys(tmp_path, git):
+    """The old path decoder trimmed names, even under an otherwise matching key."""
     old = _old_cache(tmp_path, HEAD)
 
     churn = churn_cache.load_churn(tmp_path, 12)
 
-    assert churn == {"src/old.ts": FileChurn(9, 9, 9.0)}
-    assert git.log_calls == 0, "the map was on disk; the walk buys nothing"
-    assert not old.exists(), "adopted, so the old name is litter"
+    assert churn == parse_git_log(LOG)
+    assert git.log_calls == 1
+    assert not old.exists(), "the old decoded map cannot answer this path contract"
     assert (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).is_file()
+
+
+def test_a_current_filename_with_the_old_path_contract_is_rebuilt(tmp_path, git):
+    churn_cache.load_churn(tmp_path, 12)
+    path = tmp_path / ".crapkit" / churn_cache.CACHE_NAME
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["key"]["paths"] = "root-relative"
+    doc["files"] = {"wrong.py": [1, 1, 1.0]}
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert churn_cache.load_churn(tmp_path, 12) == parse_git_log(LOG)
+    assert git.log_calls == 2
 
 
 def test_a_stale_cache_under_the_old_name_is_dropped(tmp_path, git):

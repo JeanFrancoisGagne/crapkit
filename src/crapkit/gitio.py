@@ -30,7 +30,7 @@ _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 # diff_names_since, unstaged_paths, churn_log_lines and the `diff -U0` headers
 # all spell the path the way ls-files does. git still quotes a path holding a
 # double-quote or a control character whatever this says, which is why
-# churn._unquote_git_path stays.
+# gitpaths.unquote_path stays for line-oriented history and diff headers.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
 
 
@@ -48,17 +48,24 @@ def _git_unflagged(root: Path, *args: str) -> str:
     return _run(root, args, args)
 
 
-def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...]) -> str:
+def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False) -> str:
     """`named` is what the error says ran — the injected flags are crapkit's
     business, not the caller's."""
     try:
         res = subprocess.run(["git", *argv], cwd=root,
-                             capture_output=True, text=True, encoding="utf-8")
+                             capture_output=True, text=not binary, encoding=None if binary else "utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
-        raise GitError(f"git {' '.join(named)} failed in {root}: {res.stderr.strip()}")
-    return res.stdout
+        error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
+        raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
+    return res.stdout.decode("utf-8") if binary else res.stdout
+
+
+def _git_paths(root: Path, *args: str) -> list[str]:
+    """NUL records decoded without newline conversion, quoting, or trimming."""
+    out = _run(root, (*_RELATIVE, *args), args, binary=True)
+    return [path for path in out.split("\0") if path]
 
 
 def _git_lines(root: Path, *args: str) -> Iterator[str]:
@@ -85,8 +92,7 @@ def stage_path(root: Path, rel_path: str) -> None:
 
 
 def ls_files(root: Path) -> list[str]:
-    out = _git(root, "ls-files", "-z")
-    return [p for p in out.split("\0") if p]
+    return _git_paths(root, "ls-files", "-z")
 
 
 def untracked_files(root: Path) -> list[str]:
@@ -95,8 +101,7 @@ def untracked_files(root: Path) -> list[str]:
     git applies the ignore rules, so a build directory never reads as source
     somebody forgot to add.
     """
-    out = _git(root, "ls-files", "--others", "--exclude-standard", "-z")
-    return [p for p in out.split("\0") if p]
+    return _git_paths(root, "ls-files", "--others", "--exclude-standard", "-z")
 
 
 def config_value(root: Path, key: str) -> str:
@@ -122,12 +127,11 @@ def index_modes(root: Path, pathspec: str) -> dict[str, str]:
     Windows, where the filesystem has no such bit and the working copy always
     looks 0644.
     """
-    out = _git(root, "ls-files", "-s", "-z", "--", pathspec)
+    records = _git_paths(root, "ls-files", "-s", "-z", "--", pathspec)
     modes = {}
-    for record in out.split("\0"):
-        if record:
-            meta, _, path = record.partition("\t")
-            modes[path.replace("\\", "/")] = meta.split(" ", 1)[0]
+    for record in records:
+        meta, _, path = record.partition("\t")
+        modes[path] = meta.split(" ", 1)[0]
     return modes
 
 
@@ -150,9 +154,8 @@ def unstaged_paths(root: Path) -> set[str]:
 
 
 def _diff_names(root: Path, *args: str) -> list[str]:
-    """One `git diff --name-only` answer, slash-normalized."""
-    out = _git(root, "diff", "--name-only", "--no-renames", *args)
-    return [line.strip().replace("\\", "/") for line in out.splitlines() if line.strip()]
+    """One `git diff --name-only` answer with exact root-relative paths."""
+    return _git_paths(root, "diff", "--name-only", "--no-renames", "-z", *args)
 
 
 def diff_since(root: Path, commit: str) -> str:
@@ -176,7 +179,7 @@ def _rename_pairs(fields: list[str]) -> dict[str, str]:
         status = fields[i]
         paths = 2 if status[0] in ("R", "C") else 1
         if status[0] == "R":
-            pairs[fields[i + 1].replace("\\", "/")] = fields[i + 2].replace("\\", "/")
+            pairs[fields[i + 1]] = fields[i + 2]
         i += 1 + paths
     return pairs
 
@@ -192,8 +195,8 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
     so only renames wholly inside the root pair up here; a mark on a file moved
     in from above the root reads as new.
     """
-    out = _git(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD")
-    return _rename_pairs(out.split("\0"))
+    fields = _git_paths(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD")
+    return _rename_pairs(fields)
 
 
 def status_names(root: Path) -> list[str]:
@@ -289,7 +292,19 @@ def staged_blobs(root: Path, rel_paths: list[str]) -> dict[str, bytes]:
     """
     if not rel_paths:
         return {}
+    if _line_paths(rel_paths):
+        return _individual_blobs(root, rel_paths)
     return _framed_blobs(_batch_stream(root, _batch_requests(rel_paths)), rel_paths)
+
+
+def _line_paths(paths: list[str]) -> bool:
+    return any("\n" in path or "\r" in path for path in paths)
+
+
+def _individual_blobs(root: Path, paths: list[str]) -> dict[str, bytes]:
+    """Line-bearing names cannot use line-framed requests on older Git versions."""
+    return {path: _Started(root, ("show", f":./{path}"), text=False, stdin=False).result()
+            for path in paths}
 
 
 def _batch_requests(rel_paths: list[str]) -> bytes:
@@ -358,6 +373,7 @@ class _StartedReads:
     """
 
     def __init__(self, root: Path, base: str | None = None) -> None:
+        self._root = root
         basis = (merge_base(root, base),) if base is not None else ()
         self._diff = _Started(root, ("diff", "--cached", "-U0", "--no-renames", *basis),
                               text=True, stdin=False)
@@ -369,6 +385,8 @@ class _StartedReads:
     def staged_blobs(self, rel_paths: list[str]) -> dict[str, bytes]:
         if not rel_paths:
             return {}
+        if _line_paths(rel_paths):
+            return _individual_blobs(self._root, rel_paths)
         stream = self._batch.result(_batch_requests(rel_paths))
         return _framed_blobs(stream, rel_paths)
 

@@ -34,10 +34,11 @@ from datetime import datetime, timezone
 from hashlib import blake2b
 from pathlib import Path
 
-from .churn_log import RELATIVE_PATHS, log_lines
+from .churn_log import log_lines
 from .coupling import change_coupling_lines
 from .errors import GitError
 from .gitio import head_commit
+from .gitpaths import PATH_FORMAT
 
 # The format lives in the file name, as it does for the churn map and log: a
 # version keying another shape writes another file, so two installs on one tree
@@ -86,7 +87,7 @@ def _cache_key(root: Path, months: int, paths: list[str]) -> dict | None:
     except GitError:
         return None
     return {"head": head, "months": months, "date": _utc_date(),
-            "paths": RELATIVE_PATHS, "tracked": _tracked_digest(paths)}
+            "paths": PATH_FORMAT, "tracked": _tracked_digest(paths)}
 
 
 def _read_cache(path: Path, key: dict | None) -> list[dict] | None:

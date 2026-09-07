@@ -187,6 +187,16 @@ def test_a_cache_without_the_paths_marker_reads_as_cold(tmp_path, log):
     assert log.reads == 2
 
 
+def test_a_cache_with_the_old_path_contract_is_rebuilt(tmp_path, log):
+    coupling_cache.load_coupling(tmp_path, 12, TRACKED)
+    doc = _doc(tmp_path)
+    doc["key"]["paths"] = "root-relative"
+    doc["pairs"] = []
+    _rewrite(tmp_path, doc)
+    assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
+    assert log.reads == 2
+
+
 def test_an_unreadable_head_still_answers_and_writes_nothing(tmp_path, log, monkeypatch):
     def no_head(root):
         raise GitError("no HEAD commit")

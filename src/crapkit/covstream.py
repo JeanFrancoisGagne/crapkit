@@ -111,25 +111,87 @@ def _next_member(w: _Window, first: bool):
             return None
 
 
-def _whole_value(w: _Window, start: int):
-    """The decoded value and its end offset, or None while the window may still
-    be hiding more of it. A value ending exactly at the edge is not whole: a
-    bare number would otherwise decode as its own truncated prefix."""
+_STRUCTURAL = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|[{}\[\]"]', re.DOTALL)
+_STRING_TOKEN = re.compile(r'["\\]')
+_SCALAR_END = re.compile(r'[ \t\r\n,}\]]')
+
+
+class _ValueFrame:
+    """Advance through each chunk once; JSONDecoder still judges the grammar."""
+
+    def __init__(self, text: str, start: int):
+        first = text[start:start + 1]
+        self.depth = int(first in ("{", "["))
+        self.quoted = first == '"'
+        self.scalar = first not in ('{', '[', '"')
+        self.pos = start if self.scalar else start + 1
+
+    def _string(self, token: str) -> bool:
+        if token == "\\":
+            self.pos += 1  # also skips the escaped character in the next refill
+            return False
+        self.quoted = False
+        return self.depth == 0
+
+    def _container(self, token: str) -> bool:
+        if token.startswith('"'):
+            self.quoted = len(token) == 1
+        elif token in "{[":
+            self.depth += 1
+        else:
+            self.depth -= 1
+        return self.depth == 0
+
+    def _scalar(self, text: str) -> bool:
+        end = _SCALAR_END.search(text, self.pos)
+        self.pos = len(text)
+        return end is not None
+
+    def _token(self, text: str) -> str | None:
+        pattern = _STRING_TOKEN if self.quoted else _STRUCTURAL
+        token = pattern.search(text, self.pos)
+        if token is None:
+            self.pos = max(self.pos, len(text))
+            return None
+        self.pos = token.end()
+        return token.group()
+
+    def advance(self, text: str) -> bool:
+        if self.scalar:
+            return self._scalar(text)
+        while True:
+            token = self._token(text)
+            if token is None:
+                return False
+            consume = self._string if self.quoted else self._container
+            if consume(token):
+                return True
+
+
+def _value_ended(w: _Window, end: int) -> bool:
+    if end == len(w.buf):
+        return w.eof or w.buf[end - 1] in '"}]'
+    return w.buf[end] in " \t\r\n,}]"
+
+
+def _available_value(w: _Window, start: int):
+    """Keep the C decoder fast path when the current window holds the value."""
     try:
         value, end = _DECODER.raw_decode(w.buf, start)
     except ValueError:
         return None
-    return (value, end) if end < len(w.buf) or w.eof else None
+    return (value, end) if _value_ended(w, end) else None
 
 
 def _decode_value(w: _Window, start: int):
-    """raw_decode at `start`, growing the window until the value is whole."""
-    while True:
-        whole = _whole_value(w, start)
-        if whole is not None:
-            return whole
-        if not w.refill():
-            return _DECODER.raw_decode(w.buf, start)
+    """Try the current window once; frame incomplete values before retrying."""
+    whole = _available_value(w, start)
+    if whole is not None:
+        return whole
+    frame = _ValueFrame(w.buf, start)
+    while not frame.advance(w.buf) and w.refill():
+        pass
+    return _DECODER.raw_decode(w.buf, start)
 
 
 def _enter_object(w: _Window, what: str) -> None:

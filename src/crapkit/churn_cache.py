@@ -9,7 +9,7 @@ The key is (HEAD sha, window months, UTC date, path format). The sha pins the
 history; the window pins the command; the date is there because `--since=N
 months ago` is evaluated against the wall clock, so yesterday's cache describes
 a window one day wider than today's; the format marker retires maps whose
-paths predate `git log --relative`. Anything else is a miss, and a miss
+paths predate exact path decoding. Anything else is a miss, and a miss
 rebuilds.
 
 A cache is disposable: unreadable, corrupt or unkeyable content reads as cold,
@@ -25,9 +25,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .churn import FileChurn, parse_git_log_lines
-from .churn_log import RELATIVE_PATHS, has_cache, log_lines, sweep_legacy
+from .churn_log import has_cache, log_lines, sweep_legacy
 from .errors import GitError
 from .gitio import churn_log_lines, head_commit
+from .gitpaths import PATH_FORMAT
 
 # The format lives in the file name. Two crapkit versions on one working tree
 # key different fields, each read the other's cache as cold, and each rewrote
@@ -35,9 +36,7 @@ from .gitio import churn_log_lines, head_commit
 # neither invalidates the other and both stay warm. The key's own marker stays,
 # for a format change that keeps the name.
 CACHE_NAME = "churn-cache-v2.json"
-# The name 0.4.4 wrote, with this very key shape. The rename alone would have
-# made every upgrade re-walk a map that was already on disk, and left the file
-# behind forever, so a cold read looks there once before it walks git.
+# Older maps can contain altered path names. Discard the retired name on a miss.
 LEGACY_NAME = "churn-cache.json"
 
 
@@ -56,8 +55,8 @@ def _window_lines(root: Path, months: int) -> Iterator[str]:
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     """Per-file churn for the window — from disk when the key still matches, else rebuilt.
 
-    A miss looks at 0.4.4's file names before it pays git: the map under the old
-    name, and the log pair `sweep_legacy` adopts for `_window_lines` to read.
+    A miss discards old decoded maps. The raw log pair still keeps its original
+    path spelling, so `sweep_legacy` can adopt it for `_window_lines` to read.
     """
     path = root / ".crapkit" / CACHE_NAME
     key = _cache_key(root, months)
@@ -65,23 +64,9 @@ def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     if cached is not None:
         return cached
     sweep_legacy(root)
-    churn = _adopted(path, key)
-    if churn is None:
-        churn = parse_git_log_lines(_window_lines(root, months))
+    _drop(path.with_name(LEGACY_NAME))
+    churn = parse_git_log_lines(_window_lines(root, months))
     _write_cache(path, key, churn)
-    return churn
-
-
-def _adopted(path: Path, key: dict | None) -> dict[str, FileChurn] | None:
-    """0.4.4's map: read once, kept when its key still answers, dropped either way.
-
-    Dropped even when it does not answer, because this version writes the v2
-    name and no version reads the old one again — leaving it is 16 kB of litter
-    per repo, growing with the history it describes.
-    """
-    old = path.with_name(LEGACY_NAME)
-    churn = _read_cache(old, key)
-    _drop(old)
     return churn
 
 
@@ -103,10 +88,9 @@ def _cache_key(root: Path, months: int) -> dict | None:
         head = head_commit(root)
     except GitError:
         return None
-    # `paths` marks the format, not a question: maps built before --relative
-    # hold top-relative paths in a subdirectory root, and must read as cold.
+    # Old decoded maps trimmed path content and must read as cold.
     return {"head": head, "months": months, "date": _utc_date(),
-            "paths": RELATIVE_PATHS}
+            "paths": PATH_FORMAT}
 
 
 def _read_cache(path: Path, key: dict | None) -> dict[str, FileChurn] | None:
