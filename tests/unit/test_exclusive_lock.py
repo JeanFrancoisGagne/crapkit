@@ -1,4 +1,6 @@
 """OS ownership excludes peers and ends when its process exits."""
+import os
+import signal
 import subprocess
 import sys
 
@@ -9,10 +11,10 @@ from crapkit.locks import exclusive_lock
 
 
 OWNER = """from pathlib import Path
-import sys
+import os, sys
 from crapkit.locks import exclusive_lock
 with exclusive_lock(Path(sys.argv[1]), label='fixture'):
-    print('held', flush=True)
+    print(os.getpid(), flush=True)
     sys.stdin.readline()
 """
 
@@ -24,16 +26,15 @@ def held(tmp_path):
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     try:
-        assert process.stdout.readline().strip() == "held"
-        yield path, process
+        holder = int(process.stdout.readline())
+        assert holder > 0
+        yield path, process, holder
     finally:
-        if process.poll() is None:
-            process.kill()
-        process.communicate(timeout=10)
+        process.communicate(input="\n" if process.poll() is None else None, timeout=10)
 
 
 def test_a_second_process_cannot_take_an_owned_file(held):
-    path, process = held
+    path, process, _ = held
     with pytest.raises(ToolError, match="fixture already in use"):
         with exclusive_lock(path, label="fixture"):
             pytest.fail("a peer entered the owned operation")
@@ -43,8 +44,9 @@ def test_a_second_process_cannot_take_an_owned_file(held):
 
 
 def test_a_crashed_owner_releases_the_same_stable_lock_file(held):
-    path, process = held
-    process.kill()
+    path, process, holder = held
+    # A Windows venv launcher has a different PID from the Python lock holder.
+    os.kill(holder, signal.SIGTERM)
     process.wait(timeout=10)
     with exclusive_lock(path, label="fixture"):
         assert path.is_file()
