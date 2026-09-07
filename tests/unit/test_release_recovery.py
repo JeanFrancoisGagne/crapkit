@@ -20,6 +20,7 @@ def receipt(root):
 def test_build_and_check_finish_before_any_push(tmp_path, monkeypatch):
     root = repo(tmp_path, bumped=True)
     verified(root, monkeypatch)
+    publish_adapter(root, monkeypatch)
     commands = []
 
     def execute(command, root, dry_run):
@@ -36,6 +37,7 @@ def test_build_and_check_finish_before_any_push(tmp_path, monkeypatch):
     with pytest.raises(release.ReleaseError):
         release.run("stage2b", VERSION, root)
     assert not any(c[:2] == ("git", "push") for c in commands)
+    assert any("build" in c for c in commands) and any("check" in c for c in commands)
     assert "artifacts" not in receipt(root)
 
 
@@ -59,6 +61,9 @@ class PublicationAdapter:
         from test_release_guards import git
         command = tuple(value for arg in command for value in (
             [str(p.relative_to(root)) for p in sorted(root.glob(arg))] if arg.endswith("/*") else [arg]))
+        if "--repo" in command:
+            index = command.index("--repo")
+            command = command[:index] + command[index + 2:]
         if "build" in command:
             output = root / command[command.index("--outdir") + 1]
             output.mkdir(parents=True)
@@ -105,6 +110,11 @@ class PublicationAdapter:
 
 def publish_adapter(root, monkeypatch, fail_after=None):
     adapter = PublicationAdapter(root, fail_after)
+    git_read = release._git
+    # Model the public repository identity; actual refs and pushes stay in the local bare fixture.
+    monkeypatch.setattr(release, "_git", lambda root, *args:
+                        "https://github.com/JeanFrancoisGagne/crapkit.git"
+                        if args[:2] == ("remote", "get-url") else git_read(root, *args))
     monkeypatch.setattr(release, "_execute", adapter.execute)
     monkeypatch.setattr(release, "_remote_json", adapter.remote_json, raising=False)
     return adapter

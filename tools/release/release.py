@@ -38,6 +38,8 @@ DASH = chr(0x2014)
 NL = chr(10)
 PACKAGE = "crapkit"
 REPO_SLUG = "JeanFrancoisGagne/crapkit"
+GITHUB_REPO = f"github.com/{REPO_SLUG}"
+PYPI_UPLOAD_URL = "https://upload.pypi.org/legacy/"
 RELEASE_DIST = ".crapkit/release-dist"
 REGISTRY_SEARCH = "https://registry.modelcontextprotocol.io/v0/servers?search=crapkit"
 REGISTRY_META = "io.modelcontextprotocol.registry/official"
@@ -211,7 +213,8 @@ def _git_tag(root: Path) -> str:
 
 
 def _gh_release(root: Path, version: str) -> str:
-    done = subprocess.run(["gh", "release", "view", f"v{version}", "--json", "url", "--jq", ".url"],
+    done = subprocess.run(["gh", "release", "view", f"v{version}", "--repo", GITHUB_REPO,
+                           "--json", "url", "--jq", ".url"],
                           cwd=root, capture_output=True, text=True)
     return done.stdout.strip()
 
@@ -289,6 +292,11 @@ RELEASE_FILES = tuple(sorted({surface.path for surface in SURFACES}
                             | {"CHANGELOG.md", "crapkit-ratchet.tsv"}))
 
 
+def _upload_prefix(surface: str, version: str) -> tuple:
+    return {"pypi": (PY, "-m", "twine", "upload", "--repository-url", PYPI_UPLOAD_URL, "--non-interactive"),
+            "github": ("gh", "release", "upload", f"v{version}", "--repo", GITHUB_REPO)}[surface]
+
+
 def plan(version: str) -> list:
     """The chain as a list a person reads before running it. Order is what the
     contracts require: the tag before the contract files (two of them read the
@@ -314,14 +322,15 @@ def plan(version: str) -> list:
                                       (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
              note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
         Step("push", "stage2b", (("git", "push", "-q", "origin", "main", f"v{version}"),)),
-        Step("pypi", "stage2b", ((PY, "-m", "twine", "upload", "--non-interactive", f"{RELEASE_DIST}/*"),)),
+        Step("pypi", "stage2b", ((*_upload_prefix("pypi", version), f"{RELEASE_DIST}/*"),)),
         Step("github release", "stage2b", (
-            ("gh", "release", "create", f"v{version}", "--verify-tag", "--title", f"crapkit {version}",
+            ("gh", "release", "create", f"v{version}", "--repo", GITHUB_REPO, "--verify-tag", "--title", f"crapkit {version}",
              "--notes-file", f".crapkit/release-notes-{version}.md"),
-            ("gh", "release", "upload", f"v{version}", f"{RELEASE_DIST}/*")),
+            (*_upload_prefix("github", version), f"{RELEASE_DIST}/*")),
             note="the notes file is the changelog section, written by `notes` first"),
         Step("plugin", "stage2b", (("claude", "plugin", "update", "crapkit@crapkit"),)),
-        Step("pages", "stage2b", (("gh", "api", "-X", "POST", f"repos/{REPO_SLUG}/pages/builds", "--jq", ".status"),)),
+        Step("pages", "stage2b", (("gh", "api", "--hostname", "github.com", "-X", "POST",
+                                  f"repos/{REPO_SLUG}/pages/builds", "--jq", ".status"),)),
         Step("registry", "registry", (("mcp-publisher", "login", "github"), ("mcp-publisher", "publish")),
              note="device flow; the token lasts about 40 minutes, so publish right after login"),
         Step("glama", "glama", (),
@@ -430,6 +439,14 @@ def _passing_run(root: Path, head: str, after: int) -> int:
     return row["id"]
 
 
+def _canonical_origin(root: Path) -> None:
+    pattern = r"(?:https://github\.com/|ssh://git@github\.com/|git@github\.com:)" + re.escape(REPO_SLUG) + r"(?:\.git)?/?"
+    for mode in ((), ("--push",)):
+        urls = _git(root, "remote", "get-url", *mode, "--all", "origin").splitlines()
+        if len(urls) != 1 or re.fullmatch(pattern, urls[0], re.I) is None:
+            raise ReleaseError(f"origin fetch and push must each resolve to one HTTPS or SSH URL for {GITHUB_REPO}")
+
+
 def _guard_publish(root: Path, version: str) -> dict:
     receipt = _guard_receipt(root, version)
     after = receipt.get("verify_after")
@@ -438,6 +455,7 @@ def _guard_publish(root: Path, version: str) -> dict:
     latest = _passing_run(root, receipt["head"], after)
     if receipt.get("verify_run") != latest:
         raise ReleaseError("run the verify stage before publishing this release")
+    _canonical_origin(root)
     return receipt
 
 
@@ -690,10 +708,9 @@ def _publish_push(root: Path, receipt: dict) -> None:
 
 
 def _publish_files(root: Path, receipt: dict, surface: str) -> None:
-    prefixes = {"pypi": (PY, "-m", "twine", "upload", "--non-interactive"),
-                "github": ("gh", "release", "upload", f"v{receipt['version']}")}
+    prefix = _upload_prefix(surface, receipt["version"])
     for name in sorted(receipt["artifacts"]):
-        command = (*prefixes[surface], f"{RELEASE_DIST}/{name}")
+        command = (*prefix, f"{RELEASE_DIST}/{name}")
         _publish_action(root, receipt, f"{surface}:{name}", command,
                         lambda: _file_confirmed(receipt, surface, name))
 
