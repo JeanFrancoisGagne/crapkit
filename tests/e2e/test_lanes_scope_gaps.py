@@ -144,27 +144,27 @@ def _touch_scope_file(repo: Path) -> None:
 
 
 def test_a_lane_that_never_ran_is_not_unchanged(repo: Path):
-    assert lane_unchanged(repo, _the_lane(repo), SCOPE_PATHS) is False
+    assert lane_unchanged(repo, _the_lane(repo)) is False
 
 
 def test_a_fresh_artifact_over_untouched_scopes_is_unchanged(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is True
+    assert lane_unchanged(repo, lane) is True
 
 
 def test_a_deleted_artifact_is_never_unchanged(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     (repo / lane.artifact).unlink()
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
+    assert lane_unchanged(repo, lane) is False
 
 
 def test_an_uncommitted_edit_under_a_scope_makes_the_lane_changed(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     _touch_scope_file(repo)
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
+    assert lane_unchanged(repo, lane) is False
 
 
 def test_a_commit_after_the_stamp_makes_the_lane_changed(repo: Path):
@@ -172,7 +172,7 @@ def test_a_commit_after_the_stamp_makes_the_lane_changed(repo: Path):
     _run_and_stamp(repo, lane)
     _touch_scope_file(repo)
     _commit(repo, "touch src")
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
+    assert lane_unchanged(repo, lane) is False
 
 
 def test_a_new_commit_outside_scopes_still_requires_measurement(repo: Path):
@@ -180,26 +180,7 @@ def test_a_new_commit_outside_scopes_still_requires_measurement(repo: Path):
     _run_and_stamp(repo, lane)
     (repo / "docs" / "notes.md").write_text("edited\n", encoding="utf-8")
     _commit(repo, "docs only")
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
-
-
-@pytest.mark.parametrize("scope_paths", [{}, {"src": ()}, {"other": ("src",)}])
-def test_a_lane_with_no_scope_prefixes_still_observes_changed_inputs(repo: Path, scope_paths):
-    lane = _the_lane(repo)
-    _run_and_stamp(repo, lane)
-    _touch_scope_file(repo)
-    assert lane_unchanged(repo, lane, scope_paths) is False
-
-
-def test_a_file_valued_scope_path_still_marks_its_lane_changed(repo: Path):
-    """A scope may declare a file rather than a directory — crapkit's own
-    tests/e2e/test_parallel_lanes_e2e.py writes that shape. Prefix matching
-    alone never matches the file itself, so editing it read as no change and the
-    lane reused an artifact that no longer described its code."""
-    lane = _the_lane(repo)
-    _run_and_stamp(repo, lane)
-    _touch_scope_file(repo)
-    assert lane_unchanged(repo, lane, {"src": ("src/app.ts",)}) is False
+    assert lane_unchanged(repo, lane) is False
 
 
 def test_a_stamp_commit_that_left_history_is_not_unchanged(repo: Path):
@@ -209,14 +190,14 @@ def test_a_stamp_commit_that_left_history_is_not_unchanged(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     _git(repo, "reset", "--hard", "-q", first)
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
+    assert lane_unchanged(repo, lane) is False
 
 
 def test_without_git_the_lane_is_never_unchanged(repo: Path, monkeypatch):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     monkeypatch.setenv("PATH", str(repo))
-    assert lane_unchanged(repo, lane, SCOPE_PATHS) is False
+    assert lane_unchanged(repo, lane) is False
 
 
 # --- the same decision seen through `crapkit coverage --reuse-unchanged` -----

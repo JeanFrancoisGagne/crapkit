@@ -12,6 +12,7 @@ process. Timeouts and retries are lane config (timeout_seconds, retries).
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext
 import json
 import os
 import re
@@ -25,7 +26,7 @@ from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_both_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts
-from .procs import NoProgress, run_bounded
+from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
@@ -173,7 +174,7 @@ def _raise_stalled(fh: IO[str], lane: Lane, log_path: Path, attempt: int,
                     f"(attempt {attempt}), so crapkit killed it; log: {log_path}")
 
 
-def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int:
+def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int, owner=None) -> int:
     with open(log_path, "a" if attempt > 1 else "w", encoding="utf-8", errors="replace") as fh:
         _log_header(fh, lane.command, attempt)
         # The log is a file, not a pipe, so streaming costs the deadline nothing:
@@ -181,7 +182,7 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int
         # It is also what the progress watch measures.
         try:
             code = run_bounded(lane.command, _deadline(lane), stream=fh,
-                               no_progress=_no_progress(lane), **_popen_kwargs(root, lane))
+                               no_progress=_no_progress(lane), owner=owner, **_popen_kwargs(root, lane))
         except NoProgress as stalled:
             _raise_stalled(fh, lane, log_path, attempt, stalled.seconds)
         if code is None:
@@ -192,10 +193,10 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int) -> int
     return code
 
 
-def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int) -> int | None:
+def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int, owner=None) -> int | None:
     """One attempt; None means it timed out but another attempt remains."""
     try:
-        return _stream_command(root, lane, log_path, attempt)
+        return _stream_command(root, lane, log_path, attempt, owner)
     except ToolError:
         if attempt > lane.retries:
             raise
@@ -409,13 +410,13 @@ def _unwritten(root: Path, before: dict[str, int | None]) -> dict[str, int]:
             if stamp is not None and _mtime_ns(root / name) == stamp}
 
 
-def _run_attempts(root: Path, lane: Lane) -> int | None:
+def _run_attempts(root: Path, lane: Lane, owner=None) -> int | None:
     log_path = _lane_log_path(root, lane)
     exit_code: int | None = None
     unwritten: dict[str, int] = {}
     for attempt in range(1, lane.retries + 2):
         before = _declared_mtimes(root, lane)
-        exit_code = _attempt_once(root, lane, log_path, attempt)
+        exit_code = _attempt_once(root, lane, log_path, attempt, owner)
         unwritten = _unwritten(root, before)
         if exit_code is not None and not unwritten and (root / lane.artifact).is_file():
             return exit_code
@@ -662,7 +663,7 @@ def _reusable_commit(root: Path, lane: Lane) -> str:
     return _stamp_commit(stamp)
 
 
-def lane_unchanged(root: Path, lane: Lane, scope_paths: dict, git: GitFacts | None = None) -> bool:
+def lane_unchanged(root: Path, lane: Lane) -> bool:
     """Automatic reuse requires the same clean repository, not just source scopes.
 
     A lane command can read tests, configuration or any other repository input.
@@ -1009,6 +1010,11 @@ def suite_drops(previous: dict, current: dict, *,
 
 
 def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
+    with measurement_owner(root, (lane,)) as owner:
+        return _retest_owned(root, lane, tests, owner)
+
+
+def _retest_owned(root: Path, lane: Lane, tests: set[str], owner) -> set[str]:
     """Run the lane's retest_command on just these ids; return the ones that
     PASS the rerun (the flakes). Any doubt — no artifact, a crash, a timeout —
     keeps everything failed."""
@@ -1022,7 +1028,7 @@ def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
         fh.flush()
         try:
             code = run_bounded(command, _deadline(lane), stream=fh,
-                               no_progress=_no_progress(lane), **kwargs)
+                               no_progress=_no_progress(lane), owner=owner, **kwargs)
         except NoProgress:
             return set()
     if code not in (0, 1):
@@ -1073,7 +1079,7 @@ class LaneOutcome(NamedTuple):
 
 
 def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | None,
-                  reuse_artifact: bool) -> tuple[int | None, float]:
+                  reuse_artifact: bool, owner=None) -> tuple[int | None, float]:
     """Reuse warns and costs nothing; a real run returns its exit code and wall seconds.
 
     The container guard belongs on this side of the branch. It names an OOM a
@@ -1089,7 +1095,7 @@ def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | Non
         return None, 0.0
     _refuse_container_python(lane)
     started = time.monotonic()
-    return _run_attempts(root, lane), time.monotonic() - started
+    return _run_attempts(root, lane, owner), time.monotonic() - started
 
 
 def _refuse_unwritten_artifact(root: Path, lane: Lane) -> None:
@@ -1122,10 +1128,16 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
 
 def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
              scope_paths: dict | None = None, git: GitFacts | None = None,
-             dead_lines=None) -> LaneOutcome:
+             dead_lines=None, owner=None) -> LaneOutcome:
+    ownership = nullcontext(owner) if owner is not None else measurement_owner(root, (lane,))
+    with ownership as held:
+        return _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, held)
+
+
+def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, owner) -> LaneOutcome:
     facts = _facts(root, git)
     measured = "" if reuse_artifact else _measurement_key(root, lane)
-    exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact)
+    exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact, owner)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
     _judge_artifact_scope(lane, coverage, scope_paths, root)
     provenance = {
@@ -1138,3 +1150,19 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
         provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
     stamp = {} if reuse_artifact else _stamp_entry(facts, lane, seconds, measured, provenance)
     return LaneOutcome(coverage, provenance, stamp)
+
+
+def _output_lock(path: Path) -> Path:
+    resolved = path.resolve()
+    key = os.path.normcase(resolved.name).encode("utf-8")
+    return resolved.parent / ".crapkit" / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
+
+
+def measurement_owner(root: Path, lanes):
+    """Own resolved outputs, plus this checkout's shared log and stamp state."""
+    if not lanes:
+        return nullcontext(None)
+    outputs = {root / name for lane in lanes for name in _declared_files(lane)}
+    paths = {_output_lock(path) for path in outputs}
+    paths.add(root / ".crapkit" / "measurement.lock")
+    return own_processes(sorted(paths))

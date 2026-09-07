@@ -191,7 +191,7 @@ def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
 
     if not (root / lane.artifact).is_file():
         return f"lane {lane.name!r}: no artifact at {lane.artifact}"
-    if not lane_unchanged(root, lane, scope_paths, git):
+    if not lane_unchanged(root, lane):
         return (f"lane {lane.name!r}: files in its scopes changed since {lane.artifact} "
                 "was written (uncommitted edits count), so its line numbers are stale — "
                 f"commit or revert them, then rerun `{_self()} coverage`")

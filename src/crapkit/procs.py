@@ -14,10 +14,14 @@ because the caller's next move is deleting the directory the tree ran in.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+import json
 import re
 import signal
 import shlex
 import subprocess
+import sys
+import threading
 import time
 from typing import IO
 
@@ -104,24 +108,106 @@ class NoProgress(Exception):
         self.seconds = seconds
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
-    """POSIX: start_new_session made the shell its own group leader, so its pid
-    is the group id. A group that already died raises, and that is a win."""
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
-
-
 def _kill_tree(proc: subprocess.Popen) -> None:
     """The shell and everything under it, then reap the shell."""
+    _kill_pid(proc.pid)
+    proc.wait()
+
+
+def _kill_pid(pid: int) -> None:
     if os.name == "nt":
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     else:
-        _kill_group(proc)
-    proc.wait()
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+class _ProcessOwner:
+    def __init__(self, process):
+        self.process = process
+        self._requests = threading.Lock()
+
+    def receive(self) -> None:
+        from .errors import ToolError
+        line = self.process.stdout.readline()
+        if not line:
+            raise ToolError("measurement owner stopped before confirming ownership")
+        result = json.loads(line)
+        if not result.get("ok"):
+            raise ToolError(result.get("error", "measurement owner refused the operation"))
+
+    def request(self, operation: str, pid: int) -> None:
+        from .errors import ToolError
+        try:
+            with self._requests:
+                self.process.stdin.write(json.dumps((operation, pid)) + "\n")
+                self.process.stdin.flush()
+                self.receive()
+        except OSError as error:
+            raise ToolError("measurement owner stopped during command registration") from error
+
+    def check(self) -> None:
+        from .errors import ToolError
+        if self.process.poll() is not None:
+            raise ToolError("measurement owner stopped before publication")
+
+
+@contextmanager
+def own_processes(paths):
+    """Own measurement outputs across caller crashes and command cleanup."""
+    process = subprocess.Popen([sys.executable, "-m", "crapkit._process_owner", *map(str, paths)],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+    owner = _ProcessOwner(process)
+    try:
+        owner.receive()
+        yield owner
+        owner.check()
+    finally:
+        _close_input(process)
+        process.wait()
+        process.stdout.close()
+
+
+def _close_input(process) -> None:
+    try:
+        process.stdin.close()
+    except OSError:
+        pass
+
+
+_OWNED_LAUNCH = """import os, sys
+if sys.stdin.buffer.readline() != b'go\\n':
+    raise SystemExit(1)
+if os.name != 'nt':
+    with open(os.devnull, 'rb') as source:
+        os.dup2(source.fileno(), 0)
+    os.execl('/bin/sh', '/bin/sh', '-c', sys.argv[1])
+import subprocess
+raise SystemExit(subprocess.call(sys.argv[1], shell=True, stdin=subprocess.DEVNULL))
+"""
+
+
+def _spawn(command: str, out, owner, kwargs) -> subprocess.Popen:
+    if owner is None:
+        return subprocess.Popen(command, shell=True, stdin=subprocess.DEVNULL,
+                                stdout=out, stderr=subprocess.STDOUT, **_OWN_GROUP, **kwargs)
+    process = subprocess.Popen([sys.executable, "-c", _OWNED_LAUNCH, command],
+                               stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT,
+                               **_OWN_GROUP, **kwargs)
+    try:
+        owner.request("add", process.pid)
+        process.stdin.write(b"go\n")
+        process.stdin.flush()
+        return process
+    except BaseException:
+        _kill_tree(process)
+        _close_input(process)
+        raise
 
 
 def _stream_size(stream: IO | None) -> int:
@@ -169,7 +255,7 @@ def _wait_watching(proc: subprocess.Popen, timeout: float | None, no_progress: f
 
 
 def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None,
-                no_progress: float | None = None, **popen_kwargs) -> int | None:
+                no_progress: float | None = None, owner=None, **popen_kwargs) -> int | None:
     """The exit code, or None when the deadline expired and the tree was killed.
     A timeout of None is no deadline at all: the caller waits for the command.
 
@@ -186,11 +272,25 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
     `stream` takes stdout and stderr both, and must be a real file (the lane log
     is one). A file needs no reader, so the kill lands on the deadline the same
     way; a pipe would reintroduce the drain and is the one thing not to pass.
+
+    `owner` registers the command before launch. Its separate process keeps
+    measurement locks until registered command trees stop after a caller crash.
     """
     out = subprocess.DEVNULL if stream is None else stream
-    proc = subprocess.Popen(command, shell=True, stdin=subprocess.DEVNULL,
-                            stdout=out, stderr=subprocess.STDOUT,
-                            **_OWN_GROUP, **popen_kwargs)
+    proc = _spawn(command, out, owner, popen_kwargs)
+    try:
+        return _wait_bounded(proc, timeout, no_progress, stream)
+    except BaseException:
+        if proc.poll() is None:
+            _kill_tree(proc)
+        raise
+    finally:
+        if owner is not None:
+            proc.stdin.close()
+            owner.request("remove", proc.pid)
+
+
+def _wait_bounded(proc, timeout, no_progress, stream) -> int | None:
     if no_progress and stream is not None and _stream_size(stream) != -1:
         return _wait_watching(proc, timeout, no_progress, stream)
     try:

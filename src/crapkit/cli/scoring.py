@@ -126,13 +126,12 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
-def _lane_reuse(root: Path, lane, scope_paths: dict, reuse_artifacts: bool, reuse_unchanged: bool,
-                git) -> bool:
+def _lane_reuse(root: Path, lane, reuse_artifacts: bool, reuse_unchanged: bool) -> bool:
     from ..lanes import lane_unchanged
 
     if reuse_artifacts:
         return True
-    if reuse_unchanged and lane_unchanged(root, lane, scope_paths, git):
+    if reuse_unchanged and lane_unchanged(root, lane):
         print(f"crapkit: lane {lane.name!r}: measurement inputs unchanged; reusing without rerun",
               file=sys.stderr)
         return True
@@ -144,7 +143,7 @@ def _progress(message: str) -> None:
     sys.stderr.write(f"crapkit: {message}\n")
 
 
-def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None):
+def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None, owner=None):
     """One lane's outcome or the error that failed it; a failed lane never sinks
     the run. The error object, not its text: a refusal carries the modification
     times of the files the attempt left unwritten, which the fold persists."""
@@ -152,37 +151,37 @@ def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, 
 
     try:
         return run_lane(root, lane, reuse_artifact=reuse, scope_paths=scope_paths, git=git,
-                        dead_lines=dead_lines), ""
+                        dead_lines=dead_lines, owner=owner), ""
     except ToolError as exc:
         return None, exc
 
 
-def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None):
+def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None, owner=None):
     _progress(f"lane {lane.name!r} started")
-    outcome = _run_one_lane(root, lane, reuse, scope_paths, git, dead_lines)
+    outcome = _run_one_lane(root, lane, reuse, scope_paths, git, dead_lines, owner)
     _progress(f"lane {lane.name!r} finished")
     return outcome
 
 
 def _execute_parallel(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int,
-                      dead_lines=None) -> dict:
+                      dead_lines=None, owner=None) -> dict:
     """Lanes are subprocess-bound, so threads are enough: subprocess.run drops the
     GIL for the whole command and each lane streams to its own log file."""
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=max_parallel) as pool:
-        futures = {lane: pool.submit(_traced_lane, root, lane, reuse[lane], scope_paths, git, dead_lines)
+        futures = {lane: pool.submit(_traced_lane, root, lane, reuse[lane], scope_paths, git, dead_lines, owner)
                    for lane in ordered}
     return {lane: future.result() for lane, future in futures.items()}
 
 
 def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int,
-                   dead_lines=None) -> dict:
+                   dead_lines=None, owner=None) -> dict:
     """Lane outcomes, serial below 2 and parallel otherwise."""
     if max_parallel < 2:
-        return {lane: _run_one_lane(root, lane, reuse[lane], scope_paths, git, dead_lines)
+        return {lane: _run_one_lane(root, lane, reuse[lane], scope_paths, git, dead_lines, owner)
                 for lane in ordered}
-    return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel, dead_lines)
+    return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel, dead_lines, owner)
 
 
 def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
@@ -224,6 +223,15 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
                reuse_unchanged: bool = False, max_parallel: int = 1, git=None, dead_lines=None):
+    from ..lanes import measurement_owner
+
+    with measurement_owner(root, lanes) as owner:
+        return _run_owned_lanes(root, lanes, reuse_artifacts, scope_paths, reuse_unchanged,
+                                max_parallel, git, dead_lines, owner)
+
+
+def _run_owned_lanes(root, lanes, reuse_artifacts, scope_paths, reuse_unchanged,
+                      max_parallel, git, dead_lines, owner):
     """Run each lane; a failed lane is recorded and skipped, never fatal alone.
 
     Every reuse decision is taken up front, on one thread: it reads the working
@@ -235,13 +243,14 @@ def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | Non
     from ..lanes import lane_order
 
     facts = git or GitFacts(root)
-    reuse = {lane: _lane_reuse(root, lane, scope_paths or {}, reuse_artifacts,
-                               reuse_unchanged, facts)
+    reuse = {lane: _lane_reuse(root, lane, reuse_artifacts, reuse_unchanged)
              for lane in lanes}
     ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
-    return _collect_lanes(root, lanes,
-                          _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel,
-                                         dead_lines))
+    outcomes = _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel,
+                              dead_lines, owner)
+    if owner is not None:
+        owner.check()
+    return _collect_lanes(root, lanes, outcomes)
 
 
 class _ScoredRun(NamedTuple):

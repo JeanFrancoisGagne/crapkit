@@ -4,8 +4,8 @@ These three commands were 43% covered by tests/unit: every rule they enforce was
 pinned one layer down (score_rows, lane_order, overlay_stale_coverage) and the
 commands that compose those rules were reached only from tests/e2e, at a process
 each. `main(argv)` is the same entry point `python -m crapkit` uses, so the
-assertions here are the ones an e2e test makes â€” exit code, stdout, stderr,
-store rows â€” for a hundredth of the wall time.
+assertions here are the ones an e2e test makes — exit code, stdout, stderr,
+store rows — for a hundredth of the wall time.
 
 Every test asserts through the command. Nothing here reaches into a helper's
 return value.
@@ -368,7 +368,7 @@ def test_a_ratchet_mark_the_repo_already_signed_for_passes_the_gate(scored, caps
 
 def test_an_untracked_file_is_gated_in_full_and_says_so(scored, capsys):
     """git diff sees nothing of a file git tracks nothing of, so without this
-    its violations print and the command still exits 0 â€” the gate lying."""
+    its violations print and the command still exits 0 — the gate lying."""
     (scored / "src" / "extra.ts").write_text(
         "export function loops(n: number): number {\n"
         + "".join(f"  if (n > {i}) {{ return {i}; }}\n" for i in range(1, 8))

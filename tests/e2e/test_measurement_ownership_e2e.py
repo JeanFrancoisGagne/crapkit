@@ -1,0 +1,143 @@
+"""Two CLI processes cannot publish each other's measurement artifacts."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+import pytest
+
+from test_measurement_inputs_e2e import measured_repo, run_cli  # noqa: F401
+
+
+PAUSED = '''import sys, time
+from pathlib import Path
+import crapkit.lanes as lanes
+import crapkit.cli.scoring as scoring
+from crapkit.cli import main
+root = Path(sys.argv[1])
+module, name = (lanes, '_read_and_parse') if sys.argv[2] == 'parse' else (scoring, '_collect_lanes')
+original = getattr(module, name)
+def pause(*args, **kwargs):
+    (root/'.crapkit/ready').write_text('ready')
+    until = time.monotonic() + 20
+    while not (root/'.crapkit/release').exists() and time.monotonic() < until:
+        time.sleep(.02)
+    return original(*args, **kwargs)
+setattr(module, name, pause)
+raise SystemExit(main(['coverage', '--repo', str(root), '--json']))
+'''
+WAIT = '''
+if os.environ.get('CRAPKIT_PAUSE_MEASUREMENT'):
+    import time
+    (folder/'ready').write_text('ready')
+    until = time.monotonic() + 4
+    while not (folder/'release').exists() and time.monotonic() < until:
+        time.sleep(.02)
+    (folder/'late-write').write_text('suite was still alive')
+'''
+RETEST = '''import json, sys
+from pathlib import Path
+from crapkit.config import load_config_text
+from crapkit.lanes import retest_lane
+root = Path(sys.argv[1])
+lane = load_config_text((root/'crapkit.toml').read_text(encoding='utf-8')).lanes[0]
+lane = lane._replace(retest_command=lane.command)
+print(json.dumps(sorted(retest_lane(root, lane, {'tests.test_app::test_f'}))))
+'''
+
+
+def wait_for(path, process):
+    until = time.monotonic() + 15
+    while not path.exists() and process.poll() is None and time.monotonic() < until:
+        time.sleep(.02)
+    assert path.exists(), process.communicate(timeout=10)
+
+
+@pytest.fixture
+def paused_measurement(measured_repo):
+    processes = []
+    def start(phase):
+        environment = dict(os.environ)
+        if phase in ('execute', 'retest'):
+            script = measured_repo / 'measure.py'
+            script.write_text(script.read_text().replace("count = folder /", WAIT + "\ncount = folder /"))
+            environment['CRAPKIT_PAUSE_MEASUREMENT'] = '1'
+            command = [sys.executable, '-m', 'crapkit', 'coverage', '--repo', str(measured_repo), '--json']
+            if phase == 'retest':
+                command = [sys.executable, '-c', RETEST, str(measured_repo)]
+        else:
+            command = [sys.executable, '-c', PAUSED, str(measured_repo), phase]
+        process = subprocess.Popen(command, cwd=measured_repo, env=environment,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding='utf-8')
+        processes.append(process)
+        wait_for(measured_repo / '.crapkit/ready', process)
+        return process
+    yield start
+    (measured_repo / '.crapkit/release').touch()
+    for process in processes:
+        process.communicate(timeout=30)
+
+
+@pytest.mark.parametrize('phase', ['execute', 'parse', 'stamp'])
+def test_one_owner_spans_execution_parsing_and_stamp_publication(measured_repo, paused_measurement, phase):
+    first = paused_measurement(phase)
+    second = run_cli(measured_repo, 'coverage', '--json')
+    assert second.returncode == 5, second.stdout + second.stderr
+    assert 'measurement already in use' in second.stderr
+    (measured_repo / '.crapkit/release').touch()
+    out, err = first.communicate(timeout=30)
+    assert first.returncode == 0, out + err
+    assert json.loads(out)['crap_load'] == 1
+
+
+@pytest.mark.parametrize('different_temp', [False, True])
+def test_shared_absolute_artifacts_have_one_owner_across_checkouts(measured_repo, paused_measurement, tmp_path, different_temp):
+    other = tmp_path / 'other'
+    shutil.copytree(measured_repo, other)
+    config = other / 'crapkit.toml'
+    text = config.read_text()
+    for name in ('cov.json', 'junit.xml'):
+        text = text.replace(json.dumps('.crapkit/' + name), json.dumps(str(measured_repo / '.crapkit' / name)))
+    config.write_text(text, encoding='utf-8')
+    paused_measurement('execute')
+    alternative = tmp_path / 'another-temp'
+    alternative.mkdir()
+    environment = {'TEMP': str(alternative), 'TMP': str(alternative)} if different_temp else {}
+    second = run_cli(other, 'coverage', '--json', env_extra=environment)
+    assert second.returncode == 5, second.stdout + second.stderr
+    assert 'measurement already in use' in second.stderr
+
+
+def test_independent_checkout_artifacts_can_run_at_the_same_time(measured_repo, paused_measurement, tmp_path):
+    other = tmp_path / 'independent'
+    subprocess.run(['git', 'worktree', 'add', '--detach', str(other), 'HEAD'],
+                   cwd=measured_repo, check=True, capture_output=True)
+    paused_measurement('execute')
+    second = run_cli(other, 'coverage', '--json')
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert json.loads(second.stdout)['crap_load'] == 1
+
+
+def test_retest_owns_the_same_junit_that_measurement_reads(measured_repo, paused_measurement):
+    first = paused_measurement('retest')
+    second = run_cli(measured_repo, 'coverage', '--reuse-artifacts', '--json')
+    assert second.returncode == 5, second.stdout + second.stderr
+    assert 'measurement already in use' in second.stderr
+    (measured_repo / '.crapkit/release').touch()
+    out, err = first.communicate(timeout=30)
+    assert first.returncode == 0, out + err
+    assert json.loads(out) == ['tests.test_app::test_f']
+
+
+def test_a_killed_cli_stops_its_suite_before_releasing_ownership(measured_repo, paused_measurement):
+    first = paused_measurement('execute')
+    first.kill()
+    first.wait(timeout=10)
+    time.sleep(4.5)
+    assert not (measured_repo / '.crapkit/late-write').exists(), 'the suite outlived its measurement owner'
+    second = run_cli(measured_repo, 'coverage', '--json')
+    assert second.returncode == 0, second.stdout + second.stderr
