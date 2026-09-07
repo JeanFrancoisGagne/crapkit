@@ -6,6 +6,7 @@ that does lives with its family."""
 from __future__ import annotations
 
 import json
+import os
 import posixpath
 import sys
 from pathlib import Path
@@ -100,8 +101,9 @@ def _stand(repo: str | None) -> Path | None:
 def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:
     r"""One spelling for a file argument, whatever the shell handed in.
 
-    `src/a.py`, `src\a.py`, `./src/a.py` and the absolute path tab completion
-    returns all name one file, and every one of them has to reach
+    `src/a.py`, `./src/a.py` and the absolute path tab completion returns name
+    one file. Windows also accepts `src\a.py`; on POSIX that backslash is a
+    literal filename character. Every argument has to reach
     `universe.owning_scope` as the repo-relative posix path the scopes are
     declared in. Three commands spelled this as `raw.replace("\\", "/")` and
     nothing else, so the `./` form — the one shells, `find` and coding agents
@@ -116,7 +118,7 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     At the root, from a directory outside it, or under `--repo`, the argument
     is root-relative as it always was.
     """
-    path = raw.replace("\\", "/")
+    path = raw.replace("\\", "/") if os.name == "nt" else raw
     if _is_rooted(path):
         return _under_root(path, root)
     if _below(cwd, root):

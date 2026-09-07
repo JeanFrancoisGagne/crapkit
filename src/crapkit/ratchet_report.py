@@ -6,6 +6,8 @@ NEWEST commit in the history, never the wall clock.
 """
 from __future__ import annotations
 
+from .records import record_lines
+
 DAY = 86400
 
 
@@ -24,7 +26,7 @@ def _commit_delta(patch: str) -> tuple[dict, dict]:
     """The marks one commit's patch added and removed, keyed."""
     added: dict = {}
     removed: dict = {}
-    for line in patch.splitlines():
+    for line in record_lines(patch):
         if not line or line[0] not in "+-":
             continue
         mark = _mark_line(line)

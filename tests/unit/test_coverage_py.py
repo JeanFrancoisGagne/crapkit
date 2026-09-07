@@ -91,7 +91,7 @@ def test_a_report_with_neither_branch_nor_statement_data_is_still_refused():
     hollow = {"meta": {"branch_coverage": False},
               "files": {"a.py": {"functions": {"f": {
                   "start_line": 1, "executed_lines": [1], "missing_lines": [],
-                  "summary": {"covered_lines": 1, "num_statements": 0}}}}}}
+                  "summary": {"covered_lines": 0, "num_statements": 0}}}}}}
 
     with pytest.raises(ToolError, match="branch"):
         parse_coveragepy(json.dumps(hollow), path_prefix="")

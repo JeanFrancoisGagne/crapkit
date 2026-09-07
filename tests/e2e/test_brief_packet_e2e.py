@@ -198,7 +198,7 @@ def test_the_packet_carries_the_commands_to_run_next(repo: Path):
 
     assert out["commands"] == {
         "gate": "crapkit rescore core/alpha.py --gate",
-        "scoped_tests": 'python -m pytest "core/alpha.py"',
+        "scoped_tests": 'crapkit test-scoped core/alpha.py',
         "verify": "crapkit verify",
         "refresh": "crapkit coverage --reuse-unchanged",
         "refresh_writes_run": True,

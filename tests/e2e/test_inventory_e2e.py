@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -26,11 +27,66 @@ def cache_entries(repo: Path) -> set[str]:
 
 @pytest.fixture()
 def mini_repo(tmp_path: Path) -> Path:
+    seed = tmp_path.parent / "inventory-seed"
+    if not seed.exists():
+        seed.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=seed.parent) as directory:
+            prepared = Path(directory)
+            shutil.copytree(FIXTURES / "mini_repo", prepared, dirs_exist_ok=True)
+            git_init_repo(prepared)
+            git_commit_all(prepared, "init")
+            prepared.rename(seed)
     repo = tmp_path / "mini"
-    shutil.copytree(FIXTURES / "mini_repo", repo)
-    git_init_repo(repo)
-    git_commit_all(repo, "init")
+    shutil.copytree(seed, repo)
     return repo
+
+
+def test_mini_fixture_reuses_pristine_input_without_sharing_git_or_measurements(tmp_path, monkeypatch):
+    initializations = []
+    original = git_init_repo
+
+    def initialize(repo):
+        initializations.append(repo)
+        return original(repo)
+
+    monkeypatch.setitem(globals(), "git_init_repo", initialize)
+    first = mini_repo.__wrapped__(tmp_path / "one")
+    second = mini_repo.__wrapped__(tmp_path / "two")
+    source = (second / "src/app.ts").read_bytes()
+    index = (second / ".git/index").read_bytes()
+    head = (second / ".git/refs/heads/main").read_bytes()
+    (first / "src/app.ts").write_text("export const privateValue = 42;\n")
+    git_commit_all(first, "private source change")
+    assert run_cli(first, "inventory", "--json").returncode == 0
+    assert (second / "src/app.ts").read_bytes() == source
+    assert (second / ".git/index").read_bytes() == index
+    assert (second / ".git/refs/heads/main").read_bytes() == head
+    result = run_cli(second, "inventory", "--json")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["cache_hits"] == 0
+    assert json.loads(result.stdout)["functions"] == 4
+    assert len(initializations) == 1, "commit the pristine shared input only once"
+
+
+def test_mini_fixture_retries_setup_after_an_interrupted_git_initialization(tmp_path, monkeypatch):
+    initializations = []
+    original = git_init_repo
+
+    def interrupted(repo):
+        initializations.append(repo)
+        original(repo)
+        if len(initializations) == 1:
+            raise RuntimeError("interrupted fixture initialization")
+
+    monkeypatch.setitem(globals(), "git_init_repo", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted fixture initialization"):
+        mini_repo.__wrapped__(tmp_path / "first")
+    root = mini_repo.__wrapped__(tmp_path / "retry")
+    result = run_cli(root, "inventory", "--json")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["functions"] == 4
+    mini_repo.__wrapped__(tmp_path / "warm")
+    assert len(initializations) == 2
 
 
 def test_inventory_end_to_end_deterministic_and_cached(mini_repo: Path):

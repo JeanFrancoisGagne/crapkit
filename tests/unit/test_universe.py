@@ -57,9 +57,9 @@ def test_output_order_is_sorted_and_deterministic_regardless_of_input_order():
     assert assign_files(files, CFG)["src"] == ["src/a.ts", "src/m.ts", "src/z.ts"]
 
 
-def test_backslash_paths_normalize_so_windows_git_output_cannot_split_scopes():
-    assigned = assign_files(["src\\a.ts"], CFG)
-    assert assigned["src"] == ["src/a.ts"]
+def test_git_paths_preserve_literal_backslashes_in_the_filename():
+    assigned = assign_files(["src/a\\b.ts"], CFG)
+    assert assigned["src"] == ["src/a\\b.ts"]
 
 
 def test_a_scope_path_written_with_a_trailing_slash_still_claims_its_files():
@@ -95,9 +95,7 @@ _ORACLE_GLOBS = (
     "**/*.test.*", "**/*.spec.*", "**/test_*.py", "**/*_test.py", "**/conftest.py",
     "*.md", "src/[abc]*.ts", "src/mod?.ts", "**/*.TS",
 )
-# Corpus separators stay forward-slash on purpose: both callers normalize
-# backslashes BEFORE the matcher sees a path, and fnmatch's Windows normcase
-# would rewrite a backslash path's separators on only one side of the compare.
+# Git directory separators are forward slashes on every platform.
 _TOPS = ("src", "ui", "Deployed", "packages", "dist", "node_modules", "distro")
 # "deployed" and "src" appear as inner dirs too, so a root-anchored glob like
 # "deployed/**" gets its chance to wrongly fire on "ui/deployed/x.ts".

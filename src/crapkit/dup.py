@@ -8,6 +8,8 @@ shingle are ever compared. Tiny functions are structural noise and stay out.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
+import heapq
 from typing import NamedTuple
 
 from .keys import lookup
@@ -115,19 +117,39 @@ def _pairable_owners(indexed: list[tuple[InventoryRow, set[int]]]) -> list[list[
     return [o for o in _owners_by_shingle(indexed).values() if type(o) is list]
 
 
-def _shared_counts(indexed: list[tuple[InventoryRow, set[int]]]) -> dict[tuple[int, int], int]:
-    shared: dict[tuple[int, int], int] = {}
+def _owner_groups(indexed: list[tuple[InventoryRow, set[int]]]) -> dict[int, list[list[int]]]:
+    """Shared owner lists, referenced by every owner that has a later neighbor."""
+    groups: dict[int, list[list[int]]] = {}
     for owners in _pairable_owners(indexed):
-        for i, a in enumerate(owners):
-            for b in owners[i + 1:]:
-                shared[(a, b)] = shared.get((a, b), 0) + 1
-    return shared
+        for owner in owners[:-1]:
+            groups.setdefault(owner, []).append(owners)
+    return groups
+
+
+def _neighbor_counts(owner: int, groups: list[list[int]]) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for owners in groups:
+        for neighbor in owners[bisect_right(owners, owner):]:
+            counts[neighbor] = counts.get(neighbor, 0) + 1
+    return counts
+
+
+def _shared_counts(indexed: list[tuple[InventoryRow, set[int]]]):
+    """One owner's neighbors at a time; never retain all function pairs."""
+    for owner, groups in _owner_groups(indexed).items():
+        for neighbor, count in _neighbor_counts(owner, groups).items():
+            yield owner, neighbor, count
+
+
+def _function_key(function: dict) -> tuple:
+    return (function["path"], function["start"], function["end"],
+            function["long_name"], function["nloc"])
 
 
 def _pair_payload(a: InventoryRow, b: InventoryRow, similarity: float) -> dict:
     functions = sorted(({"path": r.path, "long_name": r.long_name, "start": r.start,
                          "end": r.end, "nloc": r.nloc} for r in (a, b)),
-                       key=lambda f: (f["path"], f["start"]))
+                       key=_function_key)
     # `contained` is False on every pair that gets here, because find_duplicates
     # drops the nested ones before building a payload. It is still emitted: a
     # consumer that reads pairs and twins together gets one shape, and False is
@@ -208,8 +230,43 @@ def find_twins(target, rows: list[InventoryRow], sources: dict[str, str], *,
         return []
     entries = _entries_at(indexed, rows, sources, min_lines)
     kept = list(_qualified_twins(mine, target, entries, similarity))
-    kept.sort(key=lambda t: (-t["similarity"], t["path"], t["start"]))
+    kept.sort(key=lambda t: (-t["similarity"], _function_key(t), t["contained"]))
     return kept[:top]
+
+
+class _Pair(NamedTuple):
+    rank: tuple
+    left: int
+    right: int
+    similarity: float
+
+
+def _row_key(row: InventoryRow) -> tuple:
+    return row.path, row.start, row.end, row.long_name, row.nloc
+
+
+def _candidate(indexed, keys, left: int, right: int, count: int, minimum: float) -> _Pair | None:
+    a, b = indexed[left], indexed[right]
+    score = count / min(len(a[1]), len(b[1]))
+    if not (score >= minimum) or _nested_spans(a[0], b[0]):
+        return None
+    if keys[right] < keys[left]:
+        left, right = right, left
+    return _Pair((-round(score, 4), keys[left], keys[right]), left, right, score)
+
+
+def _qualified_pairs(indexed, minimum: float):
+    keys = [_row_key(row) for row, _ in indexed]
+    for left, right, count in _shared_counts(indexed):
+        pair = _candidate(indexed, keys, left, right, count, minimum)
+        if pair is not None:
+            yield pair
+
+
+def _best_pairs(pairs, top: int) -> list[_Pair]:
+    if top < 0:
+        return sorted(pairs, key=lambda pair: pair.rank)[:top]
+    return heapq.nsmallest(top, pairs, key=lambda pair: pair.rank)
 
 
 def find_duplicates(rows: list[InventoryRow], load_sources, *,
@@ -231,12 +288,6 @@ def find_duplicates(rows: list[InventoryRow], load_sources, *,
     it: nothing here ever holds a reference, so the index outlives the texts.
     """
     indexed = _function_shingles(rows, load_sources(), min_lines)
-    pairs = []
-    for (ia, ib), count in _shared_counts(indexed).items():
-        a, b = indexed[ia], indexed[ib]
-        score = count / min(len(a[1]), len(b[1]))
-        if score >= similarity and not _nested_spans(a[0], b[0]):
-            pairs.append(_pair_payload(a[0], b[0], score))
-    pairs.sort(key=lambda p: (-p["similarity"], p["functions"][0]["path"],
-                              p["functions"][0]["start"]))
-    return pairs[:top]
+    selected = _best_pairs(_qualified_pairs(indexed, similarity), top)
+    return [_pair_payload(indexed[pair.left][0], indexed[pair.right][0], pair.similarity)
+            for pair in selected]

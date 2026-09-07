@@ -297,6 +297,7 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
     """Grant --override for pure gate violations; regressions and new failures
     never qualify (`_refuse_override` says so once the verdict is printed)."""
     from ..override import record_override
+    from ..verify import settle_verdict
 
     if not _override_applies(verdict, reason):
         return verdict, []
@@ -305,7 +306,7 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
                     ratchet_input=ratchet_input)
     overridden = verdict.gate_violations
-    return verdict._replace(ok=True, gate_violations=[]), overridden
+    return settle_verdict(verdict._replace(gate_violations=[])), overridden
 
 
 def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
@@ -446,24 +447,20 @@ def _print_finding_split(verdict) -> None:
               "(uncommitted edits and untracked files)")
 
 
-def _verify_exit_code(verdict, diff_breach: bool = False) -> int:
+def _verify_exit_code(verdict) -> int:
     if verdict.gate_violations:
         return 6
     if verdict.ratchet_regressions:
         return 7
     if verdict.new_failures:
         return 8
-    return 9 if diff_breach else 0
+    return 9 if verdict.uncovered_violations else 0
 
 
-def _diff_cover_breach(cfg, uncovered: list) -> bool:
-    if cfg.diff_uncovered_max is None:
-        return False
-    if len(uncovered) <= cfg.diff_uncovered_max:
-        return False
-    print(f"diff coverage: {len(uncovered)} uncovered changed line(s) over the ceiling "
-          f"{cfg.diff_uncovered_max}", file=sys.stderr)
-    return True
+def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
+    if verdict.uncovered_violations:
+        print(f"diff coverage: {len(verdict.uncovered_violations)} uncovered changed line(s) "
+              f"over the ceiling {maximum}", file=sys.stderr)
 
 
 def _baseline_failures(baseline: dict) -> set:
@@ -594,7 +591,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import changed_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
-    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling
+    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -637,9 +634,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _warn_diff_uncovered(uncovered)
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
-    breach = _diff_cover_breach(cfg, uncovered)
-    if breach:
-        verdict = verdict._replace(ok=False)  # a breached run never advances the baseline
+    verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
+    _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=provenance, kind="verify")
     verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
@@ -656,7 +652,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                     **_receipt(tool_versions, saved.sha256, changes)},
                    verdict, overridden, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
-    return _verify_exit_code(verdict, breach)
+    return _verify_exit_code(verdict)
 
 
 def _flake_retry(root: Path, cfg, provenance: dict, new_failures: set) -> set:
@@ -674,6 +670,8 @@ def _flake_retry(root: Path, cfg, provenance: dict, new_failures: set) -> set:
 
 
 def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
+    from ..verify import settle_verdict
+
     if not verdict.new_failures:
         return verdict
     survivors = _flake_retry(root, cfg, provenance, set(verdict.new_failures))
@@ -681,8 +679,7 @@ def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
         return verdict
     print(f"flake retry: {len(verdict.new_failures) - len(survivors)} of "
           f"{len(verdict.new_failures)} new failures passed on rerun", file=sys.stderr)
-    ok = not (verdict.gate_violations or verdict.ratchet_regressions or survivors)
-    return verdict._replace(ok=ok, new_failures=sorted(survivors))
+    return settle_verdict(verdict._replace(new_failures=sorted(survivors)))
 
 
 def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:

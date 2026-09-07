@@ -288,7 +288,7 @@ py.json
 | `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
 | `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. |
 | `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
-| `mutate-pool/` | The `w0..wN` worker worktrees `mutation_workers > 1` keeps. Removed by `crapkit mutate --drop-pool`. | |
+| `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
 | `report.html` | Where `crapkit report` writes by default. | |
 
 Since 0.4.5 the rollup is filled once per run and pruned with its run, which is why `trend`
@@ -1054,11 +1054,19 @@ $ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 
 ### The kill takes the whole process tree
 
-`command` runs under a shell, so the shell is the child and your runner is a grandchild.
-Killing the shell alone leaves the suite running with nothing waiting on it. Since 0.4.5
-the command starts in its own process group and the deadline kills the group: `taskkill /T`
-on Windows, `killpg` on POSIX. crapkit waits for the tree to die before it moves on, so the
-working directory the lane ran in is free.
+`command` runs under a shell, so stopping the shell alone can leave the suite running.
+Crapkit registers the launcher before releasing it to start the command. A separate
+owner keeps resource locks until command cleanup finishes, even if the caller dies.
+
+Windows uses a Job that retains descendants after their parent exits. POSIX uses
+the command's process group and keeps its leader unreaped until cleanup completes.
+Normal command exit, timeout and caller death stop the owned descendants before
+resources are released. A command with no timeout still has no deadline.
+
+POSIX commands must retain their inherited process group. A daemon that explicitly
+escapes with `setsid` is outside that ownership. Linux confirms group termination
+through `/proc`; other POSIX hosts use the system `ps` command. Windows waits until
+the Job has no active processes.
 
 The lane above spawns a grandchild that appends a line to `ticks.txt` twice a second for
 30 s. Two attempts at a 2 s deadline, and the file stops growing the moment the deadline

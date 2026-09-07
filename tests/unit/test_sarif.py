@@ -51,7 +51,7 @@ def test_gate_violations_are_errors():
 # code-scanning UI reads dropped them on the floor.
 
 def test_every_uncovered_changed_line_gets_its_own_located_finding():
-    first, second = diff_uncovered_results([("src/a.py", 12), ("src\\b.py", 4)])
+    first, second = diff_uncovered_results([("src/a.py", 12), ("src/b.py", 4)])
     assert first["ruleId"] == "crapkit/diff-uncovered"
     assert first["level"] == "warning"
     loc = first["locations"][0]["physicalLocation"]

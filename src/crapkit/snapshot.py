@@ -9,6 +9,7 @@ from collections.abc import Iterable, Iterator
 from typing import NamedTuple
 
 from .merge import FunctionRecord
+from .records import encode_record
 
 
 class InventoryRow(NamedTuple):
@@ -49,4 +50,4 @@ def tsv_lines(rows: Iterable[InventoryRow]) -> Iterator[str]:
     """
     yield "\t".join(InventoryRow._fields) + "\n"
     for r in rows:
-        yield "\t".join(str(v) for v in r) + "\n"
+        yield encode_record(r) + "\n"

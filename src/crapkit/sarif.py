@@ -5,6 +5,8 @@ locations are contract. Every uri is repo-relative with forward slashes.
 """
 from __future__ import annotations
 
+from urllib.parse import quote, unquote
+
 from . import __version__
 
 _RULES = (
@@ -24,7 +26,7 @@ def _result(rule_id: str, level: str, path: str, line: int, text: str) -> dict:
         "ruleId": rule_id, "level": level,
         "message": {"text": text},
         "locations": [{"physicalLocation": {
-            "artifactLocation": {"uri": path.replace("\\", "/")},
+            "artifactLocation": {"uri": quote(path, safe="/")},
             "region": {"startLine": line},
         }}],
     }
@@ -97,6 +99,6 @@ def _property(text: str) -> str:
 
 def github_annotation(result: dict) -> str:
     loc = result["locations"][0]["physicalLocation"]
-    return (f"::{result['level']} file={_property(loc['artifactLocation']['uri'])},"
+    return (f"::{result['level']} file={_property(unquote(loc['artifactLocation']['uri']))},"
             f"line={loc['region']['startLine']},title={_property(result['ruleId'])}"
             f"::{_esc(result['message']['text'])}")

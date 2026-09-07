@@ -20,6 +20,7 @@ from typing import NamedTuple
 
 from .invocation import _self
 from .score import ScoredRow
+from .records import decode_record, encode_record, record_lines
 
 _HEADER = "path\tlong_name\tcrap"
 KEY_VERSION = 1
@@ -56,10 +57,10 @@ def metric_version() -> str:
 
 def read_stamp(text: str) -> str:
     """The metric a marks file was written under; "" for one written before stamping."""
-    for line in text.splitlines():
-        if line.startswith(_KEY_STAMP):
+    for line in record_lines(text):
+        if _comment(line) and line.startswith(_KEY_STAMP):
             continue
-        if line.startswith("#"):
+        if _comment(line):
             return line[1:].strip()
         if line.strip():
             return ""
@@ -68,13 +69,17 @@ def read_stamp(text: str) -> str:
 
 def read_key_version(text: str) -> int:
     """Missing means the old start-only identity; an unknown format cannot compare."""
-    stamps = [line[len(_KEY_STAMP):] for line in text.splitlines()
-              if line.startswith(_KEY_STAMP)]
+    stamps = _key_stamps(text)
     if not stamps:
         return 0
     if len(stamps) != 1 or stamps[0] not in ("0", str(KEY_VERSION)):
         raise ValueError("unreadable or unsupported ratchet key identity version")
     return int(stamps[0])
+
+
+def _key_stamps(text: str) -> list[str]:
+    return [line[len(_KEY_STAMP):] for line in record_lines(text)
+            if _comment(line) and line.startswith(_KEY_STAMP)]
 
 
 def _marked_group(entry: RatchetEntry, groups: set) -> tuple[str, str]:
@@ -145,9 +150,13 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
             f"re-baseline with `{_self()} ratchet seed`")
 
 
+def _comment(line: str) -> bool:
+    return line.startswith("#") and "\t" not in line
+
+
 def _is_skippable(line: str) -> bool:
     """Blank lines, the header and comment lines (the metric stamp) carry no mark."""
-    return not line.strip() or line == _HEADER or line.startswith("#")
+    return not line.strip() or line == _HEADER or _comment(line)
 
 
 def _finite_mark(text: str) -> float:
@@ -155,6 +164,19 @@ def _finite_mark(text: str) -> float:
     if not math.isfinite(mark):
         raise ValueError("ratchet mark must be finite")
     return mark
+
+
+def _read_mark(line: str, number: int) -> RatchetEntry:
+    try:
+        parts = decode_record(line)
+    except ValueError as exc:
+        raise ValueError(f"ratchet line {number} has an unreadable record: {exc}") from exc
+    if len(parts) != 3:
+        raise ValueError(f"ratchet line {number} has {len(parts)} fields, expected 3: {line!r}")
+    try:
+        return RatchetEntry(parts[0], parts[1], _finite_mark(parts[2]))
+    except ValueError as exc:
+        raise ValueError(f"ratchet line {number} has an unreadable mark: {line!r}") from exc
 
 
 def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
@@ -170,18 +192,13 @@ def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
     side is safe to salvage. The write side is not, and keeps `load_ratchet`.
     """
     entries, complaints = [], []
-    for i, line in enumerate(text.splitlines()):
+    for i, line in enumerate(record_lines(text)):
         if _is_skippable(line):
             continue
-        parts = line.split("\t")
-        if len(parts) != 3:
-            complaints.append(f"ratchet line {i + 1} has {len(parts)} fields, "
-                              f"expected 3: {line!r}")
-            continue
         try:
-            entries.append(RatchetEntry(parts[0], parts[1], _finite_mark(parts[2])))
-        except ValueError:
-            complaints.append(f"ratchet line {i + 1} has an unreadable mark: {line!r}")
+            entries.append(_read_mark(line, i + 1))
+        except ValueError as exc:
+            complaints.append(str(exc))
     return entries, complaints
 
 
@@ -219,7 +236,7 @@ def dump_ratchet(entries: list[RatchetEntry], *, stamp: str | None = None,
         lines.append(f"{_KEY_STAMP}{key_version}")
     lines.append(_HEADER)
     for e in sorted(entries, key=lambda e: (e.path, e.long_name)):
-        lines.append(f"{e.path}\t{e.long_name}\t{e.crap:.4f}")
+        lines.append(encode_record((e.path, e.long_name, f"{e.crap:.4f}")))
     return "\n".join(lines) + "\n"
 
 

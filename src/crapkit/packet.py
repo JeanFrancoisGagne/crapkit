@@ -6,13 +6,16 @@ the lane that measures the scope, and re-derived the commands to run. Each of
 those is a value some caller already holds, so each is a field here instead of a
 round trip.
 
-Every function in this module is pure: values in, a dict or a list out. The
-reads that feed them — the store, git, the config, the file texts — belong to
-the caller, which is what lets one batch of packets pay for them once. Nothing
-here removes or retypes a field `brief --json` already published; the packet is
-what was added around it.
+The caller reads the store, git, configuration and file texts once per batch.
+This module formats those values; command quoting follows the host platform's
+shells. The packet keeps the existing `brief --json` field types.
 """
 from __future__ import annotations
+
+import base64
+import os
+import re
+import shlex
 
 from .ratchet_report import DAY, mark_age_days
 from .keys import lookup, position, require_unambiguous
@@ -104,33 +107,49 @@ def lane_record(lane) -> dict | None:
             "timeout_seconds": lane.timeout_seconds}
 
 
-def scoped_test_command(template: str, files: list[str]) -> str:
-    """The scope's test command: its template with the quoted file list, or the
-    template verbatim when it names no {files}.
-
-    A template without {files} runs the scope's whole suite. That is the coarse
-    but working escape for the ordinary layout, where tests live in a top-level
-    tests/ directory owned by no scope: substituting a SOURCE file there hands
-    pytest a collection target with no tests in it (exit 5).
-    """
-    if "{files}" not in template:
-        return template
-    return template.replace("{files}", " ".join(f'"{f}"' for f in files))
+def _windows_encoded(arguments: list[str]) -> str:
+    """Cross cmd expansion and PowerShell parsing without exposing path text."""
+    quoted = " ".join("'" + arg.replace("'", "''") + "'" for arg in arguments)
+    script = ("$command = Get-Command crapkit -CommandType Application -TotalCount 1 -ErrorAction Stop; "
+              "$LASTEXITCODE = 1; & $command.Source " + quoted + "; exit $LASTEXITCODE")
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    return "powershell -NoProfile -NonInteractive -EncodedCommand " + encoded
 
 
-def commands(path: str, scoped: str | None, note: str = "") -> dict:
+def _windows_argument(argument: str) -> str:
+    if argument in ("--", "--gate") or re.fullmatch(r"[\w./:\\][-\w./:\\]*", argument, re.ASCII):
+        return argument
+    return '"' + argument + '"'
+
+
+def _console_command(arguments: list[str]) -> str:
+    if os.name != "nt":
+        return "crapkit " + " ".join(shlex.quote(arg) for arg in arguments)
+    interpreted = set('%!$`\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029')
+    if any(interpreted.intersection(arg) for arg in arguments):
+        return _windows_encoded(arguments)
+    return "crapkit " + " ".join(_windows_argument(arg) for arg in arguments)
+
+
+def _file_command(command: str, path: str, flags=()) -> str:
+    arguments = [command, path, *flags]
+    if path.startswith("-"):
+        arguments = [command, *flags, "--", path]
+    return _console_command(arguments)
+
+
+def commands(path: str, scoped: bool, note: str = "") -> dict:
     """The four commands a session runs next, with the paths already filled in.
 
-    `refresh_writes_run` rides beside `refresh` because the other three change
-    nothing on disk and that one does: a read-only session, or one holding a
-    tree it is not allowed to score, has to know which of the four it may run.
+    `refresh_writes_run` says refresh creates a coverage run. The other commands
+    can also write artifacts, caches or verification records.
     """
-    out = {"gate": f"crapkit rescore {path} --gate",
-           "scoped_tests": scoped,
+    out = {"gate": _file_command("rescore", path, ["--gate"]),
+           "scoped_tests": _file_command("test-scoped", path) if scoped else None,
            "verify": "crapkit verify",
            "refresh": REFRESH,
            "refresh_writes_run": True}
-    if scoped is None and note:
+    if not scoped and note:
         out["scoped_tests_note"] = note
     return out
 

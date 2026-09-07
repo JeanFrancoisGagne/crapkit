@@ -79,8 +79,11 @@ def test_a_clean_verdict_exits_0():
 
 
 def test_a_gate_violation_outranks_every_other_finding():
+    from crapkit.verify import UncoveredViolation
+
     assert _verify_exit_code(verdict(gate_violations=[GATE], ratchet_regressions=[ROSE],
-                                     new_failures=["t::a"]), True) == 6
+                                     new_failures=["t::a"],
+                                     uncovered_violations=(UncoveredViolation("src/a.py", 1),))) == 6
 
 
 def test_a_ratchet_regression_outranks_a_new_failure():
@@ -92,8 +95,11 @@ def test_a_new_failure_alone_is_8():
 
 
 def test_the_diff_coverage_breach_is_9_and_never_hides_a_finding():
-    assert _verify_exit_code(verdict(ok=True), True) == 9
-    assert _verify_exit_code(verdict(new_failures=["t::a"]), True) == 8
+    from crapkit.verify import UncoveredViolation
+
+    uncovered = (UncoveredViolation("src/a.py", 1),)
+    assert _verify_exit_code(verdict(uncovered_violations=uncovered)) == 9
+    assert _verify_exit_code(verdict(new_failures=["t::a"], uncovered_violations=uncovered)) == 8
 
 
 # --- which run the verdict is measured against --------------------------------

@@ -27,16 +27,17 @@ pass locally and get rejected in review.
 <!-- generated:test-schedule -->
 ```sh
 python tools/testing/run.py
-python -m pytest tests/unit -p no:randomly
+python -m pytest tests/unit -p no:randomly -n 4
 python -m pytest tests/e2e -n 8 -p no:randomly
 ```
 <!-- /generated:test-schedule -->
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. The shared runner runs `tests/unit`
-serially and `tests/e2e` with eight workers. In-process tests share imported state;
-the CLI tests run in isolated repositories. Both suites disable a globally installed
-pytest-randomly plugin to preserve their test order.
+with four workers and `tests/e2e` with eight workers. Use `--unit-workers 1` on the
+shared runner to reproduce a unit failure serially. Each worker has its own Python
+process and test directories. Both suites disable a globally installed
+pytest-randomly plugin.
 
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
 measurements, configured test contexts and JUnit results. Every direct run retains its

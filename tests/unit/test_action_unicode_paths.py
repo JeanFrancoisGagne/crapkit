@@ -13,7 +13,7 @@ def git(root, *args):
     return subprocess.check_output(["git", *args], cwd=root, text=True, encoding="utf-8").strip()
 
 
-@pytest.mark.parametrize("filename", ["café.py", "世界.py"])
+@pytest.mark.parametrize("filename", ["café.py", "世界.py", " leading.py", "line\u2028break.py"])
 def test_action_changed_files_match_unicode_worklist_paths(tmp_path, filename):
     git(tmp_path, "init")
     git(tmp_path, "config", "core.quotePath", "true")
@@ -31,5 +31,5 @@ def test_action_changed_files_match_unicode_worklist_paths(tmp_path, filename):
                    for line in (ROOT / "action.yml").read_text(encoding="utf-8").splitlines()
                    if 'diff --name-only "$BASE_SHA...HEAD"' in line)
     argv = [part.replace("$BASE_SHA", base) for part in shlex.split(command)]
-    actual = subprocess.check_output(argv, cwd=tmp_path, text=True, encoding="utf-8").splitlines()
+    actual = subprocess.check_output(argv, cwd=tmp_path).decode("utf-8").split("\0")[:-1]
     assert actual == [filename]

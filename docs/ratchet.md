@@ -30,6 +30,9 @@ Comments carrying the metric and key-format stamps, a header, then one row per m
 path, key name, CRAP to four decimals. Rows are sorted by that pair, so the file is
 diffable and merge conflicts are local.
 
+Rows containing delimiters use the shared [portable record encoding](portable-records.md).
+Ordinary three-column rows retain their bytes.
+
 Identity is `(path, key name)`, never the line number. Spans drift on every edit; names
 survive.
 

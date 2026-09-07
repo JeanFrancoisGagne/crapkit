@@ -265,8 +265,11 @@ def _judge(root: Path, rel: str) -> int:
     if in_scope is None:
         return 0
     diff = _diff_proc(root, rel)
-    records = _records(root, rel)
-    ranges = _changed(root, rel, diff.communicate()[0])
+    try:
+        records = _records(root, rel)
+        ranges = _changed(root, rel, _diff_text(diff))
+    finally:
+        diff.close()
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
     return _report(root, cfg, rel, breaches, ceiling, records)
 
@@ -304,21 +307,22 @@ def _scoped(cfg, rel: str) -> dict | None:
 def _diff_proc(root: Path, rel: str):
     """`git diff HEAD` for one file, started and not awaited.
 
-    Scoped to the path on purpose: 31.4 ms against 92.4 for the whole tree. Its
-    stderr is dropped because every way this fails (no HEAD, no git, a path git
-    dislikes) is the same answer, silence.
-
-    diff.relative because `rel` is relative to the crapkit root and git names a
-    diff's files relative to the repo TOP: under a root one directory down the
-    lookup in `_changed` missed every time and read as "nothing touched", so a
-    breaching edit drew silence. This spawn is its own, not gitio's, so it needs
-    its own flag.
+    Scoped to the path on purpose: 31.4 ms against 92.4 for the whole tree.
+    The commit gate's adapter owns display flags, exact paths and binary-marked
+    source fallback. A failed diff leaves the untracked-file decision to _changed.
     """
-    return subprocess.Popen(
-        ["git", "-c", "diff.relative=true", "diff", "HEAD", "-U0", "--no-renames", "--", rel],
-        cwd=root,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-        encoding="utf-8", errors="replace")
+    from ..gitio import SourcePatch
+
+    return SourcePatch(root, "HEAD", paths=(rel,))
+
+
+def _diff_text(diff) -> str:
+    from ..errors import GitError
+
+    try:
+        return diff.result()
+    except GitError:
+        return ""
 
 
 def _records(root: Path, rel: str) -> list:
@@ -329,9 +333,9 @@ def _records(root: Path, rel: str) -> list:
     therefore zero breaches, which is the right failure direction for a hook that
     fires while an agent is still typing.
     """
-    from ..analyze import analyze_source
+    from ..analyze import analyze_source, read_source
 
-    return analyze_source(rel, (root / rel).read_text(encoding="utf-8", errors="replace"))
+    return analyze_source(rel, read_source(str(root / rel)))
 
 
 def _changed(root: Path, rel: str, diff_text: str):

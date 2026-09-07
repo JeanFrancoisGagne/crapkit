@@ -18,6 +18,8 @@ def _escape_at(body: str, i: int) -> tuple[bytes, int]:
 def unquote_path(line: str) -> str:
     """Decode C-quoted Git paths; Git already supplies directory slashes."""
     if len(line) < 2 or not line.startswith('"') or not line.endswith('"'):
+        # Source patch bodies can carry opaque bytes; a path cannot.
+        line.encode("utf-8")
         return line
     body, out, i = line[1:-1], bytearray(), 0
     while i < len(body):

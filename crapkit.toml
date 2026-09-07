@@ -1,7 +1,7 @@
 [crapkit]
 target = 6
 notes = [
-  "Run tests/unit serially for in-process checks. Run tests/e2e with -n 8 for CLI checks against isolated git repositories. Both suites run before a change is done.",
+  "Run tests/unit with -n 4 and tests/e2e with -n 8. Use tools/testing/run.py --unit-workers 1 for a serial unit reproduction. Both suites run before a change is done.",
   "Every function crapkit ships stays at ccn <= 6. The ceiling is not a number to argue with: decompose the function, never raise it.",
 ]
 
@@ -9,7 +9,7 @@ notes = [
 # tests/, which no scope owns, so substituting a source path would hand pytest a
 # collection target holding no tests (exit 5).
 [crapkit.scoped_tests]
-src = "python -m pytest tests/unit -p no:randomly"
+src = "python -m pytest tests/unit -p no:randomly -n 4"
 
 [[scope]]
 name = "src"

@@ -82,6 +82,7 @@ def _refuse_unfinished(root: ET.Element) -> None:
     if notes:
         raise ToolError("junit reports a run that did not finish, so its coverage measures "
                         f"a partial suite: {'; '.join(notes)}")
+    _refuse_partial(root)
 
 
 def suite_summary(xml_text: str) -> tuple[set[str], dict]:
@@ -119,7 +120,6 @@ def passed_test_ids(xml_text: str) -> set[str]:
     """Completed passing cases; any failure or skip of the same ID wins."""
     root = _root(xml_text)
     _refuse_unfinished(root)
-    _refuse_partial(root)
     passed, blocked = set(), set()
     for case in root.iter("testcase"):
         destination = blocked if _is_failure(case) or case.find("skipped") is not None else passed
@@ -128,12 +128,20 @@ def passed_test_ids(xml_text: str) -> set[str]:
 
 
 def _refuse_partial(root: ET.Element) -> None:
-    for suite in root.iter("testsuite"):
-        declared = suite.get("tests")
-        if declared is None:
-            continue
-        if not declared.isdigit() or int(declared) != sum(1 for _ in suite.iter("testcase")):
-            raise ToolError("junit test count does not match its cases; the retry is incomplete")
+    """Count each subtree once, including aggregate testsuites declarations."""
+    counts = {}
+    for element in reversed(list(root.iter())):
+        count = int(element.tag == "testcase") + sum(counts[child] for child in element)
+        counts[element] = count
+        if element.tag in ("testsuite", "testsuites"):
+            _admit_declared_count(element.get("tests"), count)
+
+
+def _admit_declared_count(declared: str | None, count: int) -> None:
+    if declared is None:
+        return
+    if not declared.isascii() or not declared.isdigit() or int(declared) != count:
+        raise ToolError("junit test count does not match its cases; the report is incomplete")
 
 
 def _seconds(raw: str | None) -> float:

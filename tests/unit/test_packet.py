@@ -5,6 +5,8 @@ shape an agent parses can be argued about without a repo, a store, a git spawn
 or a lane. The wiring that feeds them lives in cli/queue.py and is measured in
 test_brief_batch.py.
 """
+import base64
+import shlex
 from types import SimpleNamespace
 
 from crapkit import packet
@@ -109,11 +111,11 @@ def test_the_lane_is_the_first_one_claiming_the_scope():
 # --- the commands an agent runs next ------------------------------------------
 
 def test_the_commands_carry_the_path_and_the_function_filled_in():
-    out = packet.commands("core/alpha.py", 'pytest "core/alpha.py"')
+    out = packet.commands("core/alpha.py", True)
 
     assert out == {
         "gate": "crapkit rescore core/alpha.py --gate",
-        "scoped_tests": 'pytest "core/alpha.py"',
+        "scoped_tests": 'crapkit test-scoped core/alpha.py',
         "verify": "crapkit verify",
         # a second `brief` re-reads the snapshot that is already stale, so the
         # field that answers `stale: true` has to be the one that writes a run
@@ -123,7 +125,7 @@ def test_the_commands_carry_the_path_and_the_function_filled_in():
 
 
 def test_an_unconfigured_scoped_test_command_is_null_and_says_why():
-    out = packet.commands("core/alpha.py", None,
+    out = packet.commands("core/alpha.py", False,
                           note="no [crapkit.scoped_tests] template for scope 'core'")
 
     assert out["scoped_tests"] is None
@@ -131,7 +133,26 @@ def test_an_unconfigured_scoped_test_command_is_null_and_says_why():
 
 
 def test_a_configured_command_carries_no_note():
-    assert "scoped_tests_note" not in packet.commands("a.py", "pytest")
+    assert "scoped_tests_note" not in packet.commands("a.py", True)
+
+
+def test_posix_commands_keep_each_path_in_one_argument(monkeypatch):
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="posix"))
+    path = "-a'b\\c\nd.py"
+    commands = packet.commands(path, True)
+    assert shlex.split(commands["scoped_tests"]) == ["crapkit", "test-scoped", "--", path]
+    assert shlex.split(commands["gate"]) == ["crapkit", "rescore", "--gate", "--", path]
+
+
+def test_windows_commands_quote_shell_operators_and_hide_expansion_text(monkeypatch):
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="nt"))
+    assert packet.commands("src/a & b.py", True)["gate"] == 'crapkit rescore "src/a & b.py" --gate'
+    encoded = packet.commands("src/a'%VAR%.py", True)["scoped_tests"]
+    prefix = "powershell -NoProfile -NonInteractive -EncodedCommand "
+    assert encoded.startswith(prefix)
+    script = base64.b64decode(encoded.removeprefix(prefix)).decode("utf-16le")
+    assert script == ("$command = Get-Command crapkit -CommandType Application -TotalCount 1 -ErrorAction Stop; "
+                      "$LASTEXITCODE = 1; & $command.Source 'test-scoped' 'src/a''%VAR%.py'; exit $LASTEXITCODE")
 
 
 # --- regrowth: complexity that came back --------------------------------------

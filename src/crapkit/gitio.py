@@ -1,6 +1,7 @@
 """Git shell layer: the tracked-file universe and the current commit."""
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from pathlib import Path
 from .errors import GitError
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -32,10 +34,21 @@ _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 # double-quote or a control character whatever this says, which is why
 # gitpaths.unquote_path stays for line-oriented history and diff headers.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
+# Parsed patches are a protocol, independent of display settings and converters.
+_PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
+          "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0",
+          "--output-indicator-new=+", "--output-indicator-old=-", "--output-indicator-context= ")
 
 
-def _git(root: Path, *args: str) -> str:
-    return _run(root, (*_RELATIVE, *args), args)
+def _environment() -> dict[str, str]:
+    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state."""
+    environment = dict(os.environ)
+    environment.pop("GIT_DIFF_OPTS", None)
+    return environment
+
+
+def _git(root: Path, *args: str, binary: bool = False) -> str:
+    return _run(root, (*_RELATIVE, *args), args, binary=binary)
 
 
 def _git_unflagged(root: Path, *args: str) -> str:
@@ -52,7 +65,7 @@ def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: b
     """`named` is what the error says ran — the injected flags are crapkit's
     business, not the caller's."""
     try:
-        res = subprocess.run(["git", *argv], cwd=root,
+        res = subprocess.run(["git", *argv], cwd=root, env=_environment(),
                              capture_output=True, text=not binary, encoding=None if binary else "utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
@@ -75,7 +88,7 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     consumer never mistakes an empty stream for an empty history.
     """
     try:
-        proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, stdout=subprocess.PIPE,
+        proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, env=_environment(), stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, encoding="utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
@@ -139,7 +152,7 @@ def staged_diff(root: Path) -> str:
     # --no-renames: a renamed file becomes delete+add, so a rename stays a
     # touched file and its functions still face the gate (and the old ratchet
     # entry's drop is matched by fresh gating at the new path).
-    return _git(root, "diff", "--cached", "-U0", "--no-renames")
+    return _read_source_patch(root, "--cached")
 
 
 def unstaged_paths(root: Path) -> set[str]:
@@ -159,7 +172,7 @@ def _diff_names(root: Path, *args: str) -> list[str]:
 
 
 def diff_since(root: Path, commit: str) -> str:
-    return _git(root, "diff", commit, "-U0", "--no-renames")
+    return _read_source_patch(root, commit)
 
 
 def diff_names_since(root: Path, commit: str) -> list[str]:
@@ -329,7 +342,7 @@ class _Started:
         self._args, self._root, self._text = args, root, text
         try:
             self._proc = subprocess.Popen(
-                ["git", *_RELATIVE, *args], cwd=root,
+                ["git", *_RELATIVE, *args], cwd=root, env=_environment(),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=text, encoding="utf-8" if text else None)
@@ -349,6 +362,73 @@ class _Started:
         if self._proc.returncode is None:
             self._proc.kill()
             self._proc.communicate()
+
+
+def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
+                      force_text: bool = False) -> tuple[str, ...]:
+    # Source body bytes need no character decoding to count hunk lines.
+    text = ("--text",) if force_text else ()
+    return ("--literal-pathspecs", "diff", *basis,
+            *_PATCH, *text, "--", *paths)
+
+
+def _binary_source_path(record: str, extensions: tuple[str, ...]) -> str | None:
+    added, removed, path = record.split("\t", 2)
+    if added == removed == "-" and path.endswith(extensions):
+        return path
+    return None
+
+
+def _binary_source_paths(root: Path, basis: tuple[str, ...],
+                         paths: tuple[str, ...]) -> tuple[str, ...]:
+    from .universe import LANGUAGE_EXTENSIONS
+
+    extensions = tuple(ext for group in LANGUAGE_EXTENSIONS.values() for ext in group)
+    records = _git_paths(root, "--literal-pathspecs", "diff", *basis, "--numstat", "-z",
+                         "--no-renames", "--no-ext-diff", "--no-textconv", "--", *paths)
+    return tuple(path for record in records if (path := _binary_source_path(record, extensions)))
+
+
+class SourcePatch:
+    """A parsed source patch, started before analysis imports need its answer.
+
+    Ordinary patches cost one process. A binary display attribute can hide an
+    analyzable source file, so only a binary summary triggers exact NUL metadata
+    and a forced patch for supported source paths. PNG/ZIP payloads stay binary.
+
+    UTF-8 surrogateescape preserves opaque body bytes, including admitted cp1252
+    source. It does not replace bytes or relax path decoding: gitpaths and NUL
+    metadata retain the strict UTF-8 identity contract.
+    """
+
+    def __init__(self, root: Path, *basis: str, paths: tuple[str, ...] = ()) -> None:
+        self._root, self._basis, self._paths = root, basis, paths
+        self._read = _Started(root, _source_diff_args(basis, paths), text=False, stdin=False)
+
+    def result(self) -> str:
+        patch = self._read.result().decode("utf-8", "surrogateescape")
+        if "\nBinary files " not in patch:
+            return patch
+        paths = _binary_source_paths(self._root, self._basis, self._paths)
+        if not paths:
+            return patch
+        forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True),
+                          text=False, stdin=False)
+        try:
+            return patch + forced.result().decode("utf-8", "surrogateescape")
+        finally:
+            forced.close()
+
+    def close(self) -> None:
+        self._read.close()
+
+
+def _read_source_patch(root: Path, *basis: str) -> str:
+    read = SourcePatch(root, *basis)
+    try:
+        return read.result()
+    finally:
+        read.close()
 
 
 class GitReads:
@@ -375,8 +455,7 @@ class _StartedReads:
     def __init__(self, root: Path, base: str | None = None) -> None:
         self._root = root
         basis = (merge_base(root, base),) if base is not None else ()
-        self._diff = _Started(root, ("diff", "--cached", "-U0", "--no-renames", *basis),
-                              text=True, stdin=False)
+        self._diff = SourcePatch(root, "--cached", *basis)
         self._batch = _Started(root, ("cat-file", "--batch"), text=False, stdin=True)
 
     def staged_diff(self) -> str:
@@ -422,13 +501,25 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
     is that renaming the ratchet file restarts its burn-down history at the
     rename.
     """
-    out = _git(root, "log", "--reverse", "--format=%x01%at", "-p", "-U0", "--", rel_path)
+    # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
+    # only a physical header line starts with the NUL timestamp marker. Raw LF
+    # framing prevents CR in a legacy field from manufacturing a header line.
+    out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
+               "-p", *_PATCH, "--text", "--", rel_path, binary=True)
+    return _history_patches(out)
+
+
+def _history_patches(out: str) -> list[tuple[int, str]]:
     patches = []
-    for block in out.split("\x01"):
-        if not block.strip():
-            continue
-        head, _, patch = block.partition("\n")
-        patches.append((int(head.strip()), patch))
+    stamp, start = None, 0
+    for header in _LOG_HEADER.finditer(out):
+        if stamp is not None:
+            patches.append((stamp, out[start:header.start()]))
+        stamp, start = int(header.group(1)), header.end()
+    if stamp is not None:
+        patches.append((stamp, out[start:]))
+    elif out:
+        raise GitError("Git patch history has no timestamp header")
     return patches
 
 

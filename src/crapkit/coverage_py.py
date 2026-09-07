@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 
-from .coverage_istanbul import FnCoverage
+from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
 
 _NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
@@ -19,8 +19,19 @@ _OLD_COVERAGE = "needs coverage >= 7.6"
 _SAMPLE = 3
 
 
+def _admit_summary(name: str, summary: dict) -> dict:
+    pairs = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
+    counts = {}
+    for total, covered in pairs:
+        counts[total] = coverage_count(summary.get(total, 0), f"{name}: {total}")
+        counts[covered] = coverage_count(summary.get(covered, 0), f"{name}: {covered}")
+        if counts[covered] > counts[total]:
+            raise ValueError(f"{name}: {covered} exceeds {total}")
+    return counts
+
+
 def _fn_coverage(name: str, fn: dict) -> FnCoverage:
-    summary = fn.get("summary", {})
+    summary = _admit_summary(name, fn.get("summary", {}))
     lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
     start = fn.get("start_line") or (min(lines) if lines else 0)
     end = max(lines) if lines else start

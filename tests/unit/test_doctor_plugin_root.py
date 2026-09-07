@@ -442,11 +442,8 @@ def test_an_empty_path_resolves_no_crapkit_at_all(tmp_path, monkeypatch):
     assert RESOLVE.__wrapped__() is None
 
 
-def test_an_executable_that_answers_nothing_falls_back_to_this_module(tmp_path):
-    """The probe is best effort. A console script that cannot run says nothing
-    about versions, and a handshake that reported '' would be worse than one
-    that reports the number it does hold."""
-    assert admin._probed_cli_version(str(tmp_path / "no-such-executable")) == CLI
+def test_an_executable_that_cannot_run_has_no_observed_version(tmp_path):
+    assert admin._probed_cli_version(str(tmp_path / "no-such-executable")) is None
 
 
 def _failing_shim(directory: Path, says: str) -> str:
@@ -469,7 +466,7 @@ def test_an_executable_that_errors_is_not_read_for_a_version(tmp_path):
     nothing on the machine reports."""
     shim = _failing_shim(tmp_path / "bin", "usage: crapkit [-h] COMMAND")
 
-    assert admin._probed_cli_version(shim) == CLI
+    assert admin._probed_cli_version(shim) is None
 
 
 def test_a_zero_exit_is_still_read_for_its_version(tmp_path):

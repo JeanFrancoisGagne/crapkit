@@ -249,7 +249,7 @@ def test_a_streamed_report_with_no_data_to_divide_by_is_still_refused(tmp_path, 
     report = {"meta": {"branch_coverage": False},
               "files": {"a.py": {"functions": {"f": {
                   "start_line": 1, "executed_lines": [1], "missing_lines": [],
-                  "summary": {"covered_lines": 1, "num_statements": 0}}}}}}
+                  "summary": {"covered_lines": 0, "num_statements": 0}}}}}}
     path = _write(tmp_path, report)
     with pytest.raises(ToolError, match="branch data"):
         parse_coveragepy_file(path, path_prefix="", chunk=chunk)

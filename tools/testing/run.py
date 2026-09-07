@@ -1,4 +1,4 @@
-"""Run serial in-process tests and parallel CLI tests with one evidence owner."""
+"""Run isolated unit and CLI workers with one evidence owner."""
 from __future__ import annotations
 
 import argparse
@@ -12,12 +12,17 @@ import xml.etree.ElementTree as ET
 
 
 SUITES = ("unit", "e2e")
+UNIT_WORKERS = 4
 E2E_WORKERS = 8
 
 
-def test_commands(python: str = "python", workers: int = E2E_WORKERS) -> list[list[str]]:
+def test_commands(python: str = "python", workers: int = E2E_WORKERS,
+                  unit_workers: int = UNIT_WORKERS) -> list[list[str]]:
     """The development and CI schedule, also rendered in contributor guidance."""
-    return [[python, "-m", "pytest", "tests/unit", "-p", "no:randomly"],
+    unit = [python, "-m", "pytest", "tests/unit", "-p", "no:randomly"]
+    if unit_workers > 1:
+        unit += ["-n", str(unit_workers)]
+    return [unit,
             [python, "-m", "pytest", "tests/e2e", "-n", str(workers), "-p", "no:randomly"]]
 
 
@@ -129,7 +134,7 @@ def _output_directory(root: Path, selected: Path | None) -> Path:
 
 
 def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS,
-               output: Path | None = None) -> int:
+               output: Path | None = None, unit_workers: int = UNIT_WORKERS) -> int:
     """Always run both suites; preserve either failure and combine their evidence."""
     root = root.resolve()
     output = _output_directory(root, output)
@@ -138,7 +143,7 @@ def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS
     with tempfile.TemporaryDirectory(prefix="suites-", dir=output) as directory:
         scratch = Path(directory)
         results = [_suite(command, root, scratch, name, coverage)
-                   for name, command in zip(SUITES, test_commands(sys.executable, workers))]
+                   for name, command in zip(SUITES, test_commands(sys.executable, workers, unit_workers))]
         complete = _collect(root, scratch, output, results, coverage)
     return int(any(results) or not complete)
 
@@ -148,12 +153,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--coverage", action="store_true")
     parser.add_argument("--workers", type=int, default=E2E_WORKERS)
+    parser.add_argument("--unit-workers", type=int, default=UNIT_WORKERS,
+                        help="unit processes (default: 4); use 1 for a serial reproduction")
     parser.add_argument("--output", type=Path,
                         help="replace evidence in this directory inside --repo; caller owns it "
                              "(default: a unique retained .crapkit/test-runs directory)")
     args = parser.parse_args(argv)
     try:
-        return run_suites(args.repo, coverage=args.coverage, workers=args.workers, output=args.output)
+        return run_suites(args.repo, coverage=args.coverage, workers=args.workers,
+                          output=args.output, unit_workers=args.unit_workers)
     except (OSError, ET.ParseError, subprocess.CalledProcessError, ValueError) as exc:
         print(f"test evidence is incomplete: {exc}", file=sys.stderr)
         return 1

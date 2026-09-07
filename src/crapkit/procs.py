@@ -1,20 +1,15 @@
-"""Shell commands run under a deadline the caller can actually enforce.
+"""Shell commands whose completion includes cleanup of their descendants.
 
-`shell=True` makes the shell the child and the real program a grandchild.
-subprocess.run's timeout kills the shell alone, so the program keeps running
-with nothing waiting on it: `mutate` scored a mutant killed at 2 s and left the
-suite it was supposed to kill running to the end, one per mutant, all at once
-on the single-worker path. The probe leaked one interpreter per timeout.
-
-So the shell starts in its own process group (its own session on POSIX) and the
-deadline kills the group, not the shell: `taskkill /T` walks the child tree on
-Windows, killpg reaches it on POSIX. The shell is reaped before this returns,
-because the caller's next move is deleting the directory the tree ran in.
+A separate owner registers each gated launcher before the command starts.
+Windows Jobs and POSIX process groups retain ownership after the shell exits.
+Completion, timeout and caller death stop the owned group before its resources
+are released. POSIX commands must keep their inherited group; an explicit
+setsid daemon is outside that ownership. Untimed commands have no deadline.
 """
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import re
 import signal
@@ -131,7 +126,7 @@ class _ProcessOwner:
         self.process = process
         self._requests = threading.Lock()
 
-    def receive(self) -> None:
+    def receive(self) -> dict:
         from .errors import ToolError
         line = self.process.stdout.readline()
         if not line:
@@ -139,6 +134,7 @@ class _ProcessOwner:
         result = json.loads(line)
         if not result.get("ok"):
             raise ToolError(result.get("error", "measurement owner refused the operation"))
+        return result
 
     def request(self, operation: str, pid: int) -> None:
         from .errors import ToolError
@@ -157,14 +153,15 @@ class _ProcessOwner:
 
 
 @contextmanager
-def own_processes(paths):
+def own_processes(paths, *, optional: bool = False, label: str = "measurement"):
     """Own measurement outputs across caller crashes and command cleanup."""
-    process = subprocess.Popen([sys.executable, "-m", "crapkit._process_owner", *map(str, paths)],
+    options = {"paths": list(map(str, paths)), "optional": optional, "label": label}
+    process = subprocess.Popen([sys.executable, "-m", "crapkit._process_owner", json.dumps(options)],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     owner = _ProcessOwner(process)
     try:
-        owner.receive()
+        owner.held = owner.receive()["held"]
         yield owner
         owner.check()
     finally:
@@ -193,10 +190,11 @@ raise SystemExit(subprocess.call(sys.argv[1], shell=True, stdin=subprocess.DEVNU
 
 
 def _spawn(command: str, out, owner, kwargs) -> subprocess.Popen:
-    if owner is None:
-        return subprocess.Popen(command, shell=True, stdin=subprocess.DEVNULL,
-                                stdout=out, stderr=subprocess.STDOUT, **_OWN_GROUP, **kwargs)
-    process = subprocess.Popen([sys.executable, "-c", _OWNED_LAUNCH, command],
+    # A Windows venv executable redirects into another process before Python
+    # reaches the start gate. Use the base interpreter with startup hooks off,
+    # so Job assignment precedes every child the launcher can create.
+    launcher = getattr(sys, "_base_executable", sys.executable)
+    process = subprocess.Popen([launcher, "-I", "-S", "-c", _OWNED_LAUNCH, command],
                                stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT,
                                **_OWN_GROUP, **kwargs)
     try:
@@ -243,14 +241,12 @@ def _wait_watching(proc: subprocess.Popen, timeout: float | None, no_progress: f
     size, since = _stream_size(stream), time.monotonic()
     while True:
         try:
-            return proc.wait(timeout=_TICK)
+            return _wait_command(proc, _TICK)
         except subprocess.TimeoutExpired:
             size, since = _progress(stream, size, since)
         if time.monotonic() - since >= no_progress:
-            _kill_tree(proc)
             raise NoProgress(no_progress)
         if _expired(limit):
-            _kill_tree(proc)
             return None
 
 
@@ -275,26 +271,54 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
 
     `owner` registers the command before launch. Its separate process keeps
     measurement locks until registered command trees stop after a caller crash.
+    Without an owner, this call creates one for the command's lifetime. A root
+    exit stops remaining descendants before returning, even without a deadline.
     """
+    ownership = own_processes(()) if owner is None else nullcontext(owner)
+    with ownership as held:
+        return _run_owned(command, timeout, stream, no_progress, held, popen_kwargs)
+
+
+def _run_owned(command, timeout, stream, no_progress, owner, popen_kwargs):
     out = subprocess.DEVNULL if stream is None else stream
     proc = _spawn(command, out, owner, popen_kwargs)
     try:
         return _wait_bounded(proc, timeout, no_progress, stream)
-    except BaseException:
-        if proc.poll() is None:
-            _kill_tree(proc)
-        raise
     finally:
-        if owner is not None:
-            proc.stdin.close()
+        _close_input(proc)
+        try:
             owner.request("remove", proc.pid)
+        except BaseException:
+            _kill_tree(proc)
+            raise
+        proc.wait()
 
 
 def _wait_bounded(proc, timeout, no_progress, stream) -> int | None:
     if no_progress and stream is not None and _stream_size(stream) != -1:
         return _wait_watching(proc, timeout, no_progress, stream)
     try:
-        return proc.wait(timeout=timeout)
+        return _wait_command(proc, timeout)
     except subprocess.TimeoutExpired:
-        _kill_tree(proc)
         return None
+
+
+def _exit_status(status) -> int:
+    return status.si_status if status.si_code == os.CLD_EXITED else -status.si_status
+
+
+def _wait_command(proc, timeout):
+    """Leave a POSIX group leader unreaped until group cleanup confirms exit."""
+    if os.name == "nt":
+        return proc.wait(timeout=timeout)
+    options = os.WEXITED | os.WNOWAIT
+    if timeout is None:
+        return _exit_status(os.waitid(os.P_PID, proc.pid, options))
+    deadline = time.monotonic() + timeout
+    while True:
+        status = os.waitid(os.P_PID, proc.pid, options | os.WNOHANG)
+        if status is not None:
+            return _exit_status(status)
+        if time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(proc.args, timeout)
+        time.sleep(min(.01, max(0, deadline - time.monotonic())))

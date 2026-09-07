@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -32,7 +33,7 @@ from .config import shell_words
 from .errors import GitError, ToolError
 from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
 from .mutate import apply_mutant
-from .procs import run_bounded
+from .procs import own_processes, run_bounded
 
 try:  # the lock, through whichever of the two the platform has
     import fcntl
@@ -50,7 +51,7 @@ def _suite_env() -> dict:
     return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
-def require_live_suite(tree: Path, cfg) -> None:
+def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
     """Refuse to score anything until the command has passed once with nothing
     mutated.
 
@@ -64,7 +65,7 @@ def require_live_suite(tree: Path, cfg) -> None:
     mutation score, so it is said instead of one.
     """
     code = run_bounded(cfg.mutation_command, cfg.mutation_timeout_seconds,
-                       cwd=tree, env=_suite_env())
+                       cwd=tree, env=_suite_env(), owner=owner)
     if code == 0:
         return
     raise ToolError(f"mutation_command {_runner_word(cfg.mutation_command)!r} "
@@ -83,9 +84,9 @@ def _baseline_verdict(code: int | None) -> str:
     return "timed out" if code is None else f"exits {code}"
 
 
-def run_one(tree: Path, cfg, mutant) -> bool:
+def run_one(tree: Path, cfg, mutant, *, owner=None) -> bool:
     """True = killed. The original file ALWAYS comes back, whatever happens."""
-    p = tree / mutant.path
+    p = _private_file(tree, mutant.path)
     original = p.read_bytes()
     # Python validates .pyc files by source SIZE + mtime in WHOLE SECONDS: two
     # same-size mutants applied within one second would reuse the first one's
@@ -102,9 +103,9 @@ def run_one(tree: Path, cfg, mutant) -> bool:
         # one of them per mutant, all at once on the single-worker path.
         # None is the deadline: a mutant that loops forever is dead.
         return run_bounded(cfg.mutation_command, cfg.mutation_timeout_seconds,
-                           cwd=tree, env=env) != 0
+                           cwd=tree, env=env, owner=owner) != 0
     finally:
-        p.write_bytes(original)
+        _private_file(tree, mutant.path).write_bytes(original)
 
 
 def _shards(indexed: list, workers: int) -> list[list]:
@@ -118,10 +119,10 @@ def _merge(done: list) -> list[bool]:
     return [killed for _, killed in sorted(done)]
 
 
-def _run_shard(tree: Path, cfg, shard: list, report) -> list:
+def _run_shard(tree: Path, cfg, shard: list, report, owner) -> list:
     out = []
     for index, mutant in shard:
-        killed = run_one(tree, cfg, mutant)
+        killed = run_one(tree, cfg, mutant, owner=owner)
         report(index, mutant, killed)
         out.append((index, killed))
     return out
@@ -131,7 +132,7 @@ def _input_snapshot(root: Path, targets: list, state: Path) -> tuple[str, dict]:
     """Freeze every working-tree change once, including tests and deletions."""
     head = head_commit(root)
     paths = sorted(set(status_names(root)) | set(targets))
-    files = {rel: _snapshot_file(root / rel) for rel in paths
+    files = {rel: _snapshot_file(_unlinked_path(root, rel)) for rel in paths
              if not Path(rel).is_relative_to(state)}
     if head_commit(root) != head:
         raise ToolError("HEAD changed while preparing mutation inputs; rerun mutate")
@@ -144,10 +145,42 @@ def _snapshot_file(path: Path) -> tuple[bytes, int] | None:
     return path.read_bytes(), path.stat().st_mode
 
 
+def _refuse_link(path: Path) -> None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    reparse = getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    if stat.S_ISLNK(info.st_mode) or reparse:
+        raise ToolError(f"mutation path {path} is a link; use private regular files")
+
+
+def _unlinked_path(root: Path, relative) -> Path:
+    """Check each component without following symlinks or Windows reparse points."""
+    root = Path(os.path.abspath(root))
+    path = Path(os.path.abspath(root / relative))
+    if not path.is_relative_to(root):
+        raise ToolError(f"mutation path {path} escapes its workspace {root}")
+    current = root
+    _refuse_link(current)
+    for part in path.relative_to(root).parts:
+        current /= part
+        _refuse_link(current)
+    return path
+
+
+def _private_file(root: Path, relative) -> Path:
+    path = _unlinked_path(root, relative)
+    if path.exists() and path.stat().st_nlink > 1:
+        raise ToolError(f"mutation path {path} has multiple links; use private regular files")
+    return path
+
+
 def _seed(tree: Path, files: dict) -> None:
     """Apply the same captured bytes and deletions to every private worker."""
+    destinations = {rel: _private_file(tree, rel) for rel in files}
     for rel, saved in files.items():
-        dst = tree / rel
+        dst = destinations[rel]
         if saved is None:
             dst.unlink(missing_ok=True)
             continue
@@ -182,10 +215,17 @@ def _worktrees(root: Path, count: int):
     a peer run holds it. Either way the caller gets `count` trees and hands
     them back at the end of the block.
     """
-    with _pool_lock(root) as held:
-        keeper = _pooled(root, count) if held else _throwaway(root, count)
+    with _owned_worktrees(root, count) as (trees, owner):
+        yield trees
+
+
+@contextmanager
+def _owned_worktrees(root: Path, count: int):
+    lock = _unlinked_path(root, pool_dir(root).parent / "mutate-pool.lock")
+    with own_processes([lock], optional=True, label="mutation worktree pool") as owner:
+        keeper = _pooled(root, count) if owner.held else _throwaway(root, count)
         with keeper as trees:
-            yield trees
+            yield trees, owner
 
 
 @contextmanager
@@ -198,6 +238,8 @@ def _pooled(root: Path, count: int):
     """
     base = pool_dir(root)
     trees = [base / f"w{i}" for i in range(count)]
+    for tree in trees:
+        _unlinked_path(root, tree)
     try:
         _stock(root, base, trees, head_commit(root))
     except BaseException:
@@ -237,6 +279,8 @@ def _reset_to(head: str, root: Path, tree: Path) -> None:
 def _drop(root: Path, base: Path, trees: list) -> None:
     """Through `worktree remove`, never an rmtree alone: an abandoned checkout
     leaves an entry in `git worktree list` that outlives the directory."""
+    for tree in trees:
+        _unlinked_path(base, tree)
     if trees:
         _on_every_tree(worktree_remove, root, trees)
 
@@ -244,7 +288,7 @@ def _drop(root: Path, base: Path, trees: list) -> None:
 def drop_pool(root: Path) -> list:
     """Every kept checkout removed, and the base with it. Returns what was
     there, for the command that prints it."""
-    base = pool_dir(root)
+    base = _unlinked_path(root, pool_dir(root))
     if not base.exists():
         return []
     with _pool_lock(root) as held:
@@ -323,9 +367,9 @@ def _drop_lock(handle: int, held: bool) -> None:
         fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def _fan_out(cfg, trees: list, shards: list, report) -> list:
+def _fan_out(cfg, trees: list, shards: list, report, owner) -> list:
     with ThreadPoolExecutor(max_workers=len(trees)) as pool:
-        futures = [pool.submit(_run_shard, tree, cfg, shard, report)
+        futures = [pool.submit(_run_shard, tree, cfg, shard, report, owner)
                    for tree, shard in zip(trees, shards)]
         return [pair for f in futures for pair in f.result()]
 
@@ -336,7 +380,7 @@ def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[
     prefix = root.resolve().relative_to(checkout)
     targets = sorted({(prefix / m.path).as_posix() for m in mutants})
     head, files = _input_snapshot(checkout, targets, prefix / ".crapkit")
-    with _worktrees(root, workers) as trees:
+    with _owned_worktrees(root, workers) as (trees, owner):
         if head_commit(root) != head:
             raise ToolError("HEAD changed while preparing mutation workers; rerun mutate")
         for tree in trees:
@@ -345,8 +389,8 @@ def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[
         # baseline taken at the root would clear a command the worktree cannot
         # start.
         execution_roots = [tree / prefix for tree in trees]
-        require_live_suite(execution_roots[0], cfg)
-        done = _fan_out(cfg, execution_roots, shards, report)
+        require_live_suite(execution_roots[0], cfg, owner=owner)
+        done = _fan_out(cfg, execution_roots, shards, report, owner)
     return _merge(done)
 
 

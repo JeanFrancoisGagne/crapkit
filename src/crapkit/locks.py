@@ -14,10 +14,8 @@ def exclusive_lock(path: Path, *, label: str):
     """Refuse peers without waiting; keep the lock file stable after release."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as owner:
-        owner.seek(0, os.SEEK_END)
-        if owner.tell() == 0:
-            owner.write(b"\0")
-            owner.flush()
+        # Windows can lock beyond EOF. Writing a marker first would conflict
+        # with a peer that already locked byte zero of an empty stable file.
         try:
             _lock(owner, True)
         except OSError as exc:

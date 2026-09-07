@@ -205,9 +205,9 @@ runs:
         changed="$CRAPKIT_STATE/crapkit-changed.txt"
         : > "$changed"
         if [ -n "$BASE_SHA" ]; then
-          git -c core.quotePath=false diff --name-only "$BASE_SHA...HEAD" > "$changed" || : > "$changed"
+          git diff --name-only "$BASE_SHA...HEAD" -z > "$changed" || : > "$changed"
         fi
-        echo "$(wc -l < "$changed") changed file(s)"
+        echo "$(tr -cd '\0' < "$changed" | wc -c) changed file(s)"
 
     - name: build the comment
       shell: bash
@@ -223,7 +223,7 @@ runs:
           --base-sha "$CRAPKIT_STATE/crapkit-base.sha" \
           --base-reason "$CRAPKIT_STATE/crapkit-base.reason" \
           --worklist "$CRAPKIT_STATE/crapkit-worklist.json" \
-          --changed "$CRAPKIT_STATE/crapkit-changed.txt" \
+          --changed-z "$CRAPKIT_STATE/crapkit-changed.txt" \
           --top "$TOP" \
           --out "$CRAPKIT_STATE/crapkit-comment.md" \
           --json-out "$CRAPKIT_STATE/crapkit-comment.json"

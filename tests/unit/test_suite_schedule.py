@@ -47,7 +47,8 @@ def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure
     fixture_repo(tmp_path, failure, contexts=contexts)
     env = fixture_env(tmp_path)
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--coverage", "--workers", "2", "--output", ".crapkit/cov"], env=env,
+                             "--coverage", "--workers", "2", "--unit-workers", "1",
+                             "--output", ".crapkit/cov"], env=env,
                             capture_output=True, text=True)
     assert result.returncode == bool(failure), result.stdout + result.stderr
     junit = ET.parse(tmp_path / ".crapkit/cov/junit.xml")
@@ -72,7 +73,7 @@ def test_startup_failure_replaces_old_passing_evidence_and_keeps_the_other_suite
     fixture_repo(tmp_path, "")
     env = fixture_env(tmp_path)
     command = [sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-               "--coverage", "--workers", "2", "--output", ".crapkit/cov"]
+               "--coverage", "--workers", "2", "--unit-workers", "1", "--output", ".crapkit/cov"]
     first = subprocess.run(command, env=env, capture_output=True, text=True)
     assert first.returncode == 0, first.stdout + first.stderr
     output = tmp_path / ".crapkit/cov"
@@ -97,7 +98,7 @@ def test_empty_suite_records_an_infrastructure_failure_with_its_exit(tmp_path):
     env = fixture_env(tmp_path)
 
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--workers", "2", "--output", ".crapkit/cov"],
+                             "--workers", "2", "--unit-workers", "1", "--output", ".crapkit/cov"],
                             env=env, capture_output=True, text=True)
 
     assert result.returncode == 1

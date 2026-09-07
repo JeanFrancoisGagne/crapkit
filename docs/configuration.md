@@ -45,13 +45,31 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 | `notes` | array of string | `[]` | House rules for this repo, in the config rather than in a file an agent has to find. `brief` carries them into the packet as `notes`, repo-wide lines first, then the scope's own. crapkit never parses them. |
 | `mutation_command` | string | `""` | The suite run once per mutant. A nonzero exit means the mutant was killed, so the command is also run **once against the unmutated tree** before the first mutant and must exit 0 there: without that baseline a command that cannot start here killed every mutant and scored 100%. `mutate` refuses to run without it. Shell and PowerShell files in the diff are skipped and named on stderr: `<` and `>` are redirections in both, so their mutants would be noise. So is every file outside the scored corpus (a test file, an excluded path, a file over `max_file_bytes`, a file no scope claims): `mutate` never mutates a test, and a diff with nothing left says `nothing to mutate` at exit 0 without running the command. |
 | `mutation_timeout_seconds` | int >= 1 | `300` | Per-mutant timeout. Expiry counts as killed, and the kill takes the suite's whole process tree, so a looping mutant does not outlive the run that gave up on it. At the default cap of 100 mutants this bounds one `mutate` run at over 8 hours, so lower it for a slow suite. |
-| `mutation_workers` | int >= 1 | `1` | Mutants run at once. Every worker uses a detached git worktree, including the default of one. Dirty, untracked and deleted inputs are copied before mutation. Crapkit deals mutants round-robin. Those worktrees are **kept**, at `.crapkit/mutate-pool/w0..wN`: building four of them costs 30.6 s on a 31,459-file repo and re-preparing the kept four costs 0.46 s, and every run re-prepares them (`git checkout --force <HEAD sha>`, then `git clean -xdff`) before a mutant is applied, so the last run's mutant goes back and a commit made since lands. What stays on disk is that many checkouts of your repo, and nothing bounds its size; `crapkit mutate --drop-pool` removes them and exits. A second `mutate` running in the same repo finds the pool locked and gets its own throwaway worktrees, removed on the way out as before. Results merge by the mutant's position in the list, so the same tree reports the same JSON at any worker count. |
+| `mutation_workers` | int >= 1 | `1` | Mutants run at once. Every worker uses a kept detached Git worktree, including one. See [mutation worktrees](#mutation-worktrees) for preparation, concurrent runs and cleanup. |
 | `diff_uncovered_max` | int >= 0 | absent | Ceiling on changed lines that never ran. **Absent means warn only**: `verify` still prints `warning: N changed line(s) have no coverage` on stderr and lists the first 20, but exits 0. Set it and a breach exits 9. |
 | `debt_max_age_months` | int >= 0 | absent | `ratchet report --enforce` flags open marks older than this (counted at 30 days per month). |
 | `repayment_min_per_30d` | int >= 0 | absent | `ratchet report --enforce` flags a burn-down that repaid fewer marks than this in the last 30 days while debt is open. |
 | `max_parallel_lanes` | int >= 1 | `1` | Lanes running at once. `1` is strictly serial. See [lanes.md](lanes.md#running-lanes-in-parallel). |
 | `analysis_workers` | int >= 0 | `0` | The lizard process pool size. `0` means one worker per core. Set it when the analysis pass runs beside something else. |
 | `tighten_max_jump` | number >= 1 | `2.0` | How far a function's CRAP may move between two runs of the **same commit** and still tighten its mark. Past this factor, `verify` holds the mark and prints one `NO TIGHTEN` line on stderr naming the function and both values. One commit measured twice cannot have improved, so a jump that size is the measurement talking, not the code. See [ratchet.md](ratchet.md#damping-a-measurement-that-bounces). |
+
+### Mutation worktrees
+
+Every mutation worker runs in a detached Git worktree, including the default of one.
+Crapkit re-prepares each worker at the current HEAD, then replays dirty, untracked
+and deleted inputs before running the unmutated baseline and the mutants.
+
+The kept pool lives at `.crapkit/mutate-pool/w0..wN`. It occupies one checkout per
+worker, has no size limit, and remains between runs. `crapkit mutate --drop-pool`
+removes it and exits. A concurrent run that finds the pool locked uses private
+throwaway worktrees and removes them when finished. Results retain mutant order
+at every worker count.
+
+Mutation refuses symlink or Windows reparse components in captured inputs and
+worker paths. Worker writes also refuse files with multiple hard links, including
+a path the suite replaced before restoration. Use private regular files for
+mutation inputs. Commands finish only after their owned descendants stop; see
+[command cleanup](lanes.md#the-kill-takes-the-whole-process-tree) for platform scope.
 
 ### The debt policy
 

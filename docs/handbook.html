@@ -812,7 +812,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 $ crapkit coupling --top 5      # cold, caches deleted: 0.53 s
 $ crapkit coupling --top 5      # warm: 0.09 s</code></pre>
 <p><code>trend</code> and <code>report</code> read a rollup row written once per run and pruned with that run, instead of rescanning every scored row the store holds. Both now write to the store on a best-effort basis, which is new for two commands that used to be pure readers.</p>
-<p><code>mutate</code> with <code>mutation_workers</code> above 1 keeps its worker worktrees at <code>.crapkit/mutate-pool/</code> and re-prepares them each run rather than adding and removing them. Single-worker runs are untouched. The pool is not size-bounded, so when you want the disk back:</p>
+<p>Every mutation worker uses a kept worktree, including the default of one. See <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees">mutation worktrees</a> for preparation, concurrent runs and cleanup. Reclaim the checkouts with:</p>
 <pre><code>$ crapkit mutate --drop-pool
 removed 2 pooled worktrees from …\.crapkit\mutate-pool</code></pre>
 

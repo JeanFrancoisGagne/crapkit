@@ -31,6 +31,9 @@ Two more house rules that hold across every payload:
 
 `next-item` is the exception to the flag: it has no `--json` because it only ever emits JSON.
 
+TSV exports and portable baselines follow the separate
+[portable record encoding](portable-records.md); JSON fields preserve their original strings.
+
 Function rows carry `occurrence` alongside their real `start` and `end` lines. A new
 measurement numbers functions sharing a start line from 1 in source creation order,
 including functions with different names. `0` means an older row has no such position.
@@ -311,7 +314,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
     "gate": "crapkit rescore app/parse_csv.py --gate",
     "refresh": "crapkit coverage --reuse-unchanged",
     "refresh_writes_run": true,
-    "scoped_tests": "python -m pytest \"app/parse_csv.py\" -q -p no:cacheprovider",
+    "scoped_tests": "crapkit test-scoped app/parse_csv.py",
     "verify": "crapkit verify"
   },
   "commit": "1b7b76bb6c16824a7bcee2d9e4c7f71a69eb4c3d",
@@ -431,22 +434,23 @@ session need not read the config to learn which number it is aiming at.
 | Key | Type | Meaning |
 |---|---|---|
 | `gate` | string | `rescore --gate` for this file. Step 3 of the loop. |
-| `scoped_tests` | string or null | This scope's own `[crapkit.scoped_tests]` template, with `{files}` already replaced by the packet's file, double-quoted. Not a `crapkit test-scoped` call: the packet hands you the runner the scope declared. `null` when the scope declares no template, and then there is no step 4; `doctor` warns about the gap. |
+| `scoped_tests` | string or null | A `crapkit test-scoped` call for the packet's literal file. It selects the scope's template and executes it from the project root with the inherited environment and literal filename transport. `null` when the scope declares no template; `doctor` warns about the gap. |
 | `scoped_tests_note` | string | Present **only** when `scoped_tests` is `null`, naming the scope that declares no template. |
 | `verify` | string | The `verify` call. Step 5, the only authoritative one. |
 | `refresh` | string | The `coverage --reuse-unchanged` call that refreshes this packet. It reuses a lane only at the same clean HEAD with unchanged configuration, inherited environment and coverage/JUnit bytes; otherwise it runs the lane. Run it first when `stale` is `true`. |
-| `refresh_writes_run` | bool | Always `true`. `refresh` is the only one of the four that writes: it appends a scored run to `.crapkit/crap.sqlite`. A read-only session runs the other three and stops here. |
+| `refresh_writes_run` | bool | Always `true`. `refresh` appends a scored coverage run to `.crapkit/crap.sqlite`. Other commands can write caches or test artifacts; this field does not promise filesystem read-only execution. |
 
-Each one is a whole command line. Run them as given: a retyped `scoped_tests` loses whatever
-the scope's template carries, and a retyped `refresh` loses `--reuse-unchanged` and reruns
-every lane.
+Each value is a whole command line. Run it as given to preserve filename quoting
+and the refresh reuse policy. Simple paths remain readable. POSIX commands use
+shell quoting; Windows commands support cmd.exe and PowerShell, using an encoded
+PowerShell command when a filename could trigger shell expansion.
 
-Both shapes, captured off one repo. With a template, and with the block removed:
+With a scoped template and without one:
 
 ```json
 {"gate": "crapkit rescore calc/grade.py --gate",
  "refresh": "crapkit coverage --reuse-unchanged", "refresh_writes_run": true,
- "scoped_tests": "python -m pytest \"calc/grade.py\" -q -p no:cacheprovider",
+ "scoped_tests": "crapkit test-scoped calc/grade.py",
  "verify": "crapkit verify"}
 
 {"gate": "crapkit rescore calc/grade.py --gate",
@@ -456,11 +460,10 @@ Both shapes, captured off one repo. With a template, and with the block removed:
  "verify": "crapkit verify"}
 ```
 
-**The three crapkit calls are spelled as the console script**, `crapkit rescore ... --gate`
-and not `python -m crapkit rescore ... --gate` (#37). That is the form the docs promise, and
-the one that resolves from a venv on Windows, where bare `python` reaches the WindowsApps
-stub or the base interpreter the venv wraps. `scoped_tests` is the scope's own string and
-crapkit does not respell it.
+All four commands resolve the `crapkit` console script on PATH, including the
+Windows encoded form. Activate the intended environment before executing them.
+`test-scoped` then runs the owning scope's configured template; a template with
+no `{files}` still runs its declared arguments unchanged.
 
 `refresh` is what `stale: true` asks for, and the only thing that answers it. `stale`
 compares the run's commit against HEAD, so nothing clears it but a run landing on the
@@ -823,7 +826,7 @@ A verdict measures the working tree, so a concurrent session's uncommitted edits
 | Key | Meaning |
 |---|---|
 | `dirty` (on each finding) | The finding's file has uncommitted tracked edits. |
-| `committed_findings` | Findings across all three kinds whose file is clean. |
+| `committed_findings` | Gate, ratchet, test-failure and breached diff-coverage findings whose file is clean. |
 | `dirty_findings` | Findings whose file is not. |
 | `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. Both the repo-path form and pytest's dotted-module form are matched. |
 
@@ -1101,7 +1104,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark covers, `ok` is `breaches == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
 | `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. A pair whose two spans nest in one file is dropped, not ranked: a factory and the closure defined inside it score 1.0 by construction and cannot be deduplicated. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
 | `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
-| `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. With `mutation_workers > 1` the worker worktrees are kept under `.crapkit/mutate-pool/`; `crapkit mutate --drop-pool` removes them and exits. |
+| `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. Every worker uses a kept worktree, including one; see [mutation worktrees](configuration.md#mutation-worktrees). |
 | `claims --json` | Above. |
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
 | `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |

@@ -83,10 +83,9 @@ crapkit = "crapkit.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# No `-n` here on purpose. tests/unit runs serially so every failure reproduces
-# in place, and xdist would hide which test wrote the file the next one read.
-# CI passes `-n 8` on the tests/e2e command line, where the work is subprocesses
-# in throwaway git repos and the workers cannot see each other.
+# Scheduling lives in tools/testing/run.py: four unit and eight E2E workers.
+# Bare pytest stays serial for reproduction; the runner also accepts
+# --unit-workers 1. No worker count is hidden in pytest's default arguments.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --tb=short -p no:cacheprovider"

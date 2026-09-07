@@ -1,11 +1,13 @@
 """Release commands require current repository proof before side effects."""
 import json
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
 from contextlib import closing
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -18,6 +20,20 @@ def git(root, *arguments):
 
 
 def repo(tmp_path, *, bumped=False):
+    seed = tmp_path.parent / ("release-seed-bumped" if bumped else "release-seed")
+    if not seed.exists():
+        seed.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=seed.parent) as directory:
+            _fresh_repo(Path(directory), bumped=bumped)
+            Path(directory).rename(seed)
+    root = tmp_path / "repo"
+    shutil.copytree(seed / "repo", root)
+    shutil.copytree(seed / "remote.git", tmp_path / "remote.git")
+    git(root, "remote", "set-url", "origin", str(tmp_path / "remote.git"))
+    return root
+
+
+def _fresh_repo(tmp_path, *, bumped=False):
     root = _tree(tmp_path)
     (root / ".gitignore").write_text(".crapkit/\ndist/\n", encoding="utf-8")
     if bumped:

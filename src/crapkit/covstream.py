@@ -323,7 +323,7 @@ def parse_istanbul_file(path: Path | str, *, repo_root: str, chunk: int = CHUNK
     w, handle = _window(path, chunk)
     with handle:
         per_file = _guarded(lambda: _istanbul_map(w, repo_root, _file_coverage),
-                            _BAD_ISTANBUL)
+                            f"{_BAD_ISTANBUL} {path}")
     _require_files(per_file)
     return per_file, w.hasher.hexdigest()
 
@@ -352,7 +352,7 @@ def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = C
     """
     w, handle = _window(path, chunk)
     with handle:
-        per_file, dead = _guarded(lambda: _istanbul_both(w, repo_root), _BAD_ISTANBUL)
+        per_file, dead = _guarded(lambda: _istanbul_both(w, repo_root), f"{_BAD_ISTANBUL} {path}")
     _require_files(per_file)
     return per_file, dead, w.hasher.hexdigest()
 
@@ -442,7 +442,7 @@ def parse_coveragepy_both_file(path: Path | str, *, path_prefix: str, chunk: int
     w, handle = _window(path, chunk)
     with handle:
         per_file, dead = _guarded(lambda: _coveragepy_both(w, lane_prefix(path_prefix), label),
-                                  _BAD_REPORT)
+                                  f"{_BAD_REPORT} {path}")
     return per_file, dead, w.hasher.hexdigest()
 
 

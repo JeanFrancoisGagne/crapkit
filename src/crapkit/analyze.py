@@ -18,6 +18,7 @@ from ._pygdefer import deferred_pygments
 
 with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
+    from lizard_languages import get_reader_for as _lizard_reader_for
 
     from .lizardpowershell import register as _register_powershell
     from .lizardrust import register as _register_rust
@@ -356,7 +357,17 @@ def _install_decoder() -> None:
     lizard.auto_read = read_source
 
 
+def _reader_for(path: str):
+    """Lizard's extension regex cannot cross LF; only its selector needs an alias.
+
+    File reads, parser context and returned records retain the original path.
+    The reader class also owns cache identity, so prior fallback rows miss.
+    """
+    return _lizard_reader_for(path.replace("\n", "\ufffd"))
+
+
 _install_decoder()
+lizard.get_reader_for = _reader_for
 
 
 def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:

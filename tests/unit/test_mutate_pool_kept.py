@@ -254,7 +254,7 @@ def test_drop_pool_on_a_repo_that_never_pooled_says_nothing_was_there(repo):
 
 def test_one_worker_uses_a_private_pool(repo, monkeypatch):
     """One worker has the same isolation contract as several workers."""
-    monkeypatch.setattr(mutate_pool, "run_one", lambda tree, cfg, mutant: True)
+    monkeypatch.setattr(mutate_pool, "run_one", lambda tree, cfg, mutant, owner=None: True)
     cfg = type("Cfg", (), {"mutation_workers": 1, "mutation_command": f'"{sys.executable}" -c "pass"',
                            "mutation_timeout_seconds": 5})()
     mutant = type("M", (), {"path": "m.py", "line": 1, "op": "x"})()

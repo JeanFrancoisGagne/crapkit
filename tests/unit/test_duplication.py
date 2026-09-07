@@ -86,9 +86,7 @@ class _Weakable(dict):
 
 
 class _ProbeRow:
-    """Duck-types the five fields dup reads off a row. `long_name` is touched
-    ONLY when a pair payload is built, which is after the index exists, so
-    reading it is how a test observes what is still alive during scoring."""
+    """Observe source lifetime when ranking or payload construction reads a name."""
 
     def __init__(self, path, start, end, on_payload):
         self.path, self.start, self.end = path, start, end
@@ -121,8 +119,8 @@ def test_the_source_texts_are_gone_before_any_pair_is_scored():
     (pair,) = find_duplicates(rows, load_sources)
 
     assert pair["similarity"] >= 0.85, "the pair still surfaces"
-    assert freed_when_scored == [True, True], \
-        "both payload reads happened with the texts already released"
+    assert len(freed_when_scored) >= 2 and all(freed_when_scored), \
+        "rank and payload reads happen with the texts already released"
 
 
 # --- one function's twins: the same shingles, asked about a single row --------

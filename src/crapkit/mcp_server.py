@@ -641,7 +641,7 @@ TOOLS: tuple[dict, ...] = (
                         "check_gate runs")},
                     "scoped_tests": {
                         "type": ("string", "null"),
-                        "description": ("this scope's own test command with the file filled in, or "
+                        "description": ("the crapkit test-scoped call for this literal file, or "
                         "null when the scope declares no [crapkit.scoped_tests] "
                         "template")},
                     "scoped_tests_note": {
@@ -657,8 +657,8 @@ TOOLS: tuple[dict, ...] = (
                         "clears stale")},
                     "refresh_writes_run": {
                         "type": "boolean",
-                        "description": ("always true: refresh is the one command here that writes a "
-                        "run to the store; the other three change nothing")}}},
+                        "description": ("always true: refresh writes a coverage run to the store; "
+                        "other commands can also write caches or test artifacts")}}},
             "lane": {
                 "type": ("object", "null"),
                 "description": ("the lane whose artifact produced cov and uncovered_lines, verbatim "
@@ -1531,7 +1531,7 @@ def _run_cli(tool: dict, arguments: dict, repo: str) -> dict:
     and its payload says so in `gate.ok`."""
     argv = build_argv(tool, arguments) + ["--repo", repo]
     proc = subprocess.run([sys.executable, "-m", "crapkit", *argv], cwd=repo,
-                          capture_output=True, text=True, timeout=600)
+                          capture_output=True, text=True, encoding="utf-8", timeout=600)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
     return _structured(_result(text, is_error=failed))

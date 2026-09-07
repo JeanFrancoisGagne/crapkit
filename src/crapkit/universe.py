@@ -225,8 +225,7 @@ def _candidates(files: list[str], cfg: Config,
                 matchers: tuple[ScopeMatch, ...]) -> list[tuple[str, str | None]]:
     match_glob = exclude_matcher(cfg.exclude_globs)
     out = []
-    for raw_path in files:
-        path = raw_path.replace("\\", "/")
+    for path in files:
         if excluded(path, match_glob):
             continue
         owner, known_language = _candidate(path, matchers)

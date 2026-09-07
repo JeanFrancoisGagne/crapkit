@@ -184,13 +184,10 @@ along with the rest of `.crapkit/`. Warm, `coupling` costs 0.11 s instead of 1.0
 `--min-support` or `--min-confidence` off their defaults bypasses the cache every time, so
 keep the fleet on the defaults unless somebody is investigating.
 
-**`mutate` with `mutation_workers > 1` leaves worktrees on disk.** The workers now keep their
-worktrees under `.crapkit/mutate-pool/w0..wN` and re-prepare them per run, which took a run's
-setup from 30.6 s to 0.46 s. What is left behind is one full checkout of the repo per worker,
-and **the pool is not size-bounded**: budget for it on a big tree, and reclaim it with
-`crapkit mutate --drop-pool`. Single-worker runs mutate the working tree as they always did
-and leave nothing. A second `mutate` in the same repo finds the pool locked and falls back to
-a throwaway base, so it is slower rather than wrong.
+**Every mutation worker uses a kept worktree**, including the default of one.
+Budget one checkout per worker and reclaim the pool with `crapkit mutate --drop-pool`.
+See [mutation worktrees](configuration.md#mutation-worktrees) for preparation,
+concurrent runs and cleanup.
 
 **`trend` and `report` write.** Both fill a per-run rollup table on first read, which is what
 takes `trend` from 4.58 s to 0.04 s. A session holding a checkout it must not write to should

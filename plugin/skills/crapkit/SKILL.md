@@ -30,8 +30,8 @@ session works in does not hold those pages.
 | Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
 | A lane command crapkit refuses on Windows | Write the value in double quotes. cmd.exe does not treat `'` as a quote, so a single-quoted value reaches the runner one word per space and the guard reads a positional |
 | `crapkit doctor` WARNs that a lane declares no `results_artifact` | Coverage is measured either way. Two checks go dark for that lane's scopes until it names a junit file: the crashed-worker trust check, and exit 8, the no-new-failures check |
-| `trend` or `report` writing in a checkout you meant to keep read-only | Both fill a per-run rollup in the store, once per run, best effort. It is a cache: no run, baseline, ratchet or mutant moves. `commands.refresh_writes_run` still marks the one command that lands a run |
-| `mutate` left worktrees behind | `crapkit mutate --drop-pool` removes `.crapkit/mutate-pool/`, the worktrees `mutation_workers > 1` keeps between runs. Every run still re-prepares them, `git checkout --force` on HEAD then `git clean -xdff`; what keeping them saves is the build, 30.6 s down to 0.46 s on a 31,459-file repo |
+| `trend` or `report` writing in a checkout you meant to keep read-only | Both fill a per-run rollup cache in the store. `commands.refresh_writes_run` marks a new coverage run; it does not promise that the other packet commands leave the filesystem unchanged |
+| `mutate` left worktrees behind | Every worker uses a kept worktree, including the default of one. `crapkit mutate --drop-pool` reclaims them. See [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees) for preparation, concurrent runs and cleanup |
 
 Field semantics live in [docs: the brief payload](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#brief);
 the five-step loop lives in [AGENTS: the packet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#1-the-packet).

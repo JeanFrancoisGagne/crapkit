@@ -37,12 +37,13 @@ gets dropped. They are spelled as the console script (`crapkit rescore PATH --ga
 which is the spelling that resolves from an activated venv on Windows: bare `python`
 there can reach the WindowsApps stub or the base interpreter the venv wraps.
 
-`commands.refresh` is the fourth string and the only one that writes: it is a `coverage`
-run. Automatic reuse requires the same clean HEAD and unchanged configuration,
+`commands.refresh` is the fourth string: it creates a `coverage` run.
+Automatic reuse requires the same clean HEAD and unchanged configuration,
 environment and coverage/JUnit bytes; every other lane reruns. That is what
 `stale: true` asks for. Nothing else clears it, because nothing else lands a run on the
-current commit. `commands.refresh_writes_run: true` marks it, so a session with a
-read-only checkout can tell the one command it must not run from the three it may.
+current commit. `commands.refresh_writes_run: true` marks that ledger write.
+The other commands can still write caches or test artifacts; the field does not
+promise filesystem read-only execution.
 
 `PATH` and `FUNCTION` come from `crapkit next-item --claim`, or from one entry of a
 `crapkit brief --batch N --json` an orchestrator already ran.
@@ -175,13 +176,13 @@ passes here and still fails verify on CRAP.
 
 ## 4. Run the owning scope's tests
 
-    python -m pytest "calc/grade.py" -q -p no:cacheprovider   # commands.scoped_tests, verbatim
+    crapkit test-scoped calc/grade.py   # commands.scoped_tests, verbatim
 
-`commands.scoped_tests` is not a `crapkit test-scoped` call. It is the owning scope's own
-`[crapkit.scoped_tests]` template with `{files}` already replaced by this packet's file,
-double-quoted, so what you run is the runner the scope declared. Without a packet in hand,
-`crapkit test-scoped calc/grade.py` fills the same template from the same config, and the
-exit codes below are its.
+`commands.scoped_tests` calls `crapkit test-scoped` with the packet's literal file.
+That command selects the owning scope's `[crapkit.scoped_tests]` template and runs
+it from the project root with the inherited environment. Packet commands quote
+special filenames for the host shell; run the string verbatim. The exit codes
+below apply to both packet commands and direct `test-scoped` calls.
 
 `commands.scoped_tests` is `null` when this scope declares no template, and then there
 is no step 4 to run: go to step 5. `crapkit doctor` warns about every scope a lane
@@ -588,9 +589,8 @@ writes a run, a baseline, a ratchet or a mutant. `coverage`, `verify`, `ratchet`
 
 `brief`, `worklist` and `coupling` do fill the ranked-pairs cache under `.crapkit/` on a
 cold run, and the store fills a per-run rollup the first time `trend` or `report` asks.
-Those are caches: deleting one costs a walk, never a verdict. A session that must write
-nothing at all still has `commands.refresh_writes_run` to tell the one command that
-lands a run from the ones that do not.
+Those are caches: deleting one costs a walk, never a verdict.
+`commands.refresh_writes_run` distinguishes a new coverage run from these cache writes.
 
 ---
 
@@ -625,14 +625,15 @@ rejected in review.
 <!-- generated:test-schedule -->
 ```sh
 python tools/testing/run.py
-python -m pytest tests/unit -p no:randomly
+python -m pytest tests/unit -p no:randomly -n 4
 python -m pytest tests/e2e -n 8 -p no:randomly
 ```
 <!-- /generated:test-schedule -->
 
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. The shared runner owns the
-serial unit and parallel CLI schedule used by development, CI and self-verification.
+four-worker unit and eight-worker CLI schedule used by development, CI and self-verification.
+Use `--unit-workers 1` on the shared runner to reproduce a unit failure serially.
 Use `--coverage` to combine both suites' branch coverage, test contexts and JUnit
 results. Either suite failing makes the runner fail.
 

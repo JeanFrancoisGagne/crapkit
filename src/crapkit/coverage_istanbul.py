@@ -44,6 +44,24 @@ def _rel_path(abs_path: str, repo_root: str) -> str:
 _B_TOTAL, _B_COV, _S_TOTAL, _S_COV = 4, 5, 6, 7
 
 
+def coverage_count(value: object, field: str) -> int:
+    """Admit a producer's count before attribution or ratio arithmetic."""
+    if type(value) is float and value.is_integer():
+        value = int(value)
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}")
+    return value
+
+
+def _admit_hits(cov: dict) -> None:
+    for group in ("f", "s"):
+        for key, value in cov.get(group, {}).items():
+            coverage_count(value, f"{group}[{key!r}]")
+    for key, hits in cov.get("b", {}).items():
+        for index, value in enumerate(hits):
+            coverage_count(value, f"b[{key!r}][{index}]")
+
+
 def _fn_spans(cov: dict) -> list[list]:
     spans = []
     for fid, fn in cov.get("fnMap", {}).items():
@@ -127,6 +145,7 @@ def _attach_statements(owners: dict[int, list | None], cov: dict) -> None:
 
 
 def _file_coverage(cov: dict) -> list[FnCoverage]:
+    _admit_hits(cov)
     fn_spans = _fn_spans(cov)
     owners = _span_owners(fn_spans, _query_lines(cov))
     _attach_branches(owners, cov)

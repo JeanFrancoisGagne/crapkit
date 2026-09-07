@@ -1477,34 +1477,21 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
     return _newest_root(_installed_crapkit_roots(plugins)), str(plugins)
 
 
-def _probed_cli_version(executable: str) -> str:
-    """What `<executable> --version` answers, reduced to the number the manifest
-    carries, or this module's own `__version__` when the probe cannot run OR
-    does not exit 0.
-
-    Only a clean exit is a version. A `crapkit` that starts and then errors — a
-    stale shim, a broken entry point printing a traceback, an argparse usage
-    dump — still has a last word, and taking it made the gap line name a version
-    nothing on the machine reports.
-
-    Spawned directly rather than through `run_bounded`: this probe needs the
-    OUTPUT, and with no shell in between the real program is the child, so
-    subprocess's own timeout lands on it. `crapkit --version` prints
-    `crapkit 0.4.11`, and the manifest carries the number alone.
-    """
+def _probed_cli_version(executable: str) -> str | None:
+    """The launcher's declared version, or None when it cannot answer."""
     import subprocess
 
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True, text=True,
+        done = subprocess.run([executable, "--version"], capture_output=True, encoding="utf-8",
                               timeout=_PROBE_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError):
-        return __version__
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
     answer = (done.stdout or done.stderr).split() if done.returncode == 0 else []
-    return answer[-1] if answer else __version__
+    return answer[1] if len(answer) == 2 and answer[0] == "crapkit" else None
 
 
 @lru_cache(maxsize=None)
-def _spawned_cli() -> tuple[str, str] | None:
+def _spawned_cli() -> tuple[str, str | None] | None:
     """The console script the plugin actually starts and the version it answers,
     or None when PATH carries no `crapkit` at all.
 
@@ -1573,6 +1560,10 @@ def _doctor_plugin(plugin_root: str) -> int:
         print(_no_crapkit_on_path())
         return 1
     executable, cli_version = spawned
+    if cli_version is None:
+        print(f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
+              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
+        return 1
     lines = plugin_handshake(where=str(root), version=_manifest_version(root),
                              cli_version=cli_version, cli_where=executable,
                              protocols=_hook_protocols(root), supported=PROTOCOL)

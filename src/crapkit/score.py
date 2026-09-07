@@ -16,6 +16,7 @@ from typing import NamedTuple
 from .coverage_istanbul import FnCoverage
 from .errors import ToolError
 from .keys import require_unambiguous
+from .records import decode_record, encode_record, record_lines
 from .snapshot import InventoryRow
 
 
@@ -61,12 +62,6 @@ _FIELD_TYPES = (str, str, str, int, int, int, int, int, int, int, int,
                 float, str, float, str, int, int)
 _SCORED_HEADER = "\t".join(ScoredRow._fields)
 _SCORED_HEADERS = {"\t".join(ScoredRow._fields[:-1]): 16, _SCORED_HEADER: 17}
-# One %s per field, built once. %s of every field is str() of it, so the bytes
-# do not move; a row is a tuple, so it IS the argument list and the per-row
-# generator, the join and the concatenation all disappear (179 -> 116 ms on
-# 140,922 rows). Derived from _fields rather than written out, so a new column
-# cannot leave the template a field short.
-_SCORED_ROW = "\t".join(["%s"] * len(ScoredRow._fields)) + "\n"
 
 
 def scored_tsv_lines(rows: list[ScoredRow]) -> Iterator[str]:
@@ -74,15 +69,19 @@ def scored_tsv_lines(rows: list[ScoredRow]) -> Iterator[str]:
     is the empty string, so the file stays the single newline it always was."""
     yield (_SCORED_HEADER if rows else "") + "\n"
     for r in rows:
-        yield _SCORED_ROW % r
+        yield encode_record(r) + "\n"
 
 
 def parse_scored_row(line: str) -> ScoredRow:
     """One exported line back to a row. str() of every field round-trips through
     its own constructor, floats included, so the re-emitted bytes are identical."""
-    parts = line.split("\t")
+    parts = decode_record(line)
+    return _scored_parts(parts)
+
+
+def _scored_parts(parts: list[str]) -> ScoredRow:
     if len(parts) not in (16, 17):
-        raise ValueError(f"scored row has {len(parts)} fields, expected 16 or 17: {line!r}")
+        raise ValueError(f"scored row has {len(parts)} fields, expected 16 or 17: {parts!r}")
     row = ScoredRow(*[cast(part) for cast, part in zip(_FIELD_TYPES, parts)])
     if row.occurrence < 0:
         raise ValueError("scored occurrence must be nonnegative")
@@ -90,7 +89,7 @@ def parse_scored_row(line: str) -> ScoredRow:
 
 
 def parse_scored_tsv(text: str) -> list[ScoredRow]:
-    lines = [line for line in text.splitlines() if line.strip()]
+    lines = [line for line in record_lines(text) if line.strip()]
     if not lines:
         return []
     count = _SCORED_HEADERS.get(lines[0])
@@ -100,10 +99,11 @@ def parse_scored_tsv(text: str) -> list[ScoredRow]:
 
 
 def _scored_line(line: str, count: int | None) -> ScoredRow:
-    fields = len(line.split("\t"))
+    parts = decode_record(line)
+    fields = len(parts)
     if count is not None and fields != count:
         raise ValueError(f"scored row has {fields} fields, expected {count}")
-    return parse_scored_row(line)
+    return _scored_parts(parts)
 
 
 def _overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> int:

@@ -376,10 +376,12 @@ def _named_claims(claims: list, path: str, name: str) -> list:
     return held
 
 
-def _claims_to_release(claims: list, release_all: bool, target: list) -> list:
+def _claims_to_release(claims: list, release_all: bool, target: list,
+                       root: Path = Path("."), cwd: Path | None = None) -> list:
     if release_all:
         return claims
-    return _named_claims(claims, *_release_target(target))
+    path, name = _release_target(target)
+    return _named_claims(claims, _repo_relative(path, root, cwd), name)
 
 
 def _print_released(as_json: bool, closed: int) -> None:
@@ -396,12 +398,13 @@ def cmd_claims(args: argparse.Namespace) -> int:
     verify happens to score that function at its ceiling — which, for the worst
     function in the repo, is the whole job.
     """
-    store = _open_store(_command_root(args.repo))
+    root = _command_root(args.repo)
+    store = _open_store(root)
     claims = store.open_claims()
     if args.action != "release":
         _print_claims(args.json, claims)
         return 0
-    to_close = _claims_to_release(claims, args.all, args.target)
+    to_close = _claims_to_release(claims, args.all, args.target, root, _stand(args.repo))
     _print_released(args.json, store.close_claims([c["id"] for c in to_close]))
     return 0
 
@@ -725,8 +728,7 @@ def _packet_gate(loader, row) -> dict:
 
 
 def _packet_commands(cfg, row, scope: str) -> dict:
-    template = dict(cfg.scoped_tests).get(scope)
-    scoped = packet.scoped_test_command(template, [row.path]) if template else None
+    scoped = bool(dict(cfg.scoped_tests).get(scope))
     return packet.commands(row.path, scoped,
                            f"no [crapkit.scoped_tests] template for scope {scope!r}")
 

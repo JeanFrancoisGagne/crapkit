@@ -34,6 +34,7 @@ _RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures"
 # The verify lists whose entries name a function. The comment's table lists
 # those rows first, so the function the gate stopped is not below the fold.
 _FINDING_LISTS = ("gate_violations", "ratchet_regressions", "overridden")
+_CELL_BREAKS = str.maketrans({char: ascii(char)[1:-1] for char in "\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029"})
 
 
 def _read_text(path: str | None) -> str:
@@ -65,6 +66,16 @@ def _read_lines(path: str | None) -> list[str]:
     """The changed-file list, empty when there is none."""
     text = _read_text(path)
     return [line.strip().replace("\\", "/") for line in text.splitlines() if line.strip()]
+
+
+def _changed_paths(args: argparse.Namespace) -> list[str]:
+    """Exact Git NUL records, or the legacy saved-payload line format."""
+    if args.changed_z is None:
+        return _read_lines(args.changed)
+    try:
+        return [path for path in Path(args.changed_z).read_bytes().decode("utf-8").split("\0") if path]
+    except OSError:
+        return []
 
 
 def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
@@ -252,9 +263,7 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
 
 
 def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
-    """worklist paths are root-relative and unquoted, and so is `git diff
-    --name-only` under crapkit's own `core.quotePath=false`, so this is a
-    string match and not a path walk."""
+    """Join worklist and Git records by their exact root-relative paths."""
     return [row for row in active if row.get("path") in changed]
 
 
@@ -295,8 +304,13 @@ def _remedy(row: dict) -> str:
     return f"{remedy} (accepted debt)" if row.get("ratchet_mark") is not None else remedy
 
 
+def _cell_text(value) -> str:
+    """Display line separators without splitting a Markdown table row."""
+    return str(value).translate(_CELL_BREAKS).replace("|", "\\|").replace("`", "\\u0060")
+
+
 def _cell(row: dict) -> str:
-    return (f"| `{row.get('path')}:{row.get('start')}` | `{row.get('function')}` "
+    return (f"| `{_cell_text(row.get('path'))}:{row.get('start')}` | `{_cell_text(row.get('function'))}` "
             f"| {row.get('ccn')} | {row.get('risk')} | {_remedy(row)} |")
 
 
@@ -338,6 +352,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--base-reason", help="file holding why the base run was not made")
     parser.add_argument("--worklist", help="crapkit worklist --json output")
     parser.add_argument("--changed", help="file holding one changed path per line")
+    parser.add_argument("--changed-z", help="file holding UTF-8, NUL-separated Git paths")
     parser.add_argument("--top", type=int, default=5, help="rows to render (default 5)")
     parser.add_argument("--out", required=True, help="where to write the markdown")
     parser.add_argument("--json-out", help="where to write the {\"body\": ...} gh api sends")
@@ -347,7 +362,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
-                _read_json(args.worklist), _read_lines(args.changed), args.top,
+                _read_json(args.worklist), _changed_paths(args), args.top,
                 _base_reason(args.base_sha, args.base_reason), args.coverage_exit)
     Path(args.out).write_text(text, encoding="utf-8", newline="\n")
     if args.json_out:
