@@ -64,6 +64,7 @@ jobs:
         with:
           name: crapkit-verdict
           path: .crapkit/ci-verdict
+          include-hidden-files: true
           if-no-files-found: warn
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python

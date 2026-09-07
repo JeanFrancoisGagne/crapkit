@@ -17,6 +17,7 @@ def test_hosted_ci_invokes_the_full_isolated_verdict_and_saves_evidence():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert 'python tools/testing/ci.py --base "$BASE_REF"' in workflow
     assert "path: .crapkit/ci-verdict" in workflow
+    assert "include-hidden-files: true" in workflow
     assert "run: python tools/testing/run.py" in workflow
 
 

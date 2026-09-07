@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,21 +30,79 @@ def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: b
     return subprocess.run(command, cwd=root, env=environment).returncode
 
 
-def _junit(scratch: Path, output: Path) -> None:
-    combined = ET.Element("testsuites")
-    for name in SUITES:
+def _incomplete_suite(name: str, code: int, reason: str) -> ET.Element:
+    suite = ET.Element("testsuite", name=name, tests="1", errors="1", failures="0")
+    case = ET.SubElement(suite, "testcase", classname="test_runner", name=name + " evidence")
+    ET.SubElement(case, "error", message=f"{name} exited {code}; {reason}")
+    return suite
+
+
+def _suite_xml(scratch: Path, name: str, code: int) -> tuple[list, bool]:
+    try:
         suite = ET.parse(scratch / (name + ".xml")).getroot()
-        combined.extend(list(suite) if suite.tag == "testsuites" else [suite])
+    except (OSError, ET.ParseError) as exc:
+        return [_incomplete_suite(name, code, str(exc))], False
+    parts = list(suite) if suite.tag == "testsuites" else [suite]
+    if code and not any(node.tag in {"failure", "error"} for node in suite.iter()):
+        return [*parts, _incomplete_suite(name, code, "JUnit recorded no failure")], False
+    return parts, True
+
+
+def _junit(scratch: Path, output: Path, results: list[int]) -> bool:
+    combined = ET.Element("testsuites")
+    complete = []
+    for name, code in zip(SUITES, results):
+        parts, valid = _suite_xml(scratch, name, code)
+        individual = ET.Element("testsuites")
+        individual.extend(parts)
+        ET.ElementTree(individual).write(output.with_name(name + ".xml"),
+                                         encoding="utf-8", xml_declaration=True)
+        combined.extend(parts)
+        complete.append(valid)
     ET.ElementTree(combined).write(output, encoding="utf-8", xml_declaration=True)
+    return all(complete)
 
 
 def _coverage(root: Path, scratch: Path, output: Path) -> None:
     environment = dict(os.environ, COVERAGE_FILE=str(scratch / ".coverage"))
     sources = [str(scratch / (".coverage." + name)) for name in SUITES]
     command = [sys.executable, "-m", "coverage"]
-    subprocess.run([*command, "combine", *sources], cwd=root, env=environment, check=True)
+    subprocess.run([*command, "combine", "--keep", *sources], cwd=root, env=environment, check=True)
     subprocess.run([*command, "json", "--show-contexts", "-o", str(output)],
                    cwd=root, env=environment, check=True)
+
+
+def _retain_incomplete(scratch: Path, output: Path) -> None:
+    retained = output / "incomplete" / scratch.name
+    shutil.copytree(scratch, retained)
+    print(f"incomplete test evidence retained at {retained}", file=sys.stderr)
+
+
+def _retain_suite_data(scratch: Path, output: Path) -> None:
+    for name in SUITES:
+        source = scratch / (".coverage." + name)
+        if source.is_file():
+            shutil.copyfile(source, output / (name + ".coverage"))
+
+
+def _collect(root: Path, scratch: Path, output: Path, results: list[int], coverage: bool) -> bool:
+    _retain_suite_data(scratch, output)
+    complete = _junit(scratch, output / "junit.xml", results)
+    if not complete:
+        _retain_incomplete(scratch, output)
+        return False
+    try:
+        if coverage:
+            _coverage(root, scratch, output / "py.json")
+    except (OSError, subprocess.CalledProcessError):
+        _retain_incomplete(scratch, output)
+        raise
+    return True
+
+
+def _clear_outputs(output: Path) -> None:
+    for name in ("junit.xml", "py.json", "unit.xml", "e2e.xml", "unit.coverage", "e2e.coverage"):
+        (output / name).unlink(missing_ok=True)
 
 
 def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS) -> int:
@@ -51,14 +110,13 @@ def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS
     root = root.resolve()
     output = root / ".crapkit/cov"
     output.mkdir(parents=True, exist_ok=True)
+    _clear_outputs(output)
     with tempfile.TemporaryDirectory(prefix="suites-", dir=output) as directory:
         scratch = Path(directory)
         results = [_suite(command, root, scratch, name, coverage)
                    for name, command in zip(SUITES, test_commands(sys.executable, workers))]
-        _junit(scratch, output / "junit.xml")
-        if coverage:
-            _coverage(root, scratch, output / "py.json")
-    return int(any(results))
+        complete = _collect(root, scratch, output, results, coverage)
+    return int(any(results) or not complete)
 
 
 def main(argv: list[str] | None = None) -> int:

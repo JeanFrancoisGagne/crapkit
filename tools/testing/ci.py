@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -128,20 +129,59 @@ def _checkout(repo: Path, directory: Path, ref: str) -> Path:
     return directory
 
 
+def _retain_revision(source: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    coverage = source / ".crapkit/cov"
+    if coverage.is_dir():
+        shutil.copytree(coverage, destination / "cov")
+    ledger = source / ".crapkit/crap.sqlite"
+    if ledger.is_file():
+        _copy_baseline(ledger, destination / "crap.sqlite")
+
+
+def _retain_evidence(scratch: Path, output: Path, evidence: dict) -> None:
+    retained = output / evidence["evidence_dir"]
+    try:
+        for name in ("base", "candidate"):
+            _retain_revision(scratch / name, retained / name)
+    finally:
+        text = json.dumps(evidence, indent=2) + "\n"
+        (output / "verdict.json").write_text(text, encoding="utf-8")
+        (retained / "verdict.json").write_text(text, encoding="utf-8")
+
+
+def _compare_checkouts(repo: Path, base_ref: str, scratch: Path, evidence: dict) -> int:
+    base = _checkout(repo, scratch / "base", base_ref)
+    candidate = _checkout(repo, scratch / "candidate", "HEAD")
+    evidence["phase"] = "base-install"
+    bp, be, evidence["base"] = install_revision(base, scratch / "base-install")
+    evidence["phase"] = "candidate-install"
+    cp, ce, evidence["candidate"] = install_revision(candidate, scratch / "candidate-install")
+    evidence["phase"] = "measure"
+    results = [_measure(base, bp, be, evidence["base"]),
+               _measure(candidate, cp, ce, evidence["candidate"])]
+    evidence["suite_exits"] = results
+    evidence["phase"] = "verify"
+    code, evidence["verdict"] = verify_pair(base, candidate, bp, cp, be, ce)
+    evidence["phase"] = "complete"
+    return code or int(any(results))
+
+
 def compare(repo: Path, base_ref: str, output: Path) -> int:
     """Measure isolated installations, then persist the verdict and provenance."""
+    output.mkdir(parents=True, exist_ok=True)
+    retained = Path(tempfile.mkdtemp(prefix="attempt-", dir=output))
+    evidence = {"phase": "checkout", "base": None, "candidate": None,
+                "suite_exits": [], "verdict": None, "evidence_dir": retained.name}
     with tempfile.TemporaryDirectory(prefix="crapkit-ci-") as directory:
         scratch = Path(directory)
-        base = _checkout(repo, scratch / "base", base_ref)
-        candidate = _checkout(repo, scratch / "candidate", "HEAD")
-        bp, be, bproof = install_revision(base, scratch / "base-install")
-        cp, ce, cproof = install_revision(candidate, scratch / "candidate-install")
-        results = [_measure(base, bp, be, bproof), _measure(candidate, cp, ce, cproof)]
-        code, verdict = verify_pair(base, candidate, bp, cp, be, ce)
-        output.mkdir(parents=True, exist_ok=True)
-        evidence = {"base": bproof, "candidate": cproof, "suite_exits": results, "verdict": verdict}
-        (output / "verdict.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
-        return code or int(any(results))
+        try:
+            return _compare_checkouts(repo, base_ref, scratch, evidence)
+        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+            evidence["error"] = str(exc)
+            raise
+        finally:
+            _retain_evidence(scratch, output, evidence)
 
 
 def main(argv=None) -> int:

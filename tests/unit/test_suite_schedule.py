@@ -52,3 +52,47 @@ def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure
     assert measured["executed_branches"] == [[2, 3], [2, 4]]
     contexts = {context for items in measured["contexts"].values() for context in items}
     assert any("test_unit" in context for context in contexts)
+    for suite in ("unit", "e2e"):
+        assert (tmp_path / ".crapkit/cov" / (suite + ".xml")).is_file()
+        assert (tmp_path / ".crapkit/cov" / (suite + ".coverage")).is_file()
+
+
+def test_startup_failure_replaces_old_passing_evidence_and_keeps_the_other_suite(tmp_path):
+    fixture_repo(tmp_path, "")
+    env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
+    for key in tuple(env):
+        if key.startswith(("COVERAGE_", "COV_CORE_")):
+            env.pop(key)
+    command = [sys.executable, str(SCRIPT), "--repo", str(tmp_path),
+               "--coverage", "--workers", "2"]
+    first = subprocess.run(command, env=env, capture_output=True, text=True)
+    assert first.returncode == 0, first.stdout + first.stderr
+    output = tmp_path / ".crapkit/cov"
+    before = output.joinpath("junit.xml").read_bytes()
+    (tmp_path / "tests/unit/conftest.py").write_text('raise RuntimeError("unit startup failed")\n')
+
+    failed = subprocess.run(command, env=env, capture_output=True, text=True)
+
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    assert output.joinpath("junit.xml").read_bytes() != before
+    current = ET.parse(output / "junit.xml")
+    assert len(current.findall(".//error")) == 1
+    assert "test_child" in [case.attrib["name"] for case in current.findall(".//testcase")]
+    assert "test_unit" not in [case.attrib["name"] for case in current.findall(".//testcase")]
+    assert not output.joinpath("py.json").exists(), "old passing coverage must not survive"
+    assert list(output.glob("incomplete/*/e2e.xml")), "retain this attempt's completed suite"
+
+
+def test_empty_suite_records_an_infrastructure_failure_with_its_exit(tmp_path):
+    fixture_repo(tmp_path, "")
+    (tmp_path / "tests/unit/test_one.py").unlink()
+    env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
+
+    result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
+                             "--workers", "2"], env=env, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    current = ET.parse(tmp_path / ".crapkit/cov/junit.xml")
+    error, = current.findall(".//error")
+    assert "unit exited 5" in error.attrib["message"]
+    assert "test_child" in [case.attrib["name"] for case in current.findall(".//testcase")]
