@@ -718,26 +718,28 @@ _NO_LISTER = shutil.which(_process_lister()) is None
 
 
 @pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
-def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path):
+@pytest.mark.parametrize("startup_delay", [0, _TIMEOUT + 1], ids=["ready", "delayed"])
+def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path, monkeypatch, startup_delay):
     """The timeout says the mutant is dead. A mutation command still running
     after that is a whole test suite the run stopped counting on: sixteen
     mutants on one worker put sixteen of them on the machine at once."""
-    command, token, started = _long_sleeper(tmp_path)
+    command, token, started = _long_sleeper(tmp_path, startup_delay)
     (tmp_path / "m.py").write_text("flag = True\n", encoding="utf-8")
     cfg = types.SimpleNamespace(mutation_command=command, mutation_timeout_seconds=_TIMEOUT)
     mutant = Mutant("m.py", 1, "flag = True", "flag = False", "True -> False")
 
-    start = time.perf_counter()
+    observed = _timeout_after_start(monkeypatch, started)
     assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
-    assert time.perf_counter() - start < _CEILING
+    assert time.perf_counter() - observed["start"] < _CEILING
+    assert observed["timed_out"] == [_TIMEOUT]
     assert started.is_file(), "the command never started: this proved nothing"
     assert _gone(token), "the mutation command outlived the timeout that killed it"
 
 
-def _probe_timeout_after_start(monkeypatch, started):
+def _timeout_after_start(monkeypatch, started):
     """Establish the cleanup fixture before starting its unchanged deadline."""
     original = procs._wait_command
-    timed_out = []
+    observed = {"timed_out": []}
 
     def wait(process, timeout):
         deadline = time.monotonic() + _ORPHAN_SLEEP
@@ -747,14 +749,15 @@ def _probe_timeout_after_start(monkeypatch, started):
         assert started.is_file(), "the interpreter never became ready for cleanup"
         assert process.poll() is None
         assert timeout == _TIMEOUT
+        observed["start"] = time.perf_counter()
         try:
             return original(process, timeout)
         except subprocess.TimeoutExpired as exc:
-            timed_out.append(exc.timeout)
+            observed["timed_out"].append(exc.timeout)
             raise
 
     monkeypatch.setattr(procs, "_wait_command", wait)
-    return timed_out
+    return observed
 
 
 @pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
@@ -765,10 +768,10 @@ def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkey
     command, token, started = _long_sleeper(tmp_path, startup_delay)
     _sleeping_interpreter(tmp_path, monkeypatch, command)
     monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
-    timed_out = _probe_timeout_after_start(monkeypatch, started)
+    observed = _timeout_after_start(monkeypatch, started)
 
     assert _pytest_cov_probe("python -m pytest --cov") is True
-    assert timed_out == [_TIMEOUT], "cleanup must follow the real probe timeout"
+    assert observed["timed_out"] == [_TIMEOUT], "cleanup must follow the real probe timeout"
     assert started.is_file(), "the interpreter never started: this proved nothing"
     assert _gone(token), "the probe left its interpreter running"
 

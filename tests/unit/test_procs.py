@@ -16,10 +16,12 @@ import subprocess
 import sys
 import time
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
 from crapkit.config import Lane
+from crapkit import procs
 from crapkit.errors import ToolError
 from crapkit.lanes import _deadline, _no_progress, run_lane
 from crapkit.procs import NoProgress, run_bounded
@@ -61,7 +63,7 @@ def _gone(token: str) -> bool:
     return not _alive(token)
 
 
-def _long_sleeper(tmp_path) -> tuple:
+def _long_sleeper(tmp_path, startup_delay=0) -> tuple:
     """A lane command that reports it started and then outlives any timeout.
 
     The script name is unique per test because the question is asked of the
@@ -70,25 +72,52 @@ def _long_sleeper(tmp_path) -> tuple:
     """
     script = tmp_path / f"lane_orphan_{uuid.uuid4().hex}.py"
     script.write_text("import pathlib, time\n"
+                      f"time.sleep({startup_delay})\n"
                       "pathlib.Path(__file__).with_suffix('.started').touch()\n"
                       f"time.sleep({_SLEEP})\n", encoding="utf-8")
     return f'"{sys.executable}" "{script}"', script.name, script.with_suffix(".started")
 
 
+def _ready_before_deadline(monkeypatch, started):
+    original = procs._wait_bounded
+    observed = {}
+
+    def wait(process, timeout, no_progress, stream):
+        deadline = time.monotonic() + _SLEEP
+        while not started.is_file() and time.monotonic() < deadline:
+            assert process.poll() is None, "the launcher exited before fixture startup"
+            time.sleep(0.01)
+        assert started.is_file(), "the child never became ready for cleanup"
+        assert process.poll() is None
+        observed.update(start=time.perf_counter(), deadlines=(timeout, no_progress))
+        try:
+            observed["result"] = original(process, timeout, no_progress, stream)
+            return observed["result"]
+        except NoProgress as exc:
+            observed["idle"] = exc.seconds
+            raise
+
+    monkeypatch.setattr(procs, "_wait_bounded", wait)
+    return observed
+
+
 @pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
-def test_a_timed_out_lane_takes_its_whole_process_tree_with_it(tmp_path):
+@pytest.mark.parametrize("startup_delay", [0, _TIMEOUT + 1], ids=["ready", "delayed"])
+def test_a_timed_out_lane_takes_its_whole_process_tree_with_it(tmp_path, monkeypatch, startup_delay):
     """The reported bug: `crapkit coverage` gave up on the lane at 2 s, wrote
     "killed" into the log, and the suite ran to the end on a machine the user
     thought was free. timeout_seconds is the only guard there is."""
-    command, token, started = _long_sleeper(tmp_path)
+    command, token, started = _long_sleeper(tmp_path, startup_delay)
     lane = Lane(name="slow", command=command, artifact="cov.json", parser="istanbul",
                 scopes=(), timeout_seconds=_TIMEOUT)
 
-    start = time.perf_counter()
+    observed = _ready_before_deadline(monkeypatch, started)
     with pytest.raises(ToolError, match="timed out"):
         run_lane(tmp_path, lane)
 
-    assert time.perf_counter() - start < _CEILING
+    assert time.perf_counter() - observed["start"] < _CEILING
+    assert observed["deadlines"] == (_TIMEOUT, None)
+    assert observed["result"] is None
     assert started.is_file(), "the lane command never started: this proved nothing"
     log = (tmp_path / ".crapkit" / "lane-slow.log").read_text(encoding="utf-8")
     assert f"[crapkit] timed out after {_TIMEOUT}s; killed" in log
@@ -96,20 +125,23 @@ def test_a_timed_out_lane_takes_its_whole_process_tree_with_it(tmp_path):
 
 
 @pytest.mark.skipif(_NO_LISTER, reason="no process list to ask on this machine")
-def test_a_lane_that_stops_writing_dies_at_the_progress_deadline(tmp_path):
+@pytest.mark.parametrize("startup_delay", [0, _TIMEOUT + 1], ids=["ready", "delayed"])
+def test_a_lane_that_stops_writing_dies_at_the_progress_deadline(tmp_path, monkeypatch, startup_delay):
     """The reported hang: a suite that stops making progress at 0% CPU. With no
     `timeout_seconds` the wait had no deadline at all, so crapkit sat on it
     forever with nothing watching the log. `no_progress_seconds` watches the
     log: it grows while the suite reports, and stops when the suite stops."""
-    command, token, started = _long_sleeper(tmp_path)
+    command, token, started = _long_sleeper(tmp_path, startup_delay)
     lane = Lane(name="stalled", command=command, artifact="cov.json", parser="istanbul",
                 scopes=(), no_progress_seconds=_IDLE)
 
-    start = time.perf_counter()
+    observed = _ready_before_deadline(monkeypatch, started)
     with pytest.raises(ToolError, match="wrote no output for"):
         run_lane(tmp_path, lane)
 
-    assert time.perf_counter() - start < _CEILING
+    assert time.perf_counter() - observed["start"] < _CEILING
+    assert observed["deadlines"] == (None, _IDLE)
+    assert observed["idle"] == _IDLE
     assert started.is_file(), "the lane command never started: this proved nothing"
     log = (tmp_path / ".crapkit" / "lane-stalled.log").read_text(encoding="utf-8")
     assert f"[crapkit] no output for {_IDLE}s; killed" in log
@@ -122,44 +154,74 @@ def test_run_bounded_says_which_deadline_killed_the_tree(tmp_path):
     was still alive and silent."""
     log = tmp_path / "out.log"
 
+    command, _, started = _long_sleeper(tmp_path, _SLEEP)
     with open(log, "w", encoding="utf-8") as fh:
         fh.write("started\n")
         fh.flush()
-        with pytest.raises(NoProgress, match="no output for"):
-            run_bounded(f'"{sys.executable}" -c "import time; time.sleep({_SLEEP})"', None,
-                        stream=fh, no_progress=_IDLE, cwd=tmp_path)
+        with pytest.raises(NoProgress, match="no output for") as caught:
+            run_bounded(command, None, stream=fh, no_progress=_IDLE, cwd=tmp_path)
+
+    assert caught.value.seconds == _IDLE
+    assert not started.exists(), "the unwrapped idle deadline must include startup silence"
 
 
-def test_a_command_that_keeps_writing_outlives_the_progress_deadline(tmp_path):
+def _watch_events(monkeypatch, stream, events):
+    """Advance only the watch's clock; retain real file-size measurements."""
+    clock = SimpleNamespace(now=0.0)
+    ticks = iter(events)
+
+    def wait(process, timeout):
+        output, code = next(ticks)
+        clock.now += timeout
+        stream.write(output)
+        stream.flush()
+        if code is not None:
+            return code
+        raise subprocess.TimeoutExpired(process.args, timeout)
+
+    monkeypatch.setattr(procs, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(procs, "_wait_command", wait)
+    return SimpleNamespace(args=["watched-command"]), clock
+
+
+def test_a_command_that_keeps_writing_outlives_the_progress_deadline(tmp_path, monkeypatch):
     """The deadline measures GROWTH, not wall time: a suite printing a dot per
     test runs as long as it likes. A deadline that fired on elapsed time would
     be `timeout_seconds` under another name."""
-    script = tmp_path / "chatty.py"
-    script.write_text("import sys, time\n"
-                      "for _ in range(8):\n"
-                      "    sys.stdout.write('tick\\n'); sys.stdout.flush(); time.sleep(0.25)\n",
-                      encoding="utf-8")
     log = tmp_path / "out.log"
-
     with open(log, "w", encoding="utf-8") as fh:
-        code = run_bounded(f'"{sys.executable}" "{script}"', None, stream=fh,
-                           no_progress=_IDLE, cwd=tmp_path)
+        events = [("tick\n", None)] * 8 + [("", 0)]
+        proc, clock = _watch_events(monkeypatch, fh, events)
+        code = procs._wait_bounded(proc, None, _IDLE, fh)
 
     assert code == 0
+    assert clock.now == 4.5 > _IDLE
     assert log.read_text(encoding="utf-8").count("tick") == 8
 
 
-def test_the_total_deadline_still_kills_a_watched_command_that_keeps_writing(tmp_path):
+def test_growth_resets_the_idle_deadline_until_the_exact_limit(tmp_path, monkeypatch):
+    with open(tmp_path / "out.log", "w", encoding="utf-8") as fh:
+        events = [("tick\n", None), ("", None), ("", None)]
+        proc, clock = _watch_events(monkeypatch, fh, events)
+        with pytest.raises(NoProgress) as caught:
+            procs._wait_bounded(proc, None, _IDLE, fh)
+    assert caught.value.seconds == _IDLE
+    assert clock.now == 1.5
+
+
+def test_the_total_deadline_still_kills_a_watched_command_that_keeps_writing(tmp_path, monkeypatch):
     """Both deadlines at once: a suite that writes happily forever trips the
     total deadline, not the watch, and the caller gets the same None the
     unwatched timeout path hands back. The watch must not eat the deadline."""
-    script = tmp_path / "chatty.py"
-    script.write_text("import time" + chr(10) + "while True:" + chr(10) + "    print(chr(42), flush=True)" + chr(10) + "    time.sleep(0.1)" + chr(10), encoding="utf-8")
-    with open(tmp_path / "lane.log", "w+b") as fh:
-        code = run_bounded(f'"{sys.executable}" "{script}"', _TIMEOUT, stream=fh,
-                           no_progress=_TIMEOUT * 4, cwd=tmp_path)
+    log = tmp_path / "lane.log"
+    with open(log, "w", encoding="utf-8") as fh:
+        events = [("tick\n", None)] * 9
+        proc, clock = _watch_events(monkeypatch, fh, events)
+        code = procs._wait_bounded(proc, _TIMEOUT, _TIMEOUT * 4, fh)
 
     assert code is None
+    assert clock.now == _TIMEOUT
+    assert log.read_text(encoding="utf-8").count("tick") == 4
 
 
 def test_a_progress_deadline_with_no_stream_to_watch_never_fires(tmp_path):
