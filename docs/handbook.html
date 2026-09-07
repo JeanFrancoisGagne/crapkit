@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The crapkit Handbook</title>
+<meta name="description" content="Install crapkit, measure complexity and coverage, set a change-risk gate, and work through one debt item with a coding agent.">
 <style>
   :root {
-    --paper: #FAF8F4; --ink: #211C17; --muted: #6E6459; --faint: #94897C;
+    --paper: #FAF8F4; --ink: #211C17; --muted: #6E6459; --faint: #766B5E;
     --line: #E5DFD5; --card: #FFFFFF; --card-line: #EAE4DA;
     --accent: #A6391F; --accent-soft: #F7E9E4;
-    --ok: #2E7D46; --ok-soft: #E7F2EA;
-    --warn: #A66A00; --warn-soft: #F8EFDC;
+    --ok: #276B3D; --ok-soft: #E7F2EA;
+    --warn: #8A5900; --warn-soft: #F8EFDC;
     --info: #3B5B8C; --info-soft: #E8EEF7;
     --data1: #A6391F; --data2: #B8860B; --data3: #3E6B8F; --data4: #2E7D46;
     --code-bg: #F1EDE5; --grid: #E9E3D8;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --paper: #17140F; --ink: #EAE4DB; --muted: #A79C8D; --faint: #7E7466;
+      --paper: #17140F; --ink: #EAE4DB; --muted: #A79C8D; --faint: #A79C8D;
       --line: #322C24; --card: #1F1B15; --card-line: #373128;
       --accent: #E0714F; --accent-soft: #33211B;
       --ok: #6FBF8A; --ok-soft: #1E2E23;
@@ -29,6 +30,13 @@
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+  .skip-link { position: absolute; left: 16px; top: -100px; z-index: 1;
+               padding: 10px 16px; background: var(--card); color: var(--ink); }
+  .skip-link:focus { top: 12px; }
+  .quick-links { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 20px; font-size: 14px; }
+  .quick-links a { padding: 8px 0; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body { margin: 0; background: var(--paper); color: var(--ink);
          font: 16px/1.62 system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
   .shell { max-width: 980px; margin: 0 auto; padding: 40px 24px 90px; }
@@ -58,7 +66,7 @@
   .formula sup { font-size: .6em; }
 
   nav.toc { margin: 26px 0 0; columns: 2; column-gap: 32px; font-size: 14px; }
-  nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; break-inside: avoid; }
+  nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 6px 0; break-inside: avoid; }
   nav.toc a:hover { color: var(--accent); }
   nav.toc a b { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-weight: 600; margin-right: 8px; }
 
@@ -118,8 +126,8 @@
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 18px 0; }
   .card { background: var(--card); border: 1px solid var(--card-line); border-radius: 8px; padding: 14px 16px 12px; }
-  .card h4 { margin: 0 0 6px; font-size: 14.5px; }
-  .card h4 code { font-size: .95em; }
+  .card h3 { margin: 0 0 6px; font-size: 14.5px; }
+  .card h3 code { font-size: .95em; }
   .card p { font-size: 13.5px; color: var(--muted); margin: 0; }
 
   .xanno { font-size: 12.5px; color: var(--faint); }
@@ -131,34 +139,40 @@
   @media (max-width: 640px) { nav.toc { columns: 1; } .shell { padding: 28px 16px 60px; } header.hero::after { display: none; } }
   @media print {
     body { background: #fff; color: #111; }
-    nav.toc, header.hero::after { display: none; }
+    .skip-link, .quick-links, nav.toc, header.hero::after { display: none; }
     h2 { break-after: avoid; } figure, .tw, pre { break-inside: avoid; }
     a { color: inherit; text-decoration: none; }
   }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute"><defs>
+<a class="skip-link" href="#content">Skip to handbook content</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
   <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
     <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
   </marker>
 </defs></svg>
 <div class="shell">
+<nav class="quick-links" aria-label="Getting started">
+  <a href="#install">Install</a>
+  <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands">Command reference</a>
+  <a href="https://github.com/JeanFrancoisGagne/crapkit">GitHub</a>
+</nav>
 
 <header class="hero">
   <p class="kicker">The Handbook · self-contained · reads offline from a clone</p>
   <h1>crapkit</h1>
-  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for Python, TypeScript, TSX, JavaScript, Vue, Go, Rust, shell, PowerShell, Swift, C and C++, Objective-C, Java and Zig. It scores every function on complexity times uncovered risk, ranks the worst by how often their files change, hands a coding agent everything it needs to fix one, and <strong>blocks commits that add more</strong>.</p>
+  <p class="standfirst">A deterministic <strong>change-risk gate</strong> for Python, TypeScript, TSX, JavaScript, Vue, Go, Rust, shell, PowerShell, Swift, C and C++, Objective-C, Java and Zig. It combines function complexity with coverage, ranks risk using file churn, and gives a coding agent a packet for one function. A configured commit gate blocks newly introduced complexity debt.</p>
   <div class="formula mono">CRAP&nbsp;=&nbsp;ccn<sup>2</sup>&nbsp;×&nbsp;(1&nbsp;−&nbsp;cov)<sup>3</sup>&nbsp;+&nbsp;ccn</div>
   <figure class="demo">
     <img src="demo.gif" alt="A terminal session: crapkit init writes a config, crapkit coverage scores eight functions, crapkit worklist --top 5 ranks them, a shell heredoc appends a function at ccn 7, the per-edit advisory reports it and exits 2, and the commit gate refuses the staged file with exit 6.">
     <figcaption>Ninety seconds, one small Python repo, no editing. Every frame is captured output: <code>tools/demo/generate.py</code> builds the fixture repo, runs these five commands and renders what they printed.</figcaption>
   </figure>
   <p class="aside">Yes, the name is real and it is not ours: <strong>C.R.A.P.</strong> (Change Risk Anti-Patterns) was coined for <em>crap4j</em> by Alberto Savoia and Bob Evans in 2007. An honest score deserved an honest name. We just built the kit.</p>
-  <nav class="toc">
+  <nav class="toc" aria-label="Handbook sections">
     <a href="#intro"><b>01</b>Why crapkit exists</a>
     <a href="#score"><b>02</b>The score</a>
-    <a href="#languages"><b>03</b>What it reads</a>
+    <a href="#language-support"><b>03</b>What it reads</a>
     <a href="#how"><b>04</b>How it works</a>
     <a href="#dials"><b>05</b>The dials</a>
     <a href="#twogates"><b>06</b>The two gates</a>
@@ -177,6 +191,7 @@
   </nav>
 </header>
 
+<main id="content" tabindex="-1">
 <!-- ============================ 01 INTRO ============================ -->
 <h2 id="intro"><span class="sn">01</span>Why crapkit exists</h2>
 <p class="lede">You need to know which function will bite you next. One number answers that.</p>
@@ -299,11 +314,11 @@
 <p>A Sonar-spec <strong>cognitive complexity</strong> column rides along in the brief and next-item payloads as a second opinion on readability, measured in every language crapkit scans. Running everywhere is not the same as modelling everything: a construct the reader for that language does not model reads 0, so a low cognitive number beside a high ccn is a question, not an all-clear. It reports and never gates. The gate is min-ccn only, so the rule a commit is judged by has exactly one definition.</p>
 
 <!-- ============================ 03 LANGUAGES ============================ -->
-<h2 id="languages"><span class="sn">03</span>What it reads</h2>
+<h2 id="language-support"><span class="sn">03</span>What it reads</h2>
 <p class="lede">Two questions before you install: can crapkit score my repo, and will coverage ever join the score.</p>
 <p>Fourteen languages, two coverage parsers. The left column is the label a <code>crapkit.toml</code> spells in <code>languages = [...]</code>. A file joins a scope only when its path prefix <em>and</em> its extension both match.</p>
-<div class="tw"><table id="languages">
-  <tr><th>Language</th><th>Extensions</th><th>Coverage</th></tr>
+<div class="tw" role="region" aria-label="Language support" tabindex="0"><table id="languages">
+  <tr><th scope="col">Language</th><th scope="col">Extensions</th><th scope="col">Coverage</th></tr>
   <tr><td class="mono">python</td><td class="mono">.py</td><td><code>coveragepy</code></td></tr>
   <tr><td class="mono">typescript</td><td class="mono">.ts</td><td><code>istanbul</code></td></tr>
   <tr><td class="mono">tsx</td><td class="mono">.tsx</td><td><code>istanbul</code></td></tr>
@@ -326,8 +341,9 @@
 <p><code>crapkit init</code> writes <code>coverage_optional = true</code> on every scope whose languages all sit in that cc-only half, and leaves it off any scope one parser can still reach. A repo made entirely of those scopes therefore declares no <code>[[lane]]</code> at all, and <code>crapkit coverage</code> runs it anyway: the scored run it writes is the baseline <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code> and <code>verify</code> all read. Exit 3 survives for the case it was written for — a scope with neither a lane nor the key — and the message names that scope.</p>
 <p>Write a coverage lane the day the language gets one. Nothing else in the config changes.</p>
 
-<h3>Three readers crapkit owns or corrects</h3>
+<h3>Reader corrections and extensions</h3>
 <ul>
+  <li><strong>JavaScript and TypeScript</strong> keep comma-separated expression arrows as separate functions, including callbacks on the same line. In TypeScript, an unparenthesized arrow body with an unmatched <code>&lt;</code> before a comma is refused because that comma can belong to a type argument or an expression. Parentheses or a block around the body resolve the ambiguity.</li>
   <li><strong>Rust</strong> runs on a corrected reader. lizard 1.24.0 lists <code>match</code> as a keyword and counts no arm (<a href="https://github.com/terryyin/lizard/issues/494">lizard #494</a>), so a dispatch table reads as trivial: a five-arm match that crapkit scores ccn 5 scores 2 upstream. crapkit counts one point per non-wildcard arm, exactly like a C <code>case</code>. A test pins the stock reader's wrong answer, so the module retires itself the day upstream lands the fix. The cognitive column charges the same block once, +1 plus the nesting it sits in with the arms free, the way Sonar charges a <code>switch</code>: seven ways through, one decision to read.</li>
   <li><strong>shell</strong> gets a reader lizard ships none of, counting <code>case</code> per arm rather than once per block. It reports functions only: top-level script code belongs to lizard's <code>*global*</code> pseudo-function, exactly like Python module level, so a script that is one long top-level sequence reports nothing. That is the answer, not a parse failure.</li>
   <li><strong>PowerShell</strong> gets a reader too: one point per non-default arm of a <code>switch</code>, because a twelve-arm dispatcher should not score the same 2 as a one-arm one. <code>default</code> is free, the same rule the Rust reader applies to a wildcard, so the same switch with and without one scores alike: it is the fall-through, not a decision. Source bytes decode utf-8 first and cp1252 second, by content rather than by the machine's locale. Windows PowerShell writes cp1252 by default, and left to <code>io.open</code> the same file scored one way on Windows and another on Linux.</li>
@@ -391,7 +407,7 @@
 <ul>
   <li><strong>Scopes</strong> carve the repo into named territories (<code>src</code>, <code>ui</code>, <code>py</code>), each with its languages, an optional per-scope target, and free-text <code>notes</code>: the written-down operational traps that ride into every packet. A file belongs to exactly one scope, and since 0.4.5 one predicate decides which, for scoring, test-scoped routing, lane reuse and the packet alike: <strong>the deepest declared path wins</strong>. Three parts of the code used to answer that differently, so if your scope paths nest (<code>src</code> and <code>src/api</code>), some files change owner on the next scan and take their per-scope rollup and ceiling with them. Scope paths that do not nest see no change at all.</li>
   <li><strong>The inventory</strong> is one lizard tokenization per file, content-hash cached, producing both ccn variants and cognitive complexity for every function.</li>
-  <li><strong>Lanes</strong> are your repo's own coverage commands with a watchdog, retries, and provenance stamps. A failed lane marks its scopes <code>no-lane</code> and the run <code>partial</code>. Visible, never fatal, never a baseline.</li>
+  <li><strong>Lanes</strong> are your repo's coverage commands with timeouts, retries, and provenance stamps. Coverage exits 5 on lane errors. When other lanes succeeded, their partial result remains available for diagnosis, with the failed lane's scopes marked <code>no-lane</code>. A partial run cannot become a trusted baseline.</li>
   <li><strong>The store</strong> keeps scored runs compactly: function identity is written once and referenced per run, alongside claims, overrides, and run history. <code>runs prune</code> is the retention knob.</li>
   <li><strong>Churn</strong> comes from the git log over a configurable window, cached deflated and refreshed incrementally, so the expensive walk happens rarely.</li>
 </ul>
@@ -492,10 +508,10 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <h2 id="ladder"><span class="sn">07</span>The rest of the ladder</h2>
 <p class="lede">One rule, checked at five distances from the keyboard: every <em>touched</em> function at or under its scope's ceiling.</p>
 <p>Touched means the diff intersects the function's span. The two automatic checks are <a href="#twogates">§06</a>. The other three you invoke.</p>
-<div class="tw"><table>
-  <tr><th>Where</th><th>Command</th><th>Blocks?</th><th>Sees coverage?</th><th>What it is for</th></tr>
+<div class="tw" role="region" aria-label="Gate and advisory commands" tabindex="0"><table>
+  <tr><th scope="col">Where</th><th scope="col">Command</th><th scope="col">Blocks?</th><th scope="col">Sees coverage?</th><th scope="col">What it is for</th></tr>
   <tr><td>after every edit</td><td class="mono">crapkit claude-hook</td><td>no</td><td>no</td><td>Automatic, via the plugin. Names a function the edit pushed over its ceiling.</td></tr>
-  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>no</td><td>Sub-second preview of the commit gate's verdict, before you stage anything. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
+  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>no</td><td>Preview of the commit gate's verdict, before you stage anything. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
   <tr><td>at <code>git commit</code></td><td class="mono">crapkit hook-precommit</td><td class="mono">exit 6, git says 1</td><td>no</td><td>The enforcement point. Staged blobs, in memory, no store needed.</td></tr>
   <tr><td>before merge</td><td class="mono">crapkit verify --base REF</td><td class="mono">6 7 8 9</td><td>yes</td><td>The full verdict: gate, ratchet, new test failures, dark diff lines.</td></tr>
   <tr><td>in CI</td><td class="mono">crapkit verify --baseline-tsv FILE</td><td class="mono">6 7 8 9</td><td>yes</td><td>A fresh clone judged against a committed baseline. Add <code>--sarif PATH</code> or <code>--github</code>.</td></tr>
@@ -503,8 +519,8 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>A refusal is design feedback, not a threshold to widen. The attended escape is an audited override: a reason, a snapshot record, and auto-staged ratchet debt. All three land or none do.</p>
 
 <h3>Exit codes are the API</h3>
-<div class="tw"><table>
-  <tr><th>Exit</th><th>Meaning</th><th>The move</th></tr>
+<div class="tw" role="region" aria-label="Exit codes" tabindex="0"><table>
+  <tr><th scope="col">Exit</th><th scope="col">Meaning</th><th scope="col">The move</th></tr>
   <tr><td class="mono">0</td><td>Verdict clean</td><td>Proceed. For <code>verify</code>, this is the green that ends a loop iteration.</td></tr>
   <tr><td class="mono">1</td><td>Overloaded: no data yet, a <code>doctor</code> FAIL, or a debt-policy breach</td><td>Read the message. It names the command that creates the missing run, or the FAIL line.</td></tr>
   <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused. Check the flag spelling and order.</td></tr>
@@ -607,27 +623,27 @@ parser           = "istanbul"          # or "coveragepy"
 scopes           = ["src"]</code></pre>
 <ul>
   <li><strong>Provenance:</strong> every artifact is stamped with its producing commit and duration. Automatic <code>--reuse-unchanged</code> requires the same clean HEAD and unchanged lane settings, configuration bytes, inherited environment and coverage/JUnit bytes. Any tracked or untracked edit or new commit reruns the lane. Ignored external inputs, dependencies and services still require a fresh measurement when they change. Explicit <code>--reuse-artifacts</code> reads saved files and warns about stale source coverage.</li>
-  <li><strong>The results file:</strong> <code>results_artifact</code> names the junit XML the same command writes. Two of verify's checks read it and nothing else does: the crashed-worker trust check, and no-new-failures (exit 8). A lane without one measures coverage exactly as it did, with both of those checks off, which until 0.4.5 nothing said out loud. <code>doctor</code> now WARNs, and <code>init</code> writes the reporter flag and the key together on the lanes it detects.</li>
-  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code>, <code>no_progress_seconds</code> and <code>retries</code>. <code>no_progress_seconds</code> kills the tree when the lane log stops growing, which is the hang a total deadline cannot catch, since that deadline has to be longer than your slowest honest run. A configured <code>retest_command</code> reruns just the newly-failing tests before exit 8 calls them real. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first. Since 0.4.5 the timeout kills the whole process tree (<code>taskkill /T</code> on Windows, <code>killpg</code> on POSIX) and waits for it, so a suite the watchdog gave up on is not still running an hour later; the lane log streams while it goes. Since 0.4.7 the cause a refusal hoists in front of the log tail is read from the last attempt only, after the final <code>--- attempt N ---</code> banner, so a retry never inherits the reason a superseded attempt died for.</li>
+  <li><strong>The results file:</strong> <code>results_artifact</code> names the JUnit XML written by the lane command. It supplies the failed test IDs for verify's no-new-failures check (exit 8). Measurement also refuses reported worker crashes, collection or session errors, and declared test counts that do not match the reported cases. Without this file, those checks cannot run; <code>doctor</code> warns, and <code>init</code> writes the reporter flag and key together for supported runners.</li>
+  <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code>, <code>no_progress_seconds</code> and <code>retries</code> bound the run. The progress deadline measures how long the lane log has stopped growing. A configured <code>retest_command</code> reruns newly failing tests; only an explicit pass in fresh JUnit evidence clears a failure. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first. Each command owns its descendants through a Windows Job or a POSIX process group. Completion, timeout, interruption and caller death stop the owned processes before releasing their resources. POSIX commands must keep their inherited group; a daemon that explicitly calls <code>setsid</code> leaves that ownership. An untimed command has no deadline. Logs stream during execution, and a refusal reports the cause from the final attempt.</li>
   <li><strong>Honest failure:</strong> a lane that produces no artifact marks its scopes <code>no-lane</code> and the run <code>partial</code>. The queue counts what it cannot see instead of pretending. The seven classic causes are triaged in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>. An artifact that parses and still reaches none of its scopes is a different refusal, below.</li>
   <li><strong>The test template:</strong> a <code>[crapkit.scoped_tests]</code> entry per scope says how to run that scope's tests in isolation. It is what <code>crapkit test-scoped</code> executes, what the packet's <code>commands.scoped_tests</code> carries, and what <code>doctor</code> warns about when a laned scope has none.</li>
-  <li><strong>Housekeeping:</strong> everything writes under <code>.crapkit/</code>. <code>doctor</code> warns about lanes littering the repo root, unclaimed files, and scopes with no test template, and FAILs a lane whose runner does not resolve on PATH or will not start.</li>
-  <li><strong>Where the root sits:</strong> <code>crapkit.toml</code> does not have to be at the git top. A package one directory down is a supported shape, with no monorepo mode to turn on: <code>crapkit coverage --repo packages/api</code> scores that package, and from 0.5.0 <code>cd packages/api &amp;&amp; crapkit coverage</code> finds the same <code>crapkit.toml</code> by walking up (ADR 0002). 0.4.4 made the scored paths and the churn behind them relative to that root; 0.4.5 finished the job, so the commit gate, verify's changed files, lane reuse, <code>mutate</code>'s targets, the ratchet's rename follow and the per-edit advisory all join on root-relative paths too. Every git call now also runs with <code>core.quotePath=false</code>, which is what made a dirty file with a non-ASCII name invisible to lane reuse: git quoted the name, <code>ls-files</code> did not, and the two never matched. The nested shape is written up in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>.</li>
+  <li><strong>Housekeeping:</strong> managed run state and logs live under <code>.crapkit/</code>; lane commands write to their configured destinations. <code>doctor</code> warns about artifacts in the repo root, unclaimed files, and scopes with no test template, and fails a lane whose runner does not resolve on PATH or will not start.</li>
+  <li><strong>Where the root sits:</strong> <code>crapkit.toml</code> can sit below the Git root. <code>crapkit coverage --repo packages/api</code> scores that package; running <code>crapkit coverage</code> inside it finds the same config by walking up. Scoring, changed files, lane reuse, mutation targets and ratchet renames use paths relative to the project root. Git paths retain their literal whitespace and Unicode. See <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a> for nested projects.</li>
 </ul>
 
 <p>One gap costs a python lane its numbers with nothing said, and it is not crapkit's to fix: pytest-cov 7.0.0 dropped its own subprocess measurement, so a suite that drives a CLI through <code>subprocess.run</code> reads every entry point at 0% and the lane still succeeds. crapkit's own suite is such a suite. <a href="notes/pytest-cov-7-subprocess-coverage.html">pytest-cov 7 and subprocess coverage</a> has the measurements and the two config lines that restore it.</p>
 
 <h3>Zero overlap has three readings</h3>
 <p>An artifact can parse, measure hundreds of files, and touch none of the paths its lane's scopes declare. Joining it would score every function in those scopes <code>untested</code>: a confident grade F assembled out of a tooling mistake, which is worse than a missing artifact because it looks like an answer. Since 0.4.7 the measured paths say which of three things happened, judged against the repo root.</p>
-<div class="tw"><table>
-  <tr><th>What the artifact reports</th><th>Reading</th><th>Verdict</th></tr>
+<div class="tw" role="region" aria-label="Coverage path diagnoses" tabindex="0"><table>
+  <tr><th scope="col">What the artifact reports</th><th scope="col">Reading</th><th scope="col">Verdict</th></tr>
   <tr><td>paths resolving <em>outside</em> the root</td><td>another tree. A venv whose editable install points at a second checkout is the quiet way in</td><td class="mono">exit 5</td></tr>
   <tr><td>absolute paths resolving <em>under</em> the root</td><td>this tree, spelled absolutely. The join is on root-relative paths, so it matches nothing either</td><td class="mono">exit 5</td></tr>
   <tr><td>in-tree relative paths that miss every scope</td><td>a suite that imports none of the scoped source yet, which <em>should</em> score untested</td><td>warning, scores on</td></tr>
 </table></div>
 <p>The middle row is the one 0.4.7 added, and it gets its own fix, because the advice for the first row is wrong for it: the environment is right, and <code>path_prefix</code> only ever prepends. A coveragepy lane is told to set <code>relative_files</code>; an istanbul lane is told to point its reporter's own cwd or root option at this checkout.</p>
 <pre><code>crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout — .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane</code></pre>
-<p>Nothing is rebased and no path is guessed at. A <code>../</code> climb is always another tree, because the runner's working directory is recorded nowhere in the artifact, and a mixed artifact is another tree as well: a path from somewhere else can only have come from somewhere else. One failed lane leaves the run <code>partial</code>; exit 5 arrives when every lane failed.</p>
+<p>Nothing is rebased and no path is guessed at. A <code>../</code> climb is always another tree, because the runner's working directory is recorded nowhere in the artifact, and a mixed artifact is another tree as well: a path from somewhere else can only have come from somewhere else. A failed lane makes coverage exit 5. Results from lanes that succeeded remain available as a <code>partial</code> run.</p>
 
 <h3>How the guard reads your command</h3>
 <p>A lane command runs under a shell, so both lane lints read it with the shell that will run it: <code>sh</code> on POSIX, <code>cmd.exe</code> on Windows. That is a character walk over the quotes, and on Windows over <code>^</code> escapes as well, not a whitespace split. So a quote that opens mid-token is one argument, <code>--cov-report=json:".crapkit/cov/unit dir/coverage.json"</code> included, and <code>-k ^"not slow^"</code> keeps its value in one piece.</p>
@@ -695,7 +711,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 
 <!-- ============================ 12 PACKET ============================ -->
 <h2 id="packet"><span class="sn">12</span>The packet</h2>
-<p class="lede">The first half hour of any refactor is reading. <code>brief</code> deletes it.</p>
+<p class="lede">One function's source, score, test commands and project notes, in one response.</p>
 <p>Ask about one function and the reply is a <strong>start-editing packet</strong>: everything a session would otherwise assemble with an editor, a grep and three git commands. The fields group into five questions.</p>
 
 <figure class="panel">
@@ -743,14 +759,14 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 
 <ul>
   <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file, and since 0.4.5 one shingling pass over the snapshot for the whole batch instead of one per packet: a batch of 5 on a 31k-file repo went from 11.8 s to 5.2 s, byte-identical output. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
-  <li><strong>The commands are console-script calls.</strong> <code>commands.gate</code> arrives as <code>crapkit rescore PATH --gate</code>. It used to be spelled <code>python -m crapkit</code>, which asks whichever python is first on PATH to be the one crapkit lives in; the console script is the form the docs promise and the one that resolves from a venv on Windows. Run the strings as given either way.</li>
+  <li><strong>Run the supplied commands as written.</strong> For ordinary paths, <code>commands.gate</code> is <code>crapkit rescore PATH --gate</code> and <code>commands.scoped_tests</code> is <code>crapkit test-scoped PATH</code>. Paths that a Windows shell would expand use an encoded PowerShell wrapper. That preserves the path when the command is pasted into cmd.exe or PowerShell. The <code>crapkit</code> console script must be on PATH.</li>
   <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>. Since 0.4.5 <code>explain</code> resolves a start line the same way, so <code>crapkit explain app/grade.py 1</code> answers where it used to want a name.</li>
   <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
 </ul>
 
 <!-- ============================ 13 AGENTS ============================ -->
 <h2 id="agents"><span class="sn">13</span>Built for agents</h2>
-<p class="lede">Half of crapkit's callers are language models. That is a design constraint here, not an afterthought.</p>
+<p class="lede">The CLI, packets and MCP tools support a coding agent's edit, test and verify loop.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 270" role="img" aria-label="The five-step burn-down loop">
@@ -779,24 +795,24 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 </figure>
 
 <div class="cards">
-  <div class="card"><h4>Claims</h4><p>Parallel sessions coordinate through <code>next-item --claim</code>: a claimed item is skipped by everyone else, released on green verify or by hand. Handles survive line shifts.</p></div>
-  <div class="card"><h4>Batches</h4><p><code>crapkit worklist --batches N</code> cuts the queue into file-disjoint batches, co-changing files kept together. A fleet plan with no overlap by construction.</p></div>
-  <div class="card"><h4>MCP server</h4><p><code>crapkit mcp</code> is a dependency-free stdio server exposing the read side as tools. Register it globally; in an unmeasured directory it answers with guidance instead of dying.</p></div>
-  <div class="card"><h4>The plugin</h4><p><code>plugin/</code> is the agent surface as one installable artifact: three skills (the loop, the failure router, the onboarding walk), the MCP server, and the advisory hook. Contract tests pin their text and the hook's handlers to the CLI so they cannot drift.</p></div>
-  <div class="card"><h4>Notes</h4><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet. The channel for hard-won operational traps, delivered at the moment of use.</p></div>
-  <div class="card"><h4>Pinned JSON</h4><p>Every read command emits JSON under <code>--json</code>, with <code>next-item</code> always and <code>digest</code> alone staying plain lines by design. Payloads carry <code>schema: 1</code> and change additively only.</p></div>
+  <div class="card"><h3>Claims</h3><p>Parallel sessions coordinate through <code>next-item --claim</code>: a claimed item is skipped by everyone else, released on green verify or by hand. Handles survive line shifts.</p></div>
+  <div class="card"><h3>Batches</h3><p><code>crapkit worklist --batches N</code> cuts the queue into file-disjoint batches, co-changing files kept together. A fleet plan with no overlap by construction.</p></div>
+  <div class="card"><h3>MCP server</h3><p><code>crapkit mcp</code> exposes discovery, briefing and gate checks over stdio. It does not run coverage lanes or claim items. Tools can populate caches or initialize and migrate local state. In an unmeasured directory it returns setup guidance.</p></div>
+  <div class="card"><h3>The plugin</h3><p><code>plugin/</code> is the agent surface as one installable artifact: three skills (the loop, the failure router, the onboarding walk), the MCP server, and the advisory hook. Contract tests pin their text and the hook's handlers to the CLI so they cannot drift.</p></div>
+  <div class="card"><h3>Notes</h3><p>Repo and scope <code>notes</code> in crapkit.toml ride into every packet. The channel for hard-won operational traps, delivered at the moment of use.</p></div>
+  <div class="card"><h3>Pinned JSON</h3><p>Every read command emits JSON under <code>--json</code>, with <code>next-item</code> always and <code>digest</code> alone staying plain lines by design. Payloads carry <code>schema: 1</code> and change additively only.</p></div>
 </div>
 
 <!-- ============================ 14 CABINET ============================ -->
 <h2 id="cabinet"><span class="sn">14</span>The analysis cabinet</h2>
-<p class="lede">Six read-only commands that answer a question the score cannot.</p>
+<p class="lede">Six commands for investigating test strength, duplication, change history and configuration.</p>
 <div class="cards">
-  <div class="card"><h4><code>mutate</code>: are the tests real?</h4><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed in files the scored corpus holds (never a test), runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
-  <div class="card"><h4><code>duplication</code>: does this already exist?</h4><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
-  <div class="card"><h4><code>coupling</code>: what changes together?</h4><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor. Cached since 0.4.5, so a warm run is a file read.</p></div>
-  <div class="card"><h4><code>trend</code>: is it getting better?</h4><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data, read since 0.4.5 off a per-run rollup instead of every row.</p></div>
-  <div class="card"><h4><code>doctor</code>: does the config still fit?</h4><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
-  <div class="card"><h4><code>overrides</code>: who granted what?</h4><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
+  <div class="card"><h3><code>mutate</code>: are the tests real?</h3><p>Diff-scoped mutation testing. Flips comparisons and boolean logic on the lines you changed in files the scored corpus holds (never a test), runs the suite per mutant, lists survivors. The audit for coverage that moved the number without testing anything.</p></div>
+  <div class="card"><h3><code>duplication</code>: does this already exist?</h3><p>Near-duplicate function detection by shingle similarity, containment-aware so an enclosing function is not reported as its own twin.</p></div>
+  <div class="card"><h3><code>coupling</code>: what changes together?</h3><p>Files that co-change across the churn window, with support and confidence. The blast-radius map for a refactor. Cached since 0.4.5, so a warm run is a file read.</p></div>
+  <div class="card"><h3><code>trend</code>: is it getting better?</h3><p>Totals per scored run: over-target count, CRAP load, grade. The burn-down chart's data, read since 0.4.5 off a per-run rollup instead of every row.</p></div>
+  <div class="card"><h3><code>doctor</code>: does the config still fit?</h3><p>Every drift between crapkit.toml and reality, as WARN or FAIL. Run it after any rename.</p></div>
+  <div class="card"><h3><code>overrides</code>: who granted what?</h3><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
 </div>
 
 <h3>What 0.4.5 caches, and where it lives</h3>
@@ -826,7 +842,7 @@ cd your-repo
 crapkit init        # sniffs tracked source into scopes, writes live lanes it can prove
 crapkit doctor      # config against reality: unknown keys, unclaimed files, lane runners that will not start
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
-<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). Plain <code>pip install crapkit</code> works once the PyPI release lands. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). <code>pip install crapkit</code> installs the latest release from PyPI. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
 <p>Read the <code>doctor</code> line narrowly. It resolves the first word of every command segment on PATH (the pieces <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code> and <code>|</code> cut the line into) and starts the command's own first word. That is the whole of what it knows about a lane. A lane spelled <code>npm run test</code> is checked as far as <code>npm</code>, never the script behind it. So <code>doctor</code> can print <code>doctor: no problems found</code> and the next line of the block, <code>crapkit coverage</code>, can still exit 5 on that same lane. The reading rules in full are in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>.</p>
 
 <h3>The one dependency crapkit cannot install for you</h3>
@@ -835,9 +851,10 @@ crapkit coverage    # runs the lanes, joins coverage, writes the first scored ru
 <p>Two Windows cases get their own notes since 0.4.5. On a PATH carrying only the <code>py</code> launcher, the lane is written <code>py -m pytest</code>: the chain is <code>python</code>, then <code>python3</code>, then <code>py</code>, and <code>py</code> is last because it exists on no other operating system. And when cmd.exe cannot start the interpreter at all, which is what the Windows Store <code>python.exe</code> alias does with no Store app behind it (exit 9009, "Python was not found"), <code>init</code> says that instead of talking about pytest-cov, and <code>doctor</code> FAILs the lane rather than calling the repo clean. Nothing ran, so nothing about pytest-cov was learned.</p>
 
 <h3>Upgrading on Windows</h3>
-<p><code>uv tool upgrade crapkit</code>, and <code>pip install -U</code> into a tool venv, fail with <code>os error 32</code> ("The process cannot access the file because it is being used by another process") while a crapkit MCP server is live: an agent session spawns <code>crapkit.exe mcp</code>, which holds the launcher, and Windows will not overwrite a running executable. The venv upgrades before that copy fails, so <code>crapkit --version</code> already reports the new version and the launcher is the only stale piece. Quit the agent session and rerun the upgrade, or rename the locked exe aside (Windows allows renaming a running one) and copy the new one in; the <code>.old</code> file goes at the next reboot.</p>
-<pre><code>mv ~/.local/bin/crapkit.exe ~/.local/bin/crapkit.exe.old
-cp %APPDATA%/uv/tools/crapkit/Scripts/crapkit.exe ~/.local/bin/crapkit.exe</code></pre>
+<p>Windows can refuse to replace <code>crapkit.exe</code> while an MCP session uses it, reporting <code>os error 32</code>. Close the agent sessions using crapkit, then rerun the upgrade with the installer you used:</p>
+<pre><code>uv tool upgrade crapkit                 # for a uv tool install
+python -m pip install --upgrade crapkit   # in the environment holding a pip install</code></pre>
+<p>Use one of these commands, then restart the agent so its MCP server runs the updated package. A partially completed upgrade can already report the new package version while its launcher remains locked; the successful installer run is the check that the upgrade finished.</p>
 
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
@@ -877,7 +894,7 @@ crapkit advisory: 1 function(s) over ceiling 6 in auth/session.ts (the edit land
   ccn 9  auth/session.ts:41  refreshToken ( req , store )
 the commit gate enforces this; decompose there or mark the debt
 
-$ crapkit rescore auth/session.ts --gate      # the same verdict, on demand, sub-second
+$ crapkit rescore auth/session.ts --gate      # the same verdict, on demand
 $ crapkit brief auth/session.ts refreshToken  # the packet, if you want the seams handed to you
 … split it, then …
 $ git commit -m "refresh tokens through a store adapter"   # gate runs, exit 0, commit lands</code></pre>
@@ -951,10 +968,10 @@ decompose before committing (coverage cannot save a function above the target).<
 <p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it.</p>
 
 <h3>Everyday lookups</h3>
-<div class="tw"><table>
-  <tr><th>You are…</th><th>Reach for</th><th>Because</th></tr>
+<div class="tw" role="region" aria-label="Commands by task" tabindex="0"><table>
+  <tr><th scope="col">You are…</th><th scope="col">Reach for</th><th scope="col">Because</th></tr>
   <tr><td>about to edit an unfamiliar file</td><td class="mono">brief PATH NAME --json</td><td>Source, siblings, churn, coupled files, the ceiling and the repo's traps, before the file is even open.</td></tr>
-  <tr><td>wondering if the hook will refuse your commit</td><td class="mono">rescore FILE --gate</td><td>The same verdict the hook gives, sub-second, before you stage.</td></tr>
+  <tr><td>wondering if the hook will refuse your commit</td><td class="mono">rescore FILE --gate</td><td>The same verdict the hook gives before you stage.</td></tr>
   <tr><td>deciding where new code should live</td><td class="mono">worklist · coupling · duplication</td><td>Hot fragile files are a design input; a near-twin means the helper already exists.</td></tr>
   <tr><td>writing tests for a change</td><td class="mono">uncovered_lines · est_uncovered_paths</td><td>The packet names the dark branches; the estimate sizes the work.</td></tr>
   <tr><td>wondering if a past refactor held</td><td class="mono">explain PATH NAME</td><td>The score's trajectory across runs, plus <code>regrowth</code> when a split quietly un-split itself.</td></tr>
@@ -998,7 +1015,7 @@ decompose before committing (coverage cannot save a function above the target).<
   <li><strong>Value is front-loaded, so stopping early is rational.</strong> The risk map is worst-first by <code>ccn × churn</code> and the hand-out queue by CRAP, and the top of it is where incidents live. "Fix the worst slice and gate the rest forever" is the same campaign ended earlier, and the ratchet holds whatever line you reach.</li>
   <li><strong>The summit items are redesigns.</strong> A whole command handler at extreme ccn is not a split, it is an architecture session. The packet's <code>est_splits</code> saying dozens is the tell.</li>
   <li><strong>Proof it composes:</strong> crapkit's own repo runs this campaign against its own gate, with the config, the marks and the hook all committed (<code>crapkit.toml</code>, <code>crapkit-ratchet.tsv</code>, <code>git-hooks/pre-commit</code>). Measured on the 0.4.5 tree: 1,291 functions, all measured, 0 over the ceiling of 6, CRAP load 3,605.78, grade A+. The marks file is a header and one standing mark on <code>cli/admin.py</code>, a pardon the repo has since paid back.</li>
-  <li><strong>0.4.5 made the repeated commands cheap</strong>, which is most of what a campaign spends its day on. Measured on a 31,459-file consumer, 152k functions, 41,544 marks and 72,653 commits: warm <code>coupling</code> 1.05 s to 0.11 s, <code>worklist --batches</code> down 62%, a batch of five briefs 11.8 s to 5.2 s, <code>doctor</code> 7.5 s to 1.4 s across 14 lanes over 2 runners, <code>trend</code> 4.58 s to 0.04 s warm, <code>report</code> down 76%, <code>verify</code> 25.5 s to 18.9 s, and <code>mutate</code>'s worker setup 30.6 s to 0.46 s. Plan the loop knowing the read commands are near-free and <code>verify</code> is the one that costs a suite run.</li>
+  <li><strong>0.4.5 made the repeated commands cheap</strong>, which is most of what a campaign spends its day on. Measured on a 31,459-file consumer, 152k functions, 41,544 marks and 72,653 commits: warm <code>coupling</code> 1.05 s to 0.11 s, <code>worklist --batches</code> down 62%, a batch of five briefs 11.8 s to 5.2 s, <code>doctor</code> 7.5 s to 1.4 s across 14 lanes over 2 runners, <code>trend</code> 4.58 s to 0.04 s warm, <code>report</code> down 76%, <code>verify</code> 25.5 s to 18.9 s, and <code>mutate</code>'s worker setup 30.6 s to 0.46 s. These are historical measurements from that consumer, not timing guarantees. Measure your own repo; <code>verify</code> includes the cost of its test lanes.</li>
   <li><strong>Four ideas were measured and thrown away</strong>, so nobody spends a week rebuilding them: skipping <code>verify</code> on an unchanged tree (the cache key cannot see a second edit to an already-dirty file), serving MCP tool calls from a kept process (a stale <code>source</code> breaks the packet contract), parallel git date slices for the churn walk, and a faster JSON decoder.</li>
 </ul>
 
@@ -1009,15 +1026,17 @@ decompose before committing (coverage cannot save a function above the target).<
   <li><strong>The gate binds the future.</strong> Standing debt is pardoned and ratcheted; only touched functions are judged. A gate a team turns off is worse than no gate.</li>
   <li><strong>Above the ceiling, decompose.</strong> Coverage cannot save a function past its target. The design pressure is the point, and crapkit's own source is held to its own rule.</li>
   <li><strong>One enforcement point.</strong> Advisories annotate; the commit gate blocks. Two things that can refuse your work are two rules to keep in your head.</li>
-  <li><strong>Additive JSON, pinned schema.</strong> Fields are added, never renamed or removed. <code>schema: 1</code> means an agent's parser written today keeps working.</li>
+  <li><strong>Versioned JSON.</strong> Outputs declare <code>schema: 1</code>, and contract tests pin the fields callers depend on. Consumers should check the schema and tolerate added fields.</li>
   <li><strong>Your test commands, not ours.</strong> Lanes run what the repo already runs and crapkit reads artifacts. There is no embedded test framework to fight.</li>
   <li><strong>Failure is data.</strong> A failed lane, a stale artifact, an abstaining scope: each is counted and named, never papered over with a zero that reads as health.</li>
   <li><strong>Docs are contracts.</strong> Tests diff this page and the README against the argument parser, and the shipped skills against the CLI, both directions. Documentation that can drift, will, so it is not allowed to.</li>
   <li><strong>Dependency-light.</strong> Python stdlib plus lizard. The MCP server, the parsers, the store: no framework underneath to version-chase.</li>
 </ul>
 
+</main>
 <footer>
   <p><strong>Where to next.</strong> <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md">README</a> for the full command reference and quickstart transcripts · <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md">AGENTS.md</a> for the working agent contract · <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md">configuration</a>, <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">lanes</a>, <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md">ratchet</a>, <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md">agent-json</a>, <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md">adoption</a> for the deep references. MIT licensed. This handbook is self-contained by design: no network, no scripts, system fonts only. It reads the same from a fresh clone, a fork, or a file:// double-click.</p>
+  <p><a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md">Contribute a patch</a> · <a href="https://github.com/JeanFrancoisGagne/crapkit/issues/new/choose">Report an issue</a> · <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/SECURITY.md">Security policy</a> · <a href="#intro">Back to the first section</a></p>
 </footer>
 </div>
 </body>

@@ -65,7 +65,8 @@ def test_the_description_counts_the_published_tools():
     description = _manifest()["description"]
 
     assert len(TOOLS) == 12
-    assert description.startswith("Twelve read-only tools"), description
+    assert description.startswith("Twelve tools to inspect CRAP scores"), description
+    assert "check edited functions against their ceiling" in description
 
 
 def test_the_manifest_names_its_repository_so_aggregators_can_link_back():

@@ -72,7 +72,7 @@ body:
     attributes:
       label: Your crapkit.toml
       description: >
-        The whole file, redact the paths if you must but keep the shape. Scopes
+        Remove secrets from commands and environment values; keep the structure. Scopes
         decide which files are scored and against which ceiling; lanes decide
         what coverage is joined on. Between them they explain most reports of a
         wrong number.

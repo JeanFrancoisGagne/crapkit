@@ -1,6 +1,12 @@
 # The machine surface
 
-Every read-side command has a JSON form. This page is the field contract.
+This page defines payloads from commands with `--json`, the JSON-only `next-item`
+command, and the read-side MCP tools. For the edit sequence, use
+[the agent workflow](../AGENTS.md#1-the-packet). For an existing integration moving
+to a new reader, use [Upgrading](upgrading.md).
+
+Jump to [packets](#brief), [verification](#verify), [errors](#errors),
+[MCP setup](#mcp-server) or [portable exports](portable-records.md).
 
 ## The `schema` field
 
@@ -23,8 +29,8 @@ read.
 
 Two more house rules that hold across every payload:
 
-- **Keys are sorted** and there are no timestamps in scored rows, so the same tree and the
-  same artifacts produce byte-identical JSON.
+- **Keys are sorted** and scored rows carry no timestamps. A new stored run can change
+  envelope fields such as `run_id`; compare row content when comparing measurements.
 - **stdout carries exactly one JSON object.** Warnings, progress, lane chatter and gate
   findings all go to stderr, so `crapkit ... --json 2>/dev/null` is always parseable. A
   command that dies prints one object too: see [Errors](#errors).
@@ -767,7 +773,7 @@ $ crapkit verify --json
 
 | Key | Type | Meaning |
 |---|---|---|
-| `ok` | bool | The whole verdict. `false` if any finding list is non-empty or the diff-coverage ceiling was breached. |
+| `ok` | bool | The final verdict after allowed overrides and flake retests. It agrees with the stored run verdict and command exit. Remaining findings or an ungranted diff-coverage breach make it `false`. |
 | `run_id` | int | The run this verify wrote. |
 | `baseline_run`, `baseline_commit` | int, string | What it was measured against. |
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
@@ -931,6 +937,9 @@ lanes: crapkit coverage --reuse-unchanged`.
 
 ## `doctor --json`
 
+The captured example below uses analysis version 8. A current `doctor` reports
+version 10; read the field from the running tool when checking a ratchet stamp.
+
 The only health payload crapkit exposes. It works on a repo that has never run anything.
 
 ```
@@ -963,7 +972,7 @@ $ crapkit doctor --json
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
 | `warnings` | The WARN findings: unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, and lanes with no `results_artifact`. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
-| `analysis_version` | The analysis semantics version, `8` since 0.4.5 (`7` in 0.4.4). It plus `lizard` are the ratchet's metric stamp, so a bump refuses every existing mark until the repo re-seeds. See [ratchet.md](ratchet.md#upgrading-to-045-analysis-version-8). |
+| `analysis_version` | The analysis semantics version, currently `10`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
 | `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. |
@@ -1121,9 +1130,9 @@ on every invocation: 4.3 M rows on the corpus the 0.4.5 work was measured agains
 
 Two consequences for a caller.
 
-- **A read-only checkout is fine, a read-only store is not.** The fill is best effort: if
-  another crapkit process holds the write lock, or the file cannot be written, the command
-  drops the cache and still prints the right answer. It never fails on the write.
+- **The rollup write is best effort.** If another process holds the write lock or
+  the cache cannot be written, the command still prints the calculated totals.
+  Opening an older store can require a schema migration before this cache step.
 - **The cache is keyed on the ceiling the totals were decided against**, repo target plus
   per-scope targets. Change a ceiling in `crapkit.toml` and the next `trend` refills under a
   new key rather than reporting the old numbers.
@@ -1300,6 +1309,13 @@ two-command prerequisite and the four tools a session starts with, and a tool wh
 is a JSON object also carries it parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
 view cannot drift from what the CLI reports, and nothing here writes a baseline, a
 ratchet, or a mutant.
+
+The CLI child stream is UTF-8, including non-ASCII filenames and error messages,
+on Windows and POSIX. Tool calls can populate disposable caches, open or migrate
+the snapshot store, and fill best-effort rollups. Read-only annotations describe
+the measurement and debt operations exposed, not a promise of zero filesystem
+writes. `get_next_item` takes no claim; `check_gate` runs `rescore` and records no
+verification run.
 
 Answering those calls from one long-lived process instead was measured for 0.4.5 and
 rejected. A kept process serves a `source` the session has already edited, and a packet whose

@@ -48,3 +48,40 @@ If readback later finds the expected bytes, rerunning stage 2b clears that pendi
 3. Rerun stage 2b. It reads the remote state again before issuing any missing upload. A digest mismatch still refuses.
 
 Do not clear pending entries merely to suppress a refusal. Restore lost local artifacts from the original checked bytes; rebuilding an existing receipt's version is not a recovery path. Keep one release stage active per checkout. A new HEAD, changed tag or later failed verification requires fixing that condition and rerunning the relevant proof stage.
+## Credentials and secondary listings
+
+Install `build` and `twine` into the Python environment that runs the release
+script. Check GitHub authentication with `gh auth status` and confirm access to
+`JeanFrancoisGagne/crapkit` before the release starts.
+
+On Windows, put the native `claude.exe` directory on the release process's
+PATH. Python's direct subprocess launch does not resolve an npm `claude.cmd`
+shim as a bare `claude` command. Confirm the executable with `claude --version`
+from that same process environment before stage 2b.
+
+Twine receives an explicit PyPI upload URL. With Twine 7, that skips the named
+`.pypirc` repository entry, including its credentials. Supply credentials through
+Twine's supported environment variables or keyring in the release process. Keep
+them out of command arguments, logs and committed files; do not remove the fixed
+upload URL to make authentication work.
+
+After stage 2b and the MCP Registry stage, check every distribution route:
+
+| Route | Source and confirmation |
+| --- | --- |
+| PyPI | The release receipt's wheel and source archive hashes match the version JSON response. |
+| GitHub release | The tag names the verified commit, notes match the changelog, and asset hashes match PyPI. |
+| Website | Pages built the release commit from `main:/docs`; open the landing page and handbook. |
+| GitHub Action and pre-commit | The release tag includes `action.yml` and `.pre-commit-hooks.yaml`; README examples use that tag. |
+| Local CLI | Stage 1 updates only its selected Python environment. Upgrade the intended user CLI with its owning installer, read its resolved executable and version, and run `crapkit doctor --plugin-root` against installed plugins. |
+| Plugin marketplace | The published marketplace points at the versioned plugin manifest. Update installed clients through their supported plugin manager and read back the version. |
+| MCP Registry | The canonical server name has the new version and matching PyPI package. |
+| Glama | Use the existing server's Repository admin **Sync Server** action after the GitHub release exists. Confirm its release version, build and tool schema, and correct stale profile text separately. |
+
+Glama profile text does not necessarily follow the README. Check its tool count
+and write behavior against the current MCP definitions. Do not use **Build and
+Release** to force an automatic version number while a synchronized release is
+pending.
+
+Finally, inspect the release commit's CI jobs and repository activity. A queued
+job has not passed, and an upload command's exit code does not replace readback.

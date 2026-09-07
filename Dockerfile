@@ -15,8 +15,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/*
 
-# The account that serves. The server only reads, and what it reads is a
-# checkout the client mounts from outside.
+# The account that serves the checkout the client mounts from outside.
+# Score inspection can write analysis caches into that checkout.
 RUN useradd --create-home --uid 1000 crapkit
 
 # Four paths and no more. `pip install .` needs pyproject.toml plus the two

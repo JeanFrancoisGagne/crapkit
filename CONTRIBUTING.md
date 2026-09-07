@@ -6,18 +6,14 @@
 git clone https://github.com/JeanFrancoisGagne/crapkit
 cd crapkit
 pip install -e ".[dev]"
-pip install pytest-xdist
 git config core.hooksPath git-hooks
-python -m pytest
 ```
 
 Quote `".[dev]"`: zsh globs the bare form and the install fails before pip sees it.
 
-`pytest-xdist` is not optional. `tests/fixtures/mini_repo` declares a lane that shells out
-to `pytest ... -n 2`, and without xdist that subprocess dies on an unrecognized `-n`,
-failing the e2e tests that assert the lane exited 0. The dev extra ships it, so the
-`pip install pytest-xdist` line is a no-op after the extra and the fix for every other
-install route.
+The dev extra includes pytest, pytest-cov and pytest-xdist. Keep all three in
+the test environment: fixture lanes launch their own pytest processes with
+coverage and worker flags. Run the shared test schedule below after setup.
 
 `core.hooksPath` arms the complexity gate on your own commits. Without it your commits
 pass locally and get rejected in review.
@@ -95,7 +91,7 @@ so no global Git configuration is required.
 - **Determinism is the product.** Identical inputs produce byte-identical outputs:
   sorted-keys JSON, no wall-clock values in scored data, no network at analysis time.
 - **The docs are pinned to the code.** Rename a subcommand or reword a message and you
-  update the page in the same commit. Eight tests hold that line, all in `tests/unit`:
+  update the page in the same commit. These contract tests live in `tests/unit`:
 
 | Test | What it pins |
 |---|---|
@@ -177,16 +173,17 @@ C, C++, Objective-C and Java. Add an entry only for a real difference, and add a
 `UNMUTABLE` reason when the operators mean something else entirely, as `<` and `>` do in
 shell and PowerShell.
 
-**lizard reads it wrong, or not at all.** Write the reader. Three exist as the pattern:
+**lizard reads it wrong, or not at all.** Use the existing readers and extension as examples:
 
 | Module | Why it exists |
 |---|---|
+| `lizardtypescript.py` | keeps sibling JavaScript and TypeScript expression arrows separate; refuses ambiguous TypeScript angle syntax instead of guessing. It extends each reader instance without changing the installed lizard package. |
 | `lizardrust.py` | lizard's Rust reader counts a `match` block once no matter how many arms it has (lizard #494). This one counts each non-wildcard arm, and retires itself the day upstream fixes it. |
 | `lizardshell.py` | lizard ships no shell reader, and answers `.sh` with `CLikeReader` rather than a failure, so the numbers were plausible and wrong. |
 | `lizardpowershell.py` | same for `.ps1` and `.psm1`, plus a cp1252 decode fallback. |
 
-Register it inside the `deferred_pygments()` block at the top of `analyze.py`, beside the
-other three. That module scope is what a `ProcessPoolExecutor` child imports; register
+Import a new reader inside the `deferred_pygments()` block at the top of `analyze.py`
+and register it at module scope beside the existing readers. That module scope is what a `ProcessPoolExecutor` child imports; register
 anywhere else and spawned workers measure with the readers lizard shipped and report
 plausible wrong numbers.
 
@@ -194,3 +191,11 @@ Every reader lands with a hand-counted probe battery: real files, a human-counte
 ccn per function, and one test per parsing hazard the language has (heredocs, here-strings,
 nested quotes, comment forms). Language docstrings state the ccn convention explicitly,
 because a convention nobody wrote down is a number nobody can check.
+
+## Reports and proposals
+
+Use the [issue chooser](https://github.com/JeanFrancoisGagne/crapkit/issues/new/choose)
+for bugs, field reports, feature requests and language requests. Include the
+command, expected behavior and observed result so someone else can reproduce it.
+Report security bugs through the private route in [SECURITY.md](SECURITY.md).
+The [Code of Conduct](CODE_OF_CONDUCT.md) applies to project discussions.

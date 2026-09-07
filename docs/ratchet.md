@@ -7,9 +7,10 @@ question: *has this function got worse than the day we agreed to live with it?*
 it; it fails the build instead. New debt enters only through `ratchet seed` or an audited
 override, both of which are visible in a diff.
 
-**Changed in 0.4.0: a commit that touches a marked function is no longer refused.** The
-pre-commit gate now treats a mark as an exemption, and `crapkit verify` is what fails a mark
-that rises. [The rule, and why it moved](#the-commit-gate-skips-marked-functions).
+The pre-commit gate treats a mark as an exemption; `crapkit verify` fails a mark
+that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
+When upgrading, review [function identity](#same-line-function-identity) before
+reseeding marks recorded by an older reader.
 
 Default file: `crapkit-ratchet.tsv` at the repo root, settable with `[crapkit] ratchet_file`.
 Commit it.
@@ -276,8 +277,10 @@ review below first.
 
 ### Upgrading to 0.4.5: analysis version 8
 
-0.4.4 measured at analysis version 7 and 0.4.5 measures at 8, so the transcript above is
-the one every consumer meets on the first run after the upgrade. Re-seed and it goes away:
+This historical transition changed analysis version 7 to 8. The transcript above
+belongs to that upgrade; the current reader uses version 10. Follow
+[Upgrading](upgrading.md) for current saved-state checks. In the older transition,
+reseeding updated the stamp as follows:
 
 ```
 $ crapkit ratchet seed
@@ -437,9 +440,10 @@ CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
 ```
 
-An upgrade puts every branch in that position for one commit: a branch cut before 0.4.5
-carries analysis 7 and the branch that upgraded carries 8. Re-seed the older side, commit
-the marks file, and the merge goes through.
+The historical example joins stamps from different reader versions. Bring both
+branches through the [upgrade checks](upgrading.md#measure-before-changing-marks)
+and review function identity before restamping. The merge driver also refuses
+different key-format versions; matching metric stamps alone are not enough.
 
 `ratchet merge` runs with no `crapkit.toml` in sight, because git invokes it from a temp
 directory. It is the one ratchet subcommand that needs no config.

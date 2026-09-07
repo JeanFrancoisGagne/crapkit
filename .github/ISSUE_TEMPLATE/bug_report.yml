@@ -18,7 +18,7 @@ body:
       description: The exact command line first. Then one line on what should have come back.
       placeholder: |
         crapkit coverage
-        Expected a scored run. Got exit 7 and no artifact.
+        Expected a scored run. Got exit 5 and no artifact.
     validations:
       required: true
 
@@ -27,8 +27,8 @@ body:
     attributes:
       label: Your crapkit.toml, lane and scope blocks only
       description: >
-        Keep the shape even if you redact the paths. Most refusals are a lane
-        whose command writes an artifact somewhere the parser is not looking.
+        Remove secrets from command arguments and environment values before posting.
+        Keep the lane and scope structure, including artifact paths.
       render: toml
       placeholder: |
         [[scope]]
@@ -51,8 +51,8 @@ body:
     attributes:
       label: The exact stderr
       description: >
-        Whole thing, wording untouched, plus the exit code. The exact string is
-        how we find the branch that raised it. A summary is not.
+        Include the output and exit code. Exact error text helps locate the
+        failing branch; remove secrets before posting.
       render: shell
     validations:
       required: true
@@ -62,11 +62,8 @@ body:
     attributes:
       label: crapkit doctor
       description: >
-        The whole report. It answers most of the follow-up questions in one
-        paste, and since 0.4.5 it answers two more on its own: it FAILs a lane
-        whose first word cannot start, and it WARNs on a coveragepy or istanbul
-        lane with no `results_artifact`, naming the checks that cannot run
-        without one.
+        Paste the report. It checks configuration, executable resolution and
+        missing result artifacts. It does not run the full test suite.
       render: shell
     validations:
       required: true

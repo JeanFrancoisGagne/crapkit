@@ -9,7 +9,7 @@
     {
       "name": "crapkit",
       "source": "./plugin",
-      "description": "crapkit's agent surface: three skills, the read-side MCP server, and one advisory PostToolUse hook that names functions an edit pushed over their ceiling. Needs the `crapkit` console script on PATH (pip install crapkit, 0.4.0 or newer); `crapkit doctor --plugin-root` says whether an installed copy and the CLI agree."
+      "description": "crapkit's agent tools: three skills, the MCP server for score inspection and gate checks, and one advisory PostToolUse hook that names functions an edit pushed over their ceiling. Needs the `crapkit` console script on PATH (pip install crapkit, 0.4.0 or newer); `crapkit doctor --plugin-root` says whether an installed copy and the CLI agree."
     }
   ]
 }

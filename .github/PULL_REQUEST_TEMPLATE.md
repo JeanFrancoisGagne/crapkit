@@ -4,9 +4,8 @@
 
 ## The test that proves it
 
-<!-- Path and test name. For a bug fix, that test has to fail on main. -->
-
-`tests/unit/test_.py::test_`
+<!-- Name the test and command you ran, with the result. For a bug fix, record
+the failure before the fix. For a docs-only change, name the affected contracts. -->
 
 ## Checks
 
@@ -14,8 +13,7 @@
 
 - [ ] Every function I added or touched sits at ccn 6 or lower, and the gate ran on my commits (`git config core.hooksPath git-hooks`, so each commit ran `python -m crapkit hook-precommit` and came back clean)
 - [ ] `python -m crapkit verify` is green on this branch
-- [ ] `python -m pytest tests/unit` is green
-- [ ] `python -m pytest -n 8 tests/e2e` is green (`-n 8` needs pytest-xdist, which the dev extra ships; it turns about 8 minutes of e2e into about 1m30)
+- [ ] `python tools/testing/run.py` is green (four unit workers, eight E2E workers; the dev extra includes pytest-xdist)
 - [ ] Docs updated in the same commit if I renamed a subcommand or reworded a message a page quotes, so the docs contract tests stay green
 - [ ] `CHANGELOG.md` has a line for this change under the unreleased heading, or nothing a user can see changed
 

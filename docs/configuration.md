@@ -1,7 +1,9 @@
 # crapkit.toml
 
-One file at the repo root. `crapkit init` writes a working starter; this page is the whole
-key list.
+`crapkit.toml` defines the project root, scopes and measurement commands. That root
+can sit below the Git repository's top directory. `crapkit init` writes a starter;
+this page lists every key. Use [Adoption](adoption.md) to choose the initial scope
+and test layout, and [Coverage lanes](lanes.md) for runner recipes.
 
 Five dials carry almost every decision you will make. Everything else has a default you can
 leave alone:
@@ -30,6 +32,36 @@ time, and only `doctor` fails on it. Every rejection the loader *does* make (a b
 an unknown parser, a lane naming an undeclared scope, a negative `timeout_seconds`) exits 3.
 
 ---
+
+## File paths and root discovery
+
+Without `--repo`, CLI commands find the nearest `crapkit.toml` at or above the
+current directory. A `.git` entry stops the search. With `--repo PATH`, that path
+names the exact project root; the flag belongs after the subcommand.
+
+| File argument | Meaning |
+|---|---|
+| Relative path with a discovered root | Relative to the current directory, then rebased to the project root. |
+| Relative path with explicit `--repo` | Relative to the named project root. |
+| Absolute source path | Accepted when it resolves inside the project root. |
+| Windows backslash | A directory separator on Windows; a literal filename character on POSIX. |
+
+These rules apply to source arguments such as `brief`, `rescore`, `test-scoped`
+and `claims release`. The `claude-hook` exception gets its root from its input
+payload. [MCP tools](agent-json.md#mcp-server) take project-relative paths because
+their CLI calls run at the server's selected root.
+
+Tracked Git paths preserve whitespace and Unicode separators. Their bytes must
+decode as UTF-8; invalid filename bytes are refused. Scope-prefix normalization
+below applies to configuration strings, not to the filenames Git reports.
+Output flags such as `--export`, `--sarif` and `--emit-baseline` are project-relative;
+an absolute output path explicitly selects a destination outside it.
+
+Parsed source diffs use Crapkit's own Git settings. Display preferences, external
+diff commands and textconv do not change attribution. A supported source file
+marked binary by Git attributes receives a text fallback; ordinary binary files
+remain outside source decoding. Source text is read as UTF-8, then cp1252 as a
+fallback. UTF-16 source is outside that reader policy.
 
 ## `[crapkit]`
 
@@ -209,14 +241,9 @@ ok   scope 'hot': 1 file
 ok   every tracked source file belongs to a scope
 ```
 
-One predicate answers this for everyone since 0.4.5: the scored corpus, `test-scoped`
-routing, lane reuse and the `brief` packet. They used to answer separately, so `brief` could
-take a function's lane and test command from one scope and its ceiling from another.
-
-**If your repo has nested scopes, its next scan may move files between them.** Whichever
-scope declares the longer path now owns those files, so their per-scope rollups, ceilings
-and lane change. A repo with no nested scopes sees no change at all. Run `crapkit doctor`
-after upgrading and read the per-scope file counts.
+The scored corpus, `test-scoped`, lane reuse and `brief` share this ownership rule.
+After changing nested scopes, run `crapkit doctor --show-files` and check the
+per-scope file lists before measuring them.
 
 ### `coverage_optional = true`
 

@@ -9,3 +9,6 @@ contact_links:
   - name: I am writing a patch
     url: https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md
     about: Setup, the CCN 6 gate, and the test rules a pull request has to pass.
+  - name: Report a security vulnerability privately
+    url: https://github.com/JeanFrancoisGagne/crapkit/security/advisories/new
+    about: Use private vulnerability reporting instead of a public issue. See SECURITY.md for the policy.

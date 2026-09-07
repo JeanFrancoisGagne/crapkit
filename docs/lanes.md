@@ -1,5 +1,11 @@
 # Coverage lanes
 
+Use the [pytest](#pytest), [Vitest](#getting-an-artifact-out-of-vitest) or
+[Jest](#jest) recipe for setup. For an existing lane, jump to
+[artifact reuse](#reusing-artifacts), [timeouts](#timeouts-and-retries),
+[incomplete JUnit](#a-junit-that-says-the-run-did-not-finish) or
+[paths from another tree](#an-artifact-that-measured-a-different-tree).
+
 A lane is how crapkit gets coverage: it runs a command you already have, reads the artifact
 that command writes, and maps the result onto the scopes it claims.
 
@@ -207,6 +213,12 @@ that package's business and is not warned about.
 Your runner writes `coverage-final.json` and you never open it. Read this section only if
 you are building one by hand, converting another format into it, or staring at a lane that
 scores nothing.
+
+Both coverage readers reject invalid numeric counts before scoring. Counts must
+be nonnegative integers, including integral JSON numbers such as `1.0`; strings,
+booleans, fractions and non-finite values are refused. A coverage.py summary also
+cannot report more covered lines or branches than its declared total. A bad
+artifact fails its lane with the input named in the error.
 
 crapkit scores functions, so `fnMap` is the part that decides everything. Per file in the
 artifact:
@@ -1196,12 +1208,19 @@ crapkit: lane 'py' FAILED: junit reports a run that did not finish, so its cover
 EXIT=5
 ```
 
-Two signatures are refused:
+These reports are refused:
 
 | In the junit | What it means |
 |---|---|
 | an `<error>` naming `worker 'gwN' crashed while running '<nodeid>'` | pytest-xdist lost a worker mid-run |
 | an `<error>` outside every `<testcase>` | the runner errored the session itself |
+| an `<error message="collection failure">` | pytest failed collection, including xdist runs that exit 1 |
+| a `tests` count on `<testsuite>` or `<testsuites>` that differs from its descendant testcase count | the report's declared total does not match what it contains |
+
+Declared counts must be nonnegative decimal integers. Both nested suites and
+aggregate wrappers are checked. A report with no declared counts is accepted
+when it otherwise contains completed cases. The same admission runs for flake
+retests: an incomplete retry cannot forgive a previously failed test.
 
 pytest-xdist 3.8 does not reschedule a crashed worker's queue. On a 15,300-test lane one dead
 worker left 4,626 tests unexecuted; coverage.py still wrote its JSON at session end, so the
@@ -1218,7 +1237,7 @@ A clean junit changes nothing, and an ordinary errored test is still just a fail
 The refusal is about a run crapkit watched. `--reuse-artifacts` is you saying run nothing
 and read what is on disk, and what is on disk can be a salvage: a coverage JSON combined
 by hand out of a killed run's `.coverage.*` shards, with that run's empty or missing junit
-still sitting beside it. So there the same two refusals are one line on stderr, and the
+still sitting beside it. So there the same admission refusals are one line on stderr, and the
 lane scores off the coverage JSON. (The one refusal reuse does keep is the [artifact a
 failed attempt left behind](#the-artifact-a-failed-attempt-left-behind-is-refused), and a
 salvage is newer than that file by construction.)

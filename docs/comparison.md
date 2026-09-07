@@ -13,7 +13,7 @@ join: complexity and coverage multiplied into one per-function number,
 | [wily](https://wily.readthedocs.io/) | complexity and maintainability across git history | nothing; it reports trends | CLI over git |
 | [coverage.py / pytest-cov](https://coverage.readthedocs.io/) | which lines and branches the suite executed | a total-percent floor (`--fail-under`) | test plugin |
 | [SonarQube](https://www.sonarsource.com/products/sonarqube/) | a multi-language platform: static analysis, duplication, coverage ingestion, quality gates | its own gate rules | server + scanner |
-| crapkit | complexity times uncovered risk, one score per function, churn-ranked | commits, pull requests and agent edits over a per-function ceiling | CLI, no server |
+| crapkit | complexity times uncovered risk, one score per function, churn-ranked | staged complexity and the full verify verdict; agent edits receive an advisory | local CLI, optional stdio MCP server |
 
 ## Where the lines actually sit
 
@@ -24,10 +24,10 @@ the product of the two. That product is the whole reason crapkit exists, and it 
 crapkit does not replace coverage.py: it *reads* the report your own test command already
 writes, in the same run.
 
-crap4py is the closest neighbour by name and formula: one release (0.1.1, June 2026, MIT),
-Python only, an lcov file in and a table out. crapkit reads fifteen languages through
+crap4py is the closest neighbour by name and formula: Python only, an lcov file in
+and a table out. crapkit reads fourteen configured language groups through
 lizard, runs your own test command as a lane and joins its artifact in the same run, ranks
-the result by churn, and holds it with a ratchet and four gates. The other visible
+the result by churn, and holds it with a ratchet and the [gate surfaces](../README.md#the-gate). The other visible
 difference is the default: crap4py quotes the conventional 30, crapkit's `target` is 6,
 because 30 is a CRAP score that an untested `ccn 5` passes and 6 is a complexity ceiling
 coverage cannot buy past. Set `target = 30` if you want the crap4j number; the ratchet

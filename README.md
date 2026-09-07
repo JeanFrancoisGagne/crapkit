@@ -15,8 +15,8 @@ worst ones by how often the file changes, and blocks commits that add more. It r
 Python, TypeScript, TSX, JavaScript, Swift, Go, Rust, shell, PowerShell, C and C++,
 Objective-C, Vue, Java and Zig through [lizard](https://github.com/terryyin/lizard), and
 joins per-function branch coverage from the istanbul or coverage.py artifact your own test
-command already writes. Every read command speaks sorted-keys JSON on a pinned schema,
-because half the callers are coding agents.
+command already writes. JSON commands use sorted keys and a versioned schema for
+scripts, coding agents and the optional MCP server.
 
 ```
 CRAP = ccn^2 * (1 - cov)^3 + ccn
@@ -47,6 +47,14 @@ a wall of red. Next to crap4py, radon, xenon, wily and SonarQube:
 crapkit scores **git-tracked files only**. Source you have not `git add`ed is invisible to
 it.
 
+| Start with | When |
+|---|---|
+| [Install](#install) and [the 60-second start](#the-60-second-start) | You want the first score in an existing Git repository. |
+| [Python](#quickstart-python) or [TypeScript](#quickstart-typescript) quickstart | You want a worked example from setup through a passing verify. |
+| [Adoption](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md) | You need to choose scopes, wire tests or introduce a ratchet to existing debt. |
+| [Upgrading](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) | You already have saved runs, ratchet marks or an installed plugin. |
+| [Subcommands](#subcommands) and [JSON/MCP reference](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | You are scripting commands or connecting a coding agent. |
+
 ---
 
 ## The 60-second start
@@ -54,16 +62,19 @@ it.
 ```
 pip install crapkit
 cd your-repo
-crapkit init        # crapkit.toml and .gitignore lines, plus a live coverage lane when it
-                    # recognizes the runner and a scope speaks its language: pyproject.toml,
-                    # pytest.ini or setup.cfg for pytest; a test script or vitest/jest in
-                    # package.json for the JS side
-                    # without one: the lane comes commented out, init says to declare one,
-                    # and docs/lanes.md is how to fill it in
+crapkit init        # write crapkit.toml and ignore measurement output
+crapkit doctor      # check scopes, test commands and coverage dependencies
 crapkit coverage    # runs the lane, joins coverage, stores a scored run
 crapkit worklist    # the ranked risk map
-crapkit ratchet seed && git add crapkit.toml crapkit-ratchet.tsv .gitignore
+crapkit ratchet seed
+git add crapkit.toml crapkit-ratchet.tsv .gitignore
 ```
+
+`init` detects pytest, Vitest and Jest from the repository's own files. Review the
+generated config before running its commands. When detection leaves a commented
+lane, fill it in using the [lane recipes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md).
+Commit the adoption files, then run `crapkit verify` to establish a passing verdict.
+Install the [commit gate](#the-gate) when the config and ratchet are ready.
 
 `coverage` scores, `worklist` ranks:
 
@@ -130,14 +141,19 @@ pip install git+https://github.com/JeanFrancoisGagne/crapkit.git
 pip install .
 ```
 
-Every route pulls one dependency, `lizard>=1.24.0`, a normal PyPI wheel, so an offline
-mirror installs fine. Requires Python 3.11 or newer. The `pip install -e ".[dev]"` under
+Requires Python 3.11 or newer and Git on PATH. The CLI has one runtime dependency,
+`lizard>=1.24.0`; a package mirror needs both distributions. Install into the environment
+you intend to use, then check `crapkit --version`. The `pip install -e ".[dev]"` under
 [Development](#development) is a different thing: it adds the test extra, for people
 changing crapkit.
 
-Scoring runs your own test command on your own machine and reads the artifact it writes.
-There is no network call anywhere in crapkit, so no source, no score and no telemetry
-leaves the box
+Python projects can install `pip install "crapkit[py]"` in their test environment to
+include pytest-cov and subprocess-capable coverage.py. A separate tool installation
+still needs the coverage plugin in the environment that runs the suite.
+
+Analysis and scoring run locally and send no telemetry. Configured lane, mutation
+and alert commands run with your permissions and can contact services or change
+files. Review those commands before running Crapkit in a repository you do not trust
 ([SECURITY.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/SECURITY.md)).
 
 ```
@@ -151,62 +167,34 @@ at or above the current directory, so a monorepo workspace finds the root's), an
 you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
 where the flag goes.
 
-## Upgrading from 0.4.4
+## Upgrading
 
-**Run `crapkit ratchet seed` first.** Shell cognitive complexity now nests, which is
-analysis version 8, and marks measured under version 7 are not comparable. Until you
-re-seed, `verify` refuses at exit 3:
+Keep the CLI and plugin versions aligned, measure fresh coverage after upgrading,
+and review any ratchet identity refusal before reseeding. The current reader is
+analysis version 10; older JavaScript and TypeScript callback marks can require a
+reviewed mapping. Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
+for saved state, portable records and Windows launcher locks.
+
+### Upgrading from 0.4.4
+
+This historical example describes the 0.4.4 to 0.4.5 transition, from analysis
+version 7 to 8. It is retained to explain older refusal messages:
 
 ```
 $ crapkit verify
 crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`
 ```
 
-Only shell and PowerShell cognitive numbers move. `ccn` does not, so a re-seed re-stamps
-the file and leaves the marks where they were.
-
-Five more things change under you. Three of them need nothing from you:
-
-- **New cache files.** `.crapkit/coupling-cache-v1.json` joins `churn-cache-v2.json` and
-  `churn-log-v2.z`. A warm 0.4.4 churn cache is adopted once and its file removed, and
-  `.crapkit/` is already gitignored, so nothing new reaches your index.
-- **`trend` and `report` write.** Both read a per-run rollup table, filled once per run and
-  pruned with its run, instead of rescanning every scored row. A read-only `.crapkit/`
-  costs the speedup, never the command.
-- **Nested scopes may move files.** One predicate decides scope ownership now, and the
-  deepest declared path wins, so a repo whose `[[scope]]` paths nest inside each other can
-  see files change scope, rollup and ceiling on the next scan. Scopes that do not nest see
-  no change.
-
-The other two put something in front of you:
-
-- **`mutate` keeps a worktree pool.** Every worker uses a kept worktree, including the
-  default of one. `crapkit mutate --drop-pool` reclaims the checkouts. See
-  [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees).
-- **`doctor` WARNs on a lane with no `results_artifact`.** Every `coveragepy` or `istanbul`
-  lane written before 0.4.5 gets one, with the two lines that fix it. Coverage is
-  unaffected. What the lane cannot feed without a results file is the crashed-worker check
-  and the no-new-failures check (exit 8).
+That transition changed cognitive complexity, not `ccn` or the CRAP formula.
+Later reader changes also affect function identity. Use the current upgrade guide
+when moving from any older release to today's reader.
 
 ### The exe lock on Windows
 
-`uv tool upgrade crapkit`, and `pip install -U` into a tool venv, fail with `os error 32`
-("The process cannot access the file because it is being used by another process") while a
-crapkit MCP server is live: an agent session spawns `crapkit.exe mcp`, which holds the
-launcher, and Windows will not overwrite a running executable. The venv upgrades before
-that copy fails, so `crapkit --version` already reports the new version and only the
-launcher is stale. Quit the agent session and rerun the upgrade, or rename the locked exe
-aside (Windows allows renaming a running one) and copy the new one in. Two lines in
-cmd.exe, where both `%` variables expand:
-
-```bat
-move %USERPROFILE%\.local\bin\crapkit.exe %USERPROFILE%\.local\bin\crapkit.exe.old
-copy %APPDATA%\uv\tools\crapkit\Scripts\crapkit.exe %USERPROFILE%\.local\bin\crapkit.exe
-```
-
-Git Bash has no `move` and passes `%APPDATA%` through as literal text, so that block
-fails there on its first line. Its form is `mv` and `cp` over `"$USERPROFILE"` and
-`"$APPDATA"`, which Git Bash sets to the same two directories.
+An active MCP server can hold `crapkit.exe` open and make an upgrade fail with
+Windows error 32. Stop that server or its agent session, rerun the upgrade with
+the same installer, then restart the client. See the
+[Windows upgrade procedure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#windows-launcher-locks).
 
 ## The Claude Code plugin
 
@@ -216,7 +204,7 @@ claude plugin install crapkit@crapkit
 ```
 
 Two commands, installed once per user, and every repo on the machine gets it. The plugin
-ships three skills, the read-only MCP server, and one advisory PostToolUse hook that names
+ships three skills, the read-side MCP server, and one advisory PostToolUse hook that names
 any function an edit pushed over its ceiling. Claude reaches two of the skills by itself,
 `crapkit` and `crapkit-recover`; the third you type, as `/crapkit:crapkit-onboard`, because
 wiring a repo up happens once and its description has no business in every turn's window.
@@ -302,8 +290,8 @@ marks with ambiguous old identities require a reviewed mapping; see
 
 ## The gate
 
-Four surfaces ask the same question, ccn against the scope's ceiling, with four
-different powers:
+Use the advisory while editing, the gate when committing, and `verify` for the
+full verdict. The preview and hooks differ in what their available evidence can prove:
 
 | Surface | Fires | Power |
 |---|---|---|
@@ -322,12 +310,10 @@ on stderr (`staged function(s) carry a ratchet mark and were not gated`), and sa
 about a staged file no `[[scope]]` claims, so a new top-level directory cannot go ungated
 in silence.
 
-**The crapkit root does not have to be the git top.** Since 0.4.5 every git spawn runs with
-`diff.relative=true` and `core.quotePath=false`, so a `crapkit.toml` in `packages/api`
-gates that package's own staged files and names them `app/m.py`, not
-`packages/api/app/m.py`, and a dirty non-ASCII path is a real row rather than an invisible
-one. Before that a nested root matched staged paths against no scope, and a function at
-twice the ceiling committed with a warning.
+**The Crapkit root can sit below the Git top.** A config in `packages/api` gates
+that package's staged files as project-relative paths such as `app/m.py`.
+[Path and root rules](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery)
+also cover absolute arguments, literal filenames and Git diff settings.
 
 Git runs hooks outside your shell's activated venv. Bare `python` must resolve to an
 interpreter that has crapkit installed, or spell it out
@@ -736,7 +722,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. It reads a per-run rollup table rather than rescanning every scored row, and fills that table for any run missing one, so it writes to the store (best effort: a read-only `.crapkit/` costs the speed, not the command). |
 | `digest [--alert]` | The delta between the two newest runs with identical lane sets. Silent when nothing changed. `--alert` pipes the body to `alert_command` on stdin. Plain lines, never JSON. |
 | `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Every row carries the function's CRAP and coverage, and prints the `crapkit explain` call for the rest: dark lines, history, the mark. It reads the same per-run rollups `trend` does, and writes them on the same terms. |
-| `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. `--top` truncates the list. A function and a function nested inside it never pair: their spans nest, they score 1.0 by construction, and nobody can deduplicate a factory from its own closure. |
+| `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. Ties have a stable order across hash seeds. A positive `--top` bounds retained candidates and output; dense inputs still require pair comparisons. A function and its nested closure never pair. |
 | `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. The ranked pairs are cached in `.crapkit/coupling-cache-v1.json`, keyed on HEAD, the churn window, today's UTC date, the path format and a digest of the tracked set, and shared with `brief` and `worklist --batches` (warm: 1.05 s to 0.11 s on a 72k-commit repo). The date is part of that key, so the first run after midnight UTC rebuilds the pairs on an unchanged HEAD. `--top` reads the cache, because it truncates that same order; `--min-support` or `--min-confidence` off their defaults ask a wider question than the file answers, so they bypass it and recompute. |
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. Both lists pass through the scored corpus first, the same predicate `coverage` uses (scopes, excludes, the test-file cut, `max_file_bytes`): a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims is named on stderr and never mutated, `--json` lists it under `outside_corpus`, and when nothing is left stdout says `nothing to mutate` at exit 0 without starting the suite. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. Every worker uses a kept worktree, including one; see [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees). `--drop-pool` removes them and exits. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
@@ -744,7 +730,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. Exit 2 and an advisory on stderr is the only thing it ever says, one block per judged file (a head line, one line per breaching function, a closing line): no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `help [TOPIC]` | The help git, npm and docker answer to. With no TOPIC it prints the command list; with one it prints that subcommand's own help, the same page as `crapkit TOPIC --help`. A TOPIC that names no subcommand exits 3. |
-| `mcp` | A dependency-free stdio MCP server (newline JSON-RPC 2.0) exposing twelve read-only tools named `verb_noun`, each with a title and a documented output schema. Every tool shells to the CLI's own `--json` surface, so the MCP view cannot drift from what the CLI reports. Answering from a kept in-process store was benchmarked and rejected: a packet's `source` would go stale behind the edit it describes. See [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server). |
+| `mcp` | A stdio MCP server with no extra dependency, exposing twelve read-side tools named `verb_noun`, each with a title and output schema. Tools call the CLI to inspect current scores, source and edited-file gates. They take no claims and run no verification; calls can write caches or store metadata. See [the MCP contract and setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server). |
 
 ## Reading the output
 
@@ -1279,6 +1265,8 @@ with no debt.
 | [docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | Every `crapkit.toml` key: type, default, and what it does. |
 | [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) | The lane model, vitest and jest and pytest recipes, artifact reuse, flake retest, containers. |
 | [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md) | Seeding, pruning, the git merge driver, metric stamps, debt policy, overrides. |
+| [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) | Existing installations: analysis and key versions, saved state, plugin alignment and Windows upgrades. |
+| [docs/portable-records.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md) | Lossless exports, portable baselines and ratchets, including filenames with delimiters. |
 | [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
 | [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md) | Where crapkit sits next to radon, xenon, wily, coverage.py and SonarQube, and how they run together. |
 | [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md) | The burn-down loop an agent runs, and the rules for changing crapkit itself. |
@@ -1290,15 +1278,17 @@ with no debt.
 
 ```
 pip install -e ".[dev]"
-pip install pytest-xdist
 git config core.hooksPath git-hooks
-python -m pytest -q
+python tools/testing/run.py
 ```
 
-`pytest-xdist` is not optional: `tests/fixtures/mini_repo` declares a lane that shells out
-to `pytest ... -n 2`, and without it that subprocess dies on an unrecognized `-n`. The
-`git config` line arms the complexity gate on your own commits. Same steps, with what each
-one buys, in [CONTRIBUTING.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md).
+The dev extra includes pytest, pytest-cov, pytest-xdist and coverage.py. The shared
+runner owns the unit and E2E schedule; use `--unit-workers 1` for serial unit
+reproduction or `--coverage` for combined branch coverage and JUnit. The `git config`
+line arms the complexity gate. See
+[CONTRIBUTING.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md)
+for development and [the verified implementation report](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/architecture/2026-09-07-implementation/REPORT.md)
+for complete Windows source and Linux wheel results, focused benchmarks and their limits.
 
 ## License
 

@@ -1,45 +1,101 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — unreleased
 
-- Keep same-line callbacks distinct in stored rows, exports, packets and report
-  commands. Version ratchet and claim identity; preserve ambiguous legacy debt
-  instead of assigning it to a different callback. Separate JavaScript and
-  TypeScript expression arrows that the upstream reader merged. Analysis version
-  10 invalidates older cached records.
-- Refuse anonymous JavaScript/TypeScript mark migration without reader proof,
-  including callbacks recovered on different lines. Keep old marks unchanged and
-  hold unproved claims across their name group until released or expired.
-- Reject ambiguous same-span coverage attribution instead of borrowing a sibling's
-  coverage. Accept `paths = ["."]` as a root scope with lower precedence than
-  deeper paths. Keep concurrent churn-cache data tied to its own checksum.
-- Reject nonfinite ratchet marks, audit overrides under their exact canonical key,
-  and retain debt age when committed marks change value.
-- Preserve failed verification evidence, trusted baselines and function-identity
-  witnesses when pruning runs. Leave concurrently created runs intact. Keep
-  same-named functions distinct through claims, history, digests and reports; reserve
-  queue items atomically. Current stores open without repeating migration writes.
-- Require fresh, explicit passing test results before a retry clears a failure.
-  Preserve literal retry and scoped-test arguments on Windows and POSIX.
-- Give every mutation worker the same captured source, tests and configuration,
-  including dirty files and deletions. Pool cleanup respects active workers. Generate
+This release makes scoring, verification and concurrent work more reliable. It
+preserves literal file paths, separates same-line callbacks, requires complete
+measurement evidence, and bounds retained duplicate candidates. The CLI, MCP tool names
+and JSON schema version remain compatible with 0.6.0.
+
+### Upgrade notes
+
+- Analysis version 10 invalidates older analysis caches. Refresh coverage after
+  upgrading. If verification reports an older metric stamp, follow the
+  [ratchet upgrade and identity checks](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.7.0/docs/ratchet.md#the-metric-stamp)
+  before reseeding; ambiguous legacy callback marks are preserved and refused,
+  never silently assigned to another function.
+- Ratchets, scored/inventory exports and portable baselines retain ordinary TSV.
+  Fields containing tabs or line separators, or a leading `#` path, use a versioned JSON
+  record. Consumers that parse these files directly must support the
+  [portable record format](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.7.0/docs/portable-records.md).
+- Configuration now rejects duplicate scope or lane names, invalid numeric and
+  boolean values, and coverage/JUnit paths that refer to the same output file.
+  Coverage parsers refuse impossible counts and nonfinite values.
+- The MCP server still exposes twelve tools. They inspect scores and check edited
+  functions without claiming queue items or running verification. Calls can update
+  local caches and store metadata; documentation and listings now state that scope.
+
+### Scoring, identity and reports
+
+- Keep same-line callbacks distinct in stored rows, packets, exports, claims and
+  history. Separate JavaScript and TypeScript expression arrows that the upstream
+  reader merged. Anonymous callback migration requires reader proof; unproved
+  claims hold their name group until released, explicitly pruned, or the whole
+  group is healthy.
+- Bind analysis and cache identity to the source bytes, language reader and typed
+  expression mode. Reject ambiguous same-span coverage instead of borrowing a
+  sibling's coverage. Treat malformed disposable caches as misses.
+- Use one scope ownership rule throughout scoring, setup, packets and scoped
+  tests. A root scope (`paths = ["."]`) has lower precedence than deeper paths.
+- Preserve exact Git filenames and source line endings. Gate and advisory paths
+  share a fixed patch format, independent of user diff settings. GitHub Action
+  inputs preserve NUL-delimited changed paths, Markdown metacharacters and Unicode;
+  SARIF paths are URI-encoded and decoded once.
+- Make duplicate ranking deterministic across input order and hash seeds. Limit
+  positive `--top` rankings with a bounded heap and construct payloads only for
+  returned matches. On the recorded 600-clone fixture, top-1 time fell from
+  598 ms to 204 ms and peak memory from 147.7 MB to 0.87 MB. These are fixture
+  measurements, not a whole-project speed claim.
+- Read coverage contexts only for the requested file. Preserve debt age when a
+  committed mark changes value and audit overrides under the exact canonical key.
+
+### Verification and concurrent execution
+
+- Require complete, fresh JUnit evidence. Collection failures, crashed workers and
+  incomplete sessions cannot pass as successful coverage; retries need explicit
+  passing results before clearing a failure.
+- Use the final settled verdict for the process exit, JSON response, stored run and
+  trusted-baseline decision. Preserve failed-run evidence and identity witnesses
+  when pruning history, and leave concurrent new runs intact.
+- Reuse measurements only when the clean HEAD, configuration, environment and
+  coverage/JUnit bytes match. Keep command outputs owned until the process tree
+  has stopped and parsing has finished.
+- Own command descendants with process groups on POSIX and Job Objects on Windows.
+  Retain ownership through completion, timeout and caller termination. Untimed
+  commands remain untimed, and launch errors retain their original meaning.
+- Give mutation workers one captured source, test and configuration snapshot,
+  including dirty files and deletions. Refuse linked source files before writing,
+  isolate worker copies, and preserve active workers during cleanup. Generate
   mutants from executable tokens rather than words inside names or comments.
-- Include the language reader and typed expression mode in analysis cache identity.
-  Reject nonfinite JSON coverage values before they can enter a score. Treat malformed disposable
-  caches as misses. Share strict streaming coverage decoding and keep missing-line
-  state inside its run. Read contexts for the requested file and filter twin
-  candidates before building their result payloads.
-- Share pytest configuration decoding between setup and runtime. Refuse duplicate
-  scope and lane names, invalid numeric and boolean settings, and artifact paths
-  that refer to the same output file.
-- Bound doctor probes through the process-tree runner, frame their version response
-  and control its encoding. Reuse MCP schema fragments without changing their output.
-- Gate committed CI changes against the event base. Isolate each composite Action
-  invocation, preserve Unicode changed paths, and enforce release prerequisites
-  before executing a release stage. Release verification uses the named repository.
-- Retire unused discovery code and production copies of reference algorithms. Internal
-  CLI helpers are imported from their owning family modules; `crapkit.cli.main`
-  remains the public entry point.
+- Reserve queue items atomically and preserve state across concurrent ratchet
+  writers. Current stores open without repeating migration writes.
+- Format packet and retry commands for their host shell while preserving literal
+  arguments. Emit MCP text as UTF-8. Report failed doctor probes as failures,
+  without substituting the current interpreter's version.
+
+### Development, CI and release maintenance
+
+- Share one test runner across development, coverage and CI: four unit workers and
+  eight E2E workers, with explicit serial reproduction controls. Reuse pristine
+  fixture seeds through private copies and remove a duplicate hosted source suite.
+- Require fresh JUnit artifacts and preserve logs and verdicts on failure. Compare
+  separately installed base and candidate wheels, validate their source provenance,
+  and retain historical baseline failures without excusing candidate regressions.
+- Gate CI changes against the event base and isolate each composite Action run.
+  Establish cleanup fixture readiness before measuring its deadline, while
+  keeping separate tests for startup and whole-call deadlines.
+- Bind release publication to a clean tagged HEAD and a passing verification ledger
+  row. Build wheel and source archives once, record their hashes, publish only
+  missing matching artifacts, and confirm PyPI, GitHub and Pages through readback.
+- Remove unused discovery code and production copies of reference algorithms.
+  CLI helpers live with their owning command families; `crapkit.cli.main` remains
+  the public entry point.
+- Refresh installation and upgrade guidance, command lifecycle documentation,
+  contributor workflows, security details and website navigation.
+
+The [implementation report](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.7.0/docs/architecture/2026-09-07-implementation/REPORT.md)
+contains the architecture findings, measured costs and gains, test results and
+reproducible evidence.
 
 ## 0.6.0 — 2026-09-05
 

@@ -1,19 +1,19 @@
 # Adoption
 
-The quickstarts in [README.md](../README.md) carry the mechanics: sniff the repo, check the
-config, score it, seed the ratchet, install the gate. This page carries the decisions they do
-not make for you, in the order you hit them. Read it before you run `crapkit init` in a repo
-you care about.
+Use this page to choose scopes, connect tests and seed existing debt. The
+[Python](../README.md#quickstart-python) and
+[TypeScript](../README.md#quickstart-typescript) quickstarts show the commands in
+order. Existing installations should start with [Upgrading](upgrading.md).
 
 ## Cut fewer, broader scopes first
 
 A scope is a ceiling plus a language set, not a package. One scope per language per
 top-level tree is the right opening move, even in a repo with twenty packages.
 
-Every scope you add owes a lane or a `coverage_optional`, because a lane-less scope is a
-`doctor` FAIL. It also wants a `scoped_tests` template of its own. Ten scopes on day one is
-ten lanes and ten templates before the first score lands, and the usual outcome is a config
-that half exists.
+Every scope needs a lane or `coverage_optional = true`; otherwise `doctor` fails.
+One lane can measure several scopes, so ten scopes do not require ten commands.
+Each measured scope also needs a `scoped_tests` template for the edit loop. Start
+with the scope boundaries your coverage commands and test routing can support.
 
 Splitting later is cheap. Ratchet marks are keyed by path and function name with no scope
 in the key, so re-cutting scopes leaves every recorded mark exactly where it was. Start
@@ -22,10 +22,7 @@ command for part of it.
 
 When you do split, a nested scope wins over the scope that contains it. Declare `src` and
 then `src/web`, and every file under `src/web` belongs to `src/web`: for scoring, for lane
-reuse, for `test-scoped` routing, and for the ceiling `crapkit brief` hands an agent. Since
-0.4.5 that is one rule with one answer. 0.4.4 answered it three ways, so a repo that already
-nests scopes may see files change scope on its next scan, and the per-scope rollups and
-ceilings move with them. A config whose scopes do not nest sees no change.
+reuse, for `test-scoped` routing, and for the ceiling `crapkit brief` hands an agent.
 
 ## Exclude, lane, or coverage_optional
 
@@ -115,10 +112,10 @@ the files you named is what you want.
 
 ## The first verify taints the baseline
 
-`crapkit verify` on a repo that has never passed one runs against a tree carrying all its
-pre-existing debt. It fails, and a failed run then blocks every later baseline: each
-subsequent run prints `run N is not the baseline: verify run M FAILED ...` and measures
-against something older.
+An early `crapkit verify` can fail on pre-existing debt that no ratchet marks cover.
+A failed verify then prevents later coverage runs from silently replacing its
+baseline: subsequent runs print `run N is not the baseline: verify run M FAILED ...`
+and compare against an older trusted run when one exists.
 
 Prevent it by seeding first. `crapkit ratchet seed` records today's over-target functions as
 accepted debt, so the first verify judges your edit rather than the repo's history.
@@ -199,10 +196,10 @@ verdict on HEAD plus the dirty file names was measured for 0.4.5 and rejected: t
 cannot see a second edit to a file that was already dirty, and a gate that misses one edit is
 worse than a slow gate.
 
-Upgrading crapkit mid-campaign costs one commit: 0.4.5 measures at analysis version 8 where
-0.4.4 measured at 7, so every existing mark is refused until somebody runs `crapkit ratchet
-seed` and commits the restamped file. Do it once, on one branch, before the fleet fans out
-([ratchet.md](ratchet.md#upgrading-to-045-analysis-version-8)).
+Upgrade before sessions fan out. Measure once, review any function-identity changes,
+and commit the resulting ratchet changes on the shared starting branch. The
+[upgrade guide](upgrading.md) separates metric restamping from identity mapping;
+a blanket seed cannot establish which callback an old mark belongs to.
 
 ## Put repo traps in `notes`
 
@@ -247,7 +244,7 @@ adapter beyond it exists yet.
 | Harness | What it gets |
 |---|---|
 | Claude Code | the plugin: three skills, the MCP server, the advisory hook |
-| any MCP client (Codex, Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: twelve read-only tools, no skills, no hook |
+| any MCP client (Codex, Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
 
 A runtime with a skills directory but no marketplace can copy `plugin/skills/*` into it and
