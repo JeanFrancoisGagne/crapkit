@@ -19,7 +19,8 @@ def test_explicit_outer_config_stays_out_of_nested_pytest(tmp_path):
     env.update(PYTHONPATH=str(tmp_path / "src"), COVERAGE_RCFILE=str(config))
 
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--coverage", "--workers", "2", "--output", ".crapkit/cov"], env=env,
+                             "--coverage", "--workers", "2", "--unit-workers", "1",
+                             "--output", ".crapkit/cov"], env=env,
                             capture_output=True, text=True)
 
     assert result.returncode == 0, result.stdout + result.stderr

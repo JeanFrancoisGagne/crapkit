@@ -19,7 +19,8 @@ def test_owner_uses_running_package_while_command_keeps_its_environment(tmp_path
     script.write_text("import crapkit; print(crapkit.origin)\n", encoding="utf-8")
     log = tmp_path / "command.log"
     with log.open("wb") as output:
-        assert procs.run_bounded(f'"{sys.executable}" "{script}"', 10, stream=output) == 0
+        # This target is a fake package, not part of the measured product.
+        assert procs.run_bounded(f'"{sys.executable}" -S "{script}"', 10, stream=output) == 0
     assert log.read_text(encoding="utf-8").strip() == "target package"
 
 
