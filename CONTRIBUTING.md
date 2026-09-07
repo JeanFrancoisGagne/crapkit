@@ -68,10 +68,10 @@ run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
 ```
 
 The defaults are the plainest child: 120 s, platform decoding, the inherited environment.
-A test that needs otherwise says so in that call. Two things are not negotiable. The child
-inherits `PYTHONPATH`, which is what makes the suite test the working tree instead of an
-installed crapkit, and each command injects its own git identity, so no global git config
-is required.
+A test that needs otherwise says so in that call. The child inherits the parent's
+package selection: `PYTHONPATH` can select a development checkout, while isolated CI
+uses its environment's verified wheel. Each Git command injects its test identity,
+so no global Git configuration is required.
 
 ## The rules the repo holds itself to
 
@@ -119,34 +119,38 @@ Two gates, and the first one is yours.
 **Before you push.** `git-hooks/pre-commit` refuses the commit on a staged function over
 ccn 6. Then `python -m crapkit verify` on the branch: it reruns the lane, gates the
 functions your diff touched, and checks that no ratchet mark rose and no test that passed
-in the baseline fails now. The hook runs again in CI. The verify does not, so this is the
-only place its verdict stops anything.
+in the baseline fails now. CI also runs the event-base hook and a complete verdict
+against separate base and candidate wheel installations.
 
-**In CI** (`.github/workflows/ci.yml`), three jobs:
+**In CI** (`.github/workflows/ci.yml`), four jobs:
 
-| Job | Runs | Blocks the PR |
+| Job | Runs | What fails the job |
 |---|---|---|
-| `test` | `pip install -e ".[dev]"`, `crapkit --version`, `python -m pytest tests/unit`, and `python -m pytest -n 8 tests/e2e` on six matrix legs (Python 3.11, 3.12, 3.13 on Ubuntu and Windows). Only Ubuntu/Python 3.12 also runs `python -m crapkit hook-precommit --base "$BASE_REF"` against the pull-request base SHA or push event's previous SHA. | yes, test failures and the event-base gate verdict block the PR |
-| `plugin` | two calls over two files: `claude plugin validate plugin --strict`, which schema-checks `plugin/.claude-plugin/plugin.json`, its `hooks.json` and the skill frontmatter no Python test can reach, then `claude plugin validate .`, which reads the repo-root `.claude-plugin/marketplace.json` a `claude plugin marketplace add` fetches and nothing else checks | yes |
-| `dogfood` | `coverage`, `verify --json`, `worklist --top 5` on crapkit itself | no: the `verify` line ends in `\|\| true`, so a rising mark or a dark diff line is reported for a human to read, not enforced |
+| `test` | Editable dev install, console-script check and `python tools/testing/run.py` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows. Ubuntu/Python 3.12 also runs `hook-precommit --base "$BASE_REF"`. | A test failure or event-base complexity breach. |
+| `verdict` | `python tools/testing/ci.py --base "$BASE_REF"` builds and verifies separate base/candidate wheels, measures both suites, transfers the complete baseline ledger and runs `verify --no-tighten`. | Either suite failing, incomplete evidence, a refused measurement or a failing CRAP verdict. |
+| `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
+| `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit. | Action execution errors. Its `gate: false` setting leaves score enforcement to `verdict`. |
 
-That last row is why the verify above matters. Nothing downstream fails the PR for you.
+The verdict job checks installed source bytes before mapping coverage paths and
+compares its JSON verdict with the actual run ledger. Its evidence is uploaded
+from `.crapkit/ci-verdict`. Repository branch protection controls which checks
+are required for merging.
 
 ## Adding a language
 
 Two cases, and the first one is most of them.
 
-**lizard already reads it.** Nothing new to write. Admit the label in four places, then
+**lizard already reads it.** Admit the label in three places, then
 prove it:
 
 | File | Change |
 |---|---|
-| `src/crapkit/config.py` | add the label to `SUPPORTED_LANGUAGES` |
+| `src/crapkit/config_contract.py` | add the label to the scope languages enum; `SUPPORTED_LANGUAGES` derives from it |
 | `src/crapkit/universe.py` | add its suffixes to `LANGUAGE_EXTENSIONS` |
 | `src/crapkit/_pygdefer.py` | name it in the module docstring's list, which a test pins to the language set |
-| `crapkit.schema.json` | add it to the `languages` enum |
 
-Then regenerate `plugin/hooks/hooks.json` from `LANGUAGE_EXTENSIONS` (a test rebuilds it
+Run `python tools/docs/generate.py` to update the editor schema. Then regenerate
+`plugin/hooks/hooks.json` from `LANGUAGE_EXTENSIONS` (a test rebuilds it
 and diffs), and name the language in the README intro and the handbook standfirst, both
 pinned to the same set. Bump `ANALYSIS_VERSION` in `analyze.py` so existing stores
 re-analyze. Coverage joins only where a parser exists, so a new language's scopes declare

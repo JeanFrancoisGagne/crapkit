@@ -18,8 +18,9 @@ body to diff against 41 others. Nothing here is a policy: the defaults are the
 plainest child (120 s, platform decoding, the inherited environment), and a file
 that needs otherwise says so.
 
-The child inherits PYTHONPATH. That is what makes the suite test the working
-tree rather than an installed crapkit, so no default here may drop it.
+The child inherits the parent's package selection. Development can select the
+working tree with PYTHONPATH; isolated CI selects its verified wheel through
+the environment's interpreter. No default here may replace that choice.
 """
 
 from __future__ import annotations
