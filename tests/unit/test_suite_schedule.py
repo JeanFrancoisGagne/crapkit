@@ -13,6 +13,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/testing/run.py"
 
 
+def fixture_env(root):
+    """The miniature package owns its tracing and cannot enter the parent data."""
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("COVERAGE_", "COV_CORE_"))}
+    env["PYTHONPATH"] = str(root / "src")
+    return env
+
+
 def fixture_repo(tmp_path, failure, *, contexts=True):
     for directory in ("src/crapkit", "tests/unit", "tests/e2e"):
         (tmp_path / directory).mkdir(parents=True)
@@ -37,10 +45,7 @@ def fixture_repo(tmp_path, failure, *, contexts=True):
     pytest.param("", False, id="no-contexts")])
 def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure, contexts):
     fixture_repo(tmp_path, failure, contexts=contexts)
-    env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
-    for key in ("COVERAGE_PROCESS_START", "COVERAGE_FILE", "COV_CORE_SOURCE",
-                "COV_CORE_CONFIG", "COV_CORE_DATAFILE", "COVERAGE_RCFILE"):
-        env.pop(key, None)
+    env = fixture_env(tmp_path)
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
                              "--coverage", "--workers", "2", "--output", ".crapkit/cov"], env=env,
                             capture_output=True, text=True)
@@ -65,10 +70,7 @@ def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure
 
 def test_startup_failure_replaces_old_passing_evidence_and_keeps_the_other_suite(tmp_path):
     fixture_repo(tmp_path, "")
-    env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
-    for key in tuple(env):
-        if key.startswith(("COVERAGE_", "COV_CORE_")):
-            env.pop(key)
+    env = fixture_env(tmp_path)
     command = [sys.executable, str(SCRIPT), "--repo", str(tmp_path),
                "--coverage", "--workers", "2", "--output", ".crapkit/cov"]
     first = subprocess.run(command, env=env, capture_output=True, text=True)
@@ -92,7 +94,7 @@ def test_startup_failure_replaces_old_passing_evidence_and_keeps_the_other_suite
 def test_empty_suite_records_an_infrastructure_failure_with_its_exit(tmp_path):
     fixture_repo(tmp_path, "")
     (tmp_path / "tests/unit/test_one.py").unlink()
-    env = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
+    env = fixture_env(tmp_path)
 
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
                              "--workers", "2", "--output", ".crapkit/cov"],

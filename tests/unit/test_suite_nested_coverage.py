@@ -1,11 +1,10 @@
 """Nested pytest owns its data while sibling CLI coverage remains measured."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
 
-from test_suite_schedule import SCRIPT, fixture_repo
+from test_suite_schedule import SCRIPT, fixture_env, fixture_repo
 
 
 NESTED = '''import subprocess, sys, time
@@ -66,10 +65,7 @@ def test_real_nested_pytest_and_parallel_cli_sibling_keep_separate_data(tmp_path
     fixture_repo(tmp_path, "")
     (tmp_path / "tests/e2e/test_two.py").write_text(NESTED)
     (tmp_path / "tests/e2e/test_sibling.py").write_text(SIBLING)
-    environment = dict(os.environ, PYTHONPATH=str(tmp_path / "src"))
-    for key in tuple(environment):
-        if key.startswith(("COVERAGE_", "COV_CORE_")):
-            environment.pop(key)
+    environment = fixture_env(tmp_path)
 
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
                              "--coverage", "--workers", "2", "--output", ".crapkit/cov"], env=environment,

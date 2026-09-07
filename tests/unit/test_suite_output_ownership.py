@@ -1,5 +1,4 @@
 """Direct test runs retain their own evidence without changing lane artifacts."""
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -7,14 +6,7 @@ import xml.etree.ElementTree as ET
 
 from crapkit.config import Lane
 from crapkit.lanes import measurement_owner
-from test_suite_schedule import SCRIPT, fixture_repo
-
-
-def environment(root):
-    env = {key: value for key, value in os.environ.items()
-           if not key.startswith(("COVERAGE_", "COV_CORE_"))}
-    env["PYTHONPATH"] = str(root / "src")
-    return env
+from test_suite_schedule import SCRIPT, fixture_env as environment, fixture_repo
 
 
 def command(root, *args):
