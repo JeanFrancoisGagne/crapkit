@@ -53,7 +53,7 @@ def fixture(root):
         encoding='utf-8')
     return {**os.environ, 'REQUEST_ROOT': str(root), 'TMP': str(scratch),
             'TEMP': str(scratch), 'TMPDIR': str(scratch),
-            'PYTHONPATH': str(hooks) + os.pathsep + os.environ['PYTHONPATH']}
+            'PYTHONPATH': os.pathsep.join(filter(None, (str(hooks), os.environ.get('PYTHONPATH'))))}
 
 
 class Client:

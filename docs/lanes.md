@@ -974,12 +974,23 @@ dependencies and services are outside that proof. Run fresh coverage when those
 inputs change. `--reuse-artifacts` remains an explicit request to read saved
 artifacts and keeps its warning about stale source coverage.
 
-Concurrent commands cannot own the same measurement outputs. Ownership covers
+Commands running as the same user on the same host cannot own the same
+measurement outputs. Ownership covers
 execution, coverage/JUnit parsing and artifact stamps, including absolute artifact
 paths shared by different checkouts. A conflicting command refuses before it
-runs. Independent output paths can run in parallel. Coordination files remain in
-`.crapkit` beside the artifacts, so those directories must be writable. If the CLI
-dies, its helper stops registered test processes before releasing ownership.
+runs. Independent output paths can run in parallel. Coordination files live under
+`~/.cache/crapkit/measurements/<host-id>`, outside report directories that runners
+may delete and recreate. The key uses the full resolved artifact path. `TEMP`,
+`TMP` and `CRAPKIT_RESOURCE_DIR` do not select another measurement domain.
+If the CLI dies, its helper stops registered test processes before releasing
+ownership. Small stable lease files remain as coordination state; do not delete
+them as idle evidence.
+
+Before 0.7.1, adjacent artifact locks could also coordinate different users or
+hosts when their shared filesystem supported those locks. The new per-user/host
+domain does not provide that coordination. Such writers need external
+serialization or distinct artifacts. Finish old-version measurements before
+starting new-version measurements because their lock locations differ.
 
 **Passing both makes `--reuse-artifacts` win.** It is checked first, so nothing reruns
 whatever changed, and the `measurement inputs unchanged; reusing without rerun` line

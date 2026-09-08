@@ -47,6 +47,19 @@ cancellation stop owned descendants before releasing output and checkout leases.
 Mutation cancellation closes admission before joining workers, so interruption
 cannot start another mutant suite.
 
+Measurement locks coordinate commands for the same user and host, including
+different repositories that target one absolute artifact. Stable files under
+`~/.cache/crapkit/measurements/<host-id>` stay outside report directories that
+test runners delete and recreate. `TEMP`, `TMP` and `CRAPKIT_RESOURCE_DIR` do not
+change this domain. Keep these small lease files as coordination state, not idle
+test evidence.
+
+The old adjacent locks could coordinate other users or hosts through a shared
+filesystem. The new local domain does not preserve that behavior; those writers
+need external serialization or distinct artifacts. Do not overlap old-version
+and new-version measurements during an upgrade because their lock locations
+differ.
+
 MCP keeps reading protocol input while a tool runs. Cancellation stops that
 request's CLI process tree. Input EOF closes the session and stops active work;
 the caller must keep stdin open until it has read the replies it needs. Control

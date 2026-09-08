@@ -102,7 +102,8 @@ GITIGNORE = ".crapkit/\ncoverage/\nalerts.log\n"
 
 def git(root: Path, *args: str) -> str:
     """One git command in `root`, refusing to continue on a non-zero exit."""
-    done = subprocess.run(["git", *args], cwd=root, check=True,
+    done = subprocess.run(["git", "-c", "maintenance.auto=false", "-c", "gc.auto=0", *args],
+                          cwd=root, check=True,
                           capture_output=True, text=True)
     return done.stdout
 

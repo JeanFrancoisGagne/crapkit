@@ -66,7 +66,7 @@ def test_watch_rescoring_stops_its_background_writer(tmp_path):
         'if "rescore" in sys.orig_argv:\n'
         '    runpy.run_path(os.path.join(os.environ["WATCH_ROOT"],"runner.py"))\n', encoding='utf-8')
     environment = {**os.environ, 'WATCH_ROOT': str(tmp_path),
-                   'PYTHONPATH': str(hooks) + os.pathsep + os.environ['PYTHONPATH']}
+                   'PYTHONPATH': os.pathsep.join(filter(None, (str(hooks), os.environ.get('PYTHONPATH'))))}
     process = subprocess.Popen([sys.executable, '-m', 'crapkit', 'watch', '--cycles', '1',
                                 '--interval', '.2', '--repo', str(tmp_path)], cwd=tmp_path,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,

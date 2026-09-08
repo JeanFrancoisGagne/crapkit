@@ -15,6 +15,14 @@ import pytest
 from test_measurement_inputs_e2e import measured_repo, run_cli  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def private_coordination_home(tmp_path, monkeypatch):
+    home = tmp_path / "coordination-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+
 PAUSE = """
 def pause_measurement(folder):
     (folder/'ready').write_text('ready')
@@ -116,7 +124,8 @@ def test_one_owner_spans_execution_parsing_and_stamp_publication(measured_repo, 
 
 
 @pytest.mark.parametrize('different_temp', [False, True])
-def test_shared_absolute_artifacts_have_one_owner_across_checkouts(measured_repo, paused_measurement, tmp_path, different_temp):
+@pytest.mark.parametrize('different_resources', [False, True])
+def test_shared_absolute_artifacts_have_one_owner_across_checkouts(measured_repo, paused_measurement, tmp_path, different_temp, different_resources):
     other = tmp_path / 'other'
     shutil.copytree(measured_repo, other)
     config = other / 'crapkit.toml'
@@ -128,6 +137,8 @@ def test_shared_absolute_artifacts_have_one_owner_across_checkouts(measured_repo
     alternative = tmp_path / 'another-temp'
     alternative.mkdir()
     environment = {'TEMP': str(alternative), 'TMP': str(alternative)} if different_temp else {}
+    if different_resources:
+        environment['CRAPKIT_RESOURCE_DIR'] = str(tmp_path / 'another-resource-domain')
     second = run_cli(other, 'coverage', '--json', env_extra=environment)
     assert second.returncode == 5, second.stdout + second.stderr
     assert 'measurement already in use' in second.stderr

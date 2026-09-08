@@ -24,6 +24,12 @@ the twelve MCP tools and JSON schema version 1 remain compatible with 0.7.0.
 
 ### Resource policies
 
+- Move measurement locks outside report directories so runners can delete and
+  recreate their output directories on Windows. Coordinate shared artifact paths
+  across repositories for the same user and host, independent of temporary and
+  analysis-resource directories. Retain small stable lease files as coordination
+  state. Cross-user or cross-host writers now need external serialization or
+  distinct artifacts; finish old-version measurements before upgrading.
 - Coordinate analysis pool slots across processes for the same user and host.
   Respect CPU affinity, configured worker ceilings and the inherited memory
   sizing hint. Contention takes available slots or falls back to serial work;
@@ -48,6 +54,9 @@ the twelve MCP tools and JSON schema version 1 remain compatible with 0.7.0.
 
 ### Release maintenance
 
+- Keep cleanup fixtures inside the tested Python environment, accept an unset
+  `PYTHONPATH`, and disable automatic Git maintenance while building copyable
+  test repositories.
 - Redistribute pending tests when parallel workers finish early, keeping the
   existing unit and end-to-end worker counts and complete coverage collection.
 - Require recorded passing tests, valid test counts and artifact digests before

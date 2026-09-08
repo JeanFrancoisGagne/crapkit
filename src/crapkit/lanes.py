@@ -16,6 +16,7 @@ from contextlib import nullcontext
 import json
 import os
 import re
+import socket
 import sys
 import time
 from pathlib import Path, PurePath
@@ -1168,9 +1169,11 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
 
 
 def _output_lock(path: Path) -> Path:
-    resolved = path.resolve()
-    key = os.path.normcase(resolved.name).encode("utf-8")
-    return resolved.parent / ".crapkit" / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
+    """Coordinate local outputs outside directories their runners may replace."""
+    key = os.path.normcase(str(path.resolve())).encode("utf-8")
+    host = hashlib.sha256(socket.gethostname().encode("utf-8")).hexdigest()[:16]
+    directory = Path.home() / ".cache" / "crapkit" / "measurements" / host
+    return directory / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
 
 
 def measurement_owner(root: Path, lanes):

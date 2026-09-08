@@ -77,8 +77,7 @@ def running_pool(tmp_path):
 
 def _start_fixture(root, mode="running"):
     script = Path(__file__).with_name("resource_pool_worker.py")
-    interpreter = getattr(sys, "_base_executable", sys.executable)
-    return subprocess.Popen([interpreter, str(script), str(root), mode],
+    return subprocess.Popen([sys.executable, str(script), str(root), mode],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
