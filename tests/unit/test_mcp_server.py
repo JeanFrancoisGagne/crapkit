@@ -182,6 +182,35 @@ def test_a_non_object_frame_and_a_blank_line_get_no_reply(monkeypatch, tmp_path)
     assert set(replies) == {9}
 
 
+@pytest.mark.parametrize("method, params", [
+    ("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {"name": "dispatch-test", "version": "1"}}),
+    ("tools/list", {}),
+])
+def test_a_synchronous_dispatch_error_replies_once_and_keeps_the_session(monkeypatch,
+                                                                         tmp_path, method, params):
+    _no_cli(monkeypatch)
+    calls = []
+
+    def _dispatch_fault(arguments):
+        calls.append(arguments)
+        raise RuntimeError("dispatch-fault")
+
+    monkeypatch.setitem(mcp_server._METHODS, method, _dispatch_fault)
+    notification = json.dumps({"jsonrpc": "2.0", "method": method, "params": params})
+    replies = _serve(monkeypatch, tmp_path, [
+        notification,
+        _rpc(1, method, params),
+        _rpc(2, "ping"),
+    ])
+
+    assert set(replies) == {1, 2}, "notifications stay silent"
+    assert calls == [params], "notifications must not invoke the handler"
+    assert replies[1]["error"]["code"] == -32603
+    assert replies[1]["error"]["message"] == "RuntimeError: dispatch-fault"
+    assert replies[2]["result"] == {}
+
+
 # --- what the listing and argv say ----------------------------------------------
 
 def test_tools_list_declares_required_from_the_positionals():

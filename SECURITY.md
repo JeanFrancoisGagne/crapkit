@@ -49,8 +49,8 @@ Untimed commands have no deadline. On POSIX, commands must keep their inherited
 process group; a daemon that explicitly calls `setsid` leaves this ownership.
 This is process cleanup, not a sandbox for hostile commands.
 
-`test-scoped` runs its command directly without a configured timeout or the
-process-owner cleanup used by lanes.
+Scoped tests have no configured timeout. They own their command descendants
+through the same cleanup used by lanes.
 
 An audited `crapkit verify --override REASON`, or a hook override through
 `CRAPKIT_OVERRIDE_REASON`, runs `alert_command` with the override record on
@@ -62,8 +62,9 @@ interpolated into the command. A nonzero alert exit refuses the operation.
 `mutate` writes mutated source in a detached worktree at every worker count,
 including the default of one worker. It copies dirty, untracked and deleted
 inputs into that worktree before applying mutants. A second `mutate` in the
-same repo finds the pool lock held and uses throwaway worktrees under the
-system temp directory. The user's working tree stays unchanged.
+same repo finds the pool lock held and uses temporary worktrees under
+`.crapkit/mutate-tmp`. Each run holds its lease until owned commands stop.
+The user's working tree stays unchanged.
 
 [Mutation isolation tests](tests/e2e/test_mutate_e2e.py) exercise this behavior
 through the CLI. [Pool tests](tests/unit/test_mutate_pool.py) check preparation

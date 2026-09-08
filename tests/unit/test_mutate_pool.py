@@ -5,7 +5,6 @@ picked, so the reported order has to come from the mutant list, never from who
 finished first. The pool's seam is what survives a run: the kept trees, and
 nothing half-built, because a half-built pool is reused in silence.
 """
-import os
 import shutil
 import subprocess
 import threading
@@ -15,7 +14,8 @@ import pytest
 
 from crapkit import mutate_pool
 from crapkit.errors import GitError
-from crapkit.mutate_pool import _merge, _shards, _take_lock, _worktrees, drop_pool, pool_dir
+from crapkit.locks import exclusive_lock
+from crapkit.mutate_pool import _merge, _shards, _worktrees, drop_pool, pool_dir
 
 
 def test_round_robin_covers_every_mutant_exactly_once():
@@ -162,13 +162,10 @@ def test_a_run_that_loses_the_lock_removes_its_own_trees(tmp_path, monkeypatch):
     """The peer's path is the old one, and the old one cleans up after itself."""
     tried = _fake_git(monkeypatch)
     pool_dir(tmp_path).mkdir(parents=True)
-    handle = os.open(pool_dir(tmp_path).parent / "mutate-pool.lock", os.O_CREAT | os.O_RDWR)
-    assert _take_lock(handle)
-    try:
+    lease = pool_dir(tmp_path).parent / "mutate-pool.lock"
+    with exclusive_lock(lease, label="peer mutation pool"):
         with _worktrees(tmp_path, 2) as trees:
             assert [t.parent for t in trees] != [pool_dir(tmp_path)] * 2
-    finally:
-        os.close(handle)
 
     assert [p for p in tried if p.exists()] == []
     assert not tried[0].parent.exists(), "the temp directory went with them"

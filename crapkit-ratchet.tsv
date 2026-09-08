@@ -1,9 +1,3 @@
 # crapkit-analysis=10 lizard=1.24.0
 # crapkit-keys=1
 path	long_name	crap
-src/crapkit/cli/maintenance.py	_print_cleanup( result : dict )	20.0000
-src/crapkit/mcp_server.py	_reply( root : Path , msg : dict , run_cli = None )	12.0000
-src/crapkit/mutate_pool.py	_drop_lock( handle : int , held : bool )	12.0000
-src/crapkit/mutate_pool.py	_on_every_tree( action , root : Path , trees : list , * , owner = None )	10.5000
-src/crapkit/mutate_pool.py	_throwaway( root : Path , count : int )	10.5000
-src/crapkit/mutate_pool.py	_trim_pool( root : Path , base : Path , trees : list , * , owner = None )	10.5000

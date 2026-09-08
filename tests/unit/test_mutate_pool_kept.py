@@ -11,7 +11,6 @@ that matter are the ones saying the reused tree is not a cheaper LIE: the last
 run's mutant is gone, the last suite's artifacts are gone, and a commit made
 between two runs is there.
 """
-import os
 import subprocess
 import sys
 import time
@@ -21,7 +20,8 @@ import pytest
 
 from crapkit import mutate_pool
 from crapkit.errors import GitError
-from crapkit.mutate_pool import _take_lock, _worktrees, drop_pool, pool_dir
+from crapkit.locks import exclusive_lock
+from crapkit.mutate_pool import _worktrees, drop_pool, pool_dir
 
 
 def git(repo: Path, *args: str) -> str:
@@ -209,16 +209,13 @@ def test_a_second_run_finding_the_pool_held_works_outside_it(repo):
     loser of the lock gets today's throwaway set: slower, never the first run's
     tree with a second run's mutant in it."""
     pool_dir(repo).mkdir(parents=True, exist_ok=True)
-    handle = os.open(pool_dir(repo).parent / "mutate-pool.lock", os.O_CREAT | os.O_RDWR)
-    assert _take_lock(handle), "the peer's lock"
-    try:
+    lease = pool_dir(repo).parent / "mutate-pool.lock"
+    with exclusive_lock(lease, label="peer mutation pool"):
         with _worktrees(repo, 1) as (tree,):
             assert pool_dir(repo) not in tree.parents
             assert tree.is_dir()
         assert not tree.exists(), "the throwaway set is still removed on the way out"
         assert sorted(pool_dir(repo).glob("w*")) == [], "the pool was left alone"
-    finally:
-        os.close(handle)
 
 
 def test_the_lock_is_released_so_the_next_run_gets_the_pool(repo, adds):

@@ -1,5 +1,6 @@
 """Public mutation cancellation stops work before releasing its checkout."""
 from concurrent.futures import Future, TimeoutError
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -155,7 +156,8 @@ def test_cancellation_during_baseline_never_starts_a_mutant(mutation_repo, monke
         (events / 'release').touch()
 
 
-def test_cancellation_during_preparation_joins_builders_before_removal(mutation_repo, monkeypatch):
+@pytest.mark.parametrize('pool_busy', [False, True])
+def test_cancellation_during_preparation_joins_builders_before_removal(mutation_repo, monkeypatch, pool_busy):
     root, events = mutation_repo
     built = threading.Event()
     release = threading.Event()
@@ -175,14 +177,17 @@ def test_cancellation_during_preparation_joins_builders_before_removal(mutation_
 
     monkeypatch.setattr(mutate_pool, 'worktree_add', finishing_add)
     interrupt_future_when(monkeypatch, ready)
-    try:
-        with pytest.raises(KeyboardInterrupt):
-            invoke(root)
-        assert recorded(events) == []
-        assert not (root / '.crapkit/mutate-pool/w0').exists()
-        assert len(git(root, 'worktree', 'list', '--porcelain').split('worktree ')) == 2
-    finally:
-        release.set()
+    peer = exclusive_lock(root / '.crapkit/mutate-pool.lock', label='other run') if pool_busy else nullcontext()
+    with peer:
+        try:
+            with pytest.raises(KeyboardInterrupt):
+                invoke(root)
+            assert recorded(events) == []
+            assert not (root / '.crapkit/mutate-pool/w0').exists()
+            assert list((root / '.crapkit/mutate-tmp').glob('*')) == []
+            assert len(git(root, 'worktree', 'list', '--porcelain').split('worktree ')) == 2
+        finally:
+            release.set()
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='native SIGINT delivery is POSIX; Windows uses the wait boundary above')

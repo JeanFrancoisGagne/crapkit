@@ -1742,13 +1742,11 @@ def _parse(line: str) -> dict | None:
 
 def _reply(root: Path, msg: dict, run_cli=None) -> dict | None:
     """The reply to one message. An exception escaping a handler becomes the
-    JSON-RPC -32603 reply instead of the end of the session; a notification
-    that raised gets nothing, since it asked for nothing."""
+    JSON-RPC -32603 reply instead of the end of the session. Dispatch returns
+    before invoking a handler when the message is a notification."""
     try:
         return _handle(root, msg, run_cli)
     except Exception as exc:  # noqa: BLE001 - the loop must outlive any one call
-        if "id" not in msg:
-            return None
         return _respond(msg["id"], error={"code": -32603,
                                           "message": f"{type(exc).__name__}: {exc}"})
 

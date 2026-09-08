@@ -39,16 +39,6 @@ from .gitio import head_commit, status_names, worktree_add, worktree_remove, wor
 from .mutate import apply_mutant
 from .procs import own_processes, run_bounded
 
-try:  # the lock, through whichever of the two the platform has
-    import fcntl
-except ImportError:  # pragma: no cover - Windows
-    fcntl = None
-try:
-    import msvcrt
-except ImportError:  # pragma: no cover - POSIX
-    msvcrt = None
-
-
 def _suite_env() -> dict:
     """Python validates .pyc files by source SIZE and whole-second mtime, so a
     written cache would answer for the next mutant of the same size."""
@@ -195,20 +185,18 @@ def _seed(tree: Path, files: dict) -> None:
         dst.chmod(saved[1])
 
 
-def _on_every_tree(action, root: Path, trees: list, *, owner=None) -> list:
+def _on_every_tree(action, root: Path, trees: list, *, owner) -> list:
     """`action(root, tree)` on one thread per tree, and WAIT FOR THEM ALL, even
     once one has raised. Leaving a checkout in flight is what turns a failed add
     into a leaked worktree: the cleanup walks the list, finds nothing at that
     path yet, and the abandoned thread creates it a moment later."""
-    if owner is not None:
-        action = partial(action, owner=owner)
+    action = partial(action, owner=owner)
     with ThreadPoolExecutor(max_workers=len(trees)) as pool:
         try:
             futures = [pool.submit(action, root, tree) for tree in trees]
             return [done.result() for done in futures]
         except BaseException as error:
-            if owner is not None:
-                _cancel_owner(owner, error)
+            _cancel_owner(owner, error)
             raise
 
 
@@ -262,7 +250,7 @@ def _clean_failed_pool(root: Path, count: int, lock: Path, error: BaseException)
         raise error from cleanup
 
 
-def _pooled(root: Path, count: int, *, owner=None):
+def _pooled(root: Path, count: int, *, owner):
     """The kept set, re-prepared on the way in and LEFT ON DISK on the way out.
 
     A build that fails takes the whole pool with it, because half a pool reused
@@ -278,7 +266,7 @@ def _pooled(root: Path, count: int, *, owner=None):
     return trees
 
 
-def _trim_pool(root: Path, base: Path, trees: list, *, owner=None) -> None:
+def _trim_pool(root: Path, base: Path, trees: list, *, owner) -> None:
     surplus = [path for path in base.glob("w*")
                if re.fullmatch(r"w(?:0|[1-9][0-9]*)", path.name) and path not in trees]
     _drop(root, base, surplus, owner=owner)
@@ -286,7 +274,7 @@ def _trim_pool(root: Path, base: Path, trees: list, *, owner=None) -> None:
         raise ToolError("could not remove surplus mutation workers")
 
 
-def _stock(root: Path, base: Path, trees: list, head: str, *, owner=None) -> None:
+def _stock(root: Path, base: Path, trees: list, head: str, *, owner) -> None:
     """Every tree at `head` with nothing of the last run in it, however it got
     there: re-prepared when the pool is there to re-prepare, built when it is
     not."""
@@ -296,14 +284,14 @@ def _stock(root: Path, base: Path, trees: list, head: str, *, owner=None) -> Non
     _on_every_tree(worktree_add, root, trees, owner=owner)
 
 
-def _reprepared(root: Path, trees: list, head: str, *, owner=None) -> bool:
+def _reprepared(root: Path, trees: list, head: str, *, owner) -> bool:
     """False, not a raise, when git refuses one of them. A directory git no
     longer knows as a worktree — a killed run, a hand-deleted admin entry, a
     copied folder — is a pool to rebuild, not a `mutate` to fail."""
     return all(_on_every_tree(partial(_reset_to, head), root, trees, owner=owner))
 
 
-def _reset_to(head: str, root: Path, tree: Path, *, owner=None) -> bool:
+def _reset_to(head: str, root: Path, tree: Path, *, owner) -> bool:
     """`_on_every_tree` hands its action (root, tree); the commit rides in
     front. The main repo's sha, never the literal HEAD, which inside a linked
     worktree means the commit that worktree was built at."""
@@ -314,7 +302,7 @@ def _reset_to(head: str, root: Path, tree: Path, *, owner=None) -> bool:
     return True
 
 
-def _drop(root: Path, base: Path, trees: list, *, owner=None) -> None:
+def _drop(root: Path, base: Path, trees: list, *, owner) -> None:
     """Through `worktree remove`, never an rmtree alone: an abandoned checkout
     leaves an entry in `git worktree list` that outlives the directory."""
     for tree in trees:
@@ -364,7 +352,7 @@ def _throwaway(root: Path, count: int):
             _recover_temporary(root, base, False)
 
 
-def _teardown(root: Path, base: Path, trees: list, *, owner=None) -> None:
+def _teardown(root: Path, base: Path, trees: list, *, owner) -> None:
     _drop(root, base, trees, owner=owner)
     shutil.rmtree(base)
 
@@ -439,49 +427,6 @@ def recover_temporary(root: Path, *, dry_run: bool = False) -> list[TemporaryRec
     if not base.exists():
         return []
     return [_recover_temporary(root, path, dry_run) for path in sorted(base.iterdir())]
-
-
-@contextmanager
-def _pool_lock(root: Path):
-    """Exclusive, and an answer rather than a wait: False means a peer run owns
-    the pool and this one takes the throwaway path.
-
-    The OS holds it, so it dies with the process. A lock file created and
-    deleted by hand would survive a killed run and lock every later run out of
-    the pool for good — a 35 s regression per run that nothing reports.
-    """
-    base = pool_dir(root)
-    base.parent.mkdir(parents=True, exist_ok=True)
-    # Outside the removable pool: deleting a held lock creates two lock owners.
-    handle = os.open(base.parent / "mutate-pool.lock", os.O_CREAT | os.O_RDWR)
-    held = _take_lock(handle)
-    try:
-        yield held
-    finally:
-        _drop_lock(handle, held)
-        os.close(handle)
-
-
-def _take_lock(handle: int) -> bool:
-    """True = this process owns the pool now."""
-    try:
-        if msvcrt is not None:
-            msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
-        else:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return False
-    return True
-
-
-def _drop_lock(handle: int, held: bool) -> None:
-    if not held:
-        return
-    if msvcrt is not None:
-        os.lseek(handle, 0, os.SEEK_SET)
-        msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
-    else:
-        fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def _fan_out(cfg, trees: list, shards: list, report, owner) -> list:
