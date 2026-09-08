@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import analyze
+from crapkit import _analysis_pool
 from crapkit.config import load_config_text
 from crapkit.hook import gate_staged
 
@@ -53,8 +53,8 @@ class _CountedPool:
 @pytest.fixture()
 def counted_pool(monkeypatch) -> list:
     built: list = []
-    monkeypatch.setattr(analyze, "ProcessPoolExecutor",
-                        lambda max_workers=None: _CountedPool(built, max_workers))
+    monkeypatch.setattr(_analysis_pool, "analysis_pool",
+                        lambda workers=None, worker_budget=0: _CountedPool(built, workers))
     return built
 
 

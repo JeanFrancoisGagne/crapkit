@@ -59,6 +59,7 @@ class Lane(NamedTuple):
     no_progress_seconds: int = 0
     retries: int = 0
     retest_command: str = ""  # {tests} template for the flake retry before exit 8
+    log_max_bytes: int = 16777216  # inherited global bound, not a per-lane TOML key
 
 
 # pytest options that read the NEXT token as their value. `-n 8` is eight
@@ -587,7 +588,7 @@ class Config(NamedTuple):
     scoped_tests: tuple[tuple[str, str], ...] = ()
     mutation_command: str = ""  # the suite run once per mutant; nonzero exit = killed
     mutation_timeout_seconds: int = 300  # a mutant that loops forever counts as killed
-    mutation_workers: int = 1  # >1 runs mutants in that many detached git worktrees
+    mutation_workers: int = 1  # one retained detached worktree per worker
     diff_uncovered_max: int | None = None  # verify exit 9 past this many dead changed lines
     # A tighten claims an improvement; one commit measured twice cannot have
     # improved. Past this factor between two runs of the same commit, verify
@@ -596,7 +597,11 @@ class Config(NamedTuple):
     debt_max_age_months: int | None = None  # ratchet report --enforce flags older marks
     repayment_min_per_30d: int | None = None  # --enforce flags a stalled burn-down
     max_parallel_lanes: int = 1  # lanes running at once; 1 = strictly serial
-    analysis_workers: int = 0  # lizard pool size; 0 = one worker per core
+    analysis_workers: int = 0  # requested lizard workers; 0 = automatic sizing
+    analysis_worker_budget: int = 0  # shared pool slot ceiling; 0 = available CPUs
+    log_max_bytes: int = 16777216  # each active/backup lane log; 0 = unlimited
+    test_retention_days: int = 7  # finished default test evidence; 0 = no age pruning
+    test_retention_count: int = 10  # finished default test evidence; 0 = no count pruning
     # Operational traps the repo learned the hard way. They lived as TOML
     # comments, which the parser drops, so no payload could ever quote them.
     notes: tuple[str, ...] = ()
@@ -748,9 +753,10 @@ def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
 def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
     scopes, scope_notes = _parse_scopes(raw["scope"])
     scope_names = {s.name for s in scopes}
-    lanes = _unique_lanes(raw.get("lane", []), scope_names, root)
-    _reject_shared_artifacts(lanes, root)
     main = raw.get("crapkit", {})
+    lanes = [lane._replace(log_max_bytes=main.get("log_max_bytes", 16777216))
+             for lane in _unique_lanes(raw.get("lane", []), scope_names, root)]
+    _reject_shared_artifacts(lanes, root)
     return Config(
         target=main.get("target", DEFAULT_TARGET),
         scopes=scopes,
@@ -772,6 +778,10 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
         repayment_min_per_30d=main.get("repayment_min_per_30d"),
         max_parallel_lanes=main.get("max_parallel_lanes", 1),
         analysis_workers=main.get("analysis_workers", 0),
+        analysis_worker_budget=main.get("analysis_worker_budget", 0),
+        log_max_bytes=main.get("log_max_bytes", 16777216),
+        test_retention_days=main.get("test_retention_days", 7),
+        test_retention_count=main.get("test_retention_count", 10),
         notes=tuple(main.get("notes", ())),
         scope_notes=scope_notes,
     )

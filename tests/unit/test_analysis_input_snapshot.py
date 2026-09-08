@@ -15,20 +15,22 @@ EDITED = "def f(x):\n    if x:\n        return 1\n    return 0\n"
 @pytest.mark.parametrize("pooled", [False, True])
 def test_changed_input_cannot_publish_records_under_an_earlier_digest(tmp_path, monkeypatch, change, pooled):
     path = tmp_path / "source.py"
+    monkeypatch.setenv("CRAPKIT_RESOURCE_DIR", str(tmp_path / "slots"))
     path.write_text(SOURCE, encoding="utf-8")
     real_jobs = analyze.analyze_jobs
+    (tmp_path / "other.py").write_text("def g(x):\n    return x + 1\n", encoding="utf-8")
 
     def change_before_parse(*args, **kwargs):
         if change == "edit":
             path.write_text(EDITED, encoding="utf-8")
         else:
             path.unlink()
-        return real_jobs(*args, **kwargs, pool_threshold=1 if pooled else 64)
+        return real_jobs(*args, **kwargs, pool_threshold=1 if pooled else 64, chunksize=1)
 
     with monkeypatch.context() as patch:
         patch.setattr(analyze, "analyze_jobs", change_before_parse)
         with pytest.raises(ToolError, match="source.py.*changed|source.py.*read"):
-            analyze.analyze_files(tmp_path, ["source.py"], cache={}, workers=1)
+            analyze.analyze_files(tmp_path, ["source.py", "other.py"], cache={}, workers=2 if pooled else 1)
 
     path.write_text(SOURCE, encoding="utf-8")
     records, hits, cache = analyze.analyze_files(tmp_path, ["source.py"], cache={}, workers=1)

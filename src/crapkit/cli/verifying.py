@@ -784,8 +784,7 @@ def _group_files_by_scope(files, scope_paths: dict, templates: dict,
 
 def cmd_test_scoped(args: argparse.Namespace) -> int:
     import os
-    import subprocess
-    from ..procs import prepare_template
+    from ..procs import own_processes, prepare_template, run_owned
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
@@ -793,12 +792,13 @@ def cmd_test_scoped(args: argparse.Namespace) -> int:
     by_scope = _group_files_by_scope(args.files, cfg.scope_paths, templates, root,
                                      cwd=_stand(args.repo))
 
-    for scope, files in sorted(by_scope.items()):
-        command, additions = prepare_template(templates[scope], {'files': files})
-        proc = subprocess.run(command, shell=True, cwd=root, env={**os.environ, **additions})
-        if proc.returncode != 0:
-            print(f"crapkit: scoped tests for {scope!r} failed (runner exit {proc.returncode})", file=sys.stderr)
-            return 1  # the runner's own code would collide with crapkit's 3/5/6/7/8
+    with own_processes(()) as owner:
+        for scope, files in sorted(by_scope.items()):
+            command, additions = prepare_template(templates[scope], {'files': files})
+            proc = run_owned(command, cwd=root, env={**os.environ, **additions}, owner=owner)
+            if proc.returncode != 0:
+                print(f"crapkit: scoped tests for {scope!r} failed (runner exit {proc.returncode})", file=sys.stderr)
+                return 1  # the runner's own code would collide with crapkit's 3/5/6/7/8
     return 0
 
 

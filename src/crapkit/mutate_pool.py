@@ -20,14 +20,18 @@ occupied pool, and removing the pool never removes the lock file's identity.
 from __future__ import annotations
 
 import os
+import json
+import re
 import shutil
 import stat
-import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import Literal
+from uuid import uuid4
 
 from .config import shell_words
 from .errors import GitError, ToolError
@@ -119,9 +123,11 @@ def _merge(done: list) -> list[bool]:
     return [killed for _, killed in sorted(done)]
 
 
-def _run_shard(tree: Path, cfg, shard: list, report, owner) -> list:
+def _run_shard(tree: Path, cfg, shard: list, report, owner, cancelled) -> list:
     out = []
     for index, mutant in shard:
+        if cancelled.is_set():
+            break
         killed = run_one(tree, cfg, mutant, owner=owner)
         report(index, mutant, killed)
         out.append((index, killed))
@@ -189,14 +195,21 @@ def _seed(tree: Path, files: dict) -> None:
         dst.chmod(saved[1])
 
 
-def _on_every_tree(action, root: Path, trees: list) -> None:
+def _on_every_tree(action, root: Path, trees: list, *, owner=None) -> list:
     """`action(root, tree)` on one thread per tree, and WAIT FOR THEM ALL, even
     once one has raised. Leaving a checkout in flight is what turns a failed add
     into a leaked worktree: the cleanup walks the list, finds nothing at that
     path yet, and the abandoned thread creates it a moment later."""
+    if owner is not None:
+        action = partial(action, owner=owner)
     with ThreadPoolExecutor(max_workers=len(trees)) as pool:
-        for done in [pool.submit(action, root, tree) for tree in trees]:
-            done.result()
+        try:
+            futures = [pool.submit(action, root, tree) for tree in trees]
+            return [done.result() for done in futures]
+        except BaseException as error:
+            if owner is not None:
+                _cancel_owner(owner, error)
+            raise
 
 
 def pool_dir(root: Path) -> Path:
@@ -221,15 +234,35 @@ def _worktrees(root: Path, count: int):
 
 @contextmanager
 def _owned_worktrees(root: Path, count: int):
+    recover_temporary(root)
     lock = _unlinked_path(root, pool_dir(root).parent / "mutate-pool.lock")
-    with own_processes([lock], optional=True, label="mutation worktree pool") as owner:
-        keeper = _pooled(root, count) if owner.held else _throwaway(root, count)
-        with keeper as trees:
-            yield trees, owner
+    prepared, owner = False, None
+    try:
+        with own_processes([lock], optional=True, label="mutation worktree pool") as owner:
+            if owner.held:
+                trees = _pooled(root, count, owner=owner)
+                prepared = True
+                yield trees, owner
+                return
+    except BaseException as error:
+        if owner is not None and owner.held and not prepared:
+            _clean_failed_pool(root, count, lock, error)
+        raise
+    with _throwaway(root, count) as owned:
+        yield owned
 
 
-@contextmanager
-def _pooled(root: Path, count: int):
+def _clean_failed_pool(root: Path, count: int, lock: Path, error: BaseException) -> None:
+    try:
+        with own_processes([lock], optional=True, label="mutation worktree pool cleanup") as owner:
+            if owner.held:
+                base = pool_dir(root)
+                _drop(root, base, [base / f'w{i}' for i in range(count)], owner=owner)
+    except BaseException as cleanup:
+        raise error from cleanup
+
+
+def _pooled(root: Path, count: int, *, owner=None):
     """The kept set, re-prepared on the way in and LEFT ON DISK on the way out.
 
     A build that fails takes the whole pool with it, because half a pool reused
@@ -240,49 +273,54 @@ def _pooled(root: Path, count: int):
     trees = [base / f"w{i}" for i in range(count)]
     for tree in trees:
         _unlinked_path(root, tree)
-    try:
-        _stock(root, base, trees, head_commit(root))
-    except BaseException:
-        _drop(root, base, trees)
-        raise
-    yield trees
+    _trim_pool(root, base, trees, owner=owner)
+    _stock(root, base, trees, head_commit(root), owner=owner)
+    return trees
 
 
-def _stock(root: Path, base: Path, trees: list, head: str) -> None:
+def _trim_pool(root: Path, base: Path, trees: list, *, owner=None) -> None:
+    surplus = [path for path in base.glob("w*")
+               if re.fullmatch(r"w(?:0|[1-9][0-9]*)", path.name) and path not in trees]
+    _drop(root, base, surplus, owner=owner)
+    if any(path.exists() for path in surplus):
+        raise ToolError("could not remove surplus mutation workers")
+
+
+def _stock(root: Path, base: Path, trees: list, head: str, *, owner=None) -> None:
     """Every tree at `head` with nothing of the last run in it, however it got
     there: re-prepared when the pool is there to re-prepare, built when it is
     not."""
-    if all(tree.is_dir() for tree in trees) and _reprepared(root, trees, head):
+    if all(tree.is_dir() for tree in trees) and _reprepared(root, trees, head, owner=owner):
         return
-    _drop(root, base, trees)
-    _on_every_tree(worktree_add, root, trees)
+    _drop(root, base, trees, owner=owner)
+    _on_every_tree(worktree_add, root, trees, owner=owner)
 
 
-def _reprepared(root: Path, trees: list, head: str) -> bool:
+def _reprepared(root: Path, trees: list, head: str, *, owner=None) -> bool:
     """False, not a raise, when git refuses one of them. A directory git no
     longer knows as a worktree — a killed run, a hand-deleted admin entry, a
     copied folder — is a pool to rebuild, not a `mutate` to fail."""
+    return all(_on_every_tree(partial(_reset_to, head), root, trees, owner=owner))
+
+
+def _reset_to(head: str, root: Path, tree: Path, *, owner=None) -> bool:
+    """`_on_every_tree` hands its action (root, tree); the commit rides in
+    front. The main repo's sha, never the literal HEAD, which inside a linked
+    worktree means the commit that worktree was built at."""
     try:
-        _on_every_tree(partial(_reset_to, head), root, trees)
+        worktree_reset(tree, head, owner=owner)
     except GitError:
         return False
     return True
 
 
-def _reset_to(head: str, root: Path, tree: Path) -> None:
-    """`_on_every_tree` hands its action (root, tree); the commit rides in
-    front. The main repo's sha, never the literal HEAD, which inside a linked
-    worktree means the commit that worktree was built at."""
-    worktree_reset(tree, head)
-
-
-def _drop(root: Path, base: Path, trees: list) -> None:
+def _drop(root: Path, base: Path, trees: list, *, owner=None) -> None:
     """Through `worktree remove`, never an rmtree alone: an abandoned checkout
     leaves an entry in `git worktree list` that outlives the directory."""
     for tree in trees:
         _unlinked_path(base, tree)
     if trees:
-        _on_every_tree(worktree_remove, root, trees)
+        _on_every_tree(worktree_remove, root, trees, owner=owner)
 
 
 def drop_pool(root: Path) -> list:
@@ -291,37 +329,116 @@ def drop_pool(root: Path) -> list:
     base = _unlinked_path(root, pool_dir(root))
     if not base.exists():
         return []
-    with _pool_lock(root) as held:
-        if not held:
+    lock = _unlinked_path(root, base.parent / 'mutate-pool.lock')
+    with own_processes([lock], optional=True, label='mutation worktree pool cleanup') as owner:
+        if not owner.held:
             raise ToolError("mutation worktree pool is in use; retry --drop-pool after the run finishes")
         trees = sorted(p for p in base.glob("w*") if p.is_dir())
-        _drop(root, base, trees)
+        _drop(root, base, trees, owner=owner)
         shutil.rmtree(base, ignore_errors=True)
         return trees
 
 
 @contextmanager
 def _throwaway(root: Path, count: int):
-    """What every run did before the pool, and what the second concurrent run
-    in one repo still does: a private base, gone on the way out — after a clean
-    run, after an exception, and after an add that failed halfway through.
+    """A concurrent run holds its own stable lease through command cleanup.
 
-    The adds run together, and so do the removes. Each one is a full checkout
-    that spends its time waiting on the disk rather than on a core, so four of
-    them serialized cost 54.5 s on a 31,620-file repo against 25.1 s overlapped.
+    The receipt precedes tree creation, so recovery can remove partial builds
+    after caller death. Older system-temp directories have no such proof.
     """
-    base = Path(tempfile.mkdtemp(prefix="crapkit-mutate-"))
+    base = _unlinked_path(root, root / '.crapkit/mutate-tmp' / uuid4().hex)
+    lease = _temporary_lease(root, base)
     trees = [base / f"w{i}" for i in range(count)]
     try:
-        _on_every_tree(worktree_add, root, trees)
-        yield trees
+        with own_processes([lease], label="temporary mutation worktrees") as owner:
+            base.mkdir(parents=True)
+            try:
+                _write_temporary_receipt(root, base, count)
+                _on_every_tree(worktree_add, root, trees, owner=owner)
+                yield trees, owner
+            finally:
+                if not owner.cancelled:
+                    _teardown(root, base, trees, owner=owner)
     finally:
-        _teardown(root, base, trees)
+        if base.exists():
+            _recover_temporary(root, base, False)
 
 
-def _teardown(root: Path, base: Path, trees: list) -> None:
-    _on_every_tree(worktree_remove, root, trees)
-    shutil.rmtree(base, ignore_errors=True)
+def _teardown(root: Path, base: Path, trees: list, *, owner=None) -> None:
+    _drop(root, base, trees, owner=owner)
+    shutil.rmtree(base)
+
+
+@dataclass(frozen=True)
+class TemporaryRecovery:
+    path: Path
+    status: Literal['recovered', 'planned', 'active', 'unproven', 'failed']
+    reason: str = ''
+
+
+def _temporary_lease(root: Path, base: Path) -> Path:
+    return _private_file(root, root / '.crapkit/mutate-leases' / (base.name + '.lock'))
+
+
+def _write_temporary_receipt(root: Path, base: Path, count: int) -> None:
+    receipt = {'version': 1, 'root': str(root.resolve()), 'run': base.name, 'workers': count}
+    temporary = base / 'owner.tmp'
+    temporary.write_text(json.dumps(receipt), encoding='utf-8')
+    temporary.replace(base / 'owner.json')
+
+
+def _temporary_trees(root: Path, base: Path) -> list[Path]:
+    _unlinked_path(root, base)
+    receipt = json.loads(_private_file(base, 'owner.json').read_text(encoding='utf-8'))
+    expected = {'version': 1, 'root': str(root.resolve()), 'run': base.name,
+                'workers': receipt['workers']}
+    if not _receipt_matches(receipt, expected) or not re.fullmatch(r'[0-9a-f]{32}', base.name):
+        raise ValueError('temporary mutation receipt does not match this directory')
+    count = receipt['workers']
+    if type(count) is not int or not 1 <= count <= 100:
+        raise ValueError('temporary mutation receipt has an invalid worker count')
+    return [_unlinked_path(base, f'w{i}') for i in range(count)]
+
+
+def _receipt_matches(receipt: dict, expected: dict) -> bool:
+    return type(receipt.get('version')) is int and receipt == expected
+
+
+def _recover_temporary(root: Path, base: Path, dry_run: bool) -> TemporaryRecovery:
+    try:
+        _temporary_trees(root, base)
+        lease = _temporary_lease(root, base)
+        if not lease.is_file():
+            raise ValueError('temporary mutation lease is missing')
+    except (OSError, ValueError, KeyError, TypeError, ToolError) as error:
+        return TemporaryRecovery(base, 'unproven', str(error))
+    return _recover_leased(root, base, lease, dry_run)
+
+
+def _recover_leased(root: Path, base: Path, lease: Path, dry_run: bool) -> TemporaryRecovery:
+    try:
+        with own_processes([lease], optional=True, label='temporary mutation recovery') as owner:
+            if not owner.held:
+                return TemporaryRecovery(base, 'active', 'temporary mutation worktrees are in use')
+            trees = _temporary_trees(root, base)
+            if dry_run:
+                return TemporaryRecovery(base, 'planned')
+            _teardown(root, base, trees, owner=owner)
+    except (OSError, ValueError, KeyError, TypeError, ToolError) as error:
+        return TemporaryRecovery(base, 'failed', str(error))
+    return TemporaryRecovery(base, 'recovered')
+
+
+def recover_temporary(root: Path, *, dry_run: bool = False) -> list[TemporaryRecovery]:
+    """Remove proved idle temporary runs; keep live or unproven paths untouched.
+
+    Stable lease files stay outside removed directories. Recovery never scans
+    old system-temp worktrees or removes a live concurrent run.
+    """
+    base = _unlinked_path(root, root / '.crapkit/mutate-tmp')
+    if not base.exists():
+        return []
+    return [_recover_temporary(root, path, dry_run) for path in sorted(base.iterdir())]
 
 
 @contextmanager
@@ -368,10 +485,23 @@ def _drop_lock(handle: int, held: bool) -> None:
 
 
 def _fan_out(cfg, trees: list, shards: list, report, owner) -> list:
+    cancelled = threading.Event()
     with ThreadPoolExecutor(max_workers=len(trees)) as pool:
-        futures = [pool.submit(_run_shard, tree, cfg, shard, report, owner)
-                   for tree, shard in zip(trees, shards)]
-        return [pair for f in futures for pair in f.result()]
+        try:
+            futures = [pool.submit(_run_shard, tree, cfg, shard, report, owner, cancelled)
+                       for tree, shard in zip(trees, shards)]
+            return [pair for f in futures for pair in f.result()]
+        except BaseException as error:
+            cancelled.set()
+            _cancel_owner(owner, error)
+            raise
+
+
+def _cancel_owner(owner, error: BaseException) -> None:
+    try:
+        owner.cancel()
+    except BaseException as cleanup:
+        raise error from cleanup
 
 
 def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[bool]:

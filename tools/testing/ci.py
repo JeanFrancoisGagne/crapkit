@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import closing
+from contextlib import closing, contextmanager
+from contextvars import ContextVar
+from functools import lru_cache
 import hashlib
+import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,6 +19,7 @@ import tempfile
 
 
 SCHEDULE = Path(__file__).with_name("run.py")
+_OWNER = ContextVar("ci_command_owner", default=None)
 JUNIT_PROBE = (
     "from pathlib import Path\nimport json\n"
     "from crapkit.junitparse import suite_summary\n"
@@ -22,8 +27,47 @@ JUNIT_PROBE = (
     "print(json.dumps(dict(counts, failures=sorted(failed))))\n")
 
 
+@lru_cache(maxsize=1)
+def _processes():
+    """Load driver ownership without changing the package selected by its children."""
+    if sys.platform == "linux":
+        return _linux_processes()
+    package = Path(__file__).resolve().parents[2] / "src/crapkit"
+    spec = importlib.util.spec_from_file_location(
+        "_crapkit_ci_driver", package / "__init__.py", submodule_search_locations=[str(package)])
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return importlib.import_module(spec.name + ".procs")
+
+
+def _linux_processes():
+    spec = importlib.util.spec_from_file_location("_crapkit_ci_linux", Path(__file__).with_name("_ci_linux.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@contextmanager
+def _commands():
+    with _processes().own_processes(()) as owner:
+        token = _OWNER.set(owner)
+        try:
+            yield
+        finally:
+            _OWNER.reset(token)
+
+
+def _run(command, *, check=False, text=False, **kwargs):
+    result = _processes().run_owned(command, owner=_OWNER.get(), **kwargs)
+    if check:
+        result.check_returncode()
+    return result
+
+
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(["git", *args], cwd=root, capture_output=True,
+    return _run(["git", *args], cwd=root, capture_output=True,
                           text=True, check=True).stdout.strip()
 
 
@@ -48,7 +92,7 @@ def _package_files(path: Path) -> dict[str, str]:
 def installed_source(root: Path, python: Path, environment: dict) -> dict:
     """Prove the imported wheel contains exactly this checkout's Python source."""
     command = "import crapkit; print(crapkit.__file__)"
-    done = subprocess.run([str(python), "-I", "-c", command], cwd=root,
+    done = _run([str(python), "-I", "-c", command], cwd=root,
                           env=environment, capture_output=True, text=True, check=True)
     package = Path(done.stdout.strip()).resolve().parent
     package.relative_to(python.parent.parent.resolve())
@@ -61,13 +105,13 @@ def installed_source(root: Path, python: Path, environment: dict) -> dict:
 def install_revision(root: Path, destination: Path) -> tuple[Path, dict, dict]:
     """Build one wheel, install it in a clean environment, and verify its bytes."""
     dist = destination / "dist"
-    subprocess.run([sys.executable, "-m", "build", "--wheel", "--outdir", str(dist), str(root)], check=True)
+    _run([sys.executable, "-m", "build", "--wheel", "--outdir", str(dist), str(root)], check=True)
     wheel, = dist.glob("*.whl")
     venv = destination / "venv"
-    subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
+    _run([sys.executable, "-m", "venv", str(venv)], check=True)
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     environment = _environment(python)
-    subprocess.run([str(python), "-m", "pip", "install", str(wheel) + "[dev]"],
+    _run([str(python), "-m", "pip", "install", str(wheel) + "[dev]"],
                    env=environment, check=True)
     proof = installed_source(root, python, environment)
     proof.update(wheel=wheel.name, wheel_sha256=_sha(wheel), commit=_git(root, "rev-parse", "HEAD"))
@@ -83,13 +127,25 @@ def _measure(root: Path, python: Path, environment: dict, proof: dict) -> int:
     config.write_text("[run]\nbranch = true\npatch = subprocess\n"
                       "source = crapkit\n[paths]\nsource =\n" + mapped + "\n", encoding="utf-8")
     measured_env = dict(environment, COVERAGE_RCFILE=str(config))
-    return subprocess.run([str(python), str(SCHEDULE), "--repo", str(root), "--coverage",
+    schedule = _measurement_runner(root)
+    proof["runner"] = {"path": str(schedule), "sha256": _sha(schedule),
+                       "source": "revision" if schedule != SCHEDULE else "driver fixture fallback"}
+    return _run([str(python), str(schedule), "--repo", str(root), "--coverage",
                            "--output", ".crapkit/cov"],
                           cwd=root, env=measured_env).returncode
 
 
+def _measurement_runner(root: Path) -> Path:
+    schedule = root / "tools/testing/run.py"
+    if schedule.is_file():
+        return schedule
+    if (root / ".git").exists():
+        raise ValueError("revision has no tools/testing/run.py; select a baseline with the shared runner")
+    return SCHEDULE
+
+
 def _crapkit(root: Path, python: Path, environment: dict, *args: str) -> tuple[int, dict]:
-    result = subprocess.run([str(python), "-m", "crapkit", *args, "--json"],
+    result = _run([str(python), "-m", "crapkit", *args, "--json"],
                             cwd=root, env=environment, capture_output=True, text=True)
     print(result.stderr, file=sys.stderr, end="")
     if not result.stdout.strip():
@@ -112,7 +168,7 @@ def _ledger(root: Path) -> dict:
 
 def _test_evidence(root: Path, python: Path, environment: dict) -> dict:
     """Use that revision's JUnit admission before explicit artifact reuse."""
-    result = subprocess.run([str(python), "-c", JUNIT_PROBE], cwd=root, env=environment,
+    result = _run([str(python), "-c", JUNIT_PROBE], cwd=root, env=environment,
                             capture_output=True, text=True)
     if result.returncode:
         raise ValueError(f"{root.name} test evidence is incomplete: {result.stderr.strip()}")
@@ -141,7 +197,7 @@ def verify_pair(base: Path, candidate: Path, base_python: Path, candidate_python
 
 def _checkout(repo: Path, directory: Path, ref: str) -> Path:
     revision = _git(repo, "rev-parse", "--verify", "--end-of-options", ref + "^{commit}")
-    subprocess.run(["git", "clone", "--shared", "--quiet", str(repo), str(directory)], check=True)
+    _run(["git", "clone", "--shared", "--quiet", str(repo), str(directory)], check=True)
     _git(directory, "checkout", "--quiet", "--detach", revision)
     return directory
 
@@ -193,7 +249,8 @@ def compare(repo: Path, base_ref: str, output: Path) -> int:
     with tempfile.TemporaryDirectory(prefix="crapkit-ci-") as directory:
         scratch = Path(directory)
         try:
-            return _compare_checkouts(repo, base_ref, scratch, evidence)
+            with _commands():
+                return _compare_checkouts(repo, base_ref, scratch, evidence)
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             evidence["error"] = str(exc)
             raise

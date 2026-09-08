@@ -38,8 +38,12 @@ pytest-randomly plugin.
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
 measurements, configured test contexts and JUnit results. Every direct run retains its
 evidence in a unique `.crapkit/test-runs/run-*` directory and prints the absolute path
-before starting. Either suite failing makes the runner fail. Remove old run directories
-when their evidence is no longer needed.
+before starting. Either suite failing makes the runner fail. The next suite starts
+only after the previous suite's owned descendants stop. Cancellation stops the run.
+Default evidence expires after seven days or beyond the ten most recent runs;
+active runs and unrecognized directories are preserved. Configure
+`test_retention_days` and `test_retention_count` in `crapkit.toml`, or preview cleanup
+with `crapkit clean --dry-run --json`. See [resource policies](docs/resources.md).
 
 `--output DIR` replaces evidence in a caller-managed directory inside `--repo`; relative
 paths resolve from that repository. Crapkit's own lane supplies `--output .crapkit/cov`

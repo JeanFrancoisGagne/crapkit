@@ -52,9 +52,9 @@ def adds(monkeypatch) -> list:
     made: list = []
     real = mutate_pool.worktree_add
 
-    def counted(root: Path, path: Path) -> None:
+    def counted(root: Path, path: Path, *, owner=None) -> None:
         made.append(path)
-        real(root, path)
+        real(root, path, owner=owner)
 
     monkeypatch.setattr(mutate_pool, "worktree_add", counted)
     return made
@@ -177,10 +177,10 @@ def test_a_build_that_fails_leaves_no_pool_to_be_reused_blind(repo, monkeypatch)
     """Half a pool reused is silent, where a fresh add that dies is loud."""
     real = mutate_pool.worktree_add
 
-    def refuse_the_second(root: Path, path: Path) -> None:
+    def refuse_the_second(root: Path, path: Path, *, owner=None) -> None:
         if path.name == "w1":
             raise GitError("checkout refused")
-        real(root, path)
+        real(root, path, owner=owner)
 
     monkeypatch.setattr(mutate_pool, "worktree_add", refuse_the_second)
 

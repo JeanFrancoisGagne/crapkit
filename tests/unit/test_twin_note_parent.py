@@ -7,7 +7,7 @@ note printed from `analyze_one` reached a UTF-8 reader as cp1252 bytes (#31: the
 em dash arrived as 0x97 on a stream whose other lines were UTF-8). Workers
 return records; the parent is the only process that says anything.
 """
-import crapkit.analyze as analyze_module
+from crapkit import _analysis_pool
 from crapkit.analyze import analyze_jobs, analyze_one, analyze_source
 
 TWINS = "def f():\n    return 1\n\n\ndef f():\n    return 2\n"
@@ -37,9 +37,10 @@ def test_the_parent_prints_the_note_once_per_file_after_collecting(tmp_path, cap
 def test_the_pooled_path_prints_from_the_parent_too(tmp_path, capsys, monkeypatch):
     """A stand-in pool runs the jobs in-process: the question is which side of
     the pool prints, not whether a child was spawned."""
+    built = []
     class InProcessPool:
-        def __init__(self, max_workers=None):
-            pass
+        def __init__(self, workers=None, worker_budget=0):
+            built.append(workers)
 
         def __enter__(self):
             return self
@@ -50,9 +51,13 @@ def test_the_pooled_path_prints_from_the_parent_too(tmp_path, capsys, monkeypatc
         def map(self, fn, jobs, chunksize=1):
             return [fn(job) for job in jobs]
 
-    monkeypatch.setattr(analyze_module, "ProcessPoolExecutor", InProcessPool)
+    monkeypatch.setattr(_analysis_pool, "analysis_pool", InProcessPool)
 
-    fresh = analyze_jobs([_twins_job(tmp_path)], pool_threshold=1)
+    plain = tmp_path / "plain.py"
+    plain.write_text("def plain():\n    return 1\n", encoding="utf-8")
+    fresh = analyze_jobs([_twins_job(tmp_path), (str(plain), "plain.py")],
+                         pool_threshold=1, chunksize=1, workers=2)
+    assert built == [2]
 
     assert len(fresh["twins.py"]) == 2
     assert capsys.readouterr().err.count("more than once") == 1

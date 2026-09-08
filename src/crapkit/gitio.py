@@ -547,7 +547,21 @@ def churn_log_lines(root: Path, months: int) -> Iterator[str]:
 _LONGPATHS = ("-c", "core.longpaths=true")
 
 
-def worktree_add(root: Path, path: Path) -> None:
+def _worktree_git(root: Path, *args: str, owner=None) -> str:
+    if owner is None:
+        return _git(root, *args)
+    from .procs import run_owned
+    try:
+        result = run_owned(["git", *_RELATIVE, *args], cwd=root, env=_environment(),
+                           capture_output=True, owner=owner)
+    except FileNotFoundError as error:
+        raise GitError("git executable not found") from error
+    if result.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed in {root}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def worktree_add(root: Path, path: Path, *, owner=None) -> None:
     """A detached checkout of HEAD at `path`: a second working tree that shares
     the object store, so a worker can edit files without touching the real one.
 
@@ -563,30 +577,30 @@ def worktree_add(root: Path, path: Path) -> None:
     add that dies in the scan leaves neither the target directory nor an entry.
     """
     try:
-        _git(root, *_LONGPATHS, "worktree", "add", "--detach", str(path))
+        _worktree_git(root, *_LONGPATHS, "worktree", "add", "--detach", str(path), owner=owner)
         return
     except GitError as first:
         message = str(first)
         if "worktrees/" not in message or "commondir" not in message:
             raise
     time.sleep(0.05)
-    _git(root, *_LONGPATHS, "worktree", "add", "--detach", str(path))
+    _worktree_git(root, *_LONGPATHS, "worktree", "add", "--detach", str(path), owner=owner)
 
 
-def worktree_remove(root: Path, path: Path) -> None:
+def worktree_remove(root: Path, path: Path, *, owner=None) -> None:
     """Teardown. --force because the worker's tree is dirty by construction, and
     it never raises: a cleanup error must not mask the failure that caused it.
     `prune` is the fallback that drops the admin entry a stuck directory leaves.
     Parallel removes survive the same admin-entry enumeration that kills a
     parallel add (0 failures in 320 concurrent removes measured), so no retry."""
     try:
-        _git(root, *_LONGPATHS, "worktree", "remove", "--force", str(path))
+        _worktree_git(root, *_LONGPATHS, "worktree", "remove", "--force", str(path), owner=owner)
     except GitError:
         shutil.rmtree(path, ignore_errors=True)
-        _prune_quietly(root)
+        _prune_quietly(root, owner=owner)
 
 
-def worktree_reset(tree: Path, commit: str) -> None:
+def worktree_reset(tree: Path, commit: str, *, owner=None) -> None:
     """A worktree back to `commit`, content and all, without a fresh checkout.
     30.6 s of `worktree add` on a 31,459-file tree against 0.46 s here.
 
@@ -618,13 +632,13 @@ def worktree_reset(tree: Path, commit: str) -> None:
     """
     if not (tree / ".git").exists():
         raise GitError(f"{tree} is not a git worktree")
-    _git(tree, *_LONGPATHS, "checkout", "--force", commit)
-    _git(tree, *_LONGPATHS, "clean", "-xdff")
+    _worktree_git(tree, *_LONGPATHS, "checkout", "--force", commit, owner=owner)
+    _worktree_git(tree, *_LONGPATHS, "clean", "-xdff", owner=owner)
 
 
-def _prune_quietly(root: Path) -> None:
+def _prune_quietly(root: Path, *, owner=None) -> None:
     try:
-        _git(root, "worktree", "prune")
+        _worktree_git(root, "worktree", "prune", owner=owner)
     except GitError:
         pass
 

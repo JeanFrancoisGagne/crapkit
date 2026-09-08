@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 import json
 import re
 import signal
@@ -29,6 +29,23 @@ _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
 # lands close to the deadline, large enough that watching a two-hour suite costs
 # nothing measurable.
 _TICK = 0.5
+
+_OWNER_INPUTS = set()
+_OWNER_INPUTS_LOCK = threading.RLock()
+
+
+def _close_forked_inputs():
+    # Raw close cannot flush a parent's pending protocol bytes into its owner.
+    for stream in _OWNER_INPUTS:
+        stream.close()
+    _OWNER_INPUTS.clear()
+    _OWNER_INPUTS_LOCK.release()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(before=_OWNER_INPUTS_LOCK.acquire,
+                        after_in_parent=_OWNER_INPUTS_LOCK.release,
+                        after_in_child=_close_forked_inputs)
 
 
 def prepare_template(template: str, values: dict[str, list[str]]) -> tuple[str, dict[str, str]]:
@@ -123,10 +140,15 @@ def _kill_pid(pid: int) -> None:
             pass
 
 
+class CommandCancelled(Exception):
+    """The command owner stopped this request and refuses further starts."""
+
+
 class _ProcessOwner:
     def __init__(self, process):
         self.process = process
         self._requests = threading.Lock()
+        self.cancelled = False
 
     def receive(self) -> dict:
         from .errors import ToolError
@@ -139,14 +161,41 @@ class _ProcessOwner:
         return result
 
     def request(self, operation: str, pid: int) -> None:
+        with self._requests:
+            if operation == "add":
+                self.check_cancelled()
+            self._request(operation, pid)
+
+    def _request(self, operation: str, pid: int) -> None:
         from .errors import ToolError
         try:
-            with self._requests:
-                self.process.stdin.write(json.dumps((operation, pid)) + "\n")
-                self.process.stdin.flush()
-                self.receive()
+            self.process.stdin.write(json.dumps((operation, pid)) + "\n")
+            self.process.stdin.flush()
+            self.receive()
         except OSError as error:
             raise ToolError("measurement owner stopped during command registration") from error
+
+    def start(self, process, family=None):
+        """Register and release one launcher atomically against cancellation."""
+        self.register_then(process.pid, lambda: _release_launcher(process), family=family)
+
+    def register_then(self, pid, release, *, family=None):
+        """Register a gated process, then release it before cancellation can enter."""
+        with self._requests:
+            self.check_cancelled()
+            self._request("add", pid if family is None else {"pid": pid, "family": family})
+            release()
+
+    def check_cancelled(self):
+        if self.cancelled:
+            raise CommandCancelled("command owner was cancelled")
+
+    def cancel(self):
+        """Stop registered trees and refuse starts, keeping resource leases held."""
+        with self._requests:
+            if not self.cancelled:
+                self.cancelled = True
+                self._request("cancel", 0)
 
     def check(self) -> None:
         from .errors import ToolError
@@ -154,23 +203,63 @@ class _ProcessOwner:
             raise ToolError("measurement owner stopped before publication")
 
 
+class _WindowsOwner(_ProcessOwner):
+    """Without leases, caller-owned Jobs already survive caller failure safely."""
+
+    def __init__(self):
+        super().__init__(None)
+        self.children = {}
+        self.held = True
+
+    def _request(self, operation, pid):
+        from ._process_owner import _operation
+        _operation(self.children, operation, pid)
+
+    def check(self):
+        pass  # The kernel owns live Jobs through this process's handles.
+
+
+@contextmanager
+def _local_owner():
+    owner = _WindowsOwner()
+    try:
+        yield owner
+    finally:
+        owner.cancel()
+
+
 @contextmanager
 def own_processes(paths, *, optional: bool = False, label: str = "measurement"):
+    """Keep leases until tree cleanup; lease-free Windows Jobs need no guardian."""
+    paths = tuple(paths)
+    context = (_local_owner() if os.name == "nt" and not paths else
+               _external_owner(paths, optional=optional, label=label))
+    with context as owner:
+        yield owner
+
+
+@contextmanager
+def _external_owner(paths, *, optional: bool = False, label: str = "measurement"):
     """Own measurement outputs across caller crashes and command cleanup."""
     options = {"paths": list(map(str, paths)), "optional": optional, "label": label}
     bootstrap = ("import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
                  "runpy.run_module('crapkit._process_owner', run_name='__main__')")
     package_root = str(Path(__file__).resolve().parent.parent)
-    process = subprocess.Popen([sys.executable, "-c", bootstrap, package_root, json.dumps(options)],
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+    with _OWNER_INPUTS_LOCK:
+        process = subprocess.Popen([sys.executable, "-c", bootstrap, package_root, json.dumps(options)],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8", **_OWN_GROUP)
+        raw_input = process.stdin.buffer.raw
+        _OWNER_INPUTS.add(raw_input)
     owner = _ProcessOwner(process)
     try:
         owner.held = owner.receive()["held"]
         yield owner
         owner.check()
     finally:
-        _close_input(process)
+        with _OWNER_INPUTS_LOCK:
+            _OWNER_INPUTS.discard(raw_input)
+            _close_input(process)
         process.wait()
         process.stdout.close()
 
@@ -182,19 +271,35 @@ def _close_input(process) -> None:
         pass
 
 
+def _release_launcher(process):
+    process.stdin.write(b"go\n")
+    process.stdin.flush()
+
+
 _OWNED_LAUNCH = """import json, os, sys
 if sys.stdin.buffer.readline() != b'go\\n':
     raise SystemExit(1)
-with os.fdopen(os.dup(2), 'w', encoding='utf-8') as errors:
-    os.dup2(1, 2)
+command, error_descriptor, merge = json.loads(sys.argv[1])
+if error_descriptor is None:
+    error_fd = os.dup(2)
+elif os.name == 'nt':
+    import msvcrt
+    error_fd = msvcrt.open_osfhandle(error_descriptor, os.O_WRONLY)
+else:
+    error_fd = error_descriptor
+os.set_inheritable(error_fd, False)
+with os.fdopen(error_fd, 'w', encoding='utf-8') as errors:
+    if merge:
+        os.dup2(1, 2)
     try:
         if os.name != 'nt':
             with open(os.devnull, 'rb') as source:
                 os.dup2(source.fileno(), 0)
-            os.execl('/bin/sh', '/bin/sh', '-c', sys.argv[1])
+            if isinstance(command, str):
+                os.execl('/bin/sh', '/bin/sh', '-c', command)
+            os.execvp(command[0], command)
         import subprocess
-        code = subprocess.call(sys.argv[1], shell=True, stdin=subprocess.DEVNULL,
-                               stderr=subprocess.STDOUT)
+        code = subprocess.call(command, shell=isinstance(command, str), stdin=subprocess.DEVNULL)
     except OSError as error:
         json.dump([error.errno, error.strerror, error.filename,
                    getattr(error, 'winerror', None), error.filename2], errors)
@@ -203,18 +308,18 @@ raise SystemExit(code)
 """
 
 
-def _spawn(command: str, out, errors, owner, kwargs) -> subprocess.Popen:
+def _spawn(command, out, errors, owner, kwargs, *, error_descriptor=None, merge=True) -> subprocess.Popen:
     # A Windows venv executable redirects into another process before Python
     # reaches the start gate. Use the base interpreter with startup hooks off,
     # so Job assignment precedes every child the launcher can create.
     launcher = getattr(sys, "_base_executable", sys.executable)
-    process = subprocess.Popen([launcher, "-I", "-S", "-c", _OWNED_LAUNCH, command],
+    payload = json.dumps([command, error_descriptor, merge])
+    family, kwargs = _command_family(kwargs)
+    process = subprocess.Popen([launcher, "-I", "-S", "-c", _OWNED_LAUNCH, payload],
                                stdin=subprocess.PIPE, stdout=out, stderr=errors,
                                **_OWN_GROUP, **kwargs)
     try:
-        owner.request("add", process.pid)
-        process.stdin.write(b"go\n")
-        process.stdin.flush()
+        owner.start(process, family)
         return process
     except BaseException:
         _kill_tree(process)
@@ -222,10 +327,18 @@ def _spawn(command: str, out, errors, owner, kwargs) -> subprocess.Popen:
         raise
 
 
+def _command_family(kwargs):
+    if os.name == "nt":
+        return None, kwargs
+    from ._process_family import command_environment
+    family, environment = command_environment(kwargs.get("env"))
+    return family, {**kwargs, "env": environment}
+
+
 def _stream_size(stream: IO | None) -> int:
-    """Bytes the command has written so far, or -1 when nothing can be measured.
-    The child writes to the file behind this handle, so its size is the only
-    progress signal available without a pipe to read."""
+    """Read the rotating log's monotonic byte count or an ordinary file's size."""
+    if hasattr(stream, "progress_bytes"):
+        return stream.progress_bytes
     try:
         return os.fstat(stream.fileno()).st_size
     except (AttributeError, OSError, ValueError):
@@ -279,9 +392,10 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
     pipe outlives the timeout - the drain has no deadline of its own, so the
     call would return when the grandchild holding the handles exits.
 
-    `stream` takes stdout and stderr both, and must be a real file (the lane log
-    is one). A file needs no reader, so the kill lands on the deadline the same
-    way; a pipe would reintroduce the drain and is the one thing not to pass.
+    `stream` takes stdout and stderr both. Use a real file or command_log's
+    continuously drained pipe, whose progress counter survives rotation.
+    Owned descendants stop before return, allowing the log reader to finish.
+    An ordinary pipe without a reader can block the command and is unsupported.
 
     `owner` registers the command before launch. Its separate process keeps
     measurement locks until registered command trees stop after a caller crash.
@@ -302,6 +416,64 @@ def _run_owned(command, timeout, stream, no_progress, owner, popen_kwargs):
         code = _complete_command(proc, timeout, stream, no_progress, owner)
         _raise_launch_error(errors)
         return code
+
+
+def run_owned(command: str | list[str], timeout: float | None = None, *, owner=None,
+              capture_output: bool = False, cwd=None, env=None) -> subprocess.CompletedProcess:
+    """Run literal argv or a shell string until the command and descendants stop.
+
+    Input is DEVNULL. Output is inherited unless capture_output requests separate
+    UTF-8 stdout/stderr strings. Background descendants stop with their command;
+    callers wanting a persistent service must launch that service separately.
+    TimeoutExpired and CommandCancelled are raised only after tree cleanup.
+    """
+    ownership = own_processes(()) if owner is None else nullcontext(owner)
+    with ownership as held, ExitStack() as stack:
+        output = _capture_streams(stack, capture_output)
+        errors = stack.enter_context(tempfile.TemporaryFile())
+        code = _owned_status(command, timeout, held, output, errors, {"cwd": cwd, "env": env})
+        return subprocess.CompletedProcess(command, code, *map(_captured_text, output))
+
+
+def _capture_streams(stack, capture):
+    if not capture:
+        return None, None
+    return tuple(stack.enter_context(tempfile.TemporaryFile()) for _ in range(2))
+
+
+def _captured_text(stream):
+    if stream is None:
+        return None
+    stream.seek(0)
+    return stream.read().decode("utf-8").replace("\r\n", "\n")
+
+
+def _owned_status(command, timeout, owner, output, errors, kwargs):
+    with _error_transport(errors) as (descriptor, transport):
+        proc = _spawn(command, *output, owner, {**kwargs, **transport},
+                      error_descriptor=descriptor, merge=False)
+    code = _complete_command(proc, timeout, None, None, owner)
+    _raise_launch_error(errors)
+    if code is None:
+        raise subprocess.TimeoutExpired(command, timeout)
+    return code
+
+
+@contextmanager
+def _error_transport(stream):
+    if os.name != "nt":
+        yield stream.fileno(), {"pass_fds": (stream.fileno(),)}
+        return
+    import msvcrt
+    descriptor = os.dup(stream.fileno())
+    try:
+        os.set_inheritable(descriptor, True)
+        handle = msvcrt.get_osfhandle(descriptor)
+        startup = subprocess.STARTUPINFO()
+        startup.lpAttributeList = {"handle_list": [handle]}
+        yield handle, {"startupinfo": startup}
+    finally:
+        os.close(descriptor)
 
 
 def _raise_launch_error(errors):
@@ -328,6 +500,7 @@ def _complete_command(proc, timeout, stream, no_progress, owner):
             _kill_tree(proc)
             raise
         proc.wait()
+        owner.check_cancelled()
 
 
 def _wait_bounded(proc, timeout, no_progress, stream) -> int | None:

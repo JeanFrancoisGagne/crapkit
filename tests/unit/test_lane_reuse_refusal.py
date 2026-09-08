@@ -209,7 +209,7 @@ def test_the_lanes_page_and_the_changelog_quote_the_refusal_reuse_prints(tmp_pat
     _refused(tmp_path, lane, _plant(tmp_path, lane.artifact, BEFORE))
     with pytest.raises(ToolError) as raised:
         run_lane(tmp_path, lane, reuse_artifact=True)
-    printed = str(raised.value).split("; full log:", 1)[0]
+    printed = str(raised.value).split("; lane log:", 1)[0]
 
     assert printed.startswith("lane 'py' wrote no artifact on its last attempt")
     assert printed in lanes_page, "the reuse transcript on the lanes page went stale"

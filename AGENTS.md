@@ -266,7 +266,7 @@ lane subset, or a lane that failed).
 The lines verify prints, one per finding kind, collected here from separate runs:
 
     verify OK @ f6e9bde18a7 vs baseline f6e9bde18a7 (1 changed files)
-    crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 4); full log: /repo/.crapkit/lane-py.log; last output: ...
+    crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 4); lane log: /repo/.crapkit/lane-py.log; last output: ...
     verify FAILED @ 3a45b8a9b6c vs baseline 03d9cac1397 (1 changed files)
       GATE  crap     42.0  ccn   6 cov 0%  calc/report.py:22  bucket( counts , low , high , invert , label )  -> add-tests  [dirty]
       RATCHET  calc/report.py  spread( counts , low , high , invert , label , pad ): 8.0 -> 72.0
@@ -345,14 +345,15 @@ Coverage is measured either way. What the lane cannot do without a results file 
 the two checks that read one, so exit 8 can never fire for its scopes and nothing else
 would have said so. `crapkit init` writes both on the lanes it detects.
 
-When the lane did start and failed anyway, the refusal names `full log: <path>` and quotes
+When the lane did start and failed anyway, the refusal names `lane log: <path>` and quotes
 the end of that log, with the reason hoisted in front when the end does not carry one.
 Those hoisted lines come from the last attempt only. A lane with `retries` set appends
 every attempt to the same `.crapkit/lane-<name>.log`, and the final one starts after the
 last whole `--- attempt N ---` line, so the reason a superseded attempt died for is never
 stood in front of the attempt that actually failed. The message names no attempt number.
-Open the log the path names and read down from its last banner; a log with no banner is
-one attempt.
+Open the log the path names and read down from its last retained banner. Logs rotate
+at `log_max_bytes`, retaining the current file and one `.1` backup; an earlier
+banner may have rotated out. Set the limit to `0` when complete output is required.
 
 ## When crapkit's root sits below the git top
 
@@ -659,7 +660,10 @@ Shared rules belong to these modules:
 | `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins |
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
-| `procs.py` | how a spawn with a deadline dies. `run_bounded` kills the whole process tree and reaps it |
+| `procs.py` | who owns command descendants. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
+| `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
+| `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
+| `retention.py` | which completed test runs are eligible for cleanup under their own leases |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
@@ -674,7 +678,7 @@ cache is a cost, losing the command is a bug.
 rollups after that read ends. Override audits and pruning take the same write
 transaction rule so retention cannot delete a run receiving an audit.
 
-`src/crapkit/cli/` is the command layer, split into ten family modules. `cli/__init__.py`
+`src/crapkit/cli/` is the command layer. `cli/__init__.py`
 exports only `main` and loads the parser when called. The parser names each handler's
 family and imports that family only when dispatching its command. Import helpers from
 their owning modules; there is no second export registry to maintain.
@@ -689,6 +693,7 @@ their owning modules; there is no second export registry to maintain.
 | `ratchet_cmds.py` | `ratchet` |
 | `analyses.py` | `duplication`, `coupling`, `mutate`, `mcp` |
 | `admin.py` | `init`, `doctor`, `watch` |
+| `maintenance.py` | `clean` |
 | `claude_hook.py` | `claude-hook` |
 | `_shared.py` | helpers more than one family reads |
 

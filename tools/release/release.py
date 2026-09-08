@@ -29,6 +29,7 @@ import sqlite3
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from contextlib import closing
@@ -43,6 +44,8 @@ PYPI_UPLOAD_URL = "https://upload.pypi.org/legacy/"
 RELEASE_DIST = ".crapkit/release-dist"
 REGISTRY_SEARCH = "https://registry.modelcontextprotocol.io/v0/servers?search=crapkit"
 REGISTRY_META = "io.modelcontextprotocol.registry/official"
+REGISTRY_NAME = f"io.github.{REPO_SLUG}"
+REGISTRY_REPOSITORY = f"https://github.com/{REPO_SLUG}"
 
 
 class ReleaseError(Exception):
@@ -234,23 +237,53 @@ def _pypi_row(version: str, fetch: Callable) -> Row:
         return Row("PyPI", version, f"unreachable ({exc})", False)
 
 
+def _registry_pages(fetch: Callable):
+    url, seen = REGISTRY_SEARCH, set()
+    for _ in range(100):
+        page = json.loads(fetch(url))
+        yield page["servers"]
+        cursor = page.get("metadata", {}).get("nextCursor")
+        if not cursor:
+            return
+        if cursor in seen:
+            raise ReleaseError("Registry repeated a pagination cursor")
+        seen.add(cursor)
+        url = REGISTRY_SEARCH + "&" + urllib.parse.urlencode({"cursor": cursor})
+    raise ReleaseError("Registry pagination did not finish within 100 pages")
+
+
+def _canonical_latest(entry: dict) -> bool:
+    return (entry.get("server", {}).get("name") == REGISTRY_NAME
+            and entry.get("_meta", {}).get(REGISTRY_META, {}).get("isLatest") is True)
+
+
 def _latest_registry_entry(fetch: Callable) -> dict | None:
-    """The registry's `isLatest` entry for the package, or None when there is none."""
-    servers = json.loads(fetch(REGISTRY_SEARCH))["servers"]
-    latest = [s for s in servers if s.get("_meta", {}).get(REGISTRY_META, {}).get("isLatest")]
-    return latest[0]["server"] if latest else None
+    """Find one latest canonical server after checking every search page."""
+    latest = []
+    for servers in _registry_pages(fetch):
+        latest.extend(entry["server"] for entry in servers if _canonical_latest(entry))
+    if len(latest) > 1:
+        raise ReleaseError(f"Registry returned multiple latest entries for {REGISTRY_NAME}")
+    return latest[0] if latest else None
+
+
+def _registry_package_row(server: dict, version: str) -> Row:
+    packages = server.get("packages", [])
+    expected = {"registryType": "pypi", "identifier": PACKAGE, "version": version}
+    matched = any(all(package.get(key) == value for key, value in expected.items()) for package in packages)
+    return Row("registry package", f"pypi:{PACKAGE}@{version}", json.dumps(packages, sort_keys=True), matched)
 
 
 def _registry_rows(version: str, fetch: Callable) -> list:
     try:
         server = _latest_registry_entry(fetch)
-    except ReleaseError as exc:
-        return [Row("registry", version, f"unreachable ({exc})", False)]
-    if server is None:
-        return [Row("registry", version, "no isLatest entry", False)]
-    repo = (server.get("repository") or {}).get("url") or ""
-    return [_row("registry", version, server.get("version", "")),
-            Row("registry repository", "present", repo or "missing", bool(repo))]
+        if server is None:
+            return [Row("registry", version, f"no latest entry for {REGISTRY_NAME}", False)]
+        repo = (server.get("repository") or {}).get("url") or ""
+        return [_row("registry", version, server.get("version", "")),
+                _row("registry repository", REGISTRY_REPOSITORY, repo), _registry_package_row(server, version)]
+    except (ReleaseError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        return [Row("registry", version, f"unconfirmed ({exc})", False)]
 
 
 def _file_rows(root: Path, version: str) -> list:
@@ -315,7 +348,7 @@ def plan(version: str) -> list:
             (PY, "-m", "crapkit", "coverage"), (PY, "-m", "crapkit", "ratchet", "seed"),
             (PY, "-m", "crapkit", "ratchet", "prune"),
             ("git", "add", "--", *RELEASE_FILES), ("git", "commit", "-q", "-m", f"Release {version}")),
-            note="guard: clean tree and main pushed before the bump"),
+            note="guard: clean main includes origin/main; publication waits for the tagged full verify"),
         Step("tag", "stage2a", (("git", "tag", f"v{version}"),)),
         Step("contracts", "stage2a", (contracts,), note=f"red: git tag -d v{version} and stop"),
         Step("verify", "verify", ((PY, "-m", "crapkit", "verify"),), background=True,
@@ -362,8 +395,10 @@ def _clean_main(root: Path) -> str:
 def _guard_bump(root: Path, version: str) -> dict:
     head = _clean_main(root)
     remote = _git(root, "ls-remote", "--exit-code", "origin", "refs/heads/main")
-    if remote.split()[0] != head:
-        raise ReleaseError("push main before starting the version bump")
+    included = subprocess.run(["git", "merge-base", "--is-ancestor", remote.split()[0], head],
+                              cwd=root, capture_output=True)
+    if included.returncode:
+        raise ReleaseError("local main must include current origin/main before release preparation")
     report = check(root, version)
     if report.problems:
         raise ReleaseError(NL.join(report.problems))

@@ -175,11 +175,12 @@ def _raise_stalled(fh: IO[str], lane: Lane, log_path: Path, attempt: int,
 
 
 def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int, owner=None) -> int:
-    with open(log_path, "a" if attempt > 1 else "w", encoding="utf-8", errors="replace") as fh:
+    from .logs import command_log
+
+    with command_log(log_path, max_bytes=lane.log_max_bytes, append=attempt > 1) as fh:
         _log_header(fh, lane.command, attempt)
-        # The log is a file, not a pipe, so streaming costs the deadline nothing:
-        # run_bounded kills the shell's whole tree, which is where the suite is.
-        # It is also what the progress watch measures.
+        # Ownership stops descendants before the log drains. Its byte counter
+        # measures progress even when the bounded files rotate.
         try:
             code = run_bounded(lane.command, _deadline(lane), stream=fh,
                                no_progress=_no_progress(lane), owner=owner, **_popen_kwargs(root, lane))
@@ -356,10 +357,9 @@ class UnwrittenArtifact(ToolError):
 
 def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | None,
                        refused: dict[str, int] | None = None, *, reuse: bool = False) -> None:
-    """The log PATH before the log's words. A tail is 500 characters of a file
-    that holds the whole story, and a reader who is not told where that file is
-    has to go looking for it — one reporter had to ask another agent to find
-    .crapkit/lane-py.log while ten collection tracebacks sat inside it.
+    """Name the retained log before quoting its last 500 characters.
+
+    The current file and optional .1 backup hold the newest command output.
 
     `refused` is the leftover files with the modification time each still
     carries; the message names them, the error carries them."""
@@ -369,7 +369,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     hint = f"; last output: {tail}" if tail else ""
     raise UnwrittenArtifact(
         f"lane {lane.name!r} {_no_artifact_head(root, lane, list(refused), reuse)}{detail}"
-        f"; full log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
+        f"; lane log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
         f"{_shard_hint(root, lane)}", refused)
 
 
@@ -1031,12 +1031,14 @@ def _retest_owned(root: Path, lane: Lane, tests: set[str], owner) -> set[str]:
     """Run the lane's retest_command on just these ids; return the ones that
     PASS the rerun (the flakes). Any doubt — no artifact, a crash, a timeout —
     keeps everything failed."""
+    from .logs import command_log
+
     command, additions = _retest_template(lane.retest_command, tests)
     kwargs = _popen_kwargs(root, lane)
     kwargs["env"] = {**(kwargs.get("env") or os.environ), **additions}
     log_path = _lane_log_path(root, lane)
     before = _mtime_ns(root / lane.results_artifact)
-    with open(log_path, "a", encoding="utf-8", errors="replace") as fh:
+    with command_log(log_path, max_bytes=lane.log_max_bytes, append=True) as fh:
         fh.write(f"\n--- flake retest ---\n$ {command}\n")
         fh.flush()
         try:
@@ -1130,7 +1132,7 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
     Reuse is what reaches here — the run path refuses inside _run_attempts — and
     it was the one lane refusal that named no log, on the reading that a reused
     artifact had no run behind it. The previous run's log is usually sitting
-    there with the story, and a reader told to look for `full log:` on every
+    there with the story, and a reader told to look for `lane log:` on every
     refusal has nowhere to go when one omits it.
     """
     path = root / lane.artifact

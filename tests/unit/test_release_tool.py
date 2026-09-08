@@ -149,7 +149,9 @@ def _live(version: str, *, latest: str | None = None) -> dict:
     return {
         "https://pypi.org/pypi/crapkit/": json.dumps({"info": {"version": version}, "urls": [{}, {}]}),
         "https://registry.modelcontextprotocol.io/": json.dumps({"servers": [
-            {"server": {"version": latest, "repository": {"url": "https://github.com/JeanFrancoisGagne/crapkit"}},
+            {"server": {"name": "io.github.JeanFrancoisGagne/crapkit", "version": latest,
+                        "repository": {"url": "https://github.com/JeanFrancoisGagne/crapkit"},
+                        "packages": [{"registryType": "pypi", "identifier": "crapkit", "version": latest}]},
              "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}}}]}),
     }
 

@@ -62,7 +62,7 @@ def capture(monkeypatch, *, effect=None):
     return commands
 
 
-@pytest.mark.parametrize("state", ["dirty", "branch", "unpushed"])
+@pytest.mark.parametrize("state", ["dirty", "branch", "behind", "diverged"])
 def test_stage1_refuses_before_any_release_command(tmp_path, monkeypatch, state):
     root = repo(tmp_path)
     if state == "dirty":
@@ -70,11 +70,23 @@ def test_stage1_refuses_before_any_release_command(tmp_path, monkeypatch, state)
     elif state == "branch":
         git(root, "switch", "-c", "feature")
     else:
-        git(root, "commit", "--allow-empty", "-qm", "not pushed")
+        _advance_remote(tmp_path, root, state)
     commands = capture(monkeypatch)
     with pytest.raises(release.ReleaseError):
         release.run("stage1", "0.5.2", root)
     assert commands == []
+
+
+def _advance_remote(tmp_path, root, state):
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "--quiet", "--branch", "main", str(tmp_path / "remote.git"), str(other))
+    git(other, "config", "user.name", "Another Release")
+    git(other, "config", "user.email", "another@example.test")
+    git(other, "commit", "--allow-empty", "-qm", "remote advanced")
+    git(other, "push", "--quiet", "origin", "main")
+    git(root, "fetch", "--quiet", "origin", "main")
+    if state == "diverged":
+        git(root, "commit", "--allow-empty", "-qm", "local candidate")
 
 
 def test_publish_refuses_without_a_verify_receipt(tmp_path, monkeypatch):
@@ -84,6 +96,17 @@ def test_publish_refuses_without_a_verify_receipt(tmp_path, monkeypatch):
     with pytest.raises(release.ReleaseError):
         release.run("stage2b", "0.5.2", root)
     assert commands == []
+
+
+def test_stage1_prepares_unpublished_descendant_without_publishing(tmp_path, monkeypatch):
+    root = repo(tmp_path)
+    remote_before = git(tmp_path / "remote.git", "rev-parse", "refs/heads/main")
+    git(root, "commit", "--allow-empty", "-qm", "verified candidate remains local")
+    commands = capture(monkeypatch)
+    release.run("stage1", "0.5.2", root)
+    assert commands
+    assert not any(tuple(command[:2]) == ("git", "push") for command in commands)
+    assert git(tmp_path / "remote.git", "rev-parse", "refs/heads/main") == remote_before
 
 
 def test_contract_stage_never_takes_over_an_existing_tag(tmp_path, monkeypatch):

@@ -2,12 +2,12 @@
 and how the loop is bounded. The mtime diffing behind it is pure and lives in
 test_contexts_and_watch.py.
 
-subprocess.run is recorded rather than run: the argv IS the contract here (the
+run_owned is recorded rather than run: the argv IS the contract here (the
 rescore has to leave the watcher's own process, so a half-saved syntax error
 cannot take the loop down with it), and a real child would only re-prove what
 tests/e2e/test_watch_cycles_e2e.py proves against a real repo.
 """
-import subprocess
+from crapkit import procs
 import sys
 
 from crapkit.cli.admin import _watch_banner, _watch_cycles, _watch_rescore
@@ -15,7 +15,7 @@ from crapkit.cli.admin import _watch_banner, _watch_cycles, _watch_rescore
 
 def _recorded(monkeypatch) -> list:
     calls = []
-    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: calls.append(argv))
+    monkeypatch.setattr(procs, "run_owned", lambda argv, **kw: calls.append(argv))
     return calls
 
 

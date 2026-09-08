@@ -427,7 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
                           "(files outside the scored corpus are named and skipped)")
     mut.add_argument("--max-mutants", type=int, default=100, help="hard cap per run (default 100)")
     mut.add_argument("--drop-pool", action="store_true",
-                     help="remove the worktrees mutation_workers > 1 keeps in "
+                     help="remove the retained mutation worker checkouts in "
                           ".crapkit/mutate-pool/ and exit")
     mut.add_argument("--json", action="store_true", help="machine output")
     mut.set_defaults(func=_Handler("analyses", "cmd_mutate"))
@@ -449,6 +449,12 @@ def build_parser() -> argparse.ArgumentParser:
     cpl.add_argument("--top", type=int, default=50, help="cap the pair list (default 50)")
     cpl.add_argument("--json", action="store_true", help="machine output")
     cpl.set_defaults(func=_Handler("analyses", "cmd_coupling"))
+
+    clean = sub.add_parser("clean", help="remove expired owned test evidence and abandoned mutation checkouts")
+    clean.add_argument("--repo", **_REPO_FLAG)
+    clean.add_argument("--dry-run", action="store_true", help="report eligible paths without removing them")
+    clean.add_argument("--json", action="store_true")
+    clean.set_defaults(func=_Handler("maintenance", "cmd_clean"))
 
     hlp = sub.add_parser("help", help="print one subcommand's help, or the command list")
     hlp.add_argument("topic", nargs="?", default=None, metavar="TOPIC",

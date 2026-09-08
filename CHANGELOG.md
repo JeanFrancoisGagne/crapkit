@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.7.1 — unreleased
+
+This release fixes process cleanup and bounds retained resources while keeping
+small analysis calls on the serial path. Scoring, analysis cache version 10,
+the twelve MCP tools and JSON schema version 1 remain compatible with 0.7.0.
+
+### Process lifetime
+
+- Stop active MCP tool descendants on cancellation or client disconnect, and
+  keep protocol control messages responsive during a tool call. Admit one active
+  tool per connection and return a retry message for overlapping tool calls.
+- Close mutation admission on interruption before joining workers, preventing
+  another suite from starting after cancellation. Own Git checkout preparation
+  and cleanup commands as well as the mutation suites.
+- Apply command ownership to scoped tests, watch subprocesses and the shared
+  development test runner. A completed suite cannot leave a background writer
+  alive when the next suite starts.
+- Retain analysis pool capacity until the actual workers exit, including
+  caller and guardian failure paths.
+- Skip POSIX process-table scans when the kernel confirms an owned group is
+  already gone; retain descriptor-closure checks for groups that still exist.
+
+### Resource policies
+
+- Coordinate analysis pool slots across processes for the same user and host.
+  Respect CPU affinity, configured worker ceilings and the inherited memory
+  sizing hint. Contention takes available slots or falls back to serial work;
+  small and cached passes avoid the shared admission path.
+- Cap pools by runnable chunks so idle workers are not started. Send compact
+  slot descriptors during worker startup to avoid oversized bootstrap writes
+  on Windows. Size automatic spawn pools to amortize startup across useful work;
+  explicit worker requests retain their configured ceiling.
+- Add `analysis_worker_budget` and report effective resource settings through
+  `doctor --json`. The budget covers Crapkit pool workers; external test
+  runners retain their own worker controls.
+- Bound each lane log and its single rotated backup to 16 MiB by default.
+  Preserve byte progress across rotations and the newest failure output.
+  Set `log_max_bytes = 0` to keep unlimited logs.
+- Retain recognized default test-run evidence for seven days and ten recent
+  runs. Configure either limit or disable it with zero. Active runs, explicit
+  output directories and unrecognized evidence remain untouched.
+- Trim surplus retained mutation workers on reuse. Record ownership of new
+  temporary mutation checkouts and recover abandoned runs under exclusive
+  leases. Add `clean --dry-run --json` to preview cleanup and `clean --json`
+  to perform it. Older unmarked system-temp checkouts remain untouched.
+
+### Release maintenance
+
+- Measure each installed wheel with its own revision's test runner and record
+  the runner hash. Linux CI stops and reaps descendants of historical runners
+  before retaining evidence or removing scratch checkouts.
+- Permit release preparation from clean local main that includes current
+  origin/main. Publication still requires the exact tagged commit and a fresh
+  passing full verification receipt, so fixes need no preliminary push.
+- Confirm the canonical MCP Registry server, repository and PyPI package across
+  all search pages. Refuse duplicate latest records and incomplete pagination.
+
+See [resource policies](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.7.1/docs/resources.md)
+for defaults, opt-outs and platform scope.
+
 ## 0.7.0 — 2026-09-07
 
 This release makes scoring, verification and concurrent work more reliable. It

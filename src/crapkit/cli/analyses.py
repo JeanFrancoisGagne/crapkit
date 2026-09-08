@@ -177,7 +177,7 @@ def cmd_mcp(args: argparse.Namespace) -> int:
 
 
 def _drop_mutate_pool(root: Path) -> int:
-    """`--drop-pool`: the worktrees `mutation_workers > 1` keeps between runs,
+    """`--drop-pool`: the worktrees mutation workers keep between runs,
     gone. No config is read first, because the reason to reach for this is a
     repo whose pool outlived whatever built it, and a crapkit.toml that no
     longer parses must not stand between a user and four checkouts of their own

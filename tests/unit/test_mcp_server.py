@@ -10,6 +10,7 @@ refusal is decided before build_argv runs, which is the point.
 """
 import io
 import json
+import queue
 import sys
 from pathlib import Path
 
@@ -37,12 +38,39 @@ def _serve(monkeypatch, tmp_path: Path, lines: list[str]) -> dict:
     """Every request at once through serve(); replies keyed by id. The root
     holds a crapkit.toml so a refusal cannot hide behind the no-config answer."""
     (tmp_path / "crapkit.toml").write_text("[crapkit]\ntarget = 6\n", encoding="utf-8")
-    out = io.StringIO()
-    monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(lines) + "\n"))
+    source, out = _live_frames(lines)
+    monkeypatch.setattr(sys, "stdin", source)
     monkeypatch.setattr(sys, "stdout", out)
     rc = serve(tmp_path)
     assert rc == 0
     return {m["id"]: m for m in map(json.loads, out.getvalue().strip().splitlines())}
+
+
+def _live_frames(lines):
+    """Keep client stdin open until each request's reply has been read."""
+    incoming = queue.Queue()
+    requests = 0
+    for line in lines:
+        incoming.put(line + '\n')
+        message = mcp_server._parse(line)
+        requests += int(message is not None and 'id' in message)
+    if not requests:
+        incoming.put('')
+
+    class Input:
+        def readline(self):
+            return incoming.get(timeout=10)
+
+    class Output(io.StringIO):
+        def write(self, text):
+            nonlocal requests
+            result = super().write(text)
+            requests -= 1
+            if requests == 0:
+                incoming.put('')
+            return result
+
+    return Input(), Output()
 
 
 def _no_cli(monkeypatch):
@@ -256,7 +284,7 @@ def _cli_answers(monkeypatch, returncode: int, stdout: str, stderr: str = "") ->
         calls.append(argv)
         return subprocess.CompletedProcess(argv, returncode, stdout, stderr)
 
-    monkeypatch.setattr(mcp_server.subprocess, "run", _run)
+    monkeypatch.setattr(mcp_server, "run_owned", _run)
     return calls
 
 

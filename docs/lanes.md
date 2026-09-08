@@ -293,7 +293,7 @@ py.json
 |---|---|---|
 | `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
 | `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
-| `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. | |
+| `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. Current and `.log.1` files each have a 16 MiB default bound; see [log policies](resources.md#logs-and-retained-evidence). | |
 | `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
@@ -301,6 +301,8 @@ py.json
 | `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. |
 | `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
 | `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
+| `mutate-tmp/` | Recognized concurrent mutation runs, removed after completion or recovered under an exclusive lease. | |
+| `test-runs/` | Marked default development test evidence, with configured age and count retention. Explicit output and active leases are preserved. | |
 | `report.html` | Where `crapkit report` writes by default. | |
 
 Since 0.4.5 the rollup is filled once per run and pruned with its run, which is why `trend`
@@ -332,7 +334,7 @@ vitest ships **no coverage provider**. Without one, `crapkit init` writes a lane
 reports no problems, and `coverage` exits 5:
 
 ```
-crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); full log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js
+crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); lane log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 ```
 
@@ -1010,7 +1012,7 @@ time in the stamp, and reuse refuses the file while that time still matches:
 
 ```
 $ crapkit coverage --reuse-artifacts
-crapkit: lane 'py' FAILED: lane 'py' wrote no artifact on its last attempt — the .crapkit/cov/py.json on disk predates it and is the previous run's, which --reuse-artifacts will not score; full log: /repo/.crapkit/lane-py.log; last output: ...
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact on its last attempt — the .crapkit/cov/py.json on disk predates it and is the previous run's, which --reuse-artifacts will not score; lane log: /repo/.crapkit/lane-py.log; last output: ...
 crapkit: every lane failed (1 of 1); the errors are above
 EXIT=5
 ```
@@ -1291,10 +1293,10 @@ A lane failure is recorded, not fatal. The run still happens:
 
 ```
 $ crapkit coverage
-crapkit: lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); full log: /repo/.crapkit/lane-scripts.log
+crapkit: lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); lane log: /repo/.crapkit/lane-scripts.log
 partial run (lane py; lane scripts failed; scripts unmeasured; not a baseline)
 run 3 @ 393b8dad2a1: 2 functions scored: 1 measured / 1 no-lane, 1 over ceiling 6, CRAP load 56.83, grade F
-  lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); full log: /repo/.crapkit/lane-scripts.log
+  lane 'scripts' FAILED: lane 'scripts' produced no artifact at .crapkit/cov/scripts.json (command exit 1); lane log: /repo/.crapkit/lane-scripts.log
 -> rerun changed lanes: crapkit coverage --reuse-unchanged
 ```
 
@@ -1333,7 +1335,7 @@ A leftover artifact says so in its own words, because "produced no artifact at
 .crapkit/cov/py.json" about a path that holds a report reads as crapkit failing to see it:
 
 ```
-crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json on disk predates it and is the previous run's (command exit 2); full log: /repo/.crapkit/lane-py.log; last output: ...
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json on disk predates it and is the previous run's (command exit 2); lane log: /repo/.crapkit/lane-py.log; last output: ...
 ```
 
 When the artifact is not on disk at all and the leftover is some other declared file, the
@@ -1351,14 +1353,15 @@ Until 0.5.0 reuse was untouched by this rule, and a dead lane's old artifact was
 
 ### The failure message names its own log
 
-Every lane refusal carries `full log: <path>` before the tail it quotes. The tail is 500
-characters cut on line boundaries; the log is the whole run. When the end of the log is a
+Every lane refusal carries `lane log: <path>` before the tail it quotes. The tail is 500
+characters cut on line boundaries. The current log and optional `.1` backup retain the
+newest output within `log_max_bytes` per file. When the end of the log is a
 summary block — pytest closes on `ERROR path` lines that say which files broke and never
 why — the message pulls the last few lines that DO name a cause up in front of it, with an
 ellipsis marking the output skipped between them:
 
 ```
-crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 2); full log: /repo/.crapkit/lane-py.log; last output: E   ImportError: cannot import name 'Widget' from 'faro.core' (/other/checkout/src/faro/core.py)
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 2); lane log: /repo/.crapkit/lane-py.log; last output: E   ImportError: cannot import name 'Widget' from 'faro.core' (/other/checkout/src/faro/core.py)
 ...
 ERROR tests/test_widgets.py
 ============================== 10 errors in 0.62s ==============================
@@ -1382,7 +1385,7 @@ above the artifact path the refusal names. So the refusal counts the shards and 
 they are:
 
 ```
-crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); full log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine && coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); lane log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine && coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
 ```
 
 The `-o` target is written relative to the shard directory, because that is where the

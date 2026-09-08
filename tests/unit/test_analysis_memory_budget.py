@@ -1,60 +1,29 @@
-"""CRAPKIT_ANALYSIS_MEMORY_MB: cap the analysis pool by memory instead of cores.
+"""The legacy memory knob remains an estimated worker cap.
 
-Measured cold over the consumer repo's 14,152 files: 24 workers peak at 807 MB of tree
-RSS in 11.8 s, 16 at 565 MB in 14.2 s. The default is unchanged behaviour (one
-worker per core); a box that cannot spare the memory trades 2.4 s for 242 MB by
-setting the budget. A mistyped budget must never silently serialize a run that
-would otherwise take eleven seconds, so anything unparsable reads as unset.
-
-The pool is stood in for here: what matters is the worker count the pool is
-asked for, not the processes it would spawn.
+Resource status exposes the same 35 MB divisor and invalid-as-unset rule.
+Native shared-pool tests separately verify admission and process lifetime.
 """
-import crapkit.analyze as analyze
+import crapkit.resources as resources
 from crapkit.analyze import analyze_jobs
 
 ENV = "CRAPKIT_ANALYSIS_MEMORY_MB"
-
-
-class _RecordingPool:
-    """Stands in for ProcessPoolExecutor: records max_workers, maps in-process."""
-
-    def __init__(self):
-        self.max_workers = "never asked"
-
-    def __call__(self, max_workers=None):
-        self.max_workers = max_workers
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def map(self, fn, jobs, chunksize=1):
-        return map(fn, jobs)
 
 
 def _workers_asked_for(monkeypatch, tmp_path, *, workers, budget=None):
     monkeypatch.delenv(ENV, raising=False)
     if budget is not None:
         monkeypatch.setenv(ENV, budget)
-    pool = _RecordingPool()
-    monkeypatch.setattr(analyze, "ProcessPoolExecutor", pool)
-    source = tmp_path / "a.ts"
-    source.write_text("export function f(x: number) { return x; }\n", encoding="utf-8")
-
-    analyze_jobs([(str(source), "a.ts")], workers=workers, pool_threshold=1)
-
-    return pool.max_workers
+    monkeypatch.delenv("CRAPKIT_ANALYSIS_WORKERS", raising=False)
+    monkeypatch.setattr(resources, "available_cpus", lambda: (24, "fixture affinity"))
+    return resources.resource_status(analysis_workers=workers or 0)["pool_worker_limit"]
 
 
 def test_no_budget_leaves_the_worker_count_alone(tmp_path, monkeypatch):
     assert _workers_asked_for(monkeypatch, tmp_path, workers=24) == 24
 
 
-def test_no_budget_and_no_worker_count_still_means_one_per_core(tmp_path, monkeypatch):
-    assert _workers_asked_for(monkeypatch, tmp_path, workers=None) is None
+def test_no_budget_and_no_worker_count_means_one_per_available_cpu(tmp_path, monkeypatch):
+    assert _workers_asked_for(monkeypatch, tmp_path, workers=None) == 24
 
 
 def test_a_budget_caps_the_pool(tmp_path, monkeypatch):

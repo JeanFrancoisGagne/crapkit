@@ -16,6 +16,12 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
+The 0.7.1 resource and cleanup fixes keep the 0.7.0 analysis version and function
+identities. They do not require a ratchet migration or analysis-cache reset.
+Review the new [resource defaults](resources.md), especially bounded lane logs
+and retention of default development test evidence. Restart each client's MCP
+session after upgrading so its running server uses the new cleanup behavior.
+
 Keep a copy of the committed ratchet and its diff before an upgrade. In each repo:
 
 ```sh

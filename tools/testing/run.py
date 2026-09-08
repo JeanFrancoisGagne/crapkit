@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
+import importlib
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -17,6 +20,40 @@ UNIT_WORKERS = 4
 E2E_WORKERS = 8
 
 
+@lru_cache(maxsize=1)
+def _runtime():
+    """Prefer the selected installation, including installed-wheel CI runs."""
+    try:
+        return importlib.import_module("crapkit.retention"), importlib.import_module("crapkit.procs")
+    except ModuleNotFoundError as error:
+        if error.name not in {"crapkit", "crapkit.retention", "crapkit.procs"}:
+            raise
+        if hasattr(sys.modules.get("crapkit"), "__version__"):
+            raise ValueError("selected Crapkit installation lacks this test runner's lifecycle helpers; "
+                             "install this checkout's dev extra") from error
+    # Miniature runner fixtures deliberately put a different crapkit package on
+    # PYTHONPATH. Keep that package selected for their tests, loading only the
+    # runner's lifecycle helpers under a private name in this process.
+    package = Path(__file__).resolve().parents[2] / "src/crapkit"
+    spec = importlib.util.spec_from_file_location(
+        "_crapkit_test_runner", package / "__init__.py", submodule_search_locations=[str(package)])
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return (importlib.import_module(spec.name + ".retention"),
+            importlib.import_module(spec.name + ".procs"))
+
+
+def _retention_limits(root: Path) -> dict:
+    path = root / "crapkit.toml"
+    if not path.is_file():
+        return {}
+    retention, _ = _runtime()
+    config = importlib.import_module(retention.__package__ + ".config")
+    cfg = config.load_config_text(path.read_text(encoding="utf-8"), root=root)
+    return {"keep": cfg.test_retention_count, "days": cfg.test_retention_days}
+
+
 def test_commands(python: str = "python", workers: int = E2E_WORKERS,
                   unit_workers: int = UNIT_WORKERS) -> list[list[str]]:
     """The development and CI schedule, also rendered in contributor guidance."""
@@ -27,7 +64,8 @@ def test_commands(python: str = "python", workers: int = E2E_WORKERS,
             [python, "-m", "pytest", "tests/e2e", "-n", str(workers), "-p", "no:randomly"]]
 
 
-def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: bool) -> int:
+def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: bool,
+           owner=None) -> int:
     environment = dict(os.environ)
     command = [*command, f"--junitxml={scratch / (name + '.xml')}"]
     if coverage:
@@ -38,7 +76,7 @@ def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: b
         config = environment.pop("COVERAGE_RCFILE", None)
         if config:
             command.append("--cov-config=" + config)
-    return subprocess.run(command, cwd=root, env=environment).returncode
+    return _runtime()[1].run_owned(command, owner=owner, cwd=root, env=environment).returncode
 
 
 def _incomplete_suite(name: str, code: int, reason: str) -> ET.Element:
@@ -100,13 +138,15 @@ def _junit(scratch: Path, output: Path, results: list[int]) -> bool:
     return all(complete)
 
 
-def _coverage(root: Path, scratch: Path, output: Path) -> None:
+def _coverage(root: Path, scratch: Path, output: Path, owner=None) -> None:
     environment = dict(os.environ, COVERAGE_FILE=str(scratch / ".coverage"))
     sources = [str(scratch / (".coverage." + name)) for name in SUITES]
     command = [sys.executable, "-m", "coverage"]
-    subprocess.run([*command, "combine", "--keep", *sources], cwd=root, env=environment, check=True)
-    subprocess.run([*command, "json", "--show-contexts", "-o", str(output)],
-                   cwd=root, env=environment, check=True)
+    run = _runtime()[1].run_owned
+    run([*command, "combine", "--keep", *sources], cwd=root, env=environment,
+        owner=owner).check_returncode()
+    run([*command, "json", "--show-contexts", "-o", str(output)],
+        cwd=root, env=environment, owner=owner).check_returncode()
 
 
 def _retain_incomplete(scratch: Path, output: Path) -> None:
@@ -122,7 +162,8 @@ def _retain_suite_data(scratch: Path, output: Path) -> None:
             shutil.copyfile(source, output / (name + ".coverage"))
 
 
-def _collect(root: Path, scratch: Path, output: Path, results: list[int], coverage: bool) -> bool:
+def _collect(root: Path, scratch: Path, output: Path, results: list[int], coverage: bool,
+             owner=None) -> bool:
     _retain_suite_data(scratch, output)
     complete = _junit(scratch, output / "junit.xml", results)
     if not complete:
@@ -130,7 +171,7 @@ def _collect(root: Path, scratch: Path, output: Path, results: list[int], covera
         return False
     try:
         if coverage:
-            _coverage(root, scratch, output / "py.json")
+            _coverage(root, scratch, output / "py.json", owner)
     except (OSError, subprocess.CalledProcessError):
         _retain_incomplete(scratch, output)
         raise
@@ -142,31 +183,42 @@ def _clear_outputs(output: Path) -> None:
         (output / name).unlink(missing_ok=True)
 
 
-def _output_directory(root: Path, selected: Path | None) -> Path:
-    if selected is None:
-        parent = root / ".crapkit/test-runs"
-        parent.mkdir(parents=True, exist_ok=True)
-        return Path(tempfile.mkdtemp(prefix="run-", dir=parent))
-    output = (root / selected).resolve()
-    if not output.is_relative_to(root):
-        raise ValueError(f"test output must be inside {root}: {output}")
-    output.mkdir(parents=True, exist_ok=True)
-    return output
-
-
 def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS,
                output: Path | None = None, unit_workers: int = UNIT_WORKERS) -> int:
-    """Always run both suites; preserve either failure and combine their evidence."""
+    """Run both suites unless cancelled; stop descendants before releasing output."""
     root = root.resolve()
-    output = _output_directory(root, output)
+    retention, _ = _runtime()
+    with retention.test_run_directory(root, selected=output, **_retention_limits(root)) as held:
+        return _run_owned_suites(root, *held, coverage, workers, unit_workers)
+
+
+def _run_owned_suites(root, output, owner, coverage, workers, unit_workers) -> int:
     print(f"test evidence: {output}", flush=True)
     _clear_outputs(output)
     with tempfile.TemporaryDirectory(prefix="suites-", dir=output) as directory:
         scratch = Path(directory)
-        results = [_suite(command, root, scratch, name, coverage)
-                   for name, command in zip(SUITES, test_commands(sys.executable, workers, unit_workers))]
-        complete = _collect(root, scratch, output, results, coverage)
+        results = _execute_suites(root, scratch, output, owner, coverage, workers, unit_workers)
+        complete = _collect(root, scratch, output, results, coverage, owner)
     return int(any(results) or not complete)
+
+
+def _execute_suites(root, scratch, output, owner, coverage, workers, unit_workers) -> list[int]:
+    try:
+        return [_suite(command, root, scratch, name, coverage, owner)
+                for name, command in zip(SUITES, test_commands(sys.executable, workers, unit_workers))]
+    except BaseException:
+        _retain_incomplete(scratch, output)
+        raise
+
+
+def _known_failures() -> tuple:
+    failures = [OSError, ET.ParseError, subprocess.CalledProcessError, ValueError]
+    for package in ("crapkit", "_crapkit_test_runner"):
+        if errors := sys.modules.get(package + ".errors"):
+            failures.append(errors.CrapkitError)
+        if processes := sys.modules.get(package + ".procs"):
+            failures.append(processes.CommandCancelled)
+    return tuple(failures)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -183,7 +235,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return run_suites(args.repo, coverage=args.coverage, workers=args.workers,
                           output=args.output, unit_workers=args.unit_workers)
-    except (OSError, ET.ParseError, subprocess.CalledProcessError, ValueError) as exc:
+    except KeyboardInterrupt:
+        print("test run cancelled; owned descendants stopped", file=sys.stderr)
+        return 130
+    except _known_failures() as exc:
         print(f"test evidence is incomplete: {exc}", file=sys.stderr)
         return 1
 

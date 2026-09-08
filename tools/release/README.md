@@ -1,6 +1,6 @@
 # Releasing crapkit
 
-The version is always an explicit argument. Run one stage at a time from the release checkout. Stage 1 requires clean `main` already pushed to `origin`; stage 2a creates the local tag and runs the contract tests. Publishing requires that tag at the same clean HEAD and a new passing full `verify` row recorded by the verify stage. A zero process exit without that ledger row is refused.
+The version is always an explicit argument. Run one stage at a time from the release checkout. Stage 1 requires clean `main` that includes current `origin/main`; local preparation commits may remain unpublished. Stage 2a creates the local tag and runs the contract tests. Publishing requires that tag at the same clean HEAD and a new passing full `verify` row recorded by the verify stage. A zero process exit without that ledger row is refused. Nothing is pushed before that proof passes.
 
 Stage 1 regenerates documentation after reinstalling the bumped version and before measuring coverage. It includes the generated `SECURITY.md` support table in the release commit. Stage 2a checks generated guidance against the tagged version.
 

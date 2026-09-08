@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 
 from ._pygdefer import deferred_pygments
@@ -621,38 +621,6 @@ def _rows_for(path: str, rows: list[FunctionRecord]) -> list[FunctionRecord]:
     return [r._replace(path=path) for r in rows]
 
 
-_MEMORY_BUDGET_ENV = "CRAPKIT_ANALYSIS_MEMORY_MB"
-
-# Measured peak RSS of one analysis worker over the consumer repo: 24 workers reached
-# 807 MB of tree RSS, the biggest child 47 MB, the median child 35 MB.
-_WORKER_PEAK_MB = 35
-
-
-def _memory_budget_mb() -> int | None:
-    """The budget in MB, or None when it is unset or not a positive whole number.
-
-    A mistyped knob must not silently serialize a run: unreadable reads as absent.
-    """
-    raw = os.environ.get(_MEMORY_BUDGET_ENV, "").strip()
-    if not raw.isdigit() or raw == "0":
-        return None
-    return int(raw)
-
-
-def _memory_bounded(workers: int | None) -> int | None:
-    """The worker count, capped by CRAPKIT_ANALYSIS_MEMORY_MB when it is set.
-
-    Off by default: no budget means one worker per core, as before. Cold over
-    the consumer repo, 24 workers peak at 807 MB in 11.8 s and 16 at 565 MB in 14.2 s, so
-    a box short of memory can buy 242 MB back for 2.4 s. Never returns zero
-    workers: a budget smaller than one worker still gets one.
-    """
-    budget = _memory_budget_mb()
-    if budget is None:
-        return workers
-    return min(workers or os.cpu_count() or 1, max(1, budget // _WORKER_PEAK_MB))
-
-
 def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionRecord]]:
     """Read one worker-owned input, verify its identity, then parse those bytes."""
     absolute, relative, expected = job
@@ -683,6 +651,7 @@ def analyze_jobs(
     pool_threshold: int = _POOL_THRESHOLD,
     chunksize: int = 32,
     hashes: dict[str, str] | None = None,
+    worker_budget: int = 0,
 ) -> dict[str, list[FunctionRecord]]:
     """Run lizard over (abs_path, rel_path) jobs, pooled once there are enough.
 
@@ -693,15 +662,9 @@ def analyze_jobs(
     all of them, serially, after paying for the pool).
     """
     worker, inputs = _job_inputs(jobs, hashes)
-    fresh: dict[str, list[FunctionRecord]] = {}
-    if len(jobs) >= pool_threshold:
-        with ProcessPoolExecutor(max_workers=_memory_bounded(workers)) as pool:
-            for rel_path, records in pool.map(worker, inputs, chunksize=chunksize):
-                fresh[rel_path] = records
-    else:
-        for job in inputs:
-            rel_path, records = worker(job)
-            fresh[rel_path] = records
+    with _pool_for(jobs, pool_threshold, workers, worker_budget, chunksize) as pool:
+        rows = pool.map(worker, inputs, chunksize=chunksize) if pool else map(worker, inputs)
+        fresh = dict(rows)
     # The parent says things; a worker only measures. A spawned child's stderr
     # never saw `_reconfigure_streams`, so a note printed from analyze_one
     # reached a UTF-8 reader in the legacy codepage on Windows (#31).
@@ -710,16 +673,55 @@ def analyze_jobs(
     return fresh
 
 
+def _pool_for(jobs: list, threshold: int, workers, worker_budget: int, chunksize: int):
+    if len(jobs) < threshold or workers == 1:
+        return nullcontext(None)
+    if chunksize < 1:
+        raise ValueError("chunksize must be >=1.")
+    chunks = (len(jobs) + chunksize - 1) // chunksize
+    if chunks <= 1:
+        return nullcontext(None)
+    requested = _requested_workers(workers, chunks, jobs)
+    if requested == 1:
+        return nullcontext(None)
+    from ._analysis_pool import analysis_pool
+    return analysis_pool(workers=requested, worker_budget=worker_budget)
+
+
+def _requested_workers(workers, chunks: int, jobs: list) -> int:
+    if workers:
+        return min(workers, chunks)
+    from .resources import DEFAULT_SOURCE_BYTES_PER_WORKER, default_chunks_per_worker
+    quantum = default_chunks_per_worker()
+    requested = (chunks + quantum - 1) // quantum
+    if quantum > 1:
+        work = _source_bytes(jobs)
+        requested = max(requested, (work + DEFAULT_SOURCE_BYTES_PER_WORKER - 1) // DEFAULT_SOURCE_BYTES_PER_WORKER)
+    return max(1, min(requested, chunks))
+
+
+def _source_bytes(jobs: list) -> int:
+    return sum(_job_size(path) for path, _ in jobs)
+
+
+def _job_size(path: str) -> int:
+    try:
+        return os.stat(path).st_size
+    except OSError:
+        return 0  # The reader retains responsibility for its exact path refusal.
+
+
 def _miss_origins(misses: list[str], identities: dict[str, str]) -> dict[str, str]:
     """Each cold path's first equivalent reader/content input, in path order."""
     origins: dict[str, str] = {}
     return {path: origins.setdefault(identities[path], path) for path in misses}
 
 
-def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dict, workers) -> dict:
+def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dict,
+                    workers, worker_budget: int) -> dict:
     origins = _miss_origins(misses, identities)
     jobs = [(str(root / path), path) for path in dict.fromkeys(origins.values())]
-    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes)
+    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget)
     records = {path: _rows_for(path, parsed[origin]) for path, origin in origins.items()}
     for path, origin in origins.items():
         if path != origin:
@@ -728,7 +730,8 @@ def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dic
 
 
 def analyze_files(
-    root: Path, rel_paths: list[str], *, cache: dict, workers: int | None = None
+    root: Path, rel_paths: list[str], *, cache: dict, workers: int | None = None,
+    worker_budget: int = 0,
 ) -> tuple[dict[str, list[FunctionRecord]], int, dict]:
     fp = fingerprint()
     stamps_path = _stamps_path(root)
@@ -740,7 +743,7 @@ def analyze_files(
     hits, misses = partition_by_cache(identities, cache, fingerprint=fp)
     hits = _restamped(hits)
 
-    fresh = _analyze_misses(root, misses, identities, hashes, workers)
+    fresh = _analyze_misses(root, misses, identities, hashes, workers, worker_budget)
 
     all_records = {**hits, **fresh}
     new_cache = updated_cache(identities, all_records, fingerprint=fp)

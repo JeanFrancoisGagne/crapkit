@@ -1001,7 +1001,31 @@ once per `doctor` call rather than once per lane.
 `doctor --tune` is a different command shape: it prints TOML lines, not JSON, and it
 respects neither `--json` nor `--show-files`.
 
+The additive `resources` object in ordinary `doctor --json` reports
+`available_cpus`, `cpu_probe`, `requested_analysis_workers`, `shared_pool_limit`, `pool_worker_limit`,
+`inherited_analysis_workers`, `memory_budget_mb`, `worker_memory_estimate_mb`,
+`memory_is_hard_limit`, `estimated_pool_memory_mb`, `budget_directory`,
+`coordination` and `serial_fallback`. It also carries
+`log_max_bytes`, `test_retention_days` and `test_retention_count`. These describe
+the effective policy, not sampled utilization. A memory budget is a pool-sizing
+estimate, not an operating-system allocation limit.
+
+### `clean --json`
+
+`clean --dry-run --json` previews configured retention and temporary mutation
+recovery. Removing `--dry-run` performs the eligible removals. The response has
+`schema: 1`, `dry_run`, `test_runs` and `temporary_mutations`.
+
+| Field | Shape |
+|---|---|
+| `test_runs` | Object with path arrays `removed`, `planned`, `active`, `unproven` and `changed`. A changed receipt is preserved because its retention eligibility changed during cleanup. |
+| `temporary_mutations` | Array of `{path, status, reason}`. Status is `recovered`, `planned`, `active`, `unproven` or `failed`. A failed recovery exits 1. |
+
+Active leases, unrecognized evidence and caller-managed output are preserved.
+Intentional mutation pools require the existing `mutate --drop-pool` command.
+
 ### `doctor --plugin-root PATH`
+
 
 The plugin and the CLI ship as two artifacts with one version number between them, and
 neither notices when they drift. This is the check, and it reads no repo at all.
@@ -1294,6 +1318,14 @@ CLI degrades to silence instead of an argparse usage dump on every edit.
 ---
 
 ## MCP server
+
+The server reads cancellation and control messages while a tool is running.
+Each connection admits one active tool call. An overlapping tool call returns
+`isError: true` with a message to retry after the active call finishes.
+Cancelling a request stops its owned CLI descendants. Closing stdin ends the
+session and stops active work, so clients must keep stdin open until they have
+read the replies they need. See [resource policies](resources.md) for process
+ownership, pool limits and cleanup scope.
 
 ```
 crapkit mcp

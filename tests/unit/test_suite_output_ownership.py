@@ -84,6 +84,7 @@ def test_explicit_output_resolves_against_repo_and_is_reported(tmp_path):
 def test_output_outside_repo_is_refused_before_writing(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
+    fixture_repo(root, "")
     output = tmp_path / "outside"
 
     result = subprocess.run(command(root, "--output", "../outside"),

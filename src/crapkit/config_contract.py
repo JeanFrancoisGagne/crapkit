@@ -98,9 +98,22 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                                  '(default 1)'},
                                            'analysis_workers': {'type': 'integer',
                                                                 'minimum': 0,
-                                                                'description': 'lizard process pool '
-                                                                               'size; 0 = one worker '
-                                                                               'per core (default 0)'},
+                                                                'description': 'requested lizard pool '
+                                                                               'workers; 0 = automatic sizing from '
+                                                                               'runnable chunks, source bytes and '
+                                                                               'CPU limits (default 0)'},
+                                           'analysis_worker_budget': {'type': 'integer', 'minimum': 0,
+                                               'description': 'shared per-user host analysis pool slot '
+                                                              'ceiling; 0 = available CPUs (default 0)'},
+                                           'log_max_bytes': {'type': 'integer', 'minimum': 0,
+                                               'description': 'bytes per active and backup lane log; '
+                                                              '0 = unlimited (default 16777216)'},
+                                           'test_retention_days': {'type': 'integer', 'minimum': 0,
+                                               'description': 'age limit for finished default test '
+                                                              'evidence; 0 disables (default 7)'},
+                                           'test_retention_count': {'type': 'integer', 'minimum': 0,
+                                               'description': 'count limit for finished default test '
+                                                              'evidence; 0 disables (default 10)'},
                                            'tighten_max_jump': {'type': 'number',
                                                                 'minimum': 1,
                                                                 'description': 'verify holds a mark '

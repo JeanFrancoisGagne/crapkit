@@ -713,6 +713,10 @@ on PATH fails that step. Both leave the rendered text in the job log.
 
 ## Subcommands
 
+`crapkit clean --dry-run --json` previews policy-based cleanup. See
+[resource policies](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/resources.md)
+for shared analysis workers, process lifetime, bounded logs and retained evidence.
+
 Every subcommand takes `--repo PATH`, and the flag goes **after** the subcommand. Without
 it the root is the nearest `crapkit.toml` at or above the current directory
 ([ADR 0002](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adr/0002-configuration-is-found-upward-nearest-wins.md)): from a
@@ -739,6 +743,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 
 | Command | What it does |
 |---|---|
+| `clean [--dry-run] [--json]` | Applies configured retention to recognized idle default test evidence and recovers abandoned temporary mutation worktrees. Preserves active runs, caller-managed output and intentional mutation pools. `--dry-run` reports planned removals. |
 | `init` | Sniffs tracked source into per-directory scopes, writes a self-validated starter `crapkit.toml` whose lanes report into `.crapkit/cov/`, and appends `.crapkit/` plus each runner's own droppings to `.gitignore`. Writes a live `[[lane]]` when it can detect the test runner, otherwise a commented template. Refuses to clobber an existing config. |
 | `doctor [--show-files] [--json] [--tune] [--plugin-root [PATH]]` | Checks the config still describes the repo: unknown keys (with the accepted spellings), zero-file scopes, tracked source no scope claims, scopes no lane covers, lane cwds and commands that no longer resolve, lizard importable, oversized files. It reads each lane command with the shell that will run it, so a quoted interpreter path is one word and a runner after `&&` is checked too, and it FAILs a lane whose runner does not resolve or that the shell cannot start, naming the word to change; a bare name is looked for on PATH and a runner spelled as a path is looked for under the directory the lane runs in, so `.venv/bin/python` answers the same from any directory you run `doctor` in; each distinct runner is probed once, not once per lane. It WARNs on a lane writing its artifact at the repo root, a `coveragepy` or `istanbul` lane with no `results_artifact` (the crashed-worker and no-new-failures checks are off for it, whichever runner the lane spells), a committed hook under `core.hooksPath` that is not executable in the index, a directory whose functions are all `untested` while its tests exist, and a scope a lane measures with no `[crapkit.scoped_tests]` template behind it, which is the loop's step 4 with nothing to run. `--tune` prints suggested parallelism knobs and writes nothing. `--plugin-root PATH` reads no repo at all: it checks an installed [plugin](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) against the `crapkit` on PATH (the bare name its hooks and MCP server spawn) on both version and hook `--protocol`, and FAILs when PATH carries no `crapkit` at all, one line per disagreement and silence when they agree; PATH is the plugin root or any directory above it, `~/.claude` included (only manifests named `crapkit` count, and the newest install wins), and with no PATH it looks in Claude Code's plugin cache. A root it found rather than one you typed is named first, as `crapkit doctor: checking PATH`. See [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#doctor---json). |
 | `inventory [--db PATH] [--export PATH] [--json]` | One lizard pass over every in-scope file into a SQLite snapshot run, cached by content hash. `--db` is the only way to point crapkit at a store outside `.crapkit/`, and only this command accepts it. |
@@ -1136,7 +1141,7 @@ exit 5:
 
 ```
 $ crapkit coverage
-crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); full log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --coverage.reportOnFailure --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
+crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); lane log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --coverage.reportOnFailure --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
 
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 
@@ -1298,6 +1303,7 @@ with no debt.
 | [docs/adoption.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md) | The judgment layer over the quickstarts: scope granularity, exclude vs lane, scoped_tests wiring, the first-verify taint hazard. |
 | [docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | Every `crapkit.toml` key: type, default, and what it does. |
 | [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) | The lane model, vitest and jest and pytest recipes, artifact reuse, flake retest, containers. |
+| [docs/resources.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/resources.md) | Worker budgets, command cleanup, log rotation, test evidence retention and safe cleanup. |
 | [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md) | Seeding, pruning, the git merge driver, metric stamps, debt policy, overrides. |
 | [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) | Existing installations: analysis and key versions, saved state, plugin alignment and Windows upgrades. |
 | [docs/portable-records.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md) | Lossless exports, portable baselines and ratchets, including filenames with delimiters. |

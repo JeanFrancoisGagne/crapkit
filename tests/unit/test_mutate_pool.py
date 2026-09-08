@@ -61,18 +61,18 @@ def _fake_git(monkeypatch, on_add=None):
     Returns the paths the pool ASKED for, failed adds included."""
     tried = []
 
-    def add(root, path):
+    def add(root, path, *, owner=None):
         tried.append(path)
         if on_add is not None:
             on_add(path)
         path.mkdir(parents=True)
 
-    def remove(root, path):
+    def remove(root, path, *, owner=None):
         shutil.rmtree(path, ignore_errors=True)
 
     monkeypatch.setattr(mutate_pool, "worktree_add", add)
     monkeypatch.setattr(mutate_pool, "worktree_remove", remove)
-    monkeypatch.setattr(mutate_pool, "worktree_reset", lambda tree, head: None)
+    monkeypatch.setattr(mutate_pool, "worktree_reset", lambda tree, head, owner=None: None)
     monkeypatch.setattr(mutate_pool, "head_commit", lambda root: "0" * 40)
     return tried
 
@@ -96,7 +96,7 @@ def test_dropping_the_pool_removes_the_worktrees_at_once_too(tmp_path, monkeypat
     removed = []
     _fake_git(monkeypatch)
 
-    def remove(root, path):
+    def remove(root, path, *, owner=None):
         together.wait()  # four arrivals or none: a serial loop stalls right here
         removed.append(path)
         shutil.rmtree(path, ignore_errors=True)

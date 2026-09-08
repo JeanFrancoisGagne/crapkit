@@ -78,7 +78,7 @@ def _materialized(tmp: Path, blobs: dict[str, bytes]) -> list[tuple[str, str]]:
     return jobs
 
 
-def staged_records(blobs: dict[str, bytes]) -> dict[str, list]:
+def staged_records(blobs: dict[str, bytes], *, worker_budget: int = 0) -> dict[str, list]:
     """Records for the staged blobs, pooled once a commit touches enough files.
 
     Below the pool threshold lizard is handed the blob text directly: the bytes
@@ -92,7 +92,7 @@ def staged_records(blobs: dict[str, bytes]) -> dict[str, list]:
     with tempfile.TemporaryDirectory() as tmp:
         jobs = _materialized(Path(tmp), blobs)
         return analyze_jobs(jobs, workers=min(len(jobs), _HOOK_MAX_WORKERS),
-                            pool_threshold=_HOOK_POOL_THRESHOLD, chunksize=1)
+                            pool_threshold=_HOOK_POOL_THRESHOLD, chunksize=1, worker_budget=worker_budget)
 
 
 def file_ceilings(cfg, in_scope, checked_files) -> dict[str, int]:
@@ -153,7 +153,8 @@ def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     unscoped = _unscoped_sources(sorted(ranges_by_path), set(checked_files), cfg)
     if not checked_files:
         return StagedGate([], unscoped)
-    records_by_path = staged_records(reads.staged_blobs(checked_files))
+    records_by_path = staged_records(reads.staged_blobs(checked_files),
+                                     worker_budget=cfg.analysis_worker_budget)
     return StagedGate(
         _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
         unscoped, tuple(chain.from_iterable(records_by_path.values()))

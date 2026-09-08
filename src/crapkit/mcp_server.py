@@ -7,7 +7,7 @@ in the CLI.
 from __future__ import annotations
 
 import json
-import subprocess
+from .procs import run_owned
 import sys
 from pathlib import Path
 
@@ -1014,6 +1014,28 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("the analysis semantics version; with the lizard version it stamps "
                 "every ratchet mark, so a bump refuses old marks until the repo "
                 "re-seeds")},
+            "resources": {
+                "type": "object",
+                "description": "effective resource policy; limits and estimates, not sampled utilization",
+                "properties": {
+                    "available_cpus": {"type": "integer", "description": "CPUs visible to this process"},
+                    "cpu_probe": {"type": "string", "description": "CPU affinity or fallback probe used"},
+                    "requested_analysis_workers": {"type": "integer", "description": "configured per-pool ceiling; zero selects the default"},
+                    "shared_pool_limit": {"type": "integer", "description": "shared numbered pool slot ceiling"},
+                    "default_chunks_per_worker": {"type": "integer", "description": "chunk target used by automatic pool sizing"},
+                    "default_source_bytes_per_worker": {"type": ("integer", "null"), "description": "source-byte target for automatic spawn sizing; null for other start methods"},
+                    "pool_worker_limit": {"type": "integer", "description": "per-pool ceiling after CPU, memory and inherited limits"},
+                    "estimated_pool_memory_mb": {"type": "integer", "description": "estimated memory for the allowed worker count"},
+                    "inherited_analysis_workers": {"type": ("integer", "null"), "description": "valid inherited worker ceiling or null"},
+                    "memory_budget_mb": {"type": ("integer", "null"), "description": "inherited memory sizing hint or null"},
+                    "worker_memory_estimate_mb": {"type": "integer", "description": "memory estimate per analysis worker"},
+                    "memory_is_hard_limit": {"type": "boolean", "description": "false: memory policy sizes workers without an OS allocation limit"},
+                    "budget_directory": {"type": "string", "description": "coordination directory; status does not create it"},
+                    "serial_fallback": {"type": "boolean", "description": "busy slots allow serial work without waiting"},
+                    "coordination": {"type": "string", "description": "worker slot ownership scope"},
+                    "log_max_bytes": {"type": "integer", "description": "byte limit per current and backup lane log; zero is unlimited"},
+                    "test_retention_days": {"type": "integer", "description": "default test evidence age limit; zero disables it"},
+                    "test_retention_count": {"type": "integer", "description": "default test evidence count limit; zero disables it"}}},
             "store": {
                 "type": "object",
                 "description": "the run store",
@@ -1519,7 +1541,7 @@ def _no_config_result(repo: str) -> dict:
                    is_error=True)
 
 
-def _run_cli(tool: dict, arguments: dict, repo: str) -> dict:
+def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     """One tool, run as the CLI command it maps to, at the root it serves: a
     server started in a workspace must not hand the command a working
     directory below the root, because `path` is repo-relative on every tool's
@@ -1528,8 +1550,8 @@ def _run_cli(tool: dict, arguments: dict, repo: str) -> dict:
     `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
     and its payload says so in `gate.ok`."""
     argv = build_argv(tool, arguments) + ["--repo", repo]
-    proc = subprocess.run([sys.executable, "-m", "crapkit", *argv], cwd=repo,
-                          capture_output=True, text=True, encoding="utf-8", timeout=600)
+    proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
+                     capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
     return _structured(_result(text, is_error=failed))
@@ -1610,7 +1632,7 @@ def _served_root(root: Path, arguments: dict) -> tuple[str, Path | None]:
     return str(root), root if (root / CONFIG_NAME).is_file() else None
 
 
-def _call_tool(root: Path, name: str, arguments: dict) -> dict:
+def _call_tool(root: Path, name: str, arguments: dict, run_cli=None) -> dict:
     """Name lookup, then the arguments against the table, then the repo the
     call names, then the run. Every refusal is decided before a CLI spawns."""
     tool = _tool_named(name)
@@ -1622,7 +1644,7 @@ def _call_tool(root: Path, name: str, arguments: dict) -> dict:
     repo, found = _served_root(root, arguments)
     if found is None:
         return _no_config_result(repo)
-    return _run_cli(tool, arguments, str(found))
+    return (run_cli or _run_cli)(tool, arguments, str(found))
 
 
 # What a connected model needs before its first call, in the one field the
@@ -1685,17 +1707,17 @@ _METHODS = {"initialize": _initialize_result,
             "ping": lambda params: {}}
 
 
-def _tools_call(root: Path, params: dict) -> dict:
-    return _call_tool(root, params.get("name", ""), params.get("arguments") or {})
+def _tools_call(root: Path, params: dict, run_cli=None) -> dict:
+    return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
 
 
-def _handle(root: Path, msg: dict) -> dict | None:
+def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:
     if "id" not in msg:
         return None  # a notification (e.g. notifications/initialized) needs no reply
     method = msg.get("method", "")
     params = msg.get("params") or {}
     if method == "tools/call":
-        return _respond(msg["id"], _tools_call(root, params))
+        return _respond(msg["id"], _tools_call(root, params, run_cli))
     handler = _METHODS.get(method)
     if handler is None:
         return _respond(msg["id"], error={"code": -32601,
@@ -1718,12 +1740,12 @@ def _parse(line: str) -> dict | None:
     return msg if isinstance(msg, dict) else None
 
 
-def _reply(root: Path, msg: dict) -> dict | None:
+def _reply(root: Path, msg: dict, run_cli=None) -> dict | None:
     """The reply to one message. An exception escaping a handler becomes the
     JSON-RPC -32603 reply instead of the end of the session; a notification
     that raised gets nothing, since it asked for nothing."""
     try:
-        return _handle(root, msg)
+        return _handle(root, msg, run_cli)
     except Exception as exc:  # noqa: BLE001 - the loop must outlive any one call
         if "id" not in msg:
             return None
@@ -1732,13 +1754,6 @@ def _reply(root: Path, msg: dict) -> dict | None:
 
 
 def serve(root: Path) -> int:
-    """Newline-delimited JSON-RPC over stdio until EOF."""
-    for line in sys.stdin:
-        msg = _parse(line)
-        if msg is None:
-            continue
-        resp = _reply(root, msg)
-        if resp is not None:
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-    return 0
+    """Newline-delimited JSON-RPC; EOF cancels active work and closes the session."""
+    from ._mcp_stdio import serve as stdio
+    return stdio(sys.stdin, sys.stdout, lambda msg, run: _reply(root, msg, run), _run_cli)

@@ -23,7 +23,7 @@ Four tables hold them: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
 
 ```
 $ crapkit doctor
-FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, tighten_max_jump, worklist_floor, worklist_top
+FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_worker_budget, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, log_max_bytes, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, test_retention_count, test_retention_days, tighten_max_jump, worklist_floor, worklist_top
 doctor: 1 problem(s)
 ```
 
@@ -82,7 +82,11 @@ fallback. UTF-16 source is outside that reader policy.
 | `debt_max_age_months` | int >= 0 | absent | `ratchet report --enforce` flags open marks older than this (counted at 30 days per month). |
 | `repayment_min_per_30d` | int >= 0 | absent | `ratchet report --enforce` flags a burn-down that repaid fewer marks than this in the last 30 days while debt is open. |
 | `max_parallel_lanes` | int >= 1 | `1` | Lanes running at once. `1` is strictly serial. See [lanes.md](lanes.md#running-lanes-in-parallel). |
-| `analysis_workers` | int >= 0 | `0` | The lizard process pool size. `0` means one worker per core. Set it when the analysis pass runs beside something else. |
+| `analysis_workers` | int >= 0 | `0` | Requested analysis pool ceiling. `0` sizes pools automatically to balance startup cost and available work, within the process-visible CPU limit. Small or cached passes remain serial. Runnable chunks and the shared budget can admit fewer workers. |
+| `analysis_worker_budget` | int >= 0 | `0` | Shared pool slot ceiling for Crapkit processes running as the same user on this host. `0` uses available CPUs. Admission never waits: a busy pool gives up slots, falling back to the calling process when none are free. See [resource policies](resources.md). |
+| `log_max_bytes` | int >= 0 | `16777216` | Maximum bytes in each current and previous lane log, 16 MiB by default. Rotation keeps recent output and preserves no-progress accounting. `0` retains unlimited direct logs. |
+| `test_retention_days` | int >= 0 | `7` | Remove recognized, idle default test-run evidence older than this many days. `0` disables age pruning. Explicit `--output` directories remain caller-managed. |
+| `test_retention_count` | int >= 0 | `10` | Keep this many recent recognized default test runs. `0` disables count pruning. A run expires when either enabled limit is exceeded; active runs are preserved. |
 | `tighten_max_jump` | number >= 1 | `2.0` | How far a function's CRAP may move between two runs of the **same commit** and still tighten its mark. Past this factor, `verify` holds the mark and prints one `NO TIGHTEN` line on stderr naming the function and both values. One commit measured twice cannot have improved, so a jump that size is the measurement talking, not the code. See [ratchet.md](ratchet.md#damping-a-measurement-that-bounces). |
 
 ### Mutation worktrees
@@ -91,11 +95,18 @@ Every mutation worker runs in a detached Git worktree, including the default of 
 Crapkit re-prepares each worker at the current HEAD, then replays dirty, untracked
 and deleted inputs before running the unmutated baseline and the mutants.
 
-The kept pool lives at `.crapkit/mutate-pool/w0..wN`. It occupies one checkout per
-worker, has no size limit, and remains between runs. `crapkit mutate --drop-pool`
-removes it and exits. A concurrent run that finds the pool locked uses private
-throwaway worktrees and removes them when finished. Results retain mutant order
-at every worker count.
+The kept pool lives at `.crapkit/mutate-pool/w0..wN` and remains between runs.
+On reuse, Crapkit removes surplus worker directories under the pool's exclusive
+lease, so reducing `mutation_workers` also reduces retained checkouts.
+`crapkit mutate --drop-pool` removes the kept pool and exits.
+
+A concurrent run that finds the pool locked uses private worktrees under
+`.crapkit/mutate-tmp` and removes them when finished. Each new temporary run
+records its repository identity and holds a stable operating-system lease.
+Startup recovery and `crapkit clean` remove only recognized, abandoned runs;
+active or unproved paths stay intact. Old system-temp checkouts from releases
+before 0.7.1 lack that ownership proof and are not removed automatically.
+Results retain mutant order at every worker count.
 
 Mutation refuses symlink or Windows reparse components in captured inputs and
 worker paths. Worker writes also refuse files with multiple hard links, including

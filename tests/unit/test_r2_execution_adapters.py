@@ -70,6 +70,7 @@ def test_process_group_signals_before_waiting_for_descriptor_closure(monkeypatch
     events = Mock()
     events.active.side_effect = [True, False]
     monkeypatch.setattr(owner, '_kill_pid', events.kill)
+    monkeypatch.setattr(owner, '_group_exists', lambda pid: True)
     monkeypatch.setattr(owner, '_group_active', events.active)
     monkeypatch.setattr(owner, 'time', SimpleNamespace(sleep=events.sleep))
     owner._ProcessGroup(71).stop()

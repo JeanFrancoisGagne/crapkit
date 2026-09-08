@@ -1277,9 +1277,19 @@ def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
             "lanes": _lane_reports(root, cfg),
             "newest_run": _newest_run_report(_store_if_any(root)),
             "problems": _at_level(findings, "FAIL"),
+            "resources": _resource_policy(cfg),
             "store": _store_report(root),
             "versions": _version_report(),
             "warnings": _at_level(findings, "WARN")}
+
+
+def _resource_policy(cfg) -> dict:
+    from ..resources import resource_status
+    return {**resource_status(analysis_workers=cfg.analysis_workers,
+                              worker_budget=cfg.analysis_worker_budget),
+            "log_max_bytes": cfg.log_max_bytes,
+            "test_retention_days": cfg.test_retention_days,
+            "test_retention_count": cfg.test_retention_count}
 
 
 def _print_findings(findings: list[Finding]) -> None:
@@ -1293,6 +1303,11 @@ def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> Non
     if as_json:
         _print_json(_doctor_report(root, cfg, findings))
         return
+    policy = _resource_policy(cfg)
+    print(f"resources: up to {policy['pool_worker_limit']} analysis worker(s) per pool, "
+          f"{policy['shared_pool_limit']} shared slot(s); "
+          f"lane log limit {policy['log_max_bytes']} bytes per file; "
+          f"test evidence {policy['test_retention_days']} days / {policy['test_retention_count']} runs")
     _print_findings(findings)
 
 
@@ -1328,11 +1343,10 @@ def _lane_durations(root: Path, cfg) -> tuple[float, ...]:
 def _doctor_tune(root: Path, cfg) -> int:
     """Advisory only: knob lines from this machine's cpu count and whatever lane
     durations are already on disk. Nothing is written and nothing is executed."""
-    import os
-
     from ..doctor import suggest_knobs, tune_lines
+    from ..resources import available_cpus
 
-    cpus = os.cpu_count() or 1
+    cpus, _ = available_cpus()
     knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes))
     for line in tune_lines(cpus=cpus, knobs=knobs, durations=_lane_durations(root, cfg)):
         print(line)
@@ -1586,7 +1600,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def _watch_rescore(root: Path, moved: list[str]) -> None:
-    import subprocess
+    from ..procs import run_owned
 
     present = [f for f in moved if (root / f).is_file()]
     if not present:
@@ -1594,7 +1608,7 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
     # flush: watch output exists to be tailed live; a block-buffered pipe sits silent
     print(f"--- changed: {', '.join(moved)}", flush=True)
     # a subprocess so a half-saved syntax error can never kill the watcher
-    subprocess.run([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)])
+    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)])
 
 
 def _watched_files(root: Path, cfg) -> list[str]:
@@ -1606,8 +1620,8 @@ def _watched_files(root: Path, cfg) -> list[str]:
 def _watch_cycles(cycles: int | None):
     """The poll counter: `cycles` polls, or an endless one when nothing bounds it.
 
-    Unbounded is the default, because a watcher an operator starts is meant to
-    outlive the shell it was typed into. A bound is what lets the loop be driven
+    Unbounded is the default; the caller must explicitly supervise or detach a
+    persistent watcher. A bound is what lets the loop be driven
     to a known end — by a test, or by a caller that wants one sweep and its exit
     code rather than a process to kill.
     """

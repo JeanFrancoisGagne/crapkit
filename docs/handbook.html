@@ -434,6 +434,7 @@ timeout_seconds = 2400      # per-lane watchdog
 no_progress_seconds = 300   # or when its log stops growing
 retries = 1                 # and how often a flaky lane gets another shot</code></pre>
 <p>Per-scope targets are how a repo holds new code to 6 while a quarantined legacy tree ratchets down from 10. Every key, with type, default and effect, is in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md">docs/configuration.md</a>. <code>doctor</code> tells you when the file and the repo have drifted apart, and <code>doctor --tune</code> proposes numbers that fit what it found.</p>
+<p>Resource limits apply across active work: analysis pools share a worker budget and start no more workers than runnable chunks. Lane logs retain up to 16 MiB in each of two files by default. The development runner retains ten recent runs for up to seven days, preserving active and caller-managed evidence. <code>crapkit doctor --json</code> reports the effective settings; <code>crapkit clean --dry-run --json</code> previews eligible cleanup. See <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/resources.md">resource use and cleanup</a> for configuration and process lifetime.</p>
 
 <!-- ============================ 06 TWO GATES ============================ -->
 <h2 id="twogates"><span class="sn">06</span>The two gates</h2>

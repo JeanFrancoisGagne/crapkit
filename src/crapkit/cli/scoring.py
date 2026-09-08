@@ -53,13 +53,12 @@ def _records_by_scope(files_by_scope: dict, records_by_path: dict) -> dict:
 
 
 def _analysis_workers(cfg) -> int | None:
-    """[crapkit] analysis_workers, as ProcessPoolExecutor wants it: 0 means
-    'unset', which is one worker per core — the pool's own default."""
+    """Requested pool ceiling; zero delegates to the shared resource policy."""
     return cfg.analysis_workers or None
 
 
 def _analyzed_corpus(root: Path, cache_path: Path, flat: list,
-                     workers: int | None = None) -> tuple[dict, int]:
+                     workers: int | None = None, worker_budget: int = 0) -> tuple[dict, int]:
     """Analyze the whole corpus cache-first and write the rebuilt cache back.
 
     The prior cache dies with this frame on purpose: it holds a second copy of
@@ -67,7 +66,8 @@ def _analyzed_corpus(root: Path, cache_path: Path, flat: list,
     """
     _, analyze_files, load_cache, save_cache = _analysis_tools()
     prior = load_cache(cache_path)
-    records_by_path, cache_hits, new_cache = analyze_files(root, flat, cache=prior, workers=workers)
+    records_by_path, cache_hits, new_cache = analyze_files(
+        root, flat, cache=prior, workers=workers, worker_budget=worker_budget)
     # Saved unmerged on purpose: this rebuild is the one point that evicts the
     # entries for content no longer in the corpus.
     save_cache(cache_path, new_cache, prior=prior)
@@ -88,7 +88,7 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
     records_by_path, cache_hits = _analyzed_corpus(
-        root, root / ".crapkit" / "cache.json", flat, _analysis_workers(cfg))
+        root, root / ".crapkit" / "cache.json", flat, _analysis_workers(cfg), cfg.analysis_worker_budget)
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
     tool_versions = {"crapkit": __version__, "lizard": lizard.version,
                      "analysis_version": str(ANALYSIS_VERSION)}
@@ -526,7 +526,7 @@ def _emit_coverage_findings(root: Path, args, scored, cfg) -> None:
 
 
 def _rescored_records(root: Path, cache_path: Path, flat: list,
-                      workers: int | None = None) -> dict:
+                      workers: int | None = None, worker_budget: int = 0) -> dict:
     """Fresh records for `flat`, folded INTO the shared cache rather than over it.
 
     A rescore knows about a handful of files; writing its entry map straight out
@@ -534,7 +534,8 @@ def _rescored_records(root: Path, cache_path: Path, flat: list,
     """
     _, analyze_files, load_cache, save_cache = _analysis_tools()
     prior = load_cache(cache_path)
-    records_by_path, _, new_cache = analyze_files(root, flat, cache=prior, workers=workers)
+    records_by_path, _, new_cache = analyze_files(
+        root, flat, cache=prior, workers=workers, worker_budget=worker_budget)
     save_cache(cache_path, merged_cache(prior, new_cache), prior=prior)
     return records_by_path
 
@@ -548,7 +549,7 @@ def _rescore_analyze(root: Path, cfg, files, cwd: Path | None = None) -> tuple[l
     files_by_scope = assign_files(rel_paths, cfg, size_of=_file_sizer(root))
     flat = sorted(set().union(*files_by_scope.values())) if files_by_scope else []
     records_by_path = _rescored_records(root, root / ".crapkit" / "cache.json", flat,
-                                        _analysis_workers(cfg))
+                                        _analysis_workers(cfg), cfg.analysis_worker_budget)
     by_scope = {scope: [r for f in scope_files for r in records_by_path[f]]
                 for scope, scope_files in files_by_scope.items()}
     return build_inventory_rows(by_scope), flat, file_ceilings(cfg, files_by_scope, flat)
