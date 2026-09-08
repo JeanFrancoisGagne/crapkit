@@ -35,8 +35,9 @@ Node or other test tools that create their own workers.
 
 `crapkit doctor --json` reports the effective CPU and worker policy, memory
 estimate, log limit and test retention settings. The reported pool limit is an
-upper bound; work sizing and slot availability can reduce it. None of these settings changes
-the scoring algorithm or invalidates a 0.7.0 analysis cache.
+upper bound; work sizing and slot availability can reduce it. These settings leave
+the scoring algorithm and analysis version 10 unchanged. A package upgrade
+rebuilds the versioned analysis cache automatically; no manual deletion is needed.
 
 ## Command lifetime
 

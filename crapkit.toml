@@ -9,7 +9,7 @@ notes = [
 # tests/, which no scope owns, so substituting a source path would hand pytest a
 # collection target holding no tests (exit 5).
 [crapkit.scoped_tests]
-src = "python -m pytest tests/unit -p no:randomly -n 4"
+src = "python -m pytest tests/unit -p no:randomly -n 4 --dist worksteal"
 
 [[scope]]
 name = "src"

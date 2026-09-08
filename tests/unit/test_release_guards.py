@@ -2,15 +2,14 @@
 import json
 import shlex
 import shutil
-import sqlite3
 import subprocess
 import sys
-from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
 
+from crapkit.store import SnapshotStore
 from test_release_tool import _tree, release
 
 
@@ -130,15 +129,24 @@ def contracts(root, monkeypatch):
     release.run("stage2a", "0.5.2", root)
 
 
-def ledger(root, *, head=None, kind="verify", ok=1, findings=0):
+def passing_lanes():
+    return {"py": {"exit_code": 0, "failures": [], "tests_total": 2,
+                   "tests_skipped": 0, "parser": "coveragepy", "scopes": ["src"],
+                   "artifact_sha256": "a" * 64, "results_artifact_sha256": "b" * 64}}
+
+
+def ledger(root, *, head=None, kind="verify", ok=1, findings=0, lanes=None):
     path = root / ".crapkit" / "crap.sqlite"
     path.parent.mkdir(exist_ok=True)
-    with closing(sqlite3.connect(path)) as db, db:
-        db.execute("CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY, "
-                   "commit_sha TEXT, kind TEXT, verdict_ok INTEGER, findings INTEGER)")
-        cursor = db.execute("INSERT INTO runs (commit_sha,kind,verdict_ok,findings) VALUES (?,?,?,?)",
-                            (head or git(root, "rev-parse", "HEAD"), kind, ok, findings))
-        return cursor.lastrowid
+    store = SnapshotStore(path)
+    try:
+        run_id = store.write_run(commit=head or git(root, "rev-parse", "HEAD"), rows=[],
+                                 tool_versions={}, kind=kind,
+                                 lanes=passing_lanes() if lanes is None else lanes)
+        store.set_verdict_ok(run_id, ok, findings=findings)
+        return run_id
+    finally:
+        store._conn.close()
 
 
 def test_successful_contracts_record_the_exact_release_tree(tmp_path, monkeypatch):

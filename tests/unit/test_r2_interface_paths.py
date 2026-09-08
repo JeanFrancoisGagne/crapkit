@@ -8,6 +8,8 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 
+from mcp_stdio import run as run_mcp
+
 from crapkit.cli import main
 from crapkit.config import Config, Scope
 from crapkit.sarif import diff_uncovered_results, github_annotation
@@ -57,13 +59,15 @@ def test_mcp_child_output_is_utf8_even_with_a_legacy_host_locale(tmp_path):
     frames = [{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                "params": {"name": "get_next_item", "arguments": {}}},
               {"jsonrpc": "2.0", "id": 2, "method": "ping"}]
-    done = subprocess.run([sys.executable, "-m", "crapkit", "mcp", "--repo", str(repo)],
-                          input="".join(json.dumps(x) + "\n" for x in frames).encode(),
-                          capture_output=True, env=dict(os.environ, PYTHONUTF8="0"), timeout=30)
-    answers = [json.loads(line) for line in done.stdout.decode("utf-8").splitlines()]
+    done = run_mcp([sys.executable, "-m", "crapkit", "mcp", "--repo", str(repo)],
+                   cwd=repo, frames="".join(json.dumps(x) + "\n" for x in frames),
+                   env=dict(os.environ, PYTHONUTF8="0"), timeout=30,
+                   encoding="utf-8", errors="strict")
+    answers = {answer["id"]: answer for answer in map(json.loads, done.stdout.splitlines())}
     assert done.returncode == 0, done.stderr
-    assert "repo-ā" in answers[0]["result"]["content"][0]["text"]
-    assert answers[1] == {"jsonrpc": "2.0", "id": 2, "result": {}}
+    assert set(answers) == {1, 2}
+    assert "repo-ā" in answers[1]["result"]["content"][0]["text"]
+    assert answers[2] == {"jsonrpc": "2.0", "id": 2, "result": {}}
 
 
 def test_doctor_refuses_a_broken_path_launcher(tmp_path):

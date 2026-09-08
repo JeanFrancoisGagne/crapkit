@@ -1002,13 +1002,24 @@ once per `doctor` call rather than once per lane.
 respects neither `--json` nor `--show-files`.
 
 The additive `resources` object in ordinary `doctor --json` reports
-`available_cpus`, `cpu_probe`, `requested_analysis_workers`, `shared_pool_limit`, `pool_worker_limit`,
+`available_cpus`, `cpu_probe`, `requested_analysis_workers`, `shared_pool_limit`,
+`pool_worker_limit`, `default_chunks_per_worker`, `default_source_bytes_per_worker`,
 `inherited_analysis_workers`, `memory_budget_mb`, `worker_memory_estimate_mb`,
 `memory_is_hard_limit`, `estimated_pool_memory_mb`, `budget_directory`,
 `coordination` and `serial_fallback`. It also carries
 `log_max_bytes`, `test_retention_days` and `test_retention_count`. These describe
 the effective policy, not sampled utilization. A memory budget is a pool-sizing
 estimate, not an operating-system allocation limit.
+
+The two automatic sizing fields describe the active multiprocessing start method:
+
+| Field | Returned value | Meaning |
+| --- | --- | --- |
+| `default_chunks_per_worker` | `4` for `spawn`, `1` otherwise | Chunks per worker used to calculate the automatic request, rounded up. |
+| `default_source_bytes_per_worker` | `524288` for `spawn`, `null` otherwise | With `spawn`, source size can raise the request to one worker per 512 KiB, rounded up. |
+
+Runnable chunks, CPU and configured ceilings, and free slots still cap the pool.
+These fields report policy; they are not configuration keys or memory limits.
 
 ### `clean --json`
 

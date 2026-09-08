@@ -16,8 +16,9 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-The 0.7.1 resource and cleanup fixes keep the 0.7.0 analysis version and function
-identities. They do not require a ratchet migration or analysis-cache reset.
+The 0.7.1 resource and cleanup fixes keep analysis version 10 and the 0.7.0
+function identities. No ratchet migration or manual cache deletion is needed.
+The package upgrade rebuilds the versioned analysis cache automatically.
 Review the new [resource defaults](resources.md), especially bounded lane logs
 and retention of default development test evidence. Restart each client's MCP
 session after upgrading so its running server uses the new cleanup behavior.
@@ -68,8 +69,10 @@ Ignored inputs, installed dependencies and external services remain outside this
 proof. See [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 
-Every mutation worker uses a retained detached worktree, including a single worker.
-Budget disk space for the pool and use `crapkit mutate --drop-pool` to reclaim it.
+Every mutation worker uses a detached worktree, including a single worker.
+The normal pool is retained; concurrent callers use temporary worktrees that
+cleanup removes. Budget disk space for the pool and use
+`crapkit mutate --drop-pool` to reclaim it.
 [Mutation worktrees](configuration.md#mutation-worktrees) owns the input, link,
 concurrency and cleanup rules. [Command cleanup](lanes.md#the-kill-takes-the-whole-process-tree)
 describes Windows Jobs and POSIX process groups. These are process-lifetime controls,

@@ -627,8 +627,8 @@ rejected in review.
 <!-- generated:test-schedule -->
 ```sh
 python tools/testing/run.py
-python -m pytest tests/unit -p no:randomly -n 4
-python -m pytest tests/e2e -n 8 -p no:randomly
+python -m pytest tests/unit -p no:randomly -n 4 --dist worksteal
+python -m pytest tests/e2e -n 8 -p no:randomly --dist worksteal
 ```
 <!-- /generated:test-schedule -->
 
@@ -740,11 +740,11 @@ else, usually later, usually as a plausible wrong number.
   reads `-k "not slow"` as three positionals. The full-suite guard, `doctor` and the
   pytest-cov probe all go through those two, and they read the command the way the shell
   that will run it reads it: sh on POSIX, cmd.exe on Windows.
-- **Any spawn with a timeout goes through `procs.run_bounded`.** `shell=True` makes the
-  shell the child and the real program a grandchild, so `subprocess.run`'s own timeout
-  kills the shell and leaves the suite running with nothing waiting on it. `mutate` left
-  one orphan suite per killed mutant that way. `run_bounded` starts the shell in its own
-  process group and kills the group, `taskkill /T` on Windows and `killpg` on POSIX.
+- **Own commands that can time out or be cancelled through `procs.run_owned`.**
+  `run_bounded` is the shell-command adapter. Windows Jobs and POSIX process groups
+  cover descendants; guardians retain protected leases until cleanup finishes.
+  Keep artifact and checkout leases around the owned command so a cancelled suite
+  cannot keep writing after another caller acquires its resources.
 - **Ask `universe.owning_scope` which scope owns a path.** Ownership was decided three
   ways once, and `brief` handed out a function's lane and test command from one scope and
   its ceiling from another.

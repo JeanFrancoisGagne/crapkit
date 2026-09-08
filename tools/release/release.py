@@ -31,6 +31,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from pathlib import Path
 from contextlib import closing
 from typing import Callable, NamedTuple
@@ -46,6 +47,9 @@ REGISTRY_SEARCH = "https://registry.modelcontextprotocol.io/v0/servers?search=cr
 REGISTRY_META = "io.modelcontextprotocol.registry/official"
 REGISTRY_NAME = f"io.github.{REPO_SLUG}"
 REGISTRY_REPOSITORY = f"https://github.com/{REPO_SLUG}"
+# This repository's py lane runs both unit and E2E suites. A verdict only
+# compares failures with a baseline; publication also requires passing tests.
+RELEASE_TEST_LANES = frozenset({"py"})
 
 
 class ReleaseError(Exception):
@@ -452,7 +456,7 @@ def _ledger_rows(root: Path) -> list:
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
             db.row_factory = sqlite3.Row
             return [dict(row) for row in db.execute(
-                "SELECT id,commit_sha,kind,verdict_ok,findings FROM runs ORDER BY id")]
+                "SELECT id,commit_sha,kind,verdict_ok,findings,lanes FROM runs ORDER BY id")]
     except sqlite3.Error as exc:
         raise ReleaseError(f"cannot read the verification ledger: {exc}") from exc
 
@@ -473,7 +477,43 @@ def _passing_run(root: Path, head: str, after: int) -> int:
     observed = tuple(row.get(key) for key in ("commit_sha", "kind", "verdict_ok", "findings"))
     if observed != expected or row.get("id", 0) <= after:
         raise ReleaseError("a new passing full verify at this HEAD is required in the runs ledger")
+    _passing_test_evidence(row["lanes"])
     return row["id"]
+
+
+def _passing_test_evidence(stored) -> None:
+    lanes = _test_lanes(stored)
+    if not isinstance(lanes, dict) or set(lanes) != RELEASE_TEST_LANES:
+        raise ReleaseError("passing test evidence is required for every release test lane")
+    if not all(_passing_lane(lane) for lane in lanes.values()):
+        raise ReleaseError("passing test evidence requires successful tests, counts and artifact digests")
+
+
+def _test_lanes(stored):
+    try:
+        raw = zlib.decompress(stored).decode("utf-8") if isinstance(stored, bytes) else stored
+        return json.loads(raw)
+    except (TypeError, ValueError, zlib.error) as exc:
+        raise ReleaseError("passing test evidence is unreadable in the verification ledger") from exc
+
+
+def _passing_lane(lane) -> bool:
+    if not isinstance(lane, dict) or lane.get("failures") != []:
+        return False
+    code = lane.get("exit_code")
+    return (type(code) is int and code == 0 and _passing_test_counts(lane)
+            and _test_artifact_digests(lane))
+
+
+def _passing_test_counts(lane: dict) -> bool:
+    total, skipped = lane.get("tests_total"), lane.get("tests_skipped")
+    return type(total) is int and type(skipped) is int and 0 <= skipped < total
+
+
+def _test_artifact_digests(lane: dict) -> bool:
+    digests = [lane.get(key) for key in ("artifact_sha256", "results_artifact_sha256")]
+    return all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+               for value in digests)
 
 
 def _canonical_origin(root: Path) -> None:

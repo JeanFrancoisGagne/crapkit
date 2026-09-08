@@ -23,8 +23,8 @@ pass locally and get rejected in review.
 <!-- generated:test-schedule -->
 ```sh
 python tools/testing/run.py
-python -m pytest tests/unit -p no:randomly -n 4
-python -m pytest tests/e2e -n 8 -p no:randomly
+python -m pytest tests/unit -p no:randomly -n 4 --dist worksteal
+python -m pytest tests/e2e -n 8 -p no:randomly --dist worksteal
 ```
 <!-- /generated:test-schedule -->
 

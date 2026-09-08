@@ -4,6 +4,12 @@ The version is always an explicit argument. Run one stage at a time from the rel
 
 Stage 1 regenerates documentation after reinstalling the bumped version and before measuring coverage. It includes the generated `SECURITY.md` support table in the release commit. Stage 2a checks generated guidance against the tagged version.
 
+The verification ledger must record passing tests for the full Python lane, which
+runs both unit and end-to-end suites. Publication requires exit code zero, no test
+failures, at least one executed test, valid skipped counts and both coverage and
+test-result digests. A regression verdict that accepts unchanged failures does
+not satisfy this release requirement.
+
 ```
 python tools/release/release.py check VERSION
 python tools/release/release.py plan VERSION

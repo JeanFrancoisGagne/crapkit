@@ -59,9 +59,9 @@ def test_commands(python: str = "python", workers: int = E2E_WORKERS,
     """The development and CI schedule, also rendered in contributor guidance."""
     unit = [python, "-m", "pytest", "tests/unit", "-p", "no:randomly"]
     if unit_workers > 1:
-        unit += ["-n", str(unit_workers)]
+        unit += ["-n", str(unit_workers), "--dist", "worksteal"]
     return [unit,
-            [python, "-m", "pytest", "tests/e2e", "-n", str(workers), "-p", "no:randomly"]]
+            [python, "-m", "pytest", "tests/e2e", "-n", str(workers), "-p", "no:randomly", "--dist", "worksteal"]]
 
 
 def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: bool,

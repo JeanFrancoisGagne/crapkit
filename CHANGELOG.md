@@ -3,7 +3,7 @@
 ## 0.7.1 — unreleased
 
 This release fixes process cleanup and bounds retained resources while keeping
-small analysis calls on the serial path. Scoring, analysis cache version 10,
+small analysis calls on the serial path. Scoring, analysis version 10,
 the twelve MCP tools and JSON schema version 1 remain compatible with 0.7.0.
 
 ### Process lifetime
@@ -48,6 +48,10 @@ the twelve MCP tools and JSON schema version 1 remain compatible with 0.7.0.
 
 ### Release maintenance
 
+- Redistribute pending tests when parallel workers finish early, keeping the
+  existing unit and end-to-end worker counts and complete coverage collection.
+- Require recorded passing tests, valid test counts and artifact digests before
+  publication, including when a regression verdict accepts unchanged failures.
 - Measure each installed wheel with its own revision's test runner and record
   the runner hash. Linux CI stops and reaps descendants of historical runners
   before retaining evidence or removing scratch checkouts.

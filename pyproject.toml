@@ -63,7 +63,8 @@ Source = "https://github.com/JeanFrancoisGagne/crapkit"
 # about 8 minutes serial against about 1m30 parallel on the same tree. Nothing
 # here needs pytest-timeout: no test takes a `--timeout` and none carries the
 # marker.
-dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3", "coverage>=7.10.6", "PyYAML>=6", "Pillow"]
+# xdist 3.7 supports Python 3.13 and atomic reassignment for work stealing.
+dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3.7", "coverage>=7.10.6", "PyYAML>=6", "Pillow"]
 # coverage>=7.10.6 in both extras is the floor `[tool.coverage.run] patch` needs,
 # and it is not decoration: coverage 7.9 answers an unrecognized `[run] patch=`
 # with a CoverageWarning that pytest-cov 6.2.0 and later file under
