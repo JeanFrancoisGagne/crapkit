@@ -595,28 +595,18 @@ def test_a_launcher_is_read_from_the_directory_the_lane_runs_in(tmp_path, monkey
     assert _lane_command_problems(repo, lane) == []
 
 
-# --- timeout= has to bound the wall clock, here and in the mutant runner -----
-#
-# Both calls run under shell=True, so the shell is the child and the program is
-# a grandchild. subprocess.run's timeout kills the shell and then drains the
-# pipes with no deadline at all, and the grandchild inherited those pipes: the
-# call returns when that process dies, not when the timeout expires. Neither
-# call reads the output, so neither needs the pipes.
-
-_SLEEP = 8      # the program outlives the timeout by a wide margin
+# --- bound timeout and cleanup after the fixture is ready -------------------
+# Process creation and interpreter startup precede the command's timeout.
+# The lifecycle cases below measure from the real wait, then require that the
+# timeout stopped the sleeper before its normal completion marker.
 _TIMEOUT = 2
-_CEILING = 5    # between the two: only the pipe wait can push past it
+_CEILING = 5
 
 
-def _sleep_command() -> str:
-    return f'"{sys.executable}" -c "import time; time.sleep({_SLEEP})"'
-
-
-def _sleeping_interpreter(tmp_path, monkeypatch, command: str = "") -> None:
+def _sleeping_interpreter(tmp_path, monkeypatch, command: str) -> None:
     """A `python` first on PATH that outlives the probe's timeout. It does not
     exec, so the shell stays between the probe and the sleeper: killing the
     shell leaves the sleeper holding whatever the shell handed it."""
-    command = command or _sleep_command()
     shim_dir = tmp_path / "slow"
     shim_dir.mkdir()
     if os.name == "nt":
@@ -626,32 +616,6 @@ def _sleeping_interpreter(tmp_path, monkeypatch, command: str = "") -> None:
         shim.write_text(f"#!/bin/sh\n{command}\n", encoding="utf-8")
         shim.chmod(0o755)
     monkeypatch.setenv("PATH", os.pathsep.join([str(shim_dir), os.environ.get("PATH", "")]))
-
-
-def test_the_probe_gives_up_when_its_timeout_expires(tmp_path, monkeypatch):
-    """init writes crapkit.toml, prints the summary, probes, and only then
-    extends .gitignore — and re-running init refuses once crapkit.toml exists.
-    A probe that waits on the interpreter instead of on its own timeout strands
-    the user there with a half-scaffolded repo."""
-    _sleeping_interpreter(tmp_path, monkeypatch)
-    monkeypatch.setattr(admin, "_PROBE_TIMEOUT_SECONDS", _TIMEOUT)
-    start = time.perf_counter()
-    assert _pytest_cov_probe("python -m pytest --cov") is True
-    assert time.perf_counter() - start < _CEILING
-
-
-def test_a_mutant_that_outlives_its_timeout_dies_at_the_timeout(tmp_path):
-    """`except TimeoutExpired: return True` says "a mutant that loops forever is
-    dead". A run that only returns when the mutant's suite ends is not that."""
-    source = tmp_path / "m.py"
-    source.write_text("flag = True\n", encoding="utf-8")
-    cfg = types.SimpleNamespace(mutation_command=_sleep_command(),
-                                mutation_timeout_seconds=_TIMEOUT)
-    mutant = Mutant("m.py", 1, "flag = True", "flag = False", "True -> False")
-    start = time.perf_counter()
-    assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
-    assert time.perf_counter() - start < _CEILING
-    assert source.read_text(encoding="utf-8") == "flag = True\n"
 
 
 # --- and the deadline has to kill the tree, not just the shell ---------------
@@ -710,7 +674,8 @@ def _long_sleeper(tmp_path, startup_delay=0) -> tuple:
     script.write_text("import pathlib, time\n"
                       f"time.sleep({startup_delay})\n"
                       "pathlib.Path(__file__).with_suffix('.started').touch()\n"
-                      f"time.sleep({_ORPHAN_SLEEP})\n", encoding="utf-8")
+                      f"time.sleep({_ORPHAN_SLEEP})\n"
+                      "pathlib.Path(__file__).with_suffix('.finished').touch()\n", encoding="utf-8")
     return f'"{sys.executable}" "{script}"', script.name, script.with_suffix(".started")
 
 
@@ -733,7 +698,9 @@ def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path, monke
     assert time.perf_counter() - observed["start"] < _CEILING
     assert observed["timed_out"] == [_TIMEOUT]
     assert started.is_file(), "the command never started: this proved nothing"
+    assert not started.with_suffix(".finished").exists(), "the suite ran to normal completion"
     assert _gone(token), "the mutation command outlived the timeout that killed it"
+    assert (tmp_path / "m.py").read_text(encoding="utf-8") == "flag = True\n"
 
 
 def _timeout_after_start(monkeypatch, started):
@@ -771,8 +738,10 @@ def test_the_probe_kills_the_interpreter_it_stopped_waiting_for(tmp_path, monkey
     observed = _timeout_after_start(monkeypatch, started)
 
     assert _pytest_cov_probe("python -m pytest --cov") is True
+    assert time.perf_counter() - observed["start"] < _CEILING
     assert observed["timed_out"] == [_TIMEOUT], "cleanup must follow the real probe timeout"
     assert started.is_file(), "the interpreter never started: this proved nothing"
+    assert not started.with_suffix(".finished").exists(), "the interpreter ran to normal completion"
     assert _gone(token), "the probe left its interpreter running"
 
 
