@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.1 — unreleased
+## 0.7.1 — 2026-09-08
 
 This release fixes process cleanup and bounds retained resources while keeping
 small analysis calls on the serial path. Scoring, analysis version 10,
