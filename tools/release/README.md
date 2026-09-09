@@ -56,12 +56,15 @@ runs the release so PATH resolves `python` to it.
 
 ## Expect a rerun after each publication
 
-Every publication action reads its own result back immediately, and PyPI's version
-JSON and GitHub's release API both take seconds to serve what was just written. A
-first read that misses is normal: the stage records the action as pending and stops.
-Rerun the same stage once the surface answers. The 0.7.2 release needed six such
-reruns, one per artifact and one for the release itself. A pending entry means
-"unconfirmed", never "failed"; check the surface before reaching for recovery.
+PyPI's version JSON and GitHub's release API both take seconds to serve what was
+just written, so the read straight after a publish usually misses. Each action now
+re-reads a few times before giving up, which costs nothing and republishes nothing.
+
+If it still misses, the stage records the action as pending and stops. Rerun the
+same stage once the surface answers. A pending entry means "unconfirmed", never
+"failed", so check the surface itself before reaching for the recovery procedure.
+The 0.7.2 release ran before this retry existed and paid a stage rerun for every
+artifact, six in all.
 
 
 ## Build once, then publish

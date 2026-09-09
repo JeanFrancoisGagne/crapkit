@@ -422,3 +422,21 @@ def test_keyring_absent_or_refusing_reads_as_no_credential(monkeypatch):
                             errors=SimpleNamespace(KeyringError=Refused))
     monkeypatch.setitem(sys.modules, "keyring", found)
     assert release._keyring_has("https://upload.pypi.org/legacy/") is True
+
+
+def test_a_readback_that_misses_is_retried_before_the_stage_gives_up():
+    """PyPI and GitHub take seconds to serve what was just written. Re-reading is
+    free and republishes nothing; without it every artifact cost a stage rerun,
+    six of them across the 0.7.2 release."""
+    answers = iter([False, False, True])
+    waits = []
+
+    assert release._settled(lambda: next(answers), pause=waits.append) is True
+    assert waits == [release.READBACK_PAUSE, release.READBACK_PAUSE]
+
+
+def test_a_readback_that_never_settles_stops_instead_of_waiting_forever():
+    waits = []
+
+    assert release._settled(lambda: False, pause=waits.append, attempts=3) is False
+    assert len(waits) == 2, "it waits between attempts, never after the last one"

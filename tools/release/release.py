@@ -31,6 +31,7 @@ import sqlite3
 import subprocess
 import sys
 import sysconfig
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -56,6 +57,8 @@ GITHUB_API = "https://api.github.com/"
 # The release runs these; a thin venv that resolves them from the base install
 # cannot bridge them into the throwaway venvs three tests build.
 RELEASE_TOOLING = ("pytest", "coverage", "build", "twine")
+# Seconds between readbacks of a surface that was just written.
+READBACK_PAUSE = 5
 # This repository's py lane runs both unit and E2E suites. A verdict only
 # compares failures with a baseline; publication also requires passing tests.
 RELEASE_TEST_LANES = frozenset({"py"})
@@ -911,6 +914,23 @@ def _attempt(root: Path, command: tuple) -> Exception | None:
     return None
 
 
+def _settled(confirm: Callable, pause: Callable = time.sleep, attempts: int = 4) -> bool:
+    """Read a just-written surface until it answers, or give up.
+
+    PyPI's version JSON and GitHub's release API both take seconds to serve what
+    was just uploaded, so the first read after a publish usually misses. Re-reading
+    is free and republishes nothing, and the alternative is what the 0.7.2 release
+    did: record the action as unconfirmed and stop, once per artifact, six times.
+    The pre-check before the command is deliberately not retried, because there the
+    honest answer is usually no."""
+    for attempt in range(attempts):
+        if confirm():
+            return True
+        if attempt + 1 < attempts:
+            pause(READBACK_PAUSE)
+    return False
+
+
 def _publish_action(root: Path, receipt: dict, key: str, command: tuple, confirm: Callable) -> None:
     if confirm():
         _record_publication(root, receipt, key)
@@ -922,7 +942,7 @@ def _publish_action(root: Path, receipt: dict, key: str, command: tuple, confirm
     receipt["pending"] = [*_pending(receipt), key]
     _write_receipt(root, receipt)
     failure = _attempt(root, command)
-    if not confirm():
+    if not _settled(confirm):
         raise ReleaseError(f"{key}: publication outcome is unconfirmed; rerun only after remote readback settles")
     _record_publication(root, receipt, key)
     if failure:
