@@ -31,8 +31,11 @@ run you watched pass is refused later with a message about test evidence.
 ## Preflight: prove the environment before anything is pushed
 
 Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
-already public, because nothing checked the machine first. Check these four before
-`run stage1`. Each takes seconds; each cost a published half-release when skipped.
+already public, because nothing checked the machine first.
+
+`check VERSION` now refuses the first two rows below, and it is stage 1's first
+command, so the chain stops before it builds or pushes anything. Confirm the other
+two yourself. Each takes seconds; each cost a published half-release when skipped.
 
 | Check | Command | Why it bites |
 | --- | --- | --- |

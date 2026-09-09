@@ -7,6 +7,7 @@ one place now, the bump refuses a tree whose surfaces disagree, and `verify`
 reads every surface through its live API rather than a cached page.
 """
 import json
+import os
 import sys
 from types import SimpleNamespace
 from pathlib import Path
@@ -338,3 +339,86 @@ def test_gh_failing_to_launch_leaves_the_read_anonymous(monkeypatch):
     monkeypatch.setattr(release.subprocess, "run", boom)
 
     assert release._read_gh_token() == ""
+
+
+# --- preflight: what must be true before stage 1 ---------------------------------
+
+def _owned(tmp_path, *names):
+    """A purelib that carries each named tool, and a locator that reads it."""
+    home = tmp_path / "site-packages"
+    inside = {name: str(home / name / "__init__.py") for name in names}
+    return str(home), inside.get
+
+
+def test_preflight_names_each_tool_the_release_environment_does_not_own(tmp_path):
+    """A thin venv resolves pytest from the base install, so crapkit's bridge has
+    nothing to hand the throwaway venvs three tests build, and those tests fail
+    inside the release with `No module named pytest`."""
+    home, locate = _owned(tmp_path, "coverage", "build", "twine")
+
+    problems = release.preflight(purelib=home, locate=locate, credential=lambda: True)
+
+    assert len(problems) == 1, problems
+    assert "pytest" in problems[0] and "coverage" not in problems[0]
+
+
+def test_preflight_refuses_before_a_push_when_no_pypi_credential_is_reachable(tmp_path):
+    """0.7.2 pushed main and the tag, then found it could not authenticate."""
+    home, locate = _owned(tmp_path, *release.RELEASE_TOOLING)
+
+    problems = release.preflight(purelib=home, locate=locate, credential=lambda: False)
+
+    assert len(problems) == 1, problems
+    assert "TWINE_PASSWORD" in problems[0]
+
+
+def test_preflight_is_silent_when_the_machine_can_actually_publish(tmp_path):
+    home, locate = _owned(tmp_path, *release.RELEASE_TOOLING)
+
+    assert release.preflight(purelib=home, locate=locate, credential=lambda: True) == []
+
+
+def test_check_refuses_a_machine_that_cannot_finish_the_release(tmp_path, capsys, monkeypatch):
+    """`check` is stage 1's first command, so it is where the chain must stop."""
+    root = _tree(tmp_path)
+    monkeypatch.setattr(release, "preflight", lambda: ["no PyPI credential reachable"])
+
+    code = release.main(["check", "0.5.2", "--repo", str(root)])
+
+    assert code == 1
+    assert "no PyPI credential reachable" in capsys.readouterr().out
+
+
+def test_a_module_resolves_to_its_file_and_an_absent_one_to_nothing():
+    assert release._module_origin("json").endswith("json" + os.sep + "__init__.py")
+    assert release._module_origin("crapkit_no_such_module") is None
+
+
+def test_the_environment_beats_keyring_and_a_missing_one_falls_through(monkeypatch):
+    monkeypatch.setattr(release, "_keyring_has", lambda url: "keyring")
+    monkeypatch.setenv("TWINE_USERNAME", "__token__")
+    monkeypatch.setenv("TWINE_PASSWORD", "pypi-x")
+    assert release._twine_credential() is True
+
+    monkeypatch.delenv("TWINE_PASSWORD")
+    assert release._twine_credential() == "keyring"
+
+
+def test_keyring_absent_or_refusing_reads_as_no_credential(monkeypatch):
+    monkeypatch.setitem(sys.modules, "keyring", None)
+    assert release._keyring_has("https://upload.pypi.org/legacy/") is False
+
+    class Refused(Exception):
+        pass
+
+    def refuse(url, username):
+        raise Refused("locked")
+
+    fake = SimpleNamespace(get_credential=refuse, errors=SimpleNamespace(KeyringError=Refused))
+    monkeypatch.setitem(sys.modules, "keyring", fake)
+    assert release._keyring_has("https://upload.pypi.org/legacy/") is False
+
+    found = SimpleNamespace(get_credential=lambda url, username: object(),
+                            errors=SimpleNamespace(KeyringError=Refused))
+    monkeypatch.setitem(sys.modules, "keyring", found)
+    assert release._keyring_has("https://upload.pypi.org/legacy/") is True

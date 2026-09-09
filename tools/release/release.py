@@ -22,12 +22,15 @@ from __future__ import annotations
 import argparse
 import datetime
 import hashlib
+import importlib.util
 import json
+import os
 import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import sysconfig
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,6 +53,9 @@ REGISTRY_REPOSITORY = f"https://github.com/{REPO_SLUG}"
 PAGES_LATEST = f"https://api.github.com/repos/{REPO_SLUG}/pages/builds/latest"
 GLAMA_SERVER = f"https://glama.ai/mcp/servers/{REPO_SLUG}"
 GITHUB_API = "https://api.github.com/"
+# The release runs these; a thin venv that resolves them from the base install
+# cannot bridge them into the throwaway venvs three tests build.
+RELEASE_TOOLING = ("pytest", "coverage", "build", "twine")
 # This repository's py lane runs both unit and E2E suites. A verdict only
 # compares failures with a baseline; publication also requires passing tests.
 RELEASE_TEST_LANES = frozenset({"py"})
@@ -153,6 +159,65 @@ def check(root: Path, new: str, current: str | None = None) -> CheckReport:
     problems += _surface_problems(root, current)
     problems += _changelog_problems(root, new)
     return CheckReport(current, problems)
+
+
+# --- preflight -------------------------------------------------------------------
+
+def _module_origin(name: str) -> str | None:
+    spec = importlib.util.find_spec(name)
+    return spec.origin if spec else None
+
+
+def _owns(purelib: Path, origin: str | None) -> bool:
+    """Whether this environment carries its own copy, rather than borrowing one."""
+    return origin is not None and purelib in Path(origin).resolve().parents
+
+
+def _keyring_has(url: str) -> bool:
+    """Twine's other credential source. Imported lazily: keyring is not stdlib and
+    the rest of this tool must run without it."""
+    try:
+        import keyring
+    except ImportError:
+        return False
+    try:
+        return keyring.get_credential(url, None) is not None
+    except keyring.errors.KeyringError:
+        return False
+
+
+def _twine_credential():
+    """Twine's own order: the environment first, then keyring for the upload URL."""
+    if os.environ.get("TWINE_USERNAME") and os.environ.get("TWINE_PASSWORD"):
+        return True
+    return _keyring_has(PYPI_UPLOAD_URL)
+
+
+def _tooling_problems(locate: Callable, purelib: Path) -> list[str]:
+    missing = [name for name in RELEASE_TOOLING if not _owns(purelib, locate(name))]
+    if not missing:
+        return []
+    return [f"the release environment does not own {', '.join(missing)}: activate this "
+            "repository's .venv, which the py lane's bare `python` also resolves from PATH"]
+
+
+def _credential_problems(credential: Callable) -> list[str]:
+    if credential():
+        return []
+    return ["no PyPI credential is reachable: twine ignores .pypirc when --repository-url "
+            "is passed, so set TWINE_USERNAME and TWINE_PASSWORD, or store the token in keyring"]
+
+
+def preflight(*, locate: Callable | None = None, purelib: str | None = None,
+              credential: Callable | None = None) -> list[str]:
+    """What must be true before stage 1 builds or pushes anything.
+
+    Every fault of the 0.7.2 release fired after PyPI and the GitHub release were
+    already public, because nothing proved the machine first. Both checks here
+    take milliseconds and both cost a published half-release when skipped."""
+    home = Path(purelib or sysconfig.get_paths()["purelib"]).resolve()
+    return (_tooling_problems(locate or _module_origin, home)
+            + _credential_problems(credential or _twine_credential))
 
 
 # --- bump ------------------------------------------------------------------------
@@ -1034,8 +1099,9 @@ def _parser() -> argparse.ArgumentParser:
 
 def _cmd_check(root: Path, version: str, args: argparse.Namespace) -> int:
     report = check(root, version)
-    print(NL.join(report.problems) or f"ok: every surface at {report.current}, {version} next")
-    return 1 if report.problems else 0
+    problems = report.problems + preflight()
+    print(NL.join(problems) or f"ok: every surface at {report.current}, {version} next")
+    return 1 if problems else 0
 
 
 def _cmd_bump(root: Path, version: str, args: argparse.Namespace) -> int:
