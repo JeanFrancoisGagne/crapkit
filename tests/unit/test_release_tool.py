@@ -149,6 +149,11 @@ def _fetch(answers: dict):
 COMMIT = "c0ffee1234567890"
 
 
+def carries(ancestor, built):
+    """The Pages build carries the release when it is that commit or later."""
+    return ancestor == built
+
+
 def _live(version: str, *, latest: str | None = None) -> dict:
     latest = latest or version
     return {
@@ -168,7 +173,7 @@ def test_verify_reads_every_surface_and_passes_when_they_agree(tmp_path):
     root = _tree(tmp_path)
     release.bump(root, "0.5.2", date="2026-09-06")
 
-    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")), tag_commit=lambda: COMMIT,
+    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")), tag_commit=lambda: COMMIT, contains=carries,
                           git_tag=lambda: "v0.5.2", gh_release=lambda v: f"https://github.com/x/releases/tag/v{v}")
 
     assert {r.surface for r in rows} >= {"git tag", "PyPI", "GitHub release", "registry", "plugin.json",
@@ -181,7 +186,7 @@ def test_verify_flags_the_one_surface_that_serves_another_version(tmp_path):
     root = _tree(tmp_path)
     release.bump(root, "0.5.2", date="2026-09-06")
 
-    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.1", latest="0.5.2")), tag_commit=lambda: COMMIT,
+    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.1", latest="0.5.2")), tag_commit=lambda: COMMIT, contains=carries,
                           git_tag=lambda: "v0.5.2", gh_release=lambda v: f"https://github.com/x/releases/tag/v{v}")
 
     bad = [r for r in rows if not r.ok]
@@ -296,7 +301,7 @@ def test_verify_reads_the_two_surfaces_no_version_string_can_prove(tmp_path):
     release.bump(root, "0.5.2", date="2026-09-06")
 
     rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")), git_tag=lambda: "v0.5.2",
-                          tag_commit=lambda: COMMIT, gh_release=lambda v: f"v{v}")
+                          tag_commit=lambda: COMMIT, contains=carries, gh_release=lambda v: f"v{v}")
 
     assert {r.surface for r in rows} >= {"Pages", "Glama"}
     assert all(r.ok for r in rows), [r for r in rows if not r.ok]
@@ -440,3 +445,33 @@ def test_a_readback_that_never_settles_stops_instead_of_waiting_forever():
 
     assert release._settled(lambda: False, pause=waits.append, attempts=3) is False
     assert len(waits) == 2, "it waits between attempts, never after the last one"
+
+
+def test_pages_stays_confirmed_after_main_moves_past_the_release(tmp_path):
+    """The newest Pages build is whatever landed last. Comparing it to the release
+    commit went red the moment the next commit shipped, which is every release: the
+    question is whether the live site carries the release, not whether it is it."""
+    root = _tree(tmp_path)
+    release.bump(root, "0.5.2", date="2026-09-06")
+    later = dict(_live("0.5.2"))
+    later["https://api.github.com/repos/JeanFrancoisGagne/crapkit/pages/builds"] = json.dumps(
+        {"status": "built", "commit": "1ater0000000000"})
+
+    rows = release.verify(root, "0.5.2", fetch=_fetch(later), git_tag=lambda: "v0.5.2",
+                          tag_commit=lambda: COMMIT, gh_release=lambda v: f"v{v}",
+                          contains=lambda ancestor, built: (ancestor, built) == (COMMIT, "1ater0000000000"))
+
+    pages = next(r for r in rows if r.surface == "Pages")
+    assert pages.ok, pages
+
+
+def test_pages_is_refused_when_the_built_commit_does_not_carry_the_release(tmp_path):
+    root = _tree(tmp_path)
+    release.bump(root, "0.5.2", date="2026-09-06")
+
+    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")), git_tag=lambda: "v0.5.2",
+                          tag_commit=lambda: COMMIT, gh_release=lambda v: f"v{v}",
+                          contains=lambda ancestor, built: False)
+
+    pages = next(r for r in rows if r.surface == "Pages")
+    assert not pages.ok, pages

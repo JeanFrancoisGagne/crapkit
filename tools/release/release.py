@@ -421,20 +421,34 @@ def _answer(override: Callable | None, live: Callable):
     return override() if override else live()
 
 
-def _pages_row(commit: str, fetch: Callable) -> Row:
-    """Pages serves no version string on any page, so the only proof that the
-    site is this release is that its newest build carries the release commit and
-    that the build finished. `verify` said nothing about Pages before, so a green
-    report was silent about whether the website had rebuilt at all."""
+def _contains(root: Path, ancestor: str, descendant: str) -> bool:
+    """Whether the built commit carries the release commit. A commit is its own
+    ancestor, so this also answers yes the moment the release itself is live."""
+    try:
+        _git(root, "merge-base", "--is-ancestor", ancestor, descendant)
+    except ReleaseError:
+        return False
+    return True
+
+
+def _pages_row(commit: str, fetch: Callable, contains: Callable) -> Row:
+    """Pages serves no version string on any page, so the proof that the site is
+    this release is that its newest successful build carries the release commit.
+
+    Carries, not equals. The newest build is whatever landed last, and main moves
+    on after every release, so an equality check goes red on the next commit and
+    stays there. `verify` said nothing about Pages at all before this."""
     if not commit:
-        return Row("Pages", "built at the release commit", "unconfirmed (no local tag)", False)
-    expected = f"built @ {commit[:11]}"
+        return Row("Pages", "built at or after the release", "unconfirmed (no local tag)", False)
+    expected = f"built, carrying {commit[:11]}"
     try:
         build = json.loads(fetch(PAGES_LATEST))
-        observed = f'{build.get("status")} @ {str(build.get("commit"))[:11]}'
+        built = str(build.get("commit") or "")
+        observed = f'{build.get("status")} @ {built[:11]}'
     except (ReleaseError, ValueError, TypeError) as exc:
         return Row("Pages", expected, f"unconfirmed ({exc})", False)
-    return Row("Pages", expected, observed, observed == expected)
+    return Row("Pages", expected, observed,
+               build.get("status") == "built" and contains(commit, built))
 
 
 def _glama_row(version: str, fetch: Callable) -> Row:
@@ -452,7 +466,7 @@ def _glama_row(version: str, fetch: Callable) -> Row:
 
 def verify(root: Path, version: str, *, fetch: Callable | None = None,
            git_tag: Callable | None = None, gh_release: Callable | None = None,
-           tag_commit: Callable | None = None) -> list:
+           tag_commit: Callable | None = None, contains: Callable | None = None) -> list:
     """One row per surface: what the release should say, what the live surface
     says. The fetchers are arguments so a test can answer for the network."""
     fetch = fetch or _urlopen
@@ -463,7 +477,8 @@ def verify(root: Path, version: str, *, fetch: Callable | None = None,
             Row("GitHub release", f"v{version}", url or "none", f"v{version}" in url),
             _pypi_row(version, fetch)]
     rows += _registry_rows(version, fetch)
-    rows += [_pages_row(commit, fetch), _glama_row(version, fetch)]
+    carries = contains or (lambda ancestor, built: _contains(root, ancestor, built))
+    rows += [_pages_row(commit, fetch, carries), _glama_row(version, fetch)]
     rows += _file_rows(root, version)
     return rows
 
