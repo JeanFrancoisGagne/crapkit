@@ -49,7 +49,8 @@ def crashed_writer(tmp_path):
         f'control = Path({str(tmp_path)!r})\n'
         'if not m.enabled():\n'
         '    with exclusive_lock(control / "writer.lock", label="writer"):\n'
-        '        (control / "started").write_text(str(Path.cwd()))\n'
+        '        (control / "started.part").write_text(str(Path.cwd()))\n'
+        '        (control / "started.part").replace(control / "started")\n'
         '        deadline = time.monotonic() + 30\n'
         '        while not (control / "release").exists() and time.monotonic() < deadline:\n'
         '            time.sleep(.02)\n'
@@ -107,3 +108,31 @@ def test_a_dead_mutation_caller_stops_the_suite_before_the_pool_can_be_reused(tm
             if caller.poll() is None:
                 caller.kill()
                 caller.wait(timeout=15)
+
+
+def test_wait_for_returns_the_moment_a_marker_exists_not_when_it_is_filled(tmp_path):
+    """Why every handshake marker here publishes through a rename.
+
+    wait_for polls exists(), and write_text creates the file before it writes the
+    bytes. A reader that lands in that gap reads '', and Path('') is Path('.'),
+    which is how a killed caller's pool tree once came back as the working
+    directory and failed a run whose product code was correct.
+    """
+    marker = tmp_path / 'started'
+    handle = marker.open('w')
+    try:
+        wait_for(marker)
+        assert marker.read_text() == ''
+    finally:
+        handle.close()
+
+
+def test_a_marker_published_through_a_rename_carries_its_content(tmp_path):
+    """The rename is atomic, so the name appears already holding its payload."""
+    part = tmp_path / 'started.part'
+    part.write_text(str(tmp_path))
+    part.replace(tmp_path / 'started')
+
+    wait_for(tmp_path / 'started')
+
+    assert Path((tmp_path / 'started').read_text()) == tmp_path
