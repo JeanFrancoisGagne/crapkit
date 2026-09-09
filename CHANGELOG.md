@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.3 — unreleased
+
+`verify` says what it forgives, and the release chain proves the machine before it
+publishes. Scoring, analysis version 10, the twelve MCP tools and JSON schema
+version 1 remain compatible with 0.7.0.
+
+### The verdict says what it forgives
+
+- A `verify OK` line now names the failures the verdict forgives because the
+  baseline carries them too. A regression verdict is about change, so an unchanged
+  failure does not fail the run; reporting nothing about it made a suite with three
+  failing tests read as clean.
+
 ## 0.7.2 — 2026-09-09
 
 One unreadable file or one underflowed counter no longer ends a run. Scoring,
