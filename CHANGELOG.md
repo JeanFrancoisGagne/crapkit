@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.2 — unreleased
+## 0.7.2 — 2026-09-09
 
 One unreadable file or one underflowed counter no longer ends a run. Scoring,
 analysis version 10, the twelve MCP tools and JSON schema version 1 remain
