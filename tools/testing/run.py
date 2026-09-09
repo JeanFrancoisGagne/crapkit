@@ -67,7 +67,12 @@ def test_commands(python: str = "python", workers: int = E2E_WORKERS,
 def _suite(command: list[str], root: Path, scratch: Path, name: str, coverage: bool,
            owner=None) -> int:
     environment = dict(os.environ)
-    command = [*command, f"--junitxml={scratch / (name + '.xml')}"]
+    # The junit file and COVERAGE_FILE below are already per-run. pytest's cache
+    # is not: it lives at the rootdir, so concurrent runners in one repo stage
+    # and delete `pytest-cache-files-*` under a peer's collector. Windows keeps a
+    # deleted directory listed until the last handle closes, so that peer gets a
+    # durable FileNotFoundError. Nothing here reads the cache, so turn it off.
+    command = [*command, "-p", "no:cacheprovider", f"--junitxml={scratch / (name + '.xml')}"]
     if coverage:
         # Nested pytest resolves this in its own cwd. Coverage's subprocess
         # startup keeps the absolute outer path for ordinary CLI children.

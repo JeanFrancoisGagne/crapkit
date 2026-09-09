@@ -106,3 +106,26 @@ def test_empty_suite_records_an_infrastructure_failure_with_its_exit(tmp_path):
     error, = current.findall(".//error")
     assert "unit exited 5" in error.attrib["message"]
     assert "test_child" in [case.attrib["name"] for case in current.findall(".//testcase")]
+
+
+def test_nested_suites_leave_no_pytest_cache_in_the_repo_they_measure(tmp_path):
+    """Concurrent runners share one rootdir, and pytest's cache is not per-run.
+
+    Building `.pytest_cache` stages a `pytest-cache-files-*` directory in the
+    rootdir and then renames it away. A peer session enumerating that directory
+    meanwhile sees a name it can no longer stat, and Windows keeps a deleted
+    directory listed until the last handle closes, so the miss is durable:
+    FileNotFoundError [WinError 2] out of a nested collector. The junit file and
+    COVERAGE_FILE are already per-run; the cache is the one shared writer left.
+    """
+    fixture_repo(tmp_path, "")
+    env = fixture_env(tmp_path)
+
+    result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
+                             "--workers", "2", "--unit-workers", "1",
+                             "--output", ".crapkit/cov"], env=env,
+                            capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    strays = [path for path in tmp_path.rglob(".pytest_cache")]
+    assert strays == [], f"nested pytest wrote a shared cache: {strays}"

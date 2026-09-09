@@ -19,6 +19,15 @@ from mutation_fixtures import holding_suite, running_mutation, stop_caller, wait
 
 SOURCE = 'def choose(x):\n    if x > 10:\n        return 10\n    return x\n'
 
+# One suite's evidence record, as the miniature runner below writes it. The pid
+# carries identity: `time.time_ns()` is a 15.625 ms tick on Windows before
+# CPython 3.13, so two shards recording inside one tick shared a filename and the
+# second `replace()` destroyed the first. The ns stays first to keep `sorted()`
+# in the reader chronological.
+RECORD = ('record = events / (str(time.time_ns()) + "-" + str(os.getpid()) + ".tmp")\n'
+          'record.write_text(json.dumps(dict(phase=phase,pid=os.getpid(),cwd=str(Path.cwd()))))\n'
+          'record.replace(record.with_suffix(".json"))\n')
+
 
 def git(root, *args):
     return subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=t@t',
@@ -35,10 +44,8 @@ def mutation_repo(tmp_path):
     runner = ('from pathlib import Path\nimport json,os,time\n'
               f'events = Path({str(events)!r})\n'
               f'phase = "baseline" if Path("app.py").read_text() == {SOURCE!r} else "mutant"\n'
-              'record = events / (str(time.time_ns()) + ".tmp")\n'
-              'record.write_text(json.dumps(dict(phase=phase,pid=os.getpid(),cwd=str(Path.cwd()))))\n'
-              'record.replace(record.with_suffix(".json"))\n'
-              'time.sleep(.1)\n')
+              + RECORD
+              + 'time.sleep(.1)\n')
     (root / 'suite.py').write_text(runner, encoding='utf-8')
     command = f'"{sys.executable}" suite.py'
     config = ('[crapkit]\nmutation_workers=1\nmutation_timeout_seconds=10\n'
@@ -202,3 +209,26 @@ def test_native_sigint_stops_dispatch_and_the_writer_before_exit(mutation_repo):
         with exclusive_lock(events / 'writer.lock', label='writer stopped'):
             assert not (events / 'finished').exists()
         assert (root / '.crapkit/mutate-pool/w0/app.py').read_text() == SOURCE
+
+
+def test_two_shards_recording_in_one_clock_tick_keep_both_records(tmp_path):
+    """Two shards that record inside one clock tick must leave two records.
+
+    `time.time_ns()` is a 15.625 ms tick on Windows before CPython 3.13, which
+    reads GetSystemTimeAsFileTime, so naming a record after the instant gave two
+    shards the same filename and the second `replace()` destroyed the first. The
+    reader then counted one mutant where two ran, and only windows-3.11 and
+    windows-3.12 ever saw it. Identity belongs to the writer, not the clock.
+    """
+    events = tmp_path / 'events'
+    events.mkdir()
+    script = tmp_path / 'writer.py'
+    script.write_text('from pathlib import Path\nimport json,os,time\n'
+                      'time.time_ns = lambda: 1700000000000000000\n'
+                      f'events = Path({str(events)!r})\n'
+                      'phase = "mutant"\n' + RECORD, encoding='utf-8')
+
+    for _ in range(2):
+        subprocess.run([sys.executable, str(script)], check=True, cwd=tmp_path)
+
+    assert len(list(events.glob('*.json'))) == 2, [p.name for p in events.iterdir()]

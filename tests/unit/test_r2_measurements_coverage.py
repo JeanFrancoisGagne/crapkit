@@ -45,8 +45,14 @@ def istanbul_report(group, bad):
     return {"/repo/src/a.js": cov}
 
 
-@pytest.mark.parametrize("group", ["f", "s", "b"])
-@pytest.mark.parametrize("bad", [-1, True, 1.5])
+@pytest.mark.parametrize(("group", "bad"), [
+    (group, bad) for group in ("f", "s", "b") for bad in (-1, True, 1.5)
+    # A negative `b` is the one pair that is not corruption: the producer derives
+    # an else-path as parent - if and that subtraction underflows, so it clamps
+    # to 0 and is counted. test_istanbul_negative_branches.py holds that
+    # contract. `f` and `s` are measured hit counts, so a negative there stays a
+    # refusal, and a bool or a fraction stays a refusal in every group.
+    if not (group == "b" and bad == -1)])
 def test_istanbul_rejects_invalid_hit_counts(tmp_path, group, bad):
     artifact = tmp_path / "istanbul.json"
     artifact.write_text(json.dumps(istanbul_report(group, bad)), encoding="utf-8")

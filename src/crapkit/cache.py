@@ -7,7 +7,7 @@ the whole cache rather than serving stale records.
 """
 from __future__ import annotations
 
-from .merge import FunctionRecord
+from .merge import FunctionRecord, UnanalyzableFile
 
 
 def partition_by_cache(
@@ -34,9 +34,19 @@ def updated_cache(
     *,
     fingerprint: str,
 ) -> dict:
+    """A refused file is left out, so the next run attempts it and names it again.
+
+    Caching the empty record set of an UnanalyzableFile would be indistinguishable
+    from a real file of zero functions: the refusal would be announced once and
+    then go quiet forever while its functions stayed unscored and ungated.
+    """
     return {
         "fp": fingerprint,
-        "entries": {hashes[path]: records for path, records in sorted(records_by_path.items())},
+        "entries": {
+            hashes[path]: records
+            for path, records in sorted(records_by_path.items())
+            if not isinstance(records, UnanalyzableFile)
+        },
     }
 
 

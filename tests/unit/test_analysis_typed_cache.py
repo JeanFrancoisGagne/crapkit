@@ -1,21 +1,30 @@
 """The expression reader's typed mode belongs to cache identity."""
-import pytest
-
 from crapkit.analyze import analyze_files
-from crapkit.errors import ToolError
+from crapkit.merge import UnanalyzableFile
 
 
 def test_jsx_cache_cannot_bypass_a_cold_tsx_refusal(tmp_path):
+    """Same bytes, different reader: the jsx entry must not answer for the tsx.
+
+    A refusal is a record now rather than a raise, which moves the risk this
+    guards. A cache keyed loosely enough to serve the jsx rows for case.tsx would
+    score two functions for a file no reader ever read, and the typed refusal
+    would go quiet behind them.
+    """
     source = 'const f = [x => x < 0, x => x + 1];\n'
     for path in ('case.jsx', 'case.tsx'):
         (tmp_path / path).write_text(source, encoding='utf-8')
     jsx, hits, cache = analyze_files(tmp_path, ['case.jsx'], cache={})
     assert hits == 0
     assert len(jsx['case.jsx']) == 2
-    with pytest.raises(ToolError, match='expression-arrow body'):
-        analyze_files(tmp_path, ['case.tsx'], cache={})
-    with pytest.raises(ToolError, match='expression-arrow body'):
-        analyze_files(tmp_path, ['case.tsx'], cache=cache)
+
+    cold, _, _ = analyze_files(tmp_path, ['case.tsx'], cache={})
+    warm, _, _ = analyze_files(tmp_path, ['case.tsx'], cache=cache)
+
+    for records in (cold['case.tsx'], warm['case.tsx']):
+        assert isinstance(records, UnanalyzableFile)
+        assert list(records) == []
+        assert 'expression-arrow body' in records.reason
 
 
 def test_jsx_to_tsx_rename_reanalyzes_and_same_mode_rename_hits(tmp_path):

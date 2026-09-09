@@ -5,6 +5,7 @@ import pytest
 
 from crapkit import analyze
 from crapkit.errors import ToolError
+from crapkit.merge import UnanalyzableFile
 
 
 SOURCE = "def f(x):\n    return x\n"
@@ -88,8 +89,23 @@ def test_a_file_changed_while_hashing_cannot_keep_a_stat_stamp(tmp_path, monkeyp
     assert records["source.py"][0].ccn == 1
 
 
-def test_verified_input_keeps_reader_refusals(tmp_path):
+def test_verified_input_keeps_reader_refusals(tmp_path, capsys):
+    """A refused file is named and left uncached, and the run keeps going.
+
+    Through 0.7.0 the first refusal raised, so one ambiguous arrow in a corpus
+    ended `coverage`, which left the ratchet unseeded and refused every commit in
+    the repo, in every language. The file now scores as the zero functions it
+    honestly holds. Staying out of the cache is what keeps the refusal audible: a
+    cached empty record set reads exactly like a real file of zero functions, so
+    the warning would sound once and then go quiet while nothing was scored.
+    """
     (tmp_path / "source.ts").write_text(
         "const callbacks = [(x: number) => x < 2, (y: number) => y];", encoding="utf-8")
-    with pytest.raises(ToolError, match="source.ts"):
-        analyze.analyze_files(tmp_path, ["source.ts"], cache={})
+
+    fresh, _, cache = analyze.analyze_files(tmp_path, ["source.ts"], cache={})
+
+    assert isinstance(fresh["source.ts"], UnanalyzableFile)
+    assert list(fresh["source.ts"]) == [], "an unread file holds zero functions"
+    assert "source.ts" in fresh["source.ts"].reason
+    assert cache["entries"] == {}, "a refusal cached as an empty file goes silent"
+    assert "source.ts" in capsys.readouterr().err

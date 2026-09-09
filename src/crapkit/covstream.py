@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import re
+import sys
 from pathlib import Path
 from typing import IO, Iterator
 
@@ -307,6 +308,34 @@ def _istanbul_map(w: _Window, repo_root: str, per_file) -> dict:
     return out
 
 
+_CLAMPED_NAMED = 3
+
+
+def _loudest_clamped(counts: dict[str, int]) -> list[tuple[str, int]]:
+    """The files worth naming: most counters clamped first, ties by path."""
+    return sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))[:_CLAMPED_NAMED]
+
+
+def _note_clamped_branches(per_file: dict) -> None:
+    """Name the derived branch counters this artifact needed clamped.
+
+    Loud but not fatal, the shape _note_unanalyzable settled for reader
+    refusals: one underflowed counter degrades one branch measurement, and
+    ending the run over it blocks every commit in the repo.
+    """
+    counts = {path: rows.clamped for path, rows in per_file.items()
+              if getattr(rows, "clamped", 0)}
+    if not counts:
+        return
+    print(f"crapkit: {sum(counts.values())} negative derived branch count(s) in "
+          f"{len(counts)} file(s) clamped to 0; the producer's else-path subtraction "
+          "underflowed and each such branch reads as uncovered:", file=sys.stderr)
+    for path, count in _loudest_clamped(counts):
+        print(f"crapkit:   {path}: {count}", file=sys.stderr)
+    if len(counts) > _CLAMPED_NAMED:
+        print(f"crapkit:   ... and {len(counts) - _CLAMPED_NAMED} more", file=sys.stderr)
+
+
 def _require_files(per_file: dict) -> None:
     """A zero-file artifact scores as full coverage if it is let through, so
     both istanbul readers refuse one in the same words."""
@@ -325,6 +354,7 @@ def parse_istanbul_file(path: Path | str, *, repo_root: str, chunk: int = CHUNK
         per_file = _guarded(lambda: _istanbul_map(w, repo_root, _file_coverage),
                             f"{_BAD_ISTANBUL} {path}")
     _require_files(per_file)
+    _note_clamped_branches(per_file)
     return per_file, w.hasher.hexdigest()
 
 
@@ -354,6 +384,7 @@ def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = C
     with handle:
         per_file, dead = _guarded(lambda: _istanbul_both(w, repo_root), f"{_BAD_ISTANBUL} {path}")
     _require_files(per_file)
+    _note_clamped_branches(per_file)
     return per_file, dead, w.hasher.hexdigest()
 
 

@@ -10,7 +10,11 @@ from test_suite_schedule import SCRIPT, fixture_env as environment, fixture_repo
 
 
 def command(root, *args):
-    return [sys.executable, str(SCRIPT), "--repo", str(root), "--workers", "1", *args]
+    # One unit test and one e2e test: a worker each. Leaving --unit-workers at
+    # its default started four xdist workers per nested run, so the concurrent
+    # pair below ran sixteen processes on a two-core runner for two tests.
+    return [sys.executable, str(SCRIPT), "--repo", str(root),
+            "--workers", "1", "--unit-workers", "1", *args]
 
 
 def published_path(stdout):

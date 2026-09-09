@@ -53,13 +53,50 @@ def coverage_count(value: object, field: str) -> int:
     return value
 
 
-def _admit_hits(cov: dict) -> None:
+class ClampedBranchCounts(list):
+    """Function coverage for a file whose artifact carried negative branch counts.
+
+    A branch count is DERIVED: @vitest/coverage-v8 takes an if/else pair's
+    else-path as parent - if, and that subtraction underflows on remapped
+    output. Refusing the file for it failed the lane, which left no baseline,
+    which blocked every commit in the measured repo, in every language. The
+    counter is clamped to 0 instead, so the branch reads uncovered and never
+    negative, and `clamped` rides back with the rows so a run can count and
+    name them the way UnanalyzableFile counts a reader refusal.
+    """
+
+    def __init__(self, rows, clamped: int) -> None:
+        super().__init__(rows)
+        self.clamped = clamped
+
+
+def _admit_branch(value: object, field: str) -> int:
+    """A derived branch counter, admitted with its underflow clamped away."""
+    if type(value) is float and value.is_integer():
+        value = int(value)
+    if type(value) is int and value < 0:
+        return 0
+    return coverage_count(value, field)
+
+
+def _admit_hits(cov: dict) -> int:
+    """Admit one file's counters in place; answer how many branches were clamped.
+
+    `f` and `s` stay strict. Those are measured hit counts, so a negative one is
+    corruption and has never been seen: over the 4,166-file openclaw unit-fast
+    artifact all 73 negatives sat in `b`, every one at index [1].
+    """
     for group in ("f", "s"):
         for key, value in cov.get(group, {}).items():
             coverage_count(value, f"{group}[{key!r}]")
+    clamped = 0
     for key, hits in cov.get("b", {}).items():
         for index, value in enumerate(hits):
-            coverage_count(value, f"b[{key!r}][{index}]")
+            admitted = _admit_branch(value, f"b[{key!r}][{index}]")
+            if admitted != value:
+                hits[index] = admitted
+                clamped += 1
+    return clamped
 
 
 def _fn_spans(cov: dict) -> list[list]:
@@ -145,12 +182,13 @@ def _attach_statements(owners: dict[int, list | None], cov: dict) -> None:
 
 
 def _file_coverage(cov: dict) -> list[FnCoverage]:
-    _admit_hits(cov)
+    clamped = _admit_hits(cov)
     fn_spans = _fn_spans(cov)
     owners = _span_owners(fn_spans, _query_lines(cov))
     _attach_branches(owners, cov)
     _attach_statements(owners, cov)
-    return [FnCoverage(*s) for s in fn_spans]
+    rows = [FnCoverage(*s) for s in fn_spans]
+    return ClampedBranchCounts(rows, clamped) if clamped else rows
 
 
 def _dead_lines(cov: dict) -> set[int]:

@@ -29,7 +29,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
 from .lizardcognitive import LizardExtension as _Cognitive
-from .merge import FunctionRecord
+from .merge import FunctionRecord, UnanalyzableFile
 from .packet import bare_name
 
 # lizard picks a reader by extension off a hardcoded list, and none of these is
@@ -375,8 +375,8 @@ def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     try:
         analysis = lizard.FileAnalyzer(_extensions_for(rel_path))(abs_path)
         return rel_path, _file_records(rel_path, analysis.function_list)
-    except Exception as exc:  # loud, with the file named
-        raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
+    except Exception as exc:  # loud and counted, never fatal: see _note_unanalyzable
+        return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
 
 def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
@@ -391,8 +391,10 @@ def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
         analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
         records = _file_records(rel_path, analysis.function_list)
-    except Exception as exc:  # loud, with the file named
-        raise ToolError(f"lizard failed on {rel_path}: {exc}") from exc
+    except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
+        records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
+        _note_unanalyzable({rel_path: records})
+        return records
     _note_twin_keys(rel_path, records)
     return records
 
@@ -615,8 +617,13 @@ def _restamped(hits: dict[str, list[FunctionRecord]]) -> dict[str, list[Function
 def _rows_for(path: str, rows: list[FunctionRecord]) -> list[FunctionRecord]:
     """One entry's rows all carry one path, because analyze_one stamps every
     record it emits with the single path it was handed. The first row answers
-    for all of them."""
-    if rows and rows[0].path == path:
+    for all of them.
+
+    An empty list comes back as it went in: there is no path to re-key, and
+    rebuilding it drops the UnanalyzableFile a refusal travels in, which is what
+    keeps that file out of the cache and names it again on the next run.
+    """
+    if not rows or rows[0].path == path:
         return rows
     return [r._replace(path=path) for r in rows]
 
@@ -634,8 +641,8 @@ def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionReco
         analyzer = lizard.FileAnalyzer(_extensions_for(relative))
         analysis = analyzer.analyze_source_code(relative, decode_source(raw))
         return relative, _file_records(relative, analysis.function_list)
-    except Exception as exc:
-        raise ToolError(f"lizard failed on {relative}: {exc}") from exc
+    except Exception as exc:  # a parse refusal, unlike the read and hash above, is per-file
+        return relative, UnanalyzableFile(f"lizard failed on {relative}: {exc}")
 
 
 def _job_inputs(jobs: list, hashes: dict[str, str] | None):
@@ -670,7 +677,33 @@ def analyze_jobs(
     # reached a UTF-8 reader in the legacy codepage on Windows (#31).
     for rel_path, records in fresh.items():
         _note_twin_keys(rel_path, records)
+    _note_unanalyzable(fresh)
     return fresh
+
+
+_UNANALYZABLE_NAMED = 5
+
+
+def _note_unanalyzable(fresh: dict[str, list[FunctionRecord]]) -> None:
+    """Name the files no reader could tokenize, and let the run continue.
+
+    Through 0.7.0 the first refusal in a corpus raised, so one ambiguous arrow
+    among 21,327 files failed `coverage`, which left the ratchet unseeded, which
+    refused every commit in the repo in every language. Refusing an ambiguous
+    arrow is specified, tested behaviour; ending the run over it was not. The
+    file is now scored as zero functions, which is what an unreadable file
+    honestly holds, and stays uncached so every run names it again.
+    """
+    refused = [(path, rows.reason) for path, rows in sorted(fresh.items())
+               if isinstance(rows, UnanalyzableFile)]
+    if not refused:
+        return
+    print(f"crapkit: {len(refused)} file(s) could not be tokenized; "
+          f"each is scored as zero functions and stays unranked:", file=sys.stderr)
+    for path, reason in refused[:_UNANALYZABLE_NAMED]:
+        print(f"crapkit:   {reason}", file=sys.stderr)
+    if len(refused) > _UNANALYZABLE_NAMED:
+        print(f"crapkit:   ... and {len(refused) - _UNANALYZABLE_NAMED} more", file=sys.stderr)
 
 
 def _pool_for(jobs: list, threshold: int, workers, worker_budget: int, chunksize: int):
