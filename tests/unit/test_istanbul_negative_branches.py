@@ -73,3 +73,29 @@ def test_a_negative_measured_count_is_still_fatal(group, payload):
     kwargs = {"functions" if group == "f" else "statements": payload}
     with pytest.raises(ToolError, match="nonnegative integer count"):
         only_function(artifact({"6": [77, 3], "13": [4, 1]}, **kwargs))
+
+
+def test_a_float_that_is_a_whole_negative_clamps_like_an_int():
+    """istanbul writes counters through JSON, where 3 and 3.0 are the same token."""
+    fn = only_function(artifact({"6": [77, -101.0], "13": [4, -81]}))
+    assert fn.branches_total == 4
+    assert fn.branches_covered == 2
+
+
+def many_files_artifact(count):
+    """One artifact holding `count` files, every one with a clamped branch."""
+    one = json.loads(artifact({"6": [77, -101], "13": [4, -81]}))[POLICY_API]
+    files = {}
+    for index in range(count):
+        path = f"/repo/src/file{index}.ts"
+        files[path] = {**one, "path": path}
+    return json.dumps(files)
+
+
+def test_more_clamped_files_than_it_names_are_counted(capsys):
+    """Four files, three named: the rest is a count, never a wall of paths."""
+    parse_istanbul(many_files_artifact(4), repo_root="/repo")
+
+    err = capsys.readouterr().err
+    assert "8 negative derived branch count(s) in 4 file(s)" in err
+    assert "... and 1 more" in err

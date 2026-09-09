@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.2 — unreleased
+
+One unreadable file or one underflowed counter no longer ends a run. Scoring,
+analysis version 10, the twelve MCP tools and JSON schema version 1 remain
+compatible with 0.7.0. 0.7.1 was tagged and never published; it is contained
+here.
+
+### One bad file no longer ends the run
+
+- A file no reader can tokenize is scored as the zero functions it holds, named
+  on stderr, and left out of the analysis cache so the next run names it again.
+  Through 0.7.0 the first refusal raised, so one ambiguous TypeScript arrow in a
+  corpus ended `coverage`, which left the ratchet unseeded and refused every
+  commit in the repo, in every language. Refusing to read the arrow is still
+  correct; ending the run over it was not.
+- A negative derived branch count in an istanbul artifact clamps to 0 and is
+  counted and named, rather than refusing the artifact. `@vitest/coverage-v8`
+  takes an else-path as `parent - if`, and that subtraction underflows on
+  remapped output. Measured hit counts (`f` and `s`) stay strict, where a
+  negative is corruption rather than arithmetic.
+
+### Test schedule
+
+- Give each nested test run its own pytest cache, and name a mutation shard's
+  evidence by its writer rather than by the clock. Concurrent runners in one
+  repository staged and deleted `pytest-cache-files-*` under a peer's collector,
+  and `time.time_ns()` is a 15.625 ms tick on Windows before CPython 3.13, so two
+  shards recording inside one tick overwrote each other's evidence.
+
 ## 0.7.1 — 2026-09-08
 
 This release fixes process cleanup and bounds retained resources while keeping
@@ -52,27 +81,8 @@ the twelve MCP tools and JSON schema version 1 remain compatible with 0.7.0.
   leases. Add `clean --dry-run --json` to preview cleanup and `clean --json`
   to perform it. Older unmarked system-temp checkouts remain untouched.
 
-### One bad file no longer ends the run
-
-- A file no reader can tokenize is scored as the zero functions it holds, named
-  on stderr, and left out of the analysis cache so the next run names it again.
-  Through 0.7.0 the first refusal raised, so one ambiguous TypeScript arrow in a
-  corpus ended `coverage`, which left the ratchet unseeded and refused every
-  commit in the repo, in every language. Refusing to read the arrow is still
-  correct; ending the run over it was not.
-- A negative derived branch count in an istanbul artifact clamps to 0 and is
-  counted and named, rather than refusing the artifact. `@vitest/coverage-v8`
-  takes an else-path as `parent - if`, and that subtraction underflows on
-  remapped output. Measured hit counts (`f` and `s`) stay strict, where a
-  negative is corruption rather than arithmetic.
-
 ### Release maintenance
 
-- Give each nested test run its own pytest cache, and name a mutation shard's
-  evidence by its writer rather than by the clock. Concurrent runners in one
-  repository staged and deleted `pytest-cache-files-*` under a peer's collector,
-  and `time.time_ns()` is a 15.625 ms tick on Windows before CPython 3.13, so two
-  shards recording inside one tick overwrote each other's evidence.
 - Keep cleanup fixtures inside the tested Python environment, accept an unset
   `PYTHONPATH`, and disable automatic Git maintenance while building copyable
   test repositories.
