@@ -121,4 +121,6 @@ def test_verify_queries_the_canonical_github_repository(tmp_path, monkeypatch):
     rows = release.verify(root, VERSION, git_tag=lambda: "v" + VERSION,
                           fetch=lambda url: json.dumps({"info": {"version": VERSION}, "servers": []}))
     assert rows[1].ok
-    assert option(commands[0], "--repo", None) == REPOSITORY
+    # verify reads the tag's commit for the Pages row first, so pick the gh call
+    gh = next(command for command in commands if command and command[0] == "gh")
+    assert option(gh, "--repo", None) == REPOSITORY

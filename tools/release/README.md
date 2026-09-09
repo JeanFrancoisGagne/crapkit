@@ -23,6 +23,44 @@ python tools/release/release.py verify VERSION
 
 Keep `run verify` in its own background process when the calling tool has a shorter deadline than the suite. `plan` and `run --dry-run` print commands without changing files or contacting publication services.
 
+Run `verify` through its stage, never as the bare command `plan` prints. The stage
+stamps a run-id watermark before it starts and publication requires a passing run
+above that watermark. `python -m crapkit verify` on its own stamps nothing, so a
+run you watched pass is refused later with a message about test evidence.
+
+## Preflight: prove the environment before anything is pushed
+
+Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
+already public, because nothing checked the machine first. Check these four before
+`run stage1`. Each takes seconds; each cost a published half-release when skipped.
+
+| Check | Command | Why it bites |
+| --- | --- | --- |
+| The release venv is ACTIVATED | `which python` names this repository's `.venv` | The py lane in `crapkit.toml` runs a bare `python`, taken from PATH, not the interpreter that launched this script. Launching by absolute path is not enough. |
+| That venv owns its dev tools | `python -c "import pytest, coverage, build, twine"` resolves inside the venv | Three tests build a throwaway venv and rely on the dependency-venv bridge to carry the parent's `purelib` into it. A thin venv that resolves pytest from the base install carries nothing, and the child reports `No module named pytest`. |
+| PyPI credentials reach Twine | `TWINE_USERNAME` and `TWINE_PASSWORD` are set, or the token is in keyring | Twine 7 skips the named `.pypirc` entry whenever `--repository-url` is passed, and that flag is a fixed anti-redirect control. A `.pypirc` alone authenticates nothing. |
+| `gh` is authenticated | `gh auth status` | Publishing uses `gh`, and every readback now sends the same credential. GitHub's Pages API answers 404, not 403, to an anonymous reader. |
+
+Set up the release venv once. `.venv/` is ignored by this repository:
+
+```
+python -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]" build twine
+```
+
+On Windows use `.venv\Scripts\python.exe`, and activate the venv in the shell that
+runs the release so PATH resolves `python` to it.
+
+## Expect a rerun after each publication
+
+Every publication action reads its own result back immediately, and PyPI's version
+JSON and GitHub's release API both take seconds to serve what was just written. A
+first read that misses is normal: the stage records the action as pending and stops.
+Rerun the same stage once the surface answers. The 0.7.2 release needed six such
+reruns, one per artifact and one for the release itself. A pending entry means
+"unconfirmed", never "failed"; check the surface before reaching for recovery.
+
+
 ## Build once, then publish
 
 Stage 2b builds a wheel and a source archive into `.crapkit/release-dist/` and runs `twine check` before any push. It records each filename and SHA256 digest in `.crapkit/release-receipt.json`, alongside the HEAD, version, contract proof and verification run. A retry rechecks those local bytes and never rebuilds a recorded pair. Missing, changed, extra or redirected artifacts refuse publication. Ordinary `dist/` output is separate.
@@ -41,7 +79,7 @@ Keep the receipt and `.crapkit/release-dist/` together, then rerun:
 python tools/release/release.py run stage2b VERSION
 ```
 
-The command repeats all clean-tree, tag and ledger checks. It reuses matching local files, reads published files again, skips matching uploads, and continues with the next missing file. The local Claude plugin update is recorded after success. An interrupted local update can run again. Registry login/publish remains its own stage. Glama's Repository admin **Sync Server** action stays manual.
+The command repeats all clean-tree, tag and ledger checks. It reuses matching local files, reads published files again, skips matching uploads, and continues with the next missing file. The local Claude plugin update is recorded after success. An interrupted local update can run again. Registry login/publish remains its own stage. Log in with `mcp-publisher login github --token "$(gh auth token)"`, which needs no device flow. Glama's Repository admin **Sync Server** action stays manual, and is the only step in the chain no command performs.
 
 Pages can finish after the command stops. A `queued` or `building` status at the release commit asks you to wait and rerun; it does not send a second POST. A `built` result at that commit completes the stage. A later `errored` result at that commit proves the build ended and permits one new request on the next invocation. A build for a different commit cannot confirm this release.
 
@@ -62,16 +100,22 @@ Install `build` and `twine` into the Python environment that runs the release
 script. Check GitHub authentication with `gh auth status` and confirm access to
 `JeanFrancoisGagne/crapkit` before the release starts.
 
-On Windows, put the native `claude.exe` directory on the release process's
-PATH. Python's direct subprocess launch does not resolve an npm `claude.cmd`
-shim as a bare `claude` command. Confirm the executable with `claude --version`
-from that same process environment before stage 2b.
+Put `claude` on the release process's PATH. The script resolves each command
+through a PATHEXT-aware lookup, so an npm `claude.CMD` shim now works where a bare
+`claude` once died with WinError 2: Windows `CreateProcess` searches PATH but
+appends only `.exe`. That failure used to land after PyPI and the GitHub release
+were public. Confirm with `claude --version` from the same shell.
 
 Twine receives an explicit PyPI upload URL. With Twine 7, that skips the named
-`.pypirc` repository entry, including its credentials. Supply credentials through
-Twine's supported environment variables or keyring in the release process. Keep
-them out of command arguments, logs and committed files; do not remove the fixed
-upload URL to make authentication work.
+`.pypirc` repository entry, including its credentials, so a populated `.pypirc`
+authenticates nothing here. Supply credentials through Twine's supported
+environment variables or keyring in the release process. Keep them out of command
+arguments, logs and committed files; do not remove the fixed upload URL to make
+authentication work.
+
+The refusal reads `NonInteractive: Credential not found for API token`, and it
+arrives after the push, with `main` and the tag already public. Check the
+credential in preflight instead.
 
 After stage 2b and the MCP Registry stage, check every distribution route:
 
@@ -79,13 +123,13 @@ After stage 2b and the MCP Registry stage, check every distribution route:
 | --- | --- |
 | PyPI | The release receipt's wheel and source archive hashes match the version JSON response. |
 | GitHub release | The tag names the verified commit, notes match the changelog, and asset hashes match PyPI. |
-| Website | Pages built the release commit from `main:/docs`; open the landing page and handbook. |
+| Website | `verify` compares the newest Pages build against the tagged commit and requires status `built`. Open the landing page and handbook. |
 | GitHub Action and pre-commit | The release tag includes `action.yml` and `.pre-commit-hooks.yaml`; README examples use that tag. |
 | Local CLI | Stage 1 updates only its selected Python environment. Upgrade the intended user CLI with its owning installer, read its resolved executable and version, and run `crapkit doctor --plugin-root` against installed plugins. |
 | Claude Code plugin | Refresh its registered marketplace, update the user-scope plugin, read back its version and check `doctor --plugin-root`. Existing sessions need a restart to apply the update. |
 | Codex plugin | Refresh its registered marketplace, install the current plugin with the supported manager, and check its listed version and explicit installed plugin root. Verify its three skills and MCP configuration. |
 | MCP Registry | The canonical server name has the new version and matching PyPI package. |
-| Glama | Use the existing server's Repository admin **Sync Server** action after the GitHub release exists. Confirm its release version, build and tool schema, and correct stale profile text separately. |
+| Glama | `verify` reads the server page and requires the README action pin to name this release's tag. Until the sync runs it reports an earlier revision. Use the Repository admin **Sync Server** action after the GitHub release exists, then confirm build and tool schema, and correct stale profile text separately. |
 
 After publication, refresh the clients' marketplace snapshots before updating their
 installed copies. Stage 2b invokes Claude's plugin update; it does not perform the

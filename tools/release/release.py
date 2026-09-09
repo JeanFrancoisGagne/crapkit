@@ -47,6 +47,9 @@ REGISTRY_SEARCH = "https://registry.modelcontextprotocol.io/v0/servers?search=cr
 REGISTRY_META = "io.modelcontextprotocol.registry/official"
 REGISTRY_NAME = f"io.github.{REPO_SLUG}"
 REGISTRY_REPOSITORY = f"https://github.com/{REPO_SLUG}"
+PAGES_LATEST = f"https://api.github.com/repos/{REPO_SLUG}/pages/builds/latest"
+GLAMA_SERVER = f"https://glama.ai/mcp/servers/{REPO_SLUG}"
+GITHUB_API = "https://api.github.com/"
 # This repository's py lane runs both unit and E2E suites. A verdict only
 # compares failures with a baseline; publication also requires passing tests.
 RELEASE_TEST_LANES = frozenset({"py"})
@@ -208,9 +211,43 @@ class Row(NamedTuple):
     ok: bool
 
 
+_GH_TOKEN: dict = {}
+
+
+def _read_gh_token() -> str:
+    tool = shutil.which("gh")
+    if tool is None:
+        return ""
+    try:
+        done = subprocess.run((tool, "auth", "token"), capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def _gh_token() -> str:
+    """Read once: a release makes many readbacks and each would spawn `gh`."""
+    if "token" not in _GH_TOKEN:
+        _GH_TOKEN["token"] = _read_gh_token()
+    return _GH_TOKEN["token"]
+
+
+def _api_request(url: str) -> urllib.request.Request:
+    """GitHub's Pages API answers 404, not 403, to an anonymous reader, so an
+    unauthenticated readback reported a built site as absent and the stage could
+    never confirm the build it had just requested. The publishing commands beside
+    it are authenticated `gh`; the reads now carry the same credential. Only
+    GitHub gets it: PyPI, the registry and Glama are read anonymously."""
+    request = urllib.request.Request(url)
+    token = _gh_token() if url.startswith(GITHUB_API) else ""
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    return request
+
+
 def _urlopen(url: str) -> str:
     try:
-        with urllib.request.urlopen(url, timeout=20) as response:
+        with urllib.request.urlopen(_api_request(url), timeout=20) as response:
             return response.read().decode("utf-8")
     except (urllib.error.URLError, OSError) as exc:
         raise ReleaseError(f"{url}: {exc}") from exc
@@ -300,17 +337,65 @@ def _file_rows(root: Path, version: str) -> list:
             _row("README", "3 of 3 mentions", f"{readme} of 3 mentions")]
 
 
+def _tag_commit(root: Path, version: str) -> str:
+    """Empty when the tag is not on this machine. `verify` is meant to run from
+    anywhere, including a checkout that never cut the release, and a missing tag
+    already has its own row; the Pages row says it cannot be checked."""
+    try:
+        return _git(root, "rev-list", "-n", "1", f"v{version}")
+    except ReleaseError:
+        return ""
+
+
+def _answer(override: Callable | None, live: Callable):
+    """One verify seam: the caller's answer when a test supplies one, else the
+    live read."""
+    return override() if override else live()
+
+
+def _pages_row(commit: str, fetch: Callable) -> Row:
+    """Pages serves no version string on any page, so the only proof that the
+    site is this release is that its newest build carries the release commit and
+    that the build finished. `verify` said nothing about Pages before, so a green
+    report was silent about whether the website had rebuilt at all."""
+    if not commit:
+        return Row("Pages", "built at the release commit", "unconfirmed (no local tag)", False)
+    expected = f"built @ {commit[:11]}"
+    try:
+        build = json.loads(fetch(PAGES_LATEST))
+        observed = f'{build.get("status")} @ {str(build.get("commit"))[:11]}'
+    except (ReleaseError, ValueError, TypeError) as exc:
+        return Row("Pages", expected, f"unconfirmed ({exc})", False)
+    return Row("Pages", expected, observed, observed == expected)
+
+
+def _glama_row(version: str, fetch: Callable) -> Row:
+    """Glama renders the README of the revision it last synced, and the release
+    step rewrites the README's action pin to the tag it just cut. So the pin on
+    Glama's page is what says whether the sync ran for this release. Its sync is
+    the one manual step in the chain, which is exactly why it needs a row."""
+    pin = f"{PACKAGE}@v{version}"
+    try:
+        page = fetch(GLAMA_SERVER)
+    except ReleaseError as exc:
+        return Row("Glama", pin, f"unconfirmed ({exc})", False)
+    return Row("Glama", pin, pin if pin in page else "an earlier revision", pin in page)
+
+
 def verify(root: Path, version: str, *, fetch: Callable | None = None,
-           git_tag: Callable | None = None, gh_release: Callable | None = None) -> list:
+           git_tag: Callable | None = None, gh_release: Callable | None = None,
+           tag_commit: Callable | None = None) -> list:
     """One row per surface: what the release should say, what the live surface
     says. The fetchers are arguments so a test can answer for the network."""
     fetch = fetch or _urlopen
-    tag = git_tag() if git_tag else _git_tag(root)
+    tag = _answer(git_tag, lambda: _git_tag(root))
+    commit = _answer(tag_commit, lambda: _tag_commit(root, version))
     url = gh_release(version) if gh_release else _gh_release(root, version)
     rows = [_row("git tag", f"v{version}", tag),
             Row("GitHub release", f"v{version}", url or "none", f"v{version}" in url),
             _pypi_row(version, fetch)]
     rows += _registry_rows(version, fetch)
+    rows += [_pages_row(commit, fetch), _glama_row(version, fetch)]
     rows += _file_rows(root, version)
     return rows
 
@@ -356,7 +441,8 @@ def plan(version: str) -> list:
         Step("tag", "stage2a", (("git", "tag", f"v{version}"),)),
         Step("contracts", "stage2a", (contracts,), note=f"red: git tag -d v{version} and stop"),
         Step("verify", "verify", ((PY, "-m", "crapkit", "verify"),), background=True,
-             note="its own background command: a foreground tool call dies at 600 s"),
+             note="run it via `release.py run verify VERSION`: the bare `crapkit verify` stamps no"
+                  " watermark and publication then refuses its evidence; a foreground call dies at 600 s"),
         Step("artifacts", "stage2b", ((PY, "-m", "build", "-q", "--outdir", RELEASE_DIST),
                                       (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
              note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
@@ -371,7 +457,8 @@ def plan(version: str) -> list:
         Step("pages", "stage2b", (("gh", "api", "--hostname", "github.com", "-X", "POST",
                                   f"repos/{REPO_SLUG}/pages/builds", "--jq", ".status"),)),
         Step("registry", "registry", (("mcp-publisher", "login", "github"), ("mcp-publisher", "publish")),
-             note="device flow; the token lasts about 40 minutes, so publish right after login"),
+             note='log in first with: mcp-publisher login github --token "$(gh auth token)" '
+                  'which needs no device flow; the token lasts about 40 minutes'),
         Step("glama", "glama", (),
              note="Sync Server on the Repository admin tab; the sync builds and publishes the "
                   "release with the GitHub notes on its own"),
@@ -569,9 +656,19 @@ def _check_artifacts(artifacts: list[Path]) -> None:
         raise ReleaseError("release artifacts must be regular files inside release-dist")
 
 
+def _executable(name: str) -> str:
+    """Windows `CreateProcess` searches PATH but appends only `.exe`, so a bare
+    `claude` never resolved the npm `claude.CMD` shim and the plugin step died
+    with WinError 2 once PyPI and the GitHub release were already public.
+    `shutil.which` honours PATHEXT. An unresolved name passes through, so the
+    failure still names the command that is missing."""
+    return shutil.which(name) or name
+
+
 def _arguments(command: tuple, root: Path) -> list[str]:
-    return [value for arg in command for value in
-            (_release_files(root) if arg == f"{RELEASE_DIST}/*" else [arg])]
+    expanded = [value for arg in command for value in
+                (_release_files(root) if arg == f"{RELEASE_DIST}/*" else [arg])]
+    return [_executable(expanded[0]), *expanded[1:]]
 
 
 def _release_dist(root: Path) -> Path:
@@ -625,7 +722,7 @@ def _prepare_artifacts(root: Path, receipt: dict, step: Step) -> None:
 
 def _remote_json(url: str, *, absent: bool = False) -> dict | None:
     try:
-        with urllib.request.urlopen(url, timeout=20) as response:
+        with urllib.request.urlopen(_api_request(url), timeout=20) as response:
             result = json.load(response)
     except urllib.error.HTTPError as exc:
         if absent and exc.code == 404:

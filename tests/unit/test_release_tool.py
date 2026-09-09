@@ -8,6 +8,7 @@ reads every surface through its live API rather than a cached page.
 """
 import json
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -144,9 +145,15 @@ def _fetch(answers: dict):
     return fetch
 
 
+COMMIT = "c0ffee1234567890"
+
+
 def _live(version: str, *, latest: str | None = None) -> dict:
     latest = latest or version
     return {
+        "https://api.github.com/repos/JeanFrancoisGagne/crapkit/pages/builds":
+            json.dumps({"status": "built", "commit": COMMIT}),
+        "https://glama.ai/": f"a page rendering the README: uses: JeanFrancoisGagne/crapkit@v{latest}",
         "https://pypi.org/pypi/crapkit/": json.dumps({"info": {"version": version}, "urls": [{}, {}]}),
         "https://registry.modelcontextprotocol.io/": json.dumps({"servers": [
             {"server": {"name": "io.github.JeanFrancoisGagne/crapkit", "version": latest,
@@ -160,7 +167,7 @@ def test_verify_reads_every_surface_and_passes_when_they_agree(tmp_path):
     root = _tree(tmp_path)
     release.bump(root, "0.5.2", date="2026-09-06")
 
-    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")),
+    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")), tag_commit=lambda: COMMIT,
                           git_tag=lambda: "v0.5.2", gh_release=lambda v: f"https://github.com/x/releases/tag/v{v}")
 
     assert {r.surface for r in rows} >= {"git tag", "PyPI", "GitHub release", "registry", "plugin.json",
@@ -173,7 +180,7 @@ def test_verify_flags_the_one_surface_that_serves_another_version(tmp_path):
     root = _tree(tmp_path)
     release.bump(root, "0.5.2", date="2026-09-06")
 
-    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.1", latest="0.5.2")),
+    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.1", latest="0.5.2")), tag_commit=lambda: COMMIT,
                           git_tag=lambda: "v0.5.2", gh_release=lambda v: f"https://github.com/x/releases/tag/v{v}")
 
     bad = [r for r in rows if not r.ok]
@@ -186,7 +193,8 @@ def test_verify_asks_the_version_specific_pypi_endpoint_not_the_cached_project_p
     release.bump(root, "0.5.2", date="2026-09-06")
     fetch = _fetch(_live("0.5.2"))
 
-    release.verify(root, "0.5.2", fetch=fetch, git_tag=lambda: "v0.5.2", gh_release=lambda v: f"v{v}")
+    release.verify(root, "0.5.2", fetch=fetch, git_tag=lambda: "v0.5.2", tag_commit=lambda: COMMIT,
+                   gh_release=lambda v: f"v{v}")
 
     assert "https://pypi.org/pypi/crapkit/0.5.2/json" in fetch.asked
 
@@ -240,3 +248,93 @@ def test_the_cli_dry_run_prints_every_command_and_runs_none(tmp_path, capsys):
     assert code == 0
     assert "git push" in out and "twine upload" in out and "gh release create v0.5.2" in out
     assert (root / "CHANGELOG.md").read_text(encoding="utf-8").count("unreleased") == 1, "dry run wrote nothing"
+
+
+# --- what the 0.7.2 release cost -------------------------------------------------
+#
+# Every fault below fired after PyPI and the GitHub release were already public,
+# because nothing proved the environment before the chain pushed.
+
+def test_a_bare_command_name_resolves_to_a_real_executable(tmp_path):
+    """Windows `CreateProcess` appends only `.exe`, so a bare `claude` never found
+    the npm `claude.CMD` shim and the plugin step died with WinError 2 after PyPI
+    and the GitHub release were public. `shutil.which` honours PATHEXT."""
+    root = _tree(tmp_path)
+
+    resolved = release._arguments(("git", "status"), root)
+
+    assert Path(resolved[0]).is_absolute(), resolved
+    assert resolved[1:] == ["status"]
+
+
+def test_a_github_api_read_carries_the_credential_the_publish_commands_use(monkeypatch):
+    """The Pages build API answers 404 to an anonymous reader, so the readback
+    reported `absent` forever and the stage could never confirm a build it had
+    just requested. The publishing commands next to it are authenticated `gh`."""
+    monkeypatch.setattr(release, "_gh_token", lambda: "T0KEN")
+
+    github = release._api_request("https://api.github.com/repos/x/y/pages/builds/latest")
+    pypi = release._api_request("https://pypi.org/pypi/crapkit/0.5.2/json")
+
+    assert github.get_header("Authorization") == "Bearer T0KEN"
+    assert pypi.get_header("Authorization") is None, "a PyPI read must not carry a GitHub token"
+
+
+def test_the_verify_step_note_names_the_stage_not_the_bare_command():
+    """`plan` printed `crapkit verify`, which stamps no watermark; publication then
+    refused evidence the operator had just watched pass."""
+    note = next(s for s in release.plan("0.5.2") if s.name == "verify").note
+
+    assert "run verify" in note
+
+
+def test_verify_reads_the_two_surfaces_no_version_string_can_prove(tmp_path):
+    """Pages serves no version anywhere, and Glama is a separate index. Both were
+    silent in `verify`, so a green report meant nothing about either."""
+    root = _tree(tmp_path)
+    release.bump(root, "0.5.2", date="2026-09-06")
+
+    rows = release.verify(root, "0.5.2", fetch=_fetch(_live("0.5.2")), git_tag=lambda: "v0.5.2",
+                          tag_commit=lambda: COMMIT, gh_release=lambda v: f"v{v}")
+
+    assert {r.surface for r in rows} >= {"Pages", "Glama"}
+    assert all(r.ok for r in rows), [r for r in rows if not r.ok]
+
+
+def test_the_github_credential_is_read_once_not_once_per_readback(monkeypatch):
+    """A release makes a readback per artifact; each one spawning `gh` would be
+    a process per file for a value that cannot change mid-release."""
+    reads = []
+    monkeypatch.setattr(release, "_GH_TOKEN", {})
+    monkeypatch.setattr(release, "_read_gh_token", lambda: reads.append(1) or "T0KEN")
+
+    assert [release._gh_token(), release._gh_token()] == ["T0KEN", "T0KEN"]
+    assert len(reads) == 1
+
+
+def test_a_missing_gh_leaves_the_read_anonymous_instead_of_failing(monkeypatch):
+    """Reading a public surface must still work on a machine with no `gh`."""
+    monkeypatch.setattr(release.shutil, "which", lambda name: None)
+
+    assert release._read_gh_token() == ""
+
+
+def test_the_credential_comes_from_gh_and_a_refusal_reads_as_none(monkeypatch):
+    monkeypatch.setattr(release.shutil, "which", lambda name: "gh")
+    results = iter([SimpleNamespace(returncode=0, stdout="T0KEN" + NL),
+                    SimpleNamespace(returncode=1, stdout="")])
+    monkeypatch.setattr(release.subprocess, "run", lambda *a, **k: next(results))
+
+    assert release._read_gh_token() == "T0KEN"
+    assert release._read_gh_token() == ""
+
+
+def test_gh_failing_to_launch_leaves_the_read_anonymous(monkeypatch):
+    monkeypatch.setattr(release.shutil, "which", lambda name: "gh")
+
+    def boom(*args, **kwargs):
+        raise OSError("gh is not executable here")
+
+    monkeypatch.setattr(release.subprocess, "run", boom)
+
+    assert release._read_gh_token() == ""

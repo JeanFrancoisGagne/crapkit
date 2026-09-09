@@ -25,9 +25,14 @@ def readback(tmp_path, pages):
         asked.append(url)
         if url == "https://pypi.org/pypi/crapkit/0.7.1/json":
             return json.dumps({"info": {"version": VERSION}})
+        if url == release.PAGES_LATEST:
+            return json.dumps({"status": "built", "commit": "c0ffee1234567890"})
+        if url == release.GLAMA_SERVER:
+            return "README pin: uses: JeanFrancoisGagne/crapkit@v" + VERSION
         return json.dumps(pages[url])
 
     rows = release.verify(root, VERSION, fetch=fetch, git_tag=lambda: "v0.7.1",
+                          tag_commit=lambda: "c0ffee1234567890",
                           gh_release=lambda version: "https://github.com/JeanFrancoisGagne/crapkit/releases/tag/v0.7.1")
     return rows, asked
 

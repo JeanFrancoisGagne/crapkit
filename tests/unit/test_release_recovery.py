@@ -276,6 +276,7 @@ def test_http_json_and_legacy_github_asset_bytes_confirm_the_release(tmp_path, m
     fetched = []
 
     def response(url, timeout):
+        url = getattr(url, 'full_url', url)  # reads carry a Request now, for the GitHub token
         fetched.append(url)
         if url.startswith("https://assets.example.test/"):
             return io.BytesIO(ARTIFACTS[url.rsplit("/", 1)[1]])

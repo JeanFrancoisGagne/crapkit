@@ -311,3 +311,16 @@ def test_contracts_require_the_requested_version_on_clean_main(tmp_path, monkeyp
     commands = capture(monkeypatch)
     assert release.main(["run", "stage2a", "0.5.2", "--repo", str(root)]) == 1
     assert commands == []
+
+
+def test_pages_is_checked_against_the_commit_the_release_tag_names(tmp_path):
+    """Pages publishes no version string, so `verify` compares the site's newest
+    build against the tagged commit. Reading that commit from the tag, not from
+    HEAD, is what keeps the answer true after main has moved on."""
+    root = _fresh_repo(tmp_path, bumped=True)
+    git(root, "tag", "v0.5.2")
+    tagged = git(root, "rev-parse", "HEAD")
+    git(root, "commit", "-q", "--allow-empty", "-m", "main moves past the release")
+
+    assert release._tag_commit(root, "0.5.2") == tagged
+    assert git(root, "rev-parse", "HEAD") != tagged
