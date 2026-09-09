@@ -1034,3 +1034,16 @@ def test_a_clean_tree_owes_no_standing_debt_line(baselined, capsys):
 
     assert (code, err) == (0, "")
     assert json.loads(out)["unmarked_over_target"] == 0
+
+
+def test_the_ok_line_names_the_failures_the_verdict_forgives():
+    """`verify OK` printed beside three failing tests during the 0.7.2 release, and
+    nothing on that line said so; the blocker surfaced only in the runs ledger."""
+    from crapkit.cli import verifying
+
+    assert verifying._forgiven_suffix({"forgiven_failures": []}) == ""
+    assert verifying._forgiven_suffix({}) == ""
+    one = verifying._forgiven_suffix({"forgiven_failures": ["tests.unit.test_a::test_b"]})
+    assert one == " (1 unchanged failure forgiven, first tests.unit.test_a::test_b)"
+    many = verifying._forgiven_suffix({"forgiven_failures": ["a::b", "c::d", "e::f"]})
+    assert many == " (3 unchanged failures forgiven, first a::b)"

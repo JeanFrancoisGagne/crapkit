@@ -558,6 +558,20 @@ def _ratchet_suffix(changes: dict | None, overridden: list, ratchet_file: str) -
     return f" ratchet: {_marks_moved(changes)} -> git add {ratchet_file}"
 
 
+def _forgiven_suffix(out: dict) -> str:
+    """Failures this verdict forgives because the baseline carries them too.
+
+    A regression verdict is about change, so an unchanged failure is not a
+    regression. Saying nothing about it made `verify OK` read as a clean suite
+    beside three failing tests, and the release guard downstream, which does not
+    forgive them, then refused evidence the operator had just watched pass."""
+    forgiven = out.get("forgiven_failures") or ()
+    if not forgiven:
+        return ""
+    plural = "" if len(forgiven) == 1 else "s"
+    return f" ({len(forgiven)} unchanged failure{plural} forgiven, first {forgiven[0]})"
+
+
 def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: str) -> None:
     if as_json:
         _print_json(out)
@@ -565,6 +579,7 @@ def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: 
     state = "OK" if verdict.ok else "FAILED"
     print(f"verify {state} @ {out['commit'][:11]} vs baseline {out['baseline_commit'][:11]} "
           f"({out['changed_files']} changed files)"
+          f"{_forgiven_suffix(out)}"
           f"{_ratchet_suffix(out['ratchet_changes'], overridden, ratchet_file)}")
     _print_verify_findings(verdict, overridden)
     _print_finding_split(verdict)
@@ -649,7 +664,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, saved.sha256, changes)},
+                    **_receipt(tool_versions, saved.sha256, changes),
+                    "forgiven_failures": sorted(set(fresh_failures) - set(verdict.new_failures))},
                    verdict, overridden, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
