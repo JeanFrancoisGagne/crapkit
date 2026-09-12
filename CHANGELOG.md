@@ -6,6 +6,15 @@
 publishes. Scoring, analysis version 10, the twelve MCP tools and JSON schema
 version 1 remain compatible with 0.7.0.
 
+### Three tool descriptions say more about their arguments
+
+- `check_gate` states the forms `path` takes (repo-relative with forward slashes,
+  or absolute inside the repo), that a path outside the repo or missing is a config
+  error, and that a file no scope claims judges 0. `list_claims` and `list_runs`
+  state how `repo` resolves (the server walks up to the nearest `crapkit.toml`)
+  and the two pointers a checkout answers when it was never initialised or never
+  scored. The other nine descriptions are unchanged.
+
 ### A missing path is refused, not crashed
 
 - `rescore`, and so `check_gate`, refuse a file argument that does not exist with a

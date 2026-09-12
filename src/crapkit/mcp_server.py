@@ -294,11 +294,13 @@ TOOLS: tuple[dict, ...] = (
         "positional": (),
         "flags": {},
         "description": ("Lists every run in the store, oldest first by id. Use it to date the store "
-        "or to see which commit the other tools answer from, get_trend for per-run "
-        "totals, and get_function_history for one function's scores per run. It reads "
-        "the store only and spawns no git, and baseline true is not always the newest "
-        "run. repo can be any directory under a measured checkout, and an unmeasured "
-        "one answers isError true with the setup pointer."),
+        "or to see which commit the other tools answer from. Use get_trend for "
+        "per-run totals and get_function_history for one function's scores per run. "
+        "It reads the store only and spawns no git. repo may be any directory under "
+        "the checkout, because the server walks up to the nearest crapkit.toml, and a "
+        "relative path resolves from the server's start directory. No crapkit.toml "
+        "above it answers an init pointer, and a checkout never scored answers a "
+        "coverage pointer, both as isError true."),
         "properties": {},
         "output": {
             "schema": {
@@ -1278,13 +1280,14 @@ TOOLS: tuple[dict, ...] = (
         "positional": ("path",),
         "flags": {},
         "verdict_exits": (6,),
-        "description": ("Checks whether an edited file clears the commit gate as the hook will: fresh "
-        "ccn per changed function against its scope's ceiling, less pardoned debt. "
-        "Call it after an edit, once get_function_brief has stated the rule, and "
-        "leave the repo-wide verdict to CLI verify. It re-measures ccn off git diff, "
-        "runs no tests, and answers a breach as gate.ok false, not a tool error. path "
-        "is repo-relative and repo must hold it: a tracked file is judged on its diff "
-        "from HEAD, an untracked one in full, an unchanged one judges 0."),
+        "description": ("Checks whether an edited file clears the commit gate: fresh ccn per changed "
+        "function against its scope's ceiling, less pardoned ratchet debt. Call it "
+        "after an edit once get_function_brief states the rule. CLI verify gives the "
+        "repo-wide verdict. It runs no tests, and a breach reads gate.ok false, not "
+        "an error. path is repo-relative or absolute inside repo, and outside or "
+        "missing is a config error. A tracked file is judged on its diff from HEAD, "
+        "an untracked one in full, an unchanged or unscoped one judges 0. repo may be "
+        "any directory under the checkout."),
         "properties": {
             "path": {
                 "type": "string",
@@ -1415,12 +1418,13 @@ TOOLS: tuple[dict, ...] = (
         "positional": (),
         "flags": {},
         "description": ("Lists open claims on queue items, oldest first. Use it when get_next_item "
-        "answers empty or skipped_claimed above 0, and get_function_brief's attempts "
-        "for one function. No tool here writes a claim by design, so a stale one is "
-        "released in the CLI with crapkit claims release PATH NAME, and one closes "
-        "when verify finds the function at its ceiling. repo may be any directory "
-        "under a checkout where crapkit init and crapkit coverage have run, and an "
-        "unmeasured one answers isError true with the setup pointer."),
+        "answers empty or skipped_claimed above 0, and use get_function_brief to see "
+        "one function's own attempts. No tool here writes a claim: the CLI releases a "
+        "stale one with crapkit claims release PATH NAME, and verify closes one at "
+        "the ceiling. repo may be any directory under the checkout, since the server "
+        "walks up to the nearest crapkit.toml. No crapkit.toml above it answers an "
+        "init pointer, and a checkout never scored answers a coverage pointer, both "
+        "as isError true."),
         "properties": {},
         "output": {
             "schema": {
