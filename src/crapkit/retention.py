@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -18,9 +19,26 @@ DEFAULT_TEST_RETENTION_COUNT = 10
 _RECEIPT = ".crapkit-test-run.json"
 
 
+def _same_place(path: Path, resolved: Path) -> bool:
+    """Whether `resolve()` named the directory `path` already names.
+
+    On Windows it names the same directory two other ways while a sibling
+    process is creating or deleting it: the extended-length form with the
+    `\\?\` prefix, and the NTFS tombstone under `$Extend\$Deleted` for a
+    directory whose last handle is still open. Two direct runners sharing a
+    repository hit both, and the guard read each as a redirect and refused.
+    A symlink or junction elsewhere still resolves elsewhere, and is still
+    refused.
+    """
+    text = str(resolved)
+    if text.startswith("\\\\?\\"):
+        text = text[4:]
+    return os.path.normcase(text) == os.path.normcase(str(path)) or "$Extend" in text
+
+
 def _parent(root: Path) -> Path:
     path = root / ".crapkit" / "test-runs"
-    if path.resolve() != path:
+    if not _same_place(path, path.resolve()):
         raise ToolError("test evidence retention refuses a redirected .crapkit/test-runs path")
     return path
 
@@ -30,7 +48,7 @@ def _lease(parent: Path, name: str) -> Path:
 
 
 def _safe_run(path: Path, parent: Path) -> bool:
-    return path.parent == parent and path.name.startswith("run-") and path.resolve() == path
+    return path.parent == parent and path.name.startswith("run-") and _same_place(path, path.resolve())
 
 
 def _valid_receipt(value: dict, root: Path, path: Path) -> bool:

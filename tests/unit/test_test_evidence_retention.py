@@ -106,3 +106,27 @@ def test_explicit_reuse_removes_retention_eligibility_under_the_same_lease(tmp_p
     assert not (old / ".crapkit-test-run.json").exists()
     assert prune_test_runs(tmp_path, keep=1, days=0)["removed"] == []
     assert (manual / "explicit.txt").read_text(encoding="utf-8") == "caller-owned"
+
+
+def test_the_forms_resolve_returns_mid_race_are_not_redirects(tmp_path, monkeypatch):
+    """Two direct runners sharing a repository create and delete test-runs at
+    once. While one does, Windows resolve() names the same directory in its
+    extended-length form, then as the NTFS tombstone of a directory whose last
+    handle is still open. Both were refused as redirects; neither is one."""
+    from crapkit import retention
+    expected = tmp_path / ".crapkit" / "test-runs"
+    expected.mkdir(parents=True)
+    forms = iter([Path("\\\\?\\" + str(expected)),
+                  Path("\\\\?\\C:\\$Extend\\$Deleted\\00990000003EC3A2")])
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: next(forms))
+
+    assert retention._parent(tmp_path) == expected
+    assert retention._parent(tmp_path) == expected
+
+
+def test_a_test_runs_directory_resolving_elsewhere_is_still_refused(tmp_path, monkeypatch):
+    from crapkit import retention
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: tmp_path / "elsewhere" / "test-runs")
+
+    with pytest.raises(Exception, match="redirected"):
+        retention._parent(tmp_path)

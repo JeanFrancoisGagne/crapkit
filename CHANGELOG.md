@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.4 — unreleased
+
+### Two runners in one repository no longer refuse each other's evidence
+
+- On Windows, `Path.resolve()` names a directory a sibling process is creating or
+  deleting in its extended-length form, or as the NTFS tombstone of a directory
+  whose last handle is still open. Test evidence retention read both as a
+  redirected `.crapkit/test-runs` and refused, so two direct runners sharing a
+  repository failed one run in four. A symlink or junction elsewhere is still
+  refused.
+
 ## 0.7.3 — 2026-09-11
 
 `verify` says what it forgives, and the release chain proves the machine before it
