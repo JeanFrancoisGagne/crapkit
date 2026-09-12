@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.3 — unreleased
+## 0.7.3 — 2026-09-11
 
 `verify` says what it forgives, and the release chain proves the machine before it
 publishes. Scoring, analysis version 10, the twelve MCP tools and JSON schema
