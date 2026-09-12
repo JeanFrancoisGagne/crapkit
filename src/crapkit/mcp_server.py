@@ -1280,14 +1280,14 @@ TOOLS: tuple[dict, ...] = (
         "positional": ("path",),
         "flags": {},
         "verdict_exits": (6,),
-        "description": ("Checks whether an edited file clears the commit gate: fresh ccn per changed "
-        "function against its scope's ceiling, less pardoned ratchet debt. Call it "
-        "after an edit once get_function_brief states the rule. CLI verify gives the "
-        "repo-wide verdict. It runs no tests, and a breach reads gate.ok false, not "
-        "an error. path is repo-relative or absolute inside repo, and outside or "
-        "missing is a config error. A tracked file is judged on its diff from HEAD, "
-        "an untracked one in full, an unchanged or unscoped one judges 0. repo may be "
-        "any directory under the checkout."),
+        "description": ("Checks whether an edited file clears the hook's commit gate: fresh ccn per "
+        "changed function against its scope's ceiling less pardoned ratchet debt. "
+        "Call it after an edit once get_function_brief states the rule. CLI verify "
+        "gives the repo-wide verdict. It runs no tests, and a breach reads gate.ok "
+        "false, not an error. path is repo-relative or absolute inside repo, outside "
+        "or missing is a config error. A tracked file is judged on its diff from "
+        "HEAD, an untracked one in full, an unchanged or unscoped one judges 0. repo "
+        "may be any directory under the checkout."),
         "properties": {
             "path": {
                 "type": "string",
