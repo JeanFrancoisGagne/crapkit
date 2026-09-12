@@ -20,7 +20,7 @@ _RECEIPT = ".crapkit-test-run.json"
 
 
 def _same_place(path: Path, resolved: Path) -> bool:
-    """Whether `resolve()` named the directory `path` already names.
+    r"""Whether `resolve()` named the directory `path` already names.
 
     On Windows it names the same directory two other ways while a sibling
     process is creating or deleting it: the extended-length form with the
