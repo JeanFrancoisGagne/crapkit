@@ -6,6 +6,13 @@
 publishes. Scoring, analysis version 10, the twelve MCP tools and JSON schema
 version 1 remain compatible with 0.7.0.
 
+### A missing path is refused, not crashed
+
+- `rescore`, and so `check_gate`, refuse a file argument that does not exist with a
+  config error naming it, exit 3. A typo reached the analyzer and came back as a
+  `FileNotFoundError` traceback; through the MCP server that traceback was the
+  whole answer.
+
 ### The verdict says what it forgives
 
 - A `verify OK` line now names the failures the verdict forgives because the

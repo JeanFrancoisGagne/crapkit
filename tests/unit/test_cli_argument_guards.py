@@ -355,3 +355,13 @@ def test_one_unknown_scope_among_declared_ones_is_still_refused(scored, capsys):
 
     assert code == 3
     assert "no scope named 'srv'" in err, err
+
+
+def test_a_file_argument_that_does_not_exist_is_refused_not_crashed(scored, capsys):
+    """A missing path reached the analyzer and came back as a FileNotFoundError
+    traceback, exit 1. Through the MCP server that traceback is what the caller
+    read. A path crapkit cannot open is a config error like one it cannot place."""
+    code, _, err = run(["rescore", "src/no_such_file.ts", "--gate"], scored, capsys)
+
+    assert code == 3, err
+    assert "does not exist" in err and "Traceback" not in err, err

@@ -540,12 +540,25 @@ def _rescored_records(root: Path, cache_path: Path, flat: list,
     return records_by_path
 
 
+def _refuse_missing(root: Path, rel_paths: list) -> None:
+    """A path crapkit cannot open is refused the way one it cannot place is.
+
+    Unchecked, a typo reached the analyzer and came back as a FileNotFoundError
+    traceback with exit 1; through the MCP server that traceback was the whole
+    answer. A config error says which path, and exits 3 like every other
+    argument the command cannot act on."""
+    missing = [rel for rel in rel_paths if not (root / rel).exists()]
+    if missing:
+        raise ConfigError(f"{', '.join(missing)} does not exist under {root}")
+
+
 def _rescore_analyze(root: Path, cfg, files, cwd: Path | None = None) -> tuple[list, list, dict]:
     """Fresh complexity for the named files, said from `cwd` where the user
     stands; the shared cache is merged, never truncated."""
     from ..hook import file_ceilings
 
     rel_paths = sorted({_repo_relative(p, root, cwd) for p in files})
+    _refuse_missing(root, rel_paths)
     files_by_scope = assign_files(rel_paths, cfg, size_of=_file_sizer(root))
     flat = sorted(set().union(*files_by_scope.values())) if files_by_scope else []
     records_by_path = _rescored_records(root, root / ".crapkit" / "cache.json", flat,
