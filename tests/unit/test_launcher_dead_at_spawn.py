@@ -71,6 +71,19 @@ class _RecordingOwner(procs._ProcessOwner):
         self.requests.append((operation, pid))
 
 
+# Windows registers the bare pid; POSIX registers it with its process family.
+_REGISTRATIONS = pytest.mark.parametrize("family", [None, "crapkit-family-4242"],
+                                         ids=["windows-bare-pid", "posix-family"])
+
+
+def _registering_as(monkeypatch, family):
+    monkeypatch.setattr(procs, "_command_family", lambda kwargs: (family, kwargs))
+
+
+def _registration(pid, family):
+    return pid if family is None else {"pid": pid, "family": family}
+
+
 def _dead_at_spawn(monkeypatch, code, fails_on="flush", error=None):
     error = OSError(22, "Invalid argument") if error is None else error
     launcher = _DeadLauncher(code, _DeadPipe(fails_on, error))
@@ -136,12 +149,14 @@ def test_a_launcher_still_running_behind_a_dead_pipe_is_reported_as_running(monk
     assert "never ran" in message
 
 
-def test_the_spawn_cleanup_still_kills_the_tree_and_closes_the_pipe(monkeypatch):
+@_REGISTRATIONS
+def test_the_spawn_cleanup_still_kills_the_tree_and_closes_the_pipe(monkeypatch, family):
     launcher = _dead_at_spawn(monkeypatch, DLL_INIT_FAILED)
+    _registering_as(monkeypatch, family)
     owner = _RecordingOwner()
     with pytest.raises(ToolError):
         procs.run_bounded("unused", 10, owner=owner)
-    assert owner.requests == [("add", launcher.pid)]
+    assert owner.requests == [("add", _registration(launcher.pid, family))]
     assert launcher.killed == [launcher.pid]
     assert launcher.stdin.closed is True
     # A bounded settle wait first, then the tree kill's reap.
@@ -159,8 +174,10 @@ class _RefusingOwner(_RecordingOwner):
             raise PermissionError(13, "Access is denied")
 
 
-def test_a_launcher_gone_before_registration_is_the_same_tool_error(monkeypatch):
+@_REGISTRATIONS
+def test_a_launcher_gone_before_registration_is_the_same_tool_error(monkeypatch, family):
     launcher = _dead_at_spawn(monkeypatch, DLL_INIT_FAILED)
+    _registering_as(monkeypatch, family)
     owner = _RefusingOwner()
     with pytest.raises(ToolError) as caught:
         procs.run_bounded("unused", 10, owner=owner)
@@ -168,7 +185,7 @@ def test_a_launcher_gone_before_registration_is_the_same_tool_error(monkeypatch)
     assert "3221225794" in message
     assert "STATUS_DLL_INIT_FAILED" in message
     assert "never ran" in message
-    assert owner.requests == [("add", launcher.pid)]
+    assert owner.requests == [("add", _registration(launcher.pid, family))]
     assert launcher.killed == [launcher.pid]
     assert launcher.stdin.closed is True
 
