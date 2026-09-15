@@ -87,7 +87,7 @@ python tools/release/release.py run stage2b VERSION
 
 The command repeats all clean-tree, tag and ledger checks. It reuses matching local files, reads published files again, skips matching uploads, and continues with the next missing file. The local Claude plugin update is recorded after success. An interrupted local update can run again. Registry login/publish remains its own stage. Log in with `mcp-publisher login github --token "$(gh auth token)"`, which needs no device flow. Glama's Repository admin **Sync Server** action stays manual, and is the only step in the chain no command performs.
 
-Pages can finish after the command stops. A `queued` or `building` status at the release commit asks you to wait and rerun; it does not send a second POST. A `built` result at that commit completes the stage. A later `errored` result at that commit proves the build ended and permits one new request on the next invocation. A build for a different commit cannot confirm this release.
+Pages can finish after the command stops. A `queued` or `building` status at the release commit asks you to wait and rerun; it does not send a second POST. A `built` result at that commit completes the stage. A later `errored` result at that commit proves the build ended and permits one new request on the next invocation. A build whose commit does not carry the release commit cannot confirm this release; a build at a later commit on main that carries it does, by the same ancestry test `verify` applies.
 
 ## Resolve an unknown outcome
 

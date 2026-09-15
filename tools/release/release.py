@@ -1006,28 +1006,32 @@ def _publish_plugin(root: Path, receipt: dict, step: Step) -> None:
     _write_receipt(root, receipt)
 
 
-def _pages_state(receipt: dict) -> str:
+def _pages_state(root: Path, receipt: dict) -> str:
+    """The newest build's status when its commit carries the release head, else
+    "other commit". Carries, not equals: main moves on right after a release and
+    Pages builds the tip, so an equality test told a 0.7.3 rerun the site was at
+    another commit while `verify` (the same ancestry test) printed the row ok."""
     data = _remote_json(f"https://api.github.com/repos/{REPO_SLUG}/pages/builds/latest", absent=True)
     if data is None:
         return "absent"
     if not isinstance(data.get("commit"), str) or data.get("status") not in ("built", "building", "queued", "errored"):
         raise ReleaseError("cannot confirm Pages build commit and status")
-    if data["commit"] != receipt["head"]:
+    if not _contains(root, receipt["head"], data["commit"]):
         return "other commit"
     return data["status"]
 
 
-def _pages_built(receipt: dict) -> bool:
-    status = _pages_state(receipt)
+def _pages_built(root: Path, receipt: dict) -> bool:
+    status = _pages_state(root, receipt)
     if status in ("building", "queued"):
         raise ReleaseError("Pages build is pending at this commit; wait, then rerun stage2b")
     return status == "built"
 
 
 def _publish_pages(root: Path, receipt: dict, step: Step) -> None:
-    if _pages_state(receipt) == "errored":
+    if _pages_state(root, receipt) == "errored":
         _clear_pending(root, receipt, "pages")
-    _publish_action(root, receipt, "pages", step.commands[0], lambda: _pages_built(receipt))
+    _publish_action(root, receipt, "pages", step.commands[0], lambda: _pages_built(root, receipt))
 
 
 def _publish_step(step: Step, root: Path, receipt: dict) -> None:
