@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.4 — unreleased
+## 0.7.4 — 2026-09-15
 
 A Python function lizard stopped reading inside its own signature is scored on its
 whole body, and three measurement defects are fixed. The twelve MCP tools, JSON
