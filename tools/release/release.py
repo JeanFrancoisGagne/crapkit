@@ -59,6 +59,12 @@ GITHUB_API = "https://api.github.com/"
 RELEASE_TOOLING = ("pytest", "coverage", "build", "twine")
 # Seconds between readbacks of a surface that was just written.
 READBACK_PAUSE = 5
+# Reads of a just-written surface before it counts as unconfirmed: 55 seconds.
+# PyPI outlasted four reads (15 seconds) on both 0.7.3 and 0.7.4.
+READBACK_ATTEMPTS = 12
+# Stands in a command for the `gh auth token` value. The command echo prints this
+# text; only the argv handed to the process carries the token.
+GH_TOKEN_ARG = "$(gh auth token)"
 # This repository's py lane runs both unit and E2E suites. A verdict only
 # compares failures with a baseline; publication also requires passing tests.
 RELEASE_TEST_LANES = frozenset({"py"})
@@ -539,9 +545,10 @@ def plan(version: str) -> list:
         Step("plugin", "stage2b", (("claude", "plugin", "update", "crapkit@crapkit"),)),
         Step("pages", "stage2b", (("gh", "api", "--hostname", "github.com", "-X", "POST",
                                   f"repos/{REPO_SLUG}/pages/builds", "--jq", ".status"),)),
-        Step("registry", "registry", (("mcp-publisher", "login", "github"), ("mcp-publisher", "publish")),
-             note='log in first with: mcp-publisher login github --token "$(gh auth token)" '
-                  'which needs no device flow; the token lasts about 40 minutes'),
+        Step("registry", "registry", (("mcp-publisher", "login", "github", "--token", GH_TOKEN_ARG),
+                                      ("mcp-publisher", "publish")),
+             note="logs in with the gh token, so no device flow; the registry session lasts "
+                  "minutes, which is why login and publish run back to back"),
         Step("glama", "glama", (),
              note="Sync Server on the Repository admin tab; the sync builds and publishes the "
                   "release with the GitHub notes on its own"),
@@ -749,9 +756,25 @@ def _executable(name: str) -> str:
 
 
 def _arguments(command: tuple, root: Path) -> list[str]:
-    expanded = [value for arg in command for value in
-                (_release_files(root) if arg == f"{RELEASE_DIST}/*" else [arg])]
+    expanded = [value for arg in command for value in _expanded(arg, root)]
     return [_executable(expanded[0]), *expanded[1:]]
+
+
+def _expanded(arg: str, root: Path) -> list[str]:
+    if arg == f"{RELEASE_DIST}/*":
+        return _release_files(root)
+    if arg == GH_TOKEN_ARG:
+        return [_login_token()]
+    return [arg]
+
+
+def _login_token() -> str:
+    """The registry login's credential. Without it mcp-publisher falls back to
+    GitHub's device flow and waits for a person to type a code."""
+    token = _gh_token()
+    if not token:
+        raise ReleaseError("gh auth token returned nothing; run gh auth login, then rerun the registry stage")
+    return token
 
 
 def _release_dist(root: Path) -> Path:
@@ -929,7 +952,7 @@ def _attempt(root: Path, command: tuple) -> Exception | None:
     return None
 
 
-def _settled(confirm: Callable, pause: Callable = time.sleep, attempts: int = 4) -> bool:
+def _settled(confirm: Callable, pause: Callable = time.sleep, attempts: int = READBACK_ATTEMPTS) -> bool:
     """Read a just-written surface until it answers, or give up.
 
     PyPI's version JSON and GitHub's release API both take seconds to serve what

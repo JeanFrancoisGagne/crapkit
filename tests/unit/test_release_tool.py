@@ -447,6 +447,49 @@ def test_a_readback_that_never_settles_stops_instead_of_waiting_forever():
     assert len(waits) == 2, "it waits between attempts, never after the last one"
 
 
+def test_a_pypi_readback_that_answers_on_its_tenth_read_still_settles():
+    """PyPI served 0.7.3 and 0.7.4 later than four reads five seconds apart, so
+    both releases recorded the wheel unconfirmed and needed a second stage2b."""
+    answers = iter([False] * 9 + [True])
+
+    assert release._settled(lambda: next(answers), pause=lambda seconds: None) is True
+
+
+# --- what the 0.7.4 release cost -------------------------------------------------
+
+def _registry_login(version="0.5.2"):
+    (step,) = [s for s in release.plan(version) if s.name == "registry"]
+    return step.commands[0]
+
+
+def test_the_registry_login_takes_the_gh_token_and_starts_no_device_flow(tmp_path, monkeypatch):
+    """A bare `mcp-publisher login github` waits for a person to type a device
+    code; the 0.7.4 registry stage sat there until the process was stopped."""
+    monkeypatch.setattr(release, "_gh_token", lambda: "T0KEN")
+
+    argv = release._arguments(_registry_login(), _tree(tmp_path))
+
+    assert argv[1:] == ["login", "github", "--token", "T0KEN"]
+
+
+def test_the_registry_login_never_prints_the_token(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(release, "_gh_token", lambda: "T0KEN")
+    ran = []
+    monkeypatch.setattr(release.subprocess, "run", lambda argv, **kw: ran.append(argv))
+
+    release._execute(_registry_login(), _tree(tmp_path), dry_run=False)
+
+    assert ran and "T0KEN" in ran[0]
+    assert "T0KEN" not in capsys.readouterr().out
+
+
+def test_the_registry_login_refuses_when_gh_has_no_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(release, "_gh_token", lambda: "")
+
+    with pytest.raises(release.ReleaseError, match="gh auth login"):
+        release._arguments(_registry_login(), _tree(tmp_path))
+
+
 def test_pages_stays_confirmed_after_main_moves_past_the_release(tmp_path):
     """The newest Pages build is whatever landed last. Comparing it to the release
     commit went red the moment the next commit shipped, which is every release: the
