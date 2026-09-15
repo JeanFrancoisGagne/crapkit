@@ -19,8 +19,10 @@ from ._pygdefer import deferred_pygments
 with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
     from lizard_languages import get_reader_for as _lizard_reader_for
+    from lizard_languages.python import PythonReader as _PythonReader
 
     from .lizardpowershell import register as _register_powershell
+    from .lizardpython import register as _register_python
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
     from .lizardtypescript import LizardExtension as _TypeScriptExpressions
@@ -34,18 +36,22 @@ from .packet import bare_name
 
 # lizard picks a reader by extension off a hardcoded list, and none of these is
 # on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
-# and `.sh` and `.ps1` resolve to nothing at all, which lizard answers with
-# CLikeReader rather than a failure. All three belong HERE, at the module scope
-# of the module a ProcessPoolExecutor child imports, or spawned workers measure
-# with the readers lizard shipped and report plausible wrong numbers.
+# `.py` to one that ends a def inside a signature that runs past its first `)`
+# (crapkit #72), and `.sh` and `.ps1` resolve to nothing at all, which lizard
+# answers with CLikeReader rather than a failure. All four belong HERE, at the
+# module scope of the module a ProcessPoolExecutor child imports, or spawned
+# workers measure with the readers lizard shipped and report plausible wrong
+# numbers.
 #
-# lizardshell and lizardpowershell already register themselves on import and
-# lizardrust deliberately does not (rebinding a name in another package's
-# namespace is not something an import should do quietly). Calling all three
-# keeps the wiring readable in one place and costs nothing: each is idempotent.
+# lizardshell and lizardpowershell already register themselves on import, and
+# lizardrust and lizardpython deliberately do not (rebinding a name in another
+# package's namespace is not something an import should do quietly). Calling
+# all four keeps the wiring readable in one place and costs nothing: each is
+# idempotent.
 _register_rust()
 _register_shell()
 _register_powershell()
+_register_python()
 
 _POOL_THRESHOLD = 16
 
@@ -145,6 +151,67 @@ class _CreationOrder:
             context.try_new_function = original
 
 
+# --- a Python def no reader finished (#72) -----------------------------------------
+#
+# lizard 1.24.0's PythonReader ended a def inside its own signature when the
+# signature ran past its first `)`: a return annotation opened on the def line,
+# or a line break after a default such as `()`. The def read as two lines at ccn
+# 1 whatever its body held and passed every gate on that reading.
+# crapkit.lizardpython reads those signatures to the body's colon. Measured on
+# 6,866 stdlib, site-packages and openclaw files: all 59 defs lizard cut off read
+# their full span, and of the defs lizard read whole only the 20 nested inside a
+# cut-off def changed, each gaining its parent's name as a prefix (one of them
+# also scores 1 lower on cognitive).
+#
+# This check stays as the net under that reader. A def read to its body has a
+# `:` at bracket depth 0 with a token after it; one cut off in its signature has
+# not. A def the reader still cannot finish is refused, never scored at ccn 1.
+_OPENERS = frozenset("([{")
+_CLOSERS = frozenset(")]}")
+
+
+def _step_body(fn, token: str) -> None:
+    """Advance one function's signature reading by one of its own tokens.
+
+    `crapkit_body` is False from the name token on and True from the first
+    token after the body colon. A function some other reader produced never
+    gets the attribute, which is what keeps `_unread_defs` to Python.
+    """
+    if getattr(fn, "crapkit_colon", False):
+        fn.crapkit_body = True
+        return
+    fn.crapkit_body = False
+    depth = getattr(fn, "crapkit_depth", 0)
+    if token in _OPENERS:
+        fn.crapkit_depth = depth + 1
+    elif token in _CLOSERS:
+        fn.crapkit_depth = depth - 1
+    elif token == ":" and depth == 0:
+        fn.crapkit_colon = True
+
+
+class _PythonBodies:
+    """Mark every Python function whose body lizard reached.
+
+    Reads a token's owner after lizard has, the way the cognitive pass does:
+    the name token is what creates the function, and the line that ends one
+    was charged to its parent by `preprocess`, upstream of here, before the
+    token arrived. Sits behind `line_counter`, so no whitespace or newline
+    token reaches it and any token after the body colon is body.
+    """
+
+    def __call__(self, tokens, reader):
+        if not isinstance(reader, _PythonReader):
+            yield from tokens
+            return
+        context = reader.context
+        for token in tokens:
+            yield token
+            fn = context.current_function
+            if fn is not context.global_pseudo_function:
+                _step_body(fn, token)
+
+
 def _chain(cognitive_index: int) -> list:
     """lizard's standard extensions with cognitive spliced in at one index.
 
@@ -155,7 +222,7 @@ def _chain(cognitive_index: int) -> list:
     """
     extensions = lizard.get_extensions(["ND"])
     extensions.insert(cognitive_index, _Cognitive())
-    return [_TypeScriptExpressions(), *extensions, _ModifiedDelta(), _CreationOrder()]
+    return [_TypeScriptExpressions(), *extensions, _ModifiedDelta(), _PythonBodies(), _CreationOrder()]
 
 
 # Two chains, built once per process each, not once per file: 14k files paid 14k
@@ -279,6 +346,35 @@ def _file_records(rel_path: str, functions) -> list[FunctionRecord]:
     return [_record(rel_path, fn, occurrences[id(fn)]) for fn in functions]
 
 
+def _unread_defs(functions) -> list:
+    """The Python functions `_PythonBodies` never saw a body token for."""
+    return [fn for fn in functions if getattr(fn, "crapkit_body", True) is False]
+
+
+def _unread_reason(rel_path: str, unread: list) -> str:
+    named = ", ".join(f"{rel_path}:{fn.start_line} {fn.long_name}" for fn in unread)
+    return (f"{rel_path}: the Python reader reached no body for {len(unread)} def(s): {named}; "
+            f"a def read no further than its signature would score ccn 1 whatever its body "
+            f"holds, so the file is not scored. Check that the file parses (a signature cut "
+            f"off at the end of the file reads this way); if it does, report the signature at "
+            f"https://github.com/JeanFrancoisGagne/crapkit/issues")
+
+
+def _trusted_records(rel_path: str, functions) -> list[FunctionRecord]:
+    """Records for a file every function of which was read to its body.
+
+    A file with a def the reader never finished takes the unanalyzable road,
+    named on every run and scored as zero functions, not a ccn-1 reading of
+    that def: scoring it would pass the gate on a number that means nothing,
+    and ending the run over one file is what 0.7.1 stopped (_note_unanalyzable).
+    Every such def in the file is named at once.
+    """
+    unread = _unread_defs(functions)
+    if unread:
+        return UnanalyzableFile(_unread_reason(rel_path, unread))
+    return _file_records(rel_path, functions)
+
+
 # --- how a source file's bytes become text -------------------------------------
 #
 # lizard opens a source file with `io.open(path, 'r')` and no encoding, so the
@@ -374,7 +470,7 @@ def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     abs_path, rel_path = args
     try:
         analysis = lizard.FileAnalyzer(_extensions_for(rel_path))(abs_path)
-        return rel_path, _file_records(rel_path, analysis.function_list)
+        return rel_path, _trusted_records(rel_path, analysis.function_list)
     except Exception as exc:  # loud and counted, never fatal: see _note_unanalyzable
         return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
@@ -390,9 +486,10 @@ def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
     try:
         analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
-        records = _file_records(rel_path, analysis.function_list)
+        records = _trusted_records(rel_path, analysis.function_list)
     except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
         records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
+    if isinstance(records, UnanalyzableFile):
         _note_unanalyzable({rel_path: records})
         return records
     _note_twin_keys(rel_path, records)
@@ -640,7 +737,7 @@ def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionReco
     try:
         analyzer = lizard.FileAnalyzer(_extensions_for(relative))
         analysis = analyzer.analyze_source_code(relative, decode_source(raw))
-        return relative, _file_records(relative, analysis.function_list)
+        return relative, _trusted_records(relative, analysis.function_list)
     except Exception as exc:  # a parse refusal, unlike the read and hash above, is per-file
         return relative, UnanalyzableFile(f"lizard failed on {relative}: {exc}")
 

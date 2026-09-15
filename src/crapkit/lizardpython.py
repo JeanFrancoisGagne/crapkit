@@ -1,0 +1,262 @@
+"""A Python reader that reads a def's signature to its body colon. Upstream defect: crapkit #72.
+
+lizard 1.24.0's PythonReader ends a def inside its own signature in two shapes,
+and the def then reads as two lines at ccn 1 whatever its body holds, so it
+passes the complexity ceiling, the commit hook, `rescore --gate` and `verify`:
+
+    def f(value: int) -> tuple[        def make(cls_name, *, bases=(),
+        int, int                                slots=False):
+    ]:                                     if slots: ...
+        if value > 0: ...
+
+The left one is a return annotation opened on the def line. The right one is a
+line break after a parameter default that holds brackets, which is what black
+and ruff write for a long signature. Measured before the fix: 39 such defs in
+the 3,742 stdlib and site-packages files of crapkit's own Python 3.11
+environment, and 20 in 3,130 openclaw files.
+
+Three mechanics combine, all in lizard_languages/python.py:
+
+  1. `PythonStates._dec` takes the first `)` token for the end of the parameter
+     list, so the `)` of a default like `()` ends it early.
+  2. `PythonStates._state_colon` follows `:` into the body and sends anything
+     else, `->` included, to `_state_global`: the reader never follows a return
+     annotation to its colon.
+  3. `PythonReader.preprocess` sets nesting from each line's indent once the
+     def's long name ends with `)`. A signature line indented deeper than the
+     body pushes the def's nesting level there, the body's first line pops it,
+     and the pop ends the def before its body.
+
+The fix, and what it keeps
+--------------------------
+`PythonSignatureStates` counts bracket depth from the def's `(` and leaves the
+signature only at a `:` at depth 0, after the parameter list and after any
+return annotation. `PythonSignatureReader.preprocess` sets no nesting while the
+states are inside a signature, so the body's first line is the one that pushes
+the def. A body on the colon line (`) -> None: ...`) is the one exception,
+kept as lizard reads it: see `_SignatureIndents`.
+
+Every token still reaches the long name and the parameter list exactly as
+lizard routes it. lizard stops both at the signature's first `)` whatever its
+depth, and a def of that shape that lizard already read whole carries that
+spelling as its ratchet key, so this reader keeps it: `make( cls_name , * ,
+bases = ( )` above. The states also end where lizard ends for the same
+signature written on one line: `_state_first_line` after `):`, `_state_global`
+after a return annotation or after a signature lizard had closed early.
+
+What moves, only around a def lizard cut off: its end line, ccn, nloc, token
+count and cognitive score now cover its body, while its long name stays; an
+enclosing def gives back the conditions lizard had charged to it from the
+nested body; a def nested inside the cut-off def gains its parent's name as a
+prefix, as it has under a parent read whole.
+
+The class name
+--------------
+lizardcognitive picks its Python rules by `type(reader).__name__` starting with
+"python". A name like `CorrectedPythonReader` would score every Python file
+with the brace rules.
+
+Registration
+------------
+The same mechanism as crapkit.lizardrust, whose docstring explains it:
+`register()` rebinds `lizard_languages.PythonReader`, which
+`lizard_languages.languages()` reads on every call, verifies the rebind through
+`lizard.get_reader_for`, and raises if it did not take. analyze.py calls it at
+module scope beside the other readers' registrations, so pool workers register
+too.
+
+Retirement
+----------
+tests/unit/test_lizardpython.py::test_stock_reader_still_cuts_the_issue_def_off
+pins the stock reader's wrong answer. It fails on the lizard release that reads
+these signatures. Delete this module then, with the `register()` call.
+"""
+from __future__ import annotations
+
+from ._pygdefer import deferred_pygments
+
+with deferred_pygments():  # lizard's Erlang reader would load pygments here
+    import lizard
+    import lizard_languages
+    from lizard_languages.python import PythonIndents, PythonStates, count_spaces
+    from lizard_languages.python import PythonReader as _StockPythonReader
+
+_OPENERS = frozenset("([{")
+_CLOSERS = frozenset(")]}")
+
+# The states between the `def` keyword and the body colon. `_state_colon` is
+# the one lizard enters after the parameter list's `)`.
+_SIGNATURE_STATES = frozenset({
+    "_function", "_dec", "_state_parameterized_type_annotation", "_state_colon", "_rest_of_signature",
+})
+
+# Any filename picks the reader; the file is never opened.
+_PROBE = "crapkit_registration_probe.py"
+
+
+def _is_continuation(token: str) -> bool:
+    """A backslash line continuation, which lizard's tokenizer keeps as one token."""
+    return token.startswith("\\") and not token[1:].strip()
+
+
+def _depth_change(token: str) -> int:
+    if token in _OPENERS:
+        return 1
+    if token in _CLOSERS:
+        return -1
+    return 0
+
+
+class PythonSignatureStates(PythonStates):
+    """lizard's PythonStates, reading a signature to the colon at bracket depth 0.
+
+    `depth` counts the brackets open since the def's own `(`. The inherited
+    states keep every decision about the long name and the parameter list;
+    these overrides only choose where a state goes next.
+    """
+
+    def __init__(self, context, reader):
+        super().__init__(context, reader)
+        self.depth = 0
+
+    @property
+    def in_signature(self) -> bool:
+        """True from the `def` keyword until the body colon has been read."""
+        return self._state.__name__ in _SIGNATURE_STATES
+
+    def _function(self, token):
+        if token == "(":
+            self.depth = 1
+        super()._function(token)
+
+    def _dec(self, token):
+        if token == ")" and self.depth > 1:
+            # lizard's parameter list ends here too, spelled the same way; the
+            # signature does not.
+            self.depth -= 1
+            self.context.add_to_long_function_name(" )")
+            self._state = self._rest_of_signature
+            return
+        self.depth += _depth_change(token)
+        super()._dec(token)
+
+    def _state_parameterized_type_annotation(self, token):
+        self.depth += _depth_change(token)
+        super()._state_parameterized_type_annotation(token)
+
+    def _state_colon(self, token):
+        if token == "->":
+            self._state = self._rest_of_signature
+            return
+        if _is_continuation(token):  # `) \` then `-> ...:` on the next line
+            return
+        super()._state_colon(token)
+
+    def _rest_of_signature(self, token):
+        """The tokens lizard sent to `_state_global` before the body: counted, not named."""
+        if token == ":" and self.depth == 0:
+            self._state = self._state_global
+            return
+        self.depth += _depth_change(token)
+
+
+class _SignatureIndents(PythonIndents):
+    """lizard's per-line indent bookkeeping, holding back what a signature line sets.
+
+    lizard sets nesting from every line's first code token once the def's long
+    name ends with `)`. Inside a signature that is the defect: see mechanic 3.
+    The first level lizard would push from inside the signature is held, and
+    what happens to it depends on where the body starts:
+
+      * on the next line: dropped, and the body's first line pushes the def
+      * on the colon line (`) -> None: ...`): pushed at the body's first token,
+        so the def ends where lizard ends it, at the next line indented no
+        deeper. lizard lists a def of that shape only when its signature pushed
+        a level, and lists no def written `def f(x): return x` at all; this
+        keeps both answers.
+    """
+
+    def __init__(self, context, states):
+        super().__init__(context)
+        self.states = states
+        self.spaces = 0
+        self.leading = True
+        self.held = None
+
+    def see(self, token: str) -> None:
+        if token == "\n":
+            self._line_ends()
+        elif self.leading:
+            self._leading(token)
+        elif self.held is not None:
+            self._after_signature(token)
+
+    def _line_ends(self) -> None:
+        self.spaces, self.leading = 0, True
+        if not self.states.in_signature:
+            self.held = None
+
+    def _leading(self, token: str) -> None:
+        if token.isspace():
+            self.spaces += count_spaces(token)
+            return
+        self.leading = False
+        if token.startswith("#"):
+            return
+        if self.states.in_signature:
+            self._hold()
+        elif self._lizard_sets_nesting():
+            self.set_nesting(self.spaces, token)
+
+    def _hold(self) -> None:
+        if self.held is None and self._lizard_sets_nesting() and self.spaces > self.indents[-1]:
+            self.held = self.spaces
+
+    def _after_signature(self, token: str) -> None:
+        if self.states.in_signature or token.isspace() or token.startswith("#"):
+            return
+        self.set_nesting(self.held, token)
+        self.held = None
+
+    def _lizard_sets_nesting(self) -> bool:
+        function = self.context.current_function
+        return function.name == "*global*" or function.long_name.endswith(")")
+
+
+class PythonSignatureReader(_StockPythonReader):
+    """lizard's PythonReader with a def's signature read to its body colon (#72)."""
+
+    def __init__(self, context):
+        super().__init__(context)
+        self.parallel_states = [PythonSignatureStates(context, self)]
+
+    def preprocess(self, tokens):
+        """lizard's preprocess, with the indent rules of `_SignatureIndents`."""
+        indents = _SignatureIndents(self.context, self.parallel_states[0])
+        for token in self._soft_keyword_lookahead(tokens):
+            indents.see(token)
+            if not token.isspace() or token == "\n":
+                yield token
+        indents.reset()
+
+
+def register() -> None:
+    """Make lizard resolve `.py` to PythonSignatureReader. Idempotent.
+
+    Raises RuntimeError when the rebind does not reach lizard's own resolution.
+    A Python file measured with the defective reader is worse than a crash: the
+    score is wrong and looks fine.
+    """
+    lizard_languages.PythonReader = PythonSignatureReader
+    resolved = lizard.get_reader_for(_PROBE)
+    if resolved is not PythonSignatureReader:
+        raise RuntimeError(_unregistered(resolved))
+
+
+def _unregistered(resolved: type | None) -> str:
+    name = getattr(resolved, "__name__", "no reader")
+    return (f"crapkit.lizardpython.register() did not take: lizard resolves '.py' to "
+            f"{name}, not PythonSignatureReader. lizard {lizard.version} picks readers "
+            f"some other way than lizard_languages.languages(); rewrite register() "
+            f"against the new mechanism, or drop this module if lizard reads these "
+            f"signatures itself.")

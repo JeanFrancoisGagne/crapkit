@@ -224,7 +224,7 @@ def test_two_wrapped_readers_compose_without_duplicating_either():
 
 
 def test_registration_leaves_the_stock_readers_alone():
-    assert lizard_languages.get_reader_for("a.py").__name__ == "PythonReader"
+    assert lizard_languages.get_reader_for("a.java").__name__ == "JavaReader"
     assert lizard_languages.get_reader_for("a.ts").__name__ == "TypeScriptReader"
 
 
