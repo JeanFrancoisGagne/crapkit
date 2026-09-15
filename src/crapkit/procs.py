@@ -22,6 +22,8 @@ import tempfile
 import time
 from typing import IO
 
+from .errors import ToolError
+
 _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
               if os.name == "nt" else {"start_new_session": True})
 
@@ -177,7 +179,10 @@ class _ProcessOwner:
 
     def start(self, process, family=None):
         """Register and release one launcher atomically against cancellation."""
-        self.register_then(process.pid, lambda: _release_launcher(process), family=family)
+        try:
+            self.register_then(process.pid, lambda: _release_launcher(process), family=family)
+        except OSError as error:
+            raise _dead_launcher(process, error) from error
 
     def register_then(self, pid, release, *, family=None):
         """Register a gated process, then release it before cancellation can enter."""
@@ -271,9 +276,47 @@ def _close_input(process) -> None:
         pass
 
 
+# How long a launcher whose input pipe is already dead gets to settle its exit
+# code before the message has to say it is still running.
+_LAUNCHER_SETTLE = 2.0
+
+# The code a Windows process exits with when a DLL's initialisation fails,
+# 0xC0000142. Seen at spawn on a loaded machine, before Python reads stdin.
+_DLL_INIT_FAILED = 3221225794
+
+
+class _LauncherDied(ToolError, OSError):
+    """A ToolError to the lane layer, which fails and retries that one lane.
+    Still an OSError to the doctor and init probes, which read an OSError from
+    run_bounded as a question that could not be put and answer with a finding."""
+
+
 def _release_launcher(process):
     process.stdin.write(b"go\n")
     process.stdin.flush()
+
+
+def _dead_launcher(process, error: OSError):
+    """The launcher exited before its start gate: registration or the start
+    line failed at the OS level. Windows Job assignment refuses an exited
+    process with access denied; the start line hits EINVAL there, EPIPE on
+    POSIX. Either is one lane's failure, which the lane layer retries, not a
+    crash of the whole run.
+    """
+    try:
+        code = process.wait(timeout=_LAUNCHER_SETTLE)
+    except subprocess.TimeoutExpired:
+        code = None
+    return _LauncherDied(f"command launcher {_launcher_fate(code, error)}, so the command never ran")
+
+
+def _launcher_fate(code, error: OSError) -> str:
+    if code is None:
+        return (f"was still running {_LAUNCHER_SETTLE:g}s after its start gate failed "
+                f"({error})")
+    if code == _DLL_INIT_FAILED:
+        return f"exited with code {code} (0xC0000142, STATUS_DLL_INIT_FAILED) before its start gate"
+    return f"exited with code {code} before its start gate"
 
 
 _OWNED_LAUNCH = """import json, os, sys
