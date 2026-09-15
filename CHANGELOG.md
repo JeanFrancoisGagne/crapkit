@@ -2,6 +2,62 @@
 
 ## 0.7.4 — unreleased
 
+A Python function lizard stopped reading inside its own signature is scored on its
+whole body, and three measurement defects are fixed. The twelve MCP tools, JSON
+schema version 1 and analysis version 10 remain compatible with 0.7.0; the only
+scores that move are those of the functions described in the first section.
+
+### A Python function whose signature runs past its first `)` is scored on its whole body
+
+- lizard 1.24.0 ended a Python function inside its own signature in three shapes: a
+  return annotation opened on the def line and closed on a later one (`-> tuple[`
+  then `]:`), a line break after a parameter default that holds brackets
+  (`bases=(),` or `skip=frozenset(),`), which is how black and ruff wrap a long
+  signature, and a backslash continuation before the return annotation (`) \`
+  then `-> ...:`). The function read as two lines at ccn 1 whatever its body held,
+  so the complexity ceiling, the commit hook, `rescore --gate` and `verify` passed
+  it. crapkit now reads these signatures to the colon that opens the body (#72).
+- After upgrading, the ccn, CRAP score, end line, nloc and cognitive score of those
+  functions rise to what their bodies hold, and one that now sits over the ceiling
+  fails the gate the next time its file changes. Measured over 45,000 Python files
+  from the standard library, installed packages and application code, about one
+  function in 400 read this way; every other function reads exactly as before,
+  apart from the functions nested in or enclosing them.
+- The long name of such a function stays as lizard spelled it, stopping at the
+  signature's first `)` (`make( cls_name , * , bases = ( )`), so its ratchet key does
+  not change.
+- A function nested inside one of them now carries its parent's name
+  (`outer.inner( a )` where it read `inner( a )`), and the parent's ccn falls by the
+  conditions lizard had charged to it from the nested body. A ratchet mark recorded
+  under the nested function's old name matches no function any more, and
+  `crapkit ratchet prune` drops it.
+- A Python file with a def no reader finishes, such as a nested def cut off at the
+  end of the file, is named on stderr and scored as zero functions, like any file
+  that could not be read, instead of scoring that def at ccn 1. The run goes on.
+- Cached analysis records refresh on upgrade, because the cache key includes
+  crapkit's version; the ratchet stamp is unchanged, so existing marks keep
+  comparing.
+
+### A launcher that dies at spawn fails its lane, not the whole command
+
+- On Windows a lane's launcher can exit with code 3221225794 (0xC0000142,
+  STATUS_DLL_INIT_FAILED) before it reads its start line, for example when the
+  scheduler that started crapkit has ended its console. The start line then hit a
+  dead pipe and `coverage` ended with a traceback. That lane now fails on its own
+  with a message that names the exit code and says the command never ran; it is
+  retried while it has retries left and the other lanes finish. `doctor` and
+  `init` probes answer as before.
+
+### doctor names a nearby test in the same language
+
+- The warning that a directory's functions are all flagged untested while a test
+  exists named the first same-named test anywhere in the repository, sorted by
+  path, so it could point at a test in another tree or another language, and a
+  file such as `docs/_mermaid_test.md` counted as a test. The example now comes, in
+  order, from the directory itself, the nearest test below it, a `tests/` mirror,
+  then a same-named test elsewhere, and at every step it has to be in the language
+  of the code crapkit scored there. A directory with no such test gets no warning.
+
 ### Two runners in one repository no longer refuse each other's evidence
 
 - On Windows, `Path.resolve()` names a directory a sibling process is creating or
@@ -10,6 +66,13 @@
   redirected `.crapkit/test-runs` and refused, so two direct runners sharing a
   repository failed one run in four. A symlink or junction elsewhere is still
   refused.
+
+### Release maintenance
+
+- `release.py run stage2b` checks the Pages build the way `release.py verify` does:
+  a build at a later commit on main that carries the release commit confirms the
+  release. A rerun after main moved past the tag used to record Pages as
+  unconfirmed.
 
 ## 0.7.3 — 2026-09-11
 
