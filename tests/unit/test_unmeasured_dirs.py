@@ -51,10 +51,14 @@ def test_a_flat_tests_directory_does_not_mirror_every_directory():
 
 
 def test_the_four_test_naming_conventions_all_count():
-    rows = [_row("src/quiet/mod.py", "untested")]
-    for test_path in ("tests/test_mod.py", "tests/mod_test.py",
-                      "src/quiet/mod.test.ts", "src/quiet/mod.spec.js"):
-        assert unmeasured_directories(rows, ["src/quiet/mod.py", test_path])[0].example_test \
+    """Each test is paired with source in its own language: a .test.ts beside
+    a Python module is not that module's test."""
+    for source, test_path in (("src/quiet/mod.py", "tests/test_mod.py"),
+                              ("src/quiet/mod.py", "tests/mod_test.py"),
+                              ("src/quiet/mod.ts", "src/quiet/mod.test.ts"),
+                              ("src/quiet/mod.js", "src/quiet/mod.spec.js")):
+        rows = [_row(source, "untested")]
+        assert unmeasured_directories(rows, [source, test_path])[0].example_test \
             == test_path
 
 

@@ -996,14 +996,16 @@ def _newest_coverage_run(store: SnapshotStore) -> dict | None:
 @dataclass
 class _DirCount:
     """One directory's share of a run: how many functions it holds, how many of
-    them carry a verdict other than untested, and the file stems to match on."""
+    them carry a verdict other than untested, and the file stems and language
+    families to match on."""
     functions: int = 0
     others: int = 0
     stems: set = field(default_factory=set)
+    families: set = field(default_factory=set)
 
 
 def _dirs_from_counts(counts: list[tuple]) -> dict[str, _DirCount]:
-    from ..doctor import _dir_of, _stem_of
+    from ..doctor import _dir_of, _family_of, _stem_of
 
     dirs: dict[str, _DirCount] = {}
     for path, functions, others in counts:
@@ -1011,6 +1013,7 @@ def _dirs_from_counts(counts: list[tuple]) -> dict[str, _DirCount]:
         entry.functions += functions
         entry.others += others
         entry.stems.add(_stem_of(path))
+        entry.families.add(_family_of(path))
     return dirs
 
 
@@ -1021,12 +1024,13 @@ def _unmeasured_gaps(counts: list[tuple], tracked: list[str]) -> tuple:
     it carries a verdict other than untested and a tracked test file names its
     code. The matching itself stays doctor's, so the mirror rule has one copy.
     """
-    from ..doctor import UnmeasuredDir, _matching_test, _test_files
+    from ..doctor import UnmeasuredDir, _matching_test, _tests_by_family
 
-    test_files = _test_files(tracked)
+    test_files = _tests_by_family(tracked)
     found = []
     for directory, stats in sorted(_dirs_from_counts(counts).items()):
-        example = _matching_test(directory, stats.stems, test_files) if not stats.others else None
+        example = _matching_test(directory, stats.stems, stats.families, test_files) \
+            if not stats.others else None
         if example:
             found.append(UnmeasuredDir(directory, stats.functions, example))
     return tuple(found)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from .universe import scopes_with_tests
+from .universe import LANGUAGE_EXTENSIONS, scopes_with_tests
 
 from .config_contract import known_keys
 
@@ -242,6 +242,7 @@ class _DirStats:
     functions: int = 0
     flags: set = field(default_factory=set)
     stems: set = field(default_factory=set)
+    families: set = field(default_factory=set)
 
 
 _TEST_DIR_PARTS = frozenset({"test", "tests", "__tests__", "spec", "specs"})
@@ -255,12 +256,31 @@ def _stem_of(path: str) -> str:
     return path.rsplit("/", 1)[-1].split(".")[0]
 
 
+# One family per coverage parser, not one per lizard reader: a vitest run
+# measures .ts, .tsx, .js and the .vue components beside them as one suite, and
+# its tests are .spec.ts whatever the component is. Every other language is its
+# own family.
+_JS_FAMILY = frozenset({"javascript", "typescript", "tsx", "vue"})
+
+
+def _family_of(path: str) -> str | None:
+    """The language family a path's extension puts it in, or None for a file
+    no lizard reader parses (a .md, a .json, a .txt)."""
+    for language, extensions in LANGUAGE_EXTENSIONS.items():
+        if path.endswith(extensions):
+            return "javascript" if language in _JS_FAMILY else language
+    return None
+
+
 def _subject_stem(path: str) -> str | None:
     """The source stem a test file names, or None when the name is not a test.
     Four conventions cover every runner crapkit parses: foo.test.ts, foo.spec.ts,
-    test_foo.py, foo_test.py."""
+    test_foo.py, foo_test.py. The extension has to be one a reader parses:
+    docs/_mermaid_test.md is named like a test and is not one."""
     name = path.rsplit("/", 1)[-1]
     stem = _stem_of(path)
+    if _family_of(path) is None:
+        return None
     if ".test." in name or ".spec." in name:
         return stem
     if stem.startswith("test_"):
@@ -281,23 +301,53 @@ def _mirrored_parts(test_dir: str) -> tuple[str, ...]:
 def _mirrors(test_dir: str, source_dir: str) -> bool:
     """A tests/ mirror: the test directory, with its test-named components
     dropped, is a path suffix of the source directory. tests/api mirrors src/api;
-    a flat tests/ mirrors nothing, or it would claim the whole repo."""
+    a flat tests/ mirrors nothing, or it would claim the whole repo, and a
+    directory with no test-named component (a root src/) is no tests/ tree."""
     parts = _mirrored_parts(test_dir)
-    return parts == _path_parts(source_dir)[-len(parts):] if parts else False
+    if not parts or len(parts) == len(_path_parts(test_dir)):
+        return False
+    return parts == _path_parts(source_dir)[-len(parts):]
 
 
-def _test_files(tracked: list[str]) -> list[str]:
-    return sorted(p for p in tracked if _subject_stem(p))
+def _nearest_below(directory: str, candidates: tuple[str, ...]) -> str | None:
+    """The test below the directory with the fewest path components, then the
+    first alphabetically. The repo root has nothing below it: "below the root"
+    would be the whole repo."""
+    below = (p for p in candidates if _dir_of(p).startswith(directory + "/"))
+    return min(below, key=lambda p: (len(_path_parts(p)), p), default=None)
 
 
-def _matching_test(directory: str, stems: set, test_files: list[str]) -> str | None:
-    """The first tracked test file that names this directory's code: a same-stem
-    test anywhere in the repo (tests/test_parser.py for core/parser.py),
-    a sibling, or a tests/ mirror of the directory."""
-    for path in test_files:
-        if _subject_stem(path) in stems or _mirrors(_dir_of(path), directory):
-            return path
-    return None
+def _tests_by_family(tracked: list[str]) -> dict[str, tuple[str, ...]]:
+    """The tracked test files, sorted, under the language family each is in."""
+    by_family: dict[str, list[str]] = {}
+    for path in sorted(p for p in tracked if _subject_stem(p)):
+        by_family.setdefault(_family_of(path), []).append(path)
+    return {family: tuple(paths) for family, paths in by_family.items()}
+
+
+def _first(paths: tuple[str, ...], qualifies) -> str | None:
+    return next((p for p in paths if qualifies(p)), None)
+
+
+def _matching_test(directory: str, stems: set, families: set,
+                   tests: dict[str, tuple[str, ...]]) -> str | None:
+    """The tracked test file that names this directory's code, the nearest first:
+    a test in the directory, then the nearest one below it, then a tests/ mirror
+    of the directory, then a same-stem test anywhere (tests/test_parser.py for
+    core/parser.py).
+
+    Every tier only looks at tests in `families`, the language families of
+    the files the store scored here. The directory's other files do not count: a Python
+    directory with a static/ folder of .js below it is still Python, and on a
+    repo with twenty handler.test.ts files a stem alone paired a Python
+    directory with a TypeScript test.
+    """
+    candidates = tuple(sorted(p for family in families for p in tests.get(family, ())))
+    tiers = (lambda: _first(candidates, lambda p: _dir_of(p) == directory),
+             lambda: _nearest_below(directory, candidates),
+             lambda: _first(candidates, lambda p: _mirrors(_dir_of(p), directory)),
+             lambda: _first(candidates, lambda p: _subject_stem(p) in stems))
+    return next(filter(None, (tier() for tier in tiers)), None)
 
 
 def _group_dirs(rows, skip_scopes: frozenset[str]) -> dict[str, _DirStats]:
@@ -309,6 +359,7 @@ def _group_dirs(rows, skip_scopes: frozenset[str]) -> dict[str, _DirStats]:
         entry.functions += 1
         entry.flags.add(row.flag)
         entry.stems.add(_stem_of(row.path))
+        entry.families.add(_family_of(row.path))
     return stats
 
 
@@ -321,10 +372,10 @@ def unmeasured_directories(rows, tracked: list[str], *,
     tests pass, and the lane's own include list never looks at this code. One
     measured function anywhere in the directory clears it.
     """
-    test_files = _test_files(tracked)
+    test_files = _tests_by_family(tracked)
     found = []
     for directory, stats in sorted(_group_dirs(rows, skip_scopes).items()):
-        example = _matching_test(directory, stats.stems, test_files) \
+        example = _matching_test(directory, stats.stems, stats.families, test_files) \
             if stats.flags == {"untested"} else None
         if example:
             found.append(UnmeasuredDir(directory, stats.functions, example))
