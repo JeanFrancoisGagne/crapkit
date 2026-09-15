@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.5 — unreleased
+
+### Release maintenance
+
+- The registry stage logs in with `gh auth token` and publishes straight after, so
+  it no longer waits on GitHub's device flow; the command echo never shows the token.
+- A readback of a surface that was just written waits up to 55 seconds before the
+  stage records it unconfirmed.
+
 ## 0.7.4 — 2026-09-15
 
 A Python function lizard stopped reading inside its own signature is scored on its
