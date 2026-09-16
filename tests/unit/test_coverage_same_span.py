@@ -28,6 +28,27 @@ def test_the_fold_keeps_every_function_on_the_shared_span():
         ("app.ts", 1, "live ( )"), ("app.ts", 1, "dead ( )")]
 
 
+def test_a_third_function_on_the_span_joins_its_members():
+    first, second = functions()
+    third = second._replace(long_name="third ( )", occurrence=3)
+    fold = SharedSpanFold()
+    score_rows([first, second, third], {"app.ts": [FnCoverage("live", 1, 1, True, 0, 0)]},
+               lane_scopes={"src"}, shared_spans=fold)
+    (members,) = fold.sites
+    assert [m.long_name for m in members] == ["live ( )", "dead ( )", "third ( )"]
+
+
+def test_a_second_scope_copy_of_a_colliding_function_is_not_a_second_member():
+    """The same function measured in two scopes is one function on the span."""
+    first, second = functions()
+    fold = SharedSpanFold()
+    score_rows([first, second, first._replace(scope="other")],
+               {"app.ts": [FnCoverage("live", 1, 1, True, 0, 0)]},
+               lane_scopes={"src", "other"}, shared_spans=fold)
+    (members,) = fold.sites
+    assert [m.long_name for m in members] == ["live ( )", "dead ( )"]
+
+
 def test_a_span_no_measurement_speaks_about_is_not_collected():
     fold = SharedSpanFold()
     score_rows(functions(), {"app.ts": []}, lane_scopes={"src"}, shared_spans=fold)

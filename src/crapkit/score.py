@@ -300,20 +300,29 @@ class SharedSpanFold:
         self.sites.append(members)
 
 
+def _identity(row) -> tuple:
+    """What separates two functions on one span: the name, and the occurrence
+    that tells sibling callbacks on a line apart."""
+    return row.long_name, row.occurrence
+
+
+def _join_member(members: list, row) -> None:
+    """A third function on the span joins its members; another copy of one that
+    is already there (the same function in a second scope) does not."""
+    if all(_identity(member) != _identity(row) for member in members):
+        members.append(row)
+
+
 def _shared_source_spans(rows, lane_scopes: set, cc_only_scopes) -> dict:
     """span -> the distinct functions declaring it, for spans more than one does."""
-    seen, collisions = {}, {}
+    first, collisions = {}, {}
     for row in rows:
         if _cov_without_join(row, lane_scopes, cc_only_scopes) is not None:
             continue
         span = row.path, row.start, row.end
-        identity = row.long_name, row.occurrence
-        first = seen.setdefault(span, (identity, row))
-        if first[0] == identity:
-            continue
-        members = collisions.setdefault(span, [first[1]])
-        if identity not in {(m.long_name, m.occurrence) for m in members}:
-            members.append(row)
+        seen = first.setdefault(span, row)
+        if _identity(seen) != _identity(row):
+            _join_member(collisions.setdefault(span, [seen]), row)
     return collisions
 
 
