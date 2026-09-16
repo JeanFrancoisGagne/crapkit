@@ -1,11 +1,12 @@
-"""A same-span coverage artifact must not turn an uncalled function green."""
+"""A same-span coverage artifact must not turn an uncalled function green,
+and must not end the run either."""
 import json
 import sys
 
 from conftest import git_commit_all, git_init_repo, run_cli
 
 
-def test_coverage_refuses_same_span_functions_with_actionable_message(tmp_path):
+def test_coverage_scores_same_span_functions_uncovered_and_names_the_span(tmp_path):
     git_init_repo(tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src/app.ts").write_text(
@@ -27,6 +28,8 @@ def test_coverage_refuses_same_span_functions_with_actionable_message(tmp_path):
         f'command={command}\nartifact=".crapkit/cov.json"\nparser="istanbul"\n', encoding="utf-8")
     git_commit_all(tmp_path, "same-span functions")
     result = run_cli(tmp_path, "coverage", "--json")
-    assert result.returncode == 5, (result.stdout, result.stderr)
-    assert "src/app.ts:1" in result.stderr
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "1 source line span(s) hold more than one function" in result.stderr
     assert "separate lines" in result.stderr
+    run = json.loads(result.stdout)
+    assert (run["functions"], run["untested"], run["measured"]) == (2, 2, 0)

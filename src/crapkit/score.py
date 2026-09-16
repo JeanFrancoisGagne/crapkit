@@ -285,27 +285,62 @@ def overlay_stale_coverage(
     return scored
 
 
+class SharedSpanFold:
+    """The source line spans more than one function declares in one run.
+
+    The join cannot tell whose coverage is whose there, so each such function
+    scores as uncovered and the run names the spans instead of ending. Filled
+    while scoring; the caller reports it once.
+    """
+
+    def __init__(self) -> None:
+        self.sites: list[list[InventoryRow]] = []
+
+    def add(self, members: list[InventoryRow]) -> None:
+        self.sites.append(members)
+
+
 def _shared_source_spans(rows, lane_scopes: set, cc_only_scopes) -> dict:
+    """span -> the distinct functions declaring it, for spans more than one does."""
     seen, collisions = {}, {}
     for row in rows:
         if _cov_without_join(row, lane_scopes, cc_only_scopes) is not None:
             continue
         span = row.path, row.start, row.end
         identity = row.long_name, row.occurrence
-        if seen.setdefault(span, identity) != identity:
-            collisions[span] = row
+        first = seen.setdefault(span, (identity, row))
+        if first[0] == identity:
+            continue
+        members = collisions.setdefault(span, [first[1]])
+        if identity not in {(m.long_name, m.occurrence) for m in members}:
+            members.append(row)
     return collisions
 
 
-def _check_coverage_spans(rows, coverage_by_path: dict, start_index: dict,
-                         lane_scopes: set, cc_only_scopes) -> None:
-    for row in _shared_source_spans(rows, lane_scopes, cc_only_scopes).values():
-        _, flag = _span_join_cov(row, coverage_by_path, start_index)
-        if flag == "measured":
-            raise ToolError(
-                f"coverage for {row.path}:{row.start} cannot distinguish functions "
-                "with the same line span; split their definitions onto separate "
-                "lines and regenerate coverage")
+def _ambiguous_spans(rows, coverage_by_path: dict, start_index: dict,
+                     lane_scopes: set, cc_only_scopes) -> dict:
+    """The shared spans a measurement would speak about, so the join would hand
+    every function on the span one function's number.
+
+    Through 0.7.4 this raised and ended the run. One consumer repo holds 591
+    shared spans, 459 of them measured, so a run died on the first one it met
+    and the repo never finished a coverage run at all. Refusing the ambiguous
+    number is the specified behaviour; ending the run over it was not, the
+    shape _note_unanalyzable settled for unreadable files.
+    """
+    ambiguous = {}
+    for span, members in _shared_source_spans(rows, lane_scopes, cc_only_scopes).items():
+        if _span_join_cov(members[0], coverage_by_path, start_index)[1] == "measured":
+            ambiguous[span] = members
+    return ambiguous
+
+
+def _ambiguous_cov(row, ambiguous: dict) -> tuple[float, str] | None:
+    """Uncovered, never the neighbour's number: the honest floor for a function
+    whose measurement cannot be told from another's."""
+    if (row.path, row.start, row.end) in ambiguous:
+        return 0.0, "untested"
+    return None
 
 
 def score_rows(
@@ -316,12 +351,17 @@ def score_rows(
     target: int = 6,
     scope_targets: dict[str, int] | None = None,
     cc_only_scopes: frozenset[str] = frozenset(),
+    shared_spans: SharedSpanFold | None = None,
 ) -> list[ScoredRow]:
     start_index = _start_index(coverage_by_path)
-    _check_coverage_spans(rows, coverage_by_path, start_index, lane_scopes, cc_only_scopes)
+    ambiguous = _ambiguous_spans(rows, coverage_by_path, start_index, lane_scopes, cc_only_scopes)
+    for members in ambiguous.values():
+        if shared_spans is not None:
+            shared_spans.add(members)
     scored = []
     for r in rows:
         cov, flag = (_cov_without_join(r, lane_scopes, cc_only_scopes)
+                     or _ambiguous_cov(r, ambiguous)
                      or _span_join_cov(r, coverage_by_path, start_index))
         scored.append(_finish(r, cov, flag, target=target, scope_targets=scope_targets))
     return scored

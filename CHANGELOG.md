@@ -2,6 +2,22 @@
 
 ## 0.7.5 — unreleased
 
+### A source line two functions share no longer ends the coverage run
+
+- Since 0.6.0 a `coverage` run refused, with exit 5, the moment it met two functions
+  declared on one line span, because an artifact overlapping that span cannot say
+  whose coverage is whose. One repository holds 591 such spans, 459 of them measured:
+  every run died on the first one it met, so that repository finished no coverage run
+  at all and its worklist, doctor and trend stayed as old as its last one.
+- Every function on such a span now scores `untested` with coverage 0, which is the
+  honest floor and never the number a neighbour's measurement carries. The run
+  continues and names on stderr how many spans it met, plus the path and line of
+  those holding a function its ceiling fails at zero coverage, which is what
+  splitting the definitions onto separate lines measures.
+- Only functions whose coverage was ambiguous change. A function of complexity 2 or
+  less cannot score above a ceiling of 6 even at zero coverage: of the 925 functions
+  on that repository's shared spans, 898 are in that class.
+
 ### Release maintenance
 
 - The registry stage logs in with `gh auth token` and publishes straight after, so

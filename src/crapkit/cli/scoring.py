@@ -281,7 +281,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     `git` is the caller's GitFacts when it already has one — verify asks for the
     dirty set before this runs, and that answer is the one the lanes must see too.
     """
-    from ..score import score_rows
+    from ..score import SharedSpanFold, score_rows
 
     git = git or GitFacts(root)
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg, git)
@@ -294,12 +294,53 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     # Only scopes a SUCCESSFUL lane covers count as measured; a failed lane's
     # scopes fall back to no-lane flags rather than reading as untested code.
     lane_scopes = {s for lane in succeeded for s in lane.scopes}
+    shared_spans = SharedSpanFold()
     scored = score_rows(rows, coverage_by_path, lane_scopes=lane_scopes, target=cfg.target,
                         scope_targets=cfg.scope_targets,
-                        cc_only_scopes=cfg.coverage_optional_scopes)
+                        cc_only_scopes=cfg.coverage_optional_scopes,
+                        shared_spans=shared_spans)
+    _note_shared_spans(shared_spans, cfg)
     test_failures = {f for prov in provenance.values() for f in prov.get("failures", ())}
     return _ScoredRun(commit, scored, provenance, lane_errors, test_failures, tool_versions,
                       corpus, cache_hits, dead_lines)
+
+
+_SPANS_NAMED = 3
+
+
+def _over_target_at_zero(members, cfg):
+    """The worst function on each shared span that its ceiling can fail.
+
+    Every function on a shared span scores as uncovered, and a function of
+    complexity 2 scores 6 at zero coverage, so no ceiling of 6 can fail it.
+    The count carries those; the named lines are the ones worth splitting.
+    """
+    from ..score import crap
+
+    for span in members:
+        worst = max(span, key=lambda row: row.ccn)
+        if crap(worst.ccn, 0.0) > cfg.ceiling_of(worst.scope):
+            yield worst
+
+
+def _note_shared_spans(fold, cfg) -> None:
+    """Name the source line spans more than one function declares.
+
+    Loud but not fatal, the shape `_note_unanalyzable` settled for unreadable
+    files: the join cannot tell whose coverage is whose on such a span, and
+    ending the run over it left the consumer repo with no coverage run at all.
+    """
+    if not fold.sites:
+        return
+    over = sorted(_over_target_at_zero(fold.sites, cfg), key=lambda row: (-row.ccn, row.path))
+    tail = f"; {len(over)} of them hold a function over its target:" if over else ""
+    print(f"crapkit: {len(fold.sites)} source line span(s) hold more than one function; "
+          "coverage cannot say whose is whose, so those functions score as uncovered, and "
+          f"splitting the definitions onto separate lines measures them{tail}", file=sys.stderr)
+    for row in over[:_SPANS_NAMED]:
+        print(f"crapkit:   {row.path}:{row.start} (complexity {row.ccn})", file=sys.stderr)
+    if len(over) > _SPANS_NAMED:
+        print(f"crapkit:   ... and {len(over) - _SPANS_NAMED} more", file=sys.stderr)
 
 
 def _run_kind(lanes, cfg, failures) -> str:

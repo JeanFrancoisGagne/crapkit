@@ -3,8 +3,7 @@ import pytest
 
 from crapkit.analyze import analyze_source
 from crapkit.coverage_istanbul import FnCoverage
-from crapkit.errors import ToolError
-from crapkit.score import score_rows
+from crapkit.score import SharedSpanFold, score_rows
 from crapkit.snapshot import build_inventory_rows
 
 
@@ -14,12 +13,25 @@ def functions():
 
 
 @pytest.mark.parametrize("hits", [(True, False), (True, True), (False, False), (True,)])
-def test_matching_artifact_cannot_prove_same_span_function_coverage(hits):
+def test_a_matching_artifact_scores_both_same_span_functions_as_uncovered(hits):
     artifact = {"app.ts": [FnCoverage(str(n), 1, 1, hit, 0, 0) for n, hit in enumerate(hits)]}
-    with pytest.raises(ToolError) as error:
-        score_rows(functions(), artifact, lane_scopes={"src"})
-    assert "app.ts:1" in str(error.value)
-    assert "separate lines" in str(error.value)
+    scored = score_rows(functions(), artifact, lane_scopes={"src"})
+    assert [(r.flag, r.cov) for r in scored] == [("untested", 0.0), ("untested", 0.0)]
+
+
+def test_the_fold_keeps_every_function_on_the_shared_span():
+    fold = SharedSpanFold()
+    score_rows(functions(), {"app.ts": [FnCoverage("live", 1, 1, True, 0, 0)]},
+               lane_scopes={"src"}, shared_spans=fold)
+    (members,) = fold.sites
+    assert [(m.path, m.start, m.long_name) for m in members] == [
+        ("app.ts", 1, "live ( )"), ("app.ts", 1, "dead ( )")]
+
+
+def test_a_span_no_measurement_speaks_about_is_not_collected():
+    fold = SharedSpanFold()
+    score_rows(functions(), {"app.ts": []}, lane_scopes={"src"}, shared_spans=fold)
+    assert fold.sites == []
 
 
 def test_repeated_scope_copies_of_one_function_are_not_a_collision():

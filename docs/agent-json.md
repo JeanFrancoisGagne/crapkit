@@ -913,10 +913,12 @@ $ crapkit coverage --json
 
 Coverage attribution uses line spans. When distinct functions share the same path,
 start line and end line, an artifact that overlaps that span cannot distinguish their
-coverage. The command refuses with exit 5, names the path and line, and asks you to
-split their definitions onto separate lines and regenerate coverage. Equal coverage
-values do not remove this ambiguity. Copies of one function in several scopes do not
-trigger the refusal. `cc-only`, `no-lane`, and functions with no matching artifact keep
+coverage. Every function on such a span scores as `untested` with coverage 0, never the
+number a neighbour's measurement carries, and the run continues. It names on stderr how
+many spans it met, and the path and line of those holding a function its ceiling fails
+at zero coverage, which splitting the definitions onto separate lines measures. Equal
+coverage values do not remove the ambiguity. Copies of one function in several scopes
+are not a collision. `cc-only`, `no-lane`, and functions with no matching artifact keep
 their existing flags.
 
 The plain form prints the same run on one line, zero buckets dropped and the ceiling
