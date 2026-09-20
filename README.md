@@ -1330,6 +1330,12 @@ line arms the complexity gate. See
 for development and [the verified implementation report](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/architecture/2026-09-07-implementation/REPORT.md)
 for complete Windows source and Linux wheel results, focused benchmarks and their limits.
 
+## Maintainer and project background
+
+crapkit is created and maintained by [Jean-François Gagné](https://www.jfgagne.com/).
+Read the [project background](https://www.jfgagne.com/projects/crapkit/) for the
+problem it addresses and how it fits into his work on software and AI.
+
 ## License
 
 MIT. See [LICENSE](https://github.com/JeanFrancoisGagne/crapkit/blob/main/LICENSE).
