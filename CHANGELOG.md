@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.6 — unreleased
+## 0.7.6 — 2026-09-20
 
 ### A function on a shared line is told to split it, not to add tests
 
