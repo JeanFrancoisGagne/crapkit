@@ -374,11 +374,51 @@ def _floor_ms() -> float:
                                            timeout=300, env=child_env(_timing_overrides())))
 
 
+# A box whose bare interpreter needs this long to start is busy with something
+# else, and an absolute ceiling then measures that something: 666 ms against the
+# 500 ms ceiling while another repository's coverage ran beside the suite. The
+# design's floor is 29.3 ms. CI is never excused, since its runners are the
+# machines the hard ceiling was written for.
+_SATURATED_FLOOR_MS = 250.0
+
+
+def _excuse_a_saturated_box() -> None:
+    if os.environ.get("CI"):
+        return
+    floor = _floor_ms()
+    if floor > _SATURATED_FLOOR_MS:
+        pytest.skip(f"python -c pass took {floor:.0f} ms to start here against a design floor of "
+                    "29.3 ms: this box is too busy to measure a wall-clock ceiling, and CI enforces it")
+
+
 @pytest.mark.parametrize("name", sorted(BUDGETS))
 def test_the_warm_path_stays_inside_the_ci_budget(name: str, tmp_path):
     hard, _ = BUDGETS[name]
+    _excuse_a_saturated_box()
 
     assert _warm_ms(name, tmp_path) < hard
+
+
+def test_a_saturated_box_is_excused_from_the_wall_clock_ceiling(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setattr(sys.modules[__name__], "_floor_ms", lambda: 600.0)
+
+    with pytest.raises(pytest.skip.Exception, match="600 ms"):
+        _excuse_a_saturated_box()
+
+
+def test_ci_is_never_excused_from_the_wall_clock_ceiling(monkeypatch):
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setattr(sys.modules[__name__], "_floor_ms", lambda: 600.0)
+
+    _excuse_a_saturated_box()
+
+
+def test_a_quiet_box_is_held_to_the_wall_clock_ceiling(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setattr(sys.modules[__name__], "_floor_ms", lambda: 31.0)
+
+    _excuse_a_saturated_box()
 
 
 @_STRICT
