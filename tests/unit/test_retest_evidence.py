@@ -62,6 +62,8 @@ def test_retry_delivers_literal_test_ids(tmp_path, monkeypatch, name):
         '    ET.SubElement(root, "testcase", classname=classname, name=name)\n'
         'ET.ElementTree(root).write("junit.xml", encoding="utf-8")\n', encoding='utf-8')
     lane = Lane('unit', 'unused', 'cov.json', 'coveragepy', ('src',),
-                results_artifact='junit.xml', timeout_seconds=5,
+                # a bound against a hung child, not a budget: on a loaded Windows box the
+                # interpreter alone has taken nine seconds to start
+                results_artifact='junit.xml', timeout_seconds=60,
                 retest_command=f'"{sys.executable}" "{script}" {{tests}}')
     assert retest_lane(tmp_path, lane, {test_id}) == {test_id}
