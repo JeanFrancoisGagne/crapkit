@@ -264,7 +264,14 @@ def test_the_readme_links_out_by_url_so_pypi_renders_them():
 
     relative = [t for t in targets if not re.match(r"https?://|#|mailto:", t)]
     assert relative == [], f"README links that go nowhere on PyPI: {relative}"
-    assert "https://jeanfrancoisgagne.github.io/crapkit/handbook.html" in targets
+    assert "https://www.jfgagne.com/crapkit/handbook.html" in targets
+
+
+def test_the_docs_landing_page_names_the_host_that_serves_it_as_canonical():
+    """A search engine indexes the canonical URL, and the github.io address only
+    redirects since the site moved."""
+    page = Path("docs/index.html").read_text(encoding="utf-8")
+    assert '<link rel="canonical" href="https://www.jfgagne.com/crapkit/handbook.html">' in page
 
 
 def _packet_keys(monkeypatch) -> set[str]:

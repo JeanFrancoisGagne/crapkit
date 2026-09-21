@@ -30,6 +30,15 @@ _NAME_DESCRIPTION = ("the bare identifier (classify, or route for a Rust "
                      "printed (classify( score , late )); both resolve, exact "
                      "match first")
 
+# The scorer's remedy vocabulary, said once: a structured result carrying a value
+# its outputSchema does not list is rejected whole by a validating client.
+_REMEDIES = ("decompose", "split-lines", "add-tests", "ok")
+_REMEDY_DESCRIPTION = ("decompose (ccn over ceiling), split-lines (another function shares its "
+                       "source lines, so coverage cannot tell them apart and no test lowers the "
+                       "score until the definitions sit on separate lines), add-tests (coverage "
+                       "short) or ok (nothing left to do)")
+_REMEDY = {"type": "string", "description": _REMEDY_DESCRIPTION, "enum": _REMEDIES}
+
 # The partition a large repo needs before `top` means anything: one --scope
 # per element, exact names as declared in crapkit.toml.
 _SCOPE = {
@@ -63,10 +72,7 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
                          'measure this span',
           'enum': ('measured', 'untested', 'no-lane', 'cc-only')},
  'crap': {'type': 'number', 'description': 'the score: ccn^2 x (1 - cov)^3 + ccn'},
- 'remedy': {'type': 'string',
-            'description': 'decompose (ccn over ceiling), add-tests (coverage short) or ok '
-                           '(nothing left to do)',
-            'enum': ('decompose', 'add-tests', 'ok')},
+ 'remedy': _REMEDY,
  'target': {'type': 'integer', 'description': "this scope's effective ccn ceiling"},
  'commits': {'type': 'integer', 'description': 'commits touching the file in the churn window'},
  'authors': {'type': 'integer', 'description': 'distinct authors of those commits'},
@@ -112,9 +118,9 @@ _WORKLIST_ITEM = {'type': 'object',
                                         'inventory-only run',
                          'enum': ('measured', 'untested', 'no-lane', 'cc-only', None)},
                 'remedy': {'type': 'string',
-                           'description': 'decompose, add-tests or ok; only decompose and '
-                                          'add-tests rows with a lane reach get_next_item',
-                           'enum': ('decompose', 'add-tests', 'ok')},
+                           'description': 'decompose, split-lines, add-tests or ok; every row '
+                                          'but ok reaches get_next_item when a lane measures it',
+                           'enum': _REMEDIES},
                 'crap': {'type': ('number', 'null'),
                          'description': 'the score from the ranked run; null on an inventory-only '
                                         'run'},
@@ -469,9 +475,9 @@ TOOLS: tuple[dict, ...] = (
                 "value get_next_item prints")},
             "remedy": {
                 "type": "string",
-                "description": ("decompose, add-tests or ok: the branch the session takes; "
-                "scored.remedy carries the same value"),
-                "enum": ("decompose", "add-tests", "ok")},
+                "description": ("decompose, split-lines, add-tests or ok: the branch the "
+                "session takes; scored.remedy carries the same value"),
+                "enum": _REMEDIES},
             "target": {
                 "type": "integer",
                 "description": ("this scope's effective ccn ceiling, the same value as "
@@ -527,11 +533,7 @@ TOOLS: tuple[dict, ...] = (
                     "crap": {
                         "type": "number",
                         "description": "the score: ccn^2 x (1 - cov)^3 + ccn"},
-                    "remedy": {
-                        "type": "string",
-                        "description": ("decompose (ccn over ceiling), add-tests (coverage short) or "
-                        "ok (nothing left to do)"),
-                        "enum": ("decompose", "add-tests", "ok")}}},
+                    "remedy": _REMEDY}},
             "source": {
                 "type": "string",
                 "description": ("the function's own text, start to end inclusive, newlines intact: "
@@ -590,11 +592,7 @@ TOOLS: tuple[dict, ...] = (
                         "crap": {
                             "type": "number",
                             "description": "score"},
-                        "remedy": {
-                            "type": "string",
-                            "description": ("decompose (ccn over ceiling), add-tests (coverage short) "
-                            "or ok (nothing left to do)"),
-                            "enum": ("decompose", "add-tests", "ok")}}}},
+                        "remedy": _REMEDY}}},
             "file_totals": {
                 "type": "object",
                 "description": "the file rolled up",
@@ -1342,11 +1340,7 @@ TOOLS: tuple[dict, ...] = (
                         "crap": {
                             "type": "number",
                             "description": "score from fresh ccn and baseline cov"},
-                        "remedy": {
-                            "type": "string",
-                            "description": ("decompose (ccn over ceiling), add-tests (coverage short) "
-                            "or ok (nothing left to do)"),
-                            "enum": ("decompose", "add-tests", "ok")},
+                        "remedy": _REMEDY,
                         "stale_coverage": {
                             "type": "boolean",
                             "description": ("always true: complexity is the working tree's, coverage "
@@ -1393,11 +1387,7 @@ TOOLS: tuple[dict, ...] = (
                                 "crap": {
                                     "type": "number",
                                     "description": "score"},
-                                "remedy": {
-                                    "type": "string",
-                                    "description": ("decompose (ccn over ceiling), add-tests "
-                                    "(coverage short) or ok (nothing left to do)"),
-                                    "enum": ("decompose", "add-tests", "ok")},
+                                "remedy": _REMEDY,
                                 "key_name": {
                                     "type": "string",
                                     "description": "the ratchet key form of the name"},

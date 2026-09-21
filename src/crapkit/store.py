@@ -70,7 +70,7 @@ _CODE_DDL = """CREATE TABLE IF NOT EXISTS {table} (
 # and a store is a file people copy between machines. A name from outside this
 # list is still stored, at a code minted after these.
 _CODE_SEEDS = {"flags": ("measured", "untested", "no-lane", "cc-only"),
-               "remedies": ("ok", "add-tests", "decompose")}
+               "remedies": ("ok", "add-tests", "decompose", "split-lines")}
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS runs (

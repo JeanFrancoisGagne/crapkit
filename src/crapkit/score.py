@@ -128,13 +128,20 @@ def _best_match(row: InventoryRow, candidates: list[FnCoverage]) -> FnCoverage |
     return best
 
 
-def _remedy(ccn: int, score: float, ceiling: int) -> str:
+def _remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> str:
+    """The first thing that can lower this score. A function sharing its source
+    line span with another scores as uncovered whatever its tests do, so
+    add-tests there is advice nobody can follow: splitting the definitions is,
+    and the run after the split says whether tests are still owed."""
     if ccn > ceiling:
         return "decompose"
-    return "ok" if score <= ceiling else "add-tests"
+    if score <= ceiling:
+        return "ok"
+    return "split-lines" if shared_span else "add-tests"
 
 
-def _finish(row, cov: float, flag: str, *, target: int, scope_targets) -> ScoredRow:
+def _finish(row, cov: float, flag: str, *, target: int, scope_targets,
+            shared_span: bool = False) -> ScoredRow:
     # cc-only is the pre-commit hook's rule: crap IS ccn, so _remedy can only
     # answer ok or decompose. Feeding it cov=0 through the formula would say
     # add-tests about code no test can reach.
@@ -146,7 +153,7 @@ def _finish(row, cov: float, flag: str, *, target: int, scope_targets) -> Scored
     # built a throwaway dict per row and looked every field up by name.
     return ScoredRow(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7],
                      row[8], row[9], row[10],
-                     cov, flag, score, _remedy(row[7], score, ceiling), row[11], row[12])
+                     cov, flag, score, _remedy(row[7], score, ceiling, shared_span), row[11], row[12])
 
 
 def _nearest_overlay(row, candidates) -> list:
@@ -277,11 +284,13 @@ def overlay_stale_coverage(
         if r.flag == "measured":
             by_key.setdefault((r.path, r.long_name), []).append(r)
 
+    shared = _shared_source_spans(rows, lane_scopes, cc_only_scopes)
     scored = []
     for row in rows:
-        cov, flag = (_cov_without_join(row, lane_scopes, cc_only_scopes)
-                     or _named_overlay_cov(row, by_key, positions))
-        scored.append(_finish(row, cov, flag, target=target, scope_targets=scope_targets))
+        verdict = _cov_without_join(row, lane_scopes, cc_only_scopes)
+        cov, flag = verdict or _named_overlay_cov(row, by_key, positions)
+        scored.append(_finish(row, cov, flag, target=target, scope_targets=scope_targets,
+                              shared_span=_on_shared_span(row, verdict, shared)))
     return scored
 
 
@@ -326,8 +335,7 @@ def _shared_source_spans(rows, lane_scopes: set, cc_only_scopes) -> dict:
     return collisions
 
 
-def _ambiguous_spans(rows, coverage_by_path: dict, start_index: dict,
-                     lane_scopes: set, cc_only_scopes) -> dict:
+def _ambiguous_spans(shared: dict, coverage_by_path: dict, start_index: dict) -> dict:
     """The shared spans a measurement would speak about, so the join would hand
     every function on the span one function's number.
 
@@ -338,18 +346,25 @@ def _ambiguous_spans(rows, coverage_by_path: dict, start_index: dict,
     shape _note_unanalyzable settled for unreadable files.
     """
     ambiguous = {}
-    for span, members in _shared_source_spans(rows, lane_scopes, cc_only_scopes).items():
+    for span, members in shared.items():
         if _span_join_cov(members[0], coverage_by_path, start_index)[1] == "measured":
             ambiguous[span] = members
     return ambiguous
 
 
-def _ambiguous_cov(row, ambiguous: dict) -> tuple[float, str] | None:
-    """Uncovered, never the neighbour's number: the honest floor for a function
-    whose measurement cannot be told from another's."""
+def _joined_cov(row, ambiguous: dict, coverage_by_path: dict,
+                start_index: dict) -> tuple[float, str]:
+    """Uncovered on an ambiguous span, never the neighbour's number: the honest
+    floor for a function whose measurement cannot be told from another's."""
     if (row.path, row.start, row.end) in ambiguous:
         return 0.0, "untested"
-    return None
+    return _span_join_cov(row, coverage_by_path, start_index)
+
+
+def _on_shared_span(row, verdict, shared: dict) -> bool:
+    """A row some lane measures, on a span it shares. Measured yet or not: tests
+    would only make the span measured, and then it scores as uncovered."""
+    return verdict is None and (row.path, row.start, row.end) in shared
 
 
 def score_rows(
@@ -363,14 +378,15 @@ def score_rows(
     shared_spans: SharedSpanFold | None = None,
 ) -> list[ScoredRow]:
     start_index = _start_index(coverage_by_path)
-    ambiguous = _ambiguous_spans(rows, coverage_by_path, start_index, lane_scopes, cc_only_scopes)
+    shared = _shared_source_spans(rows, lane_scopes, cc_only_scopes)
+    ambiguous = _ambiguous_spans(shared, coverage_by_path, start_index)
     for members in ambiguous.values():
         if shared_spans is not None:
             shared_spans.add(members)
     scored = []
     for r in rows:
-        cov, flag = (_cov_without_join(r, lane_scopes, cc_only_scopes)
-                     or _ambiguous_cov(r, ambiguous)
-                     or _span_join_cov(r, coverage_by_path, start_index))
-        scored.append(_finish(r, cov, flag, target=target, scope_targets=scope_targets))
+        verdict = _cov_without_join(r, lane_scopes, cc_only_scopes)
+        cov, flag = verdict or _joined_cov(r, ambiguous, coverage_by_path, start_index)
+        scored.append(_finish(r, cov, flag, target=target, scope_targets=scope_targets,
+                              shared_span=_on_shared_span(r, verdict, shared)))
     return scored

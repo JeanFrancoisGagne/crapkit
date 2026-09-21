@@ -3,7 +3,7 @@ import pytest
 
 from crapkit.analyze import analyze_source
 from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import SharedSpanFold, score_rows
+from crapkit.score import SharedSpanFold, overlay_stale_coverage, score_rows
 from crapkit.snapshot import build_inventory_rows
 
 
@@ -87,3 +87,54 @@ def test_different_spans_starting_on_one_line_keep_existing_attribution():
                                          FnCoverage("dead", 1, 4, False, 0, 0)]},
                         lane_scopes={"src"})
     assert [r.cov for r in scored] == [1.0, 0.0]
+
+
+def shared_pair(ccn: int):
+    """The pair on one line, the first complex enough to matter at the given ccn."""
+    first, second = functions()
+    return [first._replace(ccn=ccn), second]
+
+
+SHARED_ARTIFACT = {"app.ts": [FnCoverage("live", 1, 1, True, 0, 0)]}
+
+
+def test_a_shared_span_function_over_its_ceiling_is_told_to_split_the_line():
+    """No test can lower its score: coverage cannot be told apart on that line,
+    so add-tests would be advice nobody can follow."""
+    scored = score_rows(shared_pair(3), SHARED_ARTIFACT, lane_scopes={"src"}, target=6)
+    assert [(r.ccn, r.crap, r.remedy) for r in scored] == [(3, 12.0, "split-lines"), (1, 2.0, "ok")]
+
+
+def test_a_shared_span_function_too_complex_for_any_coverage_is_still_decomposed():
+    scored = score_rows(shared_pair(7), SHARED_ARTIFACT, lane_scopes={"src"}, target=6)
+    assert scored[0].remedy == "decompose"
+
+
+def test_an_unmeasured_function_alone_on_its_line_is_still_told_to_add_tests():
+    alone = functions()[:1]
+    scored = score_rows([alone[0]._replace(ccn=3)], {"app.ts": []}, lane_scopes={"src"}, target=6)
+    assert [(r.flag, r.remedy) for r in scored] == [("untested", "add-tests")]
+
+
+def test_a_shared_span_no_lane_measures_keeps_its_own_advice():
+    """Without a lane the missing number is a tooling gap, not a shared line."""
+    scored = score_rows(shared_pair(3), SHARED_ARTIFACT, lane_scopes=set(), target=6)
+    assert [(r.flag, r.remedy) for r in scored] == [("no-lane", "add-tests"), ("no-lane", "ok")]
+
+
+def test_a_shared_span_nothing_measures_is_told_to_split_the_line_too():
+    """Tests would only make the line measured, and a measured shared line
+    scores as uncovered: splitting comes first either way."""
+    scored = score_rows(shared_pair(3), {"app.ts": []}, lane_scopes={"src"}, target=6)
+    assert [(r.flag, r.remedy) for r in scored] == [("untested", "split-lines"), ("untested", "ok")]
+
+
+def test_the_rescore_preview_gives_a_shared_span_the_same_advice():
+    """The gate and check_gate read this path; they may not fall back to add-tests."""
+    scored = overlay_stale_coverage(shared_pair(3), [], lane_scopes={"src"}, target=6)
+    assert [(r.flag, r.remedy) for r in scored] == [("untested", "split-lines"), ("untested", "ok")]
+
+
+def test_the_rescore_preview_leaves_a_scope_without_a_lane_alone():
+    scored = overlay_stale_coverage(shared_pair(3), [], lane_scopes=set(), target=6)
+    assert [(r.flag, r.remedy) for r in scored] == [("no-lane", "add-tests"), ("no-lane", "ok")]

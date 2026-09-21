@@ -70,6 +70,9 @@ crapkit ratchet seed
 git add crapkit.toml crapkit-ratchet.tsv .gitignore
 ```
 
+Not a Python repo? `uvx crapkit init` runs the same commands and adds nothing to your
+manifest: see [A repo that is not Python](#a-repo-that-is-not-python).
+
 `init` detects pytest, Vitest and Jest from the repository's own files. Review the
 generated config before running its commands. When detection leaves a commented
 lane, fill it in using the [lane recipes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md).
@@ -140,6 +143,28 @@ of `main`, or from a local clone (run at the clone root):
 pip install git+https://github.com/JeanFrancoisGagne/crapkit.git
 pip install .
 ```
+
+### A repo that is not Python
+
+crapkit is a command-line tool, never a dependency of the code it scores. A TypeScript,
+Go or Rust repo adds nothing to its own manifest. With [uv](https://docs.astral.sh/uv/)
+on the machine, `uvx` fetches crapkit into a cache of its own and runs it:
+
+```
+$ uvx crapkit init
+wrote crapkit.toml with 1 scope(s): src
+detected 1 lane(s) from this repo's own files: js - next: run `crapkit coverage`
+added to .gitignore: .crapkit/
+
+$ uvx crapkit coverage
+$ uvx crapkit worklist
+```
+
+The lane still runs your own test runner, so Vitest or Jest and its coverage package come
+from the repo's `node_modules` as they do today. `uv tool install crapkit` or
+`pipx install crapkit` puts a `crapkit` command on PATH once, which is what the
+[commit gate](#the-gate) and the Claude Code plugin call. uv brings its own Python when
+the machine has none.
 
 Requires Python 3.11 or newer and Git on PATH. The CLI has one runtime dependency,
 `lizard>=1.24.0`; a package mirror needs both distributions. Install into the environment
@@ -613,7 +638,7 @@ closes it. A verify that passed is one line: `**verify passed.** Run 2 against b
 The rows are the ranked worklist for the files the pull request changed, worst first,
 `top` of them, with the rows a finding names listed first. `risk` is ccn times churn
 weight, the number `crapkit worklist` ranks on, and `remedy` is the run's own verdict for
-that function: `decompose`, `add-tests` or `ok`. `(accepted debt)` marks a function the
+that function: `decompose`, `split-lines`, `add-tests` or `ok`. `(accepted debt)` marks a function the
 committed ratchet carries a mark for, so an untouched `legacy_router` does not read like
 the pull request's own new function. A pull request that touches no ranked function gets
 the heading and no table.
@@ -789,6 +814,7 @@ The coverage summary counts all four as `measured` / `untested` / `no_lane` / `c
 | Remedy | Condition | Action |
 |---|---|---|
 | `decompose` | `ccn > ceiling` | Split it. No amount of coverage clears this. |
+| `split-lines` | `ccn <= ceiling`, `crap > ceiling`, and another function shares its source lines | Put each definition on its own lines, then measure again. Coverage cannot tell functions on one line apart, so the score stays at uncovered whatever the tests do. |
 | `add-tests` | `ccn <= ceiling` and `crap > ceiling` | Cover the branches. |
 | `ok` | `crap <= ceiling` | Nothing. |
 
@@ -1227,12 +1253,12 @@ export function classify(row: Row): string {
 ```
 $ crapkit rescore src/grade.ts --gate
 rescore vs run 1 @ 8bfbe613fcd (coverage STALE, complexity fresh)
-   ccn   cov     crap  remedy     function
-     5    0%     30.0  add-tests  src/grade.ts:22  band ( score )
-     5    0%     30.0  add-tests  src/grade.ts:38  demote ( letter , row Row )
-     4    0%     20.0  add-tests  src/grade.ts:8  penalty ( attempts , late )
-     4   45%      6.7  add-tests  src/grade.ts:48  classify ( row Row )
-     4   75%      4.2  ok         src/grade.ts:59  average ( scores Array )
+   ccn   cov     crap  remedy      function
+     5    0%     30.0  add-tests   src/grade.ts:22  band ( score )
+     5    0%     30.0  add-tests   src/grade.ts:38  demote ( letter , row Row )
+     4    0%     20.0  add-tests   src/grade.ts:8  penalty ( attempts , late )
+     4   45%      6.7  add-tests   src/grade.ts:48  classify ( row Row )
+     4   75%      4.2  ok          src/grade.ts:59  average ( scores Array )
 ```
 
 Exit 0: every piece is at or under 6. The `crap` column is loud because its coverage half
@@ -1299,7 +1325,7 @@ with no debt.
 
 | Page | Covers |
 |---|---|
-| [The handbook](https://jeanfrancoisgagne.github.io/crapkit/handbook.html) | **Start here for anything deeper.** The illustrated handbook: what crapkit is, how every piece works, and where each command earns its keep. Also at [docs/handbook.html](https://jeanfrancoisgagne.github.io/crapkit/handbook.html), self-contained, so it opens straight from a clone. |
+| [The handbook](https://www.jfgagne.com/crapkit/handbook.html) | **Start here for anything deeper.** The illustrated handbook: what crapkit is, how every piece works, and where each command earns its keep. Also at [docs/handbook.html](https://www.jfgagne.com/crapkit/handbook.html), self-contained, so it opens straight from a clone. |
 | [docs/adoption.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md) | The judgment layer over the quickstarts: scope granularity, exclude vs lane, scoped_tests wiring, the first-verify taint hazard. |
 | [docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | Every `crapkit.toml` key: type, default, and what it does. |
 | [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) | The lane model, vitest and jest and pytest recipes, artifact reuse, flake retest, containers. |

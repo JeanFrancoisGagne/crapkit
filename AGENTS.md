@@ -68,7 +68,7 @@ do next.
 |---|---|
 | `source` | the function's own text, `start` to `end`. Edit from this, not from a fresh read |
 | `handle` | the name to pass back to `brief`, `explain` and `claims release`. It survives your own edit; `start` does not |
-| `remedy` | `decompose`, `add-tests` or `ok`, at the top level: the same verdict `next-item` prints |
+| `remedy` | `decompose`, `split-lines`, `add-tests` or `ok`, at the top level: the same verdict `next-item` prints |
 | `est_splits`, `est_uncovered_paths` | the same two budget numbers `next-item` prints, out of the same code |
 | `params` | its parameter names in order, so a new test can call it without opening the file |
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
@@ -142,6 +142,10 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
   a new helper does not collide with a name that is there.
 - `remedy: add-tests`: write the failing test first, at the public seam, then cover the
   lines `uncovered_lines` names. `params` gives the call signature.
+- `remedy: split-lines`: another function shares this one's source lines, so coverage
+  cannot tell them apart and the score stays at uncovered whatever you test. Put each
+  definition on its own lines, then `crapkit coverage`. The next run says whether tests
+  are still owed.
 - New file: `rescore --gate` gates it in full (every function, with an `untracked`
   warning on stderr) because git diff cannot scope it. `git add` it so later runs judge
   only your edits; the pre-commit hook only ever sees staged content.
@@ -396,7 +400,7 @@ Act on these fields:
 
 | Field | Use it for |
 |---|---|
-| `remedy` | `decompose` splits the function, `add-tests` covers it, `ok` needs nothing |
+| `remedy` | `decompose` splits the function, `split-lines` moves it off a line it shares, `add-tests` covers it, `ok` needs nothing |
 | `est_splits` | pieces a decomposition needs: `0` when `ccn <= target`, else `ceil(ccn / target)` |
 | `est_uncovered_paths` | decision paths no test walks: `round((1 - cov) * ccn)` |
 | `uncovered_lines` | the exact line numbers to cover |

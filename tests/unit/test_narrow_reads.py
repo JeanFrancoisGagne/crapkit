@@ -13,7 +13,7 @@ from crapkit.store import SnapshotStore
 
 SCOPES = ("api", "ui")
 FLAGS = ("measured", "untested", "no-lane", "cc-only")
-REMEDIES = ("ok", "add-tests", "decompose")
+REMEDIES = ("ok", "add-tests", "decompose", "split-lines")
 FLAT = Config(target=6).ceiling_of  # every scope judged at the repo ceiling
 
 

@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.7.6 — unreleased
+
+### A function on a shared line is told to split it, not to add tests
+
+- 0.7.5 scores every function on a source line span it shares with another as
+  uncovered, and still labelled the ones over their ceiling `add-tests`. No test can
+  lower that score, because coverage cannot say whose is whose on such a span, so the
+  advice could not be followed. Those functions now carry a fourth remedy,
+  `split-lines`: put each definition on its own lines and measure again. The run after
+  the split says whether tests are still owed.
+- The rule covers a shared span no test reaches yet, since tests would only make it
+  measured and therefore uncovered, and it covers `rescore`, the commit gate and
+  `check_gate`, which derive the remedy on their own path. `decompose` still wins when
+  complexity alone is over the ceiling, and a scope no lane measures keeps its advice.
+- `split-lines` is stored at a fixed code like the other three, so a store copied
+  between machines reads the same. A store written by an older release gains the code
+  the first time this one opens it. Every MCP result schema that lists remedies lists
+  the new one, so a client that validates structured results accepts it.
+
+### Running it from a repo that is not Python
+
+- The README now shows the path a TypeScript, Go or Rust repo takes: `uvx crapkit init`
+  runs the tool from uv's own cache and adds nothing to the repo's manifest, and
+  `uv tool install crapkit` or `pipx install crapkit` puts the command on PATH for the
+  commit gate and the plugin.
+
+### The docs site has a new address
+
+- The handbook is served from https://www.jfgagne.com/crapkit/handbook.html over HTTPS.
+  The old github.io address redirects there. The README, the package metadata, the
+  registry manifest and the landing page's canonical link name the new address.
+
+### Running it from a repo that is not Python
+
+- The README now shows the path a TypeScript, Go or Rust repo takes: `uvx crapkit init`
+  runs the tool from uv's own cache and adds nothing to the repo's manifest, and
+  `uv tool install crapkit` or `pipx install crapkit` puts the command on PATH for the
+  commit gate and the plugin.
+
+### The docs site has a new address
+
+- The handbook is served from https://www.jfgagne.com/crapkit/handbook.html over HTTPS.
+  The old github.io address redirects there. The README, the package metadata, the
+  registry manifest and the landing page's canonical link name the new address.
+
 ## 0.7.5 — 2026-09-15
 
 ### A source line two functions share no longer ends the coverage run

@@ -67,7 +67,7 @@ CREATE INDEX idx_attempts_open ON attempts(closed_at);
 
 SCOPES = ("api", "ui")
 FLAGS = ("measured", "untested", "no-lane", "cc-only")
-REMEDIES = ("ok", "add-tests", "decompose")
+REMEDIES = ("ok", "add-tests", "decompose", "split-lines")
 LANES = {"unit": {"exit_code": 0, "scopes": ["api", "ui"]}}
 
 
@@ -195,6 +195,35 @@ def test_the_lookup_tables_name_every_code(tmp_path):
     conn.close()
     assert set(flags.values()) >= set(FLAGS)
     assert set(remedies.values()) >= set(REMEDIES)
+
+
+def remedy_codes(db) -> dict:
+    conn = conn_of(db)
+    codes = dict(conn.execute("SELECT name, id FROM remedies"))
+    conn.close()
+    return codes
+
+
+def test_every_remedy_holds_a_fixed_code_whatever_the_rows_said(tmp_path):
+    """A store is a file people copy between machines, so a remedy name means
+    the same integer in all of them, including one no row has used yet."""
+    db = tmp_path / "crap.sqlite"
+    seeded(db, scored(3))
+
+    assert remedy_codes(db) == {"ok": 1, "add-tests": 2, "decompose": 3, "split-lines": 4}
+
+
+def test_a_store_from_before_split_lines_gains_its_code_on_open(tmp_path):
+    db = tmp_path / "crap.sqlite"
+    seeded(db, scored(3))
+    conn = conn_of(db)
+    conn.execute("DELETE FROM remedies WHERE name = 'split-lines'")
+    conn.commit()
+    conn.close()
+
+    SnapshotStore(db)
+
+    assert remedy_codes(db)["split-lines"] == 4
 
 
 def test_the_reads_still_hand_back_the_strings(tmp_path):

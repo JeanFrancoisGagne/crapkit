@@ -109,9 +109,9 @@ it moves nothing, so step 3 and step 5 both pass:
 ```
 $ crapkit rescore calc/grade.py --gate
 rescore vs run 2 @ 4a06338604a (coverage STALE, complexity fresh)
-   ccn   cov     crap  remedy     function
-    13   39%     51.6  decompose  calc/grade.py:1  classify( score , attempts , late , bonus )
-     5   62%      6.3  add-tests  calc/grade.py:25  summarize( rows , wide , totals , header )
+   ccn   cov     crap  remedy      function
+    13   39%     51.6  decompose   calc/grade.py:1  classify( score , attempts , late , bonus )
+     5   62%      6.3  add-tests   calc/grade.py:25  summarize( rows , wide , totals , header )
 EXIT=0
 
 $ crapkit verify

@@ -76,4 +76,4 @@ def test_the_manifest_names_its_repository_so_aggregators_can_link_back():
     manifest = json.loads(Path("server.json").read_text(encoding="utf-8"))
 
     assert manifest["repository"] == {"url": "https://github.com/JeanFrancoisGagne/crapkit", "source": "github"}
-    assert manifest["websiteUrl"] == "https://jeanfrancoisgagne.github.io/crapkit/"
+    assert manifest["websiteUrl"] == "https://www.jfgagne.com/crapkit/"

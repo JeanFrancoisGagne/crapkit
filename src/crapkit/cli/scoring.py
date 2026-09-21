@@ -817,6 +817,6 @@ def cmd_rescore(args: argparse.Namespace) -> int:
 def _print_rescore_table(overlay, latest: dict) -> None:
     """The refactor loop's view: fresh ccn, worst first, stale cov labeled."""
     print(f"rescore vs run {latest['id']} @ {latest['commit'][:11]} (coverage STALE, complexity fresh)")
-    print(f"  {'ccn':>4} {'cov':>5} {'crap':>8}  {'remedy':10} function")
+    print(f"  {'ccn':>4} {'cov':>5} {'crap':>8}  {'remedy':11} function")
     for r in sorted(overlay, key=lambda x: (-x.ccn, x.path, x.start)):
-        print(f"  {r.ccn:>4} {r.cov:>5.0%} {r.crap:>8.1f}  {r.remedy:10} {r.path}:{r.start}  {r.long_name}")
+        print(f"  {r.ccn:>4} {r.cov:>5.0%} {r.crap:>8.1f}  {r.remedy:11} {r.path}:{r.start}  {r.long_name}")
