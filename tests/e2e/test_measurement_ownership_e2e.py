@@ -66,19 +66,28 @@ print(json.dumps(sorted(retest_lane(root, lane, {'tests.test_app::test_f'}))))
 '''
 
 
+# Bounds against a hung child, not budgets: the loops below leave the moment the
+# state they wait for appears, so a quiet machine never pays them. A box that is
+# also running another repo's coverage has taken over 25 seconds to get here.
+STATE_WAIT = 120
+EXIT_WAIT = 60
+
+
 def wait_for(path, process):
-    until = time.monotonic() + 15
+    until = time.monotonic() + STATE_WAIT
     while not path.exists() and process.poll() is None and time.monotonic() < until:
         time.sleep(.02)
-    assert path.exists(), process.communicate(timeout=10)
+    if not path.exists():
+        process.kill()
+    assert path.exists(), process.communicate(timeout=EXIT_WAIT)
 
 
 def drain(process):
     try:
-        process.communicate(timeout=30)
+        process.communicate(timeout=STATE_WAIT)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.communicate(timeout=10)
+        process.communicate(timeout=EXIT_WAIT)
         raise
 
 
@@ -116,7 +125,7 @@ def test_one_owner_spans_execution_parsing_and_stamp_publication(measured_repo, 
     assert second.returncode == 5, second.stdout + second.stderr
     assert 'measurement already in use' in second.stderr
     (measured_repo / '.crapkit/release').touch()
-    out, err = first.communicate(timeout=30)
+    out, err = first.communicate(timeout=STATE_WAIT)
     assert first.returncode == 0, out + err
     assert json.loads(out)['crap_load'] == 1
     if phase == 'execute':
@@ -160,13 +169,13 @@ def test_retest_owns_the_same_junit_that_measurement_reads(measured_repo, paused
     assert second.returncode == 5, second.stdout + second.stderr
     assert 'measurement already in use' in second.stderr
     (measured_repo / '.crapkit/release').touch()
-    out, err = first.communicate(timeout=30)
+    out, err = first.communicate(timeout=STATE_WAIT)
     assert first.returncode == 0, out + err
     assert json.loads(out) == ['tests.test_app::test_f']
 
 
 def coverage_after_owner_exit(root):
-    until = time.monotonic() + 15
+    until = time.monotonic() + STATE_WAIT
     while True:
         result = run_cli(root, 'coverage', '--json')
         if result.returncode != 5:
@@ -181,7 +190,7 @@ def test_a_killed_cli_stops_its_suite_before_releasing_ownership(measured_repo, 
     first = paused_measurement('execute')
     (measured_repo/'.crapkit/check-writer').touch()
     first.kill()
-    first.wait(timeout=10)
+    first.wait(timeout=EXIT_WAIT)
     second = coverage_after_owner_exit(measured_repo)
     assert second.returncode == 0, second.stdout + second.stderr
     assert json.loads(second.stdout)['lane_failures'] == {}
