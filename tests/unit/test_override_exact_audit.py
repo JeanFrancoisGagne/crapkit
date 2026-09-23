@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from crapkit.override import record_override
-from crapkit.ratchet import load_ratchet
+from crapkit.ratchet import load_ratchet, metric_version
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
 
@@ -22,7 +22,7 @@ def test_twin_override_audit_matches_the_exact_grant(tmp_path, raise_marks, expe
         run_id = store.write_run(commit="fixture", tool_versions={}, rows=[])
         record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                         alert_command=alert, violations=[violation], reason="reviewed debt",
-                        raise_marks=raise_marks)
+                        raise_marks=raise_marks, metric=metric_version())
         marks = {(e.path, e.long_name): e.crap for e in load_ratchet(marks_path.read_text())}
         assert marks == {("app.ts", "f( )"): 12.0, ("app.ts", key_name): expected_mark}
         assert store.read_overrides(run_id) == [("app.ts", key_name, 90.0, "reviewed debt")]

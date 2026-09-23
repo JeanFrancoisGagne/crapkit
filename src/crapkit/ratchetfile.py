@@ -105,14 +105,25 @@ class RatchetFile:
         before its lanes run. A file written before stamping gains the stamp,
         which is the tighten's `restamped`.
         """
-        conflict = self.stamp_conflict(metric)
+        conflict = self.stamp_conflict(self._vouched(metric))
         if conflict:
             raise ConfigError(conflict)
         return self._dump(entries, metric, keys)
 
     def reseeded(self, entries: list, metric: str, *, keys: int | None = None) -> str:
         """seed's text, stamped with the metric of the run it read."""
-        return self._dump(entries, metric, keys)
+        return self._dump(entries, self._vouched(metric), keys)
+
+    def _vouched(self, metric: str) -> str:
+        """A write that stamps numbers names the metric that produced them.
+
+        An empty one used to fall through to whatever stamp was there, so the
+        new numbers took a label nobody had checked.
+        """
+        if not metric:
+            raise ConfigError(f"a write that stamps numbers into {self.path.name} names no "
+                              "metric, so it cannot vouch for them; the file was left unchanged")
+        return metric
 
     def _dump(self, entries: list, metric: str, keys: int | None) -> str:
         version = read_key_version(self.text or "") if keys is None else keys

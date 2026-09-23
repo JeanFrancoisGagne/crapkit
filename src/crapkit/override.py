@@ -32,15 +32,15 @@ def record_override(
     key_version: int | None = None,
     identity_rows=None,
     ratchet_input: RatchetFile | None = None,
-    metric: str | None = None,
+    metric: str,
 ) -> None:
-    """`metric` is the metric that scored the violations. A measured grant
-    (verify's, which may raise a mark) is refused by marks another metric
-    recorded, the refusal verify itself gives. The hook's grant
-    (`raise_marks=False`) synthesizes its numbers from ccn alone and compares
-    no mark, so it keeps the recorded stamps: a stale file stays stale and
-    verify keeps refusing it. `metric` then stamps only a file the grant
-    creates. Without a metric nothing is stamped by omission."""
+    """`metric` is the metric that scored the violations, and every caller
+    names it. A measured grant (verify's, which may raise a mark) is refused
+    by marks another metric recorded, the refusal verify itself gives, and by
+    an empty metric. The hook's grant (`raise_marks=False`) synthesizes its
+    numbers from ccn alone and compares no mark, so it keeps the recorded
+    stamps: a stale file stays stale and verify keeps refusing it. `metric`
+    then stamps only a file the grant creates."""
     saved = ratchet_input or RatchetFile.read(root / ratchet_file)
     text = _checked_grant_text(saved, violations, raise_marks=raise_marks, keys=key_version,
                                metric=metric)
@@ -69,7 +69,7 @@ def _validate_override_keys(text: str, rows, key_version: int | None) -> None:
 
 
 def _checked_grant_text(saved: RatchetFile, violations: list[GateViolation], *,
-                        raise_marks: bool, keys: int | None, metric: str | None) -> str:
+                        raise_marks: bool, keys: int | None, metric: str) -> str:
     """The marks file after the grant, refused before any side effect when a
     reader cannot prove its keys.
 
@@ -131,11 +131,15 @@ def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *
 
 
 def _grant_text(saved: RatchetFile, granted: list[RatchetEntry], *, raise_marks: bool,
-                keys: int | None, metric: str | None) -> str:
-    """The marks file after the grant, stamped by the rule its numbers fall under."""
-    if metric and raise_marks:
+                keys: int | None, metric: str) -> str:
+    """The marks file after the grant, stamped by the rule its numbers fall under.
+
+    Every grant that may raise a mark goes through `measured`, which refuses
+    an empty metric rather than keeping whatever stamp was there.
+    """
+    if raise_marks:
         return saved.measured(granted, metric, keys=keys)
-    return saved.kept(granted, keys=keys, new_file_metric=metric or "")
+    return saved.kept(granted, keys=keys, new_file_metric=metric)
 
 
 def _override_mark(prior: RatchetEntry | None, crap: float, *, raise_marks: bool) -> float:

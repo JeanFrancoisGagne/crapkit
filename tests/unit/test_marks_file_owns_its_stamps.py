@@ -147,10 +147,42 @@ def test_a_measured_grant_under_the_recorded_metric_writes_the_debt(tmp_path):
     assert RatchetEntry("src/b.py", "g( )", 90.0) in load_ratchet(text)
 
 
-def test_a_grant_that_names_no_metric_keeps_the_recorded_stamps(tmp_path):
+def test_the_hooks_grant_keeps_the_recorded_stamps(tmp_path):
+    """The hook's rule: its numbers come from ccn alone and compare no mark."""
     path = marks_file(tmp_path)
     store = SnapshotStore(tmp_path / "db.sqlite")
 
-    grant(tmp_path, store)
+    grant(tmp_path, store, raise_marks=False, metric=NEW)
 
-    assert stamps(path.read_text(encoding="utf-8")) == (OLD, 1)
+    text = path.read_text(encoding="utf-8")
+    assert stamps(text) == (OLD, 1)
+    assert RatchetEntry("src/b.py", "g( )", 90.0) in load_ratchet(text)
+
+
+def test_a_measured_grant_that_names_no_metric_grants_nothing(tmp_path):
+    """Numbers that may raise a mark need the metric that produced them. An
+    empty one fell through to the kept rule and wrote a 90.0 mark under the
+    analysis 7 stamp, with no stamp check."""
+    path = marks_file(tmp_path)
+    before = path.read_bytes()
+    store = SnapshotStore(tmp_path / "db.sqlite")
+
+    with pytest.raises(ConfigError, match="names no metric"):
+        grant(tmp_path, store, metric="")
+
+    assert path.read_bytes() == before
+    assert not (tmp_path / "alert.log").exists()
+    assert all(not store.read_overrides(run["id"]) for run in store.list_runs())
+
+
+def test_a_grant_that_leaves_out_its_metric_is_a_type_error(tmp_path):
+    with pytest.raises(TypeError, match="metric"):
+        record_override(store=None, run_id=1, root=tmp_path, ratchet_file="marks.tsv",
+                        alert_command="", violations=[], reason="")
+
+
+def test_a_reseed_that_names_no_metric_writes_nothing(tmp_path):
+    saved = RatchetFile.read(marks_file(tmp_path))
+
+    with pytest.raises(ConfigError, match="names no metric"):
+        saved.reseeded([MARK], "")
