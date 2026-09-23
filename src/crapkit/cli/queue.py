@@ -749,11 +749,6 @@ def _brief_packet(loader, row) -> dict:
     }
 
 
-def _brief_payload(root: Path, cfg, store: SnapshotStore, latest: dict, row) -> dict:
-    """One packet for a caller holding a repo and a row rather than a loader."""
-    return _brief_packet(_BriefLoader(root, cfg, store, latest), row)
-
-
 def _mark_text(mark: float | None) -> str:
     return "none" if mark is None else f"{mark:.4f}"
 
