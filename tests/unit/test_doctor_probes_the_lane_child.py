@@ -8,8 +8,10 @@ whose `[lane.env] PATH` leads to a python holding pytest-cov FAILed at exit 1
 while the lane itself ran; a lane naming its repo's `.venv` launcher FAILed
 from the root and passed silently from any subdirectory.
 """
+import json
 import os
 import sys
+import venv
 
 import pytest
 
@@ -83,3 +85,30 @@ def test_a_python_the_lanes_own_path_supplies_is_the_one_probed(tmp_path, monkey
     assert code == 0, out
     assert "cannot import pytest_cov" not in out
     assert "lane 'py': python -> " in out and "(pytest 9.9.1, pytest-cov 9.9.2)" in out, out
+
+
+def _venv_launcher() -> str:
+    """The launcher word init writes for a repo's own venv, spelled for the
+    shell this platform runs lanes under."""
+    return os.path.join(".venv", "Scripts", "python.exe") if os.name == "nt" else ".venv/bin/python"
+
+
+def test_a_repo_venv_launcher_gets_one_answer_from_any_directory(tmp_path, monkeypatch, capsys):
+    """The repo's `.venv` holds no pytest-cov. From the root doctor FAILed the
+    lane; from src/pkg its probes looked for the launcher under src/pkg, found
+    nothing, read that as nothing to ask, and exited 0 with no lane line."""
+    word = _venv_launcher()
+    repo = _repo(tmp_path, _toml(f"{word} -m pytest --cov=src"))
+    venv.EnvBuilder(with_pip=False).create(repo / ".venv")
+    answers = []
+    for where in (repo, repo / "src" / "pkg"):
+        monkeypatch.chdir(where)
+        admin._start_probe.cache_clear()
+        admin._runner_report.cache_clear()
+        code, out = _doctor(["doctor", "--json"], capsys)
+        answers.append((code, json.loads(out)["problems"]))
+
+    assert answers[1] == answers[0], answers
+    code, problems = answers[1]
+    named = [p for p in problems if f"names `{word}`" in p and "cannot import pytest_cov" in p]
+    assert code == 1 and len(named) == 1, problems

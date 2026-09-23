@@ -14,6 +14,7 @@ from crapkit.cli._shared import _load_repo_config
 from crapkit.cli.admin import _missing_pytest_cov_note
 from crapkit.cli.verifying import _require_ancestor
 from crapkit.errors import ConfigError, GitError
+from crapkit.lane_command import LaunchSpec
 from crapkit.mcp_server import _no_config_result
 
 
@@ -26,7 +27,7 @@ class _Git:
 
 
 def test_the_pytest_cov_note_is_ascii():
-    note = _missing_pytest_cov_note("py", "python")
+    note = _missing_pytest_cov_note("py", "python", LaunchSpec(Path.cwd()))
 
     assert "cannot import pytest_cov - run `python -m pip install pytest-cov`" in note
     assert note.isascii()

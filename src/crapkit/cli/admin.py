@@ -290,13 +290,11 @@ def _start_probe(word: str, spec: LaunchSpec) -> int | None:
 
 def _dead_first_word(spec: LaunchSpec, command: str) -> tuple[str, int] | None:
     """The command's first word and the shell's verdict, when the shell cannot
-    start it. None when it starts, and None when the word does not resolve on
-    PATH at all: that one is already its own finding, and running nothing
-    proves nothing."""
-    import shutil
-
+    start it. None when it starts, and None when the word does not resolve
+    where the lane's shell looks for it: that one is already its own finding,
+    and running nothing proves nothing."""
     word = first_word(command)
-    if not word or shutil.which(word) is None:
+    if not word or spec.resolve(word) is None:
         return None
     code = _start_probe(word, spec)
     return (word, code) if _could_not_run_it(code) else None
@@ -324,12 +322,10 @@ def _pytest_cov_probe(spec: LaunchSpec, command: str) -> bool:
     and a missing interpreter is doctor's finding, not this one's. True as well
     when no python runs the suite, `uv run python -m pytest` included: nothing
     here can be asked."""
-    import shutil
-
     from ..procs import run_bounded
 
     word = pytest_python(command)
-    if word is None or shutil.which(word) is None:
+    if word is None or spec.resolve(word) is None:
         return True
     probe = f'{_shell_quote(word)} -c "import pytest_cov"'
     try:
@@ -366,7 +362,7 @@ def _dead_interpreter_note(name: str, word: str, code: int) -> str:
             f"(exit {code}) — {fix}, then `{_self()} coverage`")
 
 
-def _missing_pytest_cov_note(name: str, word: str) -> str:
+def _missing_pytest_cov_note(name: str, word: str, spec: LaunchSpec) -> str:
     """Name the interpreter the probe asked and where that word landed here.
 
     "this python" named nothing, and a machine has more than one. A repo whose
@@ -374,10 +370,10 @@ def _missing_pytest_cov_note(name: str, word: str) -> str:
     `python` a stock PATH answers with, and then installing a package is the
     wrong move: the reader has to be able to tell which of the two was asked.
     The install command carries the same word, so it lands in that interpreter's
-    environment rather than whichever one the reader's shell has active."""
-    import shutil
-
-    resolved = shutil.which(word) or word
+    environment rather than whichever one the reader's shell has active. Where
+    the word lands is read the way the lane's shell reads it, so a relative
+    launcher names the same file from any directory doctor runs in."""
+    resolved = spec.resolve(word) or word
     return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
             f"cannot import pytest_cov - run `{word} -m pip install pytest-cov` in the "
             "environment the suite runs in "
@@ -389,10 +385,10 @@ def _missing_pytest_cov_note(name: str, word: str) -> str:
             f"then `{_self()} coverage`")
 
 
-def _absent_manager(command: str) -> str | None:
-    """The environment manager heading this lane, when this machine's PATH
-    carries no such word. None when it resolves, and None when nothing manages
-    the lane at all.
+def _absent_manager(spec: LaunchSpec, command: str) -> str | None:
+    """The environment manager heading this lane, when the PATH the lane runs
+    on carries no such word. None when it resolves, and None when nothing
+    manages the lane at all.
 
     A lockfile is a property of the REPO, so `init` writes `uv run python` off
     its presence alone — right for the repo, and unrunnable on a checkout whose
@@ -400,13 +396,11 @@ def _absent_manager(command: str) -> str | None:
     start check skips a word that does not resolve, and the pytest-cov probe
     refuses to provision an environment to ask a question about it.
     """
-    import shutil
-
     from ..scaffold import LOCKFILE_RUNNERS
 
     managers = {runner.split()[0] for _, runner in LOCKFILE_RUNNERS}
     head = first_word(command)
-    return head if head in managers and shutil.which(head) is None else None
+    return head if head in managers and spec.resolve(head) is None else None
 
 
 def _missing_manager_note(name: str, manager: str) -> str:
@@ -421,7 +415,7 @@ def _lane_first_run_note(spec: LaunchSpec, lane) -> str | None:
     sentence: a manager that is not installed never gets as far as a python, and
     an interpreter that never started answered nothing about pytest_cov, so
     `pip install pytest-cov` fixes neither."""
-    manager = _absent_manager(lane.command)
+    manager = _absent_manager(spec, lane.command)
     if manager:
         return _missing_manager_note(lane.name, manager)
     dead = _dead_first_word(spec, lane.command)
@@ -429,7 +423,7 @@ def _lane_first_run_note(spec: LaunchSpec, lane) -> str | None:
         return _dead_interpreter_note(lane.name, *dead)
     word = pytest_python(lane.command)
     if word and not _pytest_cov_probe(spec, lane.command):
-        return _missing_pytest_cov_note(lane.name, word)
+        return _missing_pytest_cov_note(lane.name, word, spec)
     return None
 
 
