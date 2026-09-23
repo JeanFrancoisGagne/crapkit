@@ -239,8 +239,10 @@ any function an edit pushed over its ceiling. Claude reaches two of the skills b
 wiring a repo up happens once and its description has no business in every turn's window.
 It adds no files to your repo, and it needs the crapkit CLI on PATH.
 
-A repo with no `crapkit.toml` costs a silent sub-50 ms no-op per edit. After upgrading
-the CLI, refresh the marketplace before updating the installed plugin:
+A repo with no `crapkit.toml` costs a silent no-op per edit: 68 ms on Windows through the
+`crapkit.exe` launcher Claude Code starts, where a bare `python -c pass` took 32 ms on the
+same machine. After upgrading the CLI, refresh the marketplace before updating the
+installed plugin:
 
 ```
 claude plugin marketplace update crapkit
@@ -273,8 +275,8 @@ command, matcher `Bash`:
 ```
 
 The cost is one `git rev-parse --show-toplevel` and one `git status --porcelain -z -uall`
-per shell call in any git repo, whether or not crapkit measures it: about 30 ms together
-on crapkit's own checkout, and more on a bigger tree. What comes back is the dirty or
+per shell call in any git repo, whether or not crapkit measures it: about 50 ms together
+on crapkit's own checkout on Windows, and more on a bigger tree. What comes back is the dirty or
 untracked `*.py` files written in the last 12 seconds, 25 at most, each judged the way an
 edit is. Python only, so a TypeScript or Go repo pays the two spawns and hears nothing.
 

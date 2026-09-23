@@ -181,3 +181,22 @@ def test_a_page_that_kept_an_older_wording_would_be_caught():
              "(decompose before committing)")
 
     assert rendered_head(stale) != stale
+
+
+# --- what the hook costs ------------------------------------------------------
+
+def _readme_sentence(fragment: str) -> str:
+    text = " ".join((ROOT / "README.md").read_text(encoding="utf-8").split())
+    start = text.index(fragment)
+    return text[text.rfind(". ", 0, start) + 2:text.index(". ", start) + 1]
+
+
+@pytest.mark.parametrize("fragment", ["no-op per edit", "per shell call in any git repo"])
+def test_a_timing_the_readme_quotes_names_the_platform_it_was_measured_on(fragment):
+    """"sub-50 ms" measured 68 ms through the Windows launcher Claude Code starts,
+    and "about 30 ms" for the two git spawns measured 46 ms there. A number
+    with no platform beside it reads as a promise on every one."""
+    sentence = _readme_sentence(fragment)
+
+    assert re.search(r"\b\d+ ms\b", sentence), sentence
+    assert "on Windows" in sentence, sentence
