@@ -76,8 +76,8 @@ class Client:
         self.process.stdin.flush()
 
     def receive(self):
-        wait_until(lambda: not self.messages.empty(), log=self.root / 'server-errors',
-                   what='a reply from the server')
+        wait_until(lambda: not self.messages.empty(), self.process,
+                   log=self.root / 'server-errors', what='a reply from the server')
         return self.messages.get_nowait()
 
     def ready(self):
