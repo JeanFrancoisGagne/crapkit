@@ -346,7 +346,9 @@ EXIT=3
 
 `crapkit ratchet seed --baseline 12` stamps run 12's metric, and the next verify runs. When
 the named run was measured under another metric too, the refusal asks for a `coverage` run
-first and a seed from the run it writes.
+first and a seed from the run it writes. A plain seed on the pinned run says the same at the
+end of its line: it names the newer run this crapkit measured to pass to `--baseline`, or asks
+for a `coverage` run and its id, instead of a fresh `coverage` and another seed.
 
 Reseeding from a fresh run can update compatible marks; changed function membership needs
 the identity review below first.

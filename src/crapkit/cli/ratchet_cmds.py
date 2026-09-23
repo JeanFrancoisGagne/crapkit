@@ -355,7 +355,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
         entries, note = _pruned(root, store, saved.entries, fresh)
         text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
-    metric_note = _metric_note(latest, action, created=saved.text is None)
+    metric_note = _metric_note(work, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
     return 0
@@ -420,26 +420,49 @@ def _seed_metric(run: dict) -> str:
     return metric
 
 
-def _metric_note(run: dict, action: str, *, created: bool) -> str:
+def _metric_note(work: _WorkRun, action: str, *, created: bool) -> str:
     """Said only when the run seed or prune read is not this crapkit's metric."""
     from ..ratchet import metric_version, run_stamp
 
+    run = work.run
     measured, running = run_stamp(run["tool_versions"]), metric_version()
     if measured == running:
         return ""
     said = f"[{measured}]" if measured else "an unrecorded metric"
     return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]"
-            f"{_stamp_consequence(action, created)}")
+            f"{_stamp_consequence(work, action, created)}")
 
 
-def _stamp_consequence(action: str, created: bool) -> str:
+def _stamp_consequence(work: _WorkRun, action: str, created: bool) -> str:
     """What the older run means for the stamp the write left.
 
     A file prune creates recorded no stamp to keep, so there is nothing to say.
     """
     if action == "seed":
-        return f", so verify refuses these marks until a fresh `{_self()} coverage` and another seed"
+        return f", so verify refuses these marks until {_restamping_seed(work)}"
     return "" if created else ", and the marks keep their recorded stamp"
+
+
+def _restamping_seed(work: _WorkRun) -> str:
+    """The seed that replaces the stamp this one signed.
+
+    A fresh coverage run is the run the next plain seed reads only when nothing
+    holds seed where it is. Behind a failed verify, or under `--baseline`, the
+    next plain seed reads this run again and signs the same old stamp, so the
+    clause names a run this crapkit measured to pass instead.
+    """
+    if work.blocker is None and not work.named:
+        return f"a fresh `{_self()} coverage` and another seed"
+    return f"a seed from a run this crapkit measured: {_way_off(_measured_here(work.newer))}"
+
+
+def _measured_here(run: dict | None) -> dict | None:
+    """`run` when this crapkit measured it, so a seed from it signs the running metric."""
+    from ..ratchet import metric_version, run_stamp
+
+    if run is not None and run_stamp(run["tool_versions"]) == metric_version():
+        return run
+    return None
 
 
 def _publish_checked(saved, text: str, entries: list, fresh: list, analysis_version) -> None:

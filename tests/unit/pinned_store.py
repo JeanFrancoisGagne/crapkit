@@ -28,6 +28,8 @@ MARKS = "crapkit-ratchet.tsv"
 MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
 # The stamp an older crapkit signed its marks with; this one refuses to compare them.
 STALE = stamp_text(7, lizard.version)
+# The tool versions of a run that older crapkit measured: seed signs it with STALE.
+OLDER = {"analysis_version": "7", "lizard": lizard.version}
 
 
 def twin(occurrence: int) -> ScoredRow:
