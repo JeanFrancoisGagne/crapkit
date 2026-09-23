@@ -443,7 +443,7 @@ session need not read the config to learn which number it is aiming at.
 | `scoped_tests` | string or null | A `crapkit test-scoped` call for the packet's literal file. It selects the scope's template and executes it from the project root with the inherited environment and literal filename transport. `null` when the scope declares no template; `doctor` warns about the gap. |
 | `scoped_tests_note` | string | Present **only** when `scoped_tests` is `null`, naming the scope that declares no template. |
 | `verify` | string | The `verify` call. Step 5, the only authoritative one. |
-| `refresh` | string | The `coverage --reuse-unchanged` call that refreshes this packet. It reuses a lane only at the same clean HEAD with unchanged configuration, inherited environment and coverage/JUnit bytes; otherwise it runs the lane. Run it first when `stale` is `true`. |
+| `refresh` | string | The `coverage --reuse-unchanged` call that refreshes this packet. It reuses a lane only at the same clean HEAD with unchanged configuration, inherited environment and coverage/JUnit bytes, or, for a lane that declares `inputs`, while nothing under those paths, its lane table or its `env` changed and its coverage/JUnit bytes match; otherwise it runs the lane. Run it first when `stale` is `true`. |
 | `refresh_writes_run` | bool | Always `true`. `refresh` appends a scored coverage run to `.crapkit/crap.sqlite`. Other commands can write caches or test artifacts; this field does not promise filesystem read-only execution. |
 
 Each value is a whole command line. Run it as given to preserve filename quoting

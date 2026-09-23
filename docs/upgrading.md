@@ -101,10 +101,14 @@ Commands manage disposable analysis and history caches themselves. Use
 `crapkit runs list` to inspect the trusted baseline; a failed verify still prevents
 a newer coverage run from silently becoming the baseline.
 
-Automatic reuse now requires the same clean HEAD and unchanged configuration,
-environment and artifact bytes. An older stamp without that proof reruns its lane.
-Ignored inputs, installed dependencies and external services remain outside this
-proof. See [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
+Automatic reuse requires the same clean HEAD and unchanged configuration,
+environment and artifact bytes. Since 0.8.0 a lane can list the paths its command
+reads as `inputs`, and `--reuse-unchanged` then reuses it across commits while
+nothing under those paths, its lane table or its `env` changed. The reuse proof
+covers that field, so the first `--reuse-unchanged` after upgrading to 0.8.0 reruns
+every lane once, and an older stamp without the proof reruns its lane. Ignored
+files, installed dependencies and external services remain outside this proof. See
+[artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 
 `test_retention_days` and `test_retention_count` are ignored. `crapkit doctor` warns
