@@ -111,7 +111,8 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   coverage run and another seed clear the stamp when a failed verify pins seed or
   `--baseline` named the run. It names the newer run to pass to `--baseline`, or asks
   for a coverage run and its id.
-- The legacy-identity refusal from seed, prune and explain names the run it read:
+- The legacy-identity refusal from seed, prune, explain, brief, next-item and rescore
+  names the run it read:
   `ambiguous legacy function identity in src/a.ts: (anonymous) in run 1; ...`. From seed
   and prune behind a failed verify it names that verify, the one verify's taint warning
   names, and the `--baseline` to pass, where it advised refreshing analysis, which a
@@ -153,9 +154,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   file no longer refuses it.
 - check_gate, explain and the commit gate prove legacy mark identity for the files they
   read, plus any marked file the working tree no longer has. A legacy twin group in
-  another file still on disk no longer refuses them. `ratchet prune` still refuses to
-  carry a legacy mark through a rename, and explain still refuses a legacy mark on a
-  file the newest run dropped.
+  another file still on disk no longer refuses them. brief proves it for its packet's
+  file alone, so a legacy twin group in another file no longer refuses a brief either.
+  `ratchet prune` still refuses to carry a legacy mark through a rename, and explain
+  still refuses a legacy mark on a file the newest run dropped.
 - explain and get_function_history answer a bare twin name with the worst twin, as brief
   does. They reported the first twin's history and mark whenever the worse twin came
   later in the file.
@@ -208,12 +210,15 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   29-run store, explain went from 14.0 to 2.8 s and check_gate from 12.0 to 2.5 s; with
   the key-group hoist, worklist went from 14.7 to 4.7 s and brief from 13.0 to 4.4 s.
 - brief reads only the file it is about. Its twins come from a shingle index the store
-  keeps for the run: the first brief on a run builds and stores it, and every later
-  brief in any process looks its function up. On a large consumer repo the source and
-  twins fields went from 3.2-4.1 s to 0.001 s per brief, the first brief on a run pays
-  about 7 s more once, and the index takes 37.8 MB of the store. A shingle is an 8-byte
-  blake2b digest, so one process's index reads the same in another. Storing a run's
-  index drops every older run's, and `runs prune` drops it with its run.
+  keeps for the run: `inventory` and `coverage` build and store it as they record the
+  run, and every brief in any process looks its function up. On a large consumer repo
+  the source and twins fields went from 3.2-4.1 s to 0.001 s per brief, and the index
+  takes 37.8 MB of the store. `verify` stores no index, since it runs on every commit,
+  so after a verify run the first brief or `duplication` builds and stores it.
+  `duplication` at the default `--min-lines` reads the stored index and opens no file.
+  A shingle is an 8-byte blake2b digest, so one process's index reads the same in
+  another. Storing a run's index drops every older run's, and `runs prune` drops it
+  with its run.
 - `rescore --gate` and `check_gate` read the marks only when a changed function is over
   its ceiling, as `hook-precommit` did. A clean check_gate on a large consumer repo went
   from 14.2 s to 2.1 s (warm medians, loaded machine). A clean gate no longer reports a
@@ -271,7 +276,8 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   bytes match, and the lane's own table, `env` included, is the one it was measured
   with. Lanes without `inputs` keep the same-clean-HEAD rule. Entries are literal paths
   from the root, spelled like scope paths; one holding `*` or `?`, or one that is
-  absolute or climbs out of the root, is a config error.
+  absolute or climbs out of the root, is a config error. The reuse line ends with the
+  commit the artifact was built at: `(artifact built at 1a2b3c4d5e6)`.
 - An istanbul lane that sets `path_prefix` no longer hides a measured path from another
   tree: the wrong-tree check takes the prefix back off coverage.py keys only.
 
