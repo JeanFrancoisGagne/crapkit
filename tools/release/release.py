@@ -357,6 +357,9 @@ def _pypi_row(version: str, fetch: Callable) -> Row:
         return _row("PyPI", version, info["version"])
     except ReleaseError as exc:
         return Row("PyPI", version, f"unreachable ({exc})", False)
+    except (ValueError, KeyError, TypeError) as exc:
+        # An HTML error page, or JSON without `info`: PyPI answered, but not with the release.
+        return Row("PyPI", version, f"unreachable (not the version JSON: {exc!r})", False)
 
 
 def _registry_pages(fetch: Callable):

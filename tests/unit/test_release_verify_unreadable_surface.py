@@ -73,6 +73,23 @@ def test_a_shell_without_gh_gets_an_unconfirmed_github_row(tmp_path, monkeypatch
     assert [line for line in out.splitlines() if line.startswith("MISMATCH")] == [github]
 
 
+@pytest.mark.parametrize("answer", ["<html>503 Service Unavailable</html>",
+                                    json.dumps({"message": "Not Found"}),
+                                    json.dumps({"info": None})])
+def test_a_pypi_answer_that_is_not_the_version_json_reads_as_unreachable(tmp_path, monkeypatch, capsys, answer):
+    root, commit = _tagged(tmp_path)
+    monkeypatch.setattr(release, "_urlopen", _surfaces(commit, answer))
+    _gh_answers(monkeypatch)
+
+    code = release.main(["verify", VERSION, "--repo", str(root)])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    (pypi,) = [line for line in out.splitlines() if line.startswith("MISMATCH")]
+    assert pypi.startswith("MISMATCH PyPI")
+    assert "observed unreachable (" in pypi
+
+
 def test_every_surface_reads_ok_when_each_one_answers_for_the_release(tmp_path, monkeypatch, capsys):
     """The tests above change one answer each; this is the answer set they start from."""
     root, commit = _tagged(tmp_path)
