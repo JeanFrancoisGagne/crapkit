@@ -1164,9 +1164,15 @@ class SnapshotStore:
 
         The path seeks identities once; (identity_id, run_id) then hands back
         every run that scored it, already in run order.
+
+        A run written before occurrence was recorded cannot tell same-line
+        twins apart, so it cannot say which of its rows is this twin. That run
+        is left out and every other run still answers: refusing the whole
+        history for it refused a function the newest run positions cleanly,
+        and `runs prune` keeps such a run as an identity witness for good.
         """
         name, ordinal = split_ordinal(long_name)
-        self._require_identity(path=path, name=name)
+        unplaced = {run for _, _, run in self._collision_rows(path=path, name=name, legacy_only=True)}
         cur = self._conn.execute(
             f"""WITH history AS (
                 SELECT f.run_id, r.commit_sha, r.kind, r.created_at,
@@ -1182,7 +1188,7 @@ class SnapshotStore:
         flags = self._codes["flags"].names
         return [{"run_id": rid, "commit": sha, "kind": kind, "created_at": ts,
                  "ccn": ccn, "cov": cov, "flag": _name(flags, flag), "crap": crap}
-                for rid, sha, kind, ts, ccn, cov, flag, crap in cur]
+                for rid, sha, kind, ts, ccn, cov, flag, crap in cur if rid not in unplaced]
 
     def override_run_ids(self) -> set[int]:
         """Runs an override record names. Deleting one deletes an audit row."""
