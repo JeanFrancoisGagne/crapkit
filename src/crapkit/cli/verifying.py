@@ -35,9 +35,24 @@ def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
                    + diff_uncovered_results(uncovered))
 
 
-def _no_baseline(root: Path) -> str:
-    return (f"no trusted scored baseline in {root} — run `{_self()} coverage` first "
-            "(failed verifies and hook runs never serve as baselines)")
+def _no_baseline(root: Path, runs: list[dict] = ()) -> str:
+    """No trusted run to measure against. When the store holds a partial run,
+    the line names the lanes it went without: while one of them keeps failing,
+    every `coverage` comes back partial, and "run coverage first" loops."""
+    partial = next((r for r in reversed(runs) if r["kind"] == "partial"), None)
+    if partial is None:
+        return (f"no trusted scored baseline in {root} — run `{_self()} coverage` first "
+                "(failed verifies and hook runs never serve as baselines)")
+    return (f"no trusted scored baseline in {root}: run {partial['id']} is partial, measured "
+            f"without {_missing_lanes(root, partial)} (a lane that failed, or one `--lane` "
+            f"left out), and a partial run never serves as a baseline; `{_self()} coverage` "
+            "records one once every lane passes")
+
+
+def _missing_lanes(root: Path, run: dict) -> str:
+    """`lane ui` or `lanes a, b`: the declared lanes a run holds no provenance for."""
+    missing = [lane.name for lane in _load_repo_config(root).lanes if lane.name not in run["lanes"]]
+    return f"lane{'s' if len(missing) > 1 else ''} {', '.join(missing)}"
 
 
 def _taint_note(pick) -> str:
@@ -69,9 +84,10 @@ def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) ->
 
     if requested is not None:
         return _named_baseline(store, root, requested)
-    pick = pick_baseline(store.list_runs())
+    runs = store.list_runs()
+    pick = pick_baseline(runs)
     if pick.run is None:
-        raise CrapkitError(_taint_note(pick) if pick.blocker else _no_baseline(root))
+        raise CrapkitError(_taint_note(pick) if pick.blocker else _no_baseline(root, runs))
     if pick.blocker:
         print(f"warning: {_taint_note(pick)}", file=sys.stderr)
     return pick.run

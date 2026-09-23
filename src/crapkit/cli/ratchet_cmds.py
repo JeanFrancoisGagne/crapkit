@@ -35,13 +35,20 @@ def _no_trusted_run() -> str:
             "(failed verifies and hook runs never serve as baselines)")
 
 
-def _no_full_run(pick) -> str:
+def _no_full_run(pick, runs: list[dict]) -> str:
     """Why there is nothing to seed or prune against: no trusted run at all, or
-    a failure standing in front of every one there is."""
-    if pick.blocker is None:
+    a failure standing in front of every one there is, or of the next one.
+
+    A store whose only run is a failed verify gets the second line, not "run
+    coverage first": the coverage run would stand behind that failure and earn
+    the second line anyway."""
+    from ..store import outstanding_failure
+
+    blocker = pick.blocker or outstanding_failure(runs)
+    if blocker is None:
         return _no_trusted_run()
-    return (f"no run to work from: verify run {pick.blocker['id']} FAILED with "
-            f"{pick.blocker['findings']} finding(s), nothing older is left to work from, "
+    return (f"no run to work from: verify run {blocker['id']} FAILED with "
+            f"{blocker['findings']} finding(s), nothing older is left to work from, "
             f"and a fresh `{_self()} coverage` would only be refused the same way — "
             "fix the findings and let a verify pass")
 
@@ -101,7 +108,7 @@ def _usable_pick(runs: list[dict]):
 
     pick = pick_baseline(runs)
     if pick.run is None:
-        raise CrapkitError(_no_full_run(pick))
+        raise CrapkitError(_no_full_run(pick, runs))
     return pick
 
 

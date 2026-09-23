@@ -241,7 +241,9 @@ EXIT=1
 
 The line says why a fresh `coverage` is not the escape: the new run would be refused by the
 same rule. Fix the findings, or accept a newer run by name with `crapkit verify --baseline
-ID` and let that verify pass.
+ID` and let that verify pass. A store whose only run is the failed verify, such as a fresh
+clone whose first `verify --baseline-tsv` failed, gets the same line before any `coverage`
+has run, since that run would stand behind the same failure.
 
 ### Naming the run to seed from
 

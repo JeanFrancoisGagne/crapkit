@@ -1640,6 +1640,18 @@ def pick_baseline(runs: list[dict]) -> BaselinePick:
     return picked
 
 
+def outstanding_failure(runs: list[dict]) -> dict | None:
+    """The failed verify no passing verify has answered since, or None.
+
+    `pick_baseline` records it only when a trusted run stands behind it; a store
+    whose only run is that failure still has one, and it is what blocks a
+    baseline the next `coverage` would record."""
+    blocker = None
+    for run in runs:
+        blocker = _verify_blocker(run, blocker)
+    return blocker
+
+
 def admit_baseline(runs: list[dict], requested: int, *, none_trusted: str) -> dict:
     """The run `--baseline ID` names, when the trust rule admits it.
 

@@ -417,6 +417,12 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   `check_gate`'s `functions[]`, `handle` on `list_worklist` rows, and an integer value for
   each path in `check_gate`'s `gate.ceilings`. The worklist example and field list in
   docs/agent-json.md show `handle` and `occurrence`.
+- `ratchet seed` and `prune` on a store whose only run is a failed verify name that
+  verify, as they do once a coverage run stands behind it. They said to run `crapkit
+  coverage` first, and after it that a fresh coverage would only be refused the same way.
+  verify on a store whose only runs are partial names the lanes the newest one went
+  without, where it said to run `crapkit coverage` while a failing lane kept every run
+  partial.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 
