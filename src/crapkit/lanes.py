@@ -714,11 +714,6 @@ def _started_reads(root: Path, commits: tuple, paths: tuple):
         return nullcontext(GitFacts(root))
 
 
-def lane_unchanged(root: Path, lane: Lane) -> bool:
-    """Whether --reuse-unchanged may reuse this lane's artifact without a rerun."""
-    return bool(lane_reuse_commit(root, lane))
-
-
 def lane_reuse_commit(root: Path, lane: Lane) -> str:
     """The commit the lane's artifact was built at, when automatic reuse is
     proved, or "".

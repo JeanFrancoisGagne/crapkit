@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from crapkit.config import load_config_text
-from crapkit.lanes import lane_reuse_commit, lane_unchanged, run_lane, write_stamps
+from crapkit.lanes import lane_reuse_commit, run_lane, write_stamps
 
 from conftest import cli_runner
 
@@ -130,33 +130,33 @@ def test_a_commit_outside_the_inputs_leaves_the_lane_reusable(repo: Path):
 
 
 def test_an_untracked_file_outside_the_inputs_leaves_the_lane_reusable(repo: Path):
-    _measure(repo)
+    measured = _measure(repo)
     _write(repo, "docs/draft.md", "new\n")
 
-    assert lane_unchanged(repo, _lane(repo)) is True
+    assert lane_reuse_commit(repo, _lane(repo)) == measured
 
 
 def test_an_unrelated_environment_variable_does_not_block_reuse(repo: Path, monkeypatch):
-    _measure(repo)
+    measured = _measure(repo)
     monkeypatch.setenv("CRAPKIT_UNRELATED_FOR_TEST", "changed")
 
-    assert lane_unchanged(repo, _lane(repo)) is True
+    assert lane_reuse_commit(repo, _lane(repo)) == measured
 
 
 def test_other_crapkit_toml_settings_do_not_block_reuse(repo: Path):
-    _measure(repo)
+    measured = _measure(repo)
     toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
     _write(repo, "crapkit.toml", toml.replace("target = 6", "target = 8"))
     _commit(repo, "raise the ceiling")
 
-    assert lane_unchanged(repo, _lane(repo)) is True
+    assert lane_reuse_commit(repo, _lane(repo)) == measured
 
 
 def test_a_measurement_taken_beside_an_untracked_file_outside_the_inputs_is_proof(repo: Path):
     _write(repo, "docs/draft.md", "new\n")
-    _measure(repo)
+    measured = _measure(repo)
 
-    assert lane_unchanged(repo, _lane(repo)) is True
+    assert lane_reuse_commit(repo, _lane(repo)) == measured
 
 
 # --- what does ------------------------------------------------------------------
@@ -178,7 +178,7 @@ def test_a_change_to_a_declared_input_file_reruns_the_lane(repo: Path):
     _measure(repo)
     _write(repo, "make_cov.py", MAKE_COV + "# edited\n")
 
-    assert lane_unchanged(repo, _lane(repo)) is False
+    assert lane_reuse_commit(repo, _lane(repo)) == ""
 
 
 def test_a_changed_lane_env_reruns_the_lane(repo: Path):
@@ -186,7 +186,7 @@ def test_a_changed_lane_env_reruns_the_lane(repo: Path):
     _write(repo, "crapkit.toml", _toml(INPUTS, env="two"))
     _commit(repo, "new env")
 
-    assert lane_unchanged(repo, _lane(repo)) is False
+    assert lane_reuse_commit(repo, _lane(repo)) == ""
 
 
 def test_a_changed_input_list_reruns_the_lane(repo: Path):
@@ -194,7 +194,7 @@ def test_a_changed_input_list_reruns_the_lane(repo: Path):
     _write(repo, "crapkit.toml", _toml('inputs = ["src", "make_cov.py", "docs"]'))
     _commit(repo, "wider inputs")
 
-    assert lane_unchanged(repo, _lane(repo)) is False
+    assert lane_reuse_commit(repo, _lane(repo)) == ""
 
 
 def test_an_artifact_rewritten_since_its_stamp_reruns_the_lane(repo: Path):
@@ -203,7 +203,7 @@ def test_an_artifact_rewritten_since_its_stamp_reruns_the_lane(repo: Path):
     artifact = repo / lane.artifact
     artifact.write_text(artifact.read_text(encoding="utf-8") + "\n", encoding="utf-8")
 
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 def test_a_stamp_commit_that_left_history_reruns_the_lane(repo: Path):
@@ -213,7 +213,7 @@ def test_a_stamp_commit_that_left_history_reruns_the_lane(repo: Path):
     _measure(repo)
     _git(repo, "reset", "--hard", "-q", first)
 
-    assert lane_unchanged(repo, _lane(repo)) is False
+    assert lane_reuse_commit(repo, _lane(repo)) == ""
 
 
 def _refuse_kill(self):
@@ -228,7 +228,7 @@ def test_a_stamp_commit_that_left_history_kills_no_git_read(repo: Path, monkeypa
     _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
     monkeypatch.setattr(subprocess.Popen, "kill", _refuse_kill)
 
-    assert lane_unchanged(repo, _lane(repo)) is False
+    assert lane_reuse_commit(repo, _lane(repo)) == ""
     assert not (repo / ".git" / "index.lock").exists()
 
 
@@ -238,7 +238,7 @@ def test_a_measurement_taken_over_dirty_inputs_is_no_proof(repo: Path):
     _measure(repo)
     _commit(repo, "commit the wip")
 
-    assert lane_unchanged(repo, _lane(repo)) is False
+    assert lane_reuse_commit(repo, _lane(repo)) == ""
 
 
 # --- through the CLI --------------------------------------------------------------

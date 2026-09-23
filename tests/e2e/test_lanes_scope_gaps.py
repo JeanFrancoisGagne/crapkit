@@ -16,7 +16,7 @@ from crapkit import config
 from crapkit.churn import parse_git_log
 from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
-from crapkit.lanes import lane_unchanged, run_lane, write_stamps
+from crapkit.lanes import lane_reuse_commit, run_lane, write_stamps
 from crapkit.scaffold import sniff_scopes
 
 from conftest import cli_runner
@@ -140,31 +140,31 @@ def _touch_scope_file(repo: Path) -> None:
     app.write_text(app.read_text(encoding="utf-8") + "\n// touched\n", encoding="utf-8")
 
 
-# --- lane_unchanged: the reuse decision itself -------------------------------
+# --- lane_reuse_commit: the reuse decision itself ----------------------------
 
 
 def test_a_lane_that_never_ran_is_not_unchanged(repo: Path):
-    assert lane_unchanged(repo, _the_lane(repo)) is False
+    assert lane_reuse_commit(repo, _the_lane(repo)) == ""
 
 
 def test_a_fresh_artifact_over_untouched_scopes_is_unchanged(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
-    assert lane_unchanged(repo, lane) is True
+    assert lane_reuse_commit(repo, lane) == _git(repo, "rev-parse", "HEAD").strip()
 
 
 def test_a_deleted_artifact_is_never_unchanged(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     (repo / lane.artifact).unlink()
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 def test_an_uncommitted_edit_under_a_scope_makes_the_lane_changed(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     _touch_scope_file(repo)
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 def test_a_commit_after_the_stamp_makes_the_lane_changed(repo: Path):
@@ -172,7 +172,7 @@ def test_a_commit_after_the_stamp_makes_the_lane_changed(repo: Path):
     _run_and_stamp(repo, lane)
     _touch_scope_file(repo)
     _commit(repo, "touch src")
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 def test_a_new_commit_outside_scopes_still_requires_measurement(repo: Path):
@@ -180,7 +180,7 @@ def test_a_new_commit_outside_scopes_still_requires_measurement(repo: Path):
     _run_and_stamp(repo, lane)
     (repo / "docs" / "notes.md").write_text("edited\n", encoding="utf-8")
     _commit(repo, "docs only")
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 def test_a_stamp_commit_that_left_history_is_not_unchanged(repo: Path):
@@ -190,14 +190,14 @@ def test_a_stamp_commit_that_left_history_is_not_unchanged(repo: Path):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     _git(repo, "reset", "--hard", "-q", first)
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 def test_without_git_the_lane_is_never_unchanged(repo: Path, monkeypatch):
     lane = _the_lane(repo)
     _run_and_stamp(repo, lane)
     monkeypatch.setenv("PATH", str(repo))
-    assert lane_unchanged(repo, lane) is False
+    assert lane_reuse_commit(repo, lane) == ""
 
 
 # --- the same decision seen through `crapkit coverage --reuse-unchanged` -----

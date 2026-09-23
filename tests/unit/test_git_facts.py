@@ -16,7 +16,7 @@ from crapkit import churn_log, gitio
 from crapkit.config import Lane
 from crapkit.errors import GitError
 from crapkit.gitio import GitFacts
-from crapkit.lanes import lane_unchanged, write_stamps
+from crapkit.lanes import lane_reuse_commit, write_stamps
 
 @pytest.fixture()
 def counted(monkeypatch) -> dict:
@@ -84,8 +84,8 @@ def _stamped_lane(root: Path, name: str, artifact: str, commit: str) -> Lane:
 def test_legacy_lane_stamps_do_not_qualify_as_measurement_proof(tmp_path, counted):
     first = _stamped_lane(tmp_path, "unit", "a.json", "beef" * 10)
     second = _stamped_lane(tmp_path, "py", "b.json", "beef" * 10)
-    assert lane_unchanged(tmp_path, first) is False
-    assert lane_unchanged(tmp_path, second) is False
+    assert lane_reuse_commit(tmp_path, first) == ""
+    assert lane_reuse_commit(tmp_path, second) == ""
     assert counted == {"head": 0, "status": 0, "diff": 0, "ancestor": 0}
 
 
@@ -99,7 +99,7 @@ def test_line_display_shares_git_facts_without_requiring_measurement_reuse(tmp_p
 
     assert lane_states(tmp_path, cfg, GitFacts(tmp_path)) == [("first", ""), ("second", "")]
     assert counted == {"head": 0, "status": 1, "diff": 1, "ancestor": 1}
-    assert all(not lane_unchanged(tmp_path, lane) for lane in lanes)
+    assert all(lane_reuse_commit(tmp_path, lane) == "" for lane in lanes)
 
 
 @pytest.mark.parametrize("reason", ["missing-stamp", "refused-write", "lost-history", "git-error"])
