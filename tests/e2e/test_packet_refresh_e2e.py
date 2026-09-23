@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+import hang_guard
 from conftest import cli_runner
 from repo_templates import copy_of, template
 
@@ -58,8 +59,7 @@ artifact = "cov.json"
 parser = "coveragepy"
 scopes = ["core"]
 full_suite = false
-timeout_seconds = 90
-"""
+""" + f"timeout_seconds = {hang_guard.HANG_SECONDS}\n"  # no test here is about the lane's bound
 
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
@@ -120,9 +120,8 @@ def test_the_refresh_command_clears_the_staleness_it_is_printed_for(repo: Path):
     assert stale_packet["stale"] is True, "HEAD has moved, so the packet is stale"
 
     refresh = stale_packet["commands"]["refresh"]
-    ran = subprocess.run(shlex.split(refresh), cwd=repo, capture_output=True,
-                         text=True, encoding="utf-8", errors="replace", timeout=300,
-                         env=dict(os.environ))
+    ran = hang_guard.run(shlex.split(refresh), cwd=repo, text=True, encoding="utf-8",
+                         errors="replace", env=dict(os.environ))
 
     assert ran.returncode == 0, refresh + "\n" + ran.stdout + ran.stderr
     assert brief(repo, "core/alpha.py", "alpha")["stale"] is False, \

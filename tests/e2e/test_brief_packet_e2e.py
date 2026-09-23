@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from hang_guard import HANG_SECONDS
 from repo_templates import copy_of, template
 
 _LADDER = "".join(f"    if a > {i}:\n        r += {i}\n" for i in range(1, 8))
@@ -101,8 +102,7 @@ artifact = "cov.json"
 parser = "coveragepy"
 scopes = ["clean", "core", "extra"]
 full_suite = false
-timeout_seconds = 90
-"""
+""" + f"timeout_seconds = {HANG_SECONDS}\n"  # no test here is about the lane's bound
 
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
@@ -196,7 +196,7 @@ def test_a_marked_function_reports_the_mark_and_how_long_it_has_stood(repo: Path
 def test_the_packet_names_the_lane_that_measures_the_scope(repo: Path):
     assert brief(repo, "core/alpha.py", "alpha")["lane"] == {
         "name": "py", "command": "python make_cov.py", "artifact": "cov.json",
-        "parser": "coveragepy", "cwd": "", "env": {}, "timeout_seconds": 90}
+        "parser": "coveragepy", "cwd": "", "env": {}, "timeout_seconds": HANG_SECONDS}
 
 
 def test_the_packet_carries_the_commands_to_run_next(repo: Path):

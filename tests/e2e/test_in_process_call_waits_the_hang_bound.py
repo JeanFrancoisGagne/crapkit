@@ -34,5 +34,7 @@ def test_a_call_that_names_no_bound_runs_under_the_hang_bound(tmp_path, monkeypa
 def test_a_call_that_names_its_bound_runs_under_it(tmp_path, monkeypatch):
     seen = _bounds(monkeypatch)
 
-    assert run_cli(tmp_path, "--version", timeout=7).returncode == 0
-    assert seen == [7]
+    longer = hang_guard.HANG_SECONDS + 1
+
+    assert run_cli(tmp_path, "--version", timeout=longer).returncode == 0
+    assert seen == [longer]
