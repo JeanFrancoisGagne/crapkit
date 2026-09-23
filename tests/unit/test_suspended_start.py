@@ -87,6 +87,14 @@ def test_a_dll_init_failure_exit_is_the_retry_trigger(shell):
 
 
 @WINDOWS
+def test_another_ntstatus_exit_code_reaches_the_caller_unchanged():
+    # A launcher relayed it through SystemExit, which turned it into 4294967295.
+    access_violation = "import os; os._exit(-1073741819)"  # 0xC0000005 as a C int
+    result = procs.run_owned([BASE, "-c", access_violation], capture_output=True)
+    assert result.returncode == 0xC0000005
+
+
+@WINDOWS
 def test_run_bounded_raises_the_same_retry_trigger():
     with pytest.raises(ToolError, match="STATUS_DLL_INIT_FAILED"):
         procs.run_bounded(f'"{BASE}" -c "{EXIT_DLL_INIT_FAILED}"', 30)
