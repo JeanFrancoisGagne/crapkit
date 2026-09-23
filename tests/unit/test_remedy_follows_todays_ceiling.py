@@ -138,3 +138,13 @@ def test_the_worklist_floor_lets_through_what_the_lowered_ceiling_broke(tmp_path
     root = _repo_with_ceiling(tmp_path, [MID, LEAN], today=4, floor=6)
 
     assert _listed(root, capsys) == {"mid( )": "decompose", "lean( )": "add-tests"}
+
+
+def test_a_scope_ceiling_added_after_the_run_judges_that_scope(tmp_path, capsys):
+    """The repo ceiling stays 6 and the `src` scope sets its own 4, uncommitted."""
+    root = _repo_with_ceiling(tmp_path, [MID, LEAN], today=6, scope_target=4)
+    packet = _brief(root, capsys, "mid")
+
+    assert (packet["target"], packet["remedy"], packet["est_splits"]) == (4, "decompose", 2)
+    assert _offered(root, capsys) == {"mid( )": "decompose", "lean( )": "add-tests"}
+    assert _listed(root, capsys) == {"mid( )": "decompose", "lean( )": "add-tests"}
