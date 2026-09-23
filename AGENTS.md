@@ -642,7 +642,7 @@ story. Measured on `tests/e2e/test_init_doctor_e2e.py`: `cli/admin.py` scores 0/
 statements without it under pytest-cov 7.1.0, 317/498 with it under 7.1.0 and 6.3.0 alike.
 
 xdist is not a convenience either. `tests/fixtures/mini_repo` declares a lane that shells
-out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` keeps `-n 2` for the one
+out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` keeps `pytest ... -n 2` for the one
 test in `test_inventory_e2e.py` about xdist fragments combining. pytest rejects `-n`
 without xdist, `-n 0` included, so either lane dies on an unrecognized `-n` and fails the
 e2e tests that assert it exited 0. CI installs this extra and nothing else, so a pytest

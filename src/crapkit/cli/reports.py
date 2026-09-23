@@ -334,13 +334,9 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
-def _newest_id(runs: list[dict], *admits) -> int | None:
-    """The newest run the first rule to admit any run admits, rules in order."""
-    for admit in admits:
-        ids = [r["id"] for r in runs if admit(r)]
-        if ids:
-            return ids[-1]
-    return None
+def _newest_id(runs: list[dict], admit) -> int | None:
+    """The newest run ADMIT admits."""
+    return next((r["id"] for r in reversed(runs) if admit(r)), None)
 
 
 def _selector_run(store: SnapshotStore, runs: list[dict], path: str) -> int | None:
