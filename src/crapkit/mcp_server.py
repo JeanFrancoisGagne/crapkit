@@ -1280,14 +1280,14 @@ TOOLS: tuple[dict, ...] = (
         "positional": ("path",),
         "flags": {},
         "verdict_exits": (6,),
-        "description": ("Checks whether an edited file clears the hook's commit gate: fresh ccn per "
-        "changed function against its scope's ceiling less pardoned ratchet debt. "
-        "Call it after an edit once get_function_brief states the rule. CLI verify "
-        "gives the repo-wide verdict. It runs no tests, and a breach reads gate.ok "
-        "false, not an error. Marks are read only on a breach, so a clean gate never "
-        "reports a broken marks file. path is repo-relative or absolute inside repo, "
-        "outside or missing is a config error. A tracked file is judged on its diff "
-        "from HEAD, an untracked one in full."),
+        "description": ("Checks an edited file by rescore --gate's rule: each changed function's fresh "
+        "ccn against its scope's ceiling, pardoned only at or under its ratchet mark. "
+        "The hook's commit gate pardons any marked function, so this is stricter and "
+        "a breach predicts a CLI verify refusal. Call it after an edit once "
+        "get_function_brief states the rule. It runs no tests, and a breach reads gate.ok "
+        "false, not an error. Marks are read only on a breach, so a clean gate skips a "
+        "broken marks file. path is repo-relative or absolute inside repo. An untracked "
+        "file is judged in full."),
         "properties": {
             "path": {
                 "type": "string",
@@ -1368,8 +1368,8 @@ TOOLS: tuple[dict, ...] = (
                         "description": "the failing functions; empty when ok",
                         "items": {
                             "type": "object",
-                            "description": ("one judged function over its ceiling that no ratchet "
-                            "mark covers"),
+                            "description": ("one judged function over its ceiling, unmarked or "
+                            "with its crap past its ratchet mark"),
                             "properties": {
                                 "path": {
                                     "type": "string",

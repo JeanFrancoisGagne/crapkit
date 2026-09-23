@@ -1424,7 +1424,7 @@ can serve several checkouts.
 | `get_function_history` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
 | `check_config` | | JSON text (the `doctor --json` report) |
 | `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `list_worklist`) | JSON text |
-| `check_gate` | `path` (repo-relative source file) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate (`ok`, `judged`, `ceilings`, `breaches`, `untracked`); a breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
+| `check_gate` | `path` (repo-relative source file) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
