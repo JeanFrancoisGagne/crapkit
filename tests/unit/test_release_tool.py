@@ -444,7 +444,10 @@ def test_a_readback_that_misses_is_retried_before_the_stage_gives_up():
     waits = []
 
     assert release._settled(lambda: next(answers), pause=waits.append) is True
-    assert waits == [release.READBACK_PAUSE, release.READBACK_PAUSE]
+    assert waits == [5, 5]
+    # The README promises 12 reads over 55 seconds; the shared publish adapter
+    # sets the pause to 0, so this is the test that holds the real window.
+    assert release.READBACK_PAUSE * (release.READBACK_ATTEMPTS - 1) == 55
 
 
 def test_a_readback_that_never_settles_stops_instead_of_waiting_forever():
