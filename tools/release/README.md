@@ -40,8 +40,9 @@ Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
 already public, because nothing checked the machine first.
 
 `check VERSION` is stage 1's first command, so the chain stops before it builds or
-pushes anything. It reads the two rows marked `check` below and nothing else.
-Confirm the two rows marked `you` yourself: `check` never looks at PATH or at `gh`.
+pushes anything. Besides the version surfaces and the changelog heading, it reads
+the two rows marked `check` below. Confirm the two rows marked `you` yourself:
+`check` never looks at PATH or at `gh`.
 Each takes seconds; each cost a published half-release when skipped.
 
 | Check | Checked by | Command | Why it bites |
