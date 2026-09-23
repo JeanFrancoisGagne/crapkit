@@ -15,10 +15,10 @@ from pathlib import Path
 from .. import __version__, config
 from ..config import load_config_text
 from ..doctor import Finding
-from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
+from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
