@@ -160,6 +160,7 @@ def test_an_unclosed_bracket_in_a_one_line_body_ends_the_body_at_the_next_def_or
                                 ("m( self )", 12, 14, 2, 3, 1)]
     assert _read(_FILL + "def g(a):\n" + _GHI + _K) == [
         ("f( x )", 1, 1, 1, 1, 1), ("g( a )", 2, 5, 2, 4, 1), ("h( b )", 6, 9, 2, 4, 1), ("m( self )", 11, 13, 2, 3, 1)]
+    assert _read(_FILL + _K) == [("f( x )", 1, 1, 1, 1, 1), ("m( self )", 3, 5, 2, 3, 1)]
 
 
 def test_the_lines_before_that_def_stay_with_the_one_line_def():
