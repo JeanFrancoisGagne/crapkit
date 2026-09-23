@@ -4,8 +4,8 @@ from crapkit.locks import exclusive_lock
 from crapkit import mutate_pool
 from pathlib import Path
 import json
-import time
 import pytest
+from hang_guard import exited, wait_until
 from mutation_fixtures import holding_checkout_hook, holding_suite, running_mutation, stop_caller
 from test_mutation_cancellation import git, invoke, mutation_repo, recorded
 
@@ -70,13 +70,14 @@ def test_recovery_keeps_unproven_directories_and_their_bytes(mutation_repo, chan
 
 
 def recover_after_owner_exit(root):
-    deadline = time.monotonic() + 15
-    while True:
-        result = mutate_pool.recover_temporary(root, dry_run=True)
-        if not any(row.status == 'active' for row in result):
-            return result
-        assert time.monotonic() < deadline, result
-        time.sleep(.02)
+    plan = []
+
+    def settled():
+        plan[:] = mutate_pool.recover_temporary(root, dry_run=True)
+        return not any(row.status == 'active' for row in plan)
+
+    wait_until(settled, what='the dead run leave the active state')
+    return plan
 
 
 def test_recovery_skips_a_live_run_and_removes_it_only_after_its_writer_stops(mutation_repo):
@@ -89,7 +90,7 @@ def test_recovery_skips_a_live_run_and_removes_it_only_after_its_writer_stops(mu
             assert [(row.path, row.status) for row in active] == [(tree.parent, 'active')]
             assert tree.exists()
             stop_caller(caller, events)
-            caller.wait(timeout=15)
+            exited(caller, log=events / 'caller.log')
             planned = recover_after_owner_exit(root)
             assert [(row.path, row.status) for row in planned] == [(tree.parent, 'planned')]
             assert tree.exists()
@@ -109,7 +110,7 @@ def test_recovery_waits_for_a_dead_callers_git_hook_before_reusing_its_directory
         with running_mutation(root, events) as caller:
             tree = Path((events / 'started').read_text())
             stop_caller(caller, events)
-            caller.wait(timeout=15)
+            exited(caller, log=events / 'caller.log')
             planned = recover_after_owner_exit(root)
             assert [(row.path, row.status) for row in planned] == [(tree.parent, 'planned')]
             with exclusive_lock(events / 'writer.lock', label='Git hook is stopped'):

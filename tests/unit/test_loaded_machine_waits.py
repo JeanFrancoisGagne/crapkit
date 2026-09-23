@@ -16,6 +16,9 @@ import time
 
 import pytest
 
+import mutation_fixtures
+import state_concurrency_worker
+import test_ci_driver_lifetime
 import test_r2_execution_lifetime
 from hang_guard import HANG_SECONDS
 
@@ -39,7 +42,11 @@ def loaded_machine(tmp_path, monkeypatch):
     return marker
 
 
-@pytest.mark.parametrize("helper", [test_r2_execution_lifetime], ids=lambda module: module.__name__)
+SHARED_WAITS = [test_r2_execution_lifetime, mutation_fixtures, state_concurrency_worker,
+                test_ci_driver_lifetime]
+
+
+@pytest.mark.parametrize("helper", SHARED_WAITS, ids=lambda module: module.__name__)
 def test_a_marker_a_loaded_machine_writes_late_is_still_seen(loaded_machine, helper):
     helper.wait_for(loaded_machine)
 

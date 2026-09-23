@@ -1,13 +1,13 @@
 """Nested pytest owns its data while sibling CLI coverage remains measured."""
 import json
 from pathlib import Path
-import subprocess
 import sys
 
+from hang_guard import CHILD_WAIT, run
 from test_suite_schedule import SCRIPT, fixture_env, fixture_repo
 
 
-NESTED = '''import subprocess, sys, time
+NESTED = '''import os, subprocess, sys, time
 from pathlib import Path
 
 def test_nested(tmp_path):
@@ -23,7 +23,7 @@ def test_nested(tmp_path):
         '    assert data.is_relative_to(Path.cwd()), str(data)\\n'
         '    assert result() == 3\\n')
     (root / "nested-ready").touch()
-    deadline = time.monotonic() + 15
+    deadline = time.monotonic() + ''' + CHILD_WAIT + '''
     while not (root / "sibling-ready").exists():
         assert time.monotonic() < deadline
         time.sleep(.01)
@@ -37,19 +37,19 @@ def test_nested(tmp_path):
     assert (inner / "inner.json").is_file()
 '''
 
-SIBLING = '''import subprocess, sys, time
+SIBLING = '''import os, subprocess, sys, time
 from pathlib import Path
 
 def test_sibling(tmp_path):
     root = Path(__file__).resolve().parents[2]
-    deadline = time.monotonic() + 15
+    deadline = time.monotonic() + ''' + CHILD_WAIT + '''
     while not (root / "nested-ready").exists():
         assert time.monotonic() < deadline
         time.sleep(.01)
     code = (
-        'from crapkit import choose\\nfrom pathlib import Path\\nimport sys,time\\n'
+        'from crapkit import choose\\nfrom pathlib import Path\\nimport os,sys,time\\n'
         'root=Path(sys.argv[1])\\n(root/"sibling-ready").touch()\\n'
-        'deadline=time.monotonic()+15\\n'
+        'deadline=time.monotonic()+''' + CHILD_WAIT + '''\\n'
         'while not (root/"nested-done").exists():\\n'
         '    assert time.monotonic()<deadline\\n'
         '    choose(False)\\n    time.sleep(.01)\\n'
@@ -67,10 +67,9 @@ def test_real_nested_pytest_and_parallel_cli_sibling_keep_separate_data(tmp_path
     (tmp_path / "tests/e2e/test_sibling.py").write_text(SIBLING)
     environment = fixture_env(tmp_path)
 
-    result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
-                             "--coverage", "--workers", "2", "--unit-workers", "1",
-                             "--output", ".crapkit/cov"], env=environment,
-                            capture_output=True, text=True)
+    result = run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
+                  "--coverage", "--workers", "2", "--unit-workers", "1",
+                  "--output", ".crapkit/cov"], env=environment, text=True)
 
     assert result.returncode == 0, result.stdout + result.stderr
     data = json.loads((tmp_path / ".crapkit/cov/py.json").read_text())

@@ -14,7 +14,7 @@ import pytest
 from crapkit.cli import main
 from crapkit import mutate_pool, procs
 from crapkit.locks import exclusive_lock
-from hang_guard import HANG_SECONDS
+from hang_guard import HANG_SECONDS, exited
 from mutation_fixtures import holding_suite, running_mutation, stop_caller, wait_for
 
 
@@ -144,7 +144,7 @@ def test_cancellation_during_baseline_never_starts_a_mutant(mutation_repo, monke
     baseline = mutate_pool.require_live_suite
 
     def interrupted_wait(process, timeout):
-        wait_for(events / 'started')
+        wait_for(events / 'started', process)
         assert process.poll() is None
         raise KeyboardInterrupt
 
@@ -174,7 +174,7 @@ def test_cancellation_during_preparation_joins_builders_before_removal(mutation_
     def finishing_add(repo, tree, *, owner=None):
         add(repo, tree, owner=owner)
         built.set()
-        assert release.wait(30)
+        assert release.wait(HANG_SECONDS)
         (tree / 'builder-finished').touch()
 
     def ready():
@@ -204,7 +204,7 @@ def test_native_sigint_stops_dispatch_and_the_writer_before_exit(mutation_repo):
     holding_suite(root, events)
     with running_mutation(root, events) as caller:
         stop_caller(caller, events, signal.SIGINT)
-        assert caller.wait(timeout=15) == 130
+        assert exited(caller, log=events / 'caller.log') == 130
         assert (events / 'interrupted').exists()
         assert [row['phase'] for row in recorded(events)] == ['baseline', 'mutant']
         with exclusive_lock(events / 'writer.lock', label='writer stopped'):

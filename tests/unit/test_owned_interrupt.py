@@ -6,13 +6,13 @@ import json
 import os
 import signal
 import sys
-import time
 
 import pytest
 
 from crapkit import procs
 from crapkit.locks import exclusive_lock
 from crapkit.procs import own_processes, run_bounded
+from hang_guard import CHILD_HOLD, wait_for
 
 
 TREE = """from pathlib import Path
@@ -22,7 +22,7 @@ root = Path(sys.argv[1])
 if len(sys.argv) > 2:
     with exclusive_lock(root / 'child.lock', label='child'):
         print(os.getpid(), flush=True)
-        time.sleep(60)
+        time.sleep(""" + CHILD_HOLD + """)
 else:
     with exclusive_lock(root / 'parent.lock', label='parent'):
         child = subprocess.Popen([sys.executable, __file__, str(root), 'child'], stdout=subprocess.PIPE, text=True)
@@ -30,13 +30,6 @@ else:
         (root / 'ready.json').write_text(json.dumps([os.getpid(), child_pid]), encoding='utf-8')
         child.wait()
 """
-
-
-def _wait_until_ready(path):
-    deadline = time.monotonic() + 30
-    while not path.exists() and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert path.exists(), "both fixture processes must acquire locks before interruption"
 
 
 def _native_exit_checks(path, handles):
@@ -59,7 +52,7 @@ def _interrupt_at_wait(monkeypatch, ready, script, handles, exit_checks):
 
     def wait(process, *args, **kwargs):
         if not interrupted and script.name in str(process.args):
-            _wait_until_ready(ready)
+            wait_for(ready, process)
             assert process.poll() is None
             exit_checks.extend(_native_exit_checks(ready, handles))
             interrupted.append(process.pid)

@@ -6,18 +6,12 @@ import queue
 import subprocess
 import sys
 import threading
-import time
 
 import pytest
 
+from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
-
-
-def wait_ready(path):
-    deadline = time.monotonic() + 30
-    while not path.exists() and time.monotonic() < deadline:
-        time.sleep(.01)
-    assert path.exists(), 'the real request must reach the startup hold'
+from hang_guard import CHILD_HOLD, CHILD_WAIT, exited, wait_until
 
 
 def fixture(root):
@@ -36,11 +30,11 @@ def fixture(root):
         '    root=Path(os.environ["REQUEST_ROOT"])\n'
         '    with exclusive_lock(root/"request.lock",label="request"):\n'
         '        child=subprocess.Popen([sys.executable,str(root/"descendant.py")])\n'
-        '        until=time.monotonic()+15\n'
+        '        until=time.monotonic()+' + CHILD_WAIT + '\n'
         '        while not (root/"child.ready").exists() and time.monotonic()<until: time.sleep(.01)\n'
         '        assert (root/"child.ready").exists()\n'
         '        (root/"ready").touch()\n'
-        '        until=time.monotonic()+30\n'
+        '        until=time.monotonic()+' + CHILD_HOLD + '\n'
         '        while not (root/"release").exists() and time.monotonic()<until: time.sleep(.01)\n',
         encoding='utf-8')
     (root / 'descendant.py').write_text(
@@ -48,7 +42,7 @@ def fixture(root):
         'root=Path(os.environ["REQUEST_ROOT"])\n'
         'with exclusive_lock(root/"child.lock",label="child"):\n'
         '    (root/"child.ready").touch()\n'
-        '    until=time.monotonic()+30\n'
+        '    until=time.monotonic()+' + CHILD_HOLD + '\n'
         '    while not (root/"release").exists() and time.monotonic()<until: time.sleep(.01)\n',
         encoding='utf-8')
     return {**os.environ, 'REQUEST_ROOT': str(root), 'TMP': str(scratch),
@@ -81,22 +75,23 @@ class Client:
         self.process.stdin.write(json.dumps(message) + '\n')
         self.process.stdin.flush()
 
-    def receive(self, timeout=10):
-        return self.messages.get(timeout=timeout)
+    def receive(self):
+        wait_until(lambda: not self.messages.empty(), log=self.root / 'server-errors',
+                   what='a reply from the server')
+        return self.messages.get_nowait()
 
     def ready(self):
-        deadline = time.monotonic() + 15
-        while not (self.root / 'ready').exists() and time.monotonic() < deadline:
-            assert self.process.poll() is None
-            assert self.messages.empty(), list(self.messages.queue)
-            time.sleep(.01)
-        wait_ready(self.root / 'ready')
+        """The request reaches its startup hold, and no reply comes before it."""
+        wait_until(lambda: (self.root / 'ready').exists() or not self.messages.empty(),
+                   self.process, log=self.root / 'server-errors',
+                   what='the real request reach the startup hold')
+        assert self.messages.empty(), list(self.messages.queue)
 
     def close(self):
         (self.root / 'release').touch()
         if not self.process.stdin.closed:
             self.process.stdin.close()
-        self.process.wait(timeout=15)
+        exited(self.process, log=self.root / 'server-errors')
         self.reader.join(2)
         self.process.stdout.close()
         self.errors.close()
@@ -109,7 +104,7 @@ def test_matching_cancellation_stops_the_request_and_keeps_the_session_usable(tm
         client.ready()
         client.send('notifications/cancelled', params={'requestId': 73})
         client.send('ping', msg_id=74)
-        assert client.receive(3) == {'jsonrpc': '2.0', 'id': 74, 'result': {}}
+        assert client.receive() == {'jsonrpc': '2.0', 'id': 74, 'result': {}}
         with exclusive_lock(tmp_path / 'request.lock', label='request'):
             pass
         with exclusive_lock(tmp_path / 'child.lock', label='child'):
@@ -132,7 +127,7 @@ def test_eof_stops_an_active_request_before_its_hold_is_released(tmp_path):
         client.send('tools/call', msg_id=73, params={'name': 'list_runs', 'arguments': {}})
         client.ready()
         client.process.stdin.close()
-        assert client.process.wait(timeout=3) == 0
+        assert exited(client.process, log=tmp_path / 'server-errors') == 0
         with exclusive_lock(tmp_path / 'request.lock', label='request'):
             pass
         with exclusive_lock(tmp_path / 'child.lock', label='child'):
@@ -149,8 +144,7 @@ def test_unknown_cancellation_does_not_stop_the_active_request(tmp_path):
         client.ready()
         client.send('notifications/cancelled', params={'requestId': '73'})
         client.send('ping', msg_id=74)
-        assert client.receive(3)['id'] == 74
-        from crapkit.errors import ToolError
+        assert client.receive()['id'] == 74
         with pytest.raises(ToolError):
             with exclusive_lock(tmp_path / 'request.lock', label='request'):
                 pass
@@ -181,22 +175,23 @@ def stop_server(client):
         kernel.CloseHandle(handle)
 
 
+def owned_writers_stopped(root):
+    try:
+        with exclusive_lock(root / 'request.lock', label='request'):
+            with exclusive_lock(root / 'child.lock', label='child'):
+                return True
+    except ToolError:
+        return False
+
+
 def test_server_death_stops_the_request_and_its_descendant(tmp_path):
-    from crapkit.errors import ToolError
     client = Client(tmp_path)
     try:
         client.send('tools/call', msg_id=73, params={'name': 'list_runs', 'arguments': {}})
         client.ready()
         stop_server(client)
-        deadline = time.monotonic() + 5
-        while True:
-            try:
-                with exclusive_lock(tmp_path / 'request.lock', label='request'):
-                    with exclusive_lock(tmp_path / 'child.lock', label='child'):
-                        break
-            except ToolError:
-                assert time.monotonic() < deadline, 'owned writers must stop without releasing the fixture'
-                time.sleep(.01)
+        wait_until(lambda: owned_writers_stopped(tmp_path),
+                   what='the owned writers stop without releasing the fixture')
         assert list((tmp_path / 'tmp').glob('crapkit-command-*')) == [], \
             'hard server death must not leave named capture directories'
     finally:
@@ -213,9 +208,9 @@ def test_a_closed_output_pipe_exits_cleanly_without_closing_client_input(tmp_pat
         process.stdout.close()
         process.stdin.write('{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
         process.stdin.flush()
-        assert process.wait(timeout=5) == 0
+        assert exited(process) == 0
         assert process.stderr.read() == ''
     finally:
         process.stdin.close()
-        process.wait(timeout=5)
+        exited(process)
         process.stderr.close()

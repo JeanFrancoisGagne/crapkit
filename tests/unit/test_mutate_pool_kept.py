@@ -21,7 +21,7 @@ from crapkit import mutate_pool
 from crapkit.errors import GitError
 from crapkit.locks import exclusive_lock
 from crapkit.mutate_pool import _worktrees, drop_pool, pool_dir
-from hang_guard import HANG_SECONDS, exited, wait_for
+from hang_guard import CHILD_HOLD, HANG_SECONDS, exited, wait_for
 
 
 def git(repo: Path, *args: str) -> str:
@@ -300,12 +300,14 @@ def test_drop_pool_refuses_while_another_process_owns_the_workers(repo):
 
     script = repo / 'holder.py'
     script.write_text(
-        'from pathlib import Path\nimport sys,time\n'
+        'from pathlib import Path\nimport os,sys,time\n'
         'from crapkit.mutate_pool import _worktrees\n'
         'root = Path(sys.argv[1])\n'
         'with _worktrees(root, 1):\n'
         '    (root / "ready").touch()\n'
-        '    while not (root / "release").exists(): time.sleep(0.02)\n', encoding='utf-8')
+        '    deadline = time.monotonic() + ' + CHILD_HOLD + '\n'
+        '    while not (root / "release").exists() and time.monotonic() < deadline:\n'
+        '        time.sleep(0.02)\n', encoding='utf-8')
     child = subprocess.Popen([sys.executable, str(script), str(repo)])
     try:
         wait_for(repo / 'ready', child)

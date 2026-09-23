@@ -5,21 +5,14 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-import time
 from types import SimpleNamespace
 
 import pytest
 
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
+from hang_guard import CHILD_HOLD, CHILD_WAIT, exited, wait_for, wait_until
 from test_ci_verdict import ROOT, driver
-
-
-def wait_for(path):
-    deadline = time.monotonic() + 20
-    while not path.exists():
-        assert time.monotonic() < deadline, path
-        time.sleep(.02)
 
 
 def runner_fixture(root, detached):
@@ -32,7 +25,7 @@ def runner_fixture(root, detached):
         "with exclusive_lock(Path('writer.lock'), label='private runner'):\n"
         "    Path('started').with_suffix('.part').write_text(str(os.getpid()))\n"
         "    Path('started').with_suffix('.part').replace(Path('started'))\n"
-        "    deadline = time.monotonic() + 30\n"
+        "    deadline = time.monotonic() + " + CHILD_HOLD + "\n"
         "    while not Path('release').exists() and time.monotonic() < deadline:\n"
         "        time.sleep(.02)\n"
         "    Path('finished').touch()\n", encoding="utf-8")
@@ -60,13 +53,13 @@ def running_driver(root, detached=False):
         caller = subprocess.Popen([sys.executable, "-B", str(script)], cwd=root,
                                   stdout=log, stderr=log)
         try:
-            wait_for(root / "started")
+            wait_for(root / "started", caller, log=root / "caller.log")
             yield caller
         finally:
             (root / "release").touch()
             if caller.poll() is None:
                 os.kill(int((root / "caller-pid").read_text()), signal.SIGTERM)
-            caller.wait(timeout=15)
+            exited(caller, log=root / "caller.log")
 
 
 def writer_stopped(root):
@@ -84,11 +77,9 @@ def test_killed_ci_driver_stops_its_revision_runner(tmp_path, detached):
     with running_driver(tmp_path, detached) as caller:
         assert not writer_stopped(tmp_path)
         os.kill(int((tmp_path / "caller-pid").read_text()), signal.SIGTERM)
-        caller.wait(timeout=15)
-        deadline = time.monotonic() + 5
-        while not writer_stopped(tmp_path) and time.monotonic() < deadline:
-            time.sleep(.02)
-        assert writer_stopped(tmp_path), "CI driver died but its revision runner still owns output"
+        exited(caller, log=tmp_path / "caller.log")
+        wait_until(lambda: writer_stopped(tmp_path),
+                   what="the revision runner stop owning output after its CI driver died")
         assert not (tmp_path / "finished").exists()
 
 
@@ -165,9 +156,9 @@ def test_completed_ci_command_stops_detached_writer_before_returning(tmp_path):
     runner_fixture(tmp_path, True)
     runner = tmp_path / "tools/testing/run.py"
     runner.write_text(
-        "from pathlib import Path\nimport subprocess,sys,time\n"
+        "from pathlib import Path\nimport os,subprocess,sys,time\n"
         "subprocess.Popen([sys.executable, '-B', 'writer.py'], start_new_session=True)\n"
-        "until = time.monotonic() + 20\n"
+        "until = time.monotonic() + " + CHILD_WAIT + "\n"
         "while not Path('started').exists() and time.monotonic() < until:\n"
         "    time.sleep(.02)\n"
         "assert Path('started').exists()\nraise SystemExit(7)\n", encoding="utf-8")

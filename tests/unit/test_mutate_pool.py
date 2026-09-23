@@ -83,7 +83,7 @@ def test_the_worktrees_are_all_created_at_once_not_one_after_another(tmp_path, m
     of them serialized cost 55.1 s on a 31,620-file repo against 29.6 s
     overlapped, so a barrier that only four concurrent adds can clear is the
     contract: a serial loop never gets a second arrival."""
-    together = threading.Barrier(4, timeout=15)
+    together = threading.Barrier(4, timeout=HANG_SECONDS)
     _fake_git(monkeypatch, on_add=lambda path: together.wait())
 
     with _worktrees(tmp_path, 4) as trees:
@@ -93,7 +93,7 @@ def test_the_worktrees_are_all_created_at_once_not_one_after_another(tmp_path, m
 
 def test_dropping_the_pool_removes_the_worktrees_at_once_too(tmp_path, monkeypatch):
     """Teardown is the same checkout in reverse and was the same serial loop."""
-    together = threading.Barrier(4, timeout=15)
+    together = threading.Barrier(4, timeout=HANG_SECONDS)
     removed = []
     _fake_git(monkeypatch)
 
@@ -108,6 +108,11 @@ def test_dropping_the_pool_removes_the_worktrees_at_once_too(tmp_path, monkeypat
 
     assert sorted(drop_pool(tmp_path)) == sorted(asked)
     assert sorted(str(p) for p in removed) == sorted(str(p) for p in asked)
+
+
+def _slow_adds(tried):
+    """Every add but w0's, which fails at once."""
+    return [path for path in tried if path.name != "w0"]
 
 
 def test_an_add_that_fails_leaves_no_tree_behind_not_even_a_slow_one(tmp_path, monkeypatch):
@@ -128,8 +133,8 @@ def test_an_add_that_fails_leaves_no_tree_behind_not_even_a_slow_one(tmp_path, m
         with _worktrees(tmp_path, 4):
             pass
 
-    for _ in [p for p in tried if p.name != "w0"]:
-        assert made.acquire(timeout=15), "every slow add finished before we looked"
+    for _ in _slow_adds(tried):
+        assert made.acquire(timeout=HANG_SECONDS), "every slow add finished before we looked"
     assert [p for p in tried if p.exists()] == [], "no tree survived the failure"
     assert list(pool_dir(tmp_path).glob("w*")) == [], "and none was left half-built"
 

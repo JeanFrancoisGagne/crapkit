@@ -2,18 +2,13 @@
 from pathlib import Path
 import subprocess
 import sys
-import time
 
-from crapkit.score import ScoredRow
-from crapkit.store import SnapshotStore
+if __name__ == "__main__":  # run as a child: the shared test support sits one directory up
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-
-def wait_for(path: Path) -> None:
-    deadline = time.monotonic() + 15
-    while not path.exists():
-        if time.monotonic() >= deadline:
-            raise RuntimeError(f"timed out waiting for {path.name}")
-        time.sleep(0.01)
+from crapkit.score import ScoredRow  # noqa: E402
+from crapkit.store import SnapshotStore  # noqa: E402
+from hang_guard import wait_for  # noqa: E402
 
 
 def row():

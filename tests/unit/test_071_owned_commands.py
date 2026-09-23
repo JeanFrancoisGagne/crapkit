@@ -4,37 +4,30 @@ from pathlib import Path
 import subprocess
 import os
 import sys
-import time
 
 import pytest
 
 from crapkit import procs
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
-
-
-def ready(path):
-    until = time.monotonic() + 30
-    while not path.exists() and time.monotonic() < until:
-        time.sleep(.01)
-    assert path.exists(), "the private writer must start before cancellation"
+from hang_guard import CHILD_HOLD, HANG_SECONDS, wait_for
 
 
 def test_cancel_stops_live_commands_and_retains_the_lease(tmp_path):
     script = tmp_path / 'writer.py'
     script.write_text(
-        'from pathlib import Path\nimport time\n'
+        'from pathlib import Path\nimport os, time\n'
         'from crapkit.locks import exclusive_lock\n'
         'with exclusive_lock(Path("writer.lock"), label="writer"):\n'
-        '    Path("ready").touch()\n    time.sleep(30)\n', encoding='utf-8')
+        '    Path("ready").touch()\n    time.sleep(' + CHILD_HOLD + ')\n', encoding='utf-8')
     with ThreadPoolExecutor(1) as pool:
         with procs.own_processes([tmp_path / 'lease']) as owner:
             future = pool.submit(procs.run_bounded, f'"{sys.executable}" "{script}"',
                                  None, owner=owner, cwd=tmp_path)
-            ready(tmp_path / 'ready')
+            wait_for(tmp_path / 'ready')
             owner.cancel()
             with pytest.raises(procs.CommandCancelled):
-                future.result(timeout=5)
+                future.result(timeout=HANG_SECONDS)
             with exclusive_lock(tmp_path / 'writer.lock', label='writer'):
                 pass
             with pytest.raises(ToolError):
@@ -86,7 +79,7 @@ def test_forked_child_cannot_keep_an_unrelated_owners_lease_alive(tmp_path):
     with ThreadPoolExecutor(1) as pool:
         closed = pool.submit(context.__exit__, None, None, None)
         try:
-            closed.result(timeout=3)
+            closed.result(timeout=HANG_SECONDS)
             with exclusive_lock(tmp_path / 'lease', label='lease'):
                 pass
         finally:
@@ -107,9 +100,9 @@ def test_cancel_before_registration_never_releases_a_start_gate():
 
 def test_outer_cancellation_waits_for_a_nested_owners_writer(tmp_path):
     (tmp_path / 'writer.py').write_text(
-        'from pathlib import Path\nimport time\nfrom crapkit.locks import exclusive_lock\n'
+        'from pathlib import Path\nimport os, time\nfrom crapkit.locks import exclusive_lock\n'
         'with exclusive_lock(Path("writer.lock"),label="writer"):\n'
-        '    Path("ready").touch()\n    until=time.monotonic()+30\n'
+        '    Path("ready").touch()\n    until=time.monotonic()+' + CHILD_HOLD + '\n'
         '    while not Path("release").exists() and time.monotonic()<until: time.sleep(.01)\n',
         encoding='utf-8')
     (tmp_path / 'nested.py').write_text(
@@ -120,10 +113,10 @@ def test_outer_cancellation_waits_for_a_nested_owners_writer(tmp_path):
             with procs.own_processes([tmp_path / 'outer.lease']) as owner:
                 result = pool.submit(procs.run_owned, [sys.executable, 'nested.py'],
                                      owner=owner, cwd=tmp_path)
-                ready(tmp_path / 'ready')
+                wait_for(tmp_path / 'ready')
                 owner.cancel()
                 with pytest.raises(procs.CommandCancelled):
-                    result.result(timeout=5)
+                    result.result(timeout=HANG_SECONDS)
                 with exclusive_lock(tmp_path / 'writer.lock', label='writer'):
                     pass
     finally:

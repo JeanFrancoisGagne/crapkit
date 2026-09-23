@@ -5,11 +5,11 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-import time
 
 import pytest
 
 from crapkit.resources import resource_status
+from hang_guard import communicate, wait_until
 
 
 @pytest.fixture(autouse=True)
@@ -56,19 +56,15 @@ def test_unusable_coordination_directory_uses_serial_caller(tmp_path, monkeypatc
         assert pool is None
 
 
-def _wait_for(condition):
-    deadline = time.monotonic() + 15
-    while not condition():
-        if time.monotonic() > deadline:
-            raise AssertionError("private worker readiness or cleanup did not complete")
-        time.sleep(.01)
+def _wait_for(condition, process=None):
+    wait_until(condition, process, what="private worker readiness or cleanup complete")
 
 
 @pytest.fixture
 def running_pool(tmp_path):
     process = _start_fixture(tmp_path)
     try:
-        _wait_for(lambda: len(list(tmp_path.glob("worker-*.json"))) == 2)
+        _wait_for(lambda: len(list(tmp_path.glob("worker-*.json"))) == 2, process)
         yield tmp_path, process
     finally:
         (tmp_path / "release").touch()
@@ -85,7 +81,7 @@ def _start_fixture(root, mode="running"):
 def registering_pool(tmp_path):
     process = _start_fixture(tmp_path, "registering")
     try:
-        _wait_for(lambda: (tmp_path / "registration.json").exists())
+        _wait_for(lambda: (tmp_path / "registration.json").exists(), process)
         yield tmp_path, process
     finally:
         (tmp_path / "register-release").touch()
@@ -97,9 +93,9 @@ def test_delayed_registration_can_release_real_worker_code(registering_pool):
     directory, process = registering_pool
     assert not list(directory.glob("worker-*.json"))
     (directory / "register-release").touch()
-    _wait_for(lambda: len(list(directory.glob("worker-*.json"))) == 2)
+    _wait_for(lambda: len(list(directory.glob("worker-*.json"))) == 2, process)
     (directory / "release").touch()
-    output, error = process.communicate(timeout=20)
+    output, error = communicate(process)
     assert process.returncode == 0, output + error
     assert len(list(directory.glob("late-*"))) == 2
 
@@ -117,18 +113,18 @@ def test_caller_death_before_registration_cannot_start_worker_code(registering_p
 
 
 def _drain_fixture(process, root):
+    """A miss has killed the fixture's caller; its pool workers leave on abort-fixture."""
     try:
-        process.communicate(timeout=20)
-    except subprocess.TimeoutExpired:
+        communicate(process)
+    except AssertionError:
         (root / "abort-fixture").touch()
-        process.communicate(timeout=5)
         raise
 
 
 def test_a_live_pool_can_write_after_explicit_release(running_pool):
     directory, process = running_pool
     (directory / "release").touch()
-    output, error = process.communicate(timeout=20)
+    output, error = communicate(process)
     assert process.returncode == 0, output + error
     assert error == "", "normal pool cleanup wrote an interpreter-shutdown error"
     assert len(list(directory.glob("late-*"))) == 2

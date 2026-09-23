@@ -5,13 +5,13 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-import time
 from types import SimpleNamespace
 
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
 from crapkit.mutate import file_mutants
 from crapkit.mutate_pool import run_mutants
+from hang_guard import CHILD_HOLD, exited, wait_until
 from test_r2_execution_lifetime import wait_for
 
 
@@ -51,7 +51,7 @@ def crashed_writer(tmp_path):
         '    with exclusive_lock(control / "writer.lock", label="writer"):\n'
         '        (control / "started").with_suffix(".part").write_text(str(Path.cwd()))\n'
         '        (control / "started").with_suffix(".part").replace(control / "started")\n'
-        '        deadline = time.monotonic() + 30\n'
+        '        deadline = time.monotonic() + ' + CHILD_HOLD + '\n'
         '        while not (control / "release").exists() and time.monotonic() < deadline:\n'
         '            time.sleep(.02)\n'
         '        Path("m.py").write_text("CORRUPTED_BY_OLD_SUITE\\n")\n'
@@ -70,28 +70,25 @@ def crashed_writer(tmp_path):
     return root, script
 
 
-def wait_for_pool(root):
-    deadline = time.monotonic() + 15
-    while True:
-        try:
-            with exclusive_lock(root / '.crapkit' / 'mutate-pool.lock', label='pool'):
-                return
-        except ToolError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(.02)
+def pool_free(root):
+    try:
+        with exclusive_lock(root / '.crapkit' / 'mutate-pool.lock', label='pool'):
+            return True
+    except ToolError:
+        return False
 
 
 def test_a_dead_mutation_caller_stops_the_suite_before_the_pool_can_be_reused(tmp_path):
     root, script = crashed_writer(tmp_path)
     stopped = False
-    with (tmp_path / 'caller.log').open('w') as log:
-        caller = subprocess.Popen([sys.executable, str(script)], stdout=log, stderr=log)
+    log = tmp_path / 'caller.log'
+    with log.open('w') as stream:
+        caller = subprocess.Popen([sys.executable, str(script)], stdout=stream, stderr=stream)
         try:
-            wait_for(tmp_path / 'started')
+            wait_for(tmp_path / 'started', caller, log=log)
             os.kill(int((tmp_path / 'caller-pid').read_text()), signal.SIGTERM)
-            caller.wait(timeout=15)
-            wait_for_pool(root)
+            exited(caller, log=log)
+            wait_until(lambda: pool_free(root), what='the mutation pool come free')
             with exclusive_lock(tmp_path / 'writer.lock', label='writer'):
                 stopped = True
             old_tree = Path((tmp_path / 'started').read_text())
@@ -107,7 +104,7 @@ def test_a_dead_mutation_caller_stops_the_suite_before_the_pool_can_be_reused(tm
                 wait_for(tmp_path / 'finished')
             if caller.poll() is None:
                 caller.kill()
-                caller.wait(timeout=15)
+                exited(caller, log=log)
 
 
 def test_wait_for_returns_the_moment_a_marker_exists_not_when_it_is_filled(tmp_path):

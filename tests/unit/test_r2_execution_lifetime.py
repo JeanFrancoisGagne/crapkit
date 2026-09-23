@@ -6,27 +6,27 @@ from crapkit.config import Lane
 from crapkit.lanes import measurement_owner, run_lane
 from crapkit.locks import exclusive_lock
 from crapkit.procs import run_bounded
-from hang_guard import wait_for
+from hang_guard import CHILD_HOLD, CHILD_WAIT, wait_for
 
 
 def late_writer(root):
     script = root / 'late.py'
     script.write_text(
-        'from pathlib import Path\nimport time\n'
+        'from pathlib import Path\nimport os, time\n'
         'from crapkit.locks import exclusive_lock\n'
         'with exclusive_lock(Path("writer.lock"), label="writer"):\n'
         '    Path("started").touch()\n'
-        '    deadline = time.monotonic() + 30\n'
+        '    deadline = time.monotonic() + ' + CHILD_HOLD + '\n'
         '    while not Path("release").exists() and time.monotonic() < deadline:\n'
         '        time.sleep(.02)\n'
         '    Path("cov.json").write_text("OLD_DESCENDANT_WRITE")\n'
         'Path("finished").touch()\n', encoding='utf-8')
     artifact = json.dumps({'src/a.py': {'fnMap': {}, 'f': {}, 'branchMap': {}, 'b': {}}})
     (root / 'runner.py').write_text(
-        'from pathlib import Path\nimport subprocess, sys, time\n'
+        'from pathlib import Path\nimport os, subprocess, sys, time\n'
         'subprocess.Popen([sys.executable, "late.py"], stdin=subprocess.DEVNULL, '
         'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n'
-        'deadline = time.monotonic() + 15\n'
+        'deadline = time.monotonic() + ' + CHILD_WAIT + '\n'
         'while not Path("started").exists() and time.monotonic() < deadline: time.sleep(.02)\n'
         'assert Path("started").exists()\n'
         f'Path("cov.json").write_text({artifact!r})\n', encoding='utf-8')
