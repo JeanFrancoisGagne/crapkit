@@ -63,18 +63,23 @@ def test_legacy_mark_is_preserved_and_refused_by_seed_rescore_and_hook(tmp_path)
     text = f'# {metric_version()}\nsrc/app.ts\t{rows[0]["long_name"]}\t99\nsafe.py\tg( )\t17\n'
     marks.write_text(text, encoding="utf-8")
     before = marks.read_bytes()
-    for args in (("ratchet", "seed"), ("rescore", "src/app.ts", "--gate", "--json")):
-        result = run_cli(tmp_path, *args)
-        assert result.returncode == 3, result.stderr
-        assert "legacy ratchet key identity is ambiguous" in result.stderr
-        assert marks.read_bytes() == before
+    _refused(tmp_path, "ratchet", "seed")
+    # A gate over a file whose functions did not change reads no marks, so the
+    # ambiguous mark is not its to refuse; the next gate that judges a change is.
+    clean = run_cli(tmp_path, "rescore", "src/app.ts", "--gate", "--json")
+    assert clean.returncode == 0, clean.stderr
     source = tmp_path / "src/app.ts"
     source.write_text(_source().replace("return x;", "return x + 1;"), encoding="utf-8")
+    _refused(tmp_path, "rescore", "src/app.ts", "--gate", "--json")
     git(tmp_path, "add", "src/app.ts")
-    result = run_cli(tmp_path, "hook-precommit")
+    _refused(tmp_path, "hook-precommit")
+    assert marks.read_bytes() == before
+
+
+def _refused(root, *args):
+    result = run_cli(root, *args)
     assert result.returncode == 3, result.stderr
     assert "legacy ratchet key identity is ambiguous" in result.stderr
-    assert marks.read_bytes() == before
 
 
 def test_new_ratchet_has_one_mark_for_each_same_line_callback(tmp_path):
