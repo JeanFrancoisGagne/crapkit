@@ -157,7 +157,7 @@ def _free_slots():
 
 def test_registration_refusal_cannot_release_work_or_keep_slots(monkeypatch):
     from crapkit._analysis_pool import analysis_pool
-    from crapkit.procs import _ProcessOwner
+    from crapkit._process_owner import ProcessOwner as _ProcessOwner
     from crapkit.errors import ToolError
     def refuse(self, pid, release):
         raise ToolError("fixture registration refusal")

@@ -11,7 +11,7 @@ def group_adapter(monkeypatch, outcome):
     probe = Mock(side_effect=outcome)
     scan = Mock(return_value=False)
     monkeypatch.setattr(owner, 'os', SimpleNamespace(killpg=probe))
-    monkeypatch.setattr(owner, '_kill_pid', Mock())
+    monkeypatch.setattr(owner, 'kill_process_tree', Mock())
     monkeypatch.setattr(owner, '_group_active', scan)
     return probe, scan
 

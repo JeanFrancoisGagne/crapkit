@@ -69,7 +69,7 @@ def test_ps_failure_does_not_confirm_group_cleanup(monkeypatch):
 def test_process_group_signals_before_waiting_for_descriptor_closure(monkeypatch):
     events = Mock()
     events.active.side_effect = [True, False]
-    monkeypatch.setattr(owner, '_kill_pid', events.kill)
+    monkeypatch.setattr(owner, 'kill_process_tree', events.kill)
     monkeypatch.setattr(owner, '_group_exists', lambda pid: True)
     monkeypatch.setattr(owner, '_group_active', events.active)
     monkeypatch.setattr(owner, 'time', SimpleNamespace(sleep=events.sleep))

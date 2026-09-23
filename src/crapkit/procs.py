@@ -9,20 +9,21 @@ setsid daemon is outside that ownership. Untimed commands have no deadline.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from contextlib import ExitStack, contextmanager, nullcontext
 import json
 import re
-import signal
 import shlex
 import subprocess
 import sys
-import threading
 import tempfile
 import time
 from typing import IO
 
+from ._process_owner import CommandCancelled, kill_process_tree, own_processes
 from .errors import ToolError
+
+__all__ = ["CommandCancelled", "NoProgress", "own_processes", "prepare_template",
+           "run_bounded", "run_owned"]
 
 _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
               if os.name == "nt" else {"start_new_session": True})
@@ -31,23 +32,6 @@ _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
 # lands close to the deadline, large enough that watching a two-hour suite costs
 # nothing measurable.
 _TICK = 0.5
-
-_OWNER_INPUTS = set()
-_OWNER_INPUTS_LOCK = threading.RLock()
-
-
-def _close_forked_inputs():
-    # Raw close cannot flush a parent's pending protocol bytes into its owner.
-    for stream in _OWNER_INPUTS:
-        stream.close()
-    _OWNER_INPUTS.clear()
-    _OWNER_INPUTS_LOCK.release()
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(before=_OWNER_INPUTS_LOCK.acquire,
-                        after_in_parent=_OWNER_INPUTS_LOCK.release,
-                        after_in_child=_close_forked_inputs)
 
 
 def prepare_template(template: str, values: dict[str, list[str]]) -> tuple[str, dict[str, str]]:
@@ -126,147 +110,8 @@ class NoProgress(Exception):
 
 def _kill_tree(proc: subprocess.Popen) -> None:
     """The shell and everything under it, then reap the shell."""
-    _kill_pid(proc.pid)
+    kill_process_tree(proc.pid)
     proc.wait()
-
-
-def _kill_pid(pid: int) -> None:
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
-    else:
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-
-
-class CommandCancelled(Exception):
-    """The command owner stopped this request and refuses further starts."""
-
-
-class _ProcessOwner:
-    def __init__(self, process):
-        self.process = process
-        self._requests = threading.Lock()
-        self.cancelled = False
-
-    def receive(self) -> dict:
-        from .errors import ToolError
-        line = self.process.stdout.readline()
-        if not line:
-            raise ToolError("measurement owner stopped before confirming ownership")
-        result = json.loads(line)
-        if not result.get("ok"):
-            raise ToolError(result.get("error", "measurement owner refused the operation"))
-        return result
-
-    def request(self, operation: str, pid: int) -> None:
-        with self._requests:
-            if operation == "add":
-                self.check_cancelled()
-            self._request(operation, pid)
-
-    def _request(self, operation: str, pid: int) -> None:
-        from .errors import ToolError
-        try:
-            self.process.stdin.write(json.dumps((operation, pid)) + "\n")
-            self.process.stdin.flush()
-            self.receive()
-        except OSError as error:
-            raise ToolError("measurement owner stopped during command registration") from error
-
-    def start(self, process, family=None):
-        """Register and release one launcher atomically against cancellation."""
-        try:
-            self.register_then(process.pid, lambda: _release_launcher(process), family=family)
-        except OSError as error:
-            raise _dead_launcher(process, error) from error
-
-    def register_then(self, pid, release, *, family=None):
-        """Register a gated process, then release it before cancellation can enter."""
-        with self._requests:
-            self.check_cancelled()
-            self._request("add", pid if family is None else {"pid": pid, "family": family})
-            release()
-
-    def check_cancelled(self):
-        if self.cancelled:
-            raise CommandCancelled("command owner was cancelled")
-
-    def cancel(self):
-        """Stop registered trees and refuse starts, keeping resource leases held."""
-        with self._requests:
-            if not self.cancelled:
-                self.cancelled = True
-                self._request("cancel", 0)
-
-    def check(self) -> None:
-        from .errors import ToolError
-        if self.process.poll() is not None:
-            raise ToolError("measurement owner stopped before publication")
-
-
-class _WindowsOwner(_ProcessOwner):
-    """Without leases, caller-owned Jobs already survive caller failure safely."""
-
-    def __init__(self):
-        super().__init__(None)
-        self.children = {}
-        self.held = True
-
-    def _request(self, operation, pid):
-        from ._process_owner import _operation
-        _operation(self.children, operation, pid)
-
-    def check(self):
-        pass  # The kernel owns live Jobs through this process's handles.
-
-
-@contextmanager
-def _local_owner():
-    owner = _WindowsOwner()
-    try:
-        yield owner
-    finally:
-        owner.cancel()
-
-
-@contextmanager
-def own_processes(paths, *, optional: bool = False, label: str = "measurement"):
-    """Keep leases until tree cleanup; lease-free Windows Jobs need no guardian."""
-    paths = tuple(paths)
-    context = (_local_owner() if os.name == "nt" and not paths else
-               _external_owner(paths, optional=optional, label=label))
-    with context as owner:
-        yield owner
-
-
-@contextmanager
-def _external_owner(paths, *, optional: bool = False, label: str = "measurement"):
-    """Own measurement outputs across caller crashes and command cleanup."""
-    options = {"paths": list(map(str, paths)), "optional": optional, "label": label}
-    bootstrap = ("import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
-                 "runpy.run_module('crapkit._process_owner', run_name='__main__')")
-    package_root = str(Path(__file__).resolve().parent.parent)
-    with _OWNER_INPUTS_LOCK:
-        process = subprocess.Popen([sys.executable, "-c", bootstrap, package_root, json.dumps(options)],
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8", **_OWN_GROUP)
-        raw_input = process.stdin.buffer.raw
-        _OWNER_INPUTS.add(raw_input)
-    owner = _ProcessOwner(process)
-    try:
-        owner.held = owner.receive()["held"]
-        yield owner
-        owner.check()
-    finally:
-        with _OWNER_INPUTS_LOCK:
-            _OWNER_INPUTS.discard(raw_input)
-            _close_input(process)
-        process.wait()
-        process.stdout.close()
 
 
 def _close_input(process) -> None:
@@ -289,6 +134,14 @@ class _LauncherDied(ToolError, OSError):
     """A ToolError to the lane layer, which fails and retries that one lane.
     Still an OSError to the doctor and init probes, which read an OSError from
     run_bounded as a question that could not be put and answer with a finding."""
+
+
+def _start(owner, process, registration):
+    """Register and release one launcher atomically against cancellation."""
+    try:
+        owner.register_then(process.pid, lambda: _release_launcher(process), registration)
+    except OSError as error:
+        raise _dead_launcher(process, error) from error
 
 
 def _release_launcher(process):
@@ -357,25 +210,17 @@ def _spawn(command, out, errors, owner, kwargs, *, error_descriptor=None, merge=
     # so Job assignment precedes every child the launcher can create.
     launcher = getattr(sys, "_base_executable", sys.executable)
     payload = json.dumps([command, error_descriptor, merge])
-    family, kwargs = _command_family(kwargs)
+    registration, kwargs = owner.prepare(kwargs)
     process = subprocess.Popen([launcher, "-I", "-S", "-c", _OWNED_LAUNCH, payload],
                                stdin=subprocess.PIPE, stdout=out, stderr=errors,
                                **_OWN_GROUP, **kwargs)
     try:
-        owner.start(process, family)
+        _start(owner, process, registration)
         return process
     except BaseException:
         _kill_tree(process)
         _close_input(process)
         raise
-
-
-def _command_family(kwargs):
-    if os.name == "nt":
-        return None, kwargs
-    from ._process_family import command_environment
-    family, environment = command_environment(kwargs.get("env"))
-    return family, {**kwargs, "env": environment}
 
 
 def _stream_size(stream: IO | None) -> int:
@@ -538,7 +383,7 @@ def _complete_command(proc, timeout, stream, no_progress, owner):
     finally:
         _close_input(proc)
         try:
-            owner.request("remove", proc.pid)
+            owner.stop(proc.pid)
         except BaseException:
             _kill_tree(proc)
             raise
