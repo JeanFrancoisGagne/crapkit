@@ -744,12 +744,23 @@ def _outside_root(entry: str) -> bool:
 
 
 def _lane_inputs(row: dict) -> tuple[str, ...]:
-    inputs = tuple(row.get("inputs", ()))
-    for entry in inputs:
-        if _outside_root(entry):
-            raise ConfigError(f"lane {row.get('name')!r}: inputs entry {entry!r} is not a path "
-                              "inside the root; list paths relative to crapkit.toml, without '..'")
-    return inputs
+    return tuple(_lane_input(row.get("name"), entry) for entry in row.get("inputs", ()))
+
+
+def _lane_input(name, entry: str) -> str:
+    r"""One input spelled the way `git ls-files` spells a root-relative path.
+
+    git reads inputs with --literal-pathspecs, so `src/*.ts` would match no
+    file at all and the lane would be reused forever while its sources change.
+    `src\app.ts` matched on Windows git and named a file holding a backslash on
+    Linux; the scope-path spelling rule settles that before git sees it."""
+    if _outside_root(entry):
+        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is not a path "
+                          "inside the root; list paths relative to crapkit.toml, without '..'")
+    if "*" in entry or "?" in entry:
+        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is a glob; inputs are literal "
+                          "paths from the root, so list the directory or file itself")
+    return _unrooted(entry) or "."
 
 
 def _reject_shared_artifacts(lanes: list, root=None) -> None:

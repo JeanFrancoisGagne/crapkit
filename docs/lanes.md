@@ -970,8 +970,8 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
 shared helpers: any tracked or untracked change, or a new commit, reruns the lane.
-With [`inputs`](configuration.md#lane) it covers exactly those paths, read as git
-pathspecs from the root, so a docs commit or an untracked draft elsewhere reruns
+With [`inputs`](configuration.md#lane) it covers exactly those paths, literal paths
+from the root with no globs, so a docs commit or an untracked draft elsewhere reruns
 nothing, and a file the command reads that the list leaves out is never checked.
 Measurements made while their proof did not hold (a dirty tree, or dirty inputs)
 and older stamps without this proof cannot be reused automatically. Environment

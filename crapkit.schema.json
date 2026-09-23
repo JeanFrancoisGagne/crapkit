@@ -227,7 +227,7 @@
             "items": {
               "type": "string"
             },
-            "description": "repo-relative paths the command reads; --reuse-unchanged reuses the lane while none of them changed"
+            "description": "literal root-relative paths the command reads, no globs; --reuse-unchanged reuses the lane while none of them changed"
           },
           "full_suite": {
             "type": "boolean",

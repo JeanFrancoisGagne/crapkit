@@ -180,8 +180,9 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                           'additionalProperties': {'type': 'string'}},
                                                   'inputs': {'type': 'array',
                                                              'items': {'type': 'string'},
-                                                             'description': 'repo-relative paths the '
-                                                                            'command reads; '
+                                                             'description': 'literal root-relative '
+                                                                            'paths the command reads, '
+                                                                            'no globs; '
                                                                             '--reuse-unchanged reuses '
                                                                             'the lane while none of '
                                                                             'them changed'},

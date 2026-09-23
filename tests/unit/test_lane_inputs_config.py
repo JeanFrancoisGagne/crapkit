@@ -2,8 +2,10 @@
 
 `--reuse-unchanged` reuses such a lane while nothing under those paths changed,
 instead of demanding the whole tree be untouched since the artifact's commit.
-The list is read as git pathspecs from the root, so a path that climbs out of
-the root or is spelled absolutely could name changes the check never sees.
+Each entry is a literal path from the root, no globs: git reads it with
+--literal-pathspecs, so `src/*.ts` would match no file and the lane would be
+reused forever while its sources change. A path that climbs out of the root or
+is spelled absolutely could name changes the check never sees.
 """
 import json
 from pathlib import Path
@@ -38,6 +40,27 @@ def test_an_input_outside_the_root_is_refused_at_load(entry):
         load_config_text(_config(json.dumps([entry])))
     message = str(raised.value)
     assert "lane 'py'" in message and repr(entry) in message
+
+
+@pytest.mark.parametrize("entry", ["src/*.ts", "src/app?.ts", "*"])
+def test_a_glob_input_is_refused_at_load(entry):
+    with pytest.raises(ConfigError) as raised:
+        load_config_text(_config(json.dumps([entry])))
+    message = str(raised.value)
+    assert "lane 'py'" in message and repr(entry) in message and "literal" in message
+
+
+@pytest.mark.parametrize(("entry", "spelled"), [
+    ("src\\app.ts", "src/app.ts"),
+    ("./src/", "src"),
+    ("tests/", "tests"),
+    ("./", "."),
+    ("src/[id]/page.ts", "src/[id]/page.ts"),
+])
+def test_an_input_is_spelled_the_way_git_spells_a_root_relative_path(entry, spelled):
+    """A backslash matched on Windows git and named a file holding a backslash
+    on Linux; the scope-path spelling rule settles it before git sees it."""
+    assert load_config_text(_config(json.dumps([entry]))).lanes[0].inputs == (spelled,)
 
 
 def test_inputs_must_be_a_list_of_strings():
