@@ -570,8 +570,9 @@ def _emit_coverage_findings(root: Path, args, scored, cfg) -> None:
 # On a large consumer repo lizard reads 1.1 to 2.1 ms a KB in process (median
 # 1.1 on its 15 largest files, 1.4 on 15 median-sized ones), and loading the
 # 21.8 MB cache takes 0.36 to 0.41 s on a quiet machine: 256 KB is about that
-# load at the 1.4 ms rate. Fifteen of those large files ran 0.54 s slower
-# outright than through the cache, eight broke even.
+# load at the 1.4 ms rate. End to end there, three unchanged files of 194 KB
+# ran 0.55 s faster outright than through the cache, while outright cost the
+# fifteen largest (1.1 MB) 0.65 s and the eight largest (640 KB) 0.14 s.
 _RESCORE_OUTRIGHT_BYTES = 256 * 1024
 
 
@@ -602,7 +603,8 @@ def _rescored_records(root: Path, cache_path: Path, flat: list,
 def _records_in_process(root: Path, flat: list) -> dict:
     """Records for `flat` from the per-file analysis the cache path runs on a
     miss, in this process and with no cache: the same read, hash check, decode
-    and reader chain, and the same notes on stderr."""
+    and reader chain, and the notes that path prints for a miss. Every file
+    here is one, so a file with twin names prints its note on every run."""
     from ..analyze import analyze_jobs, content_hash
 
     jobs = [(str(root / rel), rel) for rel in flat]
