@@ -1,10 +1,11 @@
 """A pytest run whose test errors in teardown finished, and JUnit admission says so.
 
-pytest's junitxml counts records, not testcases, in `tests=`. A teardown error
-is its own record: it sits beside the test's own result in one testcase (a pass,
-a skip or a setup error), or, after a call failure, in a second testcase with the
-same id, and pytest then subtracts that split. The reports below are what pytest
-8.3.3 wrote for each shape, trimmed of timings and tracebacks.
+Before 9.1, pytest's junitxml counted records, not testcases, in `tests=`. A
+teardown error is its own record: it sits beside the test's own result in one
+testcase (a pass, a skip or a setup error), or, after a call failure, in a second
+testcase with the same id, and pytest then subtracted that split. pytest 9.1
+counts testcases. The reports below are what pytest 8.3.3 and 9.1.1 wrote for
+each shape, trimmed of timings and tracebacks.
 """
 import subprocess
 import sys
@@ -37,12 +38,26 @@ FAIL_THEN_TEARDOWN = (
     f'<error message="{TEARDOWN}"/></testcase></testsuite></testsuites>')
 
 
+# pytest 9.1 writes the same testcases and declares one test for each of them.
+PYTEST_91 = {
+    "pass": PASS_THEN_TEARDOWN.replace('tests="2"', 'tests="1"'),
+    "skip": SKIP_THEN_TEARDOWN.replace('tests="2"', 'tests="1"'),
+    "setup-error": SETUP_THEN_TEARDOWN.replace('tests="2"', 'tests="1"'),
+    "call-failure": FAIL_THEN_TEARDOWN.replace('tests="1"', 'tests="2"'),
+}
+
+
 @pytest.mark.parametrize(("xml", "failed"), [
     (PASS_THEN_TEARDOWN, "test_m::test_pass_teardown_err"),
     (SKIP_THEN_TEARDOWN, "test_m::test_skip_teardown_err"),
     (SETUP_THEN_TEARDOWN, "test_s::test_setup_and_teardown_err"),
     (FAIL_THEN_TEARDOWN, "test_m::test_fail_teardown_err"),
-], ids=["pass", "skip", "setup-error", "call-failure"])
+    (PYTEST_91["pass"], "test_m::test_pass_teardown_err"),
+    (PYTEST_91["skip"], "test_m::test_skip_teardown_err"),
+    (PYTEST_91["setup-error"], "test_s::test_setup_and_teardown_err"),
+    (PYTEST_91["call-failure"], "test_m::test_fail_teardown_err"),
+], ids=["pass", "skip", "setup-error", "call-failure",
+        "9.1-pass", "9.1-skip", "9.1-setup-error", "9.1-call-failure"])
 def test_a_teardown_error_is_a_finished_failure_not_a_partial_report(xml, failed):
     assert suite_summary(xml)[0] == {failed}
     assert failed_test_ids(xml) == {failed}
