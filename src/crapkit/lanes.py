@@ -187,6 +187,9 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int, owner=
                                no_progress=_no_progress(lane), owner=owner, **_popen_kwargs(root, lane))
         except NoProgress as stalled:
             _raise_stalled(fh, lane, log_path, attempt, stalled.seconds)
+        except ToolError as failed:  # a failed start: the log says why, as it does for a kill
+            fh.write(f"\n[crapkit] {failed}\n")
+            raise
         if code is None:
             fh.write(f"\n[crapkit] timed out after {lane.timeout_seconds}s; killed\n")
             raise ToolError(f"lane {lane.name!r} timed out after {lane.timeout_seconds}s "
