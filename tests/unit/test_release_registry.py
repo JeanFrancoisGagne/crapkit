@@ -1,4 +1,5 @@
 """Release readback requires the canonical published MCP server and package."""
+import io
 import json
 
 import pytest
@@ -101,3 +102,38 @@ def test_release_readback_requires_pagination_to_finish_within_its_bound(tmp_pat
     rows, asked = readback(tmp_path, pages)
     assert any(not row.ok and "100 pages" in row.observed for row in rows)
     assert len([url for url in asked if url.startswith(SEARCH)]) == 100
+
+
+COLD_SEARCH_SECONDS = 87.1  # the slowest cold registry search measured on 2026-09-23
+
+
+def cold_registry(url_of, answers):
+    """urllib.request.urlopen for a network whose registry search answers after
+    COLD_SEARCH_SECONDS: a read with a shorter timeout gets urllib's own error."""
+    def urlopen(request, timeout):
+        url = url_of(request)
+        if url.startswith(SEARCH) and timeout < COLD_SEARCH_SECONDS:
+            raise TimeoutError("The read operation timed out")
+        body = next(text for prefix, text in answers.items() if url.startswith(prefix))
+        return io.BytesIO(body.encode("utf-8"))
+    return urlopen
+
+
+def test_verify_waits_out_a_registry_search_whose_cache_is_cold(tmp_path, monkeypatch):
+    """The registry search took 78 to 87 s on a cold cache, and verify read it
+    once with a 20 s timeout, so every verify called a correct entry unconfirmed."""
+    root = _tree(tmp_path, version=VERSION, heading="0.7.2")
+    answers = {SEARCH: json.dumps({"servers": [entry()]}),
+               "https://pypi.org/": json.dumps({"info": {"version": VERSION}}),
+               release.PAGES_LATEST: json.dumps({"status": "built", "commit": "c0ffee1234567890"}),
+               release.GLAMA_SERVER: "uses: JeanFrancoisGagne/crapkit@v" + VERSION}
+    monkeypatch.setattr(release, "_gh_token", lambda: "")
+    monkeypatch.setattr(release.urllib.request, "urlopen", cold_registry(lambda r: r.full_url, answers))
+
+    rows = release.verify(root, VERSION, git_tag=lambda: "v0.7.1", tag_commit=lambda: "c0ffee1234567890",
+                          contains=lambda ancestor, built: ancestor == built,
+                          gh_release=lambda version: "https://github.com/r/releases/tag/v0.7.1")
+
+    registry = [(row.surface, row.observed) for row in rows if row.surface.startswith("registry")]
+    assert [surface for surface, _ in registry] == ["registry", "registry repository", "registry package"], registry
+    assert all(row.ok for row in rows), rows

@@ -57,6 +57,10 @@ GITHUB_API = "https://api.github.com/"
 # Stage 2b runs these through this interpreter (`python -m build`, `python -m
 # twine`) before the push, so `check` refuses an interpreter that cannot import one.
 RELEASE_TOOLING = ("build", "twine")
+# Seconds a live read may take. The registry's search answered in 78 and 87
+# seconds on a cold cache (2026-09-23), so its reads get their own bound.
+READ_TIMEOUT = 20
+REGISTRY_READ_TIMEOUT = 120
 # Seconds between readbacks of a surface that was just written.
 READBACK_PAUSE = 5
 # Reads of a just-written surface before it counts as unconfirmed: 55 seconds.
@@ -316,9 +320,13 @@ def _api_request(url: str) -> urllib.request.Request:
     return request
 
 
+def _read_timeout(url: str) -> int:
+    return REGISTRY_READ_TIMEOUT if url.startswith(REGISTRY_SEARCH) else READ_TIMEOUT
+
+
 def _urlopen(url: str) -> str:
     try:
-        with urllib.request.urlopen(_api_request(url), timeout=20) as response:
+        with urllib.request.urlopen(_api_request(url), timeout=_read_timeout(url)) as response:
             return response.read().decode("utf-8")
     except (urllib.error.URLError, OSError) as exc:
         raise ReleaseError(f"{url}: {exc}") from exc

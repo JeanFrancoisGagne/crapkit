@@ -165,7 +165,7 @@ After stage 2b and the MCP Registry stage, check every distribution route:
 | Local CLI | Stage 1 updates only its selected Python environment. Upgrade the intended user CLI with its owning installer, read its resolved executable and version, and run `crapkit doctor --plugin-root` against installed plugins. |
 | Claude Code plugin | Refresh its registered marketplace, update the user-scope plugin, read back its version and check `doctor --plugin-root`. Existing sessions need a restart to apply the update. |
 | Codex plugin | Refresh its registered marketplace, install the current plugin with the supported manager, and check its listed version and explicit installed plugin root. Verify its three skills and MCP configuration. |
-| MCP Registry | The canonical server name has the new version and matching PyPI package. |
+| MCP Registry | The canonical server name has the new version and matching PyPI package. A search on a cold registry cache took 78 to 87 s, so `verify` gives registry reads 120 s where every other read gets 20 s. |
 | Glama | `verify` reads the server page and requires the README action pin to name this release's tag. Until the sync runs it reports an earlier revision. Use the Repository admin **Sync Server** action after the GitHub release exists, then confirm build and tool schema, and correct stale profile text separately. |
 
 After publication, refresh the clients' marketplace snapshots before updating their
