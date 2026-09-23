@@ -1,6 +1,6 @@
 ---
 name: crapkit-recover
-description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the seven causes behind a lane that wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/5/6/7/8/9, a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
+description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the seven causes behind a lane that wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/5/6/7/8/9, a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, seed or prune refuses an \"ambiguous legacy function identity\", git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
 ---
 
 # Recovering a refused run
@@ -66,8 +66,12 @@ Exit 3 fires before any lane runs, so nothing was measured and nothing was writt
 `ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run
 measures [crapkit-analysis=8 lizard=1.24.0]` is an upgrade, not a break. Shell cognitive
 complexity nests since analysis 8, so shell numbers moved and CRAP scores from the two
-versions are not comparable; ccn did not move. `crapkit ratchet seed` re-baselines the
-marks under the running metric, and that is the whole fix:
+versions are not comparable; ccn did not move. Run `crapkit coverage`, then
+`crapkit ratchet seed`: seed stamps the metric of the run it reads, so a seed from a run the
+older crapkit measured keeps the old stamp and verify keeps refusing. When a failed verify
+pins the baseline, plain seed reads the pinned run. Name the newer one with
+`crapkit ratchet seed --baseline N`, which is the seed `crapkit verify --baseline N` prints
+in the same refusal:
 [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp).
 
 `lane 'py': positional argument 'slow'' narrows a full-suite coverage run ... (cmd.exe
@@ -175,6 +179,16 @@ legitimate:
 - Fix the findings the older baseline still shows, then rerun `crapkit verify`.
 - Accept the newer run by name: `crapkit verify --baseline N`, a visible act somebody can audit later.
 
+The marks take the same name. `crapkit ratchet seed` and `crapkit ratchet prune` read the
+run verify would pick, so after a failed verify they read the run before it, and their line
+names the newer run they passed over and the `--baseline` that reads it.
+`crapkit ratchet seed --baseline N` reads run N instead, refused for the same four reasons
+as `crapkit verify --baseline N`. It is the way out when seed refuses the pinned run:
+`ambiguous legacy function identity in PATH: NAME in run M; seed reads run M because verify run K FAILED after it`
+means run M was stored before crapkit recorded where same-line functions sit, and no
+coverage run changes which run seed reads. The line ends with the `--baseline` to pass:
+[docs: naming the run to seed from](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#naming-the-run-to-seed-from).
+
 Owner: [README: the trusted baseline](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-trusted-baseline).
 `crapkit runs list` prints `verdict=-` on runs that rendered no verdict.
 
@@ -201,4 +215,4 @@ the merge:
 
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
 When the driver itself refuses (`marks from different metric versions cannot merge`),
-re-baseline one side with `crapkit ratchet seed` and merge again.
+run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`, and merge again.
