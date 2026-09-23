@@ -21,7 +21,7 @@ from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, bu
                         sql_floor)
 from ._shared import (_command_root, _latest_scored, _load_repo_config, _load_sources,
                       _open_store, _positive_top, _print_json, _ratchet_entries,
-                      _repo_relative, _scope_names, _stand)
+                      _ratchet_key_version, _repo_relative, _scope_names, _stand)
 
 
 def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
@@ -632,10 +632,14 @@ class _BriefLoader:
         return key_of(self._file_keys[row.path], row)
 
     def mark(self, row) -> float | None:
-        return _brief_mark(self._once("marks",
-                                      lambda: _ratchet_entries(self.root, self.cfg,
-                                                               self.rows, self.store)),
-                           self.key(row))
+        """The mark on the row's function. The marks are read once per batch,
+        and legacy identity is proved for the row's own file, the only file
+        whose mark a packet reads."""
+        entries = self._once("marks", lambda: _ratchet_entries(self.root, self.cfg))
+        self._once(f"marks-proof:{row.path}",
+                   lambda: _ratchet_key_version(self.root, self.cfg,
+                                                lambda: self.scored_file(row.path), self.store))
+        return _brief_mark(entries, self.key(row))
 
     def mark_age(self, row, mark: float | None) -> int | None:
         """How long the mark has stood. No mark, no history read: reading the
