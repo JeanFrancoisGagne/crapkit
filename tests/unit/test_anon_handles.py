@@ -11,7 +11,7 @@ argued about without a repo, a lane or a git history.
 """
 import pytest
 from crapkit.config import Config
-from crapkit import packet
+from crapkit import keys, packet
 from crapkit.cli.queue import _claims_to_release, _next_item_payload, _pick_function
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
@@ -34,7 +34,7 @@ def named(name: str, start: int, *, ccn: int = 8, cov: float = 0.5) -> ScoredRow
 # --- what a handle is --------------------------------------------------------
 
 def test_a_named_function_is_its_own_handle():
-    assert packet.handles([named("mount", 3)]) == {lookup(named("mount", 3)): "mount"}
+    assert keys.handles([named("mount", 3)]) == {lookup(named("mount", 3)): "mount"}
 
 
 def test_anonymous_functions_number_in_file_order_not_in_row_order():
@@ -42,7 +42,7 @@ def test_anonymous_functions_number_in_file_order_not_in_row_order():
     is a claim about the file."""
     rows = [anon(80), anon(9), anon(41)]
 
-    assert packet.handles(rows) == {lookup(anon(9)): "(anonymous)#1",
+    assert keys.handles(rows) == {lookup(anon(9)): "(anonymous)#1",
                                     lookup(anon(41)): "(anonymous)#2",
                                     lookup(anon(80)): "(anonymous)#3"}
 
@@ -50,7 +50,7 @@ def test_anonymous_functions_number_in_file_order_not_in_row_order():
 def test_a_named_neighbour_does_not_take_an_ordinal():
     rows = [anon(9), named("mount", 20), anon(41)]
 
-    assert packet.handles(rows) == {lookup(anon(9)): "(anonymous)#1",
+    assert keys.handles(rows) == {lookup(anon(9)): "(anonymous)#1",
                                     lookup(named("mount", 20)): "mount",
                                     lookup(anon(41)): "(anonymous)#2"}
 
@@ -59,8 +59,8 @@ def test_a_handle_survives_an_edit_that_moves_an_earlier_function():
     """The whole reason the handle exists. An edit above the third callback
     pushes every start line down; the order is untouched, so the handle is too.
     """
-    before = packet.handles([anon(9), anon(41), anon(80)])
-    after = packet.handles([anon(9), anon(52), anon(91)])
+    before = keys.handles([anon(9), anon(41), anon(80)])
+    after = keys.handles([anon(9), anon(52), anon(91)])
 
     assert sorted(before.values()) == sorted(after.values())
     assert after[lookup(anon(91))] == "(anonymous)#3", "the third callback is still the third"
@@ -102,8 +102,8 @@ def test_a_name_that_merely_contains_a_hash_is_not_a_handle():
     rows = [named("size#px", 41)]
 
     assert _pick_function(PATH, rows, "size#px").start == 41
-    assert packet.handle_ordinal("size#px") is None
-    assert packet.handle_ordinal("mount") is None
+    assert keys.handle_ordinal("size#px") is None
+    assert keys.handle_ordinal("mount") is None
 
 
 # --- the handle rides in the payloads ----------------------------------------

@@ -19,7 +19,7 @@ parenthesis, so an empty bare name is still the one test for it.
 import pytest
 
 from crapkit.analyze import analyze_source
-from crapkit.packet import ANONYMOUS, anonymous_positions, bare_name, handles
+from crapkit.keys import ANONYMOUS, anonymous_positions, bare_name, handles
 from crapkit.score import ScoredRow
 
 # One named function per language, at the spelling its lizard reader actually

@@ -32,7 +32,7 @@ from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
-from .packet import bare_name
+from .keys import bare_name
 
 # lizard picks a reader by extension off a hardcoded list, and none of these is
 # on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),

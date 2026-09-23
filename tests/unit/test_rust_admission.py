@@ -20,7 +20,7 @@ from pathlib import Path
 import crapkit
 from crapkit.analyze import ANALYSIS_VERSION, analyze_source
 from crapkit.config import Config, Scope, load_config_text
-from crapkit.packet import bare_name
+from crapkit.keys import bare_name
 from crapkit.scaffold import DEFAULT_EXCLUDES, sniff_scopes, source_candidates
 from crapkit.universe import scan_files
 

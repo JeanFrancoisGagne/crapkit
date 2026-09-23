@@ -4,7 +4,7 @@ from contextlib import closing
 
 import pytest
 
-from crapkit import keys, packet
+from crapkit import keys
 from crapkit.errors import ToolError
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -32,7 +32,7 @@ def test_same_line_keys_follow_occurrence_not_score_or_arrival():
 
 def test_handles_distinguish_same_line_and_keep_global_anonymous_order():
     first, second = row(1), row(2, name='(anonymous) ( x )')
-    assert packet.handles([second, first, first._replace(scope='copy')]) == {
+    assert keys.handles([second, first, first._replace(scope='copy')]) == {
         ('app.ts', '(anonymous)', 1, 1): '(anonymous)#1',
         ('app.ts', '(anonymous) ( x )', 1, 2): '(anonymous)#2',
     }
@@ -105,7 +105,7 @@ def test_actual_typescript_callbacks_survive_inventory_scoring_and_store(tmp_pat
         assert store.read_scored(run) == scored
         names = keys.key_names(store.read_scored(run))
         assert [keys.key_of(names, r)[1] for r in scored] == ['(anonymous)', '(anonymous)#2']
-        assert len(packet.handles(store.read_rows(run))) == 2
+        assert len(keys.handles(store.read_rows(run))) == 2
 
 
 def test_historical_groups_do_not_mix_runs_or_scope_copies(tmp_path):
@@ -128,7 +128,7 @@ def test_same_line_numeric_selection_refuses_and_ordinal_claims_stay_separate(tm
             store.find_functions('app.ts', '1')
         with pytest.raises(ToolError, match='multiple functions'):
             store.function_key('app.ts', '(anonymous)', '1')
-        names, handles = keys.key_names(rows), packet.handles(rows)
+        names, handles = keys.key_names(rows), keys.handles(rows)
         claims = [store.record_claim(path=r.path, long_name=r.long_name, commit='fixture',
                                     handle=handles[keys.lookup(r)], key_name=keys.key_of(names, r)[1],
                                     source_run_id=run)

@@ -3,7 +3,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-from crapkit.packet import handles
+from crapkit.keys import handles
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 from crapkit.worklist import closable_claims

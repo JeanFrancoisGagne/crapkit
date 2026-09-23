@@ -9,12 +9,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from .. import packet
+from .. import keys, packet
 from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit, ls_files
 from ..invocation import _self
-from ..keys import claim_key, key_names, key_of, lookup, position, require_unambiguous, split_ordinal
+from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
@@ -87,7 +87,7 @@ class _Handles:
     def of(self, row) -> str:
         if row.path not in self._by_path:
             rows = self._store.read_positions(self._run_id, row.path)
-            self._by_path[row.path] = packet.handles(rows)
+            self._by_path[row.path] = keys.handles(rows)
             self._keys[row.path] = key_names(rows)
         return self._by_path[row.path][lookup(row)]
 
@@ -362,10 +362,8 @@ def _claim_matches(c: dict, name: str) -> bool:
         return True
     wanted, ordinal = split_ordinal(name)
     if wanted != name and wanted == c["long_name"]:
-        from ..keys import key_name
-
-        return claim_key(c) == (c["path"], key_name(wanted, ordinal))
-    return _name_matches(c["long_name"], name)
+        return claim_key(c) == (c["path"], keys.key_name(wanted, ordinal))
+    return keys.named_by(c["long_name"], name)
 
 
 def _named_claims(claims: list, path: str, name: str) -> list:
@@ -409,61 +407,12 @@ def cmd_claims(args: argparse.Namespace) -> int:
     return 0
 
 
-def _name_prefix(long_name: str) -> str:
-    """The identifier a long_name opens with, before its parameter list.
-
-    packet.bare_name is the definition. This was a second copy of the cut, and
-    it is what kept `brief` rejecting a Rust or Go bare name after the packet
-    that published it had already been fixed.
-    """
-    return packet.bare_name(long_name)
-
-
-def _name_matches(long_name: str, name: str) -> bool:
-    """Does `name` name this function, bare or whole?
-
-    next-item, worklist and brief all publish `function` as the long_name, so the
-    string an agent has just read has to be a string it can pass back — here, and
-    to `claims release`. Matching only the bare identifier broke the chain: the
-    exact value one command printed was rejected by the next.
-    """
-    return name in (long_name, _name_prefix(long_name))
-
-
-def _matching_rows(rows: list, name: str) -> list:
-    """The rows NAME resolves to, by the rule `explain` runs on the same string.
-
-    Both commands go through `packet.matching_names`, so a name that picks one
-    function in a packet cannot pick three in a trajectory.
-    """
-    wanted = set(packet.matching_names([r.long_name for r in rows], name))
-    return [r for r in rows if r.long_name in wanted]
-
-
 def _no_match_message(path: str, name: str, rows: list, candidates: list) -> str:
     if candidates:
         return f"{name!r} in {path} is ambiguous — candidates: {', '.join(candidates)}"
-    known = sorted({_name_prefix(r.long_name) for r in rows})
+    known = sorted({keys.bare_name(r.long_name) for r in rows})
     return (f"no function named {name!r} in {path} in the latest scored run"
             f" — it holds: {', '.join(known) or 'nothing'}")
-
-
-def _row_at_line(path: str, rows: list, name: str):
-    """A numeric selector resolves only when one function opens on that line."""
-    if not name.isdigit():
-        return None
-    at = [r for r in rows if r.start == int(name)]
-    if not at:
-        raise CrapkitError(_no_line_message(path, name, rows))
-    return _single_line_row(path, name, rows, at)
-
-
-def _single_line_row(path: str, name: str, rows: list, at: list):
-    if len({lookup(row) for row in at}) > 1:
-        handles = packet.handles(rows)
-        choices = ", ".join(sorted({handles[lookup(row)] for row in at}))
-        raise CrapkitError(f"line {name} in {path} is ambiguous; use a handle: {choices}")
-    return at[0]
 
 
 def _no_line_message(path: str, name: str, rows: list) -> str:
@@ -472,66 +421,54 @@ def _no_line_message(path: str, name: str, rows: list) -> str:
             f" — it starts functions at: {starts or 'nothing'}")
 
 
-def _row_by_handle(path: str, rows: list, name: str):
-    """The row `(anonymous)#N` names, or None when NAME is not that form.
-
-    N counts the file's anonymous functions in start order, so the handle
-    outlives an edit above it that a start line would not. Out of range is an
-    error here rather than a fall-through to the name forms: `(anonymous)#5` is
-    unambiguously a handle, and reporting it as an unknown NAME would send a
-    session hunting for a function whose real handle is on the list.
-    """
-    ordinal = packet.handle_ordinal(name)
-    if ordinal is None:
-        return None
-    handles = packet.handles(rows)
-    matched = [row for row in rows if handles[lookup(row)] == name]
-    if not matched:
-        raise CrapkitError(_no_handle_message(path, name, rows))
-    return max(matched, key=lambda row: row.crap)
-
-
 def _no_handle_message(path: str, name: str, rows: list) -> str:
-    held = ", ".join(packet.handle_names(rows))
+    held = ", ".join(keys.handle_names(rows))
     return (f"no {name} in {path} in the latest scored run"
             f" — it holds: {held or 'no anonymous functions'}")
 
 
 def _pick_function(path: str, rows: list, name: str):
-    """The one row `name` names, or an error listing what the file does hold."""
-    require_unambiguous(rows)
-    at_line = _row_at_line(path, rows, name)
-    if at_line is not None:
-        return at_line
-    by_handle = _row_by_handle(path, rows, name)
-    if by_handle is not None:
-        return by_handle
-    wanted, ordinal = split_ordinal(name)
-    matched = _matching_rows(rows, wanted)
-    candidates = sorted({r.long_name for r in matched})
-    if len(candidates) != 1:
-        raise CrapkitError(_no_match_message(path, name, rows, candidates))
-    return _one_of(path, matched, name, wanted, ordinal)
+    """The one row `name` names, or an error listing what the file does hold.
 
-
-def _one_of(path: str, matched: list, name: str, wanted: str, ordinal: int):
-    """Which of the same-named rows NAME meant.
-
-    A bare name means the burn-down item, and that is the worst twin — the rule
-    the ratchet, the verdict and `next-item` all run. The -start term is the
-    tie-break: equal-scoring twins resolve to the one that appears first.
-
-    `name#2` means the second of them in file order, which is the function its
-    own ratchet key `name#2` is about. That is how a session addresses the twin
-    a bare name does not pick.
+    `keys.select` decides which function NAME means: a bare twin name means
+    the worst twin, `name#2` the second in file order. What is left here is
+    brief's own wording for a miss.
     """
-    if wanted == name:
-        return max(matched, key=lambda r: (r.crap, -r.start, -position(r)[1]))
-    spans = {position(r): r for r in sorted(matched, key=lambda r: r.crap)}
-    ordered = [spans[start] for start in sorted(spans)]
-    if ordinal > len(ordered):
-        raise CrapkitError(_no_twin_message(path, name, wanted, len(ordered)))
-    return ordered[ordinal - 1]
+    picked = keys.select(rows, name)
+    if len(picked) != 1:
+        raise CrapkitError(_miss_message(path, name, rows, picked))
+    return _selected_row(path, rows, name, picked[0])
+
+
+def _miss_message(path: str, name: str, rows: list, picked: list) -> str:
+    """Why NAME selected no one function, said in terms of the form it took.
+
+    A start line or an `(anonymous)#N` handle is unambiguously that form, so a
+    miss lists the lines or handles the file does hold rather than reporting an
+    unknown name and sending a session hunting for one.
+    """
+    if name.isdigit():
+        return _no_line_message(path, name, rows)
+    if keys.handle_ordinal(name) is not None:
+        return _no_handle_message(path, name, rows)
+    return _no_match_message(path, name, rows, sorted(long for long, _ in picked))
+
+
+def _selected_row(path: str, rows: list, name: str, picked: tuple[str, str]):
+    """The row behind the selected key. One span scored under two scopes is one
+    function, and the worse copy answers for it."""
+    long_name, key = picked
+    names = key_names(rows)
+    held = [r for r in rows if key_of(names, r)[1] == key]
+    if not held:
+        raise CrapkitError(_past_the_last_twin(path, name, rows, long_name))
+    return max(held, key=lambda r: r.crap)
+
+
+def _past_the_last_twin(path: str, name: str, rows: list, long_name: str) -> str:
+    """`name#N` for an N the file does not reach: how many twins it does hold."""
+    twins = len({position(r) for r in rows if r.long_name == long_name})
+    return _no_twin_message(path, name, split_ordinal(name)[0], twins)
 
 
 def _no_twin_message(path: str, name: str, wanted: str, held: int) -> str:
@@ -771,7 +708,7 @@ def _brief_packet(loader, row) -> dict:
     return {
         "run_id": loader.latest["id"], "commit": loader.latest["commit"],
         "path": row.path, "function": row.long_name,
-        "handle": packet.handles(rows)[lookup(row)],
+        "handle": keys.handles(rows)[lookup(row)],
         "scored": dict(row._asdict()),
         "target": ceiling,
         "remedy": row.remedy,

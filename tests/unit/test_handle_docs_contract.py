@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import packet
+from crapkit import keys, packet
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENT_PAGES = ("AGENTS.md", "README.md", "docs/agent-json.md")
@@ -57,7 +57,7 @@ def _anon_rows(count: int) -> list:
 
 
 def test_the_handle_the_pages_promise_is_the_one_the_code_builds():
-    assert packet.handles(_anon_rows(2)) == {
+    assert keys.handles(_anon_rows(2)) == {
         ("calc/report.py", "(anonymous)", 10, 0): "(anonymous)#1",
         ("calc/report.py", "(anonymous)", 20, 0): "(anonymous)#2"}
 

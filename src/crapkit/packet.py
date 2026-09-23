@@ -18,7 +18,7 @@ import re
 import shlex
 
 from .ratchet_report import DAY, mark_age_days
-from .keys import lookup, position, require_unambiguous
+from .keys import position
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -28,10 +28,6 @@ GATE_BINDS = ("changed functions only; a ratchet mark pardons standing debt "
 
 _OPENERS = "([{<"
 _CLOSERS = ")]}>"
-
-# What lizard calls a function it could not name. Every anonymous function in a
-# file prints the same string, which is why the handle below exists.
-ANONYMOUS = "(anonymous)"
 
 # `stale` clears when a run lands on the current commit and never before. The
 # packet used to answer its own staleness warning with another `brief`, which
@@ -152,110 +148,6 @@ def commands(path: str, scoped: bool, note: str = "") -> dict:
     if not scoped and note:
         out["scoped_tests_note"] = note
     return out
-
-
-def bare_name(long_name: str) -> str:
-    """The identifier a long_name opens with, before its parameter list.
-
-    Two cuts, because lizard's readers spell a parameter list two ways. Python
-    and shell close the name with `(` — `classify( score , limit = 1 )`,
-    `classify()` — and Rust and Go print the parameters after a space with no
-    parenthesis at all: `route cmd : & Cmd`, `Classify n int`. Cutting only at
-    the `(` handed those back whole, so the handle a packet published was a
-    signature no command would accept back.
-
-    The leading token settles both. It moves no parenthesised language, because
-    none of those puts a space before the `(`: `n::K::m( int a)` keeps its
-    namespace and an Objective-C `doThing:( int )` keeps its selector colon.
-
-    Empty for a function lizard could not name: both `(anonymous)` and
-    `(anonymous) ( z )` open with the parenthesis, so an empty prefix IS the
-    test for anonymity, with no second string to keep in step.
-    """
-    head = long_name.split("(")[0].strip()
-    return head.split()[0] if head else ""
-
-
-def exact_names(names, name: str) -> list[str]:
-    """The long names `name` names outright: the whole string, or the bare one."""
-    return [n for n in names if name in (n, bare_name(n))]
-
-
-def matching_names(names, name: str) -> list[str]:
-    """The long names one NAME resolves to, in the order `names` arrived.
-
-    Exact first, the fragment second. `brief` matched only exactly and `explain`
-    only loosely, so `route` picked one function in one command and three —
-    `route`, `route_chain`, `route_num` — in the other, off the same string in
-    the same payload. Nesting names is the ordinary case, so the loose command
-    was wrong far more often than the strict one was unhelpful.
-
-    The fragment survives as the fallback because a name nobody owns is usually
-    a typo, and listing everything holding it is what tells a session which name
-    it meant. An empty NAME resolves to nothing rather than to everything.
-    """
-    if not name:
-        return []
-    return exact_names(names, name) or [n for n in names if name in n]
-
-
-def anonymous_positions(rows) -> list[tuple]:
-    """Anonymous locations in source order, with scope copies shared."""
-    rows = list(rows)
-    require_unambiguous(rows)
-    return sorted({lookup(r) for r in rows if not bare_name(r.long_name)},
-                  key=lambda place: (place[2], place[3], place[1]))
-
-
-def handles(rows) -> dict[tuple, str]:
-    """The handle for every row in one file, keyed by its full stored location.
-
-    Named twins carry #N, including #1; overloads retain their full signature.
-    Anonymous handles count all anonymous spans in file order. Duplicate scopes
-    share a span and a handle. Moving lines above a function keeps its ordinal.
-
-    """
-    rows = list(rows)
-    require_unambiguous(rows)
-    groups: dict[str, dict[str, set[tuple]]] = {}
-    for row in rows:
-        groups.setdefault(bare_name(row.long_name), {}).setdefault(row.long_name, set()).add(lookup(row))
-    found = _named_handles(groups)
-    found.update({place: f"{ANONYMOUS}#{n}"
-                  for n, place in enumerate(anonymous_positions(rows), 1)})
-    return found
-
-
-def _named_handles(groups: dict) -> dict[tuple, str]:
-    found = {}
-    for siblings in groups.values():
-        for name, starts in siblings.items():
-            label = name if len(siblings) > 1 else bare_name(name)
-            for n, start in enumerate(sorted(starts), 1):
-                found[start] = f"{label}#{n}" if len(starts) > 1 else label
-    return found
-
-
-def handle_names(rows) -> list[str]:
-    """Every anonymous handle this file offers, in order.
-
-    What an out-of-range ordinal is reported against: a session that guessed #5
-    needs the two that exist, the same way a wrong bare name gets the file's
-    real names back.
-    """
-    return [f"{ANONYMOUS}#{n}" for n in range(1, len(anonymous_positions(rows)) + 1)]
-
-
-def handle_ordinal(name: str) -> int | None:
-    """The N in `(anonymous)#N`, or None when `name` is some other name form.
-
-    None rather than an error: this is the question "is that string a handle",
-    asked before the other name forms get their turn.
-    """
-    head, sep, tail = name.partition("#")
-    if not sep or head.strip() != ANONYMOUS or not tail.isdigit():
-        return None
-    return int(tail)
 
 
 def budget(row, ceiling: int) -> dict:

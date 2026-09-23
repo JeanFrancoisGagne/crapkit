@@ -13,7 +13,7 @@ still finds everything holding it. A repo whose names nest — `route` inside
 """
 import pytest
 
-from crapkit import packet
+from crapkit import keys
 from crapkit.cli.queue import _pick_function
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
@@ -44,23 +44,23 @@ def store(tmp_path) -> SnapshotStore:
 # --- the shared rule ---------------------------------------------------------
 
 def test_an_exact_bare_name_beats_the_two_names_that_contain_it():
-    assert packet.matching_names(NAMES, "route") == [NAMES[0]]
+    assert keys.matching_names(NAMES, "route") == [NAMES[0]]
 
 
 def test_an_exact_long_name_resolves_to_itself():
-    assert packet.matching_names(NAMES, NAMES[1]) == [NAMES[1]]
+    assert keys.matching_names(NAMES, NAMES[1]) == [NAMES[1]]
 
 
 def test_a_fragment_nobody_owns_still_finds_everything_holding_it():
     """The fallback earns its keep: `rout` is no function's name, and answering
     nothing would make a typo indistinguishable from a missing function."""
-    assert packet.matching_names(NAMES, "rout") == NAMES
+    assert keys.matching_names(NAMES, "rout") == NAMES
 
 
 def test_an_empty_name_matches_nothing_rather_than_everything():
     """`"" in name` is true of every string, so without the guard an empty NAME
     reports the file as ambiguous instead of reporting an unusable name."""
-    assert packet.matching_names(NAMES, "") == []
+    assert keys.matching_names(NAMES, "") == []
 
 
 # --- explain, through the store ----------------------------------------------

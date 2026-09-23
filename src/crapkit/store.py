@@ -24,10 +24,9 @@ import zlib
 from pathlib import Path
 from typing import NamedTuple
 
-from .keys import (claim_holds, claim_key, expression_group, expression_reader_current,
-                   key_name, key_names, position,
+from .keys import (bare_name, claim_holds, claim_key, expression_group, expression_reader_current,
+                   handle_ordinal, key_name, key_names, matching_names, position,
                    refuse_ambiguous, split_ordinal)
-from .packet import bare_name, handle_ordinal, matching_names
 from .snapshot import InventoryRow
 from .worklist import Marks
 from .errors import ToolError
@@ -1146,7 +1145,7 @@ class SnapshotStore:
     def find_functions(self, path: str, name_fragment: str) -> list[str]:
         """The long_names in a path that one NAME resolves to, across all runs.
 
-        `packet.matching_names` is the rule, shared with `brief`: exact first,
+        `keys.matching_names` is the rule, shared with `brief`: exact first,
         the fragment only when nothing matches exactly. This used to be a SQL
         `LIKE '%name%'` and nothing else, so `explain src/lib.rs route` printed
         the trajectories of `route`, `route_chain` and `route_num` for a

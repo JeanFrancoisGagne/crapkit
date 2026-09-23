@@ -10,7 +10,8 @@ from types import SimpleNamespace
 import pytest
 from crapkit.config import Config
 from crapkit.churn import FileChurn
-from crapkit.cli.queue import _actionable, _claims_to_release, _matching_rows, _name_matches, _next_reasons, _uncovered_fields, _worklist_payload
+from crapkit import keys
+from crapkit.cli.queue import _actionable, _claims_to_release, _next_reasons, _uncovered_fields, _worklist_payload
 from crapkit.cli.ratchet_cmds import _policy_findings
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
@@ -126,27 +127,28 @@ def test_a_no_lane_row_at_its_ceiling_is_not_counted_as_debt():
 # --- names: the string next-item prints is the string brief takes ------------
 
 def test_the_bare_identifier_and_the_whole_long_name_both_match():
-    assert _name_matches("classify( score , late )", "classify")
-    assert _name_matches("classify( score , late )", "classify( score , late )")
+    assert keys.named_by("classify( score , late )", "classify")
+    assert keys.named_by("classify( score , late )", "classify( score , late )")
 
 
 def test_a_fragment_or_another_function_does_not_match():
-    assert not _name_matches("classify( score , late )", "class")
-    assert not _name_matches("classify( score , late )", "summarize")
+    assert not keys.named_by("classify( score , late )", "class")
+    assert not keys.named_by("classify( score , late )", "summarize")
 
 
-def test_matching_rows_accepts_the_long_name_next_item_published():
+def test_the_resolver_accepts_the_long_name_next_item_published():
     rows = [row("classify( score , late )"), row("summarize( rows )")]
+    classify = ("classify( score , late )", "classify( score , late )")
 
-    assert _matching_rows(rows, "classify( score , late )") == [rows[0]]
-    assert _matching_rows(rows, "classify") == [rows[0]]
+    assert keys.select(rows, "classify( score , late )") == [classify]
+    assert keys.select(rows, "classify") == [classify]
 
 
 def test_the_long_name_picks_one_of_two_functions_sharing_an_identifier():
     rows = [row("dup( a )"), row("dup( a , b )")]
 
-    assert _matching_rows(rows, "dup( a , b )") == [rows[1]]
-    assert len(_matching_rows(rows, "dup")) == 2, "the bare name is still ambiguous"
+    assert keys.select(rows, "dup( a , b )") == [("dup( a , b )", "dup( a , b )")]
+    assert len(keys.select(rows, "dup")) == 2, "the bare name is still ambiguous"
 
 
 # --- worklist: batches are an added field ------------------------------------
