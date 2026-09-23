@@ -62,14 +62,19 @@ def _git_unflagged(root: Path, *args: str) -> str:
     return _run(root, args, args)
 
 
+def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subprocess.CompletedProcess:
+    """One git process run to completion, whatever it exits with."""
+    try:
+        return subprocess.run(["git", *argv], cwd=root, env=_environment(),
+                              capture_output=True, text=not binary, encoding=None if binary else "utf-8")
+    except FileNotFoundError as exc:
+        raise GitError("git executable not found") from exc
+
+
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False) -> str:
     """`named` is what the error says ran — the injected flags are crapkit's
     business, not the caller's."""
-    try:
-        res = subprocess.run(["git", *argv], cwd=root, env=_environment(),
-                             capture_output=True, text=not binary, encoding=None if binary else "utf-8")
-    except FileNotFoundError as exc:
-        raise GitError("git executable not found") from exc
+    res = _spawn(root, argv, binary=binary)
     if res.returncode != 0:
         error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
         raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
@@ -233,13 +238,40 @@ def status_names(root: Path) -> list[str]:
                    *untracked_files(root)})
 
 
+_SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth: 0 on the "
+                "checkout or run git fetch --unshallow")
+
+
 def merge_base(root: Path, ref: str) -> str:
     """The commit REF and HEAD forked from — a branch's real diff basis, which
-    is what a mid-branch run's own commit is not."""
-    out = _git(root, "merge-base", ref, "HEAD").strip()
-    if not out:
-        raise GitError(f"no merge base between {ref} and HEAD in {root}")
-    return out
+    is what a mid-branch run's own commit is not.
+
+    A refusal says why. git exits 1 with nothing on stderr when the two share no
+    commit it holds: unrelated histories, or a shallow clone whose boundary cuts
+    the fork off. A shallow clone is the default CI checkout, so there every
+    refusal also names the fetch that brings the missing history in.
+    """
+    res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
+    if res.returncode != 0:
+        raise GitError(_merge_base_refusal(root, ref, res) + _shallow_fix(root))
+    return res.stdout.strip()
+
+
+def _merge_base_refusal(root: Path, ref: str, res: subprocess.CompletedProcess) -> str:
+    reason = res.stderr.strip()
+    if res.returncode == 1 and not reason:
+        return f"no merge base between {ref} and HEAD in {root}"
+    return f"git merge-base {ref} HEAD failed in {root}: {reason}"
+
+
+def _shallow_fix(root: Path) -> str:
+    """The fetch advice in a shallow clone; "" in a full one, and "" when git
+    cannot say, so the merge-base reason is the one the refusal keeps."""
+    try:
+        shallow = is_shallow(root)
+    except GitError:
+        return ""
+    return f"; {_SHALLOW_FIX}" if shallow else ""
 
 
 def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
