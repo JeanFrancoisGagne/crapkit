@@ -200,8 +200,8 @@ def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:
     banner reads this list; the joined note is built from it, so a lane cannot be
     fresh in one and stale in the other.
 
-    Without `git` the reads start together, scoped to the lanes git has to
-    judge (lanes.staleness_reads).
+    Without `git` the reads start together, scoped to the lanes' scope paths
+    (lanes.staleness_reads).
     """
     from .lanes import staleness_reads
 
