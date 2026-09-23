@@ -72,14 +72,14 @@ do next.
 | `handle` | the name to pass back to `brief`, `explain` and `claims release`. It survives your own edit; `start` does not |
 | `remedy` | `decompose`, `split-lines`, `add-tests` or `ok`, at the top level: the same verdict `next-item` prints |
 | `est_splits`, `est_uncovered_paths` | the same two budget numbers `next-item` prints, out of the same code |
-| `params` | its parameter names in order, so a new test can call it without opening the file |
+| `params` | its parameters in order, each `{name, type}`, so a new test can call it without opening the file |
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
 | `gate_rule` | `ceiling` is the number step 3 judges ccn against, `binds` names which limit fires first |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
 | `stale` | `true` means the run predates HEAD: run `commands.refresh` before trusting `cov` |
 | `file_functions`, `file_totals` | the siblings an extracted helper lands beside, and the file's rollup |
 | `regrowth` | `regrown: true` says an earlier decomposition of this function did not hold |
-| `attempts` | sessions that already claimed it. Above 0, read `regrowth.history` before repeating their split |
+| `attempts` | every claim already taken on it, oldest first. Not empty: read `regrowth.history` before repeating their split |
 | `coupling` | files that keep landing in the same commits: edit them in this session or not at all. `is_test: true` marks the ones outside the scored corpus |
 | `duplication_twins` | near-duplicates. `contained: true` means one already fits inside the other, so one can call the other |
 | `uncovered_lines` | the exact lines to cover, same null-vs-`[]` contract as next-item |

@@ -314,8 +314,8 @@ $ crapkit brief app/parse_csv.py parse_row --json
 
 ```json
 {
-  "attempts": 1,
-  "churn": {"authors": 1, "commits": 7, "weight": 0.8609},
+  "attempts": [{"closed": "2026-09-23T02:33:04Z", "opened": "2026-09-23T02:33:00Z"}],
+  "churn": {"authors": 1, "commits": 7, "weight": 0.1911},
   "commands": {
     "gate": "crapkit rescore app/parse_csv.py --gate",
     "refresh": "crapkit coverage --reuse-unchanged",
@@ -323,66 +323,66 @@ $ crapkit brief app/parse_csv.py parse_row --json
     "scoped_tests": "crapkit test-scoped app/parse_csv.py",
     "verify": "crapkit verify"
   },
-  "commit": "1b7b76bb6c16824a7bcee2d9e4c7f71a69eb4c3d",
+  "commit": "9c7eed1a91d12a4b84b51ecefbbf9e1f5551d216",
   "coupling": [{"confidence": 1.0, "is_test": false, "path": "app/parse_tsv.py", "support": 7}],
   "duplication_twins": [
     {
       "contained": false,
-      "end": 16,
+      "end": 17,
       "long_name": "parse_line( text , strict , sep , header )",
-      "nloc": 13,
+      "nloc": 17,
       "path": "app/parse_tsv.py",
-      "similarity": 0.9,
-      "start": 4
+      "similarity": 0.8571,
+      "start": 1
     }
-  ],
-  "file_functions": [
-    {"ccn": 9, "crap": 14.184000000000001, "end": 16,
-     "function": "parse_row( text , strict , sep , header )", "occurrence": 1,
-     "remedy": "decompose", "start": 4},
-    {"ccn": 2, "crap": 2.0, "end": 24,
-     "function": "_split( text , sep )", "occurrence": 1, "remedy": "ok", "start": 18}
   ],
   "est_splits": 2,
   "est_uncovered_paths": 4,
-  "file_totals": {"crap_load": 16.18, "functions": 2, "over_target": 1},
+  "file_functions": [
+    {"ccn": 11, "crap": 15.481481481481483, "end": 17,
+     "function": "parse_row( text , strict , sep , header )", "occurrence": 1,
+     "remedy": "decompose", "start": 1},
+    {"ccn": 2, "crap": 2.5, "end": 23,
+     "function": "_split( text , sep )", "occurrence": 1, "remedy": "ok", "start": 20}
+  ],
+  "file_totals": {"crap_load": 17.98, "functions": 2, "over_target": 1},
   "function": "parse_row( text , strict , sep , header )",
-  "handle": "parse_row",
   "gate_rule": {
-    "binds": "ratchet_mark",
+    "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
     "ceiling": 6,
     "diff_uncovered_max": 0,
-    "mark_age_days": 12,
-    "ratchet_mark": 14.184
+    "mark_age_days": 0,
+    "ratchet_mark": 15.4815
   },
+  "handle": "parse_row",
   "lane": {
     "artifact": ".crapkit/cov/py.json",
-    "command": "python -m pytest -q --cov=app --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/py-junit.xml",
+    "command": "python -m pytest -q -p no:cacheprovider --cov=app --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/py-junit.xml",
     "cwd": "", "env": {}, "name": "py", "parser": "coveragepy", "timeout_seconds": 0
   },
-  "notes": ["app/ is the public seam: no new dependencies below it"],
-  "params": ["text", "strict", "sep", "header"],
+  "notes": {"repo": ["app/ is the public seam: no new dependencies below it"], "scope": null},
+  "params": [
+    {"name": "text", "type": null}, {"name": "strict", "type": null},
+    {"name": "sep", "type": null}, {"name": "header", "type": null}
+  ],
   "path": "app/parse_csv.py",
-  "ratchet_mark": 14.184,
+  "ratchet_mark": 15.4815,
+  "regrowth": {"history": [[1, 11], [2, 7], [3, 11], [4, 11]], "regrown": true},
   "remedy": "decompose",
-  "regrowth": {
-    "history": [{"ccn": 5, "crap": 8.0, "run_id": 1}, {"ccn": 9, "crap": 14.184, "run_id": 2}],
-    "regrown": true
-  },
-  "run_id": 2,
+  "run_id": 4,
   "schema": 1,
   "scored": {
-    "ccn": 9, "ccn_mod": 9, "ccn_std": 9, "cognitive": 8, "cov": 0.6,
-    "crap": 14.184000000000001, "end": 16, "flag": "measured",
+    "ccn": 11, "ccn_mod": 11, "ccn_std": 11, "cognitive": 11, "cov": 0.6666666666666666,
+    "crap": 15.481481481481483, "end": 17, "flag": "measured",
     "long_name": "parse_row( text , strict , sep , header )", "nesting": 2,
-    "nloc": 13, "occurrence": 1, "params": 4, "path": "app/parse_csv.py", "remedy": "decompose",
-    "scope": "app", "start": 4
+    "nloc": 17, "occurrence": 1, "params": 4, "path": "app/parse_csv.py", "remedy": "decompose",
+    "scope": "app", "start": 1
   },
-  "source": "def parse_row(text, strict, sep, header):\n    ...\n",
+  "source": "def parse_row(text, strict, sep, header):\n    fields = _split(text, sep)\n    if header and fields and fields[0] == \"id\":\n        return None\n    if strict and len(fields) < 3:\n        raise ValueError(\"short row\")\n    if not strict and not fields:\n        return []\n    out = []\n    for field in fields:\n        if field == \"\":\n            out.append(None)\n        elif field.isdigit():\n            out.append(int(field))\n        else:\n            out.append(field.strip())\n    return out",
   "stale": false,
   "target": 6,
-  "uncovered_lines": [9, 11, 13, 15],
-  "versions": {"crapkit": "<version>", "lizard": "1.24.0"}
+  "uncovered_lines": [6, 8, 12, 14],
+  "versions": {"analysis_version": 10, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
 }
 ```
 
@@ -396,7 +396,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `remedy` | string | no | `decompose`, `split-lines`, `add-tests` or `ok`. Promoted out of `scored` because it is the branch the session takes; `scored.remedy` carries the same value. Judged against `target`, today's ceiling, as on `next-item`; so is every `remedy` in `file_functions`. |
 | `est_splits`, `est_uncovered_paths` | int | no | The budget, from the same code `next-item` publishes it with. Formulas under [`item` fields](#item-fields). |
 | `source` | string | no | The function's own text, `start` to `end` inclusive, newlines intact. The packet is editable without a second read of the file. |
-| `params` | array of string | no | Its parameter names, in declaration order, so a new test can call it without opening the file. `scored.params` is the count of these. |
+| `params` | array of object | no | Its parameters in declaration order, each `{name, type}`: `name` as declared, `type` the annotation as lizard printed it, or `null` when there is none. A new test can call the function without opening the file. `scored.params` is the count of these. |
 | `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. |
 | `target` | int | no | The scope's effective ceiling. |
 | `stale` | bool | no | `true` when `commit` is not HEAD, so every number here describes an older tree. Run `commands.refresh` first. |
@@ -405,9 +405,9 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `gate_rule` | object | no | What the gate will judge this edit by. Below. |
 | `commands` | object | no | The rest of the loop, filled in for this file and this scope. Below. |
 | `lane` | object | **yes** | The lane whose artifact produced `cov` and `uncovered_lines`, verbatim from the config: `name`, `command`, `artifact`, `parser`, `cwd`, `env`, `timeout_seconds`. A session rerunning the lane by hand needs the cwd and the env as declared; reconstructing them from the command string is how the reruns drift. `null` when no lane covers the scope, which is a `no-lane` row. |
-| `versions` | object | no | `{crapkit, lizard}`: the metric identity behind every number in the packet. |
-| `notes` | array of string | no | The `notes` lines the config carries, repo-wide first then this scope's. Empty when the config declares none. See [configuration.md](configuration.md#crapkit). |
-| `attempts` | int | no | How many claims have already been opened on this function. `0` is a first attempt; above `0`, someone took it and stopped. |
+| `versions` | object | no | `{analysis_version, crapkit, lizard, python}`: the tool versions and the metric's own version behind every number in the packet. Marks and scores from two `analysis_version`s are not one series. |
+| `notes` | object | no | `{repo, scope}`: the `notes` lines the config carries repo-wide and for this scope, each an array of strings, or `null` where the config declares none. See [configuration.md](configuration.md#crapkit). |
+| `attempts` | array | no | Every claim ever taken on this function, oldest first, each `{opened, closed}`: UTC timestamps, `closed` `null` while the claim is still open. `[]` is a first attempt; anything else means a session took it before, and `regrowth.history` says whether its split held. |
 | `regrowth` | object | no | `{regrown, history}`. Below. |
 | `ratchet_mark` | float | **yes** | `null` when the function carries no mark, and also when the repo has no ratchet file at all. Read under the function's own ratchet key, so twins sharing a long name report their own marks and not each other's. |
 | `churn` | object | **yes** | `{commits, authors, weight}`, or `null` when the file has no commits in the window. |
@@ -479,8 +479,8 @@ current commit. Another `brief` re-reads the same snapshot and reports the same 
 
 | Key | Type | Meaning |
 |---|---|---|
-| `regrown` | bool | `true` when this function's `crap` fell across runs and then rose again. An earlier decomposition did not hold, and repeating it will not either. |
-| `history` | array | One entry per trusted run that scored the function, oldest first: `{run_id, ccn, crap}`. Empty on a function only one run has seen. |
+| `regrown` | bool | `true` when this function's `ccn` fell between two runs in `history` and rose again at any later point. An earlier decomposition did not hold, and repeating it will not either. Coverage plays no part: a function whose `crap` fell because tests arrived has not regrown. |
+| `history` | array | One `[run_id, ccn]` pair for every stored run that scored the function, oldest first, whatever the run's kind: an inventory run, a partial run and a refused verify each count. A function one run has seen has one pair. |
 
 ### `coupling[]` and `duplication_twins[]`
 
@@ -593,8 +593,9 @@ $ crapkit brief --batch 3 --json
 
 | Key | Meaning |
 |---|---|
-| `packets` | Up to N packets, in `next-item` order (`crap` descending). Each one is the object above, minus the keys the envelope hoists. |
-| `run_id`, `commit`, `stale` | Hoisted, because every packet in one call comes from one run. |
+| `packets` | Up to N packets, in `next-item` order (`crap` descending), skipping every function an open claim holds, as `next-item` does. Each one is the object above without `schema`; it keeps its own `run_id`, `commit` and `stale`. |
+| `run_id`, `commit`, `stale` | Repeated on the envelope, because every packet in one call comes from one run. |
+| `skipped_claimed` | Present only when an open claim hid a queue row: how many it hid, the count `next-item` prints under the same key. Absent, never `0`. |
 | `schema` | `1`, as everywhere. |
 
 `--batch` takes no `FILE` or `NAME`: the queue picks the functions. It exists so an
