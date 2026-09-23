@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from typing import NamedTuple
 
 from .coverage_istanbul import FnCoverage
+from .coverage_py import LineRegion
 from .errors import ToolError
 from .keys import require_unambiguous
 from .records import decode_record, encode_record, record_lines
@@ -245,15 +246,18 @@ def _best_exact(row, bucket) -> FnCoverage | None:
     return best
 
 
-def _span_join_cov(row, coverage_by_path: dict, start_index: dict) -> tuple[float, str]:
+def _span_match(row, coverage_by_path: dict, start_index: dict) -> FnCoverage | None:
     candidates = coverage_by_path.get(row.path)
     if candidates is None:
-        return 0.0, "untested"
+        return None
     # The bucket answers for most rows; the scan is the fallback for a row that
     # starts where no candidate does, or whose bucket overlaps it nowhere.
     match = _best_exact(row, start_index[row.path].get(row.start, ()))
-    if match is None:
-        match = _best_match(row, candidates)
+    return match if match is not None else _best_match(row, candidates)
+
+
+def _span_join_cov(row, coverage_by_path: dict, start_index: dict) -> tuple[float, str]:
+    match = _span_match(row, coverage_by_path, start_index)
     if match is None:
         return 0.0, "untested"
     return match.coverage, "measured"
@@ -367,18 +371,35 @@ def _ambiguous_spans(shared: dict, coverage_by_path: dict, start_index: dict) ->
     return ambiguous
 
 
-def _joined_cov(row, ambiguous: dict, coverage_by_path: dict,
+def _def_line_spans(rows, coverage_by_path: dict, start_index: dict) -> set:
+    """The one-line functions a coverage.py region measures.
+
+    Such a function's only line is its `def` statement, which runs at import,
+    so the region reads as run whether a test called it or not
+    (coverage_py.LineRegion). Its measurement cannot be told from the
+    statement's, the way a shared span's cannot be told from a neighbour's, and
+    it takes the same floor and the same remedy.
+    """
+    return {(r.path, r.start, r.end) for r in rows
+            if r.start == r.end and isinstance(_span_match(r, coverage_by_path, start_index),
+                                               LineRegion)}
+
+
+def _joined_cov(row, floored, coverage_by_path: dict,
                 start_index: dict) -> tuple[float, str]:
-    """Uncovered on an ambiguous span, never the neighbour's number: the honest
-    floor for a function whose measurement cannot be told from another's."""
-    if (row.path, row.start, row.end) in ambiguous:
+    """Uncovered on an ambiguous span or a def line, never the neighbour's
+    number: the honest floor for a function whose measurement cannot be told
+    from another's."""
+    if (row.path, row.start, row.end) in floored:
         return 0.0, "untested"
     return _span_join_cov(row, coverage_by_path, start_index)
 
 
-def _on_shared_span(row, verdict, shared: dict) -> bool:
+def _on_shared_span(row, verdict, shared) -> bool:
     """A row some lane measures, on a span it shares. Measured yet or not: tests
-    would only make the span measured, and then it scores as uncovered."""
+    would only make the span measured, and then it scores as uncovered. A
+    coverage.py region on a one-line def's line counts too: the def shares
+    that line with its own `def` statement."""
     return verdict is None and (row.path, row.start, row.end) in shared
 
 
@@ -398,10 +419,14 @@ def score_rows(
     for members in ambiguous.values():
         if shared_spans is not None:
             shared_spans.add(members)
+    # A one-line def under coverage.py is floored like a shared span but is no
+    # site of two functions, so it stays out of the fold the run reports.
+    def_lines = _def_line_spans(rows, coverage_by_path, start_index)
+    floored, split = ambiguous.keys() | def_lines, shared.keys() | def_lines
     scored = []
     for r in rows:
         verdict = _cov_without_join(r, lane_scopes, cc_only_scopes)
-        cov, flag = verdict or _joined_cov(r, ambiguous, coverage_by_path, start_index)
+        cov, flag = verdict or _joined_cov(r, floored, coverage_by_path, start_index)
         scored.append(_finish(r, cov, flag, target=target, scope_targets=scope_targets,
-                              shared_span=_on_shared_span(r, verdict, shared)))
+                              shared_span=_on_shared_span(r, verdict, split)))
     return scored

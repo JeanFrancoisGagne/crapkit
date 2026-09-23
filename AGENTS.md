@@ -151,7 +151,9 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
 - `remedy: split-lines`: another function shares this one's source lines, so coverage
   cannot tell them apart and the score stays at uncovered whatever you test. Put each
   definition on its own lines, then `crapkit coverage`. The next run says whether tests
-  are still owed.
+  are still owed. A Python def written on one line under a coverage.py lane gets the
+  same remedy: its only line is the `def` statement, which runs at import, so
+  coverage.py cannot see a call. Move its body to the line after the `def`.
 - New file: `rescore --gate` gates it in full (every function, with an `untracked`
   warning on stderr) because git diff cannot scope it. `git add` it so later runs judge
   only your edits; the pre-commit hook only ever sees staged content.
@@ -406,7 +408,7 @@ Act on these fields:
 
 | Field | Use it for |
 |---|---|
-| `remedy` | `decompose` splits the function, `split-lines` moves it off a line it shares, `add-tests` covers it, `ok` needs nothing |
+| `remedy` | `decompose` splits the function, `split-lines` moves it off a line it shares with another function or with its own `def`, `add-tests` covers it, `ok` needs nothing |
 | `est_splits` | pieces a decomposition needs: `0` when `ccn <= target`, else `ceil(ccn / target)` |
 | `est_uncovered_paths` | decision paths no test walks: `round((1 - cov) * ccn)` |
 | `uncovered_lines` | the exact line numbers to cover |
