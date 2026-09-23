@@ -44,8 +44,8 @@ def _judged_today(rows: list, cfg, rows_of) -> list:
     `ok` next to `est_splits: 2` and the queue never offers the function.
     `rows_of(path)` is a file's rows, read only when a shared span is in doubt.
     """
-    ceilings = cfg.scope_targets
-    return [packet.rejudged(r, ceilings.get(r.scope, cfg.target), rows_of) for r in rows]
+    ceilings = {scope: cfg.ceiling_of(scope) for scope in {r.scope for r in rows}}
+    return [packet.rejudged(r, ceilings[r.scope], rows_of) for r in rows]
 
 
 def _file_reader(store, run_id: int):
