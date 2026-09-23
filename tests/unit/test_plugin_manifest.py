@@ -20,6 +20,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN = "plugin"
 PLUGIN_JSON = f"{PLUGIN}/.claude-plugin/plugin.json"
+MARKETPLACE_JSON = ".claude-plugin/marketplace.json"
 HOOKS_JSON = f"{PLUGIN}/hooks/hooks.json"
 MCP_JSON = f"{PLUGIN}/.mcp.json"
 CRAPKIT_SKILL = f"{PLUGIN}/skills/crapkit/SKILL.md"
@@ -35,7 +36,8 @@ TOOLS = ("Edit", "Write")
 # A page that lives in the crapkit repo and nowhere else: bare, it points an agent
 # at a file the repo it is working in does not have.
 _REPO_PAGE = re.compile(r"docs/[\w.-]+\.(?:md|html)|README\.md|AGENTS\.md")
-_FLOOR = re.compile(r"crapkit (\d+\.\d+\.\d+) or newer")
+_FLOOR = re.compile(r"\d+\.\d+\.\d+ or newer")
+_SAME_RELEASE = "the same crapkit release as the plugin"
 _LINK = re.compile(re.escape(BLOB) + r"([\w./-]+?)(?:#([\w-]+))?\)")
 _HEADING = re.compile(r"^#{1,6} +(.+?)\s*$", re.MULTILINE)
 _NOT_IN_SLUG = re.compile(r"[^\w\- ]")
@@ -183,11 +185,32 @@ def test_plugin_version_matches_pyproject():
     assert _json(PLUGIN_JSON)["version"] == pyproject["project"]["version"]
 
 
-def test_the_plugin_manifest_names_itself_and_its_cli_floor():
-    manifest = _json(PLUGIN_JSON)
-    assert manifest["name"] == "crapkit"
-    assert _FLOOR.search(manifest["description"]), \
-        "the description names no `crapkit X.Y.Z or newer` floor"
+def _cli_requirements() -> dict[str, str]:
+    """Each manifest's description, which is where it names the CLI it spawns."""
+    (listing,) = [p for p in _json(MARKETPLACE_JSON)["plugins"] if p["name"] == "crapkit"]
+    return {PLUGIN_JSON: _json(PLUGIN_JSON)["description"],
+            MARKETPLACE_JSON: listing["description"]}
+
+
+def _drift(plugin_version: str, cli_version: str) -> list[str]:
+    from crapkit.doctor import plugin_handshake
+
+    return plugin_handshake(where="plugin", version=plugin_version, cli_version=cli_version,
+                            cli_where="crapkit", protocols=("1",), supported="1")
+
+
+def test_both_manifests_ask_for_the_cli_release_doctor_accepts():
+    """`doctor --plugin-root` reports any version gap between the plugin and the
+    CLI as drift, and the skills run flags of their own release: the recover
+    skill's `ratchet seed --baseline N` exits 2 on a 0.7.6 CLI. A manifest that
+    names an older floor sends a user to a CLI the plugin cannot drive."""
+    version = _json(PLUGIN_JSON)["version"]
+
+    assert _json(PLUGIN_JSON)["name"] == "crapkit"
+    assert _drift(version, "0.4.0") and not _drift(version, version)
+    for name, description in _cli_requirements().items():
+        assert not _FLOOR.search(description), f"{name} names an older CLI floor"
+        assert _SAME_RELEASE in description, f"{name} no longer names the CLI it needs"
 
 
 def test_the_plugin_ships_the_three_skills_the_repo_holds():
