@@ -1,9 +1,10 @@
-"""The default window holds a multi-megabyte member whole, so C decodes it.
+"""A multi-megabyte member that fits inside the default window decodes in C.
 
-A member that crosses the window edge falls into `_ValueFrame`, a Python regex
-tokenizer that walks the member one structural token at a time. With contexts
-recorded, one file's member reaches 1.5 MB, and at a 1 MB window 9 of 81
-members in crapkit's own report took that route: half the file, parsed in Python.
+A member that straddles the window's end falls into `_ValueFrame`, a Python
+regex tokenizer that walks the member one structural token at a time, whatever
+the member's size. With contexts recorded, one file's member reaches 1.5 MB,
+and at a 1 MB window 9 of 81 members in crapkit's own report took that route:
+half the file, parsed in Python. At 4 MB, 2 of them still do.
 """
 import json
 from unittest.mock import patch
