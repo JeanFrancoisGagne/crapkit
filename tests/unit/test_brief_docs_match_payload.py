@@ -19,6 +19,7 @@ import pytest
 
 from crapkit import packet
 from crapkit.cli import main
+from crapkit.mcp_server import tool_listing
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
 from hand_scored_repo import make_repo, run, scored, write_run
@@ -213,6 +214,17 @@ def test_history_counts_the_run_kinds_the_page_names(tmp_path, capsys):
     assert code == 0, err
     assert "an inventory run, a partial run and a refused verify each count" in documented
     assert json.loads(out)["regrowth"]["history"] == [[1, 9], [2, 8], [3, 10], [4, 7]]
+
+
+def test_the_served_schema_counts_history_the_way_the_page_does():
+    """get_function_brief's outputSchema said one pair per trusted run. The
+    test above reads an inventory run, a partial run and a refused verify in
+    history, and so does the page."""
+    brief = next(t for t in tool_listing() if t["name"] == "get_function_brief")
+    served = brief["outputSchema"]["properties"]["regrowth"]["properties"]["history"]
+
+    assert "every stored run" in served["description"], served["description"]
+    assert "whatever its kind" in served["description"], served["description"]
 
 
 def _refuse(root: Path, run_id: int) -> None:
