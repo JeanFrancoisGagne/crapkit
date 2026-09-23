@@ -38,9 +38,16 @@ def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
             files, past_header = set(), True
             continue
         if past_header and line:
-            files.add(unquote_path(line))
+            files.add(_path(line))
         past_header = True  # a log starting mid-commit opens on a severed header
     yield files
+
+
+def _path(line: str) -> str:
+    """Only a quoted line goes through the unquoter: git quotes a path only for
+    a double quote or a control character, and every other line already is the
+    path. The call on every line cost more than the rest of the loop."""
+    return unquote_path(line) if line[0] == '"' else line
 
 
 def _tracked_pairs(pair_counts: dict, tracked: set[str] | None) -> dict:
