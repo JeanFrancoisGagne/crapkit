@@ -177,3 +177,115 @@ def test_a_bare_name_resolves_on_the_lanes_own_path(tmp_path, monkeypatch):
 
     assert found is not None and Path(found).parent == toolchain
     assert launch_spec(tmp_path, _lane()).resolve(name) is None
+
+
+# --- where cmd.exe finds a bare word --------------------------------------------
+#
+# cmd.exe looks in the directory it starts in before it reads PATH, unless the
+# child's environment sets NoDefaultCurrentDirectoryInExePath. which() on
+# Windows looks in this process's directory instead, so a bare `runcov` beside
+# the lane passed doctor from the root and FAILed it from src/pkg. `windows=True`
+# runs cmd.exe's search on any host: it reads nothing but the file system.
+
+_CMD_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+
+
+def _batch_file(directory: Path, stem: str) -> None:
+    """`stem.BAT`, spelled the way PATHEXT spells the extension, so a
+    case-sensitive file system finds it as cmd.exe would."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.BAT").write_text("@exit /b 0\n", encoding="utf-8")
+
+
+@pytest.fixture
+def cmd_env(tmp_path, monkeypatch):
+    """A PATH holding nothing, the stock PATHEXT, and no opt-out of the
+    directory search, whatever the machine running the test sets."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.setenv("PATHEXT", _CMD_PATHEXT)
+    monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+    return empty
+
+
+def test_a_bare_word_in_the_lanes_cwd_resolves_wherever_this_process_stands(
+        tmp_path, monkeypatch, cmd_env):
+    repo = tmp_path / "repo"
+    _batch_file(repo / "web", "runcov")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    spec = launch_spec(repo, _lane(cwd="web"))
+    cmd_finds = str(repo / "web" / "runcov.BAT") if os.name == "nt" else None
+
+    assert spec.resolve("runcov") == cmd_finds
+    assert spec.resolve("runcov", windows=True) == str(repo / "web" / "runcov.BAT")
+
+
+def test_a_bare_word_in_this_processs_directory_does_not_resolve(tmp_path, monkeypatch, cmd_env):
+    """The empty and `.` PATH entries are cmd.exe's to read against the
+    directory the lane starts in, not this one."""
+    _batch_file(tmp_path / "doctor-cwd", "runcov")
+    monkeypatch.chdir(tmp_path / "doctor-cwd")
+    monkeypatch.setenv("PATH", ";".join(["", ".", str(cmd_env)]))
+    (tmp_path / "repo").mkdir()
+    spec = launch_spec(tmp_path / "repo", _lane())
+
+    assert spec.resolve("runcov") is None
+    assert spec.resolve("runcov", windows=True) is None
+
+
+@pytest.mark.parametrize("declared_by", ["lane", "process"])
+def test_no_default_current_directory_leaves_the_lanes_cwd_unsearched(
+        tmp_path, monkeypatch, cmd_env, declared_by):
+    _batch_file(tmp_path, "runcov")
+    opt_out = ("NoDefaultCurrentDirectoryInExePath", "1")
+    if declared_by == "process":
+        monkeypatch.setenv(*opt_out)
+    spec = launch_spec(tmp_path, _lane(env=(opt_out,) if declared_by == "lane" else ()))
+
+    assert spec.resolve("runcov", windows=True) is None
+    assert launch_spec(tmp_path, _lane()).resolve("runcov", windows=True) == \
+        (None if declared_by == "process" else str(tmp_path / "runcov.BAT"))
+
+
+def test_cmd_tries_each_pathext_extension_on_each_path_entry(tmp_path, cmd_env):
+    toolchain = tmp_path / "toolchain"
+    _batch_file(toolchain, "runcov")
+    (tmp_path / "repo").mkdir()
+    spec = launch_spec(tmp_path / "repo", _lane(env=(("Path", f'"{toolchain}"'),)))
+
+    assert spec.resolve("runcov", windows=True) == str(toolchain / "runcov.BAT")
+    assert spec.resolve("runcov.BAT", windows=True) == str(toolchain / "runcov.BAT")
+    assert spec.resolve("runcov.exe", windows=True) is None
+
+
+def test_a_child_environment_without_pathext_gets_cmds_default(tmp_path, monkeypatch, cmd_env):
+    _batch_file(tmp_path, "runcov")
+    monkeypatch.delenv("PATHEXT")
+
+    assert launch_spec(tmp_path, _lane()).resolve("runcov", windows=True) == \
+        str(tmp_path / "runcov.BAT")
+
+
+def test_sh_reads_a_bare_name_from_path_alone(tmp_path, monkeypatch, cmd_env):
+    """`windows=False` is sh's search: the lane's PATH, never its directory."""
+    toolchain = tmp_path / "toolchain"
+    name = _runner_on(toolchain)
+    _runner_on(tmp_path)
+    monkeypatch.chdir(cmd_env)
+
+    found = launch_spec(tmp_path, _lane(env=(("PATH", str(toolchain)),))).resolve(name, windows=False)
+
+    assert found is not None and Path(found).parent == toolchain
+    assert launch_spec(tmp_path, _lane()).resolve(name, windows=False) is None
+
+
+def test_a_relative_path_entry_is_read_from_the_lanes_cwd(tmp_path, cmd_env):
+    repo = tmp_path / "repo"
+    _batch_file(repo / "web" / "bin", "runcov")
+    spec = launch_spec(repo, _lane(cwd="web", env=(("PATH", "bin"),
+                                                   ("NoDefaultCurrentDirectoryInExePath", "1"))))
+
+    assert spec.resolve("runcov", windows=True) == str(repo / "web" / "bin" / "runcov.BAT")

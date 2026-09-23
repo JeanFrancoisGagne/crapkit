@@ -62,19 +62,67 @@ class LaunchSpec(NamedTuple):
         cannot see on its own PATH."""
         return next((value for key, value in self.env if _names_path(key, windows)), None)
 
-    def resolve(self, word: str) -> str | None:
+    def resolve(self, word: str, windows: bool = _WINDOWS) -> str | None:
         r"""Where the child's shell finds this word, or None when it finds nothing.
 
-        A word carrying a separator is a path, and the shell reads it from the
-        directory the lane runs in. which() reads it against whatever
-        directory this process started in, so the `.venv\Scripts\python.exe`
-        init writes resolved from the repo root and from nowhere else. A bare
-        name stays PATH's question: the lane's PATH when it declares one.
+        Nothing here reads the directory this process stands in. A word
+        carrying a separator is a path, and the shell reads it from the
+        directory the lane runs in: which() read it from this process's
+        directory, so the `.venv\Scripts\python.exe` init writes resolved from
+        the repo root and from nowhere else. A bare word is cmd.exe's own search
+        on Windows, which looks in the lane's directory before PATH, and on
+        POSIX sh's, which reads PATH alone: the lane's PATH when it declares
+        one. which() on Windows looked in this process's directory first, so a
+        bare `runcov` beside the lane resolved from the root and not from below.
         """
         if os.sep in word or "/" in word:
             candidate = self.cwd / word
             return str(candidate) if candidate.is_file() else None
-        return shutil.which(word, path=self.path())
+        if windows:
+            return self._cmd_search(word)
+        return shutil.which(word, path=self.path(windows))
+
+    def _cmd_env(self) -> dict[str, str]:
+        """The child's environment as cmd.exe reads it: one case-insensitive
+        namespace, where the lane's `Path` is the process's `PATH`."""
+        return {key.upper(): value for key, value in (self.child_env() or os.environ).items()}
+
+    def _cmd_directories(self, env: dict[str, str]) -> list[Path]:
+        """Where cmd.exe looks for a bare word, in order: the directory it
+        starts in, unless the child's environment sets
+        NoDefaultCurrentDirectoryInExePath, then each PATH entry. A relative
+        entry, `.` included, is read from that same directory, as cmd.exe reads
+        it, and an empty one names nothing."""
+        here = [] if _NO_CWD_SEARCH in env else [self.cwd]
+        entries = (entry.strip('"') for entry in env.get("PATH", "").split(";"))
+        return here + [self.cwd / entry for entry in entries if entry]
+
+    def _cmd_search(self, word: str) -> str | None:
+        """The file cmd.exe starts for a bare word, or None when it finds none."""
+        env = self._cmd_env()
+        names = _cmd_names(word, env.get("PATHEXT") or _CMD_PATHEXT)
+        return _first_file(self._cmd_directories(env), names)
+
+
+# cmd.exe's defaults, used when the child's environment does not say otherwise.
+_CMD_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+_NO_CWD_SEARCH = "NODEFAULTCURRENTDIRECTORYINEXEPATH"
+
+
+def _cmd_names(word: str, pathext: str) -> list[str]:
+    """The file names cmd.exe tries for a bare word: the word itself when it
+    already ends in one of PATHEXT's extensions, else the word with each
+    extension added, in PATHEXT's order."""
+    extensions = [ext for ext in pathext.upper().split(";") if ext]
+    if PurePath(word).suffix.upper() in extensions:
+        return [word]
+    return [word + ext for ext in extensions]
+
+
+def _first_file(directories: list[Path], names: list[str]) -> str | None:
+    """The first directory, then the first name within it, that is a file."""
+    found = (directory / name for directory in directories for name in names)
+    return next((str(path) for path in found if path.is_file()), None)
 
 
 def launch_spec(root: Path, lane) -> LaunchSpec:
