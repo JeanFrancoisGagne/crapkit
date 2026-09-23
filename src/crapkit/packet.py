@@ -181,10 +181,10 @@ def rejudged(row, ceiling: int, rows_of):
     called only for a row whose stored verdict cannot say whether another
     function declares its lines.
     """
-    remedy = _remedy(row.ccn, row.crap, ceiling)
-    if remedy == "add-tests" and _shares_span(row, rows_of):
-        remedy = "split-lines"
-    return row if remedy == row.remedy else row._replace(remedy=remedy)
+    verdict = _remedy(row.ccn, row.crap, ceiling)
+    if verdict == "add-tests" and _shares_span(row, rows_of):
+        verdict = "split-lines"
+    return row if verdict == row.remedy else row._replace(remedy=verdict)
 
 
 def _shares_span(row, rows_of) -> bool:
