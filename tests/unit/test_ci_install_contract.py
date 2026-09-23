@@ -3,16 +3,18 @@
 `.github/workflows/ci.yml` installs with `pip install -e ".[dev]"` and nothing
 else, so a pytest plugin the committed fixture lanes need has to be declared
 there or every test job dies before it reaches an assertion. That is exactly
-what happened on run 33225190806: `tests/fixtures/mini_repo` declares a lane
-that shells out to `pytest pylib -n 2 ...`, pytest-xdist was a manual side
-install the docs asked for and CI never did, and all six test jobs (three
-Python versions on ubuntu-latest and windows-latest alike) failed with
-`unrecognized arguments: -n`.
+what happened on run 33225190806: `tests/fixtures/mini_repo` declared a lane
+that shelled out to `pytest pylib -n 2 ...` (mini_repo now passes `-n 0`, and
+`tests/fixtures/mini_repo_xdist` keeps `-n 2`; both still need xdist),
+pytest-xdist was a manual side install the docs asked for and CI never did, and
+all six test jobs (three Python versions on ubuntu-latest and windows-latest
+alike) failed with `unrecognized arguments: -n`.
 
-The lane resolves `python` from PATH rather than from `sys.executable`, so a
-developer whose PATH python already carries xdist sees the suite pass from a
-venv that lacks it. CI has no such second interpreter, which is why the break
-showed up there first.
+A fixture lane resolves `python` from PATH rather than from `sys.executable`. A
+developer whose PATH python carried xdist once saw the suite pass from a venv
+that lacked it, while CI, with no second interpreter, broke first. The e2e child
+environment now puts the suite's own interpreter first on PATH, so a fixture
+lane runs the interpreter whose install this contract checks.
 """
 import re
 import tomllib
