@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
+from crapkit.hook import _HOOK_POOL_THRESHOLD
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -437,13 +438,19 @@ def test_rescore_overlays_fresh_complexity_on_stale_coverage(mini_repo: Path):
 
 
 def test_rescore_merges_the_shared_cache_instead_of_truncating_it(mini_repo: Path):
+    """A rescore of fewer files than the hook's pool threshold leaves the cache
+    alone; one of that many folds its records into it."""
     assert run_cli(mini_repo, "coverage", "--json").returncode == 0
     before = cache_entries(mini_repo)
-    assert len(before) > 1, "the fixture must cache more files than the one being rescored"
+    assert len(before) > 1, "the fixture must cache more files than the ones being rescored"
+    added = [f"pylib/added{i}.py" for i in range(_HOOK_POOL_THRESHOLD - 1)]
+    for i, rel in enumerate(added):
+        (mini_repo / rel).write_text(f"def added{i}(a):\n    return a + {i}\n", encoding="utf-8")
 
-    res = run_cli(mini_repo, "rescore", "--json", "pylib/mod.py")
+    res = run_cli(mini_repo, "rescore", "--json", "pylib/mod.py", *added)
     assert res.returncode == 0, res.stderr
-    assert before <= cache_entries(mini_repo), "rescoring one file must not evict the others"
+    after = cache_entries(mini_repo)
+    assert before < after, "the rescore must add its files and evict none"
 
     warm = run_cli(mini_repo, "inventory", "--json")
     assert warm.returncode == 0, warm.stderr
