@@ -326,19 +326,29 @@ def _git_tag(root: Path) -> str:
     return _git(root, "describe", "--tags", "--abbrev=0")
 
 
+def _first_line(done: subprocess.CompletedProcess) -> str:
+    lines = done.stderr.strip().splitlines()
+    return lines[0] if lines else f"exit {done.returncode}"
+
+
 def _gh_release(root: Path, version: str) -> str:
+    """The release URL, or "" when gh says the release does not exist. Any other
+    failure raises: a logged-out gh exits 4 and knows nothing about the release."""
     try:
         done = subprocess.run(["gh", "release", "view", f"v{version}", "--repo", GITHUB_REPO,
                                "--json", "url", "--jq", ".url"],
                               cwd=root, capture_output=True, text=True)
     except OSError as exc:
         raise ReleaseError(f"cannot run gh: {exc}") from exc
+    if done.returncode and "release not found" not in done.stderr:
+        raise ReleaseError(f"gh failed: {_first_line(done)}")
     return done.stdout.strip()
 
 
 def _github_row(version: str, read: Callable) -> Row:
-    """A shell without gh cannot say whether the release exists, so the row says
-    unconfirmed rather than `none`."""
+    """A shell without gh, or a gh that fails for any reason but a missing
+    release (logged out, say), cannot say whether the release exists, so the row
+    says unconfirmed rather than `none`."""
     try:
         url = read()
     except ReleaseError as exc:
