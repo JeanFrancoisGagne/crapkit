@@ -1035,8 +1035,8 @@ TOOLS: tuple[dict, ...] = (
                     "serial_fallback": {"type": "boolean", "description": "busy slots allow serial work without waiting"},
                     "coordination": {"type": "string", "description": "worker slot ownership scope"},
                     "log_max_bytes": {"type": "integer", "description": "byte limit per current and backup lane log; zero is unlimited"},
-                    "test_retention_days": {"type": "integer", "description": "default test evidence age limit; zero disables it"},
-                    "test_retention_count": {"type": "integer", "description": "default test evidence count limit; zero disables it"}}},
+                    "test_retention_days": {"type": "integer", "description": "deprecated, always 0: crapkit applies no test evidence retention"},
+                    "test_retention_count": {"type": "integer", "description": "deprecated, always 0: crapkit applies no test evidence retention"}}},
             "store": {
                 "type": "object",
                 "description": "the run store",

@@ -450,7 +450,7 @@ def build_parser() -> argparse.ArgumentParser:
     cpl.add_argument("--json", action="store_true", help="machine output")
     cpl.set_defaults(func=_Handler("analyses", "cmd_coupling"))
 
-    clean = sub.add_parser("clean", help="remove expired owned test evidence and abandoned mutation checkouts")
+    clean = sub.add_parser("clean", help="remove abandoned temporary mutation checkouts")
     clean.add_argument("--repo", **_REPO_FLAG)
     clean.add_argument("--dry-run", action="store_true", help="report eligible paths without removing them")
     clean.add_argument("--json", action="store_true")

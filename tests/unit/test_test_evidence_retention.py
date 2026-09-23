@@ -1,11 +1,15 @@
-"""Only idle, recognized test evidence participates in configured retention."""
+"""Only idle, recognized test evidence participates in the runner's retention."""
 from pathlib import Path
 import json
 import time
 
 import pytest
 
-from crapkit.retention import prune_test_runs, test_run_directory as evidence_directory
+from test_runner_owns_test_evidence_retention import runner
+
+
+prune_test_runs = runner().prune_test_runs
+evidence_directory = runner().evidence_directory
 
 
 def test_count_retention_removes_only_old_finished_owned_runs(tmp_path):
@@ -113,7 +117,7 @@ def test_the_forms_resolve_returns_mid_race_are_not_redirects(tmp_path, monkeypa
     once. While one does, Windows resolve() names the same directory in its
     extended-length form, then as the NTFS tombstone of a directory whose last
     handle is still open. Both were refused as redirects; neither is one."""
-    from crapkit import retention
+    retention = runner()
     expected = tmp_path / ".crapkit" / "test-runs"
     expected.mkdir(parents=True)
     forms = iter([Path("\\\\?\\" + str(expected)),
@@ -125,7 +129,7 @@ def test_the_forms_resolve_returns_mid_race_are_not_redirects(tmp_path, monkeypa
 
 
 def test_a_test_runs_directory_resolving_elsewhere_is_still_refused(tmp_path, monkeypatch):
-    from crapkit import retention
+    retention = runner()
     monkeypatch.setattr(Path, "resolve", lambda self, strict=False: tmp_path / "elsewhere" / "test-runs")
 
     with pytest.raises(Exception, match="redirected"):

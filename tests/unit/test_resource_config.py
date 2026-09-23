@@ -7,8 +7,7 @@ from crapkit.errors import ConfigError
 
 SCOPE = '\n[[scope]]\nname="src"\npaths=["src"]\nlanguages=["python"]\n'
 LANE = '\n[[lane]]\nname="py"\ncommand="run"\nartifact="cov.json"\nparser="coveragepy"\nscopes=["src"]\n'
-DEFAULTS = {"analysis_worker_budget": 0, "log_max_bytes": 16777216,
-            "test_retention_days": 7, "test_retention_count": 10}
+DEFAULTS = {"analysis_worker_budget": 0, "log_max_bytes": 16777216}
 
 
 @pytest.mark.parametrize("key,value", DEFAULTS.items())

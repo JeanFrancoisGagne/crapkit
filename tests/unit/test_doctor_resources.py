@@ -29,6 +29,6 @@ def test_doctor_reports_configured_limits_without_starting_work(tmp_path, monkey
     assert policy["memory_budget_mb"] == 70
     assert policy["memory_is_hard_limit"] is False
     assert policy["log_max_bytes"] == 4096
-    assert policy["test_retention_days"] == 4
-    assert policy["test_retention_count"] == 5
+    assert policy["test_retention_days"] == 0  # deprecated keys: crapkit applies neither
+    assert policy["test_retention_count"] == 0
     assert not budget.exists()

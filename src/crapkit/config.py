@@ -600,8 +600,6 @@ class Config(NamedTuple):
     analysis_workers: int = 0  # requested lizard workers; 0 = automatic sizing
     analysis_worker_budget: int = 0  # shared pool slot ceiling; 0 = available CPUs
     log_max_bytes: int = 16777216  # each active/backup lane log; 0 = unlimited
-    test_retention_days: int = 7  # finished default test evidence; 0 = no age pruning
-    test_retention_count: int = 10  # finished default test evidence; 0 = no count pruning
     # Operational traps the repo learned the hard way. They lived as TOML
     # comments, which the parser drops, so no payload could ever quote them.
     notes: tuple[str, ...] = ()
@@ -780,8 +778,6 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
         analysis_workers=main.get("analysis_workers", 0),
         analysis_worker_budget=main.get("analysis_worker_budget", 0),
         log_max_bytes=main.get("log_max_bytes", 16777216),
-        test_retention_days=main.get("test_retention_days", 7),
-        test_retention_count=main.get("test_retention_count", 10),
         notes=tuple(main.get("notes", ())),
         scope_notes=scope_notes,
     )

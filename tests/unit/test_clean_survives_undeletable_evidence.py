@@ -1,5 +1,6 @@
 """An expired test-evidence directory the filesystem will not delete cannot stop
-`crapkit clean` before it recovers abandoned mutation checkouts."""
+`crapkit clean` before it recovers abandoned mutation checkouts: clean never
+tries to delete test evidence, which belongs to the development runner."""
 import json
 from pathlib import Path
 import shutil
@@ -34,22 +35,27 @@ def _abandoned_mutation(root: Path) -> Path:
     return checkout
 
 
-def _refuse_to_delete(monkeypatch, locked: Path) -> None:
-    """Windows refuses to unlink a read-only or open file; rmtree then raises."""
+def _refuse_to_delete(monkeypatch, locked: Path) -> list:
+    """Windows refuses to unlink a read-only or open file; rmtree then raises.
+    Returns the list of attempts on `locked`."""
+    attempts = []
     delete = shutil.rmtree
 
     def rmtree(path, *args, **kwargs):
         if Path(path) == locked:
+            attempts.append(str(path))
             raise PermissionError(13, "Access is denied", str(locked / "junit.xml"))
         return delete(path, *args, **kwargs)
     monkeypatch.setattr(shutil, "rmtree", rmtree)
+    return attempts
 
 
-def test_an_undeletable_run_still_lets_clean_recover_mutations(tmp_path, monkeypatch, capsys):
+def test_clean_recovers_mutations_without_trying_to_delete_expired_test_evidence(
+        tmp_path, monkeypatch, capsys):
     (tmp_path / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
     run = _expired_run(tmp_path)
     checkout = _abandoned_mutation(tmp_path)
-    _refuse_to_delete(monkeypatch, run)
+    attempts = _refuse_to_delete(monkeypatch, run)
 
     code = main(["clean", "--repo", str(tmp_path), "--json"])
 
@@ -58,17 +64,7 @@ def test_an_undeletable_run_still_lets_clean_recover_mutations(tmp_path, monkeyp
     assert result["temporary_mutations"] == [{
         "path": str(checkout), "status": "unproven",
         "reason": "temporary mutation lease is missing"}]
-    assert result["test_runs"]["failed"] == [str(run)]
-    assert code == 1
+    assert attempts == []
+    assert not any(result["test_runs"].values())
+    assert code == 0
     assert (run / "junit.xml").is_file()
-
-
-def test_text_clean_names_the_run_it_could_not_delete(tmp_path, monkeypatch, capsys):
-    (tmp_path / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
-    run = _expired_run(tmp_path)
-    _refuse_to_delete(monkeypatch, run)
-
-    code = main(["clean", "--repo", str(tmp_path)])
-
-    assert capsys.readouterr().out.splitlines() == [f"test evidence failed: {run}"]
-    assert code == 1

@@ -19,11 +19,12 @@ leave alone:
 Four tables hold them: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
 
 [crapkit.schema.json](../crapkit.schema.json) is the machine authority, and
-`crapkit doctor` rejects any key not on it:
+`crapkit doctor` rejects any key not on it, except two
+[deprecated retention keys](#crapkit) it only warns about:
 
 ```
 $ crapkit doctor
-FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_worker_budget, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, log_max_bytes, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, test_retention_count, test_retention_days, tighten_max_jump, worklist_floor, worklist_top
+FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_worker_budget, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, log_max_bytes, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, tighten_max_jump, worklist_floor, worklist_top
 doctor: 1 problem(s)
 ```
 
@@ -85,9 +86,13 @@ fallback. UTF-16 source is outside that reader policy.
 | `analysis_workers` | int >= 0 | `0` | Requested analysis pool ceiling. `0` sizes pools automatically to balance startup cost and available work, within the process-visible CPU limit. Small or cached passes remain serial. Runnable chunks and the shared budget can admit fewer workers. |
 | `analysis_worker_budget` | int >= 0 | `0` | Shared pool slot ceiling for Crapkit processes running as the same user on this host. `0` uses available CPUs. Admission never waits: a busy pool gives up slots, falling back to the calling process when none are free. See [resource policies](resources.md). |
 | `log_max_bytes` | int >= 0 | `16777216` | Maximum bytes in each current and previous lane log, 16 MiB by default. Rotation keeps recent output and preserves no-progress accounting. `0` retains unlimited direct logs. |
-| `test_retention_days` | int >= 0 | `7` | Remove recognized, idle default test-run evidence older than this many days. `0` disables age pruning. Explicit `--output` directories remain caller-managed. |
-| `test_retention_count` | int >= 0 | `10` | Keep this many recent recognized default test runs. `0` disables count pruning. A run expires when either enabled limit is exceeded; active runs are preserved. |
 | `tighten_max_jump` | number >= 1 | `2.0` | How far a function's CRAP may move between two runs of the **same commit** and still tighten its mark. Past this factor, `verify` holds the mark and prints one `NO TIGHTEN` line on stderr naming the function and both values. One commit measured twice cannot have improved, so a jump that size is the measurement talking, not the code. See [ratchet.md](ratchet.md#damping-a-measurement-that-bounces). |
+
+`test_retention_days` and `test_retention_count` are deprecated and ignored. Only
+crapkit's own development runner writes test evidence, so retention moved to it:
+`tools/testing/run.py --retention-days N --retention-count N`. A config that
+still sets either key loads, and `doctor` prints one WARN per key naming its
+flag. Delete them.
 
 ### Mutation worktrees
 

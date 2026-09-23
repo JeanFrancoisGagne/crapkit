@@ -610,10 +610,21 @@ def _unknown_key_text(unknown) -> str:
             f"{', '.join(valid_keys(unknown.table))}")
 
 
+def _key_finding(unknown) -> Finding:
+    """A key crapkit ignores: a WARN naming its replacement when crapkit once
+    read it, else a FAIL listing the spellings its table accepts."""
+    from ..config_contract import deprecation
+
+    replacement = deprecation(unknown.path)
+    if replacement is None:
+        return Finding("FAIL", _unknown_key_text(unknown))
+    return Finding("WARN", f"{unknown.path} is deprecated and ignored: {replacement}; delete the key")
+
+
 def _doctor_keys(raw: dict) -> list[Finding]:
     from ..doctor import unknown_key_findings
 
-    problems = [Finding("FAIL", _unknown_key_text(u)) for u in unknown_key_findings(raw)]
+    problems = [_key_finding(u) for u in unknown_key_findings(raw)]
     return problems or [Finding("ok", "config keys all recognized")]
 
 
@@ -1292,8 +1303,10 @@ def _resource_policy(cfg) -> dict:
     return {**resource_status(analysis_workers=cfg.analysis_workers,
                               worker_budget=cfg.analysis_worker_budget),
             "log_max_bytes": cfg.log_max_bytes,
-            "test_retention_days": cfg.test_retention_days,
-            "test_retention_count": cfg.test_retention_count}
+            # Deprecated: crapkit applies no test evidence retention; its
+            # development runner does. Zero disables a limit, and none applies.
+            "test_retention_days": 0,
+            "test_retention_count": 0}
 
 
 def _print_findings(findings: list[Finding]) -> None:
@@ -1310,8 +1323,7 @@ def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> Non
     policy = _resource_policy(cfg)
     print(f"resources: up to {policy['pool_worker_limit']} analysis worker(s) per pool, "
           f"{policy['shared_pool_limit']} shared slot(s); "
-          f"lane log limit {policy['log_max_bytes']} bytes per file; "
-          f"test evidence {policy['test_retention_days']} days / {policy['test_retention_count']} runs")
+          f"lane log limit {policy['log_max_bytes']} bytes per file")
     _print_findings(findings)
 
 

@@ -104,16 +104,6 @@
           "minimum": 0,
           "description": "bytes per active and backup lane log; 0 = unlimited (default 16777216)"
         },
-        "test_retention_days": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "age limit for finished default test evidence; 0 disables (default 7)"
-        },
-        "test_retention_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "count limit for finished default test evidence; 0 disables (default 10)"
-        },
         "tighten_max_jump": {
           "type": "number",
           "minimum": 1,

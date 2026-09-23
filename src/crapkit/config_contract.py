@@ -108,12 +108,6 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                            'log_max_bytes': {'type': 'integer', 'minimum': 0,
                                                'description': 'bytes per active and backup lane log; '
                                                               '0 = unlimited (default 16777216)'},
-                                           'test_retention_days': {'type': 'integer', 'minimum': 0,
-                                               'description': 'age limit for finished default test '
-                                                              'evidence; 0 disables (default 7)'},
-                                           'test_retention_count': {'type': 'integer', 'minimum': 0,
-                                               'description': 'count limit for finished default test '
-                                                              'evidence; 0 disables (default 10)'},
                                            'tighten_max_jump': {'type': 'number',
                                                                 'minimum': 1,
                                                                 'description': 'verify holds a mark '
@@ -229,6 +223,22 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                              'corpus, minified blobs '
                                                                              'included (absent = no '
                                                                              'limit)'}}}}}
+
+
+# Keys crapkit once read and now ignores. A config that sets one still loads;
+# doctor warns with the replacement instead of calling the key a typo, and
+# neither the editor schema nor an unknown-key message offers it.
+_DEPRECATED = {
+    "crapkit.test_retention_days": "only crapkit's own development runner writes test "
+                                   "evidence, and it takes --retention-days",
+    "crapkit.test_retention_count": "only crapkit's own development runner writes test "
+                                    "evidence, and it takes --retention-count",
+}
+
+
+def deprecation(path: str) -> str | None:
+    """What replaced the deprecated key at dotted `path`, or None for any other key."""
+    return _DEPRECATED.get(path)
 
 
 _TYPES = {"object": (dict,), "array": (list,), "string": (str,),
