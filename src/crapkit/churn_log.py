@@ -34,6 +34,7 @@ import json
 import zlib
 from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
+from functools import lru_cache
 from itertools import chain
 from operator import methodcaller
 from pathlib import Path
@@ -94,19 +95,53 @@ def walked_window(root: Path, months: int, head: str | None) -> Window:
     """The window as of `head`, straight from git in the stored shape, laying
     nothing down: for a reader that needs commit dates where no log is on disk
     yet. None walks whatever HEAD is when git starts."""
-    cutoff = _window_cutoff(root, months)
+    cutoff = window_cutoff(root, months, head)
     return Window(_window_log(root, months, head, cutoff), cutoff)
 
 
+# The per-process answers below are shared by the two copies a HEAD move
+# brings forward: the commit table on a map miss, then the laid-down log when a
+# coupling reader follows (brief, worklist --batches). Both ask the same three
+# questions about the same two commits, and asking git twice doubled the spawns.
+
 def commits_since(root: Path, base: str, head: str) -> Iterator[str]:
-    """What `head` added on top of `base`, in the stored shape; nothing when they match."""
-    return _fresh_commits(root, base, head)
+    """What `head` added on top of `base`, in the stored shape; nothing when
+    they match. Walked once per pair in a process: two commits name one range."""
+    if base == head:
+        return iter(())
+    return iter(_range_lines(root, base, head))
 
 
-def window_cutoff(root: Path, months: int) -> int | None:
+def grew_from(root: Path, base: str, head: str) -> bool:
+    """Whether `head` is `base` or descends from it. Asked of git once per pair
+    in a process: whether one commit descends from another never changes."""
+    return base == head or _ancestry(root, base, head)
+
+
+def window_cutoff(root: Path, months: int, head: str | None) -> int | None:
     """git's --since floor for the window, the commit date a commit must reach
-    to stay in it; None when git will not name one."""
+    to stay in it; None when git will not name one.
+
+    Read once per HEAD and UTC day in a process, so a carry and the refresh
+    after it cut at the same floor. The floor moves with the clock, so a
+    long-running process reads it again at the next HEAD or the next day, the
+    two things every copy here is keyed on."""
+    return _floor(root, months, head, _utc_date())
+
+
+@lru_cache(maxsize=16)
+def _floor(root: Path, months: int, head: str | None, date: str) -> int | None:
     return _window_cutoff(root, months)
+
+
+@lru_cache(maxsize=16)
+def _ancestry(root: Path, base: str, head: str) -> bool:
+    return is_ancestor(root, base, head)
+
+
+@lru_cache(maxsize=4)
+def _range_lines(root: Path, base: str, head: str) -> tuple[str, ...]:
+    return tuple(_range_log(root, base, head))
 
 
 def has_cache(root: Path) -> bool:
@@ -168,7 +203,7 @@ def _stored_window(root: Path, months: int, head: str | None) -> Window:
         return served
     if key is None:
         return walked_window(root, months, None)  # nothing to key a copy on
-    cutoff = _window_cutoff(root, months)
+    cutoff = window_cutoff(root, months, key["head"])
     source = _refreshed(root, path, stored, key, cutoff)
     if source is None:
         source = _window_log(root, months, key["head"], cutoff)
@@ -278,7 +313,7 @@ def _refreshed(root: Path, path: Path, stored: dict | None, key: dict,
     cached = _read_log(path, stored)
     if cached is None:
         return None
-    return _within(chain(_fresh_commits(root, stored["head"], key["head"]), cached), cutoff)
+    return _within(chain(commits_since(root, stored["head"], key["head"]), cached), cutoff)
 
 
 def _refreshable(root: Path, stored: dict | None, key: dict, cutoff: int | None) -> bool:
@@ -286,8 +321,7 @@ def _refreshable(root: Path, stored: dict | None, key: dict, cutoff: int | None)
     format, cut at a floor no higher than this one, and behind us."""
     if stored is None or not _same_window(stored, key) or not _floor_holds(stored, cutoff):
         return False
-    return stored.get("head") == key["head"] or is_ancestor(root, str(stored.get("head")),
-                                                            key["head"])
+    return grew_from(root, str(stored.get("head")), key["head"])
 
 
 def _same_window(stored: dict, key: dict) -> bool:
@@ -303,13 +337,6 @@ def _floor_holds(stored: dict, cutoff: int | None) -> bool:
     at the higher floor lacks the commits in between; only a walk has them."""
     floor = _stored_cutoff(stored)
     return cutoff is not None and floor is not None and floor <= cutoff
-
-
-def _fresh_commits(root: Path, base: str, head: str) -> Iterator[str]:
-    """Nothing to walk when the log already ends at this HEAD — a re-dating is free."""
-    if base == head:
-        return iter(())
-    return _range_log(root, base, head)
 
 
 def _within(lines: Iterator[str], cutoff: int) -> Iterator[str]:

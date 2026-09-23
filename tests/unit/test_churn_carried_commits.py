@@ -72,6 +72,8 @@ class FakeGit:
         self.shallow = False
         self.window_calls = 0
         self.range_calls: list[tuple[str, str]] = []
+        self.cutoff_calls = 0
+        self.ancestry_calls = 0
         self.inflates = 0
         self.after_read = None  # a commit that lands right after the next HEAD read
         self.floor_after_walk: int | None = None  # the clock crosses a month end mid-read
@@ -97,9 +99,11 @@ class FakeGit:
         return iter(self.ranges.get((base, head), []))
 
     def cutoff(self, root, months):
+        self.cutoff_calls += 1
         return self.floor
 
     def is_ancestor(self, root, commit, other):
+        self.ancestry_calls += 1
         return self.ancestor
 
 
@@ -111,7 +115,6 @@ def git(monkeypatch) -> FakeGit:
     monkeypatch.setattr(churn_log, "_window_cutoff", fake.cutoff)
     monkeypatch.setattr(churn_log, "is_ancestor", fake.is_ancestor)
     monkeypatch.setattr(churn_log, "head_commit", fake.read_head)
-    monkeypatch.setattr(churn_commits, "is_ancestor", fake.is_ancestor)
     monkeypatch.setattr(churn_commits, "is_shallow", lambda root: fake.shallow)
     monkeypatch.setattr(churn_cache, "head_commit", fake.read_head)
     inflate = churn_log._inflate
@@ -214,6 +217,24 @@ def test_a_commit_landing_mid_read_is_counted_once(tmp_path, git, laid):
     assert churn_cache.load_churn(tmp_path, 12) == AT_A, "the map answers the HEAD it read"
     assert git.head == HEAD_B, "the commit landed mid-read"
     assert churn_cache.load_churn(tmp_path, 12) == AT_B
+
+
+def test_a_carry_and_the_log_refresh_after_it_ask_git_once(tmp_path, git):
+    """brief and worklist --batches read the map and then the coupling log at
+    one HEAD. Both bring their copy forward over the same two commits, so the
+    ancestry answer, the window floor and the range walk are each asked of git
+    once, not once per copy."""
+    list(churn_log.log_lines(tmp_path, 12))
+    churn_cache.load_churn(tmp_path, 12)
+    move_head(git)
+    git.cutoff_calls = git.ancestry_calls = 0
+
+    assert churn_cache.load_churn(tmp_path, 12) == AT_B
+    list(churn_log.log_lines(tmp_path, 12))
+
+    assert (git.ancestry_calls, git.cutoff_calls) == (1, 1)
+    assert git.range_calls == [(HEAD_A, HEAD_B)]
+    assert git.window_calls == 1
 
 
 def test_a_moved_head_leaves_the_stored_log_unread(tmp_path, git):

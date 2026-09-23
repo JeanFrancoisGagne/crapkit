@@ -30,9 +30,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .churn import Commit, WindowCommits, fold
-from .churn_log import commits_since, window_cutoff
+from .churn_log import commits_since, grew_from, window_cutoff
 from .errors import GitError
-from .gitio import is_ancestor, is_shallow
+from .gitio import is_shallow
 from .gitpaths import PATH_FORMAT
 
 # Versioned in the name like the map and the log: a version that writes another
@@ -52,7 +52,7 @@ def carried_commits(root: Path, months: int, head: str | None) -> WindowCommits 
     stored = _stored(root, months, head)
     if stored is None:
         return None
-    cutoff = window_cutoff(root, months)
+    cutoff = window_cutoff(root, months, head)
     if cutoff is None or cutoff < stored.cutoff:
         return None
     table = stored.table
@@ -87,13 +87,9 @@ def _stored(root: Path, months: int, head: str | None) -> _Stored | None:
     if head is None:
         return None
     stored = _read(root / ".crapkit" / COMMITS_NAME, months)
-    if stored is None or not _grew_from(root, stored.head, head):
+    if stored is None or not grew_from(root, stored.head, head):
         return None
     return stored
-
-
-def _grew_from(root: Path, base: str, head: str) -> bool:
-    return base == head or is_ancestor(root, base, head)
 
 
 def _read(path: Path, months: int) -> _Stored | None:
