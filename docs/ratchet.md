@@ -316,7 +316,7 @@ EXIT=3
 ```
 $ crapkit verify
 warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) — run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
-verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files)
+verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: restamped -> git add crapkit-ratchet.tsv
 EXIT=0
 ```
 

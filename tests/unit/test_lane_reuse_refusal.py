@@ -218,3 +218,33 @@ def test_the_lanes_page_and_the_changelog_quote_the_refusal_reuse_prints(tmp_pat
     assert printed.split("lane 'py' ", 1)[1] in unwrapped, "the changelog quotes something else"
     for page in (lanes_page, changelog):
         assert "`--reuse-artifacts` is untouched" not in page, "a promise 0.5.0 broke is still made"
+
+
+def test_two_leftover_files_are_named_in_the_plural(tmp_path):
+    """`the cov.json, junit.xml on disk predates it and is the previous run's`
+    named two files with a verb for one."""
+    lane = Lane(name="py", command=WRITES_NOTHING, artifact="cov.json", parser="istanbul",
+                scopes=(), results_artifact="junit.xml")
+    _plant(tmp_path, "cov.json", BEFORE)
+    _plant(tmp_path, "junit.xml", BEFORE, "<testsuite/>")
+
+    message = str(_failed_attempt(tmp_path, lane))
+
+    assert "the cov.json and junit.xml on disk predate it and are the previous run's" in message
+
+
+def test_the_lanes_page_quotes_the_leftover_refusal_a_run_prints(tmp_path):
+    """The page's lane declares a results file, as every lane init writes does,
+    so the transcript names both files the run left."""
+    lanes_page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(
+        encoding="utf-8")
+    lane = Lane(name="py", command="python -c \"import sys; sys.exit(2)\"",
+                artifact=".crapkit/cov/py.json", parser="coveragepy", scopes=("src",),
+                results_artifact=".crapkit/cov/junit-py.xml")
+    _plant(tmp_path, lane.artifact, BEFORE)
+    _plant(tmp_path, lane.results_artifact, BEFORE, "<testsuite/>")
+
+    printed = str(_failed_attempt(tmp_path, lane)).split("; lane log:", 1)[0]
+
+    assert printed.startswith("lane 'py' wrote no artifact this run"), printed
+    assert f"crapkit: lane 'py' FAILED: {printed}; lane log:" in lanes_page, printed

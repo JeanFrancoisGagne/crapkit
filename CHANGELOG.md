@@ -436,6 +436,17 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   68 ms for the no-op in a repo with no `crapkit.toml` through the Windows launcher,
   where it promised under 50 ms, and about 50 ms for the Bash matcher's two git spawns
   on Windows, where it said 30.
+- A lane that leaves both its artifact and its results file behind says `the
+  .crapkit/cov/py.json and .crapkit/cov/junit-py.xml on disk predate it and are the
+  previous run's`, where it read `the .crapkit/cov/py.json, .crapkit/cov/junit-py.xml on
+  disk predates it and is the previous run's`.
+- The printed transcripts follow the CLI again: each `doctor` report opens with its
+  `resources:` line, the quickstarts' `verify OK` lines end with the `ratchet: 1 dropped,
+  0 tightened -> git add crapkit-ratchet.tsv` those steps print, the restamp example in
+  docs/ratchet.md ends with `ratchet: restamped`, the TypeScript `rescore --gate` block
+  ends with its `gate:` line, the `.crapkit/` listing names `measurement.lock`, and the
+  undeclared-`decl` refusal names its artifact. The TypeScript quickstart says why the
+  first `doctor` WARNs about `[crapkit.scoped_tests]`.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 

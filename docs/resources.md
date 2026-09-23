@@ -34,7 +34,9 @@ values retain the unset behavior. Use lane `env` settings to constrain pytest,
 Node or other test tools that create their own workers.
 
 `crapkit doctor --json` reports the effective CPU and worker policy, memory
-estimate and log limit. The reported pool limit is an upper bound; work sizing and
+estimate and log limit. Plain `crapkit doctor` prints the same policy as its first
+line, before any finding: `resources: up to 8 analysis worker(s) per pool, 8 shared
+slot(s); lane log limit 16777216 bytes per file` on an 8-CPU machine. The reported pool limit is an upper bound; work sizing and
 slot availability can reduce it. These settings leave the scoring algorithm and
 the analysis version unchanged. A package upgrade rebuilds the versioned analysis
 cache automatically; no manual deletion is needed.

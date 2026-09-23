@@ -37,6 +37,7 @@ verifies blind. `doctor` says so, per lane, with the flag to add:
 
 ```
 $ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
 ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
@@ -135,6 +136,7 @@ that exits 9009:
 
 ```
 $ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
 ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
@@ -258,7 +260,7 @@ that ran is the number to read.
 One shape does fail loudly. An `fnMap` entry with no `decl` exits 5:
 
 ```
-crapkit: lane 'js' FAILED: unparseable istanbul artifact: 'decl'
+crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: 'decl'
 ```
 
 ### What else lives in .crapkit/
@@ -284,7 +286,7 @@ coupling-cache-v1.json
 cov
 crap.sqlite
 lane-py.log
-stat-stamps.json
+measurement.lock
 
 .crapkit/cov:
 junit-py.xml
@@ -298,7 +300,8 @@ py.json
 | `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. Current and `.log.1` files each have a 16 MiB default bound; see [log policies](resources.md#logs-and-retained-evidence). | |
 | `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
-| `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
+| `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
+| `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. | |
 | `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
 | `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the --since cutoff its commits were cut at, plus the body's size and CRC. |
 | `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. The key also records the --since cutoff the log was cut at; a refresh below it walks the window again. |
@@ -1417,10 +1420,12 @@ there, and what came out was a confident grade off a measurement nothing took, s
 the current commit so `--reuse-unchanged` went on trusting it.
 
 A leftover artifact says so in its own words, because "produced no artifact at
-.crapkit/cov/py.json" about a path that holds a report reads as crapkit failing to see it:
+.crapkit/cov/py.json" about a path that holds a report reads as crapkit failing to see it.
+The lane below declares its junit file too, as every lane `init` writes does, so the line
+names both files the run left:
 
 ```
-crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json on disk predates it and is the previous run's (command exit 2); lane log: /repo/.crapkit/lane-py.log; last output: ...
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json and .crapkit/cov/junit-py.xml on disk predate it and are the previous run's (command exit 2); lane log: /repo/.crapkit/lane-py.log; last output: ...
 ```
 
 When the artifact is not on disk at all and the leftover is some other declared file, the

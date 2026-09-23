@@ -24,6 +24,7 @@ Four tables hold them: `[crapkit]`, `[[scope]]`, `[[lane]]`, `[exclude]`.
 
 ```
 $ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
 FAIL unknown key crapkit.churn_windo_months — crapkit ignores it (typo?); [crapkit] accepts these keys: alert_command, analysis_worker_budget, analysis_workers, churn_window_months, debt_max_age_months, diff_uncovered_max, log_max_bytes, max_parallel_lanes, mutation_command, mutation_timeout_seconds, mutation_workers, notes, ratchet_file, repayment_min_per_30d, scoped_tests, target, tighten_max_jump, worklist_floor, worklist_top
 doctor: 1 problem(s)
 ```
@@ -251,6 +252,7 @@ Declaring `src` first and `src/hot` second, `src/hot` still gets its file:
 
 ```
 $ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
 ok   config keys all recognized
 ok   scope 'src': 1 file
 ok   scope 'hot': 1 file
@@ -374,7 +376,10 @@ dropped. Run `crapkit doctor` after upgrading and read the per-scope file counts
 
 ```
 $ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
+...
 note app/core.py (181 bytes) skipped: over max_file_bytes
+...
 ```
 
 ---

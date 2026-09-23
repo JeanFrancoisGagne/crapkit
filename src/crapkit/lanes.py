@@ -293,13 +293,22 @@ def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = Fa
     """
     if not stale:
         return f"produced no artifact at {lane.artifact}"
-    leftover = f"the {', '.join(stale)} on disk"
+    leftover, predates, is_ = _leftover_words(stale)
     if reuse:
-        return (f"wrote no artifact on its last attempt — {leftover} predates it and is the "
-                "previous run's, which --reuse-artifacts will not score")
+        return (f"wrote no artifact on its last attempt — {leftover} {predates} it and {is_} "
+                "the previous run's, which --reuse-artifacts will not score")
     if (root / lane.artifact).is_file():
-        return f"wrote no artifact this run — {leftover} predates it and is the previous run's"
-    return f"produced no artifact at {lane.artifact}, and {leftover} is the previous run's"
+        return f"wrote no artifact this run — {leftover} {predates} it and {is_} the previous run's"
+    return f"produced no artifact at {lane.artifact}, and {leftover} {is_} the previous run's"
+
+
+def _leftover_words(stale: list[str]) -> tuple[str, str, str]:
+    """`the a.json on disk` with `predates` and `is`, or `the a.json and b.xml
+    on disk` with `predate` and `are`: a lane leaves its results file behind
+    beside its artifact, and one verb for two files read as a typo."""
+    if len(stale) == 1:
+        return f"the {stale[0]} on disk", "predates", "is"
+    return f"the {', '.join(stale[:-1])} and {stale[-1]} on disk", "predate", "are"
 
 
 class UnwrittenArtifact(ToolError):

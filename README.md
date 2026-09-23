@@ -1071,6 +1071,7 @@ makes it step 4 of the burn-down loop. Every key is in
 
 ```
 $ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
 ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
@@ -1138,7 +1139,7 @@ table of cases pushed into parametrized tests. Commit the fix, then:
 
 ```
 $ crapkit verify
-verify OK @ 8d10c13303d vs baseline fae4db93108 (5 changed files)
+verify OK @ 8d10c13303d vs baseline fae4db93108 (5 changed files) ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv
 
 $ crapkit coverage
 run 3 @ 8d10c13303d: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 19.0, grade A+
@@ -1181,6 +1182,12 @@ an istanbul `coverage-final.json` works; see [docs/lanes.md](https://github.com/
 [jest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#jest) and [pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) recipes, a package
 [one directory down](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#running-from-a-subdirectory), and a
 [crapkit root below the repo top](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-crapkit-root-below-the-repo-top).
+
+`init` writes the vitest line under `[crapkit.scoped_tests]` commented out, because it
+cannot see which vitest config a file-scoped run needs. Until you uncomment that line or
+write your own, `crapkit doctor` WARNs `scope 'src' has a lane but no
+[crapkit.scoped_tests] template`. The WARN leaves doctor's exit at 0; it means `crapkit
+test-scoped` exits 3 on files under `src/`.
 
 ### 2. Install a coverage provider
 
@@ -1282,9 +1289,10 @@ rescore vs run 1 @ 8bfbe613fcd (coverage STALE, complexity fresh)
      4    0%     20.0  add-tests   src/grade.ts:8  penalty ( attempts , late )
      4   45%      6.7  add-tests   src/grade.ts:48  classify ( row Row )
      4   75%      4.2  ok          src/grade.ts:59  average ( scores Array )
+gate: 4 changed function(s) judged, 0 over ceiling 6
 ```
 
-Exit 0: every piece is at or under 6. The `crap` column is loud because its coverage half
+Exit 0 and the `gate:` line: every changed piece is at or under 6. The `crap` column is loud because its coverage half
 is still run 1's, from before three of those functions existed, and `add-tests` is the
 literal instruction for step 6.
 
@@ -1324,7 +1332,7 @@ verify FAILED @ 0296156ff21 vs baseline 0e646697946 (1 changed files)
 
 ```
 $ crapkit verify
-verify OK @ 2af3433d979 vs baseline 8bfbe613fcd (3 changed files)
+verify OK @ 2af3433d979 vs baseline 8bfbe613fcd (3 changed files) ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv
 
 $ crapkit coverage
 run 3 @ 2af3433d979: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 22.0, grade A+
