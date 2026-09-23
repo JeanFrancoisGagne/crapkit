@@ -128,7 +128,7 @@ $ crapkit next-item
 | `cov` | float | Branch coverage in the span, 0.0 to 1.0. |
 | `flag` | string | `measured`, `untested`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). |
 | `crap` | float | The score. |
-| `remedy` | string | `decompose`, `split-lines`, `add-tests` or `ok`. `split-lines` means another function shares the source lines, so no test lowers the score until the definitions are separated. |
+| `remedy` | string | `decompose`, `split-lines`, `add-tests` or `ok`. `split-lines` means another function shares the source lines, so no test lowers the score until the definitions are separated. Judged against `target`, the ceiling `crapkit.toml` holds now, not the one the run was scored under: an uncommitted ceiling edit moves the remedy, and what the queue offers, before the next run lands. |
 | `target` | int | This scope's effective ceiling. |
 | `commits`, `authors` | int | Churn for the file in the window. |
 | `est_splits` | int | `0` when `ccn <= target`, else `ceil(ccn / target)`. Roughly how many functions this needs to become. |
@@ -393,7 +393,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `run_id`, `commit` | int, string | no | The scored run and its commit. |
 | `path`, `function` | string | no | The resolved function. `function` is always the long name, whichever form you asked with. |
 | `handle` | string | no | The short name form for this row: the bare identifier, or `(anonymous)#N`. Same value and same rules as [`next-item`'s](#item-fields), so a packet and a queue item name one function one way. |
-| `remedy` | string | no | `decompose`, `split-lines`, `add-tests` or `ok`. Promoted out of `scored` because it is the branch the session takes; `scored.remedy` carries the same value. |
+| `remedy` | string | no | `decompose`, `split-lines`, `add-tests` or `ok`. Promoted out of `scored` because it is the branch the session takes; `scored.remedy` carries the same value. Judged against `target`, today's ceiling, as on `next-item`; so is every `remedy` in `file_functions`. |
 | `est_splits`, `est_uncovered_paths` | int | no | The budget, from the same code `next-item` publishes it with. Formulas under [`item` fields](#item-fields). |
 | `source` | string | no | The function's own text, `start` to `end` inclusive, newlines intact. The packet is editable without a second read of the file. |
 | `params` | array of string | no | Its parameter names, in declaration order, so a new test can call it without opening the file. `scored.params` is the count of these. |

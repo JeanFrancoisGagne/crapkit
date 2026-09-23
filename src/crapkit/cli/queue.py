@@ -36,6 +36,25 @@ def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
     return store, latest
 
 
+def _judged_today(rows: list, cfg, rows_of) -> list:
+    """The rows with the remedy today's ceiling gives each one.
+
+    `target` and the budget come from the crapkit.toml on disk, so the remedy
+    printed beside them has to as well, or an uncommitted ceiling edit prints
+    `ok` next to `est_splits: 2` and the queue never offers the function.
+    `rows_of(path)` is a file's rows, read only when a shared span is in doubt.
+    """
+    ceilings = cfg.scope_targets
+    return [packet.rejudged(r, ceilings.get(r.scope, cfg.target), rows_of) for r in rows]
+
+
+def _file_reader(store, run_id: int):
+    """One scored-file read per path, kept, for the rows that need neighbours."""
+    from functools import lru_cache
+
+    return lru_cache(maxsize=None)(lambda path: store.read_scored_file(run_id, path))
+
+
 def _pushdown_floor(cfg) -> int:
     """The lowest ccn next-item's SQL read may skip.
 
@@ -52,7 +71,9 @@ def cmd_next_item(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     scopes = _scope_names(cfg, args.scope)
     store, latest = _scored_store(root)
-    scored = store.read_scored(latest["id"], min_ccn=_pushdown_floor(cfg), scopes=scopes)
+    scored = _judged_today(store.read_scored(latest["id"], min_ccn=_pushdown_floor(cfg),
+                                             scopes=scopes),
+                           cfg, _file_reader(store, latest["id"]))
     adm = admission(load_churn(root, cfg.churn_window_months), cfg.worklist_floor)
     ranked, skipped_no_lane = _next_ranked(scored, adm)
     excludes = args.exclude or []
@@ -578,8 +599,10 @@ class _BriefLoader:
         return self._once("versions", _brief_versions)
 
     def scored_file(self, path: str) -> list:
+        """One file's rows, each judged against today's ceiling for its scope."""
         if path not in self._scored_files:
-            self._scored_files[path] = self.store.read_scored_file(self.latest["id"], path)
+            stored = self.store.read_scored_file(self.latest["id"], path)
+            self._scored_files[path] = _judged_today(stored, self.cfg, lambda _path: stored)
         return self._scored_files[path]
 
     def key(self, row) -> tuple[str, str]:
@@ -791,7 +814,8 @@ def _batch_rows(loader, count: int) -> tuple[list, int]:
     `next-item --claim` is not handed to another session inside a packet.
     """
     run_id = loader.latest["id"]
-    scored = loader.store.read_scored(run_id, min_ccn=_pushdown_floor(loader.cfg))
+    scored = _judged_today(loader.store.read_scored(run_id, min_ccn=_pushdown_floor(loader.cfg)),
+                           loader.cfg, loader.scored_file)
     ranked, _ = _next_ranked(scored, admission(loader.churn(), loader.cfg.worklist_floor))
     ranked, skipped_claimed = _unclaimed(loader.store, ranked, _Handles(loader.store, run_id))
     return _actionable(ranked)[:count], skipped_claimed

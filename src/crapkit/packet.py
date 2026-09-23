@@ -19,6 +19,7 @@ import shlex
 
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
+from .score import _remedy
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -161,6 +162,55 @@ def budget(row, ceiling: int) -> dict:
     """
     return {"est_splits": 0 if row.ccn <= ceiling else -(-row.ccn // ceiling),
             "est_uncovered_paths": max(0, round((1 - row.cov) * row.ccn))}
+
+
+# The flags of rows no coverage artifact joins: the scope has no lane, or asks
+# for none. Scoring leaves them out of the shared-span check, so a rejudge does.
+_UNJOINED = ("no-lane", "cc-only")
+
+
+def rejudged(row, ceiling: int, rows_of):
+    """The row with the remedy it earns against `ceiling`, today's ceiling for
+    its scope.
+
+    A run stores the remedy its own ceiling produced, and the packet prints
+    `target` and the budget from the ceiling crapkit.toml holds now. After an
+    uncommitted edit from 6 to 4, a ccn-5 function read `remedy: ok` beside
+    `est_splits: 2`. `rows_of(path)` returns the file's scored rows and is
+    called only for a row whose stored verdict cannot say whether another
+    function declares its lines.
+    """
+    remedy = remedy_under(row, ceiling, rows_of)
+    return row if remedy == row.remedy else row._replace(remedy=remedy)
+
+
+def remedy_under(row, ceiling: int, rows_of) -> str:
+    """The scoring rule for one stored row: ccn and CRAP against `ceiling`, and
+    split-lines where another function shares the span."""
+    fresh = _remedy(row.ccn, row.crap, ceiling)
+    if fresh == "add-tests" and _shares_span(row, rows_of):
+        return "split-lines"
+    return fresh
+
+
+def _shares_span(row, rows_of) -> bool:
+    """Whether another function declares this row's source lines.
+
+    The run answered it for every row it judged between its ccn and its CRAP:
+    split-lines is yes, add-tests is no. Only a row it judged ok or decompose
+    costs a read of the file's rows.
+    """
+    if row.remedy in ("add-tests", "split-lines"):
+        return row.remedy == "split-lines"
+    return row.flag not in _UNJOINED and any(_same_span(row, other)
+                                             for other in rows_of(row.path))
+
+
+def _same_span(row, other) -> bool:
+    """Another function on the same lines. The same function scored under a
+    second scope carries the same name and occurrence, so it is not one."""
+    return (other.flag not in _UNJOINED and (other.start, other.end) == (row.start, row.end)
+            and (other.long_name, other.occurrence) != (row.long_name, row.occurrence))
 
 
 def regrowth(history: list[dict]) -> dict:
