@@ -335,7 +335,7 @@ def _records(root: Path, rel: str) -> list:
     """
     from ..analyze import analyze_source, read_source
 
-    return analyze_source(rel, read_source(str(root / rel)))
+    return analyze_source(rel, read_source(str(root / rel)), note=False)
 
 
 def _changed(root: Path, rel: str, diff_text: str):

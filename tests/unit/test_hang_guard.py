@@ -105,7 +105,10 @@ HOLDER = textwrap.dedent("""
     from pathlib import Path
     grandchild = subprocess.Popen([sys.executable, "-S", "-c", "import time; time.sleep(600)"],
                                   stdout=sys.stdout, stderr=sys.stderr)
-    Path(sys.argv[1]).write_text(str(grandchild.pid))
+    marker = Path(sys.argv[1])
+    partial = marker.with_suffix(".part")
+    partial.write_text(str(grandchild.pid))
+    partial.replace(marker)  # the marker exists only once it holds the pid
     time.sleep(600)
 """)
 

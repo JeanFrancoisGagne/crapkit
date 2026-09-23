@@ -542,13 +542,15 @@ def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
         return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
 
-def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
+def analyze_source(rel_path: str, code: str, *, note: bool = True) -> list[FunctionRecord]:
     """The records analyze_one would produce for a file holding `code`.
 
     analyze_source_code is what FileAnalyzer.__call__ runs once it has read the
     file, so nothing about the analysis depends on whether the source arrived
     from the disk or from a git blob the caller already holds; rel_path picks
     the language, and with it the extension chain, exactly as the path on disk did.
+    NOTE=False leaves an unreadable file unannounced, for a caller that reads a
+    half-typed edit on purpose.
     """
     try:
         analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
@@ -557,7 +559,8 @@ def analyze_source(rel_path: str, code: str) -> list[FunctionRecord]:
     except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
         records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
     if isinstance(records, UnanalyzableFile):
-        _note_unanalyzable({rel_path: records})
+        if note:
+            _note_unanalyzable({rel_path: records})
         return records
     _note_twin_keys(rel_path, records)
     return records
