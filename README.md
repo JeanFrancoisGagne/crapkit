@@ -206,11 +206,12 @@ for saved state, portable records and Windows launcher locks.
 ### Upgrading from 0.4.4
 
 This historical example describes the 0.4.4 to 0.4.5 transition, from analysis
-version 7 to 8. It is retained to explain older refusal messages:
+version 7 to 8. It is retained to explain the refusal, quoted as crapkit prints it
+today:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
 ```
 
 That transition changed cognitive complexity, not `ccn` or the CRAP formula.
