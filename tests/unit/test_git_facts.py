@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import gitio
+from crapkit import churn_log, gitio
 from crapkit.config import Lane
 from crapkit.errors import GitError
 from crapkit.gitio import GitFacts
@@ -234,8 +234,8 @@ def quoted_repo(tmp_path: Path) -> tuple:
 
 
 def _churn_paths(root: Path, base: str) -> list[str]:
-    """The path rows of the churn log, without its author/timestamp headers."""
-    return [line.strip() for line in gitio.churn_log_lines(root, 12)
+    """The path rows of the churn window's walk, without its author/date headers."""
+    return [line.strip() for line in churn_log.walked_window(root, 12, None).lines
             if line.strip() and not line.startswith("\x01")]
 
 
@@ -243,7 +243,7 @@ _PATH_READERS = {
     "status_names": lambda root, base: gitio.status_names(root),
     "unstaged_paths": lambda root, base: gitio.unstaged_paths(root),
     "diff_names_since": lambda root, base: gitio.diff_names_since(root, base),
-    "churn_log_lines": _churn_paths,
+    "churn_window": _churn_paths,
 }
 
 

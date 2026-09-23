@@ -416,9 +416,12 @@ def _keep(part: BinaryIO, path: Path, stamp: dict) -> None:
 
 
 def _window_log(root: Path, months: int, head: str | None, cutoff: int | None) -> Iterator[str]:
-    """The whole window, from git. The expensive one. --relative for the same
-    reason gitio.churn_log_lines carries it: consumers join these paths against
-    root-relative rows, and a root below the repo top matched nothing without it.
+    """The whole window, from git. The expensive one: on a big repo 21 MB of
+    text, so it is streamed and never held whole. --relative, because every
+    consumer joins these paths against root-relative ls-files rows: log
+    --name-only answers relative to the repo top, so a root one directory down
+    (a monorepo member, a project nested in a worktree) read every scored file
+    as zero-churn. At the top the flag changes nothing.
 
     Walked from `head`, the commit the caller keys its copy on, and not from
     whatever HEAD is by the time git starts: a commit landing in between would

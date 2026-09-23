@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from crapkit import gitio
+from crapkit import churn_log, gitio
 from crapkit.churn import parse_git_log_lines
 from crapkit.coupling import change_coupling_lines
 from crapkit.diffparse import changed_ranges
@@ -47,7 +47,7 @@ def test_dirty_history_and_diff_keys_equal_tracked_paths(repository, name, neste
     assert gitio.status_names(root) == [name]
     assert gitio.unstaged_paths(root) == {name}
     assert set(changed_ranges(gitio.diff_since(root, before))) == {name}
-    lines = list(gitio.churn_log_lines(root, 12))
+    lines = list(churn_log.walked_window(root, 12, None).lines)
     assert set(parse_git_log_lines(lines)) == {name, "other.py"}
     assert change_coupling_lines(lines, min_support=1, tracked={name, "other.py"})[0]["files"] == sorted([name, "other.py"])
     git(repository, "add", ".")

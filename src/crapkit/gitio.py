@@ -29,8 +29,8 @@ _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
 # (`"src/b\303\252ta.py"`), which no `ls-files -z` row equals, so a dirty
 # non-ASCII file fell out of every set built by intersecting the two: lane reuse
 # republished a stale score and its scope read as unchanged. Off, status_names,
-# diff_names_since, unstaged_paths, churn_log_lines and the `diff -U0` headers
-# all spell the path the way ls-files does. git still quotes a path holding a
+# diff_names_since, unstaged_paths, the churn window's log (churn_log, through
+# _git_lines) and the `diff -U0` headers all spell the path the way ls-files does. git still quotes a path holding a
 # double-quote or a control character whatever this says, which is why
 # gitpaths.unquote_path stays for line-oriented history and diff headers.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
@@ -521,19 +521,6 @@ def _history_patches(out: str) -> list[tuple[int, str]]:
     elif out:
         raise GitError("Git patch history has no timestamp header")
     return patches
-
-
-def churn_log_lines(root: Path, months: int) -> Iterator[str]:
-    """The churn window's log, streamed. On a big repo this is 21 MB of text and
-    the single most expensive call crapkit makes, so it is never held whole.
-
-    --relative, because every consumer joins these paths against root-relative
-    ls-files rows: log --name-only answers relative to the repo top, so a root
-    one directory down (a monorepo member, a project nested in a worktree)
-    read every scored file as zero-churn. At the top the flag changes nothing.
-    """
-    return _git_lines(root, "log", "--relative", f"--since={months} months ago",
-                      "--format=%x01%an%x02%at", "--name-only")
 
 
 # core.longpaths on the worktree calls, and on those alone. On a 31,459-file
