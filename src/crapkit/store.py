@@ -783,7 +783,7 @@ class SnapshotStore:
 
     def historical_collision_groups(self) -> set[tuple[str, str]]:
         """Raw-name groups that contained same-line twins in any stored run."""
-        return self._collision_groups()
+        return set(self._collision_groups())
 
     def identity_witness_run_ids(self) -> set[int]:
         """One recent run per collision group keeps legacy key checks unchanged."""
@@ -794,9 +794,13 @@ class SnapshotStore:
         return set(newest.values())
 
     def _collision_groups(self, *, run_id=None, path=None, name=None,
-                          legacy_only: bool = False) -> set[tuple[str, str]]:
-        return {(path, name) for path, name, _ in self._collision_rows(
-            run_id=run_id, path=path, name=name, legacy_only=legacy_only)}
+                          legacy_only: bool = False) -> dict[tuple[str, str], set[int]]:
+        """Each raw-name group with same-line twins, and the runs that hold it."""
+        held: dict[tuple[str, str], set[int]] = {}
+        for group_path, group_name, run in self._collision_rows(
+                run_id=run_id, path=path, name=name, legacy_only=legacy_only):
+            held.setdefault((group_path, group_name), set()).add(run)
+        return held
 
     def _collision_rows(self, *, run_id=None, path=None, name=None, legacy_only=False):
         where, params = _identity_where(run_id, path, name)

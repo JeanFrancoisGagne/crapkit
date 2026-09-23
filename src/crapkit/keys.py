@@ -117,16 +117,35 @@ def ambiguous_groups(rows, *, legacy_only: bool = False) -> set[tuple[str, str]]
             if _ambiguous(counts, legacy_only)}
 
 
-def require_unambiguous(rows) -> None:
-    refuse_ambiguous(ambiguous_groups(rows, legacy_only=True))
+# Right wherever the run read was chosen as the newest one: a coverage run
+# replaces it. A caller whose run is pinned for another reason says why instead.
+REFRESH_ADVICE = "refresh analysis before selecting or comparing these functions"
 
 
-def refuse_ambiguous(groups) -> None:
-    """The same refusal for row-backed and SQL-backed identity checks."""
+def require_unambiguous(rows, *, run_id: int | None = None, advice: str = REFRESH_ADVICE) -> None:
+    """Refuse legacy same-line twins in rows; `run_id` names the stored run they came from."""
+    held = () if run_id is None else (run_id,)
+    refuse_ambiguous(dict.fromkeys(ambiguous_groups(rows, legacy_only=True), held), advice=advice)
+
+
+def refuse_ambiguous(groups, *, advice: str = REFRESH_ADVICE) -> None:
+    """The same refusal for row-backed and SQL-backed identity checks.
+
+    `groups` holds each ambiguous (path, raw name). As a mapping it also names
+    the stored runs that hold each one, so the sentence says which run it read.
+    """
     if groups:
-        names = "; ".join(f"{path}: {name}" for path, name in sorted(groups))
-        raise ToolError(f"ambiguous legacy function identity in {names}; "
-                        "refresh analysis before selecting or comparing these functions")
+        runs = groups if isinstance(groups, dict) else {}
+        names = "; ".join(_held_in(group, runs.get(group, ())) for group in sorted(groups))
+        raise ToolError(f"ambiguous legacy function identity in {names}; {advice}")
+
+
+def _held_in(group: tuple[str, str], runs) -> str:
+    path, name = group
+    if not runs:
+        return f"{path}: {name}"
+    label = "run" if len(runs) == 1 else "runs"
+    return f"{path}: {name} in {label} {', '.join(str(run) for run in sorted(runs))}"
 
 
 def key_names(rows) -> dict[tuple[str, str, int, int], str]:
