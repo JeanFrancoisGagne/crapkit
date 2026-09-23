@@ -286,7 +286,7 @@ def _run_owned_lanes(root, lanes, reuse_artifacts, scope_paths, reuse_unchanged,
 
     facts = git or GitFacts(root)
     verdicts, reuse = _reuse_decisions(root, lanes, reuse_artifacts, reuse_unchanged)
-    ordered =lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
+    ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
     outcomes = _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel,
                               dead_lines, owner)
     if owner is not None:
