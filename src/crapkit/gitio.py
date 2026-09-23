@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from .errors import GitError
+from .errors import GitError, ToolError
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
@@ -592,10 +592,11 @@ def worktree_remove(root: Path, path: Path, *, owner=None) -> None:
     it never raises: a cleanup error must not mask the failure that caused it.
     `prune` is the fallback that drops the admin entry a stuck directory leaves.
     Parallel removes survive the same admin-entry enumeration that kills a
-    parallel add (0 failures in 320 concurrent removes measured), so no retry."""
+    parallel add (0 failures in 320 concurrent removes measured), so no retry.
+    An owned git that failed to start raises a ToolError, and falls back too."""
     try:
         _worktree_git(root, *_LONGPATHS, "worktree", "remove", "--force", str(path), owner=owner)
-    except GitError:
+    except (GitError, ToolError):
         shutil.rmtree(path, ignore_errors=True)
         _prune_quietly(root, owner=owner)
 
@@ -639,7 +640,7 @@ def worktree_reset(tree: Path, commit: str, *, owner=None) -> None:
 def _prune_quietly(root: Path, *, owner=None) -> None:
     try:
         _worktree_git(root, "worktree", "prune", owner=owner)
-    except GitError:
+    except (GitError, ToolError):
         pass
 
 
