@@ -18,13 +18,13 @@ from crapkit.store import SnapshotStore
 
 TOML = """[crapkit]
 target = {target}
-worklist_floor = 1
+worklist_floor = {floor}
 
 [[scope]]
 name = "src"
 paths = ["src"]
 languages = ["python"]
-
+{scope_target}
 [[lane]]
 name = "py"
 command = "python -m pytest -q"
@@ -60,11 +60,14 @@ def make_repo(root: Path, *, target: int = 6, files: dict | None = None) -> Path
     return root
 
 
-def write_toml(root: Path, target: int) -> None:
-    """crapkit.toml with this repo ceiling. Called again after the run is written,
-    it is the uncommitted ceiling edit: HEAD does not move."""
-    (root / "crapkit.toml").write_text(TOML.format(target=target), encoding="utf-8",
-                                       newline="\n")
+def write_toml(root: Path, target: int, *, scope_target: int | None = None,
+               floor: int = 1) -> None:
+    """crapkit.toml with this repo ceiling, and the `src` scope's own ceiling
+    when `scope_target` is set. Called again after the run is written, it is
+    the uncommitted ceiling edit: HEAD does not move."""
+    own = "" if scope_target is None else f"target = {scope_target}\n"
+    (root / "crapkit.toml").write_text(TOML.format(target=target, floor=floor, scope_target=own),
+                                       encoding="utf-8", newline="\n")
 
 
 def scored(name: str, start: int, end: int, *, ccn: int, cov: float, crap: float,

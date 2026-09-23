@@ -883,10 +883,11 @@ def _stale_warning(stale: bool, as_json: bool, latest: dict) -> None:
 
 
 def _entry_json(e) -> dict:
-    """One ranked row. `flag` and `remedy` are the run's verdict on it, so a
-    caller can tell a wiring gap and a finished row from real work without a
-    second call; `crap` and `cov` are the numbers behind that verdict. All four
-    are null on an inventory-only run."""
+    """One ranked row. `flag` and `remedy` are the verdict on it, the remedy
+    judged against today's ceiling as next-item judges it, so a caller can tell
+    a wiring gap and a finished row from real work without a second call; `crap`
+    and `cov` are the numbers behind that verdict. All four are null on an
+    inventory-only run."""
     return {"scope": e.scope, "path": e.path, "function": e.long_name,
             "start": e.start, "end": e.end, "ccn": e.ccn, "ccn_std": e.ccn_std,
             "nloc": e.nloc, "commits": e.commits, "authors": e.authors,
@@ -1044,14 +1045,30 @@ def _worklist_ratchet(root: Path, cfg, store, run_id: int) -> RatchetMarks:
 
 
 def _worklist_marks(store, cfg, run_id: int, scopes: list) -> Marks:
-    """The run's verdict per function and score per row: what the floor may
-    not hide, what each ranked row is, and the number it prints.
+    """The verdict per function and score per row: what the floor may not
+    hide, what each ranked row is, and the number it prints.
+
+    The verdict is judged against today's ceiling off the rows next-item reads,
+    as next-item judges them. The run's stored verdict kept an uncommitted
+    ceiling edit out of this list alone: its `ok` rows were the ones next-item
+    handed out, and its floor hid the rows the new ceiling broke.
 
     Empty on an inventory-only run, which scored no remedy: a run with no
     verdict has no debt to protect from the floor and nothing to say about a
     row, and there the floor is the whole admission rule.
     """
-    return store.read_marks(run_id, min_ccn=_pushdown_floor(cfg), scopes=scopes)
+    scored = store.read_scored(run_id, min_ccn=_pushdown_floor(cfg), scopes=scopes)
+    return _marks_of(_judged_today(scored, cfg, _file_reader(store, run_id)))
+
+
+def _marks_of(scored: list) -> Marks:
+    """Verdict and score by full location. A span two scopes both scored keeps
+    the verdict of the higher CRAP, as `SnapshotStore.read_marks` keeps it."""
+    verdicts, scores = {}, {}
+    for r in sorted(scored, key=lambda r: r.crap):
+        verdicts[lookup(r)] = (r.flag, r.remedy)
+        scores[lookup(r)] = (r.crap, r.cov)
+    return Marks(verdicts, scores)
 
 
 def _worklist_batches(root: Path, cfg, active: list, requested: int | None) -> list | None:

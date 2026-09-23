@@ -1,11 +1,13 @@
-"""`brief` and `next-item` judge the remedy against today's ceiling.
+"""`brief`, `next-item` and `worklist` judge the remedy against today's ceiling.
 
-Both commands print `target` and the budget from the ceiling crapkit.toml holds
-now, and used to print the remedy the run stored under the ceiling it was
-scored with. Lower `target` from 6 to 4 without committing and `brief` on a
-ccn-5 function said `remedy: ok` beside `target: 4` and `est_splits: 2`, and
-`next-item` never offered the function at all. Nothing marked the payload
-stale, because HEAD had not moved.
+`brief` and `next-item` print `target` and the budget from the ceiling
+crapkit.toml holds now, and used to print the remedy the run stored under the
+ceiling it was scored with. Lower `target` from 6 to 4 without committing and
+`brief` on a ccn-5 function said `remedy: ok` beside `target: 4` and
+`est_splits: 2`, and `next-item` never offered the function at all. Nothing
+marked the payload stale, because HEAD had not moved. `worklist` kept the stored
+verdict after `next-item` moved on, so it marked `ok` rows the queue hands out
+and its floor hid the rows the new ceiling broke.
 
 The remedy rule, from the docs: `decompose` when ccn is over the ceiling, `ok`
 when CRAP is at or under it, `split-lines` when another function declares the
@@ -33,10 +35,10 @@ TWIN_B = scored("twin_b( )", 30, 30, ccn=7, cov=0.0, crap=56.0, remedy="decompos
                 flag="untested")
 
 
-def _repo_with_ceiling(tmp_path, rows, today: int):
+def _repo_with_ceiling(tmp_path, rows, today: int, **config):
     root = make_repo(tmp_path / "repo", target=6)
     write_run(root, rows)
-    write_toml(root, today)  # uncommitted: the run's commit is still HEAD
+    write_toml(root, today, **config)  # uncommitted: the run's commit is still HEAD
     return root
 
 
@@ -51,6 +53,12 @@ def _offered(root, capsys) -> dict:
     assert code == 0, err
     payload = json.loads(out)
     return {item["function"]: item["remedy"] for item in payload.get("items", [])}
+
+
+def _listed(root, capsys) -> dict:
+    code, out, err = run(root, capsys, "worklist", "--json")
+    assert code == 0, err
+    return {entry["function"]: entry["remedy"] for entry in json.loads(out)["active"]}
 
 
 @pytest.fixture()
@@ -112,3 +120,21 @@ def test_the_batch_packets_carry_todays_remedy(lowered, capsys):
     assert {p["function"]: p["remedy"] for p in packets} == {
         "left( )": "split-lines", "right( )": "split-lines",
         "mid( )": "decompose", "lean( )": "add-tests"}
+
+
+def test_a_lowered_ceiling_moves_the_worklist_remedy_with_the_queue(lowered, capsys):
+    assert _listed(lowered, capsys) == {"mid( )": "decompose", "lean( )": "add-tests",
+                                        "left( )": "split-lines", "right( )": "split-lines"}
+
+
+def test_a_raised_ceiling_marks_ok_the_worklist_row_the_queue_dropped(raised, capsys):
+    assert _listed(raised, capsys) == {"big( )": "ok", "wide( )": "add-tests",
+                                       "twin_a( )": "split-lines", "twin_b( )": "split-lines"}
+
+
+def test_the_worklist_floor_lets_through_what_the_lowered_ceiling_broke(tmp_path, capsys):
+    """Over-ceiling debt is listed at any ccn. Stored as ok, mid (ccn 5) and
+    lean (ccn 3) sat under a floor of 6 and the list dropped them."""
+    root = _repo_with_ceiling(tmp_path, [MID, LEAN], today=4, floor=6)
+
+    assert _listed(root, capsys) == {"mid( )": "decompose", "lean( )": "add-tests"}
