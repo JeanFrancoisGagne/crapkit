@@ -229,12 +229,11 @@ def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | 
     return None
 
 
-def dump_ratchet(entries: list[RatchetEntry], *, stamp: str | None = None,
-                 key_version: int = 0) -> str:
-    """`stamp` None takes the running metric; a version string is written verbatim
-    and "" writes none, which is how the merge driver keeps two legacy sides legacy."""
-    version = metric_version() if stamp is None else stamp
-    lines = [f"# {version}"] if version else []
+def dump_ratchet(entries: list[RatchetEntry], *, stamp: str, key_version: int = 0) -> str:
+    """`stamp` is written verbatim, and "" writes none. No default: a writer that
+    stamped by omission relabeled marks another metric recorded, so the choice
+    belongs to `ratchetfile.RatchetFile`'s stamp rules."""
+    lines = [f"# {stamp}"] if stamp else []
     if key_version:
         lines.append(f"{_KEY_STAMP}{key_version}")
     lines.append(_HEADER)

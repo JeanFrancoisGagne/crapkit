@@ -67,8 +67,8 @@ def _skip_note(skipped: list[dict]) -> str:
     return f", skipped failed verify {'runs' if len(skipped) > 1 else 'run'} {ids}"
 
 
-def _merge_stamp(texts: list[str]) -> str:
-    """The stamp the merged file keeps; the two sides must share one.
+def _merge_stamp(texts: list[str]) -> None:
+    """Refuse two sides that do not share one metric stamp; the merge keeps it.
 
     Reconciling marks across metrics means picking a minimum between numbers
     produced by different rules, which is not a comparison at all.
@@ -81,11 +81,10 @@ def _merge_stamp(texts: list[str]) -> str:
             f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
             f"[{theirs or 'unstamped'}] — marks from different metric versions cannot "
             f"merge; re-baseline one side with `{_self()} ratchet seed`")
-    return ours
 
 
 def _ratchet_merge(files: list) -> int:
-    from ..ratchet import dump_ratchet, merge_ratchets
+    from ..ratchet import merge_ratchets
     from ..ratchetfile import RatchetFile
 
     if len(files) != 3:
@@ -93,16 +92,23 @@ def _ratchet_merge(files: list) -> int:
     # The one reader: OURS is the working copy a shell may have saved with a
     # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3).
     saved = [RatchetFile.read(Path(f), required=True) for f in files]
-    texts = [side.text or "" for side in saved]
-    stamp = _merge_stamp(texts)
-    key_version = _merge_key_version(texts)
+    texts = _mergeable_texts(saved)
     merged = merge_ratchets(*(_ratchet_or_die(t, f) for t, f in zip(texts, files)))
-    saved[1].publish(dump_ratchet(merged, stamp=stamp, key_version=key_version))
+    # Merging adds no number: OURS keeps the stamps all three sides share.
+    saved[1].publish(saved[1].kept(merged))
     print(f"ratchet merge: {len(merged)} mark(s)")
     return 0
 
 
-def _merge_key_version(texts: list[str]) -> int:
+def _mergeable_texts(saved: list) -> list[str]:
+    """The three sides' texts, once they share one metric stamp and one key format."""
+    texts = [side.text or "" for side in saved]
+    _merge_stamp(texts)
+    _merge_key_version(texts)
+    return texts
+
+
+def _merge_key_version(texts: list[str]) -> None:
     from ..ratchet import read_key_version
 
     try:
@@ -112,7 +118,6 @@ def _merge_key_version(texts: list[str]) -> int:
     if len(versions) != 1:
         raise ConfigError("ratchet key identity versions differ; reconcile the legacy "
                           "function mapping before merging; OURS was left unchanged")
-    return versions.pop()
 
 
 def _move_path(raw: str, root: Path, cwd: Path | None) -> str:
@@ -128,21 +133,18 @@ def _move_path(raw: str, root: Path, cwd: Path | None) -> str:
 
 
 def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None = None) -> int:
-    from ..ratchet import dump_ratchet, move_marks, read_key_version, read_stamp
+    from ..ratchet import move_marks
     from ..ratchetfile import RatchetFile
 
     if len(files) != 2:
         raise ConfigError("ratchet move takes exactly two paths: OLD NEW")
     old, new = (_move_path(raw, root, cwd) for raw in files)
-    ratchet_path = root / cfg.ratchet_file
-    saved = RatchetFile.read(ratchet_path)
-    before = saved.text or ""
+    saved = RatchetFile.read(root / cfg.ratchet_file)
     entries, moved = move_marks(saved.entries, old, new)
     if not moved:
         raise ConfigError(f"ratchet move: no mark under {old} in {cfg.ratchet_file} "
                           "(a directory must end in '/')")
-    text = dump_ratchet(entries, stamp=read_stamp(before), key_version=read_key_version(before))
-    saved.publish(text)
+    saved.publish(saved.kept(entries))  # values never change, so both stamps stay
     print(f"{cfg.ratchet_file}: moved {moved} mark(s) from {old} to {new}")
     return 0
 
@@ -266,9 +268,9 @@ def _ratchet_from_run(root: Path, cfg, action: str) -> int:
 
 def _write_checked_marks(saved, entries, fresh, key_version: int,
                           analysis_version) -> None:
-    from ..ratchet import check_reader_version, checked_key_version, dump_ratchet
+    from ..ratchet import check_reader_version, checked_key_version, metric_version
 
-    text = dump_ratchet(entries, key_version=key_version)
+    text = saved.reseeded(entries, metric_version(), keys=key_version)
     try:
         check_reader_version(entries, analysis_version)
         checked_key_version(text, fresh)

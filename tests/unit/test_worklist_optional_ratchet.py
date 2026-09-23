@@ -5,7 +5,7 @@ import pytest
 
 from cli_inproc_repo import git, repo, template_repo  # noqa: F401
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet
+from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
 
@@ -24,7 +24,7 @@ def test_worklist_does_not_load_unadmitted_rows_for_absent_or_current_marks(
     store._conn.close()
     if marked:
         (repo / "crapkit-ratchet.tsv").write_text(dump_ratchet(
-            [RatchetEntry("src/app.ts", "dispatch( kind )", 30)], key_version=1), encoding="utf-8")
+            [RatchetEntry("src/app.ts", "dispatch( kind )", 30)], stamp=metric_version(), key_version=1), encoding="utf-8")
     loaded = []
     read = SnapshotStore.read_rows
 

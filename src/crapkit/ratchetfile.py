@@ -1,4 +1,17 @@
-"""Admitted ratchet text and one concurrent publication rule for every writer."""
+"""Admitted ratchet text, the stamps it carries, and one publication rule for every writer.
+
+Every writer renders its marks through one of three stamp rules, so no command
+picks a stamp of its own:
+
+- `kept`: the write adds no measured number (move, merge, prune, the hook's
+  grant), so both recorded stamps stay.
+- `measured`: the write adds numbers one metric produced (verify's tighten and
+  its grant), and marks another metric recorded refuse it.
+- `reseeded`: seed, the one write that changes the metric stamp, to the metric
+  of the stored run it read.
+
+Then `publish` replaces the admitted text, or refuses a change another writer made.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,7 +23,7 @@ from tempfile import NamedTemporaryFile
 
 from .errors import ConfigError, ToolError
 from .locks import exclusive_lock
-from .ratchet import load_ratchet
+from .ratchet import dump_ratchet, load_ratchet, read_key_version, read_stamp, stamp_conflict
 from .repotext import repo_bytes_text
 
 
@@ -64,6 +77,46 @@ class RatchetFile:
             return load_ratchet(self.text or "")
         except ValueError as exc:
             raise ConfigError(f"unreadable ratchet file {self.path.name}: {exc}") from exc
+
+    @property
+    def metric_stamp(self) -> str:
+        """The metric the recorded marks were measured under; "" when none is recorded."""
+        return read_stamp(self.text or "")
+
+    def stamp_conflict(self, metric: str) -> str | None:
+        """Verify's refusal when these marks and numbers `metric` produced cannot be
+        compared; None when they can, or when no metric is recorded."""
+        return stamp_conflict(self.metric_stamp, metric)
+
+    def kept(self, entries: list, *, keys: int | None = None, new_file_metric: str = "") -> str:
+        """The text for a write that adds no measured number: both recorded stamps stay.
+
+        A file that does not exist yet records nothing, so it takes the metric its
+        first numbers came from. `keys` is a key format identity proof just
+        established; without one the recorded format stays.
+        """
+        metric = new_file_metric if self.text is None else self.metric_stamp
+        return self._dump(entries, metric, keys)
+
+    def measured(self, entries: list, metric: str, *, keys: int | None = None) -> str:
+        """The text for a write that adds numbers `metric` produced.
+
+        Marks another metric recorded refuse it with the refusal verify gives
+        before its lanes run. A file written before stamping gains the stamp,
+        which is the tighten's `restamped`.
+        """
+        conflict = self.stamp_conflict(metric)
+        if conflict:
+            raise ConfigError(conflict)
+        return self._dump(entries, metric, keys)
+
+    def reseeded(self, entries: list, metric: str, *, keys: int | None = None) -> str:
+        """seed's text, stamped with the metric of the run it read."""
+        return self._dump(entries, metric, keys)
+
+    def _dump(self, entries: list, metric: str, keys: int | None) -> str:
+        version = read_key_version(self.text or "") if keys is None else keys
+        return dump_ratchet(entries, stamp=metric, key_version=version)
 
     def publish(self, text: str) -> bool:
         """Replace the admitted text, or refuse a change another writer made."""

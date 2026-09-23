@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from cli_inproc_repo import add_knotty, repo, template_repo  # noqa: F401
-from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet
+from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, metric_version
 from state_concurrency_worker import wait_for
 from test_cli_verifying_inproc import baselined, marked_debt  # noqa: F401
 
@@ -15,7 +15,7 @@ def test_public_merge_requires_each_input_without_changing_ours(tmp_path, capsys
     from crapkit.cli import main
 
     paths = [tmp_path / name for name in ("base.tsv", "ours.tsv", "theirs.tsv")]
-    text = dump_ratchet([RatchetEntry("src/a.py", "f( )", 50)])
+    text = dump_ratchet([RatchetEntry("src/a.py", "f( )", 50)], stamp=metric_version())
     for index, path in enumerate(paths):
         if index != missing:
             path.write_text(text, encoding="utf-8")
@@ -27,7 +27,7 @@ def test_public_merge_requires_each_input_without_changing_ours(tmp_path, capsys
 
 def test_two_public_moves_from_one_prior_preserve_the_first_committed_change(repo):
     path = repo / "crapkit-ratchet.tsv"
-    path.write_text(dump_ratchet([RatchetEntry("src/a.py", "f( )", 50)], key_version=1),
+    path.write_text(dump_ratchet([RatchetEntry("src/a.py", "f( )", 50)], stamp=metric_version(), key_version=1),
                     encoding="utf-8")
     workers = {name: subprocess.Popen([
         sys.executable, str(Path(__file__).with_name("state_concurrency_worker.py")),
@@ -58,7 +58,7 @@ def test_verify_refuses_an_intervening_move_and_keeps_its_run_unsettled(marked_d
 
     path = marked_debt / "crapkit-ratchet.tsv"
     path.write_text(dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 100)],
-                                 key_version=1), encoding="utf-8")
+                                 stamp=metric_version(), key_version=1), encoding="utf-8")
     worker = subprocess.Popen([
         sys.executable, str(Path(__file__).with_name("state_concurrency_worker.py")),
         "verify", str(marked_debt)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -126,7 +126,7 @@ def test_fresh_noop_preserves_bytes_and_mtime_after_publication(tmp_path):
     from crapkit.ratchetfile import RatchetFile
 
     path = tmp_path / "marks.tsv"
-    text = dump_ratchet([RatchetEntry("src/a.py", "f( )", 10)], key_version=1)
+    text = dump_ratchet([RatchetEntry("src/a.py", "f( )", 10)], stamp=metric_version(), key_version=1)
     assert RatchetFile.read(path).publish(text)
     before = (path.read_bytes(), path.stat().st_mtime_ns)
     assert not RatchetFile.read(path).publish(text)
@@ -138,7 +138,7 @@ def test_verify_does_not_adopt_marks_changed_while_lanes_run(marked_debt, capsys
 
     path = marked_debt / "crapkit-ratchet.tsv"
     path.write_text(dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 100)],
-                                 key_version=1), encoding="utf-8")
+                                 stamp=metric_version(), key_version=1), encoding="utf-8")
     changed = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 90)],
                            stamp="crapkit-analysis=999 lizard=1.24.0", key_version=1)
     original = verifying._scored_run
@@ -161,7 +161,7 @@ def test_verify_override_cannot_adopt_a_marks_file_created_during_lanes(baseline
 
     add_knotty(baselined)
     path = baselined / "crapkit-ratchet.tsv"
-    changed = dump_ratchet([RatchetEntry("src/other.ts", "other ( )", 90)], key_version=1)
+    changed = dump_ratchet([RatchetEntry("src/other.ts", "other ( )", 90)], stamp=metric_version(), key_version=1)
     original = verifying._scored_run
 
     def replace_marks(*args, **kwargs):
@@ -187,7 +187,7 @@ def test_verify_receipt_hashes_the_exact_admitted_bom_bytes(marked_debt, capsys)
     from crapkit.cli import main
 
     path = marked_debt / "crapkit-ratchet.tsv"
-    text = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 100)], key_version=1)
+    text = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 100)], stamp=metric_version(), key_version=1)
     before = b"\xef\xbb\xbf" + text.replace("\n", "\r\n").encode("utf-8")
     path.write_bytes(before)
 

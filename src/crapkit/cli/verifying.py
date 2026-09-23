@@ -224,16 +224,15 @@ def _guard_ratchet_stamp(saved, name: str) -> None:
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
     """
-    from ..ratchet import metric_version, read_stamp, stamp_conflict
+    from ..ratchet import metric_version
 
     if saved.text is None:
         return
-    recorded = read_stamp(saved.text)
-    if not recorded:
+    if not saved.metric_stamp:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
               f"re-baseline with `{_self()} ratchet seed` to stamp it", file=sys.stderr)
         return
-    conflict = stamp_conflict(recorded, metric_version())
+    conflict = saved.stamp_conflict(metric_version())
     if conflict:
         raise ConfigError(conflict)
 
@@ -297,6 +296,7 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
     """Grant --override for pure gate violations; regressions and new failures
     never qualify (`_refuse_override` says so once the verdict is printed)."""
     from ..override import record_override
+    from ..ratchet import metric_version
     from ..verify import settle_verdict
 
     if not _override_applies(verdict, reason):
@@ -304,7 +304,7 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=verdict.gate_violations,
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
-                    ratchet_input=ratchet_input)
+                    ratchet_input=ratchet_input, metric=metric_version())
     overridden = verdict.gate_violations
     return settle_verdict(verdict._replace(gate_violations=[], overridden=tuple(overridden)))
 
@@ -372,14 +372,11 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry],
     can only drop or lower marks, so a marks file that does not exist has
     nothing to write, and a text that matches the disk has nothing to say.
     """
-    from ..ratchet import dump_ratchet, ratchet_delta, read_key_version
+    from ..ratchet import metric_version, ratchet_delta
 
     if saved.text is None:
         return None
-    before = saved.text
-    version = read_key_version(before) if key_version is None else key_version
-    text = dump_ratchet(updated, key_version=version)
-    if not saved.publish(text):
+    if not saved.publish(saved.measured(updated, metric_version(), keys=key_version)):
         return None
     return ratchet_delta(prior, updated)
 
@@ -901,6 +898,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     pending commit), and a snapshot record — all three or nothing."""
     from ..gitio import head_commit, stage_path
     from ..override import record_override
+    from ..ratchet import metric_version
     from ..ratchetfile import RatchetFile
     from ..verify import GateViolation
     from ._shared import _check_ratchet_identity
@@ -918,7 +916,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
                     raise_marks=False, key_version=key_version, identity_rows=records,
-                    ratchet_input=saved)
+                    ratchet_input=saved, metric=metric_version())
     stage_path(root, cfg.ratchet_file)  # the debt must be IN the commit, not dangling
     print(f"crapkit: override granted with full audit ({reason}).")
     _print_clear_the_reason()

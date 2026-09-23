@@ -7,7 +7,7 @@ import pytest
 from crapkit.analyze import analyze_source
 from crapkit.errors import ConfigError
 from crapkit.override import record_override
-from crapkit.ratchet import checked_key_version
+from crapkit.ratchet import checked_key_version, metric_version
 from crapkit.snapshot import build_inventory_rows
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
@@ -34,7 +34,8 @@ def test_mixed_legacy_override_refuses_before_alert_audit_or_ratchet_write(tmp_p
             record_override(store=store, run_id=run, root=tmp_path, ratchet_file='ratchet.tsv',
                             alert_command=f'"{sys.executable}" "{script}"',
                             violations=[violation], reason='local fixture',
-                            raise_marks=raise_marks, key_version=version, identity_rows=rows)
+                            raise_marks=raise_marks, key_version=version, identity_rows=rows,
+                            metric=metric_version())
         assert not (tmp_path / 'alert.log').exists()
         assert store.read_overrides(run) == []
         assert ratchet.read_bytes() == original

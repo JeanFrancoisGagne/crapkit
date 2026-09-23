@@ -3,6 +3,8 @@
 Pure seam. Without it a scoring change leaves 40k marks in place and every later
 verify silently compares new scores against numbers the old rules produced.
 """
+import pytest
+
 from crapkit.ratchet import (RatchetEntry, dump_ratchet, load_ratchet, read_stamp,
                              stamp_conflict, stamp_text)
 
@@ -21,9 +23,11 @@ def test_dump_writes_the_stamp_above_the_header():
     assert lines[2] == "src/a.ts\tf( )\t30.0000"
 
 
-def test_dump_stamps_with_the_running_metric_by_default():
-    first = dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)]).splitlines()[0]
-    assert first.startswith("# crapkit-analysis=") and " lizard=" in first
+def test_dump_names_no_stamp_by_default():
+    """A default stamped by omission, and a write that added no numbers relabeled
+    marks another metric recorded; the marks file's stamp rules choose it now."""
+    with pytest.raises(TypeError):
+        dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)])
 
 
 def test_an_empty_stamp_writes_no_comment_line():

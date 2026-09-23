@@ -21,7 +21,7 @@ from crapkit import config
 from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
-from crapkit.ratchet import RatchetEntry, dump_ratchet
+from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict
 
@@ -46,7 +46,8 @@ def head(repo) -> str:
 def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None,
                 key_version: int = 0) -> None:
     (repo / MARKS).write_text(
-        dump_ratchet([RatchetEntry(*e) for e in entries], stamp=stamp, key_version=key_version),
+        dump_ratchet([RatchetEntry(*e) for e in entries],
+                     stamp=metric_version() if stamp is None else stamp, key_version=key_version),
         encoding="utf-8", newline="\n")
 
 
