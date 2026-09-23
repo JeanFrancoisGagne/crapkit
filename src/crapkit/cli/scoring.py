@@ -589,15 +589,24 @@ def _rescored_records(root: Path, cache_path: Path, flat: list,
 
     A few small files are analyzed outright and the shared cache is neither read
     nor written: loading a 21.8 MB cache costs 0.41 s and rewriting it after an
-    edit 0.17 s more, against 20 to 200 ms of lizard a file. Past the hook's
-    file threshold or _RESCORE_OUTRIGHT_BYTES the cache is the cheaper read. The
-    next inventory analyzes those few files once.
+    edit 0.17 s more, against 3 to 7 ms of lizard for a median-sized file and
+    24 to 123 ms for one of 58 to 89 KB. Past the hook's file threshold or
+    _RESCORE_OUTRIGHT_BYTES the cache is the cheaper read. The next inventory
+    analyzes those few files once.
     """
-    from ..hook import working_tree_records
-
     if _outright_sized(root, flat):
-        return working_tree_records(root, flat)
+        return _records_in_process(root, flat)
     return _cached_records(root, cache_path, flat, workers, worker_budget)
+
+
+def _records_in_process(root: Path, flat: list) -> dict:
+    """Records for `flat` from the per-file analysis the cache path runs on a
+    miss, in this process and with no cache: the same read, hash check, decode
+    and reader chain, and the same notes on stderr."""
+    from ..analyze import analyze_jobs, content_hash
+
+    jobs = [(str(root / rel), rel) for rel in flat]
+    return analyze_jobs(jobs, workers=1, hashes={rel: content_hash(root / rel) for rel in flat})
 
 
 def _cached_records(root: Path, cache_path: Path, flat: list,

@@ -21,6 +21,33 @@ from crapkit.cli import main
 from crapkit.cli.scoring import _RESCORE_OUTRIGHT_BYTES
 from crapkit.hook import _HOOK_POOL_THRESHOLD
 
+AMBIGUOUS = "const f = [(x: number) => x < 2, (y: number) => y];\n"
+
+# Every input the two paths could read differently: a BOM, CRLF endings, a cp1252
+# byte in a string and in a name, two functions with one name, and two arrow
+# callbacks on one line.
+MIXED = (b"\xef\xbb\xbf"
+         b"export class Left {\r\n"
+         b"  run(x: number): number {\r\n"
+         b"    return x > 0 ? x : -x;\r\n"
+         b"  }\r\n"
+         b"}\r\n"
+         b"export class Right {\r\n"
+         b"  run(x: number): number {\r\n"
+         b"    const label = \"caf\xe9\";\r\n"
+         b"    return label.length > x ? 1 : 0;\r\n"
+         b"  }\r\n"
+         b"}\r\n"
+         b"export const pair = [1, 2].map((x) => x > 1 ? x : 0).filter((y) => y > 1 && y < 9 && y !== 4);\r\n"
+         b"export function caf\xe9(x: number): number {\r\n"
+         b"  return x;\r\n"
+         b"}\r\n")
+
+# MIXED read by hand: (function, start, end, ccn, occurrence).
+MIXED_ROWS = [("(anonymous)", 12, 12, 2, 1), ("(anonymous)", 12, 12, 3, 2),
+              ("café ( x )", 13, 15, 1, 1),
+              ("run ( x )", 2, 4, 2, 1), ("run ( x )", 7, 10, 2, 1)]
+
 
 @pytest.fixture()
 def scored(repo, capsys):
@@ -36,6 +63,10 @@ def cache_bytes(repo) -> bytes:
     return (repo / ".crapkit" / "cache.json").read_bytes()
 
 
+def cache_entries(repo) -> set[str]:
+    return set(json.loads(cache_bytes(repo))["entries"])
+
+
 def small_files(repo, count: int) -> list[str]:
     """`count` new source files the cache has never seen, one function each."""
     names = []
@@ -45,37 +76,6 @@ def small_files(repo, count: int) -> list[str]:
                                 f"  return x > {i} ? x : {i};\n}}\n", encoding="utf-8")
         names.append(rel)
     return names
-
-
-def rescore(repo, capsys, files: list[str]) -> dict:
-    assert main(["rescore", *files, "--json", "--repo", str(repo)]) == 0
-    return json.loads(capsys.readouterr().out)
-
-
-def test_an_edited_file_is_rescored_without_rewriting_the_cache(scored, capsys):
-    before = cache_bytes(scored)
-    add_knotty(scored)
-
-    payload = rescore(scored, capsys, ["src/app.ts"])
-
-    assert "knotty ( n )" in {f["function"] for f in payload["functions"]}
-    assert cache_bytes(scored) == before
-
-
-def test_a_few_files_are_rescored_without_reading_the_cache(scored, capsys, monkeypatch):
-    def refuse(_path):
-        raise AssertionError("rescore of a few files read the shared cache")
-
-    monkeypatch.setattr(crapkit.analyze, "load_cache", refuse)
-    add_knotty(scored)
-
-    payload = rescore(scored, capsys, small_files(scored, _HOOK_POOL_THRESHOLD - 2) + ["src/app.ts"])
-
-    assert len({f["path"] for f in payload["functions"]}) == _HOOK_POOL_THRESHOLD - 1
-
-
-def cache_entries(repo) -> set[str]:
-    return set(json.loads(cache_bytes(repo))["entries"])
 
 
 def sized_files(repo, total: int) -> list[str]:
@@ -96,6 +96,30 @@ def refuse_the_cache(monkeypatch) -> None:
         raise AssertionError("rescore of a few small files read the shared cache")
 
     monkeypatch.setattr(crapkit.analyze, "load_cache", refuse)
+
+
+def rescore(repo, capsys, files: list[str]) -> dict:
+    assert main(["rescore", *files, "--json", "--repo", str(repo)]) == 0
+    return json.loads(capsys.readouterr().out)
+
+
+def test_an_edited_file_is_rescored_without_rewriting_the_cache(scored, capsys):
+    before = cache_bytes(scored)
+    add_knotty(scored)
+
+    payload = rescore(scored, capsys, ["src/app.ts"])
+
+    assert "knotty ( n )" in {f["function"] for f in payload["functions"]}
+    assert cache_bytes(scored) == before
+
+
+def test_a_few_files_are_rescored_without_reading_the_cache(scored, capsys, monkeypatch):
+    refuse_the_cache(monkeypatch)
+    add_knotty(scored)
+
+    payload = rescore(scored, capsys, small_files(scored, _HOOK_POOL_THRESHOLD - 2) + ["src/app.ts"])
+
+    assert len({f["path"] for f in payload["functions"]}) == _HOOK_POOL_THRESHOLD - 1
 
 
 def test_a_few_files_under_the_byte_budget_leave_the_cache_unread(scored, capsys, monkeypatch):
@@ -124,10 +148,29 @@ def test_the_hooks_threshold_of_files_still_folds_into_the_cache(scored, capsys)
     assert before < cache_entries(scored), "every prior entry stays, and the new files join them"
 
 
+def test_files_no_reader_can_tokenize_are_named_in_one_note(scored, capsys):
+    """The note the cache path prints for its misses: one count, every file under it."""
+    files = []
+    for i in range(2):
+        rel = f"src/ambiguous{i}.ts"
+        (scored / rel).write_text(f"// {i}\n" + AMBIGUOUS, encoding="utf-8")
+        files.append(rel)
+
+    assert main(["rescore", *files, "--json", "--repo", str(scored)]) == 0
+    err = capsys.readouterr().err
+
+    assert err.count("could not be tokenized") == 1, err
+    assert "crapkit: 2 file(s) could not be tokenized" in err, err
+    assert all(f"lizard failed on {rel}" in err for rel in files), err
+
+
 def test_both_paths_score_a_file_the_same(scored, capsys):
-    many = small_files(scored, _HOOK_POOL_THRESHOLD)
+    (scored / "src" / "mixed.ts").write_bytes(MIXED)
+    many = small_files(scored, _HOOK_POOL_THRESHOLD - 1) + ["src/mixed.ts"]
 
-    folded = rescore(scored, capsys, many)["functions"]
-    outright = rescore(scored, capsys, [many[3]])["functions"]
+    folded = [f for f in rescore(scored, capsys, many)["functions"] if f["path"] == "src/mixed.ts"]
+    outright = rescore(scored, capsys, ["src/mixed.ts"])["functions"]
 
-    assert outright == [f for f in folded if f["path"] == many[3]]
+    assert outright == folded
+    assert sorted((f["function"], f["start"], f["end"], f["ccn"], f["occurrence"])
+                  for f in outright) == MIXED_ROWS

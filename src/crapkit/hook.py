@@ -79,22 +79,11 @@ def _materialized(tmp: Path, blobs: dict[str, bytes]) -> list[tuple[str, str]]:
 
 
 def commit_sized(paths) -> bool:
-    """A commit's worth of files: few enough to analyze outright, in this
-    process and with no cache, because lizard on each costs less than a pool
-    or the repo-wide cache would. `rescore` asks the same question of the files
-    it names."""
+    """A commit's worth of files: few enough to analyze in this process, with no
+    pool and no cache, because lizard on each costs less than either would.
+    `rescore` asks the same question of the files it names, and adds a byte
+    budget of its own for large files."""
     return len(paths) < _HOOK_POOL_THRESHOLD
-
-
-def _outright(blobs: dict[str, bytes]) -> dict[str, list]:
-    return {rel: analyze_source(rel, decode_source(blob)) for rel, blob in sorted(blobs.items())}
-
-
-def working_tree_records(root: Path, rel_paths) -> dict[str, list]:
-    """Records for files on disk, analyzed from their bytes the way a staged
-    blob is: the same decode and the same reader chain, so the numbers match
-    what the cached inventory path produces for those bytes."""
-    return _outright({rel: (root / rel).read_bytes() for rel in rel_paths})
 
 
 def staged_records(blobs: dict[str, bytes], *, worker_budget: int = 0) -> dict[str, list]:
@@ -106,7 +95,8 @@ def staged_records(blobs: dict[str, bytes], *, worker_budget: int = 0) -> dict[s
     materializes, because a worker process reads its own files.
     """
     if commit_sized(blobs):
-        return _outright(blobs)
+        return {rel: analyze_source(rel, decode_source(blob))
+                for rel, blob in sorted(blobs.items())}
     with tempfile.TemporaryDirectory() as tmp:
         jobs = _materialized(Path(tmp), blobs)
         return analyze_jobs(jobs, workers=min(len(jobs), _HOOK_MAX_WORKERS),
