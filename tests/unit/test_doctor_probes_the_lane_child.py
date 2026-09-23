@@ -18,6 +18,7 @@ import pytest
 
 from cli_inproc_repo import commit_all, git
 
+from crapkit import procs
 from crapkit.cli import admin, main
 
 _REPORT = "CRAPKIT_RUNNER_REPORT"
@@ -111,6 +112,48 @@ def test_a_python_the_lanes_own_path_supplies_is_the_one_probed(tmp_path, monkey
     assert "lane 'py': python -> " in out and "(pytest 9.9.1, pytest-cov 9.9.2)" in out, out
 
 
+def _record_launches(monkeypatch) -> list[tuple[str, dict]]:
+    """Every command doctor hands procs.run_bounded, with the cwd and env it
+    asked for, still run for real."""
+    started: list[tuple[str, dict]] = []
+    real = procs.run_bounded
+
+    def recording(command, timeout, **kwargs):
+        started.append((command, kwargs))
+        return real(command, timeout, **kwargs)
+
+    monkeypatch.setattr(procs, "run_bounded", recording)
+    return started
+
+
+def _launch(started: list[tuple[str, dict]], marker: str) -> tuple:
+    """Where the probe whose command holds `marker` started, and the mark it saw."""
+    kwargs = next(kwargs for command, kwargs in started if marker in command)
+    return kwargs.get("cwd"), (kwargs.get("env") or {}).get("CRAPKIT_PROBE_MARK")
+
+
+def test_every_probe_starts_from_the_lanes_cwd_with_the_lanes_env(tmp_path, monkeypatch, capsys):
+    """A probe that cannot find its python exits 1 under cmd.exe and 127 under
+    sh, and doctor reads either as 'cannot import pytest_cov', so the FAIL reads
+    the same whether the probe started as the lane does or not. Pinned here at
+    the launch each probe asks for. The lane's python exits 1 to everything, so
+    the version report comes back empty and the import probe runs too."""
+    lane_bin = tmp_path / "lane-bin"
+    _shim(lane_bin, "python", "exit /b 1", "exit 1")
+    repo = _repo(tmp_path, _toml("python -m pytest --cov=src",
+                                 f"cwd = \"web\"\n\n[lane.env]\nPATH = '{lane_bin}'\n"
+                                 "CRAPKIT_PROBE_MARK = \"lane\"\n"))
+    (repo / "web").mkdir()
+    started = _record_launches(monkeypatch)
+
+    _doctor(["doctor", "--repo", str(repo)], capsys)
+
+    lane = (repo / "web", "lane")
+    assert _launch(started, "python --version") == lane, started
+    assert _launch(started, _REPORT) == lane, started
+    assert _launch(started, '-c "import pytest_cov"') == lane, started
+
+
 def _venv_launcher() -> str:
     """The launcher word init writes for a repo's own venv, spelled for the
     shell this platform runs lanes under."""
@@ -120,7 +163,8 @@ def _venv_launcher() -> str:
 def test_a_repo_venv_launcher_gets_one_answer_from_any_directory(tmp_path, monkeypatch, capsys):
     """The repo's `.venv` holds no pytest-cov. From the root doctor FAILed the
     lane; from src/pkg its probes looked for the launcher under src/pkg, found
-    nothing, read that as nothing to ask, and exited 0 with no lane line."""
+    nothing, read that as nothing to ask, and exited 0 with no lane line. The
+    FAIL names the launcher's file under the root from both."""
     word = _venv_launcher()
     repo = _repo(tmp_path, _toml(f"{word} -m pytest --cov=src"))
     venv.EnvBuilder(with_pip=False).create(repo / ".venv")
@@ -131,6 +175,7 @@ def test_a_repo_venv_launcher_gets_one_answer_from_any_directory(tmp_path, monke
     code, problems = answers[1]
     named = _cannot_import(problems, word)
     assert code == 1 and len(named) == 1, problems
+    assert f"resolves here to {repo / word} and" in named[0], named
 
 
 def _cannot_import(problems: list[str], word: str) -> list[str]:
@@ -159,12 +204,16 @@ def test_a_manager_the_lanes_own_path_carries_is_not_called_absent(
         tmp_path, monkeypatch, capsys, git_only_path):
     """`uv sync && python -m pytest --cov` starts with a manager. The lane's
     PATH carries `uv` and doctor's does not, so the lane can start and the gap
-    to name is the python's missing pytest-cov, not a manager to install."""
-    lane_bin = tmp_path / "lane-bin"
+    to name is the python's missing pytest-cov, not a manager to install.
+    doctor's PATH leads to a python that answers yes to everything, so a probe
+    run under doctor's environment loses the FAIL."""
+    lane_bin, doctor_bin = tmp_path / "lane-bin", tmp_path / "doctor-bin"
     _shim(lane_bin, "python", "exit /b 1", "exit 1")
     _shim(lane_bin, "uv", "exit /b 0", "exit 0")
+    _shim(doctor_bin, "python", "exit /b 0", "exit 0")
     repo = _repo(tmp_path, _toml("uv sync && python -m pytest --cov=src",
                                  f"\n[lane.env]\nPATH = '{lane_bin}'\n"))
+    monkeypatch.setenv("PATH", os.pathsep.join([str(doctor_bin), git_only_path]))
 
     code, out = _doctor(["doctor", "--repo", str(repo), "--json"], capsys)
 
