@@ -135,12 +135,39 @@ def passed_test_ids(xml_text: str) -> set[str]:
 
 def _refuse_partial(root: ET.Element) -> None:
     """Count each subtree once, including aggregate testsuites declarations."""
+    records = _declared_records(root)
     counts = {}
     for element in reversed(list(root.iter())):
-        count = int(element.tag == "testcase") + sum(counts[child] for child in element)
+        count = records.get(element, 0) + sum(counts[child] for child in element)
         counts[element] = count
         if element.tag in ("testsuite", "testsuites"):
             _admit_declared_count(element.get("tests"), count)
+
+
+# pytest's junitxml declares records, not testcases. A teardown error is one more
+# record: it sits beside the test's own result in one testcase, or, after a call
+# failure, opens a second testcase with the same id that pytest subtracts again.
+_TEARDOWN = "failed on teardown with "
+
+
+def _declared_records(root: ET.Element) -> dict:
+    """What each testcase adds to its runner's declared `tests` count."""
+    records, failed = {}, set()
+    for case in root.iter("testcase"):
+        records[case] = _records(case, failed)
+        if case.find("failure") is not None:
+            failed.add(_case_id(case))
+    return records
+
+
+def _records(case: ET.Element, failed: set[str]) -> int:
+    if not _teardown_error(case):
+        return 1
+    return 0 if _case_id(case) in failed else 2
+
+
+def _teardown_error(case: ET.Element) -> bool:
+    return any((error.get("message") or "").startswith(_TEARDOWN) for error in case.findall("error"))
 
 
 def _admit_declared_count(declared: str | None, count: int) -> None:
