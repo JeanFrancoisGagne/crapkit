@@ -133,7 +133,9 @@ exits 1:
 
 `{"schema": 1, "run_id": ..., "commit": ..., "stale": ..., "packets": [...]}`: the top N
 of the queue as N packets, `crap` descending, built from one read of the store, the
-churn log and the ratchet file. Hand one packet to one session.
+churn log and the ratchet file. Hand one packet to one session. A function another
+session holds under `next-item --claim` is skipped, as `next-item` skips it, and the
+envelope then carries `skipped_claimed`, the count of rows a claim hid.
 
 ## 2. Do the work
 
