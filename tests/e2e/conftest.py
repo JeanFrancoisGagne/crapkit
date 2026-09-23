@@ -24,6 +24,11 @@ longer bound for a run that does real work.
 The child inherits the parent's package selection. Development can select the
 working tree with PYTHONPATH; isolated CI selects its verified wheel through
 the environment's interpreter. No default here may replace that choice.
+
+A fixture lane spells a bare `python`, which its shell finds through PATH, so the
+suite's own interpreter directory goes first on the child's PATH. With another
+project's virtualenv first, each nested pytest loaded that environment's
+plugins, and one e2e file spent twice the CPU.
 """
 
 from __future__ import annotations
@@ -40,10 +45,12 @@ CRAPKIT = [sys.executable, "-m", "crapkit"]
 
 
 def child_env(env_extra: dict | None = None) -> dict:
-    """The parent environment with `env_extra` applied. A None value removes the
-    key, which is how a test drops an inherited grant (CRAPKIT_OVERRIDE_REASON)
-    it must not be judged under."""
+    """The parent environment with the suite's interpreter directory first on
+    PATH, then `env_extra` applied. A None value removes the key, which is how a
+    test drops an inherited grant (CRAPKIT_OVERRIDE_REASON) it must not be
+    judged under."""
     env = dict(os.environ)
+    env["PATH"] = os.pathsep.join(filter(None, (str(Path(sys.executable).parent), env.get("PATH"))))
     for key, value in (env_extra or {}).items():
         if value is None:
             env.pop(key, None)

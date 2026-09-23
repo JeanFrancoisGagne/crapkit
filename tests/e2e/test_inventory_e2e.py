@@ -190,7 +190,18 @@ def test_coverage_single_lane_flags_other_scope_no_lane(mini_repo: Path):
     assert s["over_target"] == 0 and s["by_scope"]["py"]["over_target"] == 1, s
 
 
+def _exported_rows(path: Path) -> tuple[list[str], dict[str, dict]]:
+    """The export's columns, and its rows keyed by the bare function name."""
+    header, *rows = path.read_text(encoding="utf-8").strip().splitlines()
+    cols = header.split("\t")
+    records = [dict(zip(cols, row.split("\t"))) for row in rows]
+    return cols, {record["long_name"].split("(")[0].strip(): record for record in records}
+
+
 def test_coverage_end_to_end_scores_and_flags(mini_repo: Path):
+    # The one test about xdist fragments combining; every other run of this
+    # fixture starts no workers.
+    shutil.copy(FIXTURES / "mini_repo_xdist" / "crapkit.toml", mini_repo / "crapkit.toml")
     res = run_cli(mini_repo, "coverage", "--export", "cov1.tsv", "--json")
     assert res.returncode == 0, res.stderr
     s = json.loads(res.stdout)
@@ -198,11 +209,8 @@ def test_coverage_end_to_end_scores_and_flags(mini_repo: Path):
     assert s["lanes"]["unit"]["exit_code"] == 0
     assert s["lanes"]["py"]["exit_code"] == 0, "real pytest under xdist -n 2 must combine and pass"
 
-    text = (mini_repo / "cov1.tsv").read_text(encoding="utf-8")
-    header, *rows = text.strip().splitlines()
-    cols = header.split("\t")
+    cols, by_name = _exported_rows(mini_repo / "cov1.tsv")
     assert {"cov", "flag", "crap", "remedy"} <= set(cols)
-    by_name = {dict(zip(cols, r.split("\t")))["long_name"].split("(")[0].strip(): dict(zip(cols, r.split("\t"))) for r in rows}
     d = by_name["dispatch"]
     assert d["flag"] == "measured" and float(d["cov"]) == 0.75
     assert abs(float(d["crap"]) - (4 * 0.25 ** 3 + 2)) < 1e-9
