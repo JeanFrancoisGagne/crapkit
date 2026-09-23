@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 _LADDER = "".join(f"    if a > {i}:\n        r += {i}\n" for i in range(1, 8))
 
@@ -80,17 +81,22 @@ def commit(repo: Path, message: str) -> None:
     _git(repo, "commit", "-q", "-m", message)
 
 
-@pytest.fixture()
-def repo(tmp_path: Path) -> Path:
+def _build_repo(repo: Path) -> None:
     for rel, text in (("core/alpha.py", ALPHA), ("make_cov.py", MAKE_COV),
                       ("crapkit.toml", CONFIG)):
-        write(tmp_path, rel, text)
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True,
+        write(repo, rel, text)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True,
                    capture_output=True)
-    _git(tmp_path, "config", "core.autocrlf", "false")
-    commit(tmp_path, "init")
-    assert run_cli(tmp_path, "coverage", "--json").returncode == 0
-    return tmp_path
+    _git(repo, "config", "core.autocrlf", "false")
+    commit(repo, "init")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+
+
+@pytest.fixture()
+def repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "packet-refresh", _build_repo)
+    return copy_of(built, tmp_path)
 
 
 def brief(repo: Path, *args: str) -> dict:

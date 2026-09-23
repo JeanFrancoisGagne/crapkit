@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -93,15 +94,7 @@ def config(*sources: str) -> str:
             'parser = "istanbul"\nscopes = ["src"]\n')
 
 
-@pytest.fixture()
-def laundered(tmp_path: Path) -> Path:
-    """run 1 coverage, run 2 verify FAILED on a ccn-8 function, run 3 coverage.
-
-    Run 3 is the laundering run: it scores the very tree run 2 refused, and
-    picking it as the baseline would retire run 2's finding.
-    """
-    repo = tmp_path / "laundered"
-    repo.mkdir(parents=True)
+def _build_laundered(repo: Path) -> None:
     write(repo, ".gitignore", ".crapkit/\ncov/\n__pycache__/\n")
     write(repo, GEN, GEN_COV)
     git(repo, "init", "-q", "-b", "main")
@@ -121,7 +114,17 @@ def laundered(tmp_path: Path) -> Path:
     write(repo, "src/other.py", clean_src("beta"))
     write(repo, "crapkit.toml", config("src/mod.py", "src/legacy.py", "src/other.py"))
     commit_all(repo, "unrelated edit")
-    return repo
+
+
+@pytest.fixture()
+def laundered(tmp_path: Path) -> Path:
+    """run 1 coverage, run 2 verify FAILED on a ccn-8 function, run 3 coverage.
+
+    Run 3 is the laundering run: it scores the very tree run 2 refused, and
+    picking it as the baseline would retire run 2's finding.
+    """
+    built = template(tmp_path, "baseline-taint", _build_laundered)
+    return copy_of(built, tmp_path / "laundered")
 
 
 def test_a_coverage_run_cannot_retire_a_failed_verifys_finding(laundered: Path):

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 APP_TS = """export function plain(x: number): number {
   const a = x + 1;
@@ -80,9 +81,7 @@ def git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
 
-@pytest.fixture()
-def scored_repo(tmp_path: Path) -> Path:
-    root = tmp_path / "consumer"
+def _build_scored_repo(root: Path) -> None:
     write(root / "src" / "app.ts", APP_TS)
     write(root / "lane.py", LANE_SCRIPT)
     write(root / "crapkit.toml", TOML)
@@ -94,7 +93,13 @@ def scored_repo(tmp_path: Path) -> Path:
                    capture_output=True, env={**os.environ})
     done = run_cli(root, "coverage", "--json")
     assert done.returncode == 0, done.stdout + done.stderr
-    return root
+
+
+@pytest.fixture()
+def scored_repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "report", _build_scored_repo)
+    return copy_of(built, tmp_path / "consumer")
 
 
 def test_report_writes_the_default_page_and_prints_where(scored_repo: Path):

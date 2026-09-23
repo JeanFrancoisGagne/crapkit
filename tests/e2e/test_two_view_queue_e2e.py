@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 MAKE_COV = '''"""Fixture coverage generator: a coverage.py artifact from cov_plan.json.
 
@@ -123,12 +124,17 @@ def _built_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _build_repo(repo: Path) -> None:
+    _built_repo(repo)
+    res = run_cli(repo, "coverage", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
 @pytest.fixture()
 def repo(tmp_path: Path) -> Path:
-    _built_repo(tmp_path)
-    res = run_cli(tmp_path, "coverage", "--json")
-    assert res.returncode == 0, res.stdout + res.stderr
-    return tmp_path
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "two-view-queue", _build_repo)
+    return copy_of(built, tmp_path)
 
 
 def worklist_json(repo: Path, *args: str) -> dict:

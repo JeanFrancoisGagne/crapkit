@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template, unchanged
 
 MAKE_COV = '''"""Fixture coverage generator: a coverage.py-format artifact from cov_plan.json.
 
@@ -113,22 +114,45 @@ def _commit(repo: Path, message: str) -> None:
          env={**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when})
 
 
+def _build_repo(repo: Path) -> None:
+    (repo / "core").mkdir()
+    (repo / "extra").mkdir()
+    for rel, name, ifs in FUNCTIONS:
+        (repo / rel).write_text(_source(name, ifs), encoding="utf-8")
+    (repo / "make_cov.py").write_text(MAKE_COV, encoding="utf-8")
+    (repo / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    _commit(repo, "init")
+
+
+def _unscored(tmp_path: Path) -> Path:
+    return template(tmp_path, "worklist-surface", _build_repo)
+
+
 @pytest.fixture()
 def repo(tmp_path: Path) -> Path:
-    (tmp_path / "core").mkdir()
-    (tmp_path / "extra").mkdir()
-    for rel, name, ifs in FUNCTIONS:
-        (tmp_path / rel).write_text(_source(name, ifs), encoding="utf-8")
-    (tmp_path / "make_cov.py").write_text(MAKE_COV, encoding="utf-8")
-    (tmp_path / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
-    _commit(tmp_path, "init")
-    return tmp_path
+    """This test's copy of the tree its worker built once."""
+    return copy_of(_unscored(tmp_path), tmp_path)
+
+
+def _coverage(repo: Path) -> Path:
+    res = run_cli(repo, "coverage", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+    return repo
 
 
 def scored(repo: Path) -> None:
-    res = run_cli(repo, "coverage", "--json")
-    assert res.returncode == 0, res.stdout + res.stderr
+    """One coverage run on `repo`. A repo its test has not touched since the
+    fixture copied it is the unscored tree, so it takes the worker's copy of
+    that tree with the run already taken. `repo` is the test's tmp_path, which
+    is what finds the worker's trees."""
+    unscored = _unscored(repo)
+    if not unchanged(repo, unscored):
+        _coverage(repo)
+        return
+    built = template(repo, "worklist-surface-scored",
+                     lambda staging: _coverage(copy_of(unscored, staging)))
+    copy_of(built, repo)
 
 
 def worklist(repo: Path, *args: str) -> dict:

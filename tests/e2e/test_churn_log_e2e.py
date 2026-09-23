@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 CRAPKIT = Path(".crapkit")
 LOG_Z = CRAPKIT / "churn-log-v2.z"
@@ -126,11 +127,7 @@ def range_walks(walks: list[list[str]]) -> list[list[str]]:
     return [argv for argv in walks if any(".." in a for a in argv)]
 
 
-@pytest.fixture()
-def coupled_repo(tmp_path: Path) -> Path:
-    """src/app.py and src/util.py land in six commits together, so they are coupled
-    at the default min-support of 5 and coupling has something to report."""
-    repo = tmp_path / "coupled"
+def _build_coupled_repo(repo: Path) -> None:
     write(repo / "crapkit.toml", TOML)
     write(repo / "lane.py", LANE_SCRIPT)
     write(repo / ".gitignore", ".crapkit/\ncov.json\n__pycache__/\n")
@@ -141,7 +138,14 @@ def coupled_repo(tmp_path: Path) -> Path:
         write(repo / "src" / "util.py", UTIL_PY + f"\nBUILD = {i}\n")
         commit(repo, f"edit {i}")
     assert run_cli(repo, "coverage", "--json").returncode == 0
-    return repo
+
+
+@pytest.fixture()
+def coupled_repo(tmp_path: Path) -> Path:
+    """src/app.py and src/util.py land in six commits together, so they are coupled
+    at the default min-support of 5 and coupling has something to report."""
+    built = template(tmp_path, "churn-log", _build_coupled_repo)
+    return copy_of(built, tmp_path / "coupled")
 
 
 BRIEF = ("brief", "src/app.py", "pick", "--json")

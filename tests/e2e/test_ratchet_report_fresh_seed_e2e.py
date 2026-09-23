@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -65,21 +66,25 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
+def _build_seeded_repo(repo: Path) -> None:
+    write(repo / "src" / "app.ts", APP)
+    write(repo / "src" / "tangled.ts", TANGLED)
+    write(repo / "crapkit.toml", TOML)
+    write(repo / "make_cov.py", MAKE_COV)
+    write(repo / ".gitignore", ".crapkit/\ncov.json\n__pycache__/\n")
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, "init")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    seeded = run_cli(repo, "ratchet", "seed")
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
+    assert "added 1" in seeded.stdout, seeded.stdout
+
+
 @pytest.fixture()
 def seeded_repo(tmp_path: Path) -> Path:
     """A repo whose ratchet file holds one mark and has never been committed."""
-    write(tmp_path / "src" / "app.ts", APP)
-    write(tmp_path / "src" / "tangled.ts", TANGLED)
-    write(tmp_path / "crapkit.toml", TOML)
-    write(tmp_path / "make_cov.py", MAKE_COV)
-    write(tmp_path / ".gitignore", ".crapkit/\ncov.json\n__pycache__/\n")
-    git(tmp_path, "init", "-q", "-b", "main")
-    commit(tmp_path, "init")
-    assert run_cli(tmp_path, "coverage", "--json").returncode == 0
-    seeded = run_cli(tmp_path, "ratchet", "seed")
-    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
-    assert "added 1" in seeded.stdout, seeded.stdout
-    return tmp_path
+    built = template(tmp_path, "ratchet-report-fresh-seed", _build_seeded_repo)
+    return copy_of(built, tmp_path)
 
 
 def marks(repo: Path) -> list[str]:

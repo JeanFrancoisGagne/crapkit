@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 # route: base 1 + three outer non-wildcard arms + two inner ones = ccn 6.
 # Cognitive: the outer match +1 at nesting 0, the inner match +1 and +1 for the
@@ -138,21 +139,26 @@ def write(repo: Path, rel: str, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-@pytest.fixture()
-def repo(tmp_path: Path) -> Path:
+def _build_repo(repo: Path) -> None:
     for rel, text in (("src/lib.rs", LIB_RS), ("gosrc/route.go", ROUTE_GO),
                       ("pylib/mod.py", MOD_PY), ("make_cov.py", MAKE_COV),
                       ("crapkit.toml", CONFIG)):
-        write(tmp_path, rel, text)
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True,
+        write(repo, rel, text)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True,
                    capture_output=True)
     for args in (["config", "core.autocrlf", "false"], ["add", "-A"],
                  ["commit", "-q", "-m", "init"]):
         subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
-                       cwd=tmp_path, check=True, capture_output=True)
-    res = run_cli(tmp_path, "coverage", "--json")
+                       cwd=repo, check=True, capture_output=True)
+    res = run_cli(repo, "coverage", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
-    return tmp_path
+
+
+@pytest.fixture()
+def repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "rust-go-names", _build_repo)
+    return copy_of(built, tmp_path)
 
 
 def brief(repo: Path, path: str, name: str) -> dict:

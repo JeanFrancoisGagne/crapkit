@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 _LADDER = "".join(f"    if a > {i}:\n        r += {i}\n" for i in range(1, 8))
 
@@ -123,22 +124,27 @@ def write(repo: Path, rel: str, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-@pytest.fixture()
-def repo(tmp_path: Path) -> Path:
+def _build_repo(repo: Path) -> None:
     for rel, text in (("core/alpha.py", ALPHA), ("core/beta.py", BETA),
                       ("extra/gamma.py", GAMMA), ("clean/ok.py", OK),
                       ("make_cov.py", MAKE_COV), ("crapkit.toml", CONFIG)):
-        write(tmp_path, rel, text)
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True,
+        write(repo, rel, text)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True,
                    capture_output=True)
-    _git(tmp_path, "config", "core.autocrlf", "false")
-    _commit(tmp_path, "init")
+    _git(repo, "config", "core.autocrlf", "false")
+    _commit(repo, "init")
     for rev in range(1, 6):
-        write(tmp_path, "core/alpha.py", ALPHA.replace("# rev 0", f"# rev {rev}"))
-        write(tmp_path, "core/beta.py", BETA.replace("# rev 0", f"# rev {rev}"))
-        _commit(tmp_path, f"rev {rev}")
-    assert run_cli(tmp_path, "coverage", "--json").returncode == 0
-    return tmp_path
+        write(repo, "core/alpha.py", ALPHA.replace("# rev 0", f"# rev {rev}"))
+        write(repo, "core/beta.py", BETA.replace("# rev 0", f"# rev {rev}"))
+        _commit(repo, f"rev {rev}")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+
+
+@pytest.fixture()
+def repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "brief-packet", _build_repo)
+    return copy_of(built, tmp_path)
 
 
 def brief(repo: Path, *args: str) -> dict:

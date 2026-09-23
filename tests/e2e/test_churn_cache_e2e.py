@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 CACHE = Path(".crapkit") / "churn-cache-v2.json"
 
@@ -78,10 +79,7 @@ def cache_doc(repo: Path) -> dict:
     return json.loads((repo / CACHE).read_text(encoding="utf-8"))
 
 
-@pytest.fixture()
-def churned_repo(tmp_path: Path) -> Path:
-    """src/app.py lands in three commits, so it has churn in any window."""
-    repo = tmp_path / "churned"
+def _build_churned_repo(repo: Path) -> None:
     write(repo / "crapkit.toml", TOML)
     write(repo / "lane.py", LANE_SCRIPT)
     write(repo / ".gitignore", ".crapkit/\ncov.json\n__pycache__/\n")
@@ -92,7 +90,13 @@ def churned_repo(tmp_path: Path) -> Path:
         commit(repo, f"edit {i}")
     res = run_cli(repo, "inventory")
     assert res.returncode == 0, res.stdout + res.stderr
-    return repo
+
+
+@pytest.fixture()
+def churned_repo(tmp_path: Path) -> Path:
+    """src/app.py lands in three commits, so it has churn in any window."""
+    built = template(tmp_path, "churn-cache", _build_churned_repo)
+    return copy_of(built, tmp_path / "churned")
 
 
 def test_a_repeat_worklist_is_byte_identical_and_leaves_a_head_keyed_cache(churned_repo: Path):

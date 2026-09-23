@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 # Line numbers are load-bearing: the lane artifact below marks line 4 dead, and
 # the diff-coverage test edits exactly that line.
@@ -140,9 +141,7 @@ def commit(repo: Path, message: str, when: int | None = None) -> None:
                    cwd=repo, check=True, capture_output=True, env=env)
 
 
-@pytest.fixture()
-def repo(tmp_path: Path) -> Path:
-    root = tmp_path / "consumer"
+def _build_repo(root: Path) -> None:
     write(root / "src" / "app.ts", APP_TS)
     write(root / "lane.py", LANE_SCRIPT)
     write(root / "alert.py", ALERT_SCRIPT)
@@ -150,21 +149,37 @@ def repo(tmp_path: Path) -> Path:
     write(root / ".gitignore", ".crapkit/\ncov.json\ninv.tsv\nalerts.txt\n__pycache__/\n")
     git(root, "init", "-q", "-b", "main")
     commit(root, "init")
-    return root
 
 
 @pytest.fixture()
-def scored_repo(repo: Path) -> Path:
+def repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "cli-report-gaps", _build_repo)
+    return copy_of(built, tmp_path / "consumer")
+
+
+def _build_scored_repo(repo: Path) -> None:
+    _build_repo(repo)
     res = run_cli(repo, "coverage", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
-    return repo
 
 
 @pytest.fixture()
-def inventoried_repo(repo: Path) -> Path:
+def scored_repo(tmp_path: Path) -> Path:
+    built = template(tmp_path, "cli-report-gaps-scored", _build_scored_repo)
+    return copy_of(built, tmp_path / "consumer")
+
+
+def _build_inventoried_repo(repo: Path) -> None:
+    _build_repo(repo)
     res = run_cli(repo, "inventory", "--export", "inv.tsv")
     assert res.returncode == 0, res.stdout + res.stderr
-    return repo
+
+
+@pytest.fixture()
+def inventoried_repo(tmp_path: Path) -> Path:
+    built = template(tmp_path, "cli-report-gaps-inventoried", _build_inventoried_repo)
+    return copy_of(built, tmp_path / "consumer")
 
 
 def long_name(repo: Path, needle: str) -> str:

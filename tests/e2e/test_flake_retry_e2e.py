@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from conftest import run_cli
+from repo_templates import copy_of, template
 
 # One lane script, four suite states driven by state.txt:
 #   green    - flaky + steady both pass (the baseline)
@@ -50,9 +51,7 @@ TOML = (
 )
 
 
-@pytest.fixture()
-def flaky_repo(tmp_path: Path) -> Path:
-    repo = tmp_path / "flaky"
+def _build_flaky_repo(repo: Path) -> None:
     (repo / "src").mkdir(parents=True)
     (repo / "src" / "app.ts").write_text("export function f() { return 1; }\n", encoding="utf-8")
     (repo / "lane.py").write_text(LANE_SCRIPT, encoding="utf-8")
@@ -64,7 +63,13 @@ def flaky_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"],
                    cwd=repo, check=True, capture_output=True)
     assert run_cli(repo, "coverage", "--json").returncode == 0  # green baseline
-    return repo
+
+
+@pytest.fixture()
+def flaky_repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "flake-retry", _build_flaky_repo)
+    return copy_of(built, tmp_path / "flaky")
 
 
 def test_a_flake_passes_its_retry_and_verify_stays_green(flaky_repo: Path):

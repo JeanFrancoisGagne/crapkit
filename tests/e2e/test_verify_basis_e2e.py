@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_templates import copy_of, template
 
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.ratchet import metric_version
@@ -107,6 +108,10 @@ def config(*sources: str) -> str:
 def new_repo(tmp_path: Path, name: str) -> Path:
     repo = tmp_path / name
     repo.mkdir(parents=True)
+    return init_repo(repo)
+
+
+def init_repo(repo: Path) -> Path:
     write(repo, ".gitignore", ".crapkit/\ncov/\n__pycache__/\n")
     write(repo, GEN, GEN_COV)
     git(repo, "init", "-q", "-b", "main")
@@ -119,11 +124,8 @@ def verdict_of(res: subprocess.CompletedProcess) -> dict:
     return {k: payload[k] for k in VERDICT_KEYS}
 
 
-@pytest.fixture()
-def branch_repo(tmp_path: Path) -> Path:
-    """main sits at the fork point. A feature branch adds ccn-8 debt in one
-    commit, takes a fresh coverage run there, then makes a clean edit."""
-    repo = new_repo(tmp_path, "branch")
+def _build_branch_repo(repo: Path) -> None:
+    init_repo(repo)
     write(repo, "src/mod.py", clean_src("alpha"))
     write(repo, "src/debt.py", clean_src("beta"))
     write(repo, "crapkit.toml", config("src/mod.py", "src/debt.py"))
@@ -137,7 +139,14 @@ def branch_repo(tmp_path: Path) -> Path:
 
     write(repo, "src/mod.py", clean_src("alpha").replace("n = n + 1", "n = n + 2"))
     commit_all(repo, "a clean edit further up the branch")
-    return repo
+
+
+@pytest.fixture()
+def branch_repo(tmp_path: Path) -> Path:
+    """main sits at the fork point. A feature branch adds ccn-8 debt in one
+    commit, takes a fresh coverage run there, then makes a clean edit."""
+    built = template(tmp_path, "verify-basis-branch", _build_branch_repo)
+    return copy_of(built, tmp_path / "branch")
 
 
 def test_a_mid_branch_coverage_run_shrinks_the_diff_basis(branch_repo: Path):
@@ -192,10 +201,8 @@ def test_two_ways_of_naming_a_baseline_at_once_is_refused(branch_repo: Path):
     assert "not allowed with" in res.stderr
 
 
-@pytest.fixture()
-def portable_repo(tmp_path: Path) -> Path:
-    """A baseline run, then a committed ccn-8 function the verdict must catch."""
-    repo = new_repo(tmp_path, "portable")
+def _build_portable_repo(repo: Path) -> None:
+    init_repo(repo)
     write(repo, "src/mod.py", clean_src("alpha"))
     write(repo, "crapkit.toml", config("src/mod.py"))
     commit_all(repo, "init")
@@ -203,7 +210,13 @@ def portable_repo(tmp_path: Path) -> Path:
 
     write(repo, "src/mod.py", tangled_src("tangled"))
     commit_all(repo, "add debt")
-    return repo
+
+
+@pytest.fixture()
+def portable_repo(tmp_path: Path) -> Path:
+    """A baseline run, then a committed ccn-8 function the verdict must catch."""
+    built = template(tmp_path, "verify-basis-portable", _build_portable_repo)
+    return copy_of(built, tmp_path / "portable")
 
 
 def test_a_baseline_file_carries_the_verdict_across_a_wiped_store(portable_repo: Path):
@@ -252,10 +265,8 @@ def test_a_corrupt_baseline_file_is_refused_rather_than_half_read(portable_repo:
     assert "junk.tsv" in res.stderr
 
 
-@pytest.fixture()
-def dirty_repo(tmp_path: Path) -> Path:
-    """One ccn-8 function committed, another sitting uncommitted in the tree."""
-    repo = new_repo(tmp_path, "dirty")
+def _build_dirty_repo(repo: Path) -> None:
+    init_repo(repo)
     write(repo, "src/a.py", clean_src("alpha"))
     write(repo, "src/b.py", clean_src("beta"))
     write(repo, "crapkit.toml", config("src/a.py", "src/b.py"))
@@ -265,7 +276,13 @@ def dirty_repo(tmp_path: Path) -> Path:
     write(repo, "src/a.py", tangled_src("committed_debt"))
     commit_all(repo, "debt this session owns")
     write(repo, "src/b.py", tangled_src("someone_elses_debt"))
-    return repo
+
+
+@pytest.fixture()
+def dirty_repo(tmp_path: Path) -> Path:
+    """One ccn-8 function committed, another sitting uncommitted in the tree."""
+    built = template(tmp_path, "verify-basis-dirty", _build_dirty_repo)
+    return copy_of(built, tmp_path / "dirty")
 
 
 def test_findings_from_uncommitted_edits_are_tagged_in_json(dirty_repo: Path):
@@ -298,14 +315,19 @@ def test_a_dirty_tree_never_changes_the_exit_code(dirty_repo: Path):
     assert json.loads(committed.stdout)["committed_findings"] == 2
 
 
-@pytest.fixture()
-def receipt_repo(tmp_path: Path) -> Path:
-    repo = new_repo(tmp_path, "receipt")
+def _build_receipt_repo(repo: Path) -> None:
+    init_repo(repo)
     write(repo, "src/mod.py", clean_src("alpha"))
     write(repo, "crapkit.toml", config("src/mod.py"))
     commit_all(repo, "init")
     assert run_cli(repo, "coverage", "--json").returncode == 0
-    return repo
+
+
+@pytest.fixture()
+def receipt_repo(tmp_path: Path) -> Path:
+    """This test's copy of the tree its worker built once."""
+    built = template(tmp_path, "verify-basis-receipt", _build_receipt_repo)
+    return copy_of(built, tmp_path / "receipt")
 
 
 def test_the_verdict_names_the_tools_that_produced_it(receipt_repo: Path):

@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner, git, git_commit_all, git_init_repo
+from repo_templates import copy_of, template
 
 CRAPKIT = Path(".crapkit")
 CACHE = CRAPKIT / "coupling-cache-v1.json"
@@ -143,11 +144,7 @@ def drop_the_log(repo: Path) -> None:
     (repo / LOG_KEY).unlink()
 
 
-@pytest.fixture()
-def coupled_repo(tmp_path: Path) -> Path:
-    """app.py and util.py land in six commits together, extra.py in five, so all
-    three pairs clear the default support of 5 and the ranking has an order."""
-    repo = tmp_path / "coupled"
+def _build_coupled_repo(repo: Path) -> None:
     write(repo / "crapkit.toml", TOML)
     write(repo / "lane.py", LANE_SCRIPT)
     write(repo / ".gitignore", ".crapkit/\ncov.json\n__pycache__/\n")
@@ -159,7 +156,14 @@ def coupled_repo(tmp_path: Path) -> Path:
             write(repo / "src" / "extra.py", EXTRA_PY + f"\nBUILD = {i}\n")
         git_commit_all(repo, f"edit {i}")
     assert run_cli(repo, "coverage", "--json").returncode == 0
-    return repo
+
+
+@pytest.fixture()
+def coupled_repo(tmp_path: Path) -> Path:
+    """app.py and util.py land in six commits together, extra.py in five, so all
+    three pairs clear the default support of 5 and the ranking has an order."""
+    built = template(tmp_path, "coupling-cache", _build_coupled_repo)
+    return copy_of(built, tmp_path / "coupled")
 
 
 COUPLING = ("coupling", "--json")
