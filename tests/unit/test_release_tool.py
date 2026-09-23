@@ -256,6 +256,28 @@ def test_the_cli_dry_run_prints_every_command_and_runs_none(tmp_path, capsys):
     assert (root / "CHANGELOG.md").read_text(encoding="utf-8").count("unreleased") == 1, "dry run wrote nothing"
 
 
+def test_an_unknown_stage_is_refused_with_every_stage_the_plan_prints(tmp_path, capsys):
+    code = release.main(["run", "bogus", "0.5.2", "--repo", str(_tree(tmp_path))])
+    stages = ", ".join(dict.fromkeys(step.stage for step in release.plan("0.5.2")))
+
+    assert code == 1
+    assert capsys.readouterr().err.strip().endswith(f"no stage 'bogus'; stages: {stages}")
+    assert "glama" in stages
+
+
+@pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])
+def test_the_manual_glama_stage_prints_what_to_do_by_hand(tmp_path, capsys, dry_run):
+    """The Glama sync is the one step no command performs, so its run is the
+    step's note; before, `run glama` exited 0 and printed nothing."""
+    (glama,) = [step for step in release.plan("0.5.2") if step.stage == "glama"]
+
+    code = release.main(["run", "glama", "0.5.2", "--repo", str(_tree(tmp_path)), *dry_run])
+
+    assert code == 0
+    assert glama.note in capsys.readouterr().out
+    assert "Sync Server" in glama.note
+
+
 # --- what the 0.7.2 release cost -------------------------------------------------
 #
 # Every fault below fired after PyPI and the GitHub release were already public,

@@ -18,6 +18,7 @@ python tools/release/release.py run stage2a VERSION
 python tools/release/release.py run verify VERSION
 python tools/release/release.py run stage2b VERSION
 python tools/release/release.py run registry VERSION
+python tools/release/release.py run glama VERSION
 python tools/release/release.py verify VERSION
 ```
 
@@ -116,7 +117,7 @@ Keep the receipt and `.crapkit/release-dist/` together, then rerun:
 python tools/release/release.py run stage2b VERSION
 ```
 
-The command repeats all clean-tree, tag and ledger checks. It reuses matching local files, reads published files again, skips matching uploads, and continues with the next missing file. The local Claude plugin update is recorded after success. An interrupted local update can run again. Registry login/publish remains its own stage. It logs in with `mcp-publisher login github --token` and the `gh auth token` value, so there is no device flow, and publishes straight after, because the registry session lasts only minutes. The echoed command shows `$(gh auth token)`, never the token. Glama's Repository admin **Sync Server** action stays manual, and is the only step in the chain no command performs.
+The command repeats all clean-tree, tag and ledger checks. It reuses matching local files, reads published files again, skips matching uploads, and continues with the next missing file. The local Claude plugin update is recorded after success. An interrupted local update can run again. Registry login/publish remains its own stage. It logs in with `mcp-publisher login github --token` and the `gh auth token` value, so there is no device flow, and publishes straight after, because the registry session lasts only minutes. The echoed command shows `$(gh auth token)`, never the token. Glama's Repository admin **Sync Server** action stays manual, and is the only step in the chain no command performs: `run glama VERSION` prints that step and runs nothing.
 
 Pages can finish after the command stops. A `queued` or `building` status at the release commit asks you to wait and rerun; it does not send a second POST. A `built` result at that commit completes the stage. A later `errored` result at that commit proves the build ended and permits one new request on the next invocation. A build whose commit does not carry the release commit cannot confirm this release; a build at a later commit on main that carries it does, by the same ancestry test `verify` applies.
 
