@@ -664,9 +664,12 @@ git config is required.
 `run_cli` runs the command inside the pytest worker, which saves an interpreter start per
 call; `tests/e2e/cli_in_process.py` says what of the child it rebuilds and what it puts
 back. A file whose assertions need the process itself binds `cli_runner(spawn=True)`: a
-signal, a killed child, the console script, the child's own stdio decoding, PYTHONPATH
-(only a new interpreter reads it), calls made at once, or a patch on crapkit's own
-modules that is live while `run_cli` runs. These files do:
+signal, a killed child, the console script, the child's own stdio decoding, environment
+the interpreter reads only as it starts (PYTHONPATH, PYTHONIOENCODING, PYTHONUTF8 and the
+other PYTHON* variables), calls made at once, a repo big enough for the analysis pool (an
+in-process call that reaches it refuses), or a patch on crapkit's own modules that is
+live while `run_cli` runs. TMPDIR, TEMP and TMP work in process, because the runner
+clears tempfile's cached directory for the call. These files do:
 
 | File | What needs the process |
 |---|---|

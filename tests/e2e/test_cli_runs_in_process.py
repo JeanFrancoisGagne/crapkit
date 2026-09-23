@@ -13,6 +13,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -134,7 +135,8 @@ def _process_state() -> dict:
             "threads": threading.active_count(),
             "fds": tuple(os.fstat(fd).st_ino for fd in (1, 2)),
             "warnings": (list(warnings.filters), warnings.showwarning),
-            "frozen": gc.get_freeze_count()}
+            "frozen": gc.get_freeze_count(),
+            "tempdir": tempfile.gettempdir()}
 
 
 def _worker_state() -> dict:
@@ -192,6 +194,24 @@ def test_an_uncaught_exception_is_exit_1_with_its_traceback(tmp_path, monkeypatc
     assert done.returncode == 1 and done.stdout == ""
     assert "Traceback" in done.stderr and "RuntimeError: the command broke" in done.stderr
     assert os.getcwd() == here and "CRAPKIT_PROBE_MARK" not in os.environ
+
+
+def test_the_calls_temp_dir_comes_from_its_environment(tmp_path, monkeypatch):
+    """A child reads TMPDIR, TEMP and TMP the first time tempfile asks. The
+    worker asked long ago and kept the answer, so a call under another TEMP
+    would have written its temp files where the worker's go."""
+    import crapkit.cli
+
+    monkeypatch.setattr(crapkit.cli, "main", lambda argv: print(tempfile.gettempdir()))
+    other = tmp_path / "another-temp"
+    other.mkdir()
+    worker = tempfile.gettempdir()
+
+    done = run_cli(tmp_path, "worklist",
+                   env_extra={name: str(other) for name in ("TMPDIR", "TEMP", "TMP")})
+
+    assert (done.returncode, done.stdout) == (0, f"{other}\n")
+    assert tempfile.gettempdir() == worker
 
 
 def test_stdin_reaches_the_command_as_a_child_would_read_it(tmp_path, monkeypatch):

@@ -8,6 +8,8 @@ point `python -m crapkit` reaches, so the worker can call it directly, provided
 it rebuilds what the child had and puts the worker back afterwards:
 
 - cwd and os.environ are the child's for the call, and the worker's after it.
+  tempfile forgets the directory it cached for the worker, so the call's
+  TMPDIR, TEMP and TMP choose its temp dir as they would a child's.
 - File descriptors 1 and 2 point at a temp file each for the call, so output
   from crapkit and from any command it starts with inherited stdio (a
   test-scoped runner, a lane) lands where the child's pipes would have caught
@@ -30,7 +32,13 @@ it rebuilds what the child had and puts the worker back afterwards:
 
 What it cannot rebuild is the process boundary itself: the console entry point,
 the child's own stdio encoding, exit codes as the OS reports them, a killed
-process. Files that test those keep `spawn=True` (AGENTS.md says which).
+process, and environment the interpreter reads only as it starts (PYTHONPATH,
+PYTHONIOENCODING, PYTHONUTF8, PYTHONDONTWRITEBYTECODE, PYTHONSAFEPATH and the
+other PYTHON* variables). A variable any other stdlib module caches on first
+use is the worker's too, tempfile's aside. Files that need any of these, or a
+repo big enough for the analysis pool, keep `spawn=True` (AGENTS.md says
+which). The commands crapkit starts are real children and get the call's
+whole environment.
 
 Two calls cannot run at once, since each one owns the process for its
 duration; a second call while one is running raises instead of corrupting both.
@@ -133,6 +141,7 @@ def _enter_child(stack: ExitStack, repo: Path, env: dict, files) -> None:
     stack.enter_context(_cold_crapkit_caches())
     stack.enter_context(_working_directory(repo))
     stack.enter_context(_environment(env))
+    stack.enter_context(_swapped(tempfile, "tempdir", None))
     stack.enter_context(_swapped(_analysis_pool(), "analysis_pool", _refuse_pool))
     for fd, file in zip((1, 2), files):
         stack.enter_context(_descriptor(fd, file))
