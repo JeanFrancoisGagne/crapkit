@@ -3,7 +3,10 @@
 The reader moved to analysis version 11 while five pages still said 10: the
 README's upgrade note, the doctor field, the marks-file example and its stamp
 row, and the ratchet page's pointer to the current reader. A reader comparing
-a stamp against the docs then took a current marks file for a stale one.
+a stamp against the docs then took a current marks file for a stale one. The
+ratchet page's seed and verify sessions keep their own crapkit, one that
+measures analysis 10 (test_verify_reads_its_baseline_before_the_stamp_guard pins
+it): they show an upgrade, not the current number.
 docs/upgrading.md also owes the running version a section of its own, since an
 upgrade across it re-seeds every marks file.
 """
@@ -22,9 +25,6 @@ CLAIMS = [
     ("docs/ratchet.md", r"## What a mark is\s+```\s+# crapkit-analysis=(\d+) "),
     ("docs/ratchet.md", r"the current reader uses version (\d+)"),
     ("docs/ratchet.md", r"\| `# crapkit-analysis=(\d+) lizard=[^`]*` \| The reader"),
-    ("docs/ratchet.md", r"not this crapkit's \[crapkit-analysis=(\d+) "),
-    ("docs/ratchet.md", r"this run measures \[crapkit-analysis=(\d+) [^\]]*\] [^\n]*"
-                        r"re-baseline from run"),
     ("docs/upgrading.md", r"^###? Analysis version (\d+)"),
 ]
 

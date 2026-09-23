@@ -320,7 +320,7 @@ says so, and prune's line names the run's metric the same way:
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=10 lizard=1.24.0], not this crapkit's [crapkit-analysis=11 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=9 lizard=1.24.0], not this crapkit's [crapkit-analysis=10 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
 ```
 
 A run stored before crapkit recorded its metric vouches for none, and seed refuses it:
@@ -341,7 +341,7 @@ names run ID, since verify reads `--baseline` before it checks the stamp:
 
 ```
 $ crapkit verify --baseline 12
-crapkit: ratchet marks were recorded under [crapkit-analysis=10 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
+crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] but this run measures [crapkit-analysis=10 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
 EXIT=3
 ```
 
