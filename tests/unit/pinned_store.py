@@ -41,12 +41,14 @@ def store_of(repo: Path) -> SnapshotStore:
     return SnapshotStore(repo / ".crapkit" / "crap.sqlite")
 
 
-def write_run(repo: Path, rows: list, *, kind: str = "coverage", ok: bool | None = None) -> int:
-    """One stored run at HEAD; `ok` sets a verify's verdict."""
+def write_run(repo: Path, rows: list, *, kind: str = "coverage", ok: bool | None = None,
+              versions: dict | None = None) -> int:
+    """One stored run at HEAD; `ok` sets a verify's verdict, `versions` the metric it
+    was measured under (this crapkit's by default)."""
     store = store_of(repo)
     with closing(store._conn):
         run_id = store.write_run(commit=git(repo, "rev-parse", "HEAD").strip(),
-                                 tool_versions=MEASURED, rows=rows,
+                                 tool_versions=versions or MEASURED, rows=rows,
                                  lanes={"unit": {}, "ui": {}}, kind=kind)
         if ok is not None:
             store.set_verdict_ok(run_id, ok, findings=0 if ok else 1)

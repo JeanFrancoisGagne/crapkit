@@ -299,6 +299,23 @@ crapkit: ratchet seed: run 3 recorded no metric (analysis version and lizard), s
 EXIT=3
 ```
 
+A failed verify can leave that remedy with nothing to work on. Seed reads the run verify would
+pick, and after a failed verify that is the run before the failure until a verify passes
+([seed and prune pick the run verify picks](#seed-and-prune-pick-the-run-verify-picks)). A
+fresh `coverage` run sits behind the failure too, so seed reads the old run again and keeps
+its old stamp. Name the newer run instead. verify reads `--baseline ID` before it checks the
+stamp, so its refusal names the seed that clears it:
+
+```
+$ crapkit verify --baseline 12
+crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] but this run measures [crapkit-analysis=10 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
+EXIT=3
+```
+
+`crapkit ratchet seed --baseline 12` stamps run 12's metric, and the next verify runs. When
+the named run was measured under another metric too, the refusal asks for a `coverage` run
+first and a seed from the run it writes.
+
 Reseeding from a fresh run can update compatible marks; changed function membership needs
 the identity review below first.
 

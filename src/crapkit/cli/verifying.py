@@ -137,6 +137,11 @@ def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, gi
     return _verify_baseline(root, store, args.baseline)
 
 
+def _named_run(args, baseline: dict) -> dict | None:
+    """The baseline when `--baseline ID` chose it; None when verify's rule did."""
+    return baseline if args.baseline is not None else None
+
+
 def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, str]:
     """(the baseline record, the commit the diff is measured from).
 
@@ -178,11 +183,13 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _guard_ratchet_stamp(saved, name: str) -> None:
+def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     """Refuse to weigh fresh scores against marks another metric produced.
 
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
+    It runs after the baseline is read, so `named`, the run `--baseline ID`
+    names, can be the run the refusal says to seed from.
     """
     from ..ratchet import coverage_then_seed, metric_version
 
@@ -194,7 +201,38 @@ def _guard_ratchet_stamp(saved, name: str) -> None:
         return
     conflict = saved.stamp_conflict(metric_version())
     if conflict:
-        raise ConfigError(conflict)
+        raise ConfigError(_stamp_refusal(conflict, named))
+
+
+def _stamp_refusal(conflict: str, named: dict | None) -> str:
+    """The stamp refusal, naming the seed that clears it when verify names its baseline.
+
+    The stock remedy's `ratchet seed` reads the run verify would pick. A failed
+    verify can pin that to a run an older crapkit measured, or one written
+    before same-line positions, and seed then keeps the old stamp or refuses
+    outright, so the remedy led back to this refusal (#75). A named run is the
+    one to seed from.
+    """
+    from ..ratchet import coverage_then_seed
+
+    if named is None:
+        return conflict
+    return conflict.removesuffix(coverage_then_seed()) + _named_seed(named)
+
+
+def _named_seed(named: dict) -> str:
+    """The seed that re-baselines the marks from the run verify was handed.
+
+    Seed stamps the metric of the run it reads, so a run another metric measured
+    needs a coverage run first, and that run is the one to name.
+    """
+    from ..ratchet import metric_version, run_stamp
+
+    run_id = named["id"]
+    if run_stamp(named["tool_versions"]) == metric_version():
+        return f"re-baseline from run {run_id} with `{_self()} ratchet seed --baseline {run_id}`"
+    return (f"run {run_id} was measured under another metric too, so run `{_self()} coverage`, "
+            f"then re-baseline from the run it writes with `{_self()} ratchet seed --baseline ID`")
 
 
 def _override_applies(verdict, reason: str | None) -> bool:
@@ -602,7 +640,6 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _refuse_lane_less_verify(cfg)
     store = _verify_store(root, args.baseline_tsv)
     saved = RatchetFile.read(root / cfg.ratchet_file)
-    _guard_ratchet_stamp(saved, cfg.ratchet_file)
     # One context for the whole command: the ancestry checks, the lane runner and
     # this attribution all used to spawn their own git. Asking here also FIXES the
     # dirty set before any lane command runs, so a lane writing into a tracked file
@@ -610,6 +647,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     git = GitFacts(root)
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
+    _guard_ratchet_stamp(saved, cfg.ratchet_file, _named_run(args, baseline))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
