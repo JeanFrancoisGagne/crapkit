@@ -27,8 +27,10 @@ crash, and a key that does not answer is refused before the body is parsed.
 from __future__ import annotations
 
 import json
+import os
 import zlib
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import NamedTuple
 
 from .churn import Commit, WindowCommits, fold
@@ -143,15 +145,35 @@ def _decode(body: bytes) -> WindowCommits | None:
 
 
 def _write(root: Path, months: int, head: str, cutoff: int, table: WindowCommits) -> None:
-    """Best effort: a read-only .crapkit costs the speedup, never the command. A
-    write torn by a crash or a second crapkit fails its CRC and reads as cold."""
     body = json.dumps(_encoded(table), separators=(",", ":")).encode("utf-8")
     key = {"head": head, "months": months, "paths": PATH_FORMAT, "cutoff": cutoff,
            "size": len(body), "crc": zlib.crc32(body)}
-    path = root / ".crapkit" / COMMITS_NAME
+    _publish(root / ".crapkit" / COMMITS_NAME,
+             json.dumps(key, sort_keys=True).encode("utf-8") + b"\n" + body)
+
+
+def _publish(path: Path, blob: bytes) -> None:
+    """Written aside under a name of its own and renamed over the table, the
+    way the log is published: a reader never meets half a table, and a write
+    that fails leaves the previous one whole, with no scratch behind it. Best
+    effort: a read-only .crapkit costs the speedup, never the command."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(json.dumps(key, sort_keys=True).encode("utf-8") + b"\n" + body)
+        scratch = NamedTemporaryFile(dir=path.parent, prefix=path.stem + ".",
+                                     suffix=".part", delete=False)
+    except OSError:
+        return
+    try:
+        with scratch:
+            scratch.write(blob)
+        os.replace(scratch.name, path)
+    except OSError:
+        _drop(Path(scratch.name))
+
+
+def _drop(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
     except OSError:
         return
 

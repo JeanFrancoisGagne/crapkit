@@ -14,6 +14,7 @@ date, so 0.5 at the newest, 1/(1+e^6) = 0.0024726 halfway, 1/(1+e^3) = 0.0474259
 at three quarters, and 1/(1+e^12) = 0.0000061 at the oldest.
 """
 import json
+import os
 
 import pytest
 
@@ -430,14 +431,49 @@ def test_an_unreadable_head_keeps_no_table(tmp_path, git, monkeypatch):
     assert not table_file(tmp_path).exists()
 
 
-def test_a_read_only_crapkit_still_answers(tmp_path, git, monkeypatch):
-    def refuse(self, data):
-        raise PermissionError("read-only")
-
-    monkeypatch.setattr(type(tmp_path), "write_bytes", refuse)
+def test_a_read_only_crapkit_still_answers(tmp_path, git):
+    """A .crapkit nothing can be written into: here a file squats on the name."""
+    (tmp_path / ".crapkit").write_text("not a directory", encoding="utf-8")
 
     assert churn_cache.load_churn(tmp_path, 12) == AT_A
     assert not table_file(tmp_path).exists()
+
+
+def test_a_table_write_that_fails_leaves_the_previous_table_whole(tmp_path, git, monkeypatch):
+    """Every carry rewrites the table, 9.4 MB on a large consumer repo. Written
+    in place, a second crapkit reading mid-write fails the CRC and walks the
+    whole window, and a write that stops part way leaves a torn table. Written
+    aside and renamed over it, the previous table stays whole until the new
+    one is complete, and a rename that fails leaves no scratch behind."""
+    churn_cache.load_churn(tmp_path, 12)
+    laid = table_file(tmp_path).read_bytes()
+
+    def refuse(src, dst):
+        raise PermissionError("a reader holds the table open")
+
+    monkeypatch.setattr(os, "replace", refuse)
+    move_head(git)
+
+    assert churn_cache.load_churn(tmp_path, 12) == AT_B
+    assert table_file(tmp_path).read_bytes() == laid
+    assert sorted(p.name for p in (tmp_path / ".crapkit").iterdir()) == [
+        churn_cache.CACHE_NAME, churn_commits.COMMITS_NAME]
+
+
+def test_a_scratch_that_cannot_be_removed_still_costs_only_the_speedup(
+        tmp_path, git, monkeypatch):
+    churn_cache.load_churn(tmp_path, 12)
+    laid = table_file(tmp_path).read_bytes()
+
+    def refuse(*args, **kwargs):
+        raise PermissionError("held open")
+
+    monkeypatch.setattr(os, "replace", refuse)
+    monkeypatch.setattr(type(tmp_path), "unlink", refuse)
+    move_head(git)
+
+    assert churn_cache.load_churn(tmp_path, 12) == AT_B
+    assert table_file(tmp_path).read_bytes() == laid
 
 
 def test_a_shallow_clone_keeps_no_table(tmp_path, git):
