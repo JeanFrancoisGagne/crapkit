@@ -7,6 +7,7 @@ around and failed, `explain src/a.py 1` named one function and `brief src/a.py 1
 another, off the same file and the same line.
 """
 import json
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,8 @@ from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore, default_baseline
+
+ROOT = Path(__file__).resolve().parents[2]
 
 TOML = """[crapkit]
 target = 6
@@ -140,3 +143,21 @@ def test_a_store_with_no_run_at_all_matches_nothing(root, capsys):
 
     assert capsys.readouterr().err == (
         "crapkit: no function matching '1' in src/a.py appears in any run\n")
+
+
+@pytest.mark.parametrize("page", ("AGENTS.md", "docs/agent-json.md"))
+def test_the_pages_say_explain_keeps_a_file_the_newest_trusted_run_dropped(root, capsys, page):
+    """Run 2 is trusted and dropped src/a.py. brief finds nothing there and
+    refuses; explain answers off run 1, the newest trusted run that still holds
+    the file. The pages said both commands read the newest trusted run."""
+    store = open_store(root)
+    store.write_run(commit="a" * 40, tool_versions={},
+                    rows=[scored("src/a.py", "f( )", 1), scored("src/b.py", "h( )", 1)])
+    store.write_run(commit="b" * 40, tool_versions={}, rows=[scored("src/b.py", "h( )", 1)])
+    baseline = default_baseline(store)["id"]
+    text = " ".join((ROOT / page).read_text(encoding="utf-8").split())
+
+    with pytest.raises(CrapkitError):
+        _pick_function("src/a.py", store.read_scored_file(baseline, "src/a.py"), "1")
+    assert explained(root, capsys, "src/a.py", "1") == ["f( )"]
+    assert "`explain` reads the newest trusted run that still holds it" in text, page

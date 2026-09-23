@@ -516,7 +516,9 @@ packet and three in a trajectory.
 The start line resolves a function only when that line names one source position.
 When several functions start there, the command refuses the numeric selector and lists
 their handles. Use the handle to select one. `explain` resolves against the run `brief`
-reads, the newest trusted one:
+reads, the newest trusted one. When that run dropped the file, `brief` refuses it and
+`explain` reads the newest trusted run that still holds it. On a file the newest trusted
+run holds, both answer alike:
 
 ```
 $ crapkit explain calc/grade.py 1
