@@ -12,6 +12,7 @@ build and the write each time. On a verify run the first brief or duplication
 report still builds and stores the index.
 """
 import json
+from pathlib import Path
 
 from cli_inproc_repo import (APP_TS, commit_all, repo, seed_artifacts,  # noqa: F401
                              template_repo)
@@ -19,7 +20,10 @@ from cli_inproc_repo import (APP_TS, commit_all, repo, seed_artifacts,  # noqa: 
 import pytest
 
 from crapkit.cli import analyses, main, queue
+from crapkit.mcp_server import tool_listing
 from crapkit.store import SnapshotStore
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def store(repo) -> SnapshotStore:
@@ -87,3 +91,20 @@ def test_the_first_brief_after_coverage_opens_only_its_own_file(repo, capsys, re
 
     assert json.loads(capsys.readouterr().out)["path"] == "src/app.ts"
     assert reads == [{"src/app.ts"}]
+
+
+def test_the_served_descriptions_say_twins_come_from_the_stored_index():
+    """get_function_brief said every call shingles the repo, and
+    list_duplicate_functions that it shingles source on every call. The tests
+    above show both reading the index the run stored."""
+    served = {t["name"]: t["description"] for t in tool_listing()}
+
+    assert "the run's stored index" in served["get_function_brief"]
+    assert "the run's stored index" in served["list_duplicate_functions"]
+
+
+def test_the_json_page_says_where_the_index_is_written():
+    """The page said no on-disk cache stood behind the batch saving."""
+    text = " ".join((ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8").split())
+
+    assert "`inventory` and `coverage` write it as they record the run" in text
