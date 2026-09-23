@@ -317,6 +317,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     prune creates holds no mark and takes the running metric, which relabels
     nothing.
     """
+    from ..keys import require_unambiguous
     from ..ratchet import metric_version
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
@@ -325,6 +326,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     work = _latest_full_run(store, requested)
     latest = work.run
     fresh = store.read_scored(latest["id"])
+    require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store)
     if action == "seed":
@@ -338,6 +340,41 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
     return 0
+
+
+def _identity_advice(work: _WorkRun, action: str) -> str:
+    """What moves seed or prune off a run whose same-line twins it cannot key.
+
+    A fresh coverage run clears the refusal only when it becomes the run seed
+    reads next. Behind a failed verify, or under `--baseline`, it does not, and
+    the stock "refresh analysis" sent the reader to rerun coverage for nothing
+    while a positioned run sat in the store (#75).
+    """
+    from ..keys import REFRESH_ADVICE
+
+    reason = _pinned_by(work, action)
+    if reason is None:
+        return REFRESH_ADVICE
+    return (f"{reason}, so a fresh `{_self()} coverage` alone changes nothing; "
+            f"{_way_off(work.newer)}")
+
+
+def _pinned_by(work: _WorkRun, action: str) -> str | None:
+    """Why seed or prune read this run rather than the one coverage writes next."""
+    run_id = work.run["id"]
+    if work.named:
+        return f"{action} reads run {run_id} because `--baseline {run_id}` names it"
+    if work.skipped:
+        return (f"{action} reads run {run_id} because verify run {work.skipped[0]['id']} "
+                "FAILED after it and no verify has passed since")
+    return None
+
+
+def _way_off(newer: dict | None) -> str:
+    """The command that reads another run: the newer one when the store holds it."""
+    if newer is None:
+        return f"run `{_self()} coverage` and pass the run it writes to `--baseline`"
+    return f"pass `--baseline {newer['id']}` to read run {newer['id']}"
 
 
 def _seeded(prior: list, fresh: list, cfg) -> tuple[list, str]:
