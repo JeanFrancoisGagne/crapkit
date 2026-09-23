@@ -132,7 +132,7 @@ def test_a_store_with_no_trusted_run_keeps_seeds_own_line(repo, capsys):
     assert "no trusted full run to work from" in err, err
 
 
-@pytest.mark.parametrize("action", ["report", "move"])
+@pytest.mark.parametrize("action", ["report", "move", "merge"])
 def test_an_action_that_reads_no_run_refuses_the_flag(repo, capsys, action):
     """Silently ignoring it would let `ratchet report --baseline 3` read as a
     report about run 3."""
