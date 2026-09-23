@@ -98,7 +98,11 @@ this every def after it replaced the pending one unlisted. The def is then
 listed as the same def with its body on the next line is, one line shorter:
 `def f(): ...` reads `f( )` at ccn 1 over one line, an `@overload` stub on one
 line takes its twin key as a two-line stub does, and the lines after it go back
-to its parent.
+to its parent. Cognitive and nesting are the exception: crapkit.lizardcognitive
+starts a Python body at the def's first newline, so a one-line def reads
+cognitive 0 and nesting 0 whatever its body holds, and
+`def f(x, y): return 1 if x and y else 2` reads cognitive 0 where its two-line
+form reads 2. Both fields are reported and never gated.
 
 The class name
 --------------
