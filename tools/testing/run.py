@@ -7,7 +7,6 @@ import importlib
 import importlib.util
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -44,12 +43,17 @@ def _runtime():
             importlib.import_module(spec.name + ".procs"))
 
 
+def _runtime_module(name: str):
+    """A module from the installation that supplied the lifecycle helpers."""
+    retention, _ = _runtime()
+    return importlib.import_module(retention.__package__ + "." + name)
+
+
 def _retention_limits(root: Path) -> dict:
     path = root / "crapkit.toml"
     if not path.is_file():
         return {}
-    retention, _ = _runtime()
-    config = importlib.import_module(retention.__package__ + ".config")
+    config = _runtime_module("config")
     cfg = config.load_config_text(path.read_text(encoding="utf-8"), root=root)
     return {"keep": cfg.test_retention_count, "days": cfg.test_retention_days}
 
@@ -91,39 +95,34 @@ def _incomplete_suite(name: str, code: int, reason: str) -> ET.Element:
     return suite
 
 
-def _completed_pytest(suite: ET.Element, code: int) -> bool:
-    if _unfinished_pytest(suite):
-        return False
-    return code == 0 or (code == 1 and any(
-        node.tag in {"failure", "error"} for node in suite.iter()))
+def _unfinished(text: str, code: int) -> str:
+    """Why a session's report is not a completed pytest run, or "" when it is.
+
+    junitparse owns the report's rules, the ones the lane and CI's probe apply
+    to the same file. The runner adds one: pytest's exit agrees with the report,
+    so 0, or 1 with a recorded failure.
+    """
+    junit, errors = _runtime_module("junitparse"), _runtime_module("errors")
+    try:
+        failed, _ = junit.suite_summary(text)
+    except errors.ToolError as exc:
+        return str(exc)
+    return "" if _exit_agrees(code, failed) else "JUnit did not record a completed pytest run"
 
 
-def _unfinished_pytest(suite: ET.Element) -> bool:
-    return _session_error(suite) or any(_interrupted_error(error) for error in suite.iter("error"))
-
-
-def _session_error(suite: ET.Element) -> bool:
-    in_case = {id(error) for case in suite.iter("testcase") for error in case.iter("error")}
-    return any(id(error) not in in_case for error in suite.iter("error"))
-
-
-def _interrupted_error(error: ET.Element) -> bool:
-    # These are pytest producer records, not failures of completed test cases.
-    message = error.get("message", "")
-    if message == "collection failure":
-        return True
-    text = message + " " + (error.text or "")
-    return re.search(r"worker '[^']+' crashed while running '[^']+'", text) is not None
+def _exit_agrees(code: int, failed: set) -> bool:
+    return code == 0 or (code == 1 and bool(failed))
 
 
 def _suite_xml(scratch: Path, name: str, code: int) -> tuple[list, bool]:
     try:
-        suite = ET.parse(scratch / (name + ".xml")).getroot()
-    except (OSError, ET.ParseError) as exc:
+        text = (scratch / (name + ".xml")).read_text(encoding="utf-8")
+        suite = ET.fromstring(text)
+    except (OSError, UnicodeError, ET.ParseError) as exc:
         return [_incomplete_suite(name, code, str(exc))], False
     parts = list(suite) if suite.tag == "testsuites" else [suite]
-    if not _completed_pytest(suite, code):
-        reason = "JUnit did not record a completed pytest run"
+    reason = _unfinished(text, code)
+    if reason:
         return [*parts, _incomplete_suite(name, code, reason)], False
     return parts, True
 
