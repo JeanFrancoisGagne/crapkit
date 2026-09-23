@@ -29,9 +29,10 @@ from __future__ import annotations
 import codecs
 import json
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from itertools import chain
+from operator import methodcaller
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import BinaryIO
@@ -49,6 +50,11 @@ LOG_NAME = "churn-log-v2.z"
 LEGACY_NAME = "churn-log.z"
 LOG_FORMAT = "--format=%x01%an%x02%at%x02%ct"
 CHUNK = 1 << 20
+# Characters of log text per compress call and file write. One call and one
+# write per line cost 0.36-0.57 s over a 635k-line log; a megabyte at a time,
+# 0.17-0.22 s, for the same deflated text.
+TEE_BATCH = 1 << 20
+_TRIM = methodcaller("rstrip", "\n")
 # The key's format marker: these logs hold root-relative paths (--relative),
 # the only kind that joins against ls-files rows when the root sits below the
 # repo top. A key without it names a top-relative log, and that one is cold —
@@ -62,6 +68,14 @@ def log_lines(root: Path, months: int) -> Iterator[str]:
     Same lines as `gitio.churn_log_lines`, off disk whenever the key still holds.
     """
     return (_shipped(line) for line in _stored_lines(root, months))
+
+
+def dated_lines(root: Path, months: int) -> Iterator[str]:
+    """The same log with each header's commit date still on it (%an, %at, %ct).
+
+    For a reader that splits headers itself: it gets the commit date for free
+    and skips the per-line strip `log_lines` makes for everyone else."""
+    return _stored_lines(root, months)
 
 
 def has_cache(root: Path) -> bool:
@@ -264,16 +278,33 @@ def _tee(source: Iterator[str], path: Path, key: dict | None) -> Iterator[str]:
         return
     comp = zlib.compressobj(1)
     try:
-        for line in source:
-            # normalized: the seam promises lines, not their endings, and a
-            # stub that strips them would be written back as one long line.
-            part.write(comp.compress(line.rstrip("\n").encode("utf-8") + b"\n"))
-            yield line
+        for batch in _batches(source, TEE_BATCH):
+            part.write(comp.compress(_encoded(batch)))
+            yield from batch
         part.write(comp.flush())
     except BaseException:
         _discard(part)
         raise
     _keep(part, path, key)
+
+
+def _batches(lines: Iterable[str], size: int) -> Iterator[list[str]]:
+    """Runs of lines holding at least `size` characters; the last run holds the rest."""
+    batch, held = [], 0
+    for line in lines:
+        batch.append(line)
+        held += len(line)
+        if held >= size:
+            yield batch
+            batch, held = [], 0
+    if batch:
+        yield batch
+
+
+def _encoded(batch: list[str]) -> bytes:
+    """Normalized: the seam promises lines, not their endings, and a stub that
+    strips them would be written back as one long line."""
+    return ("\n".join(map(_TRIM, batch)) + "\n").encode("utf-8")
 
 
 def _open_part(path: Path, key: dict | None) -> BinaryIO | None:

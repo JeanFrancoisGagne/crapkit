@@ -1,11 +1,13 @@
 """Per-file churn from git history. Pure parser; the shell supplies the log text.
 
 The log format is one \\x01-prefixed author line per commit followed by the
-commit's file paths (git log --format=%x01%an --name-only).
+commit's file paths (git log --format=%x01%an --name-only). A header may carry
+the author date after a \\x02 (%at), and the stored log adds the commit date
+after another (%ct); the parser reads both shapes.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import NamedTuple
 
 from .gitpaths import history_line, unquote_path
@@ -37,32 +39,42 @@ def _twr(ts: int, oldest: int, newest: int) -> float:
 
 
 def _split_author(line: str) -> tuple[str, int | None]:
-    body = line[1:]
-    if "\x02" not in body:
-        return body, None
-    name, _, raw = body.partition("\x02")
+    """The author and author date off a header, whether or not a commit date follows."""
+    name, _, dates = line[1:].partition("\x02")
+    raw = dates.partition("\x02")[0]
     return name, int(raw) if raw.isdigit() else None
+
+
+def _blocks(lines: Iterable[str]) -> Iterator[tuple[str | None, list[str]]]:
+    """(header, paths) per commit in log order. Blank lines drop out, and paths
+    ahead of the first header arrive under a None header.
+
+    Only a quoted path goes through the unquoter: every other line already is
+    the path, and the call cost more than the rest of the loop."""
+    header, paths = None, []
+    for raw in lines:
+        line = history_line(raw)
+        if line.startswith("\x01"):
+            yield header, paths
+            header, paths = line, []
+        elif line:
+            paths.append(unquote_path(line) if line[0] == '"' else line)
+    yield header, paths
 
 
 def _collect(lines: Iterable[str]):
     commits: dict[str, int] = {}
     authors: dict[str, set[str]] = {}
     stamps: dict[str, list[int]] = {}
-    author, ts = None, None
-    for raw in lines:
-        line = history_line(raw)
-        if not line:
+    for header, paths in _blocks(lines):
+        if header is None:
             continue
-        if line.startswith("\x01"):
-            author, ts = _split_author(line)
-            continue
-        if author is None:
-            continue
-        path = unquote_path(line)
-        commits[path] = commits.get(path, 0) + 1
-        authors.setdefault(path, set()).add(author)
-        if ts is not None:
-            stamps.setdefault(path, []).append(ts)
+        author, ts = _split_author(header)
+        for path in paths:
+            commits[path] = commits.get(path, 0) + 1
+            authors.setdefault(path, set()).add(author)
+            if ts is not None:
+                stamps.setdefault(path, []).append(ts)
     return commits, authors, stamps
 
 

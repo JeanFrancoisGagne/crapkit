@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .churn import FileChurn, parse_git_log_lines
-from .churn_log import has_cache, log_lines, sweep_legacy
+from .churn_log import dated_lines, has_cache, sweep_legacy
 from .errors import GitError
 from .gitio import churn_log_lines, head_commit
 from .gitpaths import PATH_FORMAT
@@ -46,9 +46,10 @@ def _window_lines(root: Path, months: int) -> Iterator[str]:
     Read through the deflated log cache when one is on disk (free at an exact
     key, a cached..HEAD range walk otherwise); straight from git when none is.
     A map-only command never lays the log down — the commands that need its
-    per-commit structure (brief, batches, coupling) already do."""
+    per-commit structure (brief, batches, coupling) already do. The stored
+    headers keep their commit date, which the parser reads past on its own."""
     if has_cache(root):
-        return log_lines(root, months)
+        return dated_lines(root, months)
     return churn_log_lines(root, months)
 
 
