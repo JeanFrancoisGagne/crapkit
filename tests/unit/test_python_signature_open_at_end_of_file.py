@@ -31,8 +31,12 @@ def either_reader(request):
 
 
 # (source, line, the def's own name). The stock reader still prefixes the
-# last case with the one-line def before it, `f.g( ...`: that is its pin in
-# tests/unit/test_lizardpython.py, not the net's business.
+# case after a one-line def and a class with that def, `f.g( ...`: that is its
+# pin in tests/unit/test_lizardpython.py, not the net's business.
+#
+# The stock reader cuts the last two off at the return annotation's `[` and
+# charges the rest of the signature to the file's global pseudo function. That
+# is no def, and the net names none for it.
 OPEN_AT_END = [
     ("top-level def", "def g(a, b=(),\n", 1, "g( a , b = ( )"),
     ("method of a class", "class A:\n    def g(self, b=(),\n", 2, "g( self , b = ( )"),
@@ -40,6 +44,8 @@ OPEN_AT_END = [
     ("after a one-line def and a class", "def f(x): return x\nclass A:\n    def g(self, b=(),\n",
      3, "g( self , b = ( )"),
     ("nested def", "def outer(a):\n    def inner(a, b=(),\n", 2, "outer.inner( a , b = ( )"),
+    ("top-level return annotation", "def f(a) -> tuple[\n    int,\n]", 1, "f( a )"),
+    ("method return annotation", "class A:\n    def f(self) -> tuple[\n        int,\n    ]", 2, "f( self )"),
 ]
 
 
@@ -50,6 +56,7 @@ def test_a_file_ending_inside_a_signature_is_refused_and_names_that_def(either_r
     assert isinstance(records, UnanalyzableFile)
     assert f"reached no body for 1 def(s): open.py:{line} " in records.reason
     assert f"{def_name}; a def read no further" in records.reason
+    assert "*global*" not in records.reason
 
 
 def test_a_file_ending_on_the_def_keyword_names_no_def(either_reader):

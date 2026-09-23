@@ -201,10 +201,13 @@ class _DefSignatures:
     A function some other reader produced never gets the attribute, which is
     what keeps `_unread_defs` to Python.
 
-    `signature_owner` is the function current at the last signature token. A
-    file that ends before that signature's colon leaves its def pending, and
-    lizard lists a pending def only when an enclosing def is popped at the end
-    of the file. `finish` lists it, so the net names it either way.
+    `signature_owner` is the last def current at a signature token. A file
+    that ends before that signature's colon leaves its def pending, and lizard
+    lists a pending def only when an enclosing def is popped at the end of the
+    file. `finish` lists it, so the net names it either way. The stock reader
+    charges the rest of a top-level def's cut-off signature to the file's
+    global pseudo function, which is no def and never becomes the owner: the
+    def it cut off is listed already, and the net names that one.
     """
 
     def __init__(self, context):
@@ -237,7 +240,8 @@ class _DefSignatures:
         # A parent the stock reader hands the rest of a cut-off signature to
         # was read to its body already, and keeps that.
         fn.crapkit_body = getattr(fn, "crapkit_body", False)
-        self.signature_owner = fn
+        if fn is not self.context.global_pseudo_function:
+            self.signature_owner = fn
         if token == ":" and self.depth == 0:
             self.colon_owner, self.depth = fn, None
         else:
