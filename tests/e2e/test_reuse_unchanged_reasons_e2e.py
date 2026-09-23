@@ -68,7 +68,7 @@ _run_cli = cli_runner(timeout=300)
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
-                          timeout=60, check=True).stdout
+                          check=True).stdout
 
 
 def _commit(repo: Path, message: str) -> str:

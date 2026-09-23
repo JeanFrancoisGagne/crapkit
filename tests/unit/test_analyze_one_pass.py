@@ -17,7 +17,11 @@ import lizard
 from crapkit import analyze
 from crapkit.analyze import analyze_one
 from crapkit.lizardcognitive import LizardExtension as Cognitive
+from crapkit.merge import FunctionRecord
 from merge_oracle import RawFn, merge_passes
+
+# The fields the retired two-pass parser produced, path through cognitive.
+_RETIRED_FIELDS = FunctionRecord._fields.index("occurrence")
 
 TS_SWITCH = """export function dispatch(kind: string): number {
   switch (kind) {
@@ -152,10 +156,11 @@ def test_the_single_pass_reproduces_the_two_pass_record_for_every_committed_sour
     for path in files:
         rel = path.name
         _, produced = analyze_one((str(path), rel))
-        # The retired parser had no occurrence field. Compare every field it
-        # did produce; real same-line fixtures test the added identity field.
+        # The retired parser stopped at cognitive: no occurrence, no inline_body.
+        # Compare every field it did produce; real same-line and inline-body
+        # fixtures test the fields added after it.
         expected = _two_pass(str(path), rel)
-        assert [r[:-1] for r in produced] == [r[:-1] for r in expected], (
+        assert [r[:_RETIRED_FIELDS] for r in produced] == [r[:_RETIRED_FIELDS] for r in expected], (
             f"single pass diverged on {path}")
         split += sum(1 for r in produced if r.ccn_mod != r.ccn_std)
 

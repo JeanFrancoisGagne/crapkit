@@ -29,7 +29,7 @@ MAKE_COV = (
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=repo,
-                   capture_output=True, check=True, timeout=60)
+                   capture_output=True, check=True)
 
 
 def _lane() -> Lane:
