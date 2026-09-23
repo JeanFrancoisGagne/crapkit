@@ -20,7 +20,7 @@ Commit it.
 ## What a mark is
 
 ```
-# crapkit-analysis=10 lizard=1.24.0
+# crapkit-analysis=11 lizard=1.24.0
 # crapkit-keys=1
 path	long_name	crap
 calc/grade.py	classify( score , attempts , late , bonus )	66.0714
@@ -320,7 +320,7 @@ says so, and prune's line names the run's metric the same way:
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=9 lizard=1.24.0], not this crapkit's [crapkit-analysis=10 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=10 lizard=1.24.0], not this crapkit's [crapkit-analysis=11 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
 ```
 
 A run stored before crapkit recorded its metric vouches for none, and seed refuses it:
@@ -341,7 +341,7 @@ names run ID, since verify reads `--baseline` before it checks the stamp:
 
 ```
 $ crapkit verify --baseline 12
-crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] but this run measures [crapkit-analysis=10 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
+crapkit: ratchet marks were recorded under [crapkit-analysis=10 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
 EXIT=3
 ```
 
@@ -357,7 +357,7 @@ the identity review below first.
 ### Upgrading to 0.4.5: analysis version 8
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
-above belongs to that upgrade; the current reader uses version 10. Follow
+above belongs to that upgrade; the current reader uses version 11. Follow
 [Upgrading](upgrading.md) for current saved-state checks. In the older transition,
 reseeding from a fresh coverage run updated the stamp as follows:
 
@@ -815,7 +815,7 @@ The two stamps answer different questions:
 
 | Stamp | What it records |
 | --- | --- |
-| `# crapkit-analysis=10 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
+| `# crapkit-analysis=11 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
 | `# crapkit-keys=1` | Ordinals ordered by `(start, occurrence)`. |
 
 A missing key-version comment means the old start-only rule. For unchanged groups

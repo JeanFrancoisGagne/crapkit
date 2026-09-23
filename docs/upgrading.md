@@ -16,12 +16,11 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-The 0.7.1 resource and cleanup fixes keep analysis version 10 and the 0.7.0
-function identities. No ratchet migration or manual cache deletion is needed.
-The package upgrade rebuilds the versioned analysis cache automatically.
-Review the new [resource defaults](resources.md), especially bounded lane logs
-and retention of default development test evidence. Restart each client's MCP
-session after upgrading so its running server uses the new cleanup behavior.
+0.8.0 moves the reader to analysis version 11, so a marks file stamped under 10
+needs one re-seed; [analysis version 11](#analysis-version-11) says what moved.
+The package upgrade rebuilds the versioned analysis cache automatically, and the
+first `inventory` or `coverage` after it analyzes every file again. Restart each
+client's MCP session after upgrading so its running server uses the new code.
 
 Keep a copy of the committed ratchet and its diff before an upgrade. In each repo:
 
@@ -42,7 +41,46 @@ any mark changes.
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
 
-The reader is now analysis version 10, compared with version 9 in 0.6.0. It separates
+### Analysis version 11
+
+0.8.0 reads Python defs in four new ways. Each one changes some functions' names or
+numbers, and the stamp records the rules, so every marks file re-seeds once:
+
+- A def with a PEP 695 type parameter list is named by its name. `def f[T](a: int):`
+  read `]( a : int )`, and every generic def in a file that took the same parameters
+  collided on that key.
+- A def nested three or more deep names each enclosing def once: `a.b.c( x )`, where
+  it read `a.a.b.c( x )`.
+- A def whose body sits on its colon line, such as `def one(x): return x`, is listed
+  as its own function. Before, no report showed it and the lines after it counted
+  toward it. A def that encloses one can gain conditions it had lost.
+- Cognitive complexity and nesting count a def's body from the colon that ends its
+  signature, so a one-line body counts and a signature's continuation lines do not.
+
+Only the one-line change moves `ccn`: the def itself, and the defs whose lines it
+used to take. A newly listed def, or an enclosing def that read short before, can be
+over its ceiling and fails the gate the next time its file changes. Under a
+coverage.py lane a one-line def scores as uncovered with remedy `split-lines`,
+because its only line is the `def` statement that runs at import.
+
+After upgrading, in each repo:
+
+```sh
+crapkit coverage
+crapkit ratchet seed
+crapkit ratchet prune
+```
+
+`coverage` measures under version 11, and `ratchet seed` stamps the marks with the
+metric of the run it reads, so a seed from a run 0.7.x measured keeps the old stamp.
+When a failed verify pins the baseline, seed reads the pinned run: pass the new run's
+id, `crapkit ratchet seed --baseline N`; the seed line and verify's refusal both name
+it. `ratchet prune` then drops the marks left under the old names. Review the diff and
+commit it before the next `crapkit verify`.
+
+### Analysis version 10
+
+Analysis version 10, in 0.7.0, replaced version 9 from 0.6.0. It separates
 JavaScript and TypeScript expression callbacks that older readers missed. Current
 rows also carry an `occurrence` for functions sharing a start line. These changes can
 shift anonymous ordinals even when functions begin on different lines. Fresh

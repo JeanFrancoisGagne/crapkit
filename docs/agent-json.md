@@ -955,7 +955,7 @@ lanes: crapkit coverage --reuse-unchanged`.
 ## `doctor --json`
 
 The captured example below uses analysis version 8. A current `doctor` reports
-version 10; read the field from the running tool when checking a ratchet stamp.
+version 11; read the field from the running tool when checking a ratchet stamp.
 
 The only health payload crapkit exposes. It works on a repo that has never run anything.
 
@@ -989,7 +989,7 @@ $ crapkit doctor --json
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
 | `warnings` | The WARN findings: unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, and lanes with no `results_artifact`. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
-| `analysis_version` | The analysis semantics version, currently `10`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
+| `analysis_version` | The analysis semantics version, currently `11`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
 | `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. |

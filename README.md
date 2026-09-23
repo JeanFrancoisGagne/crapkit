@@ -196,8 +196,11 @@ where the flag goes.
 
 Keep the CLI and plugin versions aligned, measure fresh coverage after upgrading,
 and review any ratchet identity refusal before reseeding. The current reader is
-analysis version 10; older JavaScript and TypeScript callback marks can require a
-reviewed mapping. Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
+analysis version 11. It renames once each Python def with a PEP 695 type parameter
+list and each def nested three or more deep, and it lists a def whose body sits on
+its colon line; `crapkit ratchet prune` drops the marks left under the old names.
+Older JavaScript and TypeScript callback marks can require a reviewed mapping.
+Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
 for saved state, portable records and Windows launcher locks.
 
 ### Upgrading from 0.4.4
