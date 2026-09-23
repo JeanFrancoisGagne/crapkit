@@ -53,6 +53,10 @@ SAME_DEF = [
      "def f(a,\n      b=1 if X else 2):\n    return a\n",
      "def f(a, b=1 if X else 2):\n    return a\n",
      (0, 0)),
+    ("a multi-line signature with its body on the colon line",  # the body's or +1
+     "def f(a,\n      b=1 if X else 2): return a or b\n",
+     "def f(a, b=1 if X else 2):\n    return a or b\n",
+     (1, 0)),
     ("a signature continuation line that opens with if",
      "def f(a=(1\n         if X else 2)):\n    return a\n",
      "def f(a=(1 if X else 2)):\n    return a\n",
