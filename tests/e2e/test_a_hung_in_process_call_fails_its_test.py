@@ -80,6 +80,7 @@ def test_a_call_past_its_bound_fails_its_test_and_the_next_test_runs(tmp_path, w
     assert "FAILED test_spins.py::test_hangs" in report
     assert "'-m', 'crapkit', 'worklist', '--json'] finish within 1 s" in report
     assert "started the command" in report
+    assert "test_spins.py:11: in spins" in report, "the stack the call was stopped in"
 
 
 def test_a_call_stuck_in_c_code_ends_the_worker_and_leaves_its_stack_in_basetemp(tmp_path):

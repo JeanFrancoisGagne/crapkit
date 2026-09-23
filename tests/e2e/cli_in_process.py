@@ -48,7 +48,8 @@ does. A watch thread raises _PastBound in the call's thread, which arrives at
 its next Python instruction; a BaseException, so crapkit's `except Exception`
 handlers let it through. Every context above puts the worker back on the way
 out, and the test fails with an AssertionError naming argv, the bound and what
-the call printed, and the session goes on. A thread stuck in C code never
+the call printed, chained to _PastBound's traceback, which shows where the call
+was when it stopped. The session goes on. A thread stuck in C code never
 reaches another Python instruction, so GRACE_SECONDS later faulthandler writes
 every thread's stack to the file `log_hangs_to` named, and the worker exits.
 The suite names a file under the worker's basetemp, because pytest's capture
@@ -110,8 +111,8 @@ def run(repo: Path, args, *, env: dict, stdin: str | None = None,
                 stack.enter_context(_child_stdin(stdin, encoding, errors))
                 stack.enter_context(_swapped(sys, "argv", [_main_path(), *args]))
                 code = _watched(argv, timeout)
-        except _PastBound:
-            raise AssertionError(_miss(argv, timeout, (out, err), encoding)) from None
+        except _PastBound as stopped:
+            raise AssertionError(_miss(argv, timeout, (out, err), encoding)) from stopped
         return subprocess.CompletedProcess(argv, code, _decoded(out, encoding, errors),
                                            _decoded(err, encoding, errors))
 
