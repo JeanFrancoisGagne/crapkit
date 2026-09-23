@@ -567,7 +567,7 @@ def _emit_coverage_findings(root: Path, args, scored, cfg) -> None:
 
 
 # The named source past which loading the shared cache costs less than lizard.
-# On a large consumer repo lizard reads 1.1 to 2.1 ms a KB in process (median
+# On a large consumer repo lizard reads 0.3 to 2.1 ms a KB in process (median
 # 1.1 on its 15 largest files, 1.4 on 15 median-sized ones), and loading the
 # 21.8 MB cache takes 0.36 to 0.41 s on a quiet machine: 256 KB is about that
 # load at the 1.4 ms rate. End to end there, three unchanged files of 194 KB
