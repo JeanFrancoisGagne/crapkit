@@ -566,18 +566,36 @@ def _emit_coverage_findings(root: Path, args, scored, cfg) -> None:
                    over_target_results(scored, cfg.scope_targets, cfg.target))
 
 
+# The named source past which loading the shared cache costs less than lizard.
+# On a large consumer repo lizard reads 1.1 to 2.1 ms a KB in process (median
+# 1.1 on its 15 largest files, 1.4 on 15 median-sized ones), and loading the
+# 21.8 MB cache takes 0.36 to 0.41 s on a quiet machine: 256 KB is about that
+# load at the 1.4 ms rate. Fifteen of those large files ran 0.54 s slower
+# outright than through the cache, eight broke even.
+_RESCORE_OUTRIGHT_BYTES = 256 * 1024
+
+
+def _outright_sized(root: Path, flat: list) -> bool:
+    """Few enough files for the hook's rule, and few enough bytes that lizard on
+    them costs less than loading the cache would."""
+    from ..hook import commit_sized
+
+    return commit_sized(flat) and sum(map(_file_sizer(root), flat)) < _RESCORE_OUTRIGHT_BYTES
+
+
 def _rescored_records(root: Path, cache_path: Path, flat: list,
                       workers: int | None = None, worker_budget: int = 0) -> dict:
     """Fresh records for `flat`.
 
-    A commit's worth of files is analyzed outright, the hook's rule: loading
-    and rewriting the shared cache costs more than lizard on a few files (0.41 s
-    to load a 21.8 MB cache, 0.17 s to rewrite it after an edit, against tens of
-    milliseconds a file). The next inventory analyzes those few files once.
+    A few small files are analyzed outright and the shared cache is neither read
+    nor written: loading a 21.8 MB cache costs 0.41 s and rewriting it after an
+    edit 0.17 s more, against 20 to 200 ms of lizard a file. Past the hook's
+    file threshold or _RESCORE_OUTRIGHT_BYTES the cache is the cheaper read. The
+    next inventory analyzes those few files once.
     """
-    from ..hook import commit_sized, working_tree_records
+    from ..hook import working_tree_records
 
-    if commit_sized(flat):
+    if _outright_sized(root, flat):
         return working_tree_records(root, flat)
     return _cached_records(root, cache_path, flat, workers, worker_budget)
 

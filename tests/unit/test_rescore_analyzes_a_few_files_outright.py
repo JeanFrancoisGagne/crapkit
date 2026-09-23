@@ -1,12 +1,13 @@
-"""`rescore` of a commit's worth of files runs lizard on them and leaves the
-shared analysis cache alone.
+"""`rescore` of a few small files runs lizard on them and leaves the shared
+analysis cache alone.
 
 Loading the cache validated every record in it (0.41 s on a large consumer
 repo's 21.8 MB file) and an edit rewrote all of it (0.17 s more), while lizard
-costs tens of milliseconds a file. The pre-commit hook settled the same trade:
-below its pool threshold it analyzes a commit's files outright with no cache,
-and rescore reuses that threshold rather than a second number. At or above it,
-rescore keeps folding its records into the cache, so the next inventory stays
+costs 4 to 123 ms a file there, about 1.1 to 2.1 ms a KB. The pre-commit hook
+settled the same trade on file count: below its pool threshold it analyzes a
+commit's files outright with no cache, and rescore reuses that threshold. Large
+files break the trade on bytes, so rescore also holds a byte budget: past
+either limit it folds its records into the cache, and the next inventory stays
 warm.
 """
 import json
@@ -17,6 +18,7 @@ import pytest
 
 import crapkit.analyze
 from crapkit.cli import main
+from crapkit.cli.scoring import _RESCORE_OUTRIGHT_BYTES
 from crapkit.hook import _HOOK_POOL_THRESHOLD
 
 
@@ -74,6 +76,44 @@ def test_a_few_files_are_rescored_without_reading_the_cache(scored, capsys, monk
 
 def cache_entries(repo) -> set[str]:
     return set(json.loads(cache_bytes(repo))["entries"])
+
+
+def sized_files(repo, total: int) -> list[str]:
+    """Two new source files of `total` bytes between them, one function each.
+    A comment pads them, so lizard reads the size in one token."""
+    names = []
+    for i, size in enumerate((total // 2, total - total // 2)):
+        rel = f"src/sized{i}.ts"
+        body = f"export function sized{i}(x: number): number {{\n  return x;\n}}\n"
+        (repo / rel).write_bytes((body + "//" + "x" * (size - len(body) - 3) + "\n").encode())
+        assert (repo / rel).stat().st_size == size
+        names.append(rel)
+    return names
+
+
+def refuse_the_cache(monkeypatch) -> None:
+    def refuse(_path):
+        raise AssertionError("rescore of a few small files read the shared cache")
+
+    monkeypatch.setattr(crapkit.analyze, "load_cache", refuse)
+
+
+def test_a_few_files_under_the_byte_budget_leave_the_cache_unread(scored, capsys, monkeypatch):
+    files = sized_files(scored, _RESCORE_OUTRIGHT_BYTES - 1)
+    refuse_the_cache(monkeypatch)
+
+    payload = rescore(scored, capsys, files)
+
+    assert sorted(f["path"] for f in payload["functions"]) == files
+
+
+def test_a_few_files_at_the_byte_budget_fold_into_the_cache(scored, capsys):
+    """Lizard on this many bytes costs more than loading a large cache."""
+    before = cache_entries(scored)
+
+    rescore(scored, capsys, sized_files(scored, _RESCORE_OUTRIGHT_BYTES))
+
+    assert before < cache_entries(scored), "every prior entry stays, and the new files join them"
 
 
 def test_the_hooks_threshold_of_files_still_folds_into_the_cache(scored, capsys):
