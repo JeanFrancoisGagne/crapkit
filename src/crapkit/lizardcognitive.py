@@ -23,6 +23,11 @@ Three language-specific rules:
     only introduce the body of a structure already charged. See
     `_shell_keywords`.
 
+A Python def's signature never counts. Its body starts at the token after the
+`:` that closes the signature at bracket depth 0, so `def f(x, y): return 1 if
+x and y else 2` reads cognitive 2 like its two-line form, and a signature over
+several lines reads like the same signature on one. See `_signature_token`.
+
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
 deepen nesting (a structure inside a ternary arm is rare enough to accept).
@@ -101,11 +106,17 @@ _SHELL_BODY_WORDS = frozenset({"do", "then", "in"})
 _SHELL_BLOCK = None
 
 
+# What a bracket does to the depth a Python signature is read at. The signature
+# ends at the first `:` with none open, so a colon in a default's lambda, a dict
+# default, a slice in an annotation or a type parameter's bound is not the end.
+_SIGNATURE_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
+
+
 class _FnState:
     __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
-                 "bool_op", "name", "recursed", "body_started", "prev",
-                 "label_check", "c_family", "match_kw", "is_shell")
+                 "bool_op", "name", "recursed", "body_started", "signature_depth",
+                 "prev", "label_check", "c_family", "match_kw", "is_shell")
 
     def __init__(self, name: str, c_family: bool = False, match_kw: bool = False,
                  is_shell: bool = False):
@@ -124,7 +135,8 @@ class _FnState:
         self.bool_op = None
         self.name = name
         self.recursed = False
-        self.body_started = False
+        self.body_started = False  # Python only: past the colon that ends the signature
+        self.signature_depth = 0   # brackets open in that signature
         self.prev = ""
         self.label_check = False  # just saw break/continue
 
@@ -193,11 +205,11 @@ def _state_for(states: dict, fn, last, flags: tuple) -> _FnState:
 
 def _step(state: _FnState, token: str, is_python: bool) -> None:
     if not token.strip():
-        _line_event(state, token, is_python)
+        _line_event(state, token)
         return
     if token.startswith(("#", "//", "/*")):
         return  # a comment token must never read as code, whatever it contains
-    if is_python and state.at_line_start:
+    if is_python:
         _python_dedent(state)
     if _resolve_lookbehinds(state, token, is_python):
         state.prev = token
@@ -208,7 +220,7 @@ def _step(state: _FnState, token: str, is_python: bool) -> None:
     state.at_line_start = False
 
 
-def _line_event(state: _FnState, token: str, is_python: bool) -> None:
+def _line_event(state: _FnState, token: str) -> None:
     """Whitespace arrives split ('\\n' then '    '): the newline opens the line,
     later whitespace extends its indent, and the dedent settles only when the
     first real token of the line arrives."""
@@ -216,12 +228,14 @@ def _line_event(state: _FnState, token: str, is_python: bool) -> None:
         state.at_line_start = True
         state.bool_op = None
         state.line_indent = len(token) - token.rfind("\n") - 1
-        state.body_started = state.body_started or is_python
     elif state.at_line_start:
         state.line_indent += len(token)
 
 
 def _python_dedent(state: _FnState) -> None:
+    """At a line's first real token, close every block its indent has left."""
+    if not state.at_line_start:
+        return
     while state.stack and state.line_indent <= state.stack[-1]:
         state.stack.pop()
 
@@ -278,17 +292,37 @@ def _push(state: _FnState, entry) -> None:
 
 
 def _consume(state: _FnState, token: str, is_python: bool) -> None:
+    if _in_signature(state, is_python):
+        _signature_token(state, token)
+        return
     if token in _RUN_RESETS:
         state.bool_op = None
     if token in ("{", "}"):
         _brace(state, token)
         return
-    if is_python and not state.body_started:
-        return  # tokens of the def header line never count
     if token in _BOOL_OPS:
         _bool_op(state, token)
         return
     _keywords(state, token, is_python)
+
+
+def _in_signature(state: _FnState, is_python: bool) -> bool:
+    return is_python and not state.body_started
+
+
+def _signature_token(state: _FnState, token: str) -> None:
+    """One token of a Python def's signature, which never counts.
+
+    The body starts at the token after the `:` that closes the signature at
+    bracket depth 0, the token analyze._PythonBodies marks as the body's first.
+    Starting it at the def's first newline instead read a body on the colon
+    line as nothing, cognitive 0 and nesting 0, and read a signature's
+    continuation lines as body.
+    """
+    if token == ":" and state.signature_depth == 0:
+        state.body_started = True
+    else:
+        state.signature_depth += _SIGNATURE_DEPTH.get(token, 0)
 
 
 def _brace(state: _FnState, token: str) -> None:
