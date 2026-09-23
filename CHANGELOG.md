@@ -399,6 +399,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   git showed as empty, and `--json` counted `{"dropped": 0, "tightened": 0}`. A text that
   differs only in line endings now leaves the file alone, and a real write keeps the
   file's own line ending.
+- `diff_uncovered_max` counts the lines of a changed file no lane artifact mentions,
+  such as a new module no test imports: every line of its functions, which score flag
+  `untested`. Such a file was skipped, so a pull request adding one passed a ceiling of 0
+  with no warning. Its lines outside any function still do not count.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 

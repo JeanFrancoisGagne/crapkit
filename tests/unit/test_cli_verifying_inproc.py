@@ -513,6 +513,25 @@ def test_dead_lines_in_the_diff_warn_and_breach_the_ceiling(baselined, capsys):
     assert "1 uncovered changed line(s) over the ceiling 0" in err, err
 
 
+def test_a_new_module_no_test_imports_breaches_the_ceiling(baselined, capsys):
+    """No artifact mentions a file nothing imports, so its functions score flag
+    untested and none of their lines ran. A ceiling of 0 passed such a module."""
+    text = (baselined / "crapkit.toml").read_text(encoding="utf-8")
+    (baselined / "crapkit.toml").write_text(
+        text.replace("target = 6", "target = 6\ndiff_uncovered_max = 0"), encoding="utf-8")
+    (baselined / "src" / "fresh.ts").write_text(
+        "export function small(a: number): number {\n  return a > 0 ? a : -a;\n}\n",
+        encoding="utf-8")
+    commit_all(baselined, "a module no test imports")
+
+    code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert code == 9, err
+    assert "warning: 3 changed line(s) have no coverage" in err, err
+    assert "uncovered src/fresh.ts:1" in err, err
+    assert "3 uncovered changed line(s) over the ceiling 0" in err, err
+
+
 def test_dead_changed_lines_under_the_ceiling_warn_without_failing(baselined, capsys):
     """The warning is unconditional; only the ceiling decides the verdict."""
     text = (baselined / "crapkit.toml").read_text(encoding="utf-8")

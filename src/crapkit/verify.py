@@ -13,7 +13,7 @@ Three independent checks, all must hold:
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import NamedTuple
 
 from .keys import key_names, key_of
@@ -21,12 +21,18 @@ from .ratchet import RatchetEntry
 from .score import ScoredRow, parse_scored_tsv, scored_tsv_lines
 
 
-def diff_uncovered(changed_ranges: dict, missing: dict) -> list[tuple[str, int]]:
+def diff_uncovered(changed_ranges: dict, missing: dict,
+                   rows: Iterable[ScoredRow] = ()) -> list[tuple[str, int]]:
     """Changed lines (new-file coordinates) whose statement never ran — where
-    the next bug ships. Files no lane measured stay silent (absent from missing)."""
+    the next bug ships.
+
+    A file no lane artifact mentions is one nothing imported, so none of it ran:
+    every line of its `untested` functions counts. Its module-level lines do not,
+    since no artifact says which of them are statements."""
+    dead_by_path = {**_silent_file_lines(rows, missing, changed_ranges), **missing}
     out = []
     for path, ranges in sorted(changed_ranges.items()):
-        dead = missing.get(path)
+        dead = dead_by_path.get(path)
         if not dead:
             continue
         # Sort the file's dead lines ONCE: sorting (and linearly scanning) them
@@ -36,6 +42,19 @@ def diff_uncovered(changed_ranges: dict, missing: dict) -> list[tuple[str, int]]
         for start, end in ranges:
             out.extend((path, line)
                        for line in ordered[bisect_left(ordered, start):bisect_right(ordered, end)])
+    return out
+
+
+def _silent_file_lines(rows: Iterable[ScoredRow], missing: dict,
+                       changed_ranges: dict) -> dict[str, set[int]]:
+    """The lines of `untested` functions in changed files no artifact mentions.
+
+    The flag alone is not enough: a measured file's one-line def floors to
+    untested although the artifact saw its line run."""
+    out: dict[str, set[int]] = {}
+    for row in rows:
+        if row.flag == "untested" and row.path in changed_ranges and row.path not in missing:
+            out.setdefault(row.path, set()).update(range(row.start, row.end + 1))
     return out
 
 

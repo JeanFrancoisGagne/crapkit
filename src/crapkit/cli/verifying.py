@@ -684,7 +684,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever
     # the artifacts say — and reading every lane's artifact to spell that [] is
     # the whole cost of the post-commit verify on an unchanged tree.
-    uncovered = diff_uncovered(ranges, missing_by_path(root, cfg, folded=run.dead_lines)) if ranges else []
+    uncovered = diff_uncovered(ranges, missing_by_path(root, cfg, folded=run.dead_lines),
+                               scored) if ranges else []
     _warn_diff_uncovered(uncovered)
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)

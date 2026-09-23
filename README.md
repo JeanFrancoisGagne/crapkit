@@ -945,7 +945,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
-| 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. |
+| 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. A changed file no lane artifact mentions counts every line of its functions. |
 
 ### Exit 1 means one of three things
 
