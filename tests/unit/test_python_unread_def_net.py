@@ -89,15 +89,16 @@ def test_the_stock_reader_reading_a_generic_def_whole_is_scored(stock_reader, na
     assert _verdict(source) == expected
 
 
-def test_only_the_cut_off_def_is_named_when_its_parent_owns_the_rest_of_its_signature(stock_reader, capsys):
-    """The stock reader ends `f` at its annotation's second line and charges `]:`
-    to `outer`, which was read to its body before `f` began."""
-    source = "def outer(a):\n    def f(value) -> tuple[\n        int, int\n    ]:\n" + _indented(BODY)
+def test_only_the_cut_off_def_is_named_when_its_parent_owns_the_rest_of_its_signature(stock_reader):
+    """The stock reader ends `f` on line 4, which is indented less than line 3,
+    and charges `int ,` to `outer`, which was read to its body before `f`
+    began. Line 5 then ends `outer` too, before the colon."""
+    source = ("def outer(a):\n    def f(value) -> tuple[\n            int,\n        int,\nint]:\n"
+              "        if value:\n            return 1\n        return 0\n    return f\n")
     records = analyze_source("net.py", source)
     assert isinstance(records, UnanalyzableFile)
     assert "reached no body for 1 def(s): net.py:2 outer.f( value )" in records.reason
     assert "outer( a )" not in records.reason
-    capsys.readouterr()
 
 
 # The corrected reader reads every generic def whole; only a file that ends

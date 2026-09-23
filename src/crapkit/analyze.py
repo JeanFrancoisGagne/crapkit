@@ -185,9 +185,11 @@ class _DefSignatures:
     its body only if it also owns the next token: one the reader cut off has
     ended by then, and the token belongs to its parent.
 
-    `crapkit_body` is False on every function current inside a signature
-    and True once its body is reached. A function some other reader produced
-    never gets the attribute, which is what keeps `_unread_defs` to Python.
+    `crapkit_body` turns False on a function first seen inside a signature
+    and True once its body is reached. A function already read to its body
+    keeps True when the rest of a cut-off child's signature is charged to it.
+    A function some other reader produced never gets the attribute, which is
+    what keeps `_unread_defs` to Python.
     """
 
     def __init__(self, context):
