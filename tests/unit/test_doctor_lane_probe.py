@@ -15,6 +15,7 @@ import pytest
 
 from crapkit.cli import admin
 from crapkit.config import Config, Lane, Scope
+from crapkit.lane_command import LaunchSpec
 from crapkit.doctor import files_template_gaps
 
 
@@ -71,11 +72,11 @@ def _cfg(*lanes: Lane) -> Config:
 
 
 def test_doctor_fails_with_inits_sentence_when_the_lane_cannot_import_pytest_cov(monkeypatch):
-    monkeypatch.setattr(admin, "_runner_report", lambda word: None)
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: None)
     monkeypatch.setattr(admin, "_lane_first_run_note",
-                        lambda lane: "note: lane 'py' names `python`, which cannot import pytest_cov")
+                        lambda spec, lane: "note: lane 'py' names `python`, which cannot import pytest_cov")
 
-    findings = admin._doctor_lane_probes([_lane()])
+    findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
 
     assert [(f.level, f.text) for f in findings] == [
         ("FAIL", "lane 'py' names `python`, which cannot import pytest_cov")]
@@ -85,20 +86,20 @@ def test_a_healthy_lane_costs_one_interpreter_start_not_two(monkeypatch):
     """The version report imports pytest_cov on its way, so it answers the
     first-run question too; asking init's probe as well started the same
     interpreter twice per lane per doctor."""
-    def boom(lane):
+    def boom(spec, lane):
         raise AssertionError("the first-run note must not be asked once the report answered")
 
-    monkeypatch.setattr(admin, "_runner_report", lambda word: (sys.executable, "8.3.3", "7.1.0"))
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: (sys.executable, "8.3.3", "7.1.0"))
     monkeypatch.setattr(admin, "_lane_first_run_note", boom)
 
-    assert [f.level for f in admin._doctor_lane_probes([_lane()])] == ["ok"]
+    assert [f.level for f in admin._doctor_lane_probes(Path.cwd(), [_lane()])] == ["ok"]
 
 
 def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_to(monkeypatch):
-    monkeypatch.setattr(admin, "_lane_first_run_note", lambda lane: None)
-    monkeypatch.setattr(admin, "_runner_report", lambda word: (sys.executable, "8.3.3", "7.1.0"))
+    monkeypatch.setattr(admin, "_lane_first_run_note", lambda spec, lane: None)
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: (sys.executable, "8.3.3", "7.1.0"))
 
-    findings = admin._doctor_lane_probes([_lane()])
+    findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
 
     assert [f.level for f in findings] == ["ok"]
     assert findings[0].text == (f"lane 'py': python -> {sys.executable} "
@@ -106,11 +107,11 @@ def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_t
 
 
 def test_a_lane_running_another_python_than_this_doctor_warns(monkeypatch):
-    monkeypatch.setattr(admin, "_lane_first_run_note", lambda lane: None)
+    monkeypatch.setattr(admin, "_lane_first_run_note", lambda spec, lane: None)
     monkeypatch.setattr(admin, "_runner_report",
-                        lambda word: ("/srv/venv/bin/python", "8.3.3", "7.1.0"))
+                        lambda word, spec: ("/srv/venv/bin/python", "8.3.3", "7.1.0"))
 
-    findings = admin._doctor_lane_probes([_lane()])
+    findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
 
     assert [f.level for f in findings] == ["ok", "WARN"]
     assert "/srv/venv/bin/python" in findings[1].text
@@ -118,34 +119,34 @@ def test_a_lane_running_another_python_than_this_doctor_warns(monkeypatch):
 
 
 def test_only_a_cov_flagged_coveragepy_lane_is_probed(monkeypatch):
-    def boom(lane):
+    def boom(spec, lane):
         raise AssertionError("this lane must not be probed")
 
     monkeypatch.setattr(admin, "_lane_first_run_note", boom)
 
-    assert admin._doctor_lane_probes([_lane(command="npx vitest run --coverage", parser="istanbul"),
+    assert admin._doctor_lane_probes(Path.cwd(), [_lane(command="npx vitest run --coverage", parser="istanbul"),
                                       _lane(command="python -m pytest")]) == []
 
 
 def test_a_stub_interpreter_with_no_version_to_print_is_no_finding(monkeypatch):
     """A python that runs and answers neither probe is not a finding: nothing
     is known about it either way."""
-    monkeypatch.setattr(admin, "_lane_first_run_note", lambda lane: None)
-    monkeypatch.setattr(admin, "_runner_report", lambda word: None)
+    monkeypatch.setattr(admin, "_lane_first_run_note", lambda spec, lane: None)
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: None)
 
-    assert admin._doctor_lane_probes([_lane()]) == []
+    assert admin._doctor_lane_probes(Path.cwd(), [_lane()]) == []
 
 
 def test_a_manager_headed_lane_gets_a_note_that_it_was_not_probed(monkeypatch):
     """`uv run python -m pytest --cov` names no python doctor can ask without
     provisioning the environment. Silence there read the same as "probed and
     healthy"; the note says which one this is."""
-    def boom(word):
+    def boom(word, spec):
         raise AssertionError("a manager-headed lane must not be probed")
 
     monkeypatch.setattr(admin, "_runner_report", boom)
 
-    findings = admin._doctor_lane_probes([_lane(command="uv run python -m pytest --cov")])
+    findings = admin._doctor_lane_probes(Path.cwd(), [_lane(command="uv run python -m pytest --cov")])
 
     assert [f.level for f in findings] == ["note"]
     assert findings[0].text.startswith("lane 'py' runs pytest through `uv`"), findings[0].text
@@ -156,9 +157,9 @@ def test_a_manager_headed_lane_gets_a_note_that_it_was_not_probed(monkeypatch):
 def test_the_note_names_the_head_of_the_segment_that_runs_pytest(monkeypatch):
     """A lane that chains steps runs pytest after `&&`; the word to name is
     the one in front of pytest, not the command's first word."""
-    monkeypatch.setattr(admin, "_runner_report", lambda word: None)
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: None)
 
-    (note,) = admin._doctor_lane_probes([_lane(command="cd pkg && uv run python -m pytest --cov")])
+    (note,) = admin._doctor_lane_probes(Path.cwd(), [_lane(command="cd pkg && uv run python -m pytest --cov")])
 
     assert note.text.startswith("lane 'py' runs pytest through `uv`"), note.text
 
@@ -168,7 +169,7 @@ def test_the_real_probe_answers_for_this_interpreter():
     # a lane command carries, and _runner_report quotes for the shell it runs under.
     # Handing it a pre-quoted path passed under cmd.exe and failed under sh, where
     # shlex.quote wrapped the quotes into the program name (CI, 2026-09-03).
-    report = admin._runner_report(sys.executable)
+    report = admin._runner_report(sys.executable, LaunchSpec(Path.cwd()))
 
     assert report is not None
     assert report[0].lower() == sys.executable.lower()
@@ -185,7 +186,7 @@ def test_a_timed_out_probe_cannot_keep_running(monkeypatch, tmp_path):
         '-c "import os, time; from pathlib import Path; time.sleep(3); '
         "Path(os.environ['CRAPKIT_PROBE_MARKER']).write_text('escaped')\""))
 
-    assert admin._runner_report(sys.executable) is None
+    assert admin._runner_report(sys.executable, LaunchSpec(Path.cwd())) is None
     time.sleep(3.1)
     assert not marker.exists(), "doctor returned while its interpreter could still run"
 
@@ -195,7 +196,7 @@ def test_interpreter_startup_warnings_do_not_change_its_report(monkeypatch, tmp_
         'import sys\nprint("BENIGN_STARTUP_WARNING", file=sys.stderr)\n', encoding='utf-8')
     monkeypatch.setenv('PYTHONPATH', os.pathsep.join([str(tmp_path), os.environ.get('PYTHONPATH', '')]))
 
-    report = admin._runner_report(sys.executable)
+    report = admin._runner_report(sys.executable, LaunchSpec(Path.cwd()))
 
     assert report is not None
     assert report[0].lower() == sys.executable.lower()
@@ -206,7 +207,7 @@ def test_the_probe_controls_its_output_encoding(monkeypatch, tmp_path, dependenc
     executable, _ = dependency_venv(environment)
     monkeypatch.setenv('PYTHONIOENCODING', 'cp1252')
 
-    report = admin._runner_report(str(executable))
+    report = admin._runner_report(str(executable), LaunchSpec(Path.cwd()))
 
     assert report is not None
     assert report[0] == str(executable)
@@ -251,7 +252,7 @@ def test_a_lane_with_a_problem_of_its_own_is_not_probed_twice(monkeypatch, tmp_p
     """The dead-interpreter FAIL already names the word; the first-run note
     would say it again one line down."""
     monkeypatch.setattr(admin, "_lane_first_run_note",
-                        lambda lane: "note: lane 'py' names `python`, and the shell cannot run it")
+                        lambda spec, lane: "note: lane 'py' names `python`, and the shell cannot run it")
 
     findings = admin._doctor_lanes(tmp_path, _cfg(_lane(command="no-such-runner-7f3a -m pytest --cov")))
 

@@ -265,28 +265,30 @@ def _could_not_run_it(returncode: int | None) -> bool:
 
 
 @lru_cache(maxsize=None)
-def _start_probe(word: str) -> int | None:
+def _start_probe(word: str, spec: LaunchSpec) -> int | None:
     """The shell's exit code for this one word, or None when the question could
     not be put at all. `--version` and not the bare word: the probe must not do
     the lane's work by accident, and a lane starting with `pytest` would run
     the suite. A runner that rejects the flag still started, which is all this
     asks; only the shell's own could-not-run code answers no.
 
-    Memoized on the word, which is the whole question: no cwd, no env, so two
-    lanes starting with `pnpm` cannot get different answers. Probe each distinct
-    first word once, including when it returns None after OSError or the 15 s
-    deadline. Repeated lanes then share the answer without repeating a hung
-    runner's timeout. Whoever gives the probe a cwd or an env has to put it in
-    the key in the same commit."""
+    Asked of the child the lane starts: from the lane's directory, with the
+    lane's environment. Memoized on the word and that launch spec, which
+    together are the whole question, so two lanes starting with `pnpm` from one
+    directory under one environment cannot get different answers. Probe each
+    distinct pair once, including when it returns None after OSError or the
+    15 s deadline. Repeated lanes then share the answer without repeating a
+    hung runner's timeout."""
     from ..procs import run_bounded
 
     try:
-        return run_bounded(f"{_shell_quote(word)} --version", _PROBE_TIMEOUT_SECONDS)
+        return run_bounded(f"{_shell_quote(word)} --version", _PROBE_TIMEOUT_SECONDS,
+                           **spec.popen_kwargs())
     except OSError:
         return None
 
 
-def _dead_first_word(command: str) -> tuple[str, int] | None:
+def _dead_first_word(spec: LaunchSpec, command: str) -> tuple[str, int] | None:
     """The command's first word and the shell's verdict, when the shell cannot
     start it. None when it starts, and None when the word does not resolve on
     PATH at all: that one is already its own finding, and running nothing
@@ -296,7 +298,7 @@ def _dead_first_word(command: str) -> tuple[str, int] | None:
     word = first_word(command)
     if not word or shutil.which(word) is None:
         return None
-    code = _start_probe(word)
+    code = _start_probe(word, spec)
     return (word, code) if _could_not_run_it(code) else None
 
 
@@ -312,10 +314,12 @@ def _probe_answered_no(returncode: int) -> bool:
     return returncode != 0
 
 
-def _pytest_cov_probe(command: str) -> bool:
+def _pytest_cov_probe(spec: LaunchSpec, command: str) -> bool:
     """Can the interpreter this lane names import pytest_cov? The probe runs
-    through the same shell as the lane, so a bare `python` resolves to the one
-    the lane will get (a .bat shim included), not the one CreateProcess finds.
+    through the same shell as the lane, from the lane's directory and with its
+    environment, so a bare `python` resolves to the one the lane will get (a
+    .bat shim or a `[lane.env] PATH` entry included), not the one CreateProcess
+    finds.
     True too when the probe cannot run — only a clean "no" earns the warning,
     and a missing interpreter is doctor's finding, not this one's. True as well
     when no python runs the suite, `uv run python -m pytest` included: nothing
@@ -333,7 +337,7 @@ def _pytest_cov_probe(command: str) -> bool:
         # kills the shell alone. The 15 bounded nothing and left one interpreter
         # running per timeout. None here is that deadline, and it is not an
         # answer about pytest_cov.
-        code = run_bounded(probe, _PROBE_TIMEOUT_SECONDS)
+        code = run_bounded(probe, _PROBE_TIMEOUT_SECONDS, **spec.popen_kwargs())
     except OSError:
         return True
     return code is None or not _probe_answered_no(code)
@@ -411,7 +415,7 @@ def _missing_manager_note(name: str, manager: str) -> str:
             f"an interpreter that resolves here, then `{_self()} coverage`")
 
 
-def _lane_first_run_note(lane) -> str | None:
+def _lane_first_run_note(spec: LaunchSpec, lane) -> str | None:
     """What init owes this lane before the first `crapkit coverage`, or None
     when the lane will run. Three different gaps, and they are not the same
     sentence: a manager that is not installed never gets as far as a python, and
@@ -420,11 +424,11 @@ def _lane_first_run_note(lane) -> str | None:
     manager = _absent_manager(lane.command)
     if manager:
         return _missing_manager_note(lane.name, manager)
-    dead = _dead_first_word(lane.command)
+    dead = _dead_first_word(spec, lane.command)
     if dead:
         return _dead_interpreter_note(lane.name, *dead)
     word = pytest_python(lane.command)
-    if word and not _pytest_cov_probe(lane.command):
+    if word and not _pytest_cov_probe(spec, lane.command):
         return _missing_pytest_cov_note(lane.name, word)
     return None
 
@@ -435,7 +439,7 @@ def _probed_lanes(lanes: tuple) -> list:
             if lane.parser == "coveragepy" and "--cov" in lane.command]
 
 
-def _warn_missing_pytest_cov(lanes: tuple) -> None:
+def _warn_missing_pytest_cov(root: Path, lanes: tuple) -> None:
     """The first-run trap, caught where it starts. The py lane shells out to
     `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
     REPO's interpreter, so a crapkit dependency could only ever cover installs
@@ -450,7 +454,7 @@ def _warn_missing_pytest_cov(lanes: tuple) -> None:
     and a first word the shell cannot start.
     """
     for lane in _probed_lanes(lanes):
-        note = _lane_first_run_note(lane)
+        note = _lane_first_run_note(launch_spec(root, lane), lane)
         if note:
             print(note, file=sys.stderr)
 
@@ -546,7 +550,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
-    _warn_missing_pytest_cov(live_lanes(lanes, scopes))
+    _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
     _extend_gitignore(root, live_lanes(lanes, scopes))
     return 0
 
@@ -690,14 +694,14 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
             for problem in _segment_problems(lane.name, spec, segment)]
 
 
-def _lane_start_problem(lane) -> str | None:
+def _lane_start_problem(root: Path, lane) -> str | None:
     """The rot which() cannot see: a first word that resolves and then will not
     run. %LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe is the case — a stock
     Windows PATH carries that stub with no Store app behind it, which() finds
     it, and doctor cleared a repo whose only lane exits 9009 while `coverage`
     exited 5 on the same command. This one does start the runner, with
     --version, which is why it is not part of _lane_command_problems."""
-    dead = _dead_first_word(lane.command)
+    dead = _dead_first_word(launch_spec(root, lane), lane.command)
     if not dead:
         return None
     word, code = dead
@@ -717,11 +721,12 @@ def _doctor_lane_summary(cfg) -> Finding:
 
 def _lane_problems_of(root: Path, lane) -> list[str]:
     return [p for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
-                        _lane_start_problem(lane)) if p]
+                        _lane_start_problem(root, lane)) if p]
 
 
-def _lane_findings(cfg, problems: list[str]) -> list[Finding]:
-    return [Finding("FAIL", p) for p in problems] or [_doctor_lane_summary(cfg)]
+def _lane_findings(cfg, by_lane: list[tuple]) -> list[Finding]:
+    return ([Finding("FAIL", p) for _, problems in by_lane for p in problems]
+            or [_doctor_lane_summary(cfg)])
 
 
 def _doctor_lanes(root: Path, cfg) -> list[Finding]:
@@ -730,8 +735,8 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
     names the word, and init's note would say it again one line down."""
     by_lane = [(lane, _lane_problems_of(root, lane)) for lane in cfg.lanes]
     healthy = [lane for lane, problems in by_lane if not problems]
-    return (_lane_findings(cfg, [p for _, problems in by_lane for p in problems])
-            + _doctor_results_artifacts(cfg) + _doctor_lane_probes(healthy))
+    return (_lane_findings(cfg, by_lane)
+            + _doctor_results_artifacts(cfg) + _doctor_lane_probes(root, healthy))
 
 
 # One probe answers three questions about the python a lane names: where the
@@ -752,12 +757,13 @@ def _runner_versions(report: str) -> tuple[str, str, str] | None:
 
 
 @lru_cache(maxsize=None)
-def _runner_report(word: str) -> tuple[str, str, str] | None:
+def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
     """(executable, pytest version, pytest-cov version) the interpreter word
-    answers through the lane's shell, or None when it cannot say. Memoized on
-    the word for the reason `_start_probe` is: one machine fact per word,
-    however many lanes name it. The path may hold spaces, so the two versions
-    are split off the right."""
+    answers through the lane's shell, from the lane's directory and with its
+    environment, or None when it cannot say. Memoized on the word and the
+    launch spec for the reason `_start_probe` is: one fact per child, however
+    many lanes start it the same way. The path may hold spaces, so the two
+    versions are split off the right."""
     from tempfile import TemporaryFile
     from ..procs import run_bounded
 
@@ -765,7 +771,7 @@ def _runner_report(word: str) -> tuple[str, str, str] | None:
         with TemporaryFile() as output:
             code = run_bounded(f"{_shell_quote(word)} {_VERSION_PROBE}",
                                _PROBE_TIMEOUT_SECONDS, stream=output,
-                               env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+                               **spec.popen_kwargs({"PYTHONIOENCODING": "utf-8"}))
             output.seek(0)
             report = output.read().decode("utf-8", errors="replace")
     except OSError:
@@ -808,14 +814,14 @@ def _unprobed_lane_note(lane) -> Finding:
                            f"probed, the first `{_self()} coverage` will say whether the plugin imports")
 
 
-def _first_run_failure(lane) -> list[Finding]:
+def _first_run_failure(spec: LaunchSpec, lane) -> list[Finding]:
     """init's first-run note as a FAIL, or nothing when a stub interpreter
     answered neither the version probe nor the import probe."""
-    note = _lane_first_run_note(lane)
+    note = _lane_first_run_note(spec, lane)
     return [Finding("FAIL", note.removeprefix("note: "))] if note else []
 
 
-def _lane_probe_findings(lane) -> list[Finding]:
+def _lane_probe_findings(root: Path, lane) -> list[Finding]:
     """The interpreter and plugin versions a healthy lane resolves to, plus a
     WARN when that interpreter is foreign; init's first-run note as a FAIL when
     the interpreter cannot say; a note when no python heads the lane. The
@@ -825,22 +831,24 @@ def _lane_probe_findings(lane) -> list[Finding]:
     word = pytest_python(lane.command)
     if word is None:
         return [_unprobed_lane_note(lane)]
-    report = _runner_report(word)
+    spec = launch_spec(root, lane)
+    report = _runner_report(word, spec)
     if report is None:
-        return _first_run_failure(lane)
+        return _first_run_failure(spec, lane)
     executable, pytest_version, cov_version = report
     resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} "
                              f"(pytest {pytest_version}, pytest-cov {cov_version})")
     return [resolved, *_foreign_interpreter(lane.name, executable)]
 
 
-def _doctor_lane_probes(lanes) -> list[Finding]:
+def _doctor_lane_probes(root: Path, lanes) -> list[Finding]:
     """init's first-run lane note, asked again of every coverage.py lane that
     runs `pytest --cov`, so a lane whose python cannot import pytest-cov fails
     doctor instead of the first `crapkit coverage`. Only those lanes: an
     istanbul lane has no plugin to import. A manager-headed one names no
     python to ask and gets a note saying so."""
-    return [finding for lane in _probed_lanes(lanes) for finding in _lane_probe_findings(lane)]
+    return [finding for lane in _probed_lanes(lanes)
+            for finding in _lane_probe_findings(root, lane)]
 
 
 _RESULTS_HINT = {

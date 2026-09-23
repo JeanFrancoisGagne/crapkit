@@ -18,17 +18,18 @@ from pathlib import Path
 import pytest
 
 from crapkit import config, mutate_pool, procs
-from crapkit.cli.admin import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
+from crapkit.cli.admin import _lane_command_problems
 from crapkit.cli import admin
 from crapkit.config import Lane
-from crapkit.lane_command import first_word, is_python
+from crapkit.lane_command import LaunchSpec, first_word, is_python
 from crapkit.mutate import Mutant
 from crapkit.scaffold import LaneSpec
 
 
 @pytest.fixture(autouse=True)
 def _forget_probed_words():
-    """`admin._start_probe` is memoized on the first word, and this file answers
+    """`admin._start_probe` is memoized on the first word and the launch spec,
+    and every lane here starts the same way, from this directory. This file answers
     `python --version` differently per test: a shim exiting 0, one exiting 9009,
     one exiting 1. The cache outlives the test that filled it, so whichever shim
     ran first answered for every later test that reaches the real probe, and the
@@ -46,6 +47,16 @@ def _forget_probed_words():
 
 def _lane(command: str, parser: str = "coveragepy") -> LaneSpec:
     return LaneSpec("py", command, ".crapkit/cov/py.json", parser, ("python",))
+
+
+def _pytest_cov_probe(command: str) -> bool:
+    """The probe, asked of a lane with no cwd and no env of its own under the
+    directory this test runs in: what the probe asked before it took a spec."""
+    return admin._pytest_cov_probe(LaunchSpec(Path.cwd()), command)
+
+
+def _warn_missing_pytest_cov(lanes: tuple) -> None:
+    admin._warn_missing_pytest_cov(Path.cwd(), lanes)
 
 
 def test_the_probe_says_yes_where_pytest_cov_imports():
@@ -164,7 +175,7 @@ def _recorded_probe(monkeypatch) -> list[str]:
 
     seen: list[str] = []
 
-    def record(command: str, timeout: float) -> int:
+    def record(command: str, timeout: float, **popen_kwargs) -> int:
         seen.append(command)
         return 0
 
@@ -225,7 +236,7 @@ def test_a_probe_that_raises_oserror_says_yes(monkeypatch):
 
 
 def test_a_failing_probe_prints_both_install_commands(monkeypatch, capsys):
-    monkeypatch.setattr(admin, "_pytest_cov_probe", lambda command: False)
+    monkeypatch.setattr(admin, "_pytest_cov_probe", lambda spec, command: False)
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
     err = capsys.readouterr().err
     assert "pytest_cov" in err
@@ -235,7 +246,7 @@ def test_a_failing_probe_prints_both_install_commands(monkeypatch, capsys):
 
 
 def test_a_passing_probe_prints_nothing(monkeypatch, capsys):
-    monkeypatch.setattr(admin, "_pytest_cov_probe", lambda command: True)
+    monkeypatch.setattr(admin, "_pytest_cov_probe", lambda spec, command: True)
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
     assert capsys.readouterr().err == ""
 
@@ -245,7 +256,7 @@ def test_a_passing_probe_prints_nothing(monkeypatch, capsys):
     _lane("python -m pytest"),  # no --cov: nothing for pytest-cov to reject
 ])
 def test_only_a_cov_flagged_coveragepy_lane_is_probed(lane, monkeypatch, capsys):
-    def boom(command):
+    def boom(spec, command):
         raise AssertionError("this lane must not be probed")
 
     monkeypatch.setattr(admin, "_pytest_cov_probe", boom)
@@ -263,7 +274,7 @@ def _shell_says(monkeypatch, tmp_path, cmd_shell: bool, code: int) -> None:
     """A `python` that resolves on PATH, and a shell that answers `code`."""
     _interpreter_shim(tmp_path, monkeypatch, 0)
     monkeypatch.setattr(config, "SHELL_IS_CMD", cmd_shell)
-    monkeypatch.setattr(admin, "_start_probe", lambda word: code)
+    monkeypatch.setattr(admin, "_start_probe", lambda word, spec: code)
 
 
 @pytest.mark.parametrize("cmd_shell, code", [(True, 9009), (False, 127), (False, 126)])
@@ -380,7 +391,7 @@ def test_doctor_asks_the_manager_for_its_version_not_for_an_import(tmp_path, mon
     word is `uv`, and the only question it can answer is whether it starts."""
     seen = _manager_shim(tmp_path, monkeypatch)
 
-    assert admin._dead_first_word("uv run python -m pytest --cov") is None
+    assert admin._dead_first_word(LaunchSpec(Path.cwd()), "uv run python -m pytest --cov") is None
     assert seen == ["uv --version"]
 
 
@@ -408,33 +419,34 @@ def test_doctor_fails_a_lane_whose_first_word_will_not_start(tmp_path, monkeypat
     only lane exits 9009 while `crapkit coverage` exited 5 on that same word."""
     _shell_says(monkeypatch, tmp_path, True, 9009)
 
-    problem = admin._lane_start_problem(_lane("python -m pytest --cov"))
+    problem = admin._lane_start_problem(Path.cwd(), _lane("python -m pytest --cov"))
 
     assert problem and "'python'" in problem and "9009" in problem
 
 
 def test_doctor_says_nothing_about_a_lane_that_starts():
-    assert admin._lane_start_problem(_lane(f'"{sys.executable}" -m pytest --cov')) is None
+    assert admin._lane_start_problem(Path.cwd(), _lane(f'"{sys.executable}" -m pytest --cov')) is None
 
 
 def test_doctor_leaves_an_unresolvable_runner_to_the_path_check(monkeypatch):
     """A first word that is on no PATH is already its own finding, and running
     nothing would prove nothing: one gap, one line."""
     monkeypatch.setattr(config, "SHELL_IS_CMD", os.name == "nt")
-    assert admin._lane_start_problem(_lane("no-such-runner-7f3a --coverage")) is None
+    assert admin._lane_start_problem(Path.cwd(), _lane("no-such-runner-7f3a --coverage")) is None
 
 
 def test_lanes_sharing_a_first_word_are_probed_once(tmp_path, monkeypatch):
     """The probe asks the same word the same question once per LANE, and the
-    answer cannot differ between two lanes: it takes no cwd and no env. On a
-    config declaring 14 lanes over 2 distinct first words that was 14 shells
-    started to learn 2 things, and doctor spent 5.6 of its 6.9 seconds waiting
-    on them. A repo with N lanes over K distinct first words owes K spawns."""
+    answer cannot differ between two lanes that start the same way: one cwd,
+    one env. On a config declaring 14 lanes over 2 distinct first words that
+    was 14 shells started to learn 2 things, and doctor spent 5.6 of its 6.9
+    seconds waiting on them. A repo with N lanes over K distinct first words
+    owes K spawns."""
     _name_only_on_path(tmp_path, monkeypatch, "python", "pnpm")
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     probed = []
 
-    def counted(command, timeout):
+    def counted(command, timeout, **popen_kwargs):
         probed.append(command)
         return 9009
 
@@ -442,7 +454,7 @@ def test_lanes_sharing_a_first_word_are_probed_once(tmp_path, monkeypatch):
     admin._start_probe.cache_clear()
 
     problems = [admin._lane_start_problem(
-                    Lane(name=name, command=command, artifact="cov.json",
+                    tmp_path, Lane(name=name, command=command, artifact="cov.json",
                          parser="coveragepy", scopes=("py",)))
                 for name, command in (("py", "python -m pytest --cov"),
                                       ("py2", "python -m pytest --cov=lib"),

@@ -19,6 +19,7 @@ import pytest
 
 from crapkit import procs
 from crapkit.errors import ToolError
+from crapkit.lane_command import LaunchSpec
 
 KILLED = -9
 
@@ -195,7 +196,7 @@ def test_the_start_probe_cannot_ask_a_dead_launcher(monkeypatch):
     _probes_meet_a_dead_launcher(monkeypatch)
     admin._start_probe.cache_clear()
     try:
-        assert admin._start_probe("dead-launcher-word") is None
+        assert admin._start_probe("dead-launcher-word", LaunchSpec(Path.cwd())) is None
     finally:
         admin._start_probe.cache_clear()
 
@@ -205,7 +206,7 @@ def test_the_runner_report_cannot_ask_a_dead_launcher(monkeypatch):
     _probes_meet_a_dead_launcher(monkeypatch)
     admin._runner_report.cache_clear()
     try:
-        assert admin._runner_report("dead-launcher-word") is None
+        assert admin._runner_report("dead-launcher-word", LaunchSpec(Path.cwd())) is None
     finally:
         admin._runner_report.cache_clear()
 
@@ -219,4 +220,4 @@ def test_the_pytest_import_probe_answers_no_for_a_dead_launcher(monkeypatch):
 def test_the_pytest_cov_probe_stays_quiet_for_a_dead_launcher(monkeypatch):
     from crapkit.cli import admin
     _probes_meet_a_dead_launcher(monkeypatch)
-    assert admin._pytest_cov_probe(f'"{sys.executable}" -m pytest') is True
+    assert admin._pytest_cov_probe(LaunchSpec(Path.cwd()), f'"{sys.executable}" -m pytest') is True

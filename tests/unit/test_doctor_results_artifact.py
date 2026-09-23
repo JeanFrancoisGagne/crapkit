@@ -16,6 +16,7 @@ from crapkit import procs
 from crapkit.cli import admin
 from crapkit.cli.admin import _doctor_lanes
 from crapkit.config import Lane
+from crapkit.lane_command import launch_spec
 
 
 @pytest.fixture(autouse=True)
@@ -23,8 +24,9 @@ def probe_that_started(monkeypatch):
     """Every finding here is about the results file, none of it about whether
     this machine can start `python`. `_doctor_lanes` asks anyway, through
     `_lane_start_problem` -> `admin._start_probe`, which is an lru_cache keyed
-    on the first word and nothing else, so any test in the process that shims a
-    `python` onto PATH answers that word for every test after it. That is how
+    on the first word and the launch spec, and these lanes all start from the
+    same directory, so any test in the process that shims a `python` onto PATH
+    answers that word for every test after it. That is how
     three tests here failed in the combined lane run and passed alone: they read
     a FAIL naming a dead interpreter where the ok summary belongs.
 
@@ -33,7 +35,7 @@ def probe_that_started(monkeypatch):
     on both sides so this file neither reads nor leaves an answer."""
     real = admin._start_probe
     real.cache_clear()
-    monkeypatch.setattr(admin, "_start_probe", lambda word: 0)
+    monkeypatch.setattr(admin, "_start_probe", lambda word, spec: 0)
     yield real
     real.cache_clear()
 
@@ -86,8 +88,9 @@ def test_a_probe_answer_another_test_cached_never_reaches_these_findings(
     start, for a lane running the same python this suite runs under.
 
     Fills the real cache the same way and reads the ok summary through it."""
-    monkeypatch.setattr(procs, "run_bounded", lambda command, timeout: 9009)
-    assert probe_that_started("python") == 9009, "the poison has to land"
+    monkeypatch.setattr(procs, "run_bounded", lambda command, timeout, **popen_kwargs: 9009)
+    spec = launch_spec(Path("."), lane("py", "coveragepy"))
+    assert probe_that_started("python", spec) == 9009, "the poison has to land on the key read"
 
     assert findings(lane("py", "coveragepy", "junit-py.xml")) == \
         [("ok", "1 lane(s) declared")]
