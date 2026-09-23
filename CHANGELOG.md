@@ -234,14 +234,15 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   the key-group hoist, worklist went from 14.7 to 4.7 s and brief from 13.0 to 4.4 s.
 - brief reads only the file it is about. Its twins come from a shingle index the store
   keeps for the run: `inventory` and `coverage` build and store it as they record the
-  run, and every brief in any process looks its function up. On a large consumer repo
-  the source and twins fields went from 3.2-4.1 s to 0.001 s per brief, and the index
-  takes 37.8 MB of the store. `verify` stores no index, since it runs on every commit,
-  so after a verify run the first brief or `duplication` builds and stores it.
-  `duplication` at the default `--min-lines` reads the stored index and opens no file.
-  A shingle is an 8-byte blake2b digest, so one process's index reads the same in
-  another. Storing a run's index drops every older run's, and `runs prune` drops it
-  with its run.
+  run, and every brief in any process looks its function up. `verify` stores no index,
+  since it runs on every commit, so after a verify run, or a run an older crapkit
+  recorded, the first brief or `duplication` builds and stores it; on a large consumer
+  repo that brief took 9.2 to 16.5 s longer than the brief after it (six cycles on a
+  quiet machine). The source and twins fields went from 3.2-4.1 s to 0.001 s per brief,
+  and the index takes 37.8 MB of the store. `duplication` at the default `--min-lines`
+  reads the stored index and opens no file. A shingle is an 8-byte blake2b digest, so
+  one process's index reads the same in another. Storing a run's index drops every
+  older run's, and `runs prune` drops it with its run.
 - `rescore --gate` and `check_gate` read the marks only when a changed function is over
   its ceiling, as `hook-precommit` did. A clean check_gate on a large consumer repo went
   from 14.2 s to 2.1 s (warm medians, loaded machine). A clean gate no longer reports a
