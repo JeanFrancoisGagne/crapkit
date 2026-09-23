@@ -64,8 +64,18 @@ list over several lines starts the def on the list's last line.
 `_type_parameters` counts the list to its `]` with the same `depth` the
 parameter list uses and hands none of its tokens to lizard's naming. The def
 is named by its name token and its parameters read as lizard spells them:
-`f( a : int )`. This is the one spelling the reader changes, because `]` and
-`:` are not a prefix of the name the way `make( cls_name , * , bases = ( )` is.
+`f( a : int )`. The reader changes this spelling, and the nested names below,
+because neither is a prefix of the def's own name the way
+`make( cls_name , * , bases = ( )` is.
+
+Nested def names
+----------------
+lizard qualifies a new def with the full name of every def on its nesting
+stack (`NestingStack.with_namespace`), and each of those names already carries
+its own parents. Two deep that reads `a.b`; three deep it read `a.a.b.c`, and
+four deep `a.a.b.a.a.b.c.d`. `_name_under_parent` qualifies the def by its
+innermost enclosing def alone: `a.b.c`. A class adds nothing to the name, as
+under lizard.
 
 The class name
 --------------
@@ -84,12 +94,13 @@ too.
 
 Retirement
 ----------
-Two tests in tests/unit/test_lizardpython.py pin the stock reader's wrong
-answers: test_stock_reader_still_cuts_the_issue_def_off for #72, and
-test_stock_reader_still_names_a_generic_def_after_a_bracket for PEP 695. Each
-fails on the lizard release that fixes its half. Delete this module, with the
-`register()` call, once both fail; while one still passes, the override for
-that half stays.
+Three tests in tests/unit/test_lizardpython.py pin the stock reader's wrong
+answers: test_stock_reader_still_cuts_the_issue_def_off for #72,
+test_stock_reader_still_names_a_generic_def_after_a_bracket for PEP 695, and
+test_stock_reader_still_repeats_the_outer_names_three_deep for nested names.
+Each fails on the lizard release that fixes its part. Delete this module, with
+the `register()` call, once all three fail; while one still passes, the
+override for that part stays.
 """
 from __future__ import annotations
 
@@ -128,14 +139,27 @@ def _depth_change(token: str) -> int:
     return 0
 
 
+def _name_under_parent(context, token: str) -> None:
+    """Name the def lizard just opened by its innermost enclosing def and `token`.
+
+    lizard joins the full name of every def on the nesting stack, and each of
+    those already carries its own parents: see "Nested def names" above.
+    """
+    parent = context.last_function
+    name = f"{parent.name}.{token}" if parent is not None else token
+    function = context.current_function
+    function.long_name = name + function.long_name[len(function.name):]
+    function.name = name
+
+
 class PythonSignatureStates(PythonStates):
     """lizard's PythonStates, reading a signature to the colon at bracket depth 0.
 
     `depth` counts the brackets open since the def's own `(`, and before
     that since the `[` of a type parameter list. The inherited states keep
     every decision about the long name and the parameter list; these
-    overrides choose where a state goes next, and keep a type parameter list
-    out of the name.
+    overrides choose where a state goes next, keep a type parameter list out
+    of the name, and qualify a nested def by its innermost enclosing def.
     """
 
     def __init__(self, context, reader):
@@ -151,10 +175,12 @@ class PythonSignatureStates(PythonStates):
         if token == "[":  # PEP 695: `def f[T: int](a):`, whose name came first
             self.depth = 1
             self._state = self._type_parameters
-            return
-        if token == "(":
+        elif token == "(":
             self.depth = 1
-        super()._function(token)
+            super()._function(token)
+        else:
+            super()._function(token)
+            _name_under_parent(self.context, token)
 
     def _type_parameters(self, token):
         """A def's type parameter list: counted to its `]`, never named."""
