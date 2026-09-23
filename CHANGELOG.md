@@ -429,6 +429,9 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
 - `verify --override ""` is refused with exit 3 before any lane runs, as a blank reason
   now is too. It ran as a plain verify and recorded the failure it was meant to grant,
   which held later runs back as tainted.
+- The README's Route 1 says git refuses every commit when the hook file starts with a
+  byte-order mark (measured on git 2.43 for Windows, exit 1, HEAD unchanged). It said
+  git let the commit through. Writing the hook as ASCII is still the fix.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 

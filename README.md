@@ -393,8 +393,9 @@ chmod +x .git/hooks/pre-commit
 ```
 
 The same file from PowerShell. `Out-File` and `>` write a byte-order mark (UTF-16 on
-5.1) in front of the shebang, and git then answers every commit with `cannot spawn
-.git/hooks/pre-commit` and lets it through; `Set-Content -Encoding ascii` does not. Git
+5.1) in front of the shebang, and git then refuses every commit with `error: cannot spawn
+.git/hooks/pre-commit: No such file or directory` (measured on git 2.43 for Windows)
+without ever running the gate; `Set-Content -Encoding ascii` writes no mark. Git
 runs the hook with its own `sh`, so the interpreter is spelled with forward slashes and
 quoted, and no `chmod` is needed on Windows:
 

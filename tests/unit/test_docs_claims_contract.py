@@ -294,10 +294,10 @@ def _route_one() -> str:
 
 
 def test_route_one_carries_a_powershell_form_that_writes_no_byte_order_mark():
-    """`Out-File` under PowerShell 5.1 writes UTF-16, git answers `cannot spawn
-    .git/hooks/pre-commit`, and the commit goes through ungated. The form the
-    page prints has to be the one that writes plain bytes, with the interpreter
-    quoted and forward-slashed so git's sh can exec it."""
+    """`Out-File` under PowerShell 5.1 writes UTF-16, and git answers `cannot spawn
+    .git/hooks/pre-commit`. The form the page prints has to be the one that
+    writes plain bytes, with the interpreter quoted and forward-slashed so git's
+    sh can exec it."""
     block = _route_one()
     powershell = block[block.index("```powershell"):]
 
@@ -306,6 +306,16 @@ def test_route_one_carries_a_powershell_form_that_writes_no_byte_order_mark():
     assert "-replace '\\\\', '/'" in powershell, "the interpreter path is forward-slashed"
     assert "exec '$python' -m crapkit hook-precommit" in powershell, "quoted, as sh reads it"
     assert "cannot spawn" in block, "the failure the form avoids is named"
+
+
+def test_route_one_says_git_refuses_the_commit_a_marked_hook_cannot_spawn():
+    """Measured on git 2.43.0.windows.1: a hook starting with a UTF-8 or UTF-16
+    byte-order mark fails `git commit` with exit 1 and HEAD unchanged. The page
+    said git let the commit through."""
+    block = " ".join(_route_one().split())
+
+    assert "lets it through" not in block
+    assert "refuses every commit" in block, block
 
 
 # --- the gate a reader installs from Route 2 ---------------------------------

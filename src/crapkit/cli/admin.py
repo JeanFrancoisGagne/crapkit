@@ -1011,8 +1011,9 @@ def _doctor_hook_encoding(root: Path) -> list[Finding]:
 
     A Windows author who wrote the hook with `Out-File` got a BOM (or UTF-16)
     in front of the shebang, git said `cannot spawn .git/hooks/pre-commit` at
-    the first commit and let it through ungated, and doctor had passed the
-    file. WARN, not FAIL: the config is fine, the file beside it is not.
+    the first commit and refused it without running the gate (git 2.43 for
+    Windows), and doctor had passed the file. WARN, not FAIL: the config is
+    fine, the file beside it is not.
     """
     named = _hook_file(root)
     mark = _leading_mark(root / named) if named else None
