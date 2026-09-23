@@ -328,13 +328,12 @@ def select(rows, name: str, names=None) -> list[tuple[str, str]]:
     Nothing selected is an empty list. Each command words its own miss.
     """
     rows = list(rows)
-    keys = key_names(rows)
     if name.isdigit():
-        return _at_line(rows, keys, name)
+        return _at_line(rows, key_names(rows), name)
     if handle_ordinal(name) is not None:
         found = handles(rows)
-        return _pairs(keys, [r for r in rows if found[lookup(r)] == name])
-    return _by_name(rows, keys, name, names)
+        return _pairs(key_names(rows), [r for r in rows if found[lookup(r)] == name])
+    return _by_name(rows, name, names)
 
 
 def _pairs(keys: dict, rows) -> list[tuple[str, str]]:
@@ -355,21 +354,25 @@ def _ambiguous_line(rows: list, at: list, line: str) -> str:
     return f"line {line} in {at[0].path} is ambiguous; use a handle: {choices}"
 
 
-def _by_name(rows: list, keys: dict, name: str, names) -> list[tuple[str, str]]:
+def _by_name(rows: list, name: str, names) -> list[tuple[str, str]]:
     wanted, ordinal = split_ordinal(name)
     known = list(dict.fromkeys(r.long_name for r in rows)) if names is None else names
     picked = None if wanted == name else ordinal
-    return [(long_name, _twin_key(rows, keys, long_name, picked))
+    return [(long_name, _twin_key(rows, long_name, picked))
             for long_name in matching_names(known, wanted)]
 
 
-def _twin_key(rows: list, keys: dict, long_name: str, ordinal: int | None) -> str:
+def _twin_key(rows: list, long_name: str, ordinal: int | None) -> str:
     """The key of the twin NAME picked: the Nth in file order, or the worst of
-    them when NAME gave no ordinal."""
+    them when NAME gave no ordinal.
+
+    Only the twins are keyed. Ordinals count within one long name, so their keys
+    match the whole file's, and a legacy collision under another name does not
+    refuse this one."""
     if ordinal is not None:
         return key_name(long_name, ordinal)
     twins = [r for r in rows if r.long_name == long_name]
-    return keys[lookup(max(twins, key=_severity))] if twins else long_name
+    return key_names(twins)[lookup(max(twins, key=_severity))] if twins else long_name
 
 
 def _severity(row) -> tuple:

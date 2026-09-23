@@ -1,10 +1,12 @@
 """Same-line callbacks retain separate keys, stored marks and selectable history."""
+import json
 from collections import namedtuple
 from contextlib import closing
 
 import pytest
 
 from crapkit import keys
+from crapkit.cli import main
 from crapkit.cli.reports import _explain_selection
 from crapkit.errors import CrapkitError, ToolError
 from crapkit.score import ScoredRow
@@ -82,6 +84,36 @@ def test_legacy_database_keeps_rows_and_refuses_precise_collision_reads(tmp_path
                      lambda: reopened.function_history('app.ts', '(anonymous)')]:
             with pytest.raises(ToolError, match='ambiguous legacy'):
                 read()
+
+
+def test_a_legacy_collision_refuses_only_the_selectors_that_reach_it(tmp_path, capsys):
+    """Two callbacks share line 1 with no recorded position; f opens alone on 5.
+
+    A name reads only its own twins, so the collision elsewhere in the file
+    does not refuse f. The line form reads every position in the file and still
+    refuses."""
+    root = tmp_path / 'repo'
+    (root / 'src').mkdir(parents=True)
+    (root / 'src' / 'app.ts').write_text('//\n' * 20, encoding='utf-8')
+    (root / 'crapkit.toml').write_text(
+        '[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+        'languages = ["typescript"]\ncoverage_optional = true\n', encoding='utf-8')
+    (root / '.crapkit').mkdir()
+    path = root / '.crapkit' / 'crap.sqlite'
+    store = SnapshotStore(path)
+    in_src = [r._replace(path='src/app.ts', scope='src')
+              for r in (row(0), row(0), row(0, start=5, name='f( )'))]
+    with closing(store._conn):
+        store.write_run(commit='a' * 40, tool_versions={}, rows=in_src)
+        if 'occurrence' in {r[1] for r in store._conn.execute('PRAGMA table_info(functions)')}:
+            store._conn.execute('ALTER TABLE functions DROP COLUMN occurrence')
+            store._conn.commit()
+
+    assert main(['explain', 'src/app.ts', 'f', '--json', '--repo', str(root)]) == 0
+    functions = json.loads(capsys.readouterr().out)['functions']
+    assert [f['long_name'] for f in functions] == ['f( )']
+    assert main(['explain', 'src/app.ts', '5', '--json', '--repo', str(root)]) == ToolError.exit_code
+    assert 'ambiguous legacy function identity' in capsys.readouterr().out
 
 
 def test_collision_group_query_preserves_ordinary_and_scope_copy_rows():
