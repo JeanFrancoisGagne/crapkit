@@ -36,12 +36,16 @@ def _object_gaps(value: dict, schema: dict, where: str) -> list[str]:
     return gaps
 
 
+def _array_gaps(value: list, schema: dict, where: str) -> list[str]:
+    return sorted({gap for item in value
+                   for gap in undeclared(item, schema["items"], f"{where}[]")})
+
+
 def undeclared(value, schema: dict, where: str = "") -> list[str]:
     if isinstance(value, dict) and "properties" in schema:
         return _object_gaps(value, schema, where)
     if isinstance(value, list) and "items" in schema:
-        return sorted({gap for item in value for gap in undeclared(item, schema["items"],
-                                                                   f"{where}[]")})
+        return _array_gaps(value, schema, where)
     return []
 
 
