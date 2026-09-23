@@ -807,7 +807,8 @@ has no reader proof, and every later reader would refuse the file (see
 and writes no alert line, no store row and no mark. The grant is refused until
 `crapkit coverage` and `crapkit ratchet seed` restamp the file.
 
-An empty reason is refused. Runs an override names are pinned in the store: `runs prune`
+An empty or blank reason is refused with exit 3 before any lane runs, so it records no run.
+Runs an override names are pinned in the store: `runs prune`
 never deletes them.
 
 ---

@@ -304,6 +304,17 @@ def _override_refusal(verdict) -> str | None:
             f"{'; '.join(escapes)}")
 
 
+def _require_override_reason(reason: str | None) -> None:
+    """Refuse an empty or blank --override before any lane runs.
+
+    `--override ""` was falsy, so it ran as a plain verify and recorded the
+    failure it was meant to grant; a blank one was refused only after the lanes,
+    by the audit. The audit keeps its own check for the hook's grant.
+    """
+    if reason is not None and not reason.strip():
+        raise ConfigError("an override requires a non-empty reason")
+
+
 def _refuse_override(verdict, reason: str | None) -> None:
     """One stderr line when a reason was given and something disqualified it.
 
@@ -664,6 +675,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
+    _require_override_reason(args.override)
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     _refuse_lane_less_verify(cfg)

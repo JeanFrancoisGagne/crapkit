@@ -322,6 +322,20 @@ def _knotty(repo):
     return repo
 
 
+@pytest.mark.parametrize("reason", ["", "   "])
+def test_an_empty_override_reason_is_refused_before_anything_runs(baselined, capsys, reason):
+    """`--override ""` ran as a plain verify and recorded the failure it was
+    meant to grant, which then held every later run back as tainted."""
+    runs = len(store_of(baselined).list_runs())
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--override", reason],
+                         _knotty(baselined), capsys)
+
+    assert (code, out) == (3, "")
+    assert err == "crapkit: an override requires a non-empty reason\n", err
+    assert len(store_of(baselined).list_runs()) == runs, "a refused override records no run"
+
+
 def test_an_override_grants_a_pure_gate_violation_and_leaves_a_record(baselined, capsys):
     """--override is not a bypass: the violation is printed as OVERRIDDEN, the
     debt lands in the marks file, and the store carries the reason."""
