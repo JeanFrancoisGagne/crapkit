@@ -38,9 +38,21 @@ def _first_cells() -> dict[str, str]:
     return cells
 
 
+def _spells(row: str, flag: str) -> bool:
+    """The whole flag, so `--base` is not found inside `--baseline`."""
+    return re.search(re.escape(flag) + r"(?![\w-])", row) is not None
+
+
 @pytest.mark.parametrize("name", sorted(_subcommands()))
 def test_the_row_spells_every_flag_the_subcommand_takes(name):
     taken = {flag for action in _subcommands()[name]._actions for flag in action.option_strings}
     row = _first_cells().get(name, "")
 
-    assert sorted(flag for flag in taken - _EVERY_SUBCOMMAND if flag not in row) == []
+    assert sorted(flag for flag in taken - _EVERY_SUBCOMMAND if not _spells(row, flag)) == []
+
+
+def test_a_flag_is_not_found_inside_a_longer_one():
+    row = "verify [--baseline ID | --baseline-tsv PATH]"
+
+    assert not _spells(row, "--base")
+    assert _spells(row, "--baseline")
