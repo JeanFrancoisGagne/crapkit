@@ -404,7 +404,8 @@ def build_parser() -> argparse.ArgumentParser:
     # all run with no file at all. cmd_ratchet keeps its own per-action arity check.
     rat.add_argument("files", nargs="*", metavar="FILE", default=[],
                      help="for merge: the three files git passes as %%O %%A %%B; "
-                          "for move: OLD NEW, where a trailing '/' on OLD moves a directory")
+                          "for move: OLD NEW" + _WHERE
+                          + ", where a trailing '/' on OLD moves a directory")
     rat.add_argument("--baseline", type=int, default=None, metavar="ID",
                      help="seed and prune: read run ID instead of the run verify would pick, "
                           "the audited way past a failed verify; refused for a failed verify, "

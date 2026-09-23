@@ -1,6 +1,6 @@
-"""mutate --files and claims release rebase a relative path from the working
-directory when the root came from the walk, like explain and rescore do, so their
-help says so too."""
+"""mutate --files, claims release and ratchet move rebase a relative path from the
+working directory when the root came from the walk, like explain and rescore do,
+so their help says so too."""
 import pytest
 
 from crapkit.cli import main
@@ -25,3 +25,9 @@ def test_claims_help_says_where_the_release_path_is_read_from(capsys):
     text = _help(capsys, "claims")
 
     assert f"PATH {NOTE}" in text, text
+
+
+def test_ratchet_help_says_where_move_paths_are_read_from(capsys):
+    text = _help(capsys, "ratchet")
+
+    assert f"for move: OLD NEW {NOTE}" in text, text
