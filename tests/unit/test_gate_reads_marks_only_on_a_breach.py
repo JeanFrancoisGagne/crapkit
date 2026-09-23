@@ -9,12 +9,17 @@ rule.
 The trade is the hook's too: a clean gate no longer reports a marks file it
 cannot parse. The next gate that breaches still reads the file and refuses it.
 """
+import json
+
 from cli_inproc_repo import add_knotty, repo, seed_artifacts, template_repo  # noqa: F401
 
 import pytest
 
 from crapkit.cli import main
 from crapkit.mcp_server import tool_listing
+
+# A new function well under the ceiling of 6: the gate judges it and it passes.
+TINY = "\nexport function tiny(n: number): number {\n  return n > 1 ? 1 : 0;\n}\n"
 
 HEADER = "path\tlong_name\tcrap\n"
 
@@ -47,6 +52,21 @@ def test_a_clean_gate_never_opens_the_marks_file(scored, capsys, marks):
     write_marks(scored, marks)
 
     assert gate(scored, capsys) == (0, "")
+
+
+@pytest.mark.parametrize("marks", [UNSUPPORTED_KEYS, SHORT_LINE], ids=["unsupported-keys", "short-line"])
+def test_a_judged_edit_under_its_ceiling_never_opens_the_marks_file(scored, capsys, marks):
+    """The case the rule is for: the gate judged an edit and nothing breached."""
+    write_marks(scored, marks)
+    with open(scored / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(TINY)
+
+    code = main(["rescore", "src/app.ts", "--gate", "--json", "--repo", str(scored)])
+    out, err = capsys.readouterr()
+    verdict = json.loads(out)["gate"]
+
+    assert verdict["judged"] >= 1 and verdict["ok"] is True, verdict
+    assert (code, err) == (0, "")
 
 
 def test_a_breaching_gate_still_refuses_a_marks_file_it_cannot_compare(scored, capsys):
