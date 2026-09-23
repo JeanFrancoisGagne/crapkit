@@ -117,10 +117,11 @@ _WORKLIST_ITEM = {'type': 'object',
                          'description': 'measured, untested, no-lane or cc-only; null on an '
                                         'inventory-only run',
                          'enum': ('measured', 'untested', 'no-lane', 'cc-only', None)},
-                'remedy': {'type': 'string',
+                'remedy': {'type': ('string', 'null'),
                            'description': 'decompose, split-lines, add-tests or ok; every row '
-                                          'but ok reaches get_next_item when a lane measures it',
-                           'enum': _REMEDIES},
+                                          'but ok reaches get_next_item when a lane measures it; '
+                                          'null on an inventory-only run',
+                           'enum': (*_REMEDIES, None)},
                 'crap': {'type': ('number', 'null'),
                          'description': 'the score from the ranked run; null on an inventory-only '
                                         'run'},
