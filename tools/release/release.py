@@ -574,12 +574,29 @@ def _git(root: Path, *arguments: str) -> str:
     return done.stdout.strip()
 
 
+def _status_records(root: Path) -> list[str]:
+    output = _git(root, "status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z")
+    return [record for record in output.split("\0") if record]
+
+
+def _repo_state(root: Path) -> tuple[dict, int]:
+    """Branch headers and the count of changed paths, from one git status. Every
+    stage and every publish action checks this, and it used to cost three git
+    processes: branch, status and rev-parse."""
+    records = _status_records(root)
+    headers = [record[2:].split(" ", 1) for record in records if record.startswith("# ")]
+    return dict(headers), len(records) - len(headers)
+
+
 def _clean_main(root: Path) -> str:
-    if _git(root, "branch", "--show-current") != "main":
+    headers, changed = _repo_state(root)
+    if headers.get("branch.head") != "main":
         raise ReleaseError("release requires the main branch")
-    if _git(root, "status", "--porcelain", "--untracked-files=all"):
+    if headers.get("branch.oid") == "(initial)":
+        raise ReleaseError("release requires a commit on main")
+    if changed:
         raise ReleaseError("release requires a clean tree, including untracked files")
-    return _git(root, "rev-parse", "HEAD")
+    return headers["branch.oid"]
 
 
 def _guard_bump(root: Path, version: str) -> dict:
