@@ -99,5 +99,9 @@ def test_the_postings_are_staged_before_the_write_lock_is_taken(tmp_path, built)
 
     assert writes == {"INSERT INTO temp.twin_stage": True, "INSERT INTO twin_postings": False}, \
         "another writer gets in while the postings are staged, and waits only for the copy"
-    assert attempt(db, "SELECT name FROM temp.sqlite_master"), "the stage is gone"
+    # a temp table lives in the connection that made it, so only the writer
+    # can say whether its stage is gone
+    assert store._conn.execute(
+        "SELECT 1 FROM temp.sqlite_master WHERE name = 'twin_stage'").fetchone() is None, \
+        "the stage is gone"
     assert SnapshotStore(db).twin_index(run_id, lambda: pytest.fail("not stored")).min_lines == 8
