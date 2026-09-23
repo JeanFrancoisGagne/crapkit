@@ -43,12 +43,13 @@ any mark changes.
 
 ### Analysis version 11
 
-0.8.0 reads Python defs in four new ways. Each one changes some functions' names or
+0.8.0 reads Python defs in five new ways. Each one changes some functions' names or
 numbers, and the stamp records the rules, so every marks file re-seeds once:
 
 - A def with a PEP 695 type parameter list is named by its name. `def f[T](a: int):`
   read `]( a : int )`, and every generic def in a file that took the same parameters
-  collided on that key.
+  collided on that key. A file refused for a generic def with no annotated parameter
+  now scores.
 - A def nested three or more deep names each enclosing def once: `a.b.c( x )`, where
   it read `a.a.b.c( x )`.
 - A def whose body sits on its colon line, such as `def one(x): return x`, is listed
@@ -56,12 +57,16 @@ numbers, and the stamp records the rules, so every marks file re-seeds once:
   toward it. A def that encloses one can gain conditions it had lost.
 - Cognitive complexity and nesting count a def's body from the colon that ends its
   signature, so a one-line body counts and a signature's continuation lines do not.
+- A Python file that ends inside a def's signature is refused and names that def;
+  before, only a nested def was, and the file scored without it.
 
-Only the one-line change moves `ccn`: the def itself, and the defs whose lines it
-used to take. A newly listed def, or an enclosing def that read short before, can be
-over its ceiling and fails the gate the next time its file changes. Under a
-coverage.py lane a one-line def scores as uncovered with remedy `split-lines`,
-because its only line is the `def` statement that runs at import.
+The one-line change moves `ccn` for the def and for the defs whose lines it used to
+take, and a generic def with a constrained bound and a line break after a default,
+which read two lines at ccn 1, now reads its whole body. A newly listed def, or an
+enclosing def that read short before, can be over its ceiling and fails the gate the
+next time its file changes. Under a coverage.py lane a one-line def scores as
+uncovered with remedy `split-lines`, because its only line is the `def` statement
+that runs at import.
 
 After upgrading, in each repo:
 
