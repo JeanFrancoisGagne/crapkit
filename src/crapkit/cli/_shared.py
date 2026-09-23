@@ -324,8 +324,7 @@ def _identity_history(root: Path, store, paths: set) -> set:
         return set()
     from contextlib import closing
 
-    opened = SnapshotStore(db)
-    with closing(opened._conn):
+    with closing(SnapshotStore(db)) as opened:
         return opened.historical_collision_groups(paths)
 
 

@@ -583,6 +583,10 @@ class SnapshotStore:
             self._prepare()
         self._codes = {table: _read_codes(self._conn, table) for table in _CODE_SEEDS}
 
+    def close(self) -> None:
+        """Release the database, so `contextlib.closing(store)` scopes one read."""
+        self._conn.close()
+
     def _current(self) -> bool:
         """Detect actual schema and data, including writes by older crapkit.
 
