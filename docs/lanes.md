@@ -1163,7 +1163,7 @@ retest_command = "python -m pytest --junitxml=.crapkit/cov/junit.xml -q -k \"{na
 ```
 $ crapkit verify
 flake retry: 1 of 1 new failures passed on rerun
-verify OK @ f0070ff1fad vs baseline f0070ff1fad (0 changed files)
+verify OK @ f0070ff1fad vs baseline f0070ff1fad (0 changed files) (1 new failure passed on rerun, first tests.test_net::test_timeout)
 ```
 
 Three placeholders, filled from the JUnit ids (`classname::name`):
@@ -1177,9 +1177,14 @@ Three placeholders, filled from the JUnit ids (`classname::name`):
 Rules that keep this from hiding real failures:
 
 - Only lanes that declare `retest_command` retest. Lanes without one keep every failure.
+  A test that several lanes failed drops out only when each of those lanes reran it and
+  it passed.
 - A test only drops out of `new_failures` when the rerun's own results artifact says it
   passed. No artifact, a crash, or a timeout during the retest keeps everything failed.
 - The retest never touches the gate or the ratchet. It only shrinks the new-failure set.
+- A test that passed its rerun is stored under the lane's `retried_passes`, and the lane's
+  `failures` keeps the first attempt. A later verify that measures against this run never
+  forgives that test.
 
 ---
 

@@ -747,6 +747,7 @@ $ crapkit verify --json
   "diff_uncovered_max": null,
   "dirty_failures": [],
   "dirty_findings": 0,
+  "forgiven_failures": [],
   "gate_violations": [],
   "new_failures": [],
   "ok": false,
@@ -762,6 +763,7 @@ $ crapkit verify --json
     }
   ],
   "ratchet_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
+  "retried_passes": [],
   "run_id": 9,
   "schema": 1,
   "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
@@ -789,6 +791,8 @@ $ crapkit verify --json
 | `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
 | `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
 | `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
+| `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
+| `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
 | `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
@@ -801,6 +805,11 @@ already, because the entry it reports comes from the marks file.
 two disagree on purpose. Trust the count.
 
 `verify` reports the first of 6, 7, 8, 9 that fires, in that order.
+
+The run a verify stores keeps each lane's `failures` as the lane reported them, first attempt
+included. A lane with failures that passed their flake retry also names those ids under
+`retried_passes`. A later verify that reads this run as its baseline leaves them out, so it
+never forgives them: the baseline did not count them as failing.
 
 Since 0.4.5 the gate exempts a touched function whose fresh CRAP sits at or under its ratchet
 mark, the rule `rescore --gate` already applied (#29). So a `gate_violations` entry on a
