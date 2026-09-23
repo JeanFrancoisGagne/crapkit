@@ -106,6 +106,12 @@ def test_a_resume_the_kernel_refuses_is_an_os_error():
         procs._resume(SimpleNamespace(_handle=0))
 
 
+def test_only_a_zero_resume_status_lets_the_command_run():
+    procs._check_resumed(0)
+    with pytest.raises(OSError, match="status 0xC0000008"):
+        procs._check_resumed(-1073741816)  # STATUS_INVALID_HANDLE as a signed NTSTATUS
+
+
 class _RefusingOwner:
     """An owner that cannot take the command: Job assignment was refused."""
 

@@ -166,7 +166,10 @@ def _suspended(command, stdout, stderr, owner, kwargs):
 
 def _resume(process):
     import ctypes
-    status = ctypes.WinDLL("ntdll").NtResumeProcess(ctypes.c_void_p(int(process._handle)))
+    _check_resumed(ctypes.WinDLL("ntdll").NtResumeProcess(ctypes.c_void_p(int(process._handle))))
+
+
+def _check_resumed(status):
     if status:
         raise OSError(f"NtResumeProcess refused the command: status 0x{status & 0xFFFFFFFF:08X}")
 
