@@ -17,9 +17,12 @@ def _releases() -> list[tuple[str, str]]:
     return list(zip(parts[1::2], parts[2::2]))
 
 
-def test_no_release_repeats_a_heading():
-    repeated = {release: sorted(h for h, n in Counter(re.findall(r"^### (.+)$", body, re.M)).items()
-                                if n > 1)
-                for release, body in _releases()}
+def _repeated(body: str) -> list[str]:
+    counts = Counter(re.findall(r"^### (.+)$", body, re.M))
+    return sorted(heading for heading, seen in counts.items() if seen > 1)
 
-    assert {r: h for r, h in repeated.items() if h} == {}
+
+def test_no_release_repeats_a_heading():
+    repeated = {release: _repeated(body) for release, body in _releases()}
+
+    assert {release: heads for release, heads in repeated.items() if heads} == {}
