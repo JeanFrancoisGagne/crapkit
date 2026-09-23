@@ -90,6 +90,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --tb=short -p no:cacheprovider"
+# A test still running after 600 s prints every thread's stack, which -q
+# would otherwise leave as a missing dot. 600 is past hang_guard.HOLD_SECONDS,
+# the longest a correct test holds a child.
+faulthandler_timeout = 600
 
 # tests/e2e runs most CLI calls inside the pytest worker, where they are
 # measured like any test. The files that bind cli_runner(spawn=True), and every
