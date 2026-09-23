@@ -78,8 +78,8 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   remedy `split-lines` in the coverage run, `rescore`, `rescore --gate` and `check_gate`
   alike. Its only line is the `def` statement, which runs at import, so coverage.py
   could not show whether a test called it: an uncalled `def one(x): return x` read 1 of
-  2 branches covered, and an uncalled one-liner at the end of a module read cov 1.0.
-  Move the body to the line after the `def` and measure again.
+  2 branches covered, and an uncalled one-liner that is its module's only line read cov
+  1.0. Move the body to the line after the `def` and measure again.
 - A one-line TypeScript function keeps its istanbul number, since istanbul counts calls
   per function, and the shared-span note still names only spans two functions declare.
 
