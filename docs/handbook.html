@@ -512,7 +512,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <div class="tw" role="region" aria-label="Gate and advisory commands" tabindex="0"><table>
   <tr><th scope="col">Where</th><th scope="col">Command</th><th scope="col">Blocks?</th><th scope="col">Sees coverage?</th><th scope="col">What it is for</th></tr>
   <tr><td>after every edit</td><td class="mono">crapkit claude-hook</td><td>no</td><td>no</td><td>Automatic, via the plugin. Names a function the edit pushed over its ceiling.</td></tr>
-  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>no</td><td>Preview of the commit gate's verdict, before you stage anything. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
+  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>the newest run's</td><td>A stricter preview of the commit gate, before you stage anything: a ratchet mark pardons a function only while its CRAP is at or under the mark, where the hook pardons any marked function. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
   <tr><td>at <code>git commit</code></td><td class="mono">crapkit hook-precommit</td><td class="mono">exit 6, git says 1</td><td>no</td><td>The enforcement point. Staged blobs, in memory, no store needed.</td></tr>
   <tr><td>before merge</td><td class="mono">crapkit verify --base REF</td><td class="mono">6 7 8 9</td><td>yes</td><td>The full verdict: gate, ratchet, new test failures, dark diff lines.</td></tr>
   <tr><td>in CI</td><td class="mono">crapkit verify --baseline-tsv FILE</td><td class="mono">6 7 8 9</td><td>yes</td><td>A fresh clone judged against a committed baseline. Add <code>--sarif PATH</code> or <code>--github</code>.</td></tr>
@@ -909,7 +909,7 @@ crapkit advisory: 1 function(s) over ceiling 6 in auth/session.ts (the edit land
   ccn 9  auth/session.ts:41  refreshToken ( req , store )
 the commit gate enforces this; decompose there or mark the debt
 
-$ crapkit rescore auth/session.ts --gate      # the same verdict, on demand
+$ crapkit rescore auth/session.ts --gate      # the gate's rule, stricter on marks, on demand
 $ crapkit brief auth/session.ts refreshToken  # the packet, if you want the seams handed to you
 … split it, then …
 $ git commit -m "refresh tokens through a store adapter"   # gate runs, exit 0, commit lands</code></pre>
@@ -986,7 +986,7 @@ decompose before committing (coverage cannot save a function above the target).<
 <div class="tw" role="region" aria-label="Commands by task" tabindex="0"><table>
   <tr><th scope="col">You are…</th><th scope="col">Reach for</th><th scope="col">Because</th></tr>
   <tr><td>about to edit an unfamiliar file</td><td class="mono">brief PATH NAME --json</td><td>Source, siblings, churn, coupled files, the ceiling and the repo's traps, before the file is even open.</td></tr>
-  <tr><td>wondering if the hook will refuse your commit</td><td class="mono">rescore FILE --gate</td><td>The same verdict the hook gives before you stage.</td></tr>
+  <tr><td>wondering if the hook will refuse your commit</td><td class="mono">rescore FILE --gate</td><td>The hook's rule before you stage, stricter on marks: a marked function passes only while its CRAP is at or under the mark.</td></tr>
   <tr><td>deciding where new code should live</td><td class="mono">worklist · coupling · duplication</td><td>Hot fragile files are a design input; a near-twin means the helper already exists.</td></tr>
   <tr><td>writing tests for a change</td><td class="mono">uncovered_lines · est_uncovered_paths</td><td>The packet names the dark branches; the estimate sizes the work.</td></tr>
   <tr><td>wondering if a past refactor held</td><td class="mono">explain PATH NAME</td><td>The score's trajectory across runs, plus <code>regrowth</code> when a split quietly un-split itself.</td></tr>

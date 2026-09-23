@@ -41,6 +41,27 @@ def test_the_row_states_the_pardon_rule(page, first_cell):
     assert PARDON in _row(page, first_cell)
 
 
+def _handbook_rows() -> list[str]:
+    text = (ROOT / "docs/handbook.html").read_text(encoding="utf-8")
+    return [line for line in text.splitlines()
+            if line.lstrip().startswith("<tr>") and ">rescore FILE --gate</td>" in line]
+
+
+def test_the_handbook_rows_state_the_pardon_rule():
+    """The ladder and the lookup table each have a row for it, and each called
+    it the hook's own verdict before you stage."""
+    rows = _handbook_rows()
+
+    assert len(rows) == 2
+    assert [PARDON in row and "same verdict" not in row for row in rows] == [True, True]
+
+
+def test_the_handbook_walkthrough_does_not_call_it_the_same_verdict():
+    text = (ROOT / "docs/handbook.html").read_text(encoding="utf-8")
+
+    assert "the same verdict, on demand" not in text
+
+
 def test_the_gate_step_says_when_the_marks_are_read():
     text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     step = text.split("\n## 3. Gate the edit\n", 1)[1].split("\n## ", 1)[0]
