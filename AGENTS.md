@@ -631,9 +631,10 @@ key and ignores it, so the floor is the half that keeps the warning from being t
 story. Measured on `tests/e2e/test_init_doctor_e2e.py`: `cli/admin.py` scores 0/498
 statements without it under pytest-cov 7.1.0, 317/498 with it under 7.1.0 and 6.3.0 alike.
 
-xdist is not a convenience either: `tests/fixtures/mini_repo` declares a lane that shells out to
-`pytest ... -n 2`, and without it that subprocess dies on an unrecognized `-n`, failing
-the e2e tests that assert the lane exited 0. CI installs this extra and nothing else, so
+xdist is not a convenience either: `tests/fixtures/mini_repo` declares a lane that
+shells out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` gives the one test
+about xdist fragments combining `pytest ... -n 2`; without xdist either subprocess dies
+on an unrecognized `-n`, failing the e2e tests that assert the lane exited 0. CI installs this extra and nothing else, so
 a pytest plugin a committed fixture lane needs belongs in it.
 
 The second line arms the complexity gate. Without it your commits pass locally and get
@@ -692,6 +693,14 @@ run does gets a fresh build. A copy's lane artifacts still key files by the buil
 staging dir, which is gone, so a test that reads dark lines or reuses artifacts runs
 `coverage` in its copy first, or builds fresh.
 
+A test waits on a child through `tests/hang_guard.py`: one bound, `HANG_SECONDS`, that a
+passing wait never pays, and a miss that kills the child and fails with what it printed.
+A child script spells `CHILD_WAIT` for a state and `CHILD_HOLD` for a lock the test
+releases; a hold outlasts the longest chain of waits a test starts after it.
+`tests/unit/test_one_hang_bound.py` refuses a wait bound spelled as a number, and
+`tests/unit/test_loaded_machine_waits.py` refuses a CLI, lane or mutation deadline under
+the bound unless a test is about it.
+
 ## Where code goes
 
 `src/crapkit/` is the pure core: analysis, scoring, the store, git, the ratchet, the
@@ -709,6 +718,7 @@ Shared rules belong to these modules:
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
+| `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |

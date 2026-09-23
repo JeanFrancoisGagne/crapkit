@@ -69,7 +69,7 @@ the former cache leak is fixed.
 
 ### The e2e CLI runner
 
-`tests/e2e/conftest.py` holds the one way e2e spawns the CLI. Before it, 42 copies of the
+`tests/e2e/conftest.py` holds the one way e2e runs the CLI. Before it, 42 copies of the
 same four-line `subprocess.run` lived in the test files, 23 of them different, and nothing
 said which differences were deliberate. A file binds its own contract once at the top:
 
@@ -78,8 +78,11 @@ run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
                      env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 ```
 
-The defaults are the plainest child: 120 s, platform decoding, the inherited environment.
-A test that needs otherwise says so in that call. The child inherits the parent's
+The defaults are the plainest child: platform decoding and the inherited environment.
+A spawned call that names no timeout waits the suite's one hang bound from
+`tests/hang_guard.py`. A test that needs otherwise says so in that call. The call runs
+inside the pytest worker unless the file binds `cli_runner(spawn=True)`; AGENTS.md lists
+the files that need a real child process and why. The child inherits the parent's
 package selection: `PYTHONPATH` can select a development checkout, while isolated CI
 uses its environment's verified wheel. Each Git command injects its test identity,
 so no global Git configuration is required.
