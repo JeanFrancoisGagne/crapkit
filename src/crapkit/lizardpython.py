@@ -246,17 +246,17 @@ class PythonSignatureStates(PythonStates):
 
 
 class _SignatureIndents(PythonIndents):
-    """lizard's per-line indent bookkeeping, holding back what a signature line sets.
+    """lizard's per-line indent bookkeeping, with no nesting set from a signature line.
 
     lizard sets nesting from every line's first code token once the def's long
     name ends with `)`. Inside a signature that is the defect: see mechanic 3.
-    The first level lizard would push from inside the signature is held, and
-    what happens to it depends on where the body starts:
+    Here a signature line sets no nesting, and where the body starts decides
+    what ends the def:
 
-      * on the next line: dropped, and the body's first line pushes the def
-      * on the colon line (`) -> None: ...`, `def f(x): return x`): dropped,
-        and the def ends with the logical line that holds its body. See "A body
-        on the colon line" above.
+      * on the next line: that line's first token pushes the def, and a later
+        dedent past it ends it, as under lizard
+      * on the colon line (`) -> None: ...`, `def f(x): return x`): the end of
+        that body ends the def. See "A body on the colon line" above.
 
     A code token after the body colon on the colon's own line starts a body on
     the colon line. `body_depth` counts that body's brackets and is None
@@ -269,7 +269,6 @@ class _SignatureIndents(PythonIndents):
         self.states = states
         self.spaces = 0
         self.leading = True
-        self.held = None
         self.body_depth = None
 
     def see(self, token: str) -> None:
@@ -292,8 +291,6 @@ class _SignatureIndents(PythonIndents):
         self.states.colon_read = False  # a colon that ends its line opens the body below
         if self.body_depth == 0:
             self._end_body()
-        if not self.states.in_signature:
-            self.held = None
 
     def _leading(self, token: str) -> None:
         if token.isspace():
@@ -304,27 +301,21 @@ class _SignatureIndents(PythonIndents):
             self._line_starts(token)
 
     def _line_starts(self, token: str) -> None:
-        """A line's first code token: held in a signature, no nesting inside a body on its colon line.
+        """A line's first code token: no nesting in a signature or inside a body on its colon line.
 
-        Outside a signature lizard's own condition always holds: every way out
-        of one passes the `)` that ends the long name.
+        Outside both, lizard's own condition always holds: every way out of a
+        signature passes the `)` that ends the long name.
         """
         if self.body_depth is not None:
             self.body_depth += _depth_change(token)
-        elif self.states.in_signature:
-            self._hold()
-        else:
+        elif not self.states.in_signature:
             self.set_nesting(self.spaces, token)
-
-    def _hold(self) -> None:
-        if self.held is None and self._lizard_sets_nesting() and self.spaces > self.indents[-1]:
-            self.held = self.spaces
 
     def _after_colon(self, token: str) -> None:
         if token.isspace() or token.startswith("#"):
             return
         self.states.colon_read = False
-        self.held, self.body_depth = None, _depth_change(token)
+        self.body_depth = _depth_change(token)
 
     def _end_body(self) -> None:
         """End the def whose body sat on its colon line, as a dedent past it would.
@@ -335,10 +326,6 @@ class _SignatureIndents(PythonIndents):
         self.body_depth = None
         self.context.add_bare_nesting()
         self.context.pop_nesting()
-
-    def _lizard_sets_nesting(self) -> bool:
-        function = self.context.current_function
-        return function.name == "*global*" or function.long_name.endswith(")")
 
 
 class PythonSignatureReader(_StockPythonReader):
