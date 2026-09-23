@@ -1,8 +1,8 @@
 """End-to-end: the istanbul half of the absolute-path refusal.
 
 `tests/e2e/test_lane_absolute_paths_e2e.py` proves the coveragepy half three
-ways and never builds an istanbul lane, so the branch of `_absolute_fix` a JS
-consumer meets had nothing behind it. The two messages name different knobs,
+ways and never builds an istanbul lane, so the advice a JS consumer meets
+(`coverage_istanbul.ABSOLUTE_FIX`) had nothing behind it. The two messages name different knobs,
 and the istanbul one is the harder to write: the reader strips this checkout's
 root off every measured path literally, so a path that stayed absolute means the
 reporter spelled that root some other way, and no key on the lane can rebase it.
