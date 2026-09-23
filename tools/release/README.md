@@ -29,10 +29,22 @@ above that watermark. `python -m crapkit verify` on its own stamps nothing, so a
 run you watched pass is refused later with a message about test evidence.
 
 After a passing verify, the stage runs `ratchet seed` and `ratchet prune` against
-that verify run. When either would change `crapkit-ratchet.tsv`, the release commit
-lacks marks its own tree earns: the stage puts the file back, stops, and publication
-stays refused. Delete the tag, run both commands, amend the release commit with the
-new marks, then rerun stage 2a and verify.
+that verify run. A green verify also tightens and drops marks on its own, so the
+stage compares against the marks it read before the verify started. When verify,
+seed and prune change `crapkit-ratchet.tsv`, the release commit lacks marks its own
+tree earns. The stage puts the committed file back, saves the computed one as
+`.crapkit/release-marks-VERSION.tsv`, stops, and publication stays refused. The
+refusal prints the commands that carry the saved file into the release commit:
+
+```
+git tag -d vVERSION
+cp .crapkit/release-marks-VERSION.tsv crapkit-ratchet.tsv
+git add -- crapkit-ratchet.tsv
+git commit --amend --no-edit
+```
+
+Then rerun stage 2a and verify. `git add` comes first because `git commit -- PATH`
+refuses a marks file the release commit does not track yet.
 
 ## Preflight: prove the environment before anything is pushed
 

@@ -542,8 +542,9 @@ def plan(version: str) -> list:
                   " watermark and publication then refuses its evidence; a foreground call dies at 600 s"),
         Step("ratchet", "verify", ((PY, "-m", "crapkit", "ratchet", "seed"),
                                    (PY, "-m", "crapkit", "ratchet", "prune")),
-             note=f"after a passing verify, against its run: a change to {RATCHET_FILE} stops the "
-                  "release and the file is put back"),
+             note=f"after a passing verify, against its run: a change verify, seed and prune make "
+                  f"to {RATCHET_FILE} stops the release; the committed file goes back and the "
+                  "computed one is saved under .crapkit/"),
         Step("artifacts", "stage2b", ((PY, "-m", "build", "-q", "--outdir", RELEASE_DIST),
                                       (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
              note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
@@ -1143,43 +1144,68 @@ def _put_back_marks(root: Path, marks: bytes | None) -> None:
         path.write_bytes(marks)
 
 
-def _check_ratchet(step: Step, root: Path, receipt: dict, before: int) -> None:
+def _save_marks(root: Path, version: str, marks: bytes) -> str:
+    saved = f".crapkit/release-marks-{version}.tsv"
+    (root / saved).write_bytes(marks)
+    return saved
+
+
+def _marks_stop(version: str, run: int, saved: str) -> str:
+    """The refusal, with the commands that carry the computed marks into the
+    release commit. `git add` comes first because `git commit -- PATH` refuses a
+    marks file the release commit does not track yet."""
+    return NL.join((
+        f"verify, seed and prune change {RATCHET_FILE} against verify run {run}, so the release "
+        f"commit lacks marks its own tree earns. The committed file is back in place and the "
+        f"computed one is saved at {saved}. Carry it into the release commit:",
+        f"    $ git tag -d v{version}",
+        f"    $ cp {saved} {RATCHET_FILE}",
+        f"    $ git add -- {RATCHET_FILE}",
+        "    $ git commit --amend --no-edit",
+        f"then rerun `release.py run stage2a {version}` and `release.py run verify {version}`"))
+
+
+def _check_ratchet(step: Step, root: Path, receipt: dict, before: int, committed: bytes | None) -> None:
     """Stage 1 once ran a full coverage lane only to feed `ratchet seed` and
     `ratchet prune`, and the verify stage then ran the same lane again. The verify
-    run is that lane at the tagged tree, so seed and prune now work from it. A
-    change to the marks stops the release, because the release commit must carry
-    them; the file is put back either way."""
-    run = _passing_run(root, receipt["head"], before)
-    marks = _marks(root)
+    run is that lane at the tagged tree, so seed and prune now work from it.
+
+    `committed` is the marks file as the stage found it, read before the verify:
+    a green verify already tightens and drops marks, so a read taken after it
+    would miss that change. Any change by verify, seed or prune stops the release,
+    because the release commit must carry the marks. The committed bytes go back
+    either way, and the computed ones wait under .crapkit/ for the operator."""
     try:
+        run = _passing_run(root, receipt["head"], before)
         _run_or_untag(step, root, receipt["version"], False)
-        changed = _marks(root) != marks
+        computed = _marks(root)
     finally:
-        _put_back_marks(root, marks)
-    if changed:
-        raise ReleaseError(
-            f"ratchet seed and prune change {RATCHET_FILE} against verify run {run}, so the release "
-            f"commit lacks marks its tree earns; the file is put back. Delete v{receipt['version']}, "
-            "run both, amend the release commit with the marks, then rerun stage2a and verify")
+        _put_back_marks(root, committed)
+    if computed != committed:
+        saved = _save_marks(root, receipt["version"], computed)
+        raise ReleaseError(_marks_stop(receipt["version"], run, saved))
 
 
-def _stage_step(step: Step, root: Path, version: str, receipt: dict, before: int) -> None:
+def _stage_step(step: Step, root: Path, version: str, receipt: dict, before: int,
+                marks: bytes | None = None) -> None:
     if step.stage == "stage2b":
         _publish_step(step, root, receipt)
     elif step.name == "ratchet":
-        _check_ratchet(step, root, receipt, before)
+        _check_ratchet(step, root, receipt, before, marks)
     else:
         _run_or_untag(step, root, version, False, receipt.get("head", ""))
 
 
 def _run_guarded(stage: str, steps: list, version: str, root: Path) -> None:
     receipt = _preflight(stage, root, version)
-    before = _last_run(root) if stage == "verify" else 0
+    before, marks = 0, None
     if stage == "verify":
+        # The guard proved a clean tree, so these are HEAD's committed marks.
+        before, marks = _last_run(root), _marks(root)
         receipt.pop("verify_run", None)
         _write_receipt(root, receipt)
     for step in steps:
-        _stage_step(step, root, version, receipt, before)
+        _stage_step(step, root, version, receipt, before, marks)
     _finish_stage(stage, root, version, receipt, before)
 
 
