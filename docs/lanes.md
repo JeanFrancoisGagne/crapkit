@@ -966,12 +966,16 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 | Flag | Behavior |
 |---|---|
 | `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
-| `--reuse-unchanged` | Reuse a lane only at the same clean HEAD, with unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. Otherwise run it again. A failed attempt that wrote no artifact always reruns. |
+| `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. |
 
-Automatic reuse covers the whole tracked tree, including tests and shared helpers.
-Any tracked or untracked change, or a new commit, reruns the lane. Measurements
-made from a dirty tree and older stamps without this proof cannot be reused
-automatically. Environment values are hashed together; stamps do not store them.
+Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
+shared helpers: any tracked or untracked change, or a new commit, reruns the lane.
+With [`inputs`](configuration.md#lane) it covers exactly those paths, read as git
+pathspecs from the root, so a docs commit or an untracked draft elsewhere reruns
+nothing, and a file the command reads that the list leaves out is never checked.
+Measurements made while their proof did not hold (a dirty tree, or dirty inputs)
+and older stamps without this proof cannot be reused automatically. Environment
+values are hashed together; stamps do not store them.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
 dependencies and services are outside that proof. Run fresh coverage when those

@@ -432,6 +432,36 @@ def _measurement_commit(root: Path) -> str:
 
 
 def _measurement_key(root: Path, lane: Lane) -> str:
+    """The proof a stamp records that nothing the lane reads moved while it ran.
+
+    A lane that declares `inputs` is proved by those paths and its own config
+    block, env included. Every other lane is proved by the whole clean checkout,
+    crapkit.toml and the inherited environment.
+    """
+    return _declared_inputs_key(root, lane) if lane.inputs else _whole_tree_key(root, lane)
+
+
+def _inputs_key(commit: str, lane: Lane) -> str:
+    """The lane's own configuration, env and inputs included, bound to a commit."""
+    payload = json.dumps(("inputs", commit, lane), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _declared_inputs_key(root: Path, lane: Lane) -> str:
+    """HEAD bound to the lane's config, or "" while an uncommitted change touches
+    its inputs: the artifact would describe the edit, not the commit."""
+    from .lane_changes import ChangeReads
+
+    try:
+        commit = GitFacts(root).head_commit()
+        with ChangeReads(root, (), lane.inputs) as reads:
+            dirty = reads.status_names()
+    except GitError:
+        return ""
+    return "" if dirty else _inputs_key(commit, lane)
+
+
+def _whole_tree_key(root: Path, lane: Lane) -> str:
     """Hash declared execution inputs without persisting environment values.
 
     Only clean repository inputs qualify. Ignored or absent configuration is
@@ -642,16 +672,48 @@ def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict,
 
 
 def lane_unchanged(root: Path, lane: Lane) -> bool:
-    """Automatic reuse requires the same clean repository, not just source scopes.
+    """Whether --reuse-unchanged may reuse this lane's artifact without a rerun."""
+    return bool(lane_reuse_commit(root, lane))
 
-    A lane command can read tests, configuration or any other repository input.
-    Source ownership cannot prove that a changed path leaves its measurement
-    intact. Explicit artifact reuse remains a separate deliberate request.
+
+def lane_reuse_commit(root: Path, lane: Lane) -> str:
+    """The commit the lane's artifact was built at, when automatic reuse is
+    proved, or "".
+
+    A lane command can read tests, configuration or any other repository input,
+    and source ownership cannot prove that a changed path leaves its
+    measurement intact. So a lane that declares nothing is reused only at the
+    same clean repository. A lane that declares `inputs` is reused while its
+    commit is behind HEAD and no committed, staged, unstaged or untracked
+    change touches those paths. Either way the artifact bytes have to match the
+    stamp. Explicit artifact reuse remains a separate deliberate request.
     """
     stamp = stamp_for(read_stamps(root), lane.artifact)
-    if not stamp.get("inputs") or not _artifact_commit(root, lane):
+    commit = _artifact_commit(root, lane)
+    if not (commit and stamp.get("inputs")):
+        return ""
+    proved = _inputs_proved(root, lane, stamp["inputs"], commit) and _same_artifacts(root, lane, stamp)
+    return commit if proved else ""
+
+
+def _inputs_proved(root: Path, lane: Lane, recorded: str, commit: str) -> bool:
+    if lane.inputs:
+        return recorded == _inputs_key(commit, lane) and _inputs_untouched(root, lane, commit)
+    return recorded == _measurement_key(root, lane)
+
+
+def _inputs_untouched(root: Path, lane: Lane, commit: str) -> bool:
+    """The stamp's commit is still behind HEAD and nothing under the inputs moved.
+
+    git reads the inputs as a pathspec, so an untracked file outside them
+    costs nothing and blocks nothing."""
+    from .lane_changes import ChangeReads
+
+    try:
+        with ChangeReads(root, (commit,), lane.inputs) as reads:
+            return reads.is_ancestor(commit) and not reads.changed_since(commit)
+    except GitError:
         return False
-    return stamp["inputs"] == _measurement_key(root, lane) and _same_artifacts(root, lane, stamp)
 
 
 def _same_artifacts(root: Path, lane: Lane, stamp: dict) -> bool:

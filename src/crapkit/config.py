@@ -60,6 +60,9 @@ class Lane(NamedTuple):
     retries: int = 0
     retest_command: str = ""  # {tests} template for the flake retry before exit 8
     log_max_bytes: int = 16777216  # inherited global bound, not a per-lane TOML key
+    # Root-relative paths the command reads. Declared, they let --reuse-unchanged
+    # reuse the lane while none of them changed; () keeps the whole-tree rule.
+    inputs: tuple[str, ...] = ()
 
 
 # pytest options that read the NEXT token as their value. `-n 8` is eight
@@ -723,7 +726,30 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
-                retest_command=row.get("retest_command", ""))
+                retest_command=row.get("retest_command", ""),
+                inputs=_lane_inputs(row))
+
+
+_DRIVE_PATH = re.compile(r"[A-Za-z]:")
+
+
+def _outside_root(entry: str) -> bool:
+    """An input git would read outside the root, or could not read at all.
+
+    Inputs become pathspecs read from the root with diff.relative on, and that
+    diff never reports a change above the root: a `../shared` input would be
+    trusted forever."""
+    path = entry.replace("\\", "/")
+    return not path or path.startswith("/") or bool(_DRIVE_PATH.match(path)) or ".." in path.split("/")
+
+
+def _lane_inputs(row: dict) -> tuple[str, ...]:
+    inputs = tuple(row.get("inputs", ()))
+    for entry in inputs:
+        if _outside_root(entry):
+            raise ConfigError(f"lane {row.get('name')!r}: inputs entry {entry!r} is not a path "
+                              "inside the root; list paths relative to crapkit.toml, without '..'")
+    return inputs
 
 
 def _reject_shared_artifacts(lanes: list, root=None) -> None:

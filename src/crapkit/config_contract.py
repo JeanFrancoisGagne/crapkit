@@ -178,6 +178,13 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                                  'paths'},
                                                   'env': {'type': 'object',
                                                           'additionalProperties': {'type': 'string'}},
+                                                  'inputs': {'type': 'array',
+                                                             'items': {'type': 'string'},
+                                                             'description': 'repo-relative paths the '
+                                                                            'command reads; '
+                                                                            '--reuse-unchanged reuses '
+                                                                            'the lane while none of '
+                                                                            'them changed'},
                                                   'full_suite': {'type': 'boolean',
                                                                  'description': 'false permits '
                                                                                 'positional narrowing '
