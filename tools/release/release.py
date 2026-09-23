@@ -509,8 +509,8 @@ class Step(NamedTuple):
 
 
 PY = sys.executable
-RELEASE_FILES = tuple(sorted({surface.path for surface in SURFACES}
-                            | {"CHANGELOG.md", "SECURITY.md", "crapkit-ratchet.tsv"}))
+RATCHET_FILE = "crapkit-ratchet.tsv"
+RELEASE_FILES = tuple(sorted({surface.path for surface in SURFACES} | {"CHANGELOG.md", "SECURITY.md"}))
 
 
 def _upload_prefix(surface: str, version: str) -> tuple:
@@ -522,7 +522,8 @@ def plan(version: str) -> list:
     """The chain as a list a person reads before running it. Order is what the
     contracts require: the tag before the contract files (two of them read the
     newest tag), verify before anything leaves the machine, PyPI before the
-    registry (the registry validates the README PyPI serves)."""
+    registry (the registry validates the README PyPI serves). Stage 1 measures
+    nothing: seed and prune run after the verify, against its run."""
     _parse(version)
     tool = (PY, "tools/release/release.py")
     contracts = (PY, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", *CONTRACT_FILES)
@@ -532,8 +533,6 @@ def plan(version: str) -> list:
             (PY, "-m", "pip", "install", "-e", ".", "--no-deps", "-q"),
             (PY, "tools/docs/generate.py"),
             (PY, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", "tests/unit/test_version_surface.py"),
-            (PY, "-m", "crapkit", "coverage"), (PY, "-m", "crapkit", "ratchet", "seed"),
-            (PY, "-m", "crapkit", "ratchet", "prune"),
             ("git", "add", "--", *RELEASE_FILES), ("git", "commit", "-q", "-m", f"Release {version}")),
             note="guard: clean main includes origin/main; publication waits for the tagged full verify"),
         Step("tag", "stage2a", (("git", "tag", f"v{version}"),)),
@@ -541,6 +540,10 @@ def plan(version: str) -> list:
         Step("verify", "verify", ((PY, "-m", "crapkit", "verify"),), background=True,
              note="run it via `release.py run verify VERSION`: the bare `crapkit verify` stamps no"
                   " watermark and publication then refuses its evidence; a foreground call dies at 600 s"),
+        Step("ratchet", "verify", ((PY, "-m", "crapkit", "ratchet", "seed"),
+                                   (PY, "-m", "crapkit", "ratchet", "prune")),
+             note=f"after a passing verify, against its run: a change to {RATCHET_FILE} stops the "
+                  "release and the file is put back"),
         Step("artifacts", "stage2b", ((PY, "-m", "build", "-q", "--outdir", RELEASE_DIST),
                                       (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
              note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
@@ -1127,6 +1130,48 @@ def _run_or_untag(step: Step, root: Path, version: str, dry_run: bool,
         raise ReleaseError(f"{step.name} failed: {exc}") from exc
 
 
+def _marks(root: Path) -> bytes | None:
+    path = root / RATCHET_FILE
+    return path.read_bytes() if path.is_file() else None
+
+
+def _put_back_marks(root: Path, marks: bytes | None) -> None:
+    path = root / RATCHET_FILE
+    if marks is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_bytes(marks)
+
+
+def _check_ratchet(step: Step, root: Path, receipt: dict, before: int) -> None:
+    """Stage 1 once ran a full coverage lane only to feed `ratchet seed` and
+    `ratchet prune`, and the verify stage then ran the same lane again. The verify
+    run is that lane at the tagged tree, so seed and prune now work from it. A
+    change to the marks stops the release, because the release commit must carry
+    them; the file is put back either way."""
+    run = _passing_run(root, receipt["head"], before)
+    marks = _marks(root)
+    try:
+        _run_or_untag(step, root, receipt["version"], False)
+        changed = _marks(root) != marks
+    finally:
+        _put_back_marks(root, marks)
+    if changed:
+        raise ReleaseError(
+            f"ratchet seed and prune change {RATCHET_FILE} against verify run {run}, so the release "
+            f"commit lacks marks its tree earns; the file is put back. Delete v{receipt['version']}, "
+            "run both, amend the release commit with the marks, then rerun stage2a and verify")
+
+
+def _stage_step(step: Step, root: Path, version: str, receipt: dict, before: int) -> None:
+    if step.stage == "stage2b":
+        _publish_step(step, root, receipt)
+    elif step.name == "ratchet":
+        _check_ratchet(step, root, receipt, before)
+    else:
+        _run_or_untag(step, root, version, False, receipt.get("head", ""))
+
+
 def _run_guarded(stage: str, steps: list, version: str, root: Path) -> None:
     receipt = _preflight(stage, root, version)
     before = _last_run(root) if stage == "verify" else 0
@@ -1134,10 +1179,7 @@ def _run_guarded(stage: str, steps: list, version: str, root: Path) -> None:
         receipt.pop("verify_run", None)
         _write_receipt(root, receipt)
     for step in steps:
-        if stage == "stage2b":
-            _publish_step(step, root, receipt)
-        else:
-            _run_or_untag(step, root, version, False, receipt.get("head", ""))
+        _stage_step(step, root, version, receipt, before)
     _finish_stage(stage, root, version, receipt, before)
 
 

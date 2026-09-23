@@ -1,4 +1,4 @@
-"""A minor release regenerates supported-version guidance before measuring."""
+"""A minor release regenerates supported-version guidance before it stages the release commit."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -38,9 +38,9 @@ def stage_effect(command, root):
         release.bump(root, "0.6.0")
     elif command[1:2] == ("tools/docs/generate.py",):
         generate(root)
-    elif command[-2:] == ("crapkit", "coverage"):
+    elif command[:2] == ("git", "add"):
         support = (root / "SECURITY.md").read_text(encoding="utf-8")
-        assert "| 0.6.x | Yes |" in support, "coverage started before support guidance was regenerated"
+        assert "| 0.6.x | Yes |" in support, "staging started before support guidance was regenerated"
         assert "| < 0.6 | No. Upgrade. |" in support
 
 
