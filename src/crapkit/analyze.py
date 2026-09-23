@@ -411,6 +411,24 @@ def _note_twin_keys(rel_path: str, records: list[FunctionRecord]) -> None:
           f"file order", file=sys.stderr)
 
 
+# How many files one batch's twin-key notes name before counting the rest, the
+# cap _note_unanalyzable keeps. The first run after an analysis version bump
+# analyzes every file again, and on a large consumer repo that printed 1,021
+# notes over the lane progress lines.
+_TWIN_FILES_NAMED = 5
+
+
+def _note_twin_files(fresh: dict[str, list[FunctionRecord]]) -> None:
+    """The twin-key note for the first five such files in path order, then one
+    line counting the rest."""
+    noted = [path for path, records in sorted(fresh.items()) if _colliding_names(records)]
+    for path in noted[:_TWIN_FILES_NAMED]:
+        _note_twin_keys(path, fresh[path])
+    if len(noted) > _TWIN_FILES_NAMED:
+        print(f"crapkit: ... and {len(noted) - _TWIN_FILES_NAMED} more file(s) define a name "
+              f"more than once", file=sys.stderr)
+
+
 def _listed(names: list[str]) -> str:
     if len(names) <= _NAMES_SHOWN:
         return ", ".join(names)
@@ -865,6 +883,7 @@ def analyze_jobs(
     chunksize: int = 32,
     hashes: dict[str, str] | None = None,
     worker_budget: int = 0,
+    note_twins: bool = True,
 ) -> dict[str, list[FunctionRecord]]:
     """Run lizard over (abs_path, rel_path) jobs, pooled once there are enough.
 
@@ -872,7 +891,8 @@ def analyze_jobs(
     different scales: an inventory feeds thousands of files and wants fat
     chunks, a hook feeds a commit's worth and needs each job dealt to a
     different worker (a chunksize above the job count leaves one worker doing
-    all of them, serially, after paying for the pool).
+    all of them, serially, after paying for the pool). NOTE_TWINS=False leaves
+    the twin-key note to a caller that notes more paths than these jobs.
     """
     worker, inputs = _job_inputs(jobs, hashes)
     with _pool_for(jobs, pool_threshold, workers, worker_budget, chunksize) as pool:
@@ -881,8 +901,8 @@ def analyze_jobs(
     # The parent says things; a worker only measures. A spawned child's stderr
     # never saw `_reconfigure_streams`, so a note printed from analyze_one
     # reached a UTF-8 reader in the legacy codepage on Windows (#31).
-    for rel_path, records in fresh.items():
-        _note_twin_keys(rel_path, records)
+    if note_twins:
+        _note_twin_files(fresh)
     _note_unanalyzable(fresh)
     return fresh
 
@@ -960,11 +980,10 @@ def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dic
                     workers, worker_budget: int) -> dict:
     origins = _miss_origins(misses, identities)
     jobs = [(str(root / path), path) for path in dict.fromkeys(origins.values())]
-    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget)
+    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget,
+                          note_twins=False)
     records = {path: _rows_for(path, parsed[origin]) for path, origin in origins.items()}
-    for path, origin in origins.items():
-        if path != origin:
-            _note_twin_keys(path, records[path])
+    _note_twin_files(records)
     return records
 
 

@@ -19,8 +19,11 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 0.8.0 moves the reader to analysis version 11, so a marks file stamped under 10
 needs one re-seed; [analysis version 11](#analysis-version-11) says what moved.
 The package upgrade rebuilds the versioned analysis cache automatically, and the
-first `inventory` or `coverage` after it analyzes every file again. Restart each
-client's MCP session after upgrading so its running server uses the new code.
+first `inventory` or `coverage` after it analyzes every file again. That run's
+[twin-key note](ratchet.md#twins-one-name-several-functions) names the first five
+files that give one name to several functions and ends with `... and N more file(s)
+define a name more than once`. Restart each client's MCP session after upgrading so
+its running server uses the new code.
 
 Keep a copy of the committed ratchet and its diff before an upgrade. In each repo:
 

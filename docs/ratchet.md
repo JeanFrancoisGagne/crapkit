@@ -71,6 +71,11 @@ has an explanation:
 crapkit: calc/iso_cost.py defines __post_init__( self ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
 ```
 
+One run names five such files at most, in path order, and counts the rest on one line:
+`crapkit: ... and 1016 more file(s) define a name more than once`. The first run after
+an analysis version change analyzes every file again, which on a large consumer repo
+meant 1,021 notes before the cap.
+
 To address one twin by hand, `brief` and `explain` take the same suffix:
 `crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves, to the
 worst twin: the one the queue ranks. `brief`, `explain` and the MCP tool

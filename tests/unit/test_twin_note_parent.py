@@ -7,10 +7,13 @@ note printed from `analyze_one` reached a UTF-8 reader as cp1252 bytes (#31: the
 em dash arrived as 0x97 on a stream whose other lines were UTF-8). Workers
 return records; the parent is the only process that says anything.
 """
+from pathlib import Path
+
 from crapkit import _analysis_pool
-from crapkit.analyze import analyze_jobs, analyze_one, analyze_source
+from crapkit.analyze import analyze_files, analyze_jobs, analyze_one, analyze_source
 
 TWINS = "def f():\n    return 1\n\n\ndef f():\n    return 2\n"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _twins_job(tmp_path) -> tuple[str, str]:
@@ -69,3 +72,53 @@ def test_analyze_source_keeps_the_note_because_it_runs_in_the_parent(capsys):
 
     assert len(records) == 2
     assert "more than once" in capsys.readouterr().err
+
+
+def _twin_notes(err: str) -> list[str]:
+    return [line for line in err.splitlines() if "more than once" in line]
+
+
+def test_a_batch_names_five_twin_files_and_counts_the_rest(tmp_path, capsys):
+    """The first run after an analysis upgrade analyzes every file again. On a
+    large consumer repo that printed 1,021 of these notes, uncapped, over the
+    lane progress lines; the tokenize-failure list in the same run stops at five."""
+    jobs = []
+    for n in range(8):
+        src = tmp_path / f"twins{n}.py"
+        src.write_text(TWINS, encoding="utf-8")
+        jobs.append((str(src), f"twins{n}.py"))
+
+    analyze_jobs(jobs, pool_threshold=10**6)
+
+    notes = _twin_notes(capsys.readouterr().err)
+    assert [note.split()[1] for note in notes[:5]] == [f"twins{n}.py" for n in range(5)], notes
+    assert notes[5:] == ["crapkit: ... and 3 more file(s) define a name more than once"], notes
+
+
+def test_copies_of_one_analyzed_file_share_the_same_cap(tmp_path, capsys):
+    """Files with the same content are analyzed once and noted per path."""
+    paths = [f"copy{n}.py" for n in range(7)]
+    for path in paths:
+        (tmp_path / path).write_text(TWINS, encoding="utf-8")
+
+    analyze_files(tmp_path, paths, cache={})
+
+    notes = _twin_notes(capsys.readouterr().err)
+    assert len(notes) == 6 and notes[-1].endswith("and 2 more file(s) define a name more than once"), notes
+
+
+def test_the_pages_quote_the_count_line_a_batch_prints(tmp_path, capsys):
+    jobs = []
+    for n in range(6):
+        src = tmp_path / f"twins{n}.py"
+        src.write_text(TWINS, encoding="utf-8")
+        jobs.append((str(src), f"twins{n}.py"))
+    analyze_jobs(jobs, pool_threshold=10**6)
+    printed = _twin_notes(capsys.readouterr().err)[-1]
+    assert " and 1 more file(s) " in printed, printed
+
+    def flat(page: str) -> str:
+        return " ".join((ROOT / "docs" / page).read_text(encoding="utf-8").split())
+
+    assert f"`{printed.replace(' 1 more', ' 1016 more')}`" in flat("ratchet.md")
+    assert f"`{printed.removeprefix('crapkit: ').replace(' 1 more', ' N more')}`" in flat("upgrading.md")

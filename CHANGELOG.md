@@ -71,6 +71,11 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   Over 187 PEP 695 files, 422 of 4,730 rows change name and no `ccn` moves. Some added
   rows are enclosing defs that were never listed, and they can be over a ceiling.
   crapkit's own tree reads the same apart from two renamed test helpers.
+- The first run after the upgrade analyzes every file again, so the twin-key note, one
+  stderr line per file that gives one name to several functions, came out for every
+  such file: 1,021 lines on a large consumer repo, over the lane progress lines. One
+  run now names five files at most, in path order, and ends with `crapkit: ... and N
+  more file(s) define a name more than once`.
 
 ### A template literal nested in another's `${...}` no longer hides the functions after it
 
