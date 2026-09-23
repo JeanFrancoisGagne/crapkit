@@ -80,10 +80,11 @@ def test_legacy_database_keeps_rows_and_refuses_precise_collision_reads(tmp_path
         assert len(reopened.read_rows(run)) == 2
         assert [r.occurrence for r in reopened.read_rows(run)] == [0, 0]
         for read in [lambda: reopened.read_marks(run), lambda: reopened.twin_key_names(run),
-                     lambda: reopened.function_span(run, 'app.ts', '(anonymous)'),
-                     lambda: reopened.function_history('app.ts', '(anonymous)')]:
+                     lambda: reopened.function_span(run, 'app.ts', '(anonymous)')]:
             with pytest.raises(ToolError, match='ambiguous legacy'):
                 read()
+        # a history lists runs, and this run cannot say which row is the twin
+        assert reopened.function_history('app.ts', '(anonymous)') == []
 
 
 def test_a_legacy_collision_refuses_only_the_selectors_that_reach_it(tmp_path, capsys):
