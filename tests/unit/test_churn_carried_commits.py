@@ -156,17 +156,35 @@ def test_a_moved_head_folds_in_only_the_new_commits(tmp_path, git):
     assert git.range_calls == [(HEAD_A, HEAD_B)]
 
 
+# A merged branch. rita committed before sue and sam but was merged after them,
+# so the range walk carries her commit above theirs while git's own log lists it
+# below. The dates span 7*10^15 seconds, which steps the recency weights finely
+# enough to land src/p.py on a 4-decimal rounding edge: its weights are
+# 0.003149365420286381 (rita), 0.5 (sam) and 0.07380063457971359 (sue). Summed
+# rita first they give 0.5769500000000001, which rounds to 0.577; in log order,
+# 0.57695, which rounds to 0.5769. The exact sum is 3.2e-17 below 0.57695, so
+# 0.5769 is the answer in either order.
+SAM = block("sam", 7000001000000000, 7000001000000000, "src/p.py")
+SUE = block("sue", 5524329729096004, 5524329729096004, "src/p.py")
+RITA = block("rita", 3641517686962032, 3641517686962032, "src/p.py")
+OSCAR = block("oscar", 1000000000, 1000000000, "src/z.py")
+MERGE = ["\x01sam\x027000001000000001\x027000001000000001\n"]  # --name-only lists no path
+
+
 def test_a_carried_map_is_byte_identical_to_a_cold_rebuild(tmp_path, git):
+    git.log = SAM + SUE + OSCAR
     churn_cache.load_churn(tmp_path, 12)
-    move_head(git)
+    git.head = HEAD_B
+    git.ranges[(HEAD_A, HEAD_B)] = MERGE + RITA
     carried = churn_cache.load_churn(tmp_path, 12)
 
     for stale in (tmp_path / ".crapkit").iterdir():
         stale.unlink()
-    git.log = RANGE + LOG
+    git.log = MERGE + SAM + SUE + RITA + OSCAR
     cold = churn_cache.load_churn(tmp_path, 12)
 
     assert git.window_calls == 2
+    assert carried["src/p.py"] == FileChurn(3, 3, 0.5769)
     assert dump(carried) == dump(cold)
 
 

@@ -6,7 +6,9 @@ byte-identical to a cold rebuild, and no window walk happened. The second is
 proved by a census of the git commands the run spawned (GIT_TRACE2_EVENT).
 """
 import json
+import os
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -39,14 +41,22 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
-                   cwd=repo, check=True, capture_output=True)
+def git(repo: Path, *args: str, when: str | None = None, who: str = "t") -> None:
+    env = dict(os.environ)
+    if when:
+        env.update(GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", f"user.name={who}", *args],
+                   cwd=repo, check=True, capture_output=True, env=env)
 
 
-def commit(repo: Path, message: str, *extra: str) -> None:
+def commit(repo: Path, message: str, *extra: str, when: str | None = None,
+           who: str = "t") -> None:
     git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", message, *extra)
+    git(repo, "commit", "-q", "-m", message, *extra, when=when, who=who)
+
+
+def days_ago(days: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
 
 def _log_walks(trace_dir: Path) -> list[list[str]]:
@@ -129,3 +139,35 @@ def test_an_amended_head_rebuilds_the_window(churned_repo, tmp_path):
     assert json.loads(amended.stdout)["active"][0]["commits"] == 3
 
     assert rebuilt(churned_repo).stdout == amended.stdout
+
+
+def test_a_merged_branch_carries_to_what_a_rebuild_answers(tmp_path):
+    """bea's branch commit is older than cal's and dee's on main but is merged
+    after them. The range walk carries it above theirs, while git's own log
+    lists it between them by date: the path's weights are summed over the two
+    orders, and the answer must not depend on which one."""
+    repo = tmp_path / "merged"
+    write(repo / "crapkit.toml", TOML)
+    write(repo / ".gitignore", ".crapkit/\n__pycache__/\n")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True,
+                   capture_output=True)
+    write(repo / "src" / "app.py", APP_PY)
+    commit(repo, "start", when=days_ago(100), who="ann")
+    git(repo, "checkout", "-q", "-b", "side")
+    write(repo / "src" / "app.py", APP_PY + "\nSIDE = 1\n")
+    commit(repo, "side", when=days_ago(80), who="bea")
+    git(repo, "checkout", "-q", "main")
+    for days, who in ((60, "cal"), (40, "dee")):
+        write(repo / "src" / "app.py", APP_PY + f"\nMAIN = {days}\n")
+        commit(repo, f"main {days}", when=days_ago(days), who=who)
+    assert run_cli(repo, "inventory").returncode == 0
+    assert run_cli(repo, *WORKLIST).returncode == 0
+    git(repo, "merge", "-q", "--no-ff", "-s", "ours", "side", "-m", "merge side")
+
+    merged, walks = traced(repo, tmp_path, "merged", *WORKLIST)
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert window_walks(walks) == [], "the merge and its branch commit are carried"
+    assert len(range_walks(walks)) == 1
+    assert json.loads(merged.stdout)["active"][0]["commits"] == 4
+
+    assert rebuilt(repo).stdout == merged.stdout, "carried and cold answer byte for byte"

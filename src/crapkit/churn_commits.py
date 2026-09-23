@@ -9,8 +9,10 @@ miss at a HEAD that grew from the stored one walks `git log stored..HEAD`,
 expires what aged out, and computes the map from the table.
 
 Read only on a map miss. Expiry reads the commit date at git's own --since
-cutoff while the weights read the author date, so a carried table answers what
-a full parse of the same commits would, byte for byte. A HEAD the table is not
+cutoff while the weights read the author date. A carried table can list a
+merged branch's commits in another order than git's log does, and the weights
+are exact sums for that reason, so a carried table answers what a full parse of
+the same commits would, byte for byte. A HEAD the table is not
 behind (a rewind, a rebase, a force-push), another window, another path format,
 or a cutoff earlier than the stored one is a full rebuild. git's month
 arithmetic is what moves the cutoff back: 6 months before Aug 31 is Mar 3, and

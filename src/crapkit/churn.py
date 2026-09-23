@@ -77,10 +77,12 @@ def _blocks(lines: Iterable[str]) -> Iterator[tuple[str | None, list[str]]]:
 
 
 def _weight(seqs: list[int], weights: dict[int, float]) -> float:
-    """The path's commits summed in log order, the order the full parse adds
-    them in, so the float is the same to the last bit."""
+    """The path's stamped commits summed exactly and rounded once. A plain sum
+    depends on the order the commits arrive in, and a carried table lists a
+    merged branch's commits where the range walk put them while git's own log
+    interleaves them by date: at a rounding edge the two orders round apart."""
     stamped = [weights[seq] for seq in seqs if seq in weights]
-    return round(sum(stamped), 4) if stamped else float(len(seqs))
+    return round(math.fsum(stamped), 4) if stamped else float(len(seqs))
 
 
 class WindowCommits:
@@ -89,9 +91,12 @@ class WindowCommits:
 
     A commit is named by a sequence number that only grows toward the present:
     a full parse numbers the newest 0 and counts down, and commits folded in on
-    top continue upward. A path's numbers therefore always fall along the log,
-    which is the order both its weight and its expiry read them in. Commits
-    that touched no path are not kept: they weigh nothing and date no range.
+    top continue upward. A path's numbers therefore always fall, which its
+    expiry relies on. They follow git's log order only until a merge: a carried
+    table lists a merged branch's commits above the ones they were merged over,
+    where git's log interleaves them by date, so the weight is an exact sum no
+    order can move. Commits that touched no path are not kept: they weigh
+    nothing and date no range.
     """
 
     def __init__(self, authors: list[str], commits: dict[int, Commit],
@@ -112,13 +117,14 @@ class WindowCommits:
                 for path, seqs in self.files.items()}
 
     def _weigher(self) -> Callable[[list[int]], float]:
-        """A path's weight from its commits. Every commit git lists has an
-        author date, and then each weight is one lookup per commit; an
-        untimestamped header, which only a hand-written log carries, takes the
-        path that skips it."""
+        """A path's weight from its commits, summed exactly (math.fsum) so the
+        order they are listed in cannot move the rounding. Every commit git
+        lists has an author date, and then each weight is one lookup per
+        commit; an untimestamped header, which only a hand-written log carries,
+        takes the path that skips it."""
         weights = self._weights()
         if len(weights) == len(self.commits):
-            return lambda seqs: round(sum(map(weights.__getitem__, seqs)), 4)
+            return lambda seqs: round(math.fsum(map(weights.__getitem__, seqs)), 4)
         return lambda seqs: _weight(seqs, weights)
 
     def _weights(self) -> dict[int, float]:
