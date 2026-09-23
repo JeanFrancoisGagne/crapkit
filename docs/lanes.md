@@ -296,7 +296,7 @@ py.json
 | `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
 | `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
 | `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. Current and `.log.1` files each have a 16 MiB default bound; see [log policies](resources.md#logs-and-retained-evidence). | |
-| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
+| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
 | `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
@@ -966,7 +966,7 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 | Flag | Behavior |
 |---|---|
 | `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
-| `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. |
+| `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. Each lane prints one line saying which it did, and a rerun names the first condition that failed. |
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
 shared helpers: any tracked or untracked change, or a new commit, reruns the lane.
@@ -976,8 +976,35 @@ nothing, and a file the command reads that the list leaves out is never checked.
 An entry that matches no tracked file, and no untracked file outside `.gitignore`,
 hides every change behind it, so `doctor` fails on it and names the entry.
 Measurements made while their proof did not hold (a dirty tree, or dirty inputs)
-and older stamps without this proof cannot be reused automatically. Environment
-values are hashed together; stamps do not store them.
+and older stamps without this proof cannot be reused automatically.
+
+The declared `artifact` and `results_artifact` of every lane in `crapkit.toml` are not
+changes to the tree or to a lane's inputs, whether git ignores them or not: every run
+rewrites them, and each stamp proves its own by their digests. Any other file a lane
+writes that git does not ignore is a change, and the rerun line names it; ignore it.
+
+The environment half of the proof leaves out what a shell or terminal keeps for its
+own bookkeeping: `OLDPWD`, `PWD`, `SHLVL`, `_` and terminal session ids such as
+`WT_SESSION`, `TERM_SESSION_ID` and `SSH_CONNECTION`, so a `cd` between two runs reruns
+nothing. Every other inherited variable counts. The stamp keeps a
+16-hex digest of each value under `proof_parts`, never the value, so a rerun can
+name the variable that changed.
+
+Each lane says what `--reuse-unchanged` decided, before any lane starts:
+
+```
+$ crapkit coverage --reuse-unchanged
+crapkit: lane 'py': measurement inputs unchanged; reusing without rerun (artifact built at 525a3276065)
+crapkit: lane 'web': rerunning: the working tree has 1 uncommitted change(s): web/src/app.ts
+```
+
+A rerun names the first condition that failed: `no artifact at PATH`, a last attempt
+that wrote none, `its stamp holds no proof` (measured with uncommitted changes, or by a
+crapkit that recorded none), uncommitted changes, `HEAD is X and its artifact was built
+at Y`, `crapkit.toml changed`, `its lane table changed`, `N environment variable(s)
+changed: NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that
+differ from the stamp. `coverage --json` carries the same sentence per lane as
+`rerun_reason`, `""` for a lane it reused.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
 dependencies and services are outside that proof. Run fresh coverage when those
@@ -1337,7 +1364,9 @@ run 3 @ 393b8dad2a1: 2 functions scored: 1 measured / 1 no-lane, 1 over ceiling 
 
 Exit 5. The summary opens by saying the run is partial, counts `over` and the grade over
 the measured scopes only (the failed lane's function is `scripts`' debt under
-`by_scope`, not this run's grade), and ends with the lanes to rerun. Four consequences:
+`by_scope`, not this run's grade), and ends with the lanes to rerun. On a tree with
+uncommitted changes that last line adds ``(the working tree has uncommitted changes, so
+every lane that lists no `inputs` reruns)``. Four consequences:
 
 1. **The failed lane's scopes fall back to `no-lane`, not `untested`.** The distinction is
    the point: `untested` means a working lane had nothing to say about this function,

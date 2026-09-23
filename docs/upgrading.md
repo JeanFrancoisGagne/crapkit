@@ -132,8 +132,9 @@ environment and artifact bytes. Since 0.8.0 a lane can list the paths its comman
 reads as `inputs`, and `--reuse-unchanged` then reuses it across commits while
 nothing under those paths, its lane table or its `env` changed. The reuse proof
 covers that field, so the first `--reuse-unchanged` after upgrading to 0.8.0 reruns
-every lane once, and an older stamp without the proof reruns its lane. Ignored
-files, installed dependencies and external services remain outside this proof. See
+every lane once, and an older stamp without the proof reruns its lane; each rerun
+prints `lane 'x': rerunning:` and the reason. Ignored files, installed dependencies and
+external services remain outside this proof. See
 [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 

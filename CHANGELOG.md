@@ -312,6 +312,21 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   1a2b3c4d5e6)`.
 - An istanbul lane that sets `path_prefix` no longer hides a measured path from another
   tree: the wrong-tree check takes the prefix back off coverage.py keys only.
+- `--reuse-unchanged` says why a lane reruns. Each lane gets one stderr line, `lane 'x':
+  rerunning: <reason>` naming the first condition that failed (no artifact, a stamp
+  with no proof, uncommitted changes, a moved HEAD, crapkit.toml, the lane table, the
+  environment variables that changed, changes under `inputs`, artifact bytes), and
+  `coverage --json` carries it as `lanes.<name>.rerun_reason`. A declined reuse used to
+  print nothing, on a large consumer repo a rerun of up to 88 minutes. A partial run on
+  a dirty tree says its hinted `--reuse-unchanged` reruns every lane without `inputs`.
+- A `cd` between two runs no longer reruns every lane: the proof leaves out `OLDPWD`,
+  `PWD`, `SHLVL`, `_` and terminal session ids. The stamp keeps a digest of each other
+  variable, never its value, so the rerun line names the one that changed.
+- A lane artifact or results file git does not ignore no longer blocks reuse. It left
+  the tree dirty after every run, so no stamp held a proof and every lane reran: 12 of
+  12 lanes on a large consumer repo whose Python lane writes an untracked coverage JSON.
+  The declared outputs of every lane in `crapkit.toml` are not changes; each stamp
+  proves its own by digest.
 
 ### doctor checks a lane the way the lane starts
 

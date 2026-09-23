@@ -547,15 +547,15 @@ def _next_command(kind: str, root: Path) -> str:
     return f"-> next: {_self()} worklist"
 
 
+# What the hinted run does on a dirty tree: reuse proves a lane without `inputs`
+# only at a clean HEAD, so every such lane runs again.
+_DIRTY_TREE_NOTE = "(the working tree has uncommitted changes, so every lane that lists no `inputs` reruns)"
+
+
 def _dirty_note(root: Path) -> str:
-    """What the hinted run does on a dirty tree: reuse proves a lane without
-    `inputs` only at a clean HEAD, so every such lane runs again."""
     from ..lanes import uncommitted_changes
 
-    if not uncommitted_changes(root):
-        return ""
-    return (" (the working tree has uncommitted changes, so every lane that lists no "
-            "`inputs` reruns)")
+    return f" {_DIRTY_TREE_NOTE}" if uncommitted_changes(root) else ""
 
 
 def _print_coverage(as_json: bool, summary: dict, shape: _RunShape, root: Path) -> None:

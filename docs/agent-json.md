@@ -918,7 +918,7 @@ $ crapkit coverage --json
 | `crap_load` | Sum of every function's CRAP, rounded to 2dp. |
 | `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
-| `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `results_artifact_sha256`, `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. The digests bind coverage and JUnit to the bytes read for this run. |
+| `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `results_artifact_sha256`, `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. The digests bind coverage and JUnit to the bytes read for this run. Under `--reuse-unchanged` each lane also carries `rerun_reason`: `""` when its artifact was reused, else the sentence its `rerunning:` stderr line gave, such as `the working tree has 1 uncommitted change(s): src/app.ts`. |
 | `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed, and then the payload is the [error object](#errors). |
 | `kind` | `coverage` for a full run, `partial` when a lane was skipped (`--lane`) or failed: the word `runs` lists it under. A partial run is never a baseline. |
 | `unmeasured_scopes` | Scopes a declared lane measures that no succeeding lane reached this run, in declaration order; `[]` on a full run. A scope no lane declares at all is not listed: that is a configuration `doctor` names, not this run's shape. |
@@ -949,7 +949,9 @@ With a scope at its own ceiling the label reads `over their ceilings (6; reports
 partial run opens with `partial run (lane py; web unmeasured; not a baseline)`, a failed
 lane named in it as `lane ui failed` and listed after the line as `  lane 'ui' FAILED: ...`,
 counts `over` and the grade over the measured scopes only, and ends with `-> rerun changed
-lanes: crapkit coverage --reuse-unchanged`.
+lanes: crapkit coverage --reuse-unchanged`. With uncommitted changes in the tree that line
+adds ``(the working tree has uncommitted changes, so every lane that lists no `inputs`
+reruns)``.
 
 ---
 

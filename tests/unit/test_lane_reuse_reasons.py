@@ -8,9 +8,12 @@ import json
 import subprocess
 from pathlib import Path
 
+from crapkit.cli.scoring import _DIRTY_TREE_NOTE
 from crapkit.config import Lane
-from crapkit.lanes import (_from_top, _output_names, lane_reuse_verdict, read_stamps, run_lane,
-                           uncommitted_changes, write_stamps)
+from crapkit.lanes import (_SESSION_VARIABLES, _from_top, _output_names, lane_reuse_verdict,
+                           read_stamps, run_lane, uncommitted_changes, write_stamps)
+
+ROOT = Path(__file__).resolve().parents[2]
 
 MAKE_COV = (
     "import json, os, pathlib\n"
@@ -112,3 +115,20 @@ def test_names_under_a_subdirectory_root_are_spelled_from_the_top(tmp_path):
 
     assert _from_top(tmp_path / "web", tmp_path.resolve(), frozenset({"out/cov.json"})) == frozenset(
         {"web/out/cov.json"})
+
+
+def _flat(page: str) -> str:
+    return " ".join((ROOT / page).read_text(encoding="utf-8").split())
+
+
+def test_the_pages_quote_the_note_a_partial_run_on_a_dirty_tree_prints():
+    for page in ("docs/lanes.md", "docs/agent-json.md"):
+        assert f"``{_DIRTY_TREE_NOTE}``" in _flat(page), page
+
+
+def test_every_variable_the_lanes_page_says_the_proof_leaves_out_is_left_out():
+    text = _flat("docs/lanes.md")
+    named = text.split("The environment half of the proof leaves out", 1)[1].split("so a `cd`", 1)[0]
+    quoted = {word.strip("`,.:") for word in named.split() if word.startswith("`")}
+
+    assert quoted and quoted <= _SESSION_VARIABLES, quoted - _SESSION_VARIABLES
