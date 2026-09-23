@@ -5,13 +5,14 @@ recorded values, and report ages and repayment from the marks file's history."""
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
-                      _print_json, _ratchet_or_die, repo_text)
+                      _print_json, _ratchet_or_die, _repo_relative, _stand, repo_text)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -114,22 +115,35 @@ def _merge_key_version(texts: list[str]) -> int:
     return versions.pop()
 
 
-def _ratchet_move(root: Path, cfg, files: list) -> int:
+def _move_path(raw: str, root: Path, cwd: Path | None) -> str:
+    """One `ratchet move` argument as the repo-relative path marks are keyed by.
+
+    Read like every other path argument (ADR 0002), so `./web/a.py`, a Windows
+    backslash path and a path typed below the root all name the key a scored
+    row carries. The rebase normalizes away the trailing slash that makes OLD
+    a directory, so it goes back on.
+    """
+    path = _repo_relative(raw, root, cwd)
+    return path + "/" if raw.endswith(("/", os.sep)) else path
+
+
+def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None = None) -> int:
     from ..ratchet import dump_ratchet, move_marks, read_key_version, read_stamp
     from ..ratchetfile import RatchetFile
 
     if len(files) != 2:
         raise ConfigError("ratchet move takes exactly two paths: OLD NEW")
+    old, new = (_move_path(raw, root, cwd) for raw in files)
     ratchet_path = root / cfg.ratchet_file
     saved = RatchetFile.read(ratchet_path)
     before = saved.text or ""
-    entries, moved = move_marks(saved.entries, files[0], files[1])
+    entries, moved = move_marks(saved.entries, old, new)
     if not moved:
-        raise ConfigError(f"ratchet move: no mark under {files[0]} in {cfg.ratchet_file} "
+        raise ConfigError(f"ratchet move: no mark under {old} in {cfg.ratchet_file} "
                           "(a directory must end in '/')")
     text = dump_ratchet(entries, stamp=read_stamp(before), key_version=read_key_version(before))
     saved.publish(text)
-    print(f"{cfg.ratchet_file}: moved {moved} mark(s) from {files[0]} to {files[1]}")
+    print(f"{cfg.ratchet_file}: moved {moved} mark(s) from {old} to {new}")
     return 0
 
 
@@ -213,10 +227,6 @@ def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
 
 
 def cmd_ratchet(args: argparse.Namespace) -> int:
-    from ..ratchet import seed_ratchet
-    from ..ratchetfile import RatchetFile
-    from ._shared import _check_ratchet_identity
-
     if args.action == "merge":  # a git merge driver runs with no crapkit.toml in sight
         return _ratchet_merge(args.files)
     root = _command_root(args.repo)
@@ -224,7 +234,16 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     if args.action == "report":
         return _ratchet_report(root, cfg, args.json, args.enforce)
     if args.action == "move":  # a hand-declared rename needs no run to follow
-        return _ratchet_move(root, cfg, args.files)
+        return _ratchet_move(root, cfg, args.files, _stand(args.repo))
+    return _ratchet_from_run(root, cfg, args.action)
+
+
+def _ratchet_from_run(root: Path, cfg, action: str) -> int:
+    """seed and prune: both work from the run verify would compare against."""
+    from ..ratchet import seed_ratchet
+    from ..ratchetfile import RatchetFile
+    from ._shared import _check_ratchet_identity
+
     store = _open_store(root)
     latest, skipped = _latest_full_run(store)
     fresh = store.read_scored(latest["id"])
@@ -232,7 +251,7 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     saved = RatchetFile.read(ratchet_path)
     prior = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store)
-    if args.action == "seed":
+    if action == "seed":
         entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target,
                                                  scope_targets=cfg.scope_targets)
         note = f"added {added}, tightened {tightened}"
