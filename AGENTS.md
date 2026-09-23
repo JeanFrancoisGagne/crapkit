@@ -471,6 +471,10 @@ They print which run they took and which they passed over:
 
     crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 3 (86fb0cc6bce), skipped failed verify run 4
 
+`--baseline ID` names the run instead, as it does for verify, and is refused for the same
+reasons. When a failed verify stands in front of a newer trusted run, the line names that
+run and the flag that reads it.
+
 The `worklist_floor` is not part of the judgement: a function under the floor whose CRAP
 is over its ceiling is queued like any other, so an empty queue is never the floor hiding
 debt.

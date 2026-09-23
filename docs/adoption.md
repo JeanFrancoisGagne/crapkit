@@ -131,8 +131,9 @@ Once it has happened, two escapes, both legitimate:
 
 Since 0.4.5 the same failure also blocks `crapkit ratchet seed` and `crapkit ratchet prune`,
 which used to take the newest trusted run and would happily sign marks off a `coverage` run
-made after the failure. They now walk back with `verify` and say what they stepped over
-(`skipped failed verify run 2`). If the failure stands in front of every trusted run there
+made after the failure. They now walk back with `verify` and say what they stepped over: the
+failed verify and the newer run behind it (`skipped failed verify run 2 and the newer run 3`),
+with the `--baseline` that reads the newer run. If the failure stands in front of every trusted run there
 is, both refuse and say a fresh `coverage` would be refused the same way. That is the case
 you hit by running `verify` before seeding, so seed first
 ([ratchet.md](ratchet.md#seed-and-prune-pick-the-run-verify-picks)).
