@@ -171,7 +171,8 @@ _UNJOINED = ("no-lane", "cc-only")
 
 def rejudged(row, ceiling: int, rows_of):
     """The row with the remedy it earns against `ceiling`, today's ceiling for
-    its scope.
+    its scope: the scoring rule on its ccn and CRAP, and split-lines where
+    another function shares its span.
 
     A run stores the remedy its own ceiling produced, and the packet prints
     `target` and the budget from the ceiling crapkit.toml holds now. After an
@@ -180,17 +181,10 @@ def rejudged(row, ceiling: int, rows_of):
     called only for a row whose stored verdict cannot say whether another
     function declares its lines.
     """
-    remedy = remedy_under(row, ceiling, rows_of)
+    remedy = _remedy(row.ccn, row.crap, ceiling)
+    if remedy == "add-tests" and _shares_span(row, rows_of):
+        remedy = "split-lines"
     return row if remedy == row.remedy else row._replace(remedy=remedy)
-
-
-def remedy_under(row, ceiling: int, rows_of) -> str:
-    """The scoring rule for one stored row: ccn and CRAP against `ceiling`, and
-    split-lines where another function shares the span."""
-    fresh = _remedy(row.ccn, row.crap, ceiling)
-    if fresh == "add-tests" and _shares_span(row, rows_of):
-        return "split-lines"
-    return fresh
 
 
 def _shares_span(row, rows_of) -> bool:
