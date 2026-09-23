@@ -194,10 +194,12 @@ def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int
 
 def _qualified_twins(mine: set[int], target,
                      entries: list[tuple[InventoryRow, set[int]]], similarity: float):
+    """The raw containment meets the threshold, as in `_candidate`; only the
+    similarity a twin reports is rounded."""
     for row, other in entries:
         if _is_self(row, target):
             continue
-        score = round(len(mine & other) / min(len(mine), len(other)), 4)
+        score = len(mine & other) / min(len(mine), len(other))
         if score >= similarity:
             yield _twin_payload(row, score, _nested_spans(row, target))
 
