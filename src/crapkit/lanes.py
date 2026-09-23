@@ -575,8 +575,9 @@ def _is_lane(entry: object, name: str) -> bool:
     return isinstance(entry, dict) and entry.get("lane") == name
 
 
-def _named_seconds(stamps: dict, name: str) -> float:
-    """The longest run any stamp recorded under this lane's NAME.
+def _named_seconds(stamps: dict, name: str) -> float | None:
+    """The longest run any stamp recorded under this lane's NAME, or None when
+    no stamp names it.
 
     Stamps are filed under the artifact PATH, so moving an artifact orphans its
     duration and the lane sorts as never-measured: the consumer repo renamed 12 of them
@@ -590,13 +591,14 @@ def _named_seconds(stamps: dict, name: str) -> float:
     stale coverage number, and a start order can never do that.
     """
     named = (_recorded_seconds(entry) for entry in stamps.values() if _is_lane(entry, name))
-    return max((seconds for seconds in named if seconds is not None), default=0.0)
+    return max((seconds for seconds in named if seconds is not None), default=None)
 
 
-def _stamp_seconds(stamps: dict, lane: Lane) -> float:
-    """How long this lane took last time it actually ran; 0 when never recorded.
-    The declared artifact is the exact record; the lane name is the fallback that
-    survives a rename."""
+def recorded_seconds(stamps: dict, lane: Lane) -> float | None:
+    """How long this lane took the last time it actually ran, or None when no
+    stamp records it. The declared artifact is the exact record; the lane name
+    is the fallback that survives a rename. The start order and doctor --tune
+    both read this, so the two cannot disagree about a renamed artifact."""
     exact = _recorded_seconds(stamps.get(lane.artifact))
     return exact if exact is not None else _named_seconds(stamps, lane.name)
 
@@ -608,7 +610,7 @@ def lane_order(root: Path, lanes: list[Lane]) -> list[Lane]:
     A recorded duration only ever changes WHICH lane starts first — results are
     merged in declaration order regardless, so it cannot move a score."""
     stamps = read_stamps(root)
-    return sorted(lanes, key=lambda lane: -_stamp_seconds(stamps, lane))
+    return sorted(lanes, key=lambda lane: -(recorded_seconds(stamps, lane) or 0.0))
 
 
 def _lane_matchers(lane: Lane, scope_paths: dict) -> tuple[ScopeMatch, ...]:

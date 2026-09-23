@@ -1357,13 +1357,14 @@ def _junit_seconds(path: Path) -> float | None:
 
 def _lane_seconds(root: Path, lane, stamps: dict) -> float | None:
     """What this lane costs, best signal first: the duration its own run
-    recorded, else the wall time its junit report claims. None means this lane
-    has never left a cost signal on disk — which is not the same as costing 0."""
-    from ..lanes import stamp_for
+    recorded, found the way the start order finds it, else the wall time its
+    junit report claims. None means this lane has never left a cost signal on
+    disk — which is not the same as costing 0."""
+    from ..lanes import recorded_seconds
 
-    recorded = stamp_for(stamps, lane.artifact).get("seconds")
-    if isinstance(recorded, (int, float)):
-        return float(recorded)
+    recorded = recorded_seconds(stamps, lane)
+    if recorded is not None:
+        return recorded
     return _junit_seconds(root / lane.results_artifact) if lane.results_artifact else None
 
 
