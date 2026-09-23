@@ -227,7 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
                           "or, with --all, every one")
     clm.add_argument("target", nargs="*", metavar="ARG",
                      help="release: PATH NAME, taking either the bare identifier or the "
-                          "long_name next-item printed")
+                          "long_name next-item printed; PATH" + _WHERE)
     clm.add_argument("--all", action="store_true", help="release: close every open claim")
     clm.add_argument("--repo", **_REPO_FLAG)
     clm.add_argument("--json", action="store_true", help="machine output")
@@ -427,8 +427,8 @@ def build_parser() -> argparse.ArgumentParser:
     mut = sub.add_parser("mutate", help="diff-scoped mutation testing: flip operators on changed lines, run the suite per mutant")
     mut.add_argument("--repo", **_REPO_FLAG)
     mut.add_argument("--files", nargs="*", default=None,
-                     help="mutate these whole files instead of the working-tree diff vs HEAD "
-                          "(files outside the scored corpus are named and skipped)")
+                     help="mutate these whole files" + _WHERE + " instead of the working-tree "
+                          "diff vs HEAD; files outside the scored corpus are named and skipped")
     mut.add_argument("--max-mutants", type=int, default=100, help="hard cap per run (default 100)")
     mut.add_argument("--drop-pool", action="store_true",
                      help="remove the retained mutation worker checkouts in "
