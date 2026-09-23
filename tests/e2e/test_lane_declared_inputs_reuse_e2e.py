@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from crapkit.config import load_config_text
-from crapkit.lanes import lane_reuse_commit, run_lane, write_stamps
+from crapkit.lanes import lane_reuse_commit, lane_reuse_verdict, run_lane, write_stamps
 
 from conftest import cli_runner
 
@@ -203,7 +203,7 @@ def test_an_artifact_rewritten_since_its_stamp_reruns_the_lane(repo: Path):
     artifact = repo / lane.artifact
     artifact.write_text(artifact.read_text(encoding="utf-8") + "\n", encoding="utf-8")
 
-    assert lane_reuse_commit(repo, lane) == ""
+    assert lane_reuse_verdict(repo, lane) == ("", "coverage/final.json: bytes differ from its stamp")
 
 
 def test_a_stamp_commit_that_left_history_reruns_the_lane(repo: Path):
@@ -239,6 +239,55 @@ def test_a_measurement_taken_over_dirty_inputs_is_no_proof(repo: Path):
     _commit(repo, "commit the wip")
 
     assert lane_reuse_commit(repo, _lane(repo)) == ""
+
+
+# --- the reason a rerun gives ------------------------------------------------------
+
+def test_a_change_under_the_inputs_is_named_with_the_stamp_commit(repo: Path):
+    measured = _measure(repo)
+    _write(repo, "src/app.ts", APP_TS + "// touched\n")
+
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
+        f"1 change(s) under its inputs since {measured[:11]}: src/app.ts")
+
+
+def test_a_changed_lane_table_is_named(repo: Path):
+    _measure(repo)
+    _write(repo, "crapkit.toml", _toml(INPUTS, env="two"))
+    _commit(repo, "new env")
+
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
+        "its lane table or env differs from the one it was measured with")
+
+
+def test_a_stamp_commit_off_history_is_named(repo: Path):
+    first = _git(repo, "rev-parse", "HEAD").strip()
+    _write(repo, "docs/notes.md", "second\n")
+    _commit(repo, "second")
+    measured = _measure(repo)
+    _git(repo, "reset", "--hard", "-q", first)
+
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
+        f"its artifact was built at {measured[:11]}, which is not behind HEAD")
+
+
+def test_a_measurement_over_dirty_inputs_is_named_as_no_proof(repo: Path):
+    _write(repo, "src/app.ts", APP_TS + "// wip\n")
+    _measure(repo)
+    _commit(repo, "commit the wip")
+
+    assert lane_reuse_verdict(repo, _lane(repo)).reason.startswith("its stamp holds no proof: ")
+
+
+def test_an_unignored_artifact_under_the_inputs_leaves_the_lane_reusable(repo: Path):
+    """The artifact's bytes are proved by the stamp's digest, so the file the
+    lane writes under its own inputs is not a change to them."""
+    _write(repo, "crapkit.toml", _toml('inputs = ["src", "make_cov.py", "coverage"]'))
+    _write(repo, ".gitignore", ".crapkit/\nruns.txt\n")
+    measured = _commit(repo, "measure inside the inputs")
+    _measure(repo)
+
+    assert lane_reuse_verdict(repo, _lane(repo)) == (measured, "")
 
 
 # --- through the CLI --------------------------------------------------------------

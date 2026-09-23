@@ -140,17 +140,44 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
-def _lane_reuse(root: Path, lane, reuse_artifacts: bool, reuse_unchanged: bool) -> bool:
-    from ..lanes import lane_reuse_commit
+def _lane_reuse(root: Path, lane, reuse_artifacts: bool, reuse_unchanged: bool):
+    """The lane's verdict under --reuse-unchanged, None when that was not asked,
+    with one stderr line either way: the commit it reuses, or why it reruns. A
+    declined reuse printed nothing, and on a large consumer repo it costs a
+    rerun of up to 88 minutes."""
+    from ..lanes import lane_reuse_verdict
 
-    if reuse_artifacts:
-        return True
-    commit = lane_reuse_commit(root, lane) if reuse_unchanged else ""
-    if commit:
-        print(f"crapkit: lane {lane.name!r}: measurement inputs unchanged; reusing without rerun "
-              f"(artifact built at {commit[:11]})", file=sys.stderr)
-        return True
-    return False
+    if reuse_artifacts or not reuse_unchanged:
+        return None
+    verdict = lane_reuse_verdict(root, lane)
+    _report_reuse(lane.name, verdict)
+    return verdict
+
+
+def _report_reuse(name: str, verdict) -> None:
+    if verdict.commit:
+        print(f"crapkit: lane {name!r}: measurement inputs unchanged; reusing without rerun "
+              f"(artifact built at {verdict.commit[:11]})", file=sys.stderr)
+    else:
+        print(f"crapkit: lane {name!r}: rerunning: {verdict.reason}", file=sys.stderr)
+
+
+def _reuse_decisions(root: Path, lanes, reuse_artifacts: bool, reuse_unchanged: bool):
+    """Each lane's verdict under --reuse-unchanged, and whether the lane reuses."""
+    verdicts = {lane: _lane_reuse(root, lane, reuse_artifacts, reuse_unchanged) for lane in lanes}
+    return verdicts, {lane: _reused(verdict, reuse_artifacts) for lane, verdict in verdicts.items()}
+
+
+def _reused(verdict, reuse_artifacts: bool) -> bool:
+    return reuse_artifacts or bool(verdict and verdict.commit)
+
+
+def _record_rerun_reasons(provenance: dict, verdicts: dict) -> None:
+    """`rerun_reason` on each lane that succeeded under --reuse-unchanged: ""
+    when its artifact was reused, else the reason its stderr line gave."""
+    for lane, verdict in verdicts.items():
+        if verdict and lane.name in provenance:
+            provenance[lane.name]["rerun_reason"] = verdict.reason
 
 
 def _progress(message: str) -> None:
@@ -258,14 +285,15 @@ def _run_owned_lanes(root, lanes, reuse_artifacts, scope_paths, reuse_unchanged,
     from ..lanes import lane_order
 
     facts = git or GitFacts(root)
-    reuse = {lane: _lane_reuse(root, lane, reuse_artifacts, reuse_unchanged)
-             for lane in lanes}
-    ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
+    verdicts, reuse = _reuse_decisions(root, lanes, reuse_artifacts, reuse_unchanged)
+    ordered =lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
     outcomes = _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel,
                               dead_lines, owner)
     if owner is not None:
         owner.check()
-    return _collect_lanes(root, lanes, outcomes)
+    collected = _collect_lanes(root, lanes, outcomes)
+    _record_rerun_reasons(collected[1], verdicts)
+    return collected
 
 
 class _ScoredRun(NamedTuple):
@@ -511,15 +539,26 @@ def _summary_line(summary: dict) -> str:
             f"CRAP load {summary['crap_load']}, grade {summary['grade']}")
 
 
-def _next_command(kind: str) -> str:
+def _next_command(kind: str, root: Path) -> str:
     """What to run next: the ranking after a trusted run, the lanes a partial
     run skipped after a partial one."""
     if kind == "partial":
-        return f"-> rerun changed lanes: {_self()} coverage --reuse-unchanged"
+        return f"-> rerun changed lanes: {_self()} coverage --reuse-unchanged{_dirty_note(root)}"
     return f"-> next: {_self()} worklist"
 
 
-def _print_coverage(as_json: bool, summary: dict, shape: _RunShape) -> None:
+def _dirty_note(root: Path) -> str:
+    """What the hinted run does on a dirty tree: reuse proves a lane without
+    `inputs` only at a clean HEAD, so every such lane runs again."""
+    from ..lanes import uncommitted_changes
+
+    if not uncommitted_changes(root):
+        return ""
+    return (" (the working tree has uncommitted changes, so every lane that lists no "
+            "`inputs` reruns)")
+
+
+def _print_coverage(as_json: bool, summary: dict, shape: _RunShape, root: Path) -> None:
     if as_json:
         _print_json(summary)
         return
@@ -528,7 +567,7 @@ def _print_coverage(as_json: bool, summary: dict, shape: _RunShape) -> None:
     print(_summary_line(summary))
     for name, err in summary["lane_failures"].items():
         print(f"  lane {name!r} FAILED: {err}")
-    print(_next_command(shape.kind))
+    print(_next_command(shape.kind, root))
 
 
 def _warn_suite_drop(store: SnapshotStore, provenance: dict) -> None:
@@ -569,7 +608,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
         _export_scored(root, args.export, run.scored)
     _emit_coverage_findings(root, args, run.scored, cfg)
 
-    _print_coverage(args.json, _coverage_summary(run_id, run, cfg, shape, db_path), shape)
+    _print_coverage(args.json, _coverage_summary(run_id, run, cfg, shape, db_path), shape, root)
     return 5 if run.lane_errors else 0
 
 

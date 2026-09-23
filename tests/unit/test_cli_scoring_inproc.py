@@ -254,7 +254,8 @@ def test_reuse_unchanged_reruns_only_the_lane_without_a_valid_stamp(repo, capsys
     code, _, err = run(["coverage", "--reuse-unchanged"], repo, capsys)
     assert code == 0
     assert err.count("reusing without rerun") == 1, err
-    assert "lane 'unit'" in err and "lane 'ui'" not in err
+    assert "lane 'unit': measurement inputs unchanged" in err
+    assert "lane 'ui': rerunning: no stamp records the commit coverage/ui.json was built at" in err
 
 
 def test_lanes_run_in_parallel_score_exactly_what_serial_lanes_score(repo, capsys):
