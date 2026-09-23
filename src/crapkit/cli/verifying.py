@@ -464,7 +464,22 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
 
 
 def _baseline_failures(baseline: dict) -> set:
-    return {f for prov in baseline["lanes"].values() for f in prov.get("failures", ())}
+    """The failures a baseline carries. One that passed its flake retry in a
+    verify run is also named under `retried_passes` and is not carried: that
+    run never counted it, so a later verify must not forgive it."""
+    return {f for prov in baseline["lanes"].values() for f in prov.get("failures", ())
+            if f not in prov.get("retried_passes", ())}
+
+
+def _stored_lanes(provenance: dict, retried: tuple[str, ...]) -> dict:
+    """Lane provenance as a verify run stores it: `failures` stays the lane's
+    own report, and the ones that passed their flake retry are named again."""
+    return {name: _with_retried(prov, retried) for name, prov in provenance.items()}
+
+
+def _with_retried(prov: dict, retried: tuple[str, ...]) -> dict:
+    passed = [f for f in prov.get("failures", ()) if f in retried]
+    return {**prov, "retried_passes": passed} if passed else prov
 
 
 def _verify_attribution(verdict) -> dict:
@@ -667,7 +682,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
-                             lanes=provenance, kind="verify")
+                             lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
     verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
                                                  key_version=key_version, identity_rows=scored,
                                                  ratchet_input=saved)

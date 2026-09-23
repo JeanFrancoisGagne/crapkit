@@ -13,6 +13,7 @@ from cli_inproc_repo import repo, seed_artifacts, template_repo  # noqa: F401
 import pytest
 
 from crapkit.cli import main
+from crapkit.store import SnapshotStore
 from crapkit.verify import evaluate, settle_verdict
 
 TEST_FILE = "src/app.test.ts"
@@ -150,3 +151,53 @@ def test_a_run_with_no_retry_names_no_retried_pass(retry_repo, capsys):
     assert code == 0, err
     assert payload["forgiven_failures"] == [OLD]
     assert payload["retried_passes"] == []
+
+
+# --- the run verify stores, and the baseline it becomes ----------------------
+
+def test_a_retried_pass_is_new_again_when_it_fails_against_that_run(retry_repo, capsys):
+    """Verify A: `renders` failed, passed its rerun, and A passed, so A is the
+    next baseline. Verify B: `renders` fails and fails its rerun too. A never
+    counted `renders` as failing, so B's failure is new, not forgiven."""
+    _junit(retry_repo, FLAKY)
+    _rerun(retry_repo, passes=True)
+    first, _, err = verify(retry_repo, capsys)
+    assert first == 0, err
+
+    _junit(retry_repo, FLAKY)
+    _rerun(retry_repo, passes=False)
+    code, out, err = verify(retry_repo, capsys)
+
+    assert code == 8, out + err
+    assert f"NEW FAILURE  {FLAKY}" in out, out
+    assert "forgiven" not in out, out
+
+
+def test_a_failure_the_stored_run_carried_is_still_forgiven(retry_repo, capsys):
+    """The same stored run keeps forgiving `old`, which it failed without a retry."""
+    _junit(retry_repo, OLD, FLAKY)
+    _rerun(retry_repo, passes=True)
+    first, out, err = verify(retry_repo, capsys, "--json")
+    assert first == 0, err
+    stored_run = json.loads(out)["run_id"]
+
+    _junit(retry_repo, OLD)
+    code, out, err = verify(retry_repo, capsys, "--json")
+
+    payload = json.loads(out)
+    assert code == 0, err
+    assert payload["baseline_run"] == stored_run
+    assert payload["forgiven_failures"] == [OLD]
+
+
+def test_the_stored_run_keeps_the_first_attempt_and_names_the_retried_pass(retry_repo, capsys):
+    """`failures` stays the lane's own report, so the release guard still sees a
+    lane that failed a test; `retried_passes` says which of them passed on rerun."""
+    _junit(retry_repo, OLD, FLAKY)
+    _rerun(retry_repo, passes=True)
+    assert verify(retry_repo, capsys)[0] == 0
+
+    lane = SnapshotStore(retry_repo / ".crapkit" / "crap.sqlite").list_runs()[-1]["lanes"]["unit"]
+
+    assert lane["failures"] == [OLD, FLAKY]
+    assert lane["retried_passes"] == [FLAKY]
