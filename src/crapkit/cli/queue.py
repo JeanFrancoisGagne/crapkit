@@ -974,6 +974,10 @@ def _worklist_run(root: Path, store) -> dict:
     The fallback is the newest run with rows, for a repo that has only run
     `inventory`: next-item refuses that repo and a complexity-only ranking is
     still worth printing.
+
+    The store is open by now, so the refusal names the run that is missing
+    rather than the store: a store holding only hook runs used to read as
+    `no snapshot` with `.crapkit/crap.sqlite` on disk.
     """
     from ..store import default_baseline, rowful_runs
 
@@ -983,7 +987,7 @@ def _worklist_run(root: Path, store) -> dict:
     runs = rowful_runs(store)
     if runs:
         return runs[-1]
-    raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first "
+    raise CrapkitError(f"no run with rows in {root} — run `{_self()} coverage` first "
                        f"(or `{_self()} inventory` for complexity-only ranking, "
                        "with no coverage, flags or remedies)")
 

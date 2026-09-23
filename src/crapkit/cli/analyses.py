@@ -231,7 +231,8 @@ def cmd_duplication(args: argparse.Namespace) -> int:
     store = _open_store(root, first_command="inventory")
     runs = rowful_runs(store)
     if not runs:
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} inventory` first")
+        # the store opened, so what is missing is a run that scored anything
+        raise CrapkitError(f"no run with rows in {root} — run `{_self()} inventory` first")
     rows = store.read_rows(runs[-1]["id"])
     # A loader, never a bound dict: whoever names those texts pins every byte of
     # them across the pair counting (146 MB of peak on a 104 MB repo).
