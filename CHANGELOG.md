@@ -445,7 +445,7 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   0 tightened -> git add crapkit-ratchet.tsv` those steps print, the restamp example in
   docs/ratchet.md ends with `ratchet: restamped`, the TypeScript `rescore --gate` block
   ends with its `gate:` line, the `.crapkit/` listing names `measurement.lock`, and the
-  undeclared-`decl` refusal names its artifact. The TypeScript quickstart says why the
+  refusal for an `fnMap` entry without `decl` names its artifact. The TypeScript quickstart says why the
   first `doctor` WARNs about `[crapkit.scoped_tests]`.
 - On Windows the hook override's receipt names `unset CRAPKIT_OVERRIDE_REASON` for Git
   Bash beside the PowerShell and cmd.exe forms. Git Bash is where most Windows users run
