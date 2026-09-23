@@ -103,10 +103,11 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   coverage run and another seed clear the stamp when a failed verify pins seed or
   `--baseline` named the run. It names the newer run to pass to `--baseline`, or asks
   for a coverage run and its id.
-- The legacy-identity refusal names the run it read: `ambiguous legacy function identity
-  in src/a.ts: (anonymous) in run 1; ...`. From seed and prune behind a failed verify it
-  names that verify, the one verify's taint warning names, and the `--baseline` to pass,
-  where it advised refreshing analysis, which a fresh coverage run could not satisfy.
+- The legacy-identity refusal from seed, prune and explain names the run it read:
+  `ambiguous legacy function identity in src/a.ts: (anonymous) in run 1; ...`. From seed
+  and prune behind a failed verify it names that verify, the one verify's taint warning
+  names, and the `--baseline` to pass, where it advised refreshing analysis, which a
+  fresh coverage run could not satisfy.
 
 ### Marks keep the metric stamp of the run that measured them
 
@@ -157,7 +158,9 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
 - `brief --batch` skips a function another session holds under `next-item --claim`, as
   next-item does, and the envelope carries `skipped_claimed` when a claim hid a row.
 - brief's twins apply the similarity threshold to the raw containment, as `duplication`
-  does, so a pair just under the threshold appears in neither.
+  does, so a pair just under the threshold appears in neither, and only a function that
+  shares a shingle with the target is scored, so a similarity of 0 no longer lists every
+  function at 0.
 - On a store that holds no run with rows, such as one holding only hook runs,
   `duplication` and `worklist` say `no run with rows in <root>` instead of `no
   snapshot`.
@@ -346,7 +349,7 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   output and stack, and the session goes on.
 - mini_repo's py lane runs pytest with `-n 0`, and fixture lanes turn the suite's
   coverage off in their children. One `crapkit coverage` on mini_repo went from 6.73 to
-  1.30 s of CPU.
+  1.30 s of CPU, and from 8.50 to 1.36 s with the suite's own coverage on.
 - Releasing: stage 1 no longer runs the full coverage lane, `ratchet seed` or `ratchet
   prune`. After a passing verify, the verify stage runs seed and prune against that run
   and stops the release, with the marks file put back, when either would change it, so a
