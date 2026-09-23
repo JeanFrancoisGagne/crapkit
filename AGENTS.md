@@ -583,14 +583,15 @@ Twelve tools, every one the CLI command's `--json` form:
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
-key or a wrong type answers a tool result with `isError` true, in the tool's words
-(`brief needs name (see inputSchema.required)`), not a `-32602` protocol error; ADR 0001
-under `docs/adr/` says why. `ping` answers `{}`. An exception escaping the server answers
-`-32603` and the loop continues. `structuredContent` rides beside the text whenever the
-CLI exited 0; a `doctor` that finds a FAIL exits 1 and answers its JSON text with
-`isError: true` and no `structuredContent`. `gate` is the one tool whose non-zero exit is
-an answer: exit 6 (a breach) comes back with `isError: false`, `structuredContent` and
-`gate.ok` false; exits 3, 4 and 5 stay tool errors, as does 1 (no scored run yet).
+key or a wrong type answers a tool result with `isError` true, naming the MCP tool rather
+than the CLI command behind it (`get_function_brief needs name (see inputSchema.required)`),
+not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `ping` answers `{}`.
+An exception escaping the server answers `-32603` and the loop continues.
+`structuredContent` rides beside the text whenever the CLI exited 0; a `doctor` that finds
+a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`.
+`check_gate` is the one tool whose non-zero exit is an answer: exit 6 (a breach) comes
+back with `isError: false`, `structuredContent` and `gate.ok` false; exits 3, 4 and 5 stay
+tool errors, as does 1 (no scored run yet).
 
 The tools inspect scores and source without running test suites or editing source files.
 Calls can write caches, initialize or migrate the snapshot store, and fill rollups.

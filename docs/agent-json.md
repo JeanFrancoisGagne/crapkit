@@ -1442,10 +1442,12 @@ true in the cases where no CLI call runs at all: the missing-config result above
 unknown tool name, and an argument the tool's own table refuses.
 
 Arguments are checked against the served schema before anything is spawned. `tools/list`
-declares `required` from each tool's positionals (`brief` and `explain` require `path` and
-`name`). A missing positional answers `brief needs name (see inputSchema.required)`, an
-undeclared key answers `worklist does not take 'bogus'; accepted: repo, top, scope`, and a
-wrong type answers `top must be an integer (got "three")`. Each is a tool result with
+declares `required` from each tool's positionals (`get_function_brief` and
+`get_function_history` require `path` and `name`). A missing positional answers
+`get_function_brief needs name (see inputSchema.required)`, an undeclared key answers
+`list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
+`top must be an integer (got "three")`. The refusal names the MCP tool and the argument
+as the schema spells them, never the CLI command behind the tool. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
