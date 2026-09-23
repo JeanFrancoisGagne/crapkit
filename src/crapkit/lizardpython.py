@@ -77,6 +77,12 @@ four deep `a.a.b.a.a.b.c.d`. `_name_under_parent` qualifies the def by its
 innermost enclosing def alone: `a.b.c`. A class adds nothing to the name, as
 under lizard.
 
+What this leaves as lizard reads it: a def whose body sits on its colon line
+(`def g(self): pass`) and whose signature pushed no level is never listed and
+stays pending on the nesting stack, so the next def pushed deeper carries its
+name: `test_autospec.g.a( self )` for a method `a` of a class declared after
+`g`.
+
 The class name
 --------------
 lizardcognitive picks its Python rules by `type(reader).__name__` starting with
