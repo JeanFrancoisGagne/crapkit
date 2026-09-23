@@ -107,6 +107,11 @@ Ignored inputs, installed dependencies and external services remain outside this
 proof. See [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 
+`test_retention_days` and `test_retention_count` are ignored. `crapkit doctor` warns
+once for each key a config sets; delete them. Test evidence retention is now the
+development runner's `--retention-days` and `--retention-count`, and
+`crapkit clean` recovers abandoned mutation checkouts only.
+
 Every mutation worker uses a detached worktree, including a single worker.
 The normal pool is retained; concurrent callers use temporary worktrees that
 cleanup removes. Budget disk space for the pool and use

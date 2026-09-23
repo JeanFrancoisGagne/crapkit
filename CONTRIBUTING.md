@@ -42,9 +42,10 @@ evidence in a unique `.crapkit/test-runs/run-*` directory and prints the absolut
 before starting. Either suite failing makes the runner fail. The next suite starts
 only after the previous suite's owned descendants stop. Cancellation stops the run.
 Default evidence expires after seven days or beyond the ten most recent runs;
-active runs and unrecognized directories are preserved. Configure
-`test_retention_days` and `test_retention_count` in `crapkit.toml`, or preview cleanup
-with `crapkit clean --dry-run --json`. See [resource policies](docs/resources.md).
+active runs and unrecognized directories are preserved. Change the limits with
+`--retention-days N` and `--retention-count N` (0 disables a limit), or print the runs
+they would remove, without running a suite, with `--preview-retention`. See
+[resource policies](docs/resources.md).
 
 `--output DIR` replaces evidence in a caller-managed directory inside `--repo`; relative
 paths resolve from that repository. Crapkit's own lane supplies `--output .crapkit/cov`
