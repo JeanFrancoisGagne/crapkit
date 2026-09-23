@@ -46,17 +46,18 @@ CACHE_NAME = "churn-cache-v2.json"
 LEGACY_NAME = "churn-cache.json"
 
 
-def _window_lines(root: Path, months: int) -> Iterator[str]:
+def _window_lines(root: Path, months: int, head: str | None) -> Iterator[str]:
     """The raw window log a map rebuild parses.
 
     Read through the deflated log cache when one is on disk (free at an exact
     key, a cached..HEAD range walk otherwise); straight from git when none is.
     A map-only command never lays the log down — the commands that need its
     per-commit structure (brief, batches, coupling) already do. Either way the
-    headers keep their commit date, which the stored table needs to expire."""
+    headers keep their commit date, which the stored table needs to expire, and
+    the log is the one at `head`, the HEAD the map and table are keyed on."""
     if has_cache(root):
-        return dated_lines(root, months)
-    return walk_lines(root, months)
+        return dated_lines(root, months, head)
+    return walk_lines(root, months, head)
 
 
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
@@ -83,7 +84,7 @@ def _window_commits(root: Path, months: int, key: dict | None) -> WindowCommits:
     head = key["head"] if key else None
     table = carried_commits(root, months, head)
     if table is None:
-        table = fold(_window_lines(root, months))
+        table = fold(_window_lines(root, months, head))
         store_commits(root, months, head, table)
     return table
 

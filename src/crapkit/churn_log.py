@@ -67,21 +67,24 @@ def log_lines(root: Path, months: int) -> Iterator[str]:
 
     Same lines as `gitio.churn_log_lines`, off disk whenever the key still holds.
     """
-    return (_shipped(line) for line in _stored_lines(root, months))
+    return (_shipped(line) for line in _stored_lines(root, months, None))
 
 
-def dated_lines(root: Path, months: int) -> Iterator[str]:
-    """The same log with each header's commit date still on it (%an, %at, %ct).
+def dated_lines(root: Path, months: int, head: str | None) -> Iterator[str]:
+    """The same log with each header's commit date still on it (%an, %at, %ct),
+    as of `head`: a caller that keys what it builds on a HEAD it read passes
+    that HEAD, so a commit landing meanwhile stays out of both. None reads HEAD.
 
     For a reader that splits headers itself: it gets the commit date for free
     and skips the per-line strip `log_lines` makes for everyone else."""
-    return _stored_lines(root, months)
+    return _stored_lines(root, months, head)
 
 
-def walk_lines(root: Path, months: int) -> Iterator[str]:
-    """The window straight from git in the stored shape, laying nothing down:
-    for a reader that needs commit dates where no log is on disk yet."""
-    return _window_log(root, months)
+def walk_lines(root: Path, months: int, head: str | None) -> Iterator[str]:
+    """The window as of `head`, straight from git in the stored shape, laying
+    nothing down: for a reader that needs commit dates where no log is on disk
+    yet. None walks whatever HEAD is when git starts."""
+    return _window_log(root, months, head)
 
 
 def commits_since(root: Path, base: str, head: str) -> Iterator[str]:
@@ -141,11 +144,11 @@ def _drop(path: Path) -> None:
         return
 
 
-def _stored_lines(root: Path, months: int) -> Iterator[str]:
+def _stored_lines(root: Path, months: int, head: str | None) -> Iterator[str]:
     """The same log with its commit dates still attached — the on-disk form."""
     sweep_legacy(root)
     path = root / ".crapkit" / LOG_NAME
-    key = _cache_key(root, months)
+    key = _cache_key(root, months, head)
     served = _cached(path, key)
     if served is not None:
         return served
@@ -156,7 +159,7 @@ def _source(root: Path, months: int, path: Path, key: dict | None) -> Iterator[s
     refreshed = _refreshed(root, months, path, key)
     if refreshed is not None:
         return refreshed
-    return _window_log(root, months)
+    return _window_log(root, months, key["head"] if key else None)
 
 
 def _shipped(line: str) -> str:
@@ -177,12 +180,14 @@ def _utc_date() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _cache_key(root: Path, months: int) -> dict | None:
-    """None when HEAD is unreadable — then there is nothing safe to key on."""
-    try:
-        head = head_commit(root)
-    except GitError:
-        return None
+def _cache_key(root: Path, months: int, head: str | None = None) -> dict | None:
+    """Keyed on `head` when the caller read one, else on HEAD now. None when
+    HEAD is unreadable — then there is nothing safe to key on."""
+    if head is None:
+        try:
+            head = head_commit(root)
+        except GitError:
+            return None
     return {"head": head, "months": months, "date": _utc_date(),
             "paths": RELATIVE_PATHS}
 
@@ -360,12 +365,17 @@ def _keep(part: BinaryIO, path: Path, key: dict | None) -> None:
         _drop(scratch)
 
 
-def _window_log(root: Path, months: int) -> Iterator[str]:
+def _window_log(root: Path, months: int, head: str | None) -> Iterator[str]:
     """The whole window, from git. The expensive one. --relative for the same
     reason gitio.churn_log_lines carries it: consumers join these paths against
-    root-relative rows, and a root below the repo top matched nothing without it."""
+    root-relative rows, and a root below the repo top matched nothing without it.
+
+    Walked from `head`, the commit the caller keys its copy on, and not from
+    whatever HEAD is by the time git starts: a commit landing in between would
+    sit in a copy keyed on its parent, and the next range walk would add it
+    again. Only a caller with no HEAD to key on walks HEAD itself."""
     return _git_lines(root, "log", "--relative", f"--since={months} months ago",
-                      LOG_FORMAT, "--name-only")
+                      LOG_FORMAT, "--name-only", *([head] if head else []))
 
 
 def _range_log(root: Path, base: str, head: str) -> Iterator[str]:

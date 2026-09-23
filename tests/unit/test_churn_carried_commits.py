@@ -21,6 +21,7 @@ from crapkit import churn_cache, churn_commits, churn_log
 from crapkit.churn import FileChurn
 from crapkit.errors import GitError
 
+HEAD_0 = "0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa"
 HEAD_A = "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
 HEAD_B = "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
 FLOOR = 999999999  # a window floor every commit here clears
@@ -52,6 +53,7 @@ class FakeGit:
     def __init__(self):
         self.head = HEAD_A
         self.log = list(LOG)
+        self.logs: dict[str, list[str]] = {}  # the window at a named HEAD, when it differs
         self.ranges: dict[tuple[str, str], list[str]] = {}
         self.floor: int | None = FLOOR
         self.ancestor = True
@@ -59,10 +61,19 @@ class FakeGit:
         self.window_calls = 0
         self.range_calls: list[tuple[str, str]] = []
         self.inflates = 0
+        self.after_read = None  # a commit that lands right after the next HEAD read
 
-    def window(self, root, months):
+    def read_head(self, root):
+        head = self.head
+        if self.after_read is not None:
+            land, self.after_read = self.after_read, None
+            land()
+        return head
+
+    def window(self, root, months, head=None, *rest):
+        """The window at `head`; the current HEAD's when no head is named."""
         self.window_calls += 1
-        return iter(self.log)
+        return iter(self.logs.get(head, self.log))
 
     def range(self, root, base, head):
         self.range_calls.append((base, head))
@@ -82,10 +93,10 @@ def git(monkeypatch) -> FakeGit:
     monkeypatch.setattr(churn_log, "_range_log", fake.range)
     monkeypatch.setattr(churn_log, "_window_cutoff", fake.cutoff)
     monkeypatch.setattr(churn_log, "is_ancestor", fake.is_ancestor)
-    monkeypatch.setattr(churn_log, "head_commit", lambda root: fake.head)
+    monkeypatch.setattr(churn_log, "head_commit", fake.read_head)
     monkeypatch.setattr(churn_commits, "is_ancestor", fake.is_ancestor)
     monkeypatch.setattr(churn_commits, "is_shallow", lambda root: fake.shallow)
-    monkeypatch.setattr(churn_cache, "head_commit", lambda root: fake.head)
+    monkeypatch.setattr(churn_cache, "head_commit", fake.read_head)
     inflate = churn_log._inflate
 
     def counted(blob):
@@ -150,6 +161,40 @@ def test_the_carried_table_is_carried_again(tmp_path, git):
     assert git.range_calls[-1] == (HEAD_B, git.head)
     # c.py: carol and bob, both at the newest author date.
     assert churn["src/c.py"] == FileChurn(2, 2, 1.0)
+
+
+def lay_log_behind(tmp_path, git: FakeGit) -> None:
+    """A log laid down at HEAD_0, one commit behind HEAD_A, by a command that
+    needs per-commit structure."""
+    git.head, git.log = HEAD_0, list(OLD)
+    list(churn_log.log_lines(tmp_path, 12))
+    git.head, git.log = HEAD_A, list(LOG)
+    git.ranges[(HEAD_0, HEAD_A)] = list(MID)
+    git.ranges[(HEAD_0, HEAD_B)] = RANGE + MID
+
+
+def land_after_the_head_read(git: FakeGit) -> None:
+    """HEAD_B's two commits land between load_churn's HEAD read and its walk."""
+    def land():
+        git.logs[HEAD_A] = list(LOG)
+        move_head(git)
+        git.log = RANGE + LOG
+    git.after_read = land
+
+
+@pytest.mark.parametrize("laid", [False, True], ids=["walked", "through-the-log"])
+def test_a_commit_landing_mid_read_is_counted_once(tmp_path, git, laid):
+    """Another session commits between load_churn's HEAD read and the window
+    walk. The table is stored under the HEAD that was read, so it must hold that
+    HEAD's commits and no more: the next miss carries stored..HEAD, and a commit
+    already in the table would count twice there and at every carry after."""
+    if laid:
+        lay_log_behind(tmp_path, git)
+    land_after_the_head_read(git)
+
+    assert churn_cache.load_churn(tmp_path, 12) == AT_A, "the map answers the HEAD it read"
+    assert git.head == HEAD_B, "the commit landed mid-read"
+    assert churn_cache.load_churn(tmp_path, 12) == AT_B
 
 
 def test_a_moved_head_leaves_the_stored_log_unread(tmp_path, git):

@@ -51,7 +51,7 @@ class FakeGit:
         self.range_calls: list[tuple[str, str]] = []
         self.cutoff_calls = 0
 
-    def window(self, root, months):
+    def window(self, root, months, *walked_from):
         self.window_calls += 1
         return iter(self.log)
 

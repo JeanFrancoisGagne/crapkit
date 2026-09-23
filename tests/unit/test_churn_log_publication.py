@@ -63,7 +63,7 @@ def test_competing_process_never_stamps_another_windows_bytes(tmp_path):
         key = churn_log._cache_key(tmp_path, 1)
         cached = churn_log._cached(tmp_path / ".crapkit" / churn_log.LOG_NAME, key)
         assert cached is None or "old.txt\n" not in list(cached)
-        fresh = [churn_log._shipped(line) for line in churn_log._window_log(tmp_path, 1)]
+        fresh = [churn_log._shipped(line) for line in churn_log._window_log(tmp_path, 1, None)]
         assert list(churn_log.log_lines(tmp_path, 1)) == fresh
         assert list((tmp_path / ".crapkit").glob("*.part")) == []
     finally:
@@ -76,7 +76,7 @@ def test_competing_process_never_stamps_another_windows_bytes(tmp_path):
 def test_overlapping_reads_in_one_process_own_separate_scratch(tmp_path, monkeypatch):
     monkeypatch.setattr(churn_log, "head_commit", lambda root: "fixture-head")
     monkeypatch.setattr(churn_log, "_window_log",
-                        lambda root, months: iter([f"window-{months}.txt\n"]))
+                        lambda root, months, *head: iter([f"window-{months}.txt\n"]))
     first = churn_log.log_lines(tmp_path, 1)
     second = churn_log.log_lines(tmp_path, 12)
     try:

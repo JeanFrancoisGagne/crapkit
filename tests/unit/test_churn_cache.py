@@ -25,7 +25,7 @@ class FakeGit:
         self.log = log
         self.log_calls = 0
 
-    def lines(self, root, months):
+    def lines(self, root, months, head):
         self.log_calls += 1
         return iter(self.log.splitlines())
 

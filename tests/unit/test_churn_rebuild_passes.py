@@ -41,7 +41,7 @@ class CountingPart:
 @pytest.fixture()
 def git(monkeypatch):
     state = {"log": list(LOG), "parts": []}
-    monkeypatch.setattr(churn_log, "_window_log", lambda root, months: iter(state["log"]))
+    monkeypatch.setattr(churn_log, "_window_log", lambda root, months, *head: iter(state["log"]))
     monkeypatch.setattr(churn_log, "head_commit", lambda root: HEAD)
     monkeypatch.setattr(churn_cache, "head_commit", lambda root: HEAD)
     opened = churn_log._open_part
