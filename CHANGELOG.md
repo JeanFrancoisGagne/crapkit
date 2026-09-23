@@ -322,6 +322,12 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   such as 0xC0000005, reaches the caller unchanged; the launcher turned every code above
   2^31 into 4294967295. A worktree teardown whose git failed to start still falls back
   to removing the directory.
+- Every owned command raises that start failure instead of returning an exit code, not
+  only a lane: MCP tool calls, test-scoped runners and git worktree commands included.
+  `crapkit test-scoped` exits 5 and names the failure, where it exited 1 with `runner
+  exit 4294967295`, and an MCP tool call answers a JSON-RPC error (-32603) naming it
+  instead of an `isError` result. A shell string raises it when its last process
+  failed to start, even after earlier steps ran.
 
 ### `crapkit clean` recovers mutations only
 
