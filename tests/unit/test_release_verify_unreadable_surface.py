@@ -121,7 +121,30 @@ def test_a_pypi_answer_that_is_not_the_version_json_reads_as_unreachable(tmp_pat
     assert code == 1
     (pypi,) = [line for line in out.splitlines() if line.startswith("MISMATCH")]
     assert pypi.startswith("MISMATCH PyPI")
-    assert "observed unreachable (" in pypi
+    assert "observed unreachable (not the version JSON: " in pypi
+
+
+def test_a_pypi_fetch_that_fails_keeps_its_own_unreachable_text(tmp_path, monkeypatch, capsys):
+    """The fetch error branch predates the not-the-version-JSON branch and keeps
+    its text: the error message alone in the parentheses."""
+    root, commit = _tagged(tmp_path)
+    answer = _surfaces(commit, json.dumps({"info": {"version": VERSION}}))
+
+    def fetch(url):
+        if url.startswith("https://pypi.org/"):
+            raise release.ReleaseError("down")
+        return answer(url)
+
+    monkeypatch.setattr(release, "_urlopen", fetch)
+    _gh(monkeypatch, _released)
+
+    code = release.main(["verify", VERSION, "--repo", str(root)])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    (pypi,) = [line for line in out.splitlines() if line.startswith("MISMATCH")]
+    assert pypi.startswith("MISMATCH PyPI")
+    assert pypi.endswith("observed unreachable (down)")
 
 
 def test_every_surface_reads_ok_when_each_one_answers_for_the_release(tmp_path, monkeypatch, capsys):
