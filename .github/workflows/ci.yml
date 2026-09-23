@@ -57,7 +57,8 @@ jobs:
   # The verdict compares installed base and candidate wheels. Each side builds,
   # installs and measures its own wheel in a job of its own, the two side by
   # side, and hands off its coverage evidence, the wheel and a proof of both. A
-  # failing suite still hands off; the join decides what it means.
+  # failing suite still hands off; the join decides what it means. A measurement
+  # that stops hands off failure.json instead, with the phase and the error.
   verdict-measure:
     runs-on: ubuntu-latest
     permissions:

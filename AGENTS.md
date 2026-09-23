@@ -643,7 +643,8 @@ python -m pytest tests/e2e -n 8 -p no:randomly --dist worksteal
 four-worker unit and eight-worker CLI schedule used by development, CI and self-verification.
 Use `--unit-workers 1` on the shared runner to reproduce a unit failure serially.
 Use `--coverage` to combine both suites' branch coverage, test contexts and JUnit
-results. Either suite failing makes the runner fail.
+results. Either suite failing makes the runner fail. Use `--suite unit` or
+`--suite e2e` to run one session, the way each Windows CI job does.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
