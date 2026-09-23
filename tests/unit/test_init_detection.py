@@ -109,7 +109,7 @@ def test_with_no_runner_detected_both_templates_stay_commented():
 def test_the_files_init_would_scope_are_counted_out_of_a_raw_path_list():
     files = ["app/m.py", "README.md", "app/m.test.py", "loose.py", "app\\win.py"]
 
-    assert source_candidates(files) == ["app/m.py", "app/win.py"]
+    assert source_candidates(files) == ["app/m.py"]
 
 
 def test_a_tree_of_nothing_but_tests_and_docs_has_no_candidates():

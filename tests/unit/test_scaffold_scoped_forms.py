@@ -55,10 +55,6 @@ def test_scopes_with_tests_names_the_scopes_whose_paths_hold_one():
     assert tested == frozenset({"pkg"})
 
 
-def test_scopes_with_tests_reads_backslash_paths_the_way_git_prints_them_on_windows():
-    assert scopes_with_tests(["pkg\\test_x.py"], {"pkg": ("pkg",)}) == frozenset({"pkg"})
-
-
 # --- the python form -----------------------------------------------------------
 
 def test_a_scope_holding_no_test_file_gets_the_whole_suite_form_naming_the_test_dir():

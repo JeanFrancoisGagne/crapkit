@@ -76,16 +76,17 @@ def source_candidates(files: list[str]) -> list[str]:
     """The paths init would put in a scope. Counting them over the UNTRACKED set
     is how init tells "you are in the wrong directory" from "you never ran
     `git add`" — crapkit reads `git ls-files` and sees neither case any other way.
+    git separates directories with `/` on every platform, so a backslash in one
+    of its paths is part of a filename and stays one.
     """
-    paths = (raw.replace("\\", "/") for raw in files)
-    return [p for p in paths if _scoped_source(p)]
+    return [p for p in files if _scoped_source(p)]
 
 
 def sniff_scopes(files: list[str]) -> dict[str, tuple[str, ...]]:
-    """Top-level source dirs -> their languages, sorted both ways for stable output."""
+    """Top-level source dirs -> their languages, sorted both ways for stable output.
+    `files` are git's paths, read as `source_candidates` reads them."""
     langs: dict[str, set[str]] = {}
-    for raw in files:
-        path = raw.replace("\\", "/")
+    for path in files:
         top = _scoped_source(path)
         if top is None:
             continue
@@ -596,9 +597,9 @@ def _confirmed_languages(lanes: tuple[LaneSpec, ...]) -> frozenset[str]:
     return frozenset({"python"} if _pytest_lane_launcher(lanes) is not None else ())
 
 
-def _test_top(raw: str) -> str:
-    """The top-level directory of a tracked test file, "" for anything else."""
-    path = raw.replace("\\", "/")
+def _test_top(path: str) -> str:
+    """The top-level directory of a tracked test file, "" for anything else.
+    Only `/` separates: git prints it on every platform."""
     top, sep, _ = path.partition("/")
     return top if sep and is_test_file(path) else ""
 

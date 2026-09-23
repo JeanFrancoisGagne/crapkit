@@ -174,8 +174,7 @@ def _package_json(root: Path) -> dict[str, str]:
     node_modules is skipped: its packages describe somebody else's tests.
     """
     found: dict[str, str] = {}
-    for raw in ls_files(root):
-        path = raw.replace("\\", "/")
+    for path in ls_files(root):
         directory, _, name = path.rpartition("/")
         if name != "package.json" or "node_modules/" in path:
             continue

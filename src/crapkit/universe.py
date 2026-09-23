@@ -157,11 +157,11 @@ def scopes_with_tests(files, scope_paths: dict[str, tuple[str, ...]]) -> frozens
     read ownership: a test is claimed by its path, whatever its language. Both
     `init` (which scoped-test form to write) and `doctor` (whether a {files}
     template can collect anything) ask here, so the two cannot disagree about
-    one scope.
+    one scope. `files` are git's paths: `/` separates directories on every
+    platform, and a backslash is part of a filename.
     """
     matchers = path_matchers(scope_paths)
-    paths = [raw.replace("\\", "/") for raw in files]
-    owners = (owning_scope(path, matchers) for path in paths if is_test_file(path))
+    owners = (owning_scope(path, matchers) for path in files if is_test_file(path))
     return frozenset(owner for owner in owners if owner is not None)
 
 

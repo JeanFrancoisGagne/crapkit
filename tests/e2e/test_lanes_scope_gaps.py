@@ -314,7 +314,7 @@ def test_paths_that_never_become_scopes(path: str):
 
 
 def test_scopes_group_by_top_level_dir_with_every_language_they_hold():
-    files = ["src/app.ts", "src/util.py", "pylib\\mod.py", "docs/guide.md", "setup.py"]
+    files = ["src/app.ts", "src/util.py", "pylib/mod.py", "docs/guide.md", "setup.py"]
     assert sniff_scopes(files) == {"pylib": ("python",), "src": ("python", "typescript")}
 
 
