@@ -91,3 +91,12 @@ def test_a_miss_names_the_path_it_looked_under(repo, monkeypatch):
         move("web/src/a.py", "lib/a.py")
 
     assert marks(repo) == ["web/src/a.py\tf( )\t40.0000"]
+
+
+def test_the_move_takes_the_directory_its_paths_were_typed_in(repo):
+    """No default. A caller that left the directory out would read every path
+    root-relative from any directory, the bug this file pins, and say nothing."""
+    from crapkit.cli.ratchet_cmds import _ratchet_move
+
+    with pytest.raises(TypeError, match="cwd"):
+        _ratchet_move(repo, None, ["web/src/a.py", "web/lib/a.py"])

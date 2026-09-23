@@ -132,7 +132,10 @@ def _move_path(raw: str, root: Path, cwd: Path | None) -> str:
     return path + "/" if raw.endswith(("/", os.sep)) else path
 
 
-def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None = None) -> int:
+def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None) -> int:
+    """`cwd` is where the user typed the paths (`_stand`), None under --repo.
+    It has no default: leaving it out read every path root-relative from any
+    directory, and nothing said so."""
     from ..ratchet import move_marks
     from ..ratchetfile import RatchetFile
 
