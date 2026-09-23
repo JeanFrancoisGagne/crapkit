@@ -63,9 +63,9 @@ def test_windows_registers_the_command_before_it_runs_any_code():
     with procs.own_processes(()) as owner:
         register = owner.register_then
 
-        def observed(pid, release, registration=None):
+        def observed(pid, release, *args, **named):
             seen.append(_suspend_counts(pid))
-            register(pid, release, registration)
+            register(pid, release, *args, **named)
 
         owner.register_then = observed
         result = procs.run_owned([BASE, "-c", "print('ran')"], owner=owner, capture_output=True)
