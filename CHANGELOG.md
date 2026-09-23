@@ -227,7 +227,7 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
 - The legacy ratchet key check builds its group union once instead of once per mark. On
   a large consumer repo with 39,496 legacy marks, `worklist` fell from 133.9 s to 12.4 s
   and `brief --json` from 150.3 s to 22.0 s (warm medians, byte-identical output).
-  `ratchet report` and `ratchet prune` run the same check.
+  `report`, `ratchet seed`, `ratchet prune` and `verify` run the same check.
 - Each run's same-line collision groups are scanned once, kept in a per-run
   `run_collisions` table and deleted by `runs prune` with the run. On a 4.17M-row,
   29-run store, explain went from 14.0 to 2.8 s and check_gate from 12.0 to 2.5 s; with
