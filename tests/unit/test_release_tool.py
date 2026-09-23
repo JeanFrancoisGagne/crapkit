@@ -349,38 +349,45 @@ def test_gh_failing_to_launch_leaves_the_read_anonymous(monkeypatch):
 # --- preflight: what must be true before stage 1 ---------------------------------
 
 def _owned(tmp_path, *names):
-    """A purelib that carries each named tool, and a locator that reads it."""
-    home = tmp_path / "site-packages"
-    inside = {name: str(home / name / "__init__.py") for name in names}
-    return str(home), inside.get
+    """A locator that finds each named tool in the base install, the way a venv
+    made with --system-site-packages finds it, and finds nothing else."""
+    base = tmp_path / "base" / "Lib" / "site-packages"
+    return {name: str(base / name / "__init__.py") for name in names}.get
 
 
-def test_preflight_names_each_tool_the_release_environment_does_not_own(tmp_path):
-    """A thin venv resolves pytest from the base install, so crapkit's bridge has
-    nothing to hand the throwaway venvs three tests build, and those tests fail
-    inside the release with `No module named pytest`."""
-    home, locate = _owned(tmp_path, "coverage", "build", "twine")
+def test_preflight_asks_only_that_build_and_twine_import(tmp_path):
+    """Stage 2b runs `python -m build` and `python -m twine` before the push.
+    Where they live is not the release's business, and pytest and coverage
+    belong to the py lane, which the verify stage runs before anything leaves
+    the machine."""
+    locate = _owned(tmp_path, "build", "twine")
 
-    problems = release.preflight(purelib=home, locate=locate, credential=lambda: True)
+    assert release.preflight(locate=locate, credential=lambda: True) == []
+
+
+def test_preflight_names_each_release_tool_this_interpreter_cannot_import(tmp_path):
+    locate = _owned(tmp_path, "build")
+
+    problems = release.preflight(locate=locate, credential=lambda: True)
 
     assert len(problems) == 1, problems
-    assert "pytest" in problems[0] and "coverage" not in problems[0]
+    assert problems[0].startswith("the release interpreter cannot import twine;"), problems
 
 
 def test_preflight_refuses_before_a_push_when_no_pypi_credential_is_reachable(tmp_path):
     """0.7.2 pushed main and the tag, then found it could not authenticate."""
-    home, locate = _owned(tmp_path, *release.RELEASE_TOOLING)
+    locate = _owned(tmp_path, *release.RELEASE_TOOLING)
 
-    problems = release.preflight(purelib=home, locate=locate, credential=lambda: False)
+    problems = release.preflight(locate=locate, credential=lambda: False)
 
     assert len(problems) == 1, problems
     assert "TWINE_PASSWORD" in problems[0]
 
 
 def test_preflight_is_silent_when_the_machine_can_actually_publish(tmp_path):
-    home, locate = _owned(tmp_path, *release.RELEASE_TOOLING)
+    locate = _owned(tmp_path, *release.RELEASE_TOOLING)
 
-    assert release.preflight(purelib=home, locate=locate, credential=lambda: True) == []
+    assert release.preflight(locate=locate, credential=lambda: True) == []
 
 
 def test_check_refuses_a_machine_that_cannot_finish_the_release(tmp_path, capsys, monkeypatch):

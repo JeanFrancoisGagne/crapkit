@@ -30,7 +30,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import sysconfig
 import time
 import urllib.error
 import urllib.parse
@@ -54,9 +53,9 @@ REGISTRY_REPOSITORY = f"https://github.com/{REPO_SLUG}"
 PAGES_LATEST = f"https://api.github.com/repos/{REPO_SLUG}/pages/builds/latest"
 GLAMA_SERVER = f"https://glama.ai/mcp/servers/{REPO_SLUG}"
 GITHUB_API = "https://api.github.com/"
-# The release runs these; a thin venv that resolves them from the base install
-# cannot bridge them into the throwaway venvs three tests build.
-RELEASE_TOOLING = ("pytest", "coverage", "build", "twine")
+# Stage 2b runs these through this interpreter (`python -m build`, `python -m
+# twine`) before the push, so `check` refuses an interpreter that cannot import one.
+RELEASE_TOOLING = ("build", "twine")
 # Seconds between readbacks of a surface that was just written.
 READBACK_PAUSE = 5
 # Reads of a just-written surface before it counts as unconfirmed: 55 seconds.
@@ -177,11 +176,6 @@ def _module_origin(name: str) -> str | None:
     return spec.origin if spec else None
 
 
-def _owns(purelib: Path, origin: str | None) -> bool:
-    """Whether this environment carries its own copy, rather than borrowing one."""
-    return origin is not None and purelib in Path(origin).resolve().parents
-
-
 def _keyring_has(url: str) -> bool:
     """Twine's other credential source. Imported lazily: keyring is not stdlib and
     the rest of this tool must run without it."""
@@ -202,12 +196,13 @@ def _twine_credential():
     return _keyring_has(PYPI_UPLOAD_URL)
 
 
-def _tooling_problems(locate: Callable, purelib: Path) -> list[str]:
-    missing = [name for name in RELEASE_TOOLING if not _owns(purelib, locate(name))]
+def _tooling_problems(locate: Callable) -> list[str]:
+    missing = [name for name in RELEASE_TOOLING if locate(name) is None]
     if not missing:
         return []
-    return [f"the release environment does not own {', '.join(missing)}: activate this "
-            "repository's .venv, which the py lane's bare `python` also resolves from PATH"]
+    return [f"the release interpreter cannot import {', '.join(missing)}; stage 2b runs "
+            "`python -m build` and `python -m twine` before the push, so install both "
+            "into the environment that runs release.py"]
 
 
 def _credential_problems(credential: Callable) -> list[str]:
@@ -217,15 +212,14 @@ def _credential_problems(credential: Callable) -> list[str]:
             "is passed, so set TWINE_USERNAME and TWINE_PASSWORD, or store the token in keyring"]
 
 
-def preflight(*, locate: Callable | None = None, purelib: str | None = None,
+def preflight(*, locate: Callable | None = None,
               credential: Callable | None = None) -> list[str]:
     """What must be true before stage 1 builds or pushes anything.
 
     Every fault of the 0.7.2 release fired after PyPI and the GitHub release were
     already public, because nothing proved the machine first. Both checks here
     take milliseconds and both cost a published half-release when skipped."""
-    home = Path(purelib or sysconfig.get_paths()["purelib"]).resolve()
-    return (_tooling_problems(locate or _module_origin, home)
+    return (_tooling_problems(locate or _module_origin)
             + _credential_problems(credential or _twine_credential))
 
 

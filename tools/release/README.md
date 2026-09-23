@@ -40,7 +40,7 @@ two yourself. Each takes seconds; each cost a published half-release when skippe
 | Check | Command | Why it bites |
 | --- | --- | --- |
 | The release venv is ACTIVATED | `which python` names this repository's `.venv` | The py lane in `crapkit.toml` runs a bare `python`, taken from PATH, not the interpreter that launched this script. Launching by absolute path is not enough. |
-| That venv owns its dev tools | `python -c "import pytest, coverage, build, twine"` resolves inside the venv | Three tests build a throwaway venv and rely on the dependency-venv bridge to carry the parent's `purelib` into it. A thin venv that resolves pytest from the base install carries nothing, and the child reports `No module named pytest`. |
+| The release interpreter imports build and twine | `python -c "import build, twine"` | Stage 2b runs `python -m build` and `python -m twine` through the interpreter that launched this script, and it builds before the push. |
 | PyPI credentials reach Twine | `TWINE_USERNAME` and `TWINE_PASSWORD` are set, or the token is in keyring | Twine 7 skips the named `.pypirc` entry whenever `--repository-url` is passed, and that flag is a fixed anti-redirect control. A `.pypirc` alone authenticates nothing. |
 | `gh` is authenticated | `gh auth status` | Publishing uses `gh`, and every readback now sends the same credential. GitHub's Pages API answers 404, not 403, to an anonymous reader. |
 
