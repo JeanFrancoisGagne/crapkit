@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://www.jfgagne.com/crapkit/",
-  "version": "0.7.6",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "crapkit",
-      "version": "0.7.6",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },

@@ -183,7 +183,7 @@ files. Review those commands before running Crapkit in a repository you do not t
 
 ```
 $ crapkit --version
-crapkit 0.7.6
+crapkit 0.8.0
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
@@ -446,7 +446,7 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
     # crapkit's release step rewrites this line to the tag it just cut
-    rev: v0.7.6
+    rev: v0.8.0
     hooks:
       - id: crapkit-gate
 ```
@@ -564,7 +564,7 @@ to a workflow, and every input has a default:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: JeanFrancoisGagne/crapkit@v0.7.6
+      - uses: JeanFrancoisGagne/crapkit@v0.8.0
 ```
 
 The whole job those four lines sit in:
@@ -584,7 +584,7 @@ jobs:
         with:
           python-version: "3.12"       # the interpreter the install below lands in
       - run: pip install -e ".[dev]"   # whatever your lanes need to run
-      - uses: JeanFrancoisGagne/crapkit@v0.7.6
+      - uses: JeanFrancoisGagne/crapkit@v0.8.0
         with:
           gate: "false"
 ```

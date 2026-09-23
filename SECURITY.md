@@ -7,8 +7,8 @@ Fixes land on the latest minor only. There are no maintenance branches.
 <!-- generated:version-support -->
 | Version | Supported |
 | --- | --- |
-| 0.7.x | Yes |
-| < 0.7 | No. Upgrade. |
+| 0.8.x | Yes |
+| < 0.8 | No. Upgrade. |
 <!-- /generated:version-support -->
 
 ## Reporting a vulnerability

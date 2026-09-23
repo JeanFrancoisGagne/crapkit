@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 — unreleased
+## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
 `ratchet seed` and `ratchet prune` take `--baseline ID`, the way out when a failed
