@@ -108,3 +108,45 @@ def test_settling_keeps_the_dirty_failures_that_are_still_new():
 
     assert settled.dirty_failures == ["tests/b.py::y"]
     assert settled.ok is False
+
+
+# --- the OK line and the payload name the retried pass apart -----------------
+
+def test_the_ok_line_calls_a_retried_pass_by_its_own_name(retry_repo, capsys):
+    """The baseline failed `old`; this run failed `old` and `renders`, and
+    `renders` passed its rerun. Only `old` is an unchanged failure: the
+    baseline never failed `renders`."""
+    _junit(retry_repo, OLD, FLAKY)
+    _rerun(retry_repo, passes=True)
+
+    code, out, err = verify(retry_repo, capsys)
+
+    ok_line = out.splitlines()[0]
+    assert code == 0, err
+    assert ok_line.startswith("verify OK @ "), ok_line
+    assert "(1 unchanged failure forgiven, first src/app.test.ts::old)" in ok_line, ok_line
+    assert "(1 new failure passed on rerun, first src/app.test.ts::renders)" in ok_line, ok_line
+
+
+def test_the_json_verdict_keeps_forgiven_and_retried_apart(retry_repo, capsys):
+    _junit(retry_repo, OLD, FLAKY)
+    _rerun(retry_repo, passes=True)
+
+    code, out, err = verify(retry_repo, capsys, "--json")
+
+    payload = json.loads(out)
+    assert code == 0, err
+    assert payload["forgiven_failures"] == [OLD]
+    assert payload["retried_passes"] == [FLAKY]
+    assert payload["new_failures"] == []
+
+
+def test_a_run_with_no_retry_names_no_retried_pass(retry_repo, capsys):
+    _junit(retry_repo, OLD)
+
+    code, out, err = verify(retry_repo, capsys, "--json")
+
+    payload = json.loads(out)
+    assert code == 0, err
+    assert payload["forgiven_failures"] == [OLD]
+    assert payload["retried_passes"] == []
