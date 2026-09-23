@@ -7,6 +7,7 @@ from crapkit.keys import handles
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 from crapkit.worklist import closable_claims
+from hang_guard import HANG_SECONDS
 
 
 def twins():
@@ -49,7 +50,7 @@ print(store.record_claim(path='src/a.py', long_name='f( )', commit='known', hand
 
     def acquire(_):
         return subprocess.run([sys.executable, "-B", "-c", script, str(path)],
-                              capture_output=True, text=True, check=True, timeout=20).stdout.strip()
+                              capture_output=True, text=True, check=True, timeout=HANG_SECONDS).stdout.strip()
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         answers = list(pool.map(acquire, range(3)))

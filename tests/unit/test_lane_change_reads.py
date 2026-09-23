@@ -7,11 +7,12 @@ import pytest
 from crapkit import lane_changes
 from crapkit.errors import GitError
 from crapkit.lane_changes import ChangeReads
+from hang_guard import HANG_SECONDS
 
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
-                          timeout=60, check=True).stdout
+                          timeout=HANG_SECONDS, check=True).stdout
 
 
 def _write(repo: Path, rel: str, text: str = "x\n") -> None:

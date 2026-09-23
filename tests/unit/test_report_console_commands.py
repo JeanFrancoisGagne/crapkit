@@ -20,6 +20,7 @@ import pytest
 from crapkit import packet
 from crapkit.cli.parser import build_parser
 from crapkit.report import render_report
+from hang_guard import HANG_SECONDS
 
 FIXTURE = Path(__file__).parents[1] / 'fixtures/recorded/report_payload.json'
 SHELLS = ['cmd', 'cmd-delayed', 'powershell'] if os.name == 'nt' else ['sh']
@@ -65,7 +66,7 @@ def _pasted(command: str, shell: str, cwd: Path) -> list[str]:
     else:
         args = command
     result = subprocess.run(args, shell=shell in ('cmd', 'sh'), cwd=cwd, capture_output=True,
-                            text=True, encoding='utf-8', errors='replace', timeout=60)
+                            text=True, encoding='utf-8', errors='replace', timeout=HANG_SECONDS)
     assert result.returncode == 0, result.stdout + result.stderr
     return json.loads(result.stdout)
 

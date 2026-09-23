@@ -11,6 +11,7 @@ import pytest
 from crapkit import _process_owner as owner
 from crapkit import _windows_job as windows
 from crapkit import procs
+from hang_guard import HANG_SECONDS
 
 
 @pytest.mark.parametrize(('group', 'state', 'expected'), [
@@ -224,7 +225,7 @@ def test_a_missing_completion_keeps_ownership_held(monkeypatch):
 
     def completion(port, message, key, process, timeout):
         waiting.set()
-        assert release.wait(5), "the test must release the native completion stub"
+        assert release.wait(HANG_SECONDS), "the test must release the native completion stub"
         message._obj.value, key._obj.value = 4, 100
         return 1
 
@@ -234,10 +235,10 @@ def test_a_missing_completion_keeps_ownership_held(monkeypatch):
     with ThreadPoolExecutor(max_workers=1) as worker:
         stopped = worker.submit(job.stop)
         try:
-            assert waiting.wait(5), "cleanup must reach the native completion wait"
+            assert waiting.wait(HANG_SECONDS), "cleanup must reach the native completion wait"
             assert not stopped.done()
             kernel.CloseHandle.assert_not_called()
             kernel.QueryInformationJobObject.assert_not_called()
         finally:
             release.set()
-        stopped.result(timeout=5)
+        stopped.result(timeout=HANG_SECONDS)

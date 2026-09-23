@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from crapkit import churn_log
+from hang_guard import HANG_SECONDS
 
 
 def _git(root, *args, when=None):
@@ -35,7 +36,7 @@ def _publish_first(root, ready, done):
         result = replace(part, destination)
         if destination == path:
             ready.set()
-            assert done.wait(15), "second writer did not finish"
+            assert done.wait(HANG_SECONDS), "second writer did not finish"
         return result
 
     Path.replace = held_replace
@@ -43,7 +44,7 @@ def _publish_first(root, ready, done):
 
 
 def _publish_second(root, ready, done):
-    assert ready.wait(15), "first writer did not publish its bytes"
+    assert ready.wait(HANG_SECONDS), "first writer did not publish its bytes"
     assert "old.txt\n" in list(churn_log.log_lines(root, 12))
     done.set()
 
@@ -55,11 +56,7 @@ def test_competing_process_never_stamps_another_windows_bytes(tmp_path):
     workers = [ctx.Process(target=fn, args=(tmp_path, ready, done))
                for fn in (_publish_first, _publish_second)]
     try:
-        for worker in workers:
-            worker.start()
-        for worker in workers:
-            worker.join(30)
-        assert [worker.exitcode for worker in workers] == [0, 0]
+        assert _exit_codes(workers) == [0, 0]
         key = churn_log._cache_key(tmp_path, 1)
         path = tmp_path / ".crapkit" / churn_log.LOG_NAME
         cached = churn_log._served(path, churn_log._read_key(path), key)
@@ -68,10 +65,23 @@ def test_competing_process_never_stamps_another_windows_bytes(tmp_path):
         assert list(churn_log.log_lines(tmp_path, 1)) == fresh
         assert list((tmp_path / ".crapkit").glob("*.part")) == []
     finally:
-        for worker in workers:
-            if worker.is_alive():
-                worker.terminate()
-                worker.join(5)
+        _stop(workers)
+
+
+def _exit_codes(workers):
+    """Start every worker, and each one's exit code once it ends."""
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(HANG_SECONDS)
+    return [worker.exitcode for worker in workers]
+
+
+def _stop(workers):
+    for worker in workers:
+        if worker.is_alive():
+            worker.terminate()
+            worker.join(HANG_SECONDS)
 
 
 def test_overlapping_reads_in_one_process_own_separate_scratch(tmp_path, monkeypatch):

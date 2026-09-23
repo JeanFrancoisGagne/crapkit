@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from conftest import git_commit_all, git_init_repo, run_cli
+from hang_guard import HANG_SECONDS
 
 SCOPED = """[crapkit]
 target = 6
@@ -237,19 +238,19 @@ def test_a_second_call_while_one_runs_refuses_instead_of_sharing_the_process(
 
     def held(argv):
         entered.set()
-        release.wait(60)
+        release.wait(HANG_SECONDS)
         return 0
 
     monkeypatch.setattr(crapkit.cli, "main", held)
     with ThreadPoolExecutor(max_workers=1) as pool:
         first = pool.submit(run_cli, tmp_path, "worklist")
-        assert entered.wait(60)
+        assert entered.wait(HANG_SECONDS)
         try:
             with pytest.raises(RuntimeError, match="cannot overlap"):
                 run_cli(tmp_path, "worklist")
         finally:
             release.set()
-        assert first.result(timeout=60).returncode == 0
+        assert first.result(timeout=HANG_SECONDS).returncode == 0
 
 
 def _live_connections() -> int:

@@ -7,6 +7,7 @@ import sys
 from cli_inproc_repo import repo, template_repo  # noqa: F401
 from crapkit.cli import main
 from crapkit.store import SnapshotStore, prune_keep_set
+from hang_guard import communicate
 from state_concurrency_worker import wait_for
 
 
@@ -28,7 +29,7 @@ def test_prune_winning_during_alert_refuses_the_grant_before_writing_marks(repo,
         assert main(["runs", "prune", "--keep", "1", "--repo", str(repo), "--json"]) == 0
         assert json.loads(capsys.readouterr().out)["pruned_runs"] == 1
         (repo / "alert-go").touch()
-        stdout, stderr = worker.communicate(timeout=15)
+        stdout, stderr = communicate(worker)
         assert worker.returncode != 0, stdout
         assert b"no longer exists" in stderr
         assert not (repo / "crapkit-ratchet.tsv").exists()
@@ -37,7 +38,7 @@ def test_prune_winning_during_alert_refuses_the_grant_before_writing_marks(repo,
     finally:
         (repo / "alert-go").touch()
         if worker.poll() is None:
-            worker.communicate(timeout=15)
+            communicate(worker)
 
 
 def test_audit_winning_after_retention_selection_keeps_its_run(repo):

@@ -8,6 +8,7 @@ import pytest
 
 from crapkit import _analysis_pool as pools
 from crapkit.errors import ToolError
+from hang_guard import HANG_SECONDS
 
 
 class Gate:
@@ -53,7 +54,7 @@ def test_interrupted_submission_drains_gated_workers_before_shutdown(monkeypatch
             pending.put((123, gates[0]))
             raise KeyboardInterrupt
         def shutdown(self, **kwargs):
-            assert gates[0].released.wait(1), "submitted worker kept waiting at its gate"
+            assert gates[0].released.wait(HANG_SECONDS), "submitted worker kept waiting at its gate"
     context = SimpleNamespace(Queue=lambda: pending, get_start_method=lambda: "fork")
     monkeypatch.setattr(pools.multiprocessing, "get_context", lambda: context)
     monkeypatch.setattr(pending, "close", lambda: None, raising=False)
@@ -78,7 +79,7 @@ def test_spawn_workers_can_start_while_later_jobs_are_still_submitting(monkeypat
             pass
         def map(self, *args, **kwargs):
             pending.put((123, gate))
-            assert gate.released.wait(1), "spawn work was held until every job was submitted"
+            assert gate.released.wait(HANG_SECONDS), "spawn work was held until every job was submitted"
             return iter([1])
         def shutdown(self, **kwargs):
             pass

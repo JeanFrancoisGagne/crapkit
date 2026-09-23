@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 
+from hang_guard import HANG_SECONDS
 from test_ci_verdict import driver
 from test_suite_schedule import SCRIPT, fixture_env
 
@@ -13,7 +14,7 @@ def test_old_selected_package_refuses_before_loading_candidate_helpers(tmp_path)
     package.mkdir(parents=True)
     (package / "__init__.py").write_text('__version__ = "0.7.0"\n', encoding="utf-8")
     result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path)],
-                            env=fixture_env(tmp_path), capture_output=True, text=True, timeout=15)
+                            env=fixture_env(tmp_path), capture_output=True, text=True, timeout=HANG_SECONDS)
     assert result.returncode == 1
     assert "selected Crapkit installation lacks" in result.stderr
     assert "Traceback" not in result.stderr

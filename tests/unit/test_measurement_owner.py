@@ -8,6 +8,7 @@ import pytest
 
 from crapkit.errors import ToolError
 from crapkit.procs import own_processes, run_bounded
+from hang_guard import exited
 
 
 def test_a_dead_owner_cannot_start_a_command(tmp_path):
@@ -16,7 +17,7 @@ def test_a_dead_owner_cannot_start_a_command(tmp_path):
     with pytest.raises(ToolError, match="measurement owner stopped"):
         with own_processes([tmp_path / "owner.lock"]) as owner:
             owner.process.kill()
-            owner.process.wait(timeout=10)
+            exited(owner.process)
             run_bounded(command, 5, owner=owner)
     assert not marker.exists()
 
@@ -25,7 +26,7 @@ def test_a_dead_owner_cannot_confirm_publication(tmp_path):
     with pytest.raises(ToolError, match="before publication"):
         with own_processes([tmp_path / "owner.lock"]) as owner:
             owner.process.kill()
-            owner.process.wait(timeout=10)
+            exited(owner.process)
 
 
 def test_a_failed_command_releases_the_same_output_for_another_run(tmp_path):

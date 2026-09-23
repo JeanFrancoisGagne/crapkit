@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 
+from hang_guard import HANG_SECONDS
 from mcp_stdio import run as run_mcp
 
 from crapkit.cli import main
@@ -76,7 +77,7 @@ def test_doctor_refuses_a_broken_path_launcher(tmp_path):
     environment = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ["PATH"])
     done = subprocess.run([sys.executable, "-m", "crapkit", "doctor", "--plugin-root",
                            str(ROOT / "plugin")], capture_output=True, encoding="utf-8",
-                          env=environment, timeout=30)
+                          env=environment, timeout=HANG_SECONDS)
     assert done.returncode == 1
     assert os.path.normcase(str(shim)) in os.path.normcase(done.stdout) and "FAIL" in done.stdout
 
@@ -104,10 +105,14 @@ def test_action_comment_selects_exact_nul_framed_paths(tmp_path):
     out = tmp_path / "comment.md"
     done = subprocess.run([sys.executable, str(ROOT / "tools/action/comment.py"),
                            "--changed-z", str(changed), "--worklist", str(worklist),
-                           "--top", "10", "--out", str(out)], capture_output=True, timeout=30)
+                           "--top", "10", "--out", str(out)], capture_output=True, timeout=HANG_SECONDS)
     assert done.returncode == 0, done.stderr
     text = out.read_text(encoding="utf-8")
     assert all(f"selected_{i}" in text for i in range(len(names)))
     assert "selected_5" not in text
-    assert len([line for line in text.splitlines() if line.startswith("| ")]) == len(names) + 1
+    assert len(_table_rows(text)) == len(names) + 1
     assert "a\\rb.py" in text and "a\\nb.py" in text and "line\\u2028break.py" in text
+
+
+def _table_rows(text):
+    return [line for line in text.splitlines() if line.startswith("| ")]

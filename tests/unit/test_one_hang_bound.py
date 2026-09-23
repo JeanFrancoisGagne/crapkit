@@ -11,6 +11,10 @@ import ast
 from pathlib import Path
 import re
 
+import pytest
+
+from hang_guard import HANG_SECONDS
+
 TESTS = Path(__file__).resolve().parents[1]
 CLOCK_BOUND = re.compile(r"(monotonic|time)\(\)\s*\+\s*\d")
 WAIT_CALLS = {"wait", "result", "receive", "get", "join"}
@@ -19,8 +23,8 @@ WINDOWS = {
     "e2e/test_parallel_lanes_e2e.py": "a window: two lanes started together must meet inside it",
 }
 DEADLINES = {
-    ("unit/test_hang_guard.py", "run([*PYTHON, '-c', 'import time; time.sleep(600)'], timeout=0)"):
-        "forces the miss the test is about",
+    ("unit/test_r2_execution_adapters.py", "proc.wait.assert_called_once_with(timeout=2)"):
+        "asserts the deadline the product hands Popen.wait; nothing waits on it",
     ("unit/test_mutation_cancellation.py", "wait(future, timeout=0.02)"):
         "a poll slice: the loop checks its interrupt condition between slices and retries",
 }
@@ -43,14 +47,11 @@ def test_no_wait_spells_its_own_clock_bound():
     assert spelled == [], "wait through tests/hang_guard.py, or spell CHILD_WAIT in a child script"
 
 
-def _names_hang_guard(node):
-    if isinstance(node, ast.ImportFrom):
-        return node.module == "hang_guard"
-    return isinstance(node, ast.Import) and "hang_guard" in {alias.name for alias in node.names}
-
-
-def _is_number(node):
-    return isinstance(node, ast.Constant) and type(node.value) in (int, float)
+def _under_the_bound(node):
+    """Zero is no wait at all. A number past the hang bound is an allowance for a
+    run that does real work, and costs a loaded machine nothing."""
+    return (isinstance(node, ast.Constant) and type(node.value) in (int, float)
+            and 0 < node.value < HANG_SECONDS)
 
 
 def _bound_candidates(call):
@@ -60,21 +61,30 @@ def _bound_candidates(call):
 
 
 def _spells_a_bound(node):
-    """cli_runner is left out: test_loaded_machine_waits refuses a CLI bound under
-    the hang bound, and a file may name a longer one for a run that does real work."""
-    return (isinstance(node, ast.Call) and getattr(node.func, "id", None) != "cli_runner"
-            and any(map(_is_number, _bound_candidates(node))))
+    return isinstance(node, ast.Call) and any(map(_under_the_bound, _bound_candidates(node)))
+
+
+@pytest.mark.parametrize("call, spelled", [
+    ("process.communicate(timeout=10)", True),
+    ("subprocess.run(argv, capture_output=True, timeout=15)", True),
+    ("done.wait(5)", True),
+    ("subprocess.run(argv, timeout=HANG_SECONDS)", False),
+    ("sqlite3.connect(path, timeout=0)", False),
+    ("run_cli(repo, 'coverage', timeout=300)", False),
+])
+def test_a_wait_spells_a_bound_only_when_its_number_is_under_the_hang_bound(call, spelled):
+    assert _spells_a_bound(ast.parse(call, mode="eval").body) is spelled
 
 
 def _spelled_bounds(path):
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    if not any(map(_names_hang_guard, ast.walk(tree))):
-        return []
     return [(_relative(path), ast.unparse(node)) for node in ast.walk(tree) if _spells_a_bound(node)]
 
 
-def test_a_file_that_waits_through_the_hang_guard_spells_no_other_bound():
+def test_no_wait_spells_a_bound_under_the_hang_bound():
+    """Every file, not only the ones that import the hang guard: a new file that
+    waits 10 s on a child is the guess this suite removed."""
     spelled = [site for path in sorted(TESTS.rglob("*.py")) for site in _spelled_bounds(path)
                if site not in DEADLINES]
 
-    assert spelled == [], "a file on the hang guard waits its bound, or lists the deadline here"
+    assert spelled == [], "wait through tests/hang_guard.py, or list the deadline here"

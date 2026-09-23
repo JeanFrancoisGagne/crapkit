@@ -17,6 +17,7 @@ from crapkit.config import Lane
 from crapkit.errors import GitError
 from crapkit.gitio import GitFacts
 from crapkit.lanes import lane_reuse_commit, write_stamps
+from hang_guard import HANG_SECONDS
 
 @pytest.fixture()
 def counted(monkeypatch) -> dict:
@@ -174,7 +175,7 @@ def test_four_lanes_asking_at_the_same_instant_still_spawn_git_once(tmp_path, mo
     facts = GitFacts(tmp_path)
 
     def ask(_):
-        barrier.wait(timeout=10)
+        barrier.wait(timeout=HANG_SECONDS)
         return facts.status_names()
 
     with ThreadPoolExecutor(max_workers=4) as pool:

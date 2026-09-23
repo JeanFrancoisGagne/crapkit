@@ -8,6 +8,7 @@ import pytest
 
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
+from hang_guard import communicate, exited
 
 
 OWNER = """from pathlib import Path
@@ -30,7 +31,7 @@ def held(tmp_path):
         assert holder > 0
         yield path, process, holder
     finally:
-        process.communicate(input="\n" if process.poll() is None else None, timeout=10)
+        communicate(process, "\n" if process.poll() is None else None)
 
 
 def test_a_second_process_cannot_take_an_owned_file(held):
@@ -38,7 +39,7 @@ def test_a_second_process_cannot_take_an_owned_file(held):
     with pytest.raises(ToolError, match="fixture already in use"):
         with exclusive_lock(path, label="fixture"):
             pytest.fail("a peer entered the owned operation")
-    process.communicate(input="\n", timeout=10)
+    communicate(process, "\n")
     with exclusive_lock(path, label="fixture"):
         assert path.is_file()
 
@@ -47,7 +48,7 @@ def test_a_crashed_owner_releases_the_same_stable_lock_file(held):
     path, process, holder = held
     # A Windows venv launcher has a different PID from the Python lock holder.
     os.kill(holder, signal.SIGTERM)
-    process.wait(timeout=10)
+    exited(process)
     with exclusive_lock(path, label="fixture"):
         assert path.is_file()
 

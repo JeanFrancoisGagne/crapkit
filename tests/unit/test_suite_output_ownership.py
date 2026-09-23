@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 
 from crapkit.config import Lane
 from crapkit.lanes import measurement_owner
+from hang_guard import HANG_SECONDS, communicate
 from test_suite_schedule import SCRIPT, fixture_env as environment, fixture_repo
 
 
@@ -43,7 +44,7 @@ def test_direct_runner_preserves_artifacts_held_by_a_live_measurement_owner(tmp_
 
     with measurement_owner(tmp_path, [lane]) as owner:
         result = subprocess.run(command(tmp_path), env=environment(tmp_path),
-                                capture_output=True, text=True, timeout=60)
+                                capture_output=True, text=True, timeout=HANG_SECONDS)
         owner.check()
         assert result.returncode == 0, result.stdout + result.stderr
         assert [path.read_bytes() for path in artifacts] == [b"owned measurement evidence"] * 2
@@ -60,8 +61,8 @@ def test_two_direct_runners_keep_distinct_complete_evidence(tmp_path):
     second = subprocess.Popen(command(tmp_path), env=environment(tmp_path),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        one, error_one = first.communicate(timeout=60)
-        two, error_two = second.communicate(timeout=60)
+        one, error_one = communicate(first)
+        two, error_two = communicate(second)
     finally:
         for child in (first, second):
             if child.poll() is None:
@@ -78,7 +79,7 @@ def test_explicit_output_resolves_against_repo_and_is_reported(tmp_path):
     fixture_repo(tmp_path, "")
 
     result = subprocess.run(command(tmp_path, "--output", ".crapkit/selected"),
-                            env=environment(tmp_path), capture_output=True, text=True, timeout=60)
+                            env=environment(tmp_path), capture_output=True, text=True, timeout=HANG_SECONDS)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert published_path(result.stdout) == tmp_path / ".crapkit/selected"
@@ -92,7 +93,7 @@ def test_output_outside_repo_is_refused_before_writing(tmp_path):
     output = tmp_path / "outside"
 
     result = subprocess.run(command(root, "--output", "../outside"),
-                            env=environment(root), capture_output=True, text=True, timeout=60)
+                            env=environment(root), capture_output=True, text=True, timeout=HANG_SECONDS)
 
     assert result.returncode == 1, result.stdout + result.stderr
     assert "test output must be inside" in result.stderr

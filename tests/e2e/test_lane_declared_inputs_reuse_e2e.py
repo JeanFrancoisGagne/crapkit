@@ -19,6 +19,7 @@ from crapkit.config import load_config_text
 from crapkit.lanes import lane_reuse_commit, lane_reuse_verdict, run_lane, write_stamps
 
 from conftest import cli_runner
+from hang_guard import HANG_SECONDS
 
 PY = sys.executable.replace("\\", "/")
 
@@ -67,7 +68,7 @@ INPUTS = 'inputs = ["src", "make_cov.py"]'
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
-                          timeout=60, check=True).stdout
+                          timeout=HANG_SECONDS, check=True).stdout
 
 
 def _commit(repo: Path, message: str) -> str:

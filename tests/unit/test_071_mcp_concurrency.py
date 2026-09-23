@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from crapkit import _mcp_stdio, mcp_server
+from hang_guard import HANG_SECONDS
 
 
 class Input:
@@ -19,7 +20,7 @@ class Input:
         self.frames = queue.Queue()
 
     def readline(self):
-        return self.frames.get(timeout=10)
+        return self.frames.get(timeout=HANG_SECONDS)
 
     def send(self, value):
         self.frames.put(json.dumps(value) + '\n')
@@ -58,7 +59,7 @@ def test_cancellation_during_owner_startup_never_dispatches_the_cli(monkeypatch,
     @contextmanager
     def owner(*_):
         entered.set()
-        assert release.wait(5)
+        assert release.wait(HANG_SECONDS)
         try:
             yield SimpleNamespace(cancel=lambda: None)
         finally:
@@ -75,14 +76,14 @@ def test_cancellation_during_owner_startup_never_dispatches_the_cli(monkeypatch,
         served = workers.submit(mcp_server.serve, tmp_path)
         try:
             call(source)
-            assert entered.wait(5)
+            assert entered.wait(HANG_SECONDS)
             source.send({'jsonrpc': '2.0', 'method': 'notifications/cancelled',
                          'params': {'requestId': 73}})
-            assert waiting.wait(5), 'the input loop must reach cancellation during startup'
+            assert waiting.wait(HANG_SECONDS), 'the input loop must reach cancellation during startup'
         finally:
             release.set()
             source.frames.put('')
-        assert served.result(timeout=5) == 0
+        assert served.result(timeout=HANG_SECONDS) == 0
     assert calls == [], 'a cancelled startup must never dispatch its CLI'
     assert closed.is_set()
     assert target.getvalue() == ''
@@ -106,7 +107,7 @@ def test_failed_cancellation_still_joins_work_and_closes_ownership(monkeypatch, 
 
     def run(argv, **_):
         running.set()
-        if not released.wait(1):
+        if not released.wait(HANG_SECONDS):
             timeouts.append('command remained alive before owner teardown')
         return subprocess.CompletedProcess(argv, 0, '{}', '')
 
@@ -115,10 +116,10 @@ def test_failed_cancellation_still_joins_work_and_closes_ownership(monkeypatch, 
     with ThreadPoolExecutor(1) as workers:
         served = workers.submit(mcp_server.serve, tmp_path)
         call(source)
-        assert running.wait(5)
+        assert running.wait(HANG_SECONDS)
         source.frames.put('')
         with pytest.raises(RuntimeError, match='cancel-fault'):
-            served.result(timeout=5)
+            served.result(timeout=HANG_SECONDS)
     assert closed.is_set(), 'ownership teardown still runs after a cancellation failure'
     assert timeouts == [], 'failed cancellation must close ownership before joining the live request'
 

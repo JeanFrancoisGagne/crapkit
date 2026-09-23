@@ -18,6 +18,7 @@ import pytest
 
 from crapkit import mcp_server
 from crapkit.mcp_server import TOOLS, build_argv, serve, tool_listing
+from hang_guard import HANG_SECONDS
 
 
 def _rpc(msg_id, method, params="omitted"):
@@ -59,7 +60,7 @@ def _live_frames(lines):
 
     class Input:
         def readline(self):
-            return incoming.get(timeout=10)
+            return incoming.get(timeout=HANG_SECONDS)
 
     class Output(io.StringIO):
         def write(self, text):

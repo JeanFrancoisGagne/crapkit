@@ -8,6 +8,7 @@ import sys
 from cli_inproc_repo import repo, template_repo  # noqa: F401
 from crapkit.cli import main
 from crapkit.store import SnapshotStore
+from hang_guard import communicate
 from state_concurrency_worker import row, wait_for
 
 
@@ -44,7 +45,7 @@ def test_public_trend_reads_one_snapshot_while_another_process_adds_a_run(repo, 
                    for r in output["runs"])
     finally:
         (repo / "writer-go").touch()
-        stdout, stderr = worker.communicate(timeout=15)
+        stdout, stderr = communicate(worker)
         assert worker.returncode == 0, (stdout, stderr)
 
 

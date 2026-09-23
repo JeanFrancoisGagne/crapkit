@@ -6,6 +6,7 @@ import pytest
 
 from cli_inproc_repo import add_knotty, repo, template_repo  # noqa: F401
 from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, metric_version
+from hang_guard import communicate
 from state_concurrency_worker import wait_for
 from test_cli_verifying_inproc import baselined, marked_debt  # noqa: F401
 
@@ -37,19 +38,24 @@ def test_two_public_moves_from_one_prior_preserve_the_first_committed_change(rep
         for name in workers:
             wait_for(repo / f"{name}-ready")
         (repo / "first-go").touch()
-        stdout, stderr = workers["first"].communicate(timeout=15)
+        stdout, stderr = communicate(workers["first"])
         assert workers["first"].returncode == 0, (stdout, stderr)
         (repo / "second-go").touch()
-        stdout, stderr = workers["second"].communicate(timeout=15)
+        stdout, stderr = communicate(workers["second"])
         assert workers["second"].returncode == 3, (stdout, stderr)
         assert b"changed" in stderr and b"rerun" in stderr
         assert load_ratchet(path.read_text(encoding="utf-8")) == [
             RatchetEntry("src/first.py", "f( )", 50)]
     finally:
-        for name, worker in workers.items():
-            (repo / f"{name}-go").touch()
-            if worker.poll() is None:
-                worker.communicate(timeout=15)
+        _release(repo, workers)
+
+
+def _release(repo, workers):
+    """Let every worker go, and wait out the ones still running."""
+    for name, worker in workers.items():
+        (repo / f"{name}-go").touch()
+        if worker.poll() is None:
+            communicate(worker)
 
 
 def test_verify_refuses_an_intervening_move_and_keeps_its_run_unsettled(marked_debt, capsys):
@@ -68,7 +74,7 @@ def test_verify_refuses_an_intervening_move_and_keeps_its_run_unsettled(marked_d
                      "--repo", str(marked_debt)]) == 0
         moved = path.read_bytes()
         (marked_debt / "verify-go").touch()
-        stdout, stderr = worker.communicate(timeout=15)
+        stdout, stderr = communicate(worker)
         assert worker.returncode == 3, (stdout, stderr)
         assert b"changed during the command" in stderr
         assert path.read_bytes() == moved
@@ -79,7 +85,7 @@ def test_verify_refuses_an_intervening_move_and_keeps_its_run_unsettled(marked_d
     finally:
         (marked_debt / "verify-go").touch()
         if worker.poll() is None:
-            worker.communicate(timeout=15)
+            communicate(worker)
 
 
 @pytest.mark.parametrize("prior", [None, "", "src/a.py\tf( )\t50\n"])

@@ -20,6 +20,7 @@ from crapkit.lanes import lane_reuse_commit, run_lane, write_stamps
 from crapkit.scaffold import sniff_scopes
 
 from conftest import cli_runner
+from hang_guard import HANG_SECONDS
 
 # Forward slashes survive TOML basic strings and cmd.exe alike.
 PY = sys.executable.replace("\\", "/")
@@ -88,7 +89,7 @@ SCOPE_PATHS = {"src": ("src",)}
 
 def _git(repo: Path, *args: str) -> str:
     res = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
-                         timeout=60, check=True)
+                         timeout=HANG_SECONDS, check=True)
     return res.stdout
 
 
