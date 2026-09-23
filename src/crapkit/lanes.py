@@ -574,9 +574,10 @@ def _output_names(root: Path, lane: Lane, config: bytes | None = None) -> frozen
 @lru_cache(maxsize=4)
 def _configured_outputs(config: bytes) -> frozenset[str]:
     from .config import load_config_text
+    from .repotext import repo_bytes_text
 
     try:
-        lanes = load_config_text(config.decode("utf-8-sig")).lanes
+        lanes = load_config_text(repo_bytes_text(config, "crapkit.toml")).lanes
     except (CrapkitError, ValueError):
         return frozenset()
     return frozenset(_normalized(name) for lane in lanes for name in _declared_files(lane))
