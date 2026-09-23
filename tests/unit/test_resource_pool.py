@@ -113,12 +113,9 @@ def test_caller_death_before_registration_cannot_start_worker_code(registering_p
 
 
 def _drain_fixture(process, root):
-    """A miss has killed the fixture's caller; its pool workers leave on abort-fixture."""
-    try:
-        communicate(process)
-    except AssertionError:
-        (root / "abort-fixture").touch()
-        raise
+    """On a miss the fixture's pool workers still hold the caller's pipes. They
+    leave on abort-fixture, touched before the report reads those pipes."""
+    communicate(process, on_miss=(root / "abort-fixture").touch)
 
 
 def test_a_live_pool_can_write_after_explicit_release(running_pool):

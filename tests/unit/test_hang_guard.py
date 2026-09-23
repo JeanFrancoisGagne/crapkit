@@ -14,8 +14,9 @@ import textwrap
 import pytest
 
 import hang_guard
-from hang_guard import (CHILD_HOLD, CHILD_WAIT, HANG_ENV, HANG_SECONDS, HOLD_SECONDS,
-                        communicate, exited, next_line, run, wait_for, wait_until)
+from hang_guard import (CHAINED_WAITS, CHILD_HOLD, CHILD_WAIT, HANG_ENV, HANG_SECONDS,
+                        HOLD_SECONDS, communicate, exited, next_line, run, wait_for,
+                        wait_until)
 
 TALKER = textwrap.dedent("""
     import sys, time
@@ -124,6 +125,39 @@ def test_a_descendant_holding_the_pipes_cannot_stall_the_report(tmp_path, run_ou
         child.communicate()
 
 
+def test_on_miss_frees_the_pipes_before_a_missed_communicate_reads_them(tmp_path, run_out):
+    marker = tmp_path / "grandchild-pid"
+    child = subprocess.Popen([*PYTHON, "-c", HOLDER, str(marker)],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    released = []
+
+    def release():
+        os.kill(int(marker.read_text()), signal.SIGTERM)
+        released.append(marker)
+
+    try:
+        wait_for(marker, child)
+        run_out()
+        with pytest.raises(AssertionError) as missed:
+            communicate(child, on_miss=release)
+        assert str(missed.value).endswith("--- the child printed ---\n(nothing)")
+    finally:
+        if not released:
+            release()
+        child.kill()
+        child.communicate()
+
+
+def test_a_miss_whose_log_was_never_written_still_reports_the_miss(tmp_path, run_out):
+    absent = tmp_path / "no-such.log"
+    run_out()
+
+    with pytest.raises(AssertionError) as missed:
+        wait_for(tmp_path / "never", log=absent)
+
+    assert str(missed.value).endswith(f"--- the child printed ---\n(no log at {absent})")
+
+
 def test_a_miss_without_a_child_names_what_it_waited_for(tmp_path, run_out):
     run_out()
     with pytest.raises(AssertionError, match="never saw .*absent-marker"):
@@ -214,10 +248,16 @@ def test_next_line_kills_a_child_that_prints_nothing(run_out):
     assert str(missed.value).endswith("--- the child printed ---\n(nothing)")
 
 
-def test_a_child_script_reads_the_bound_and_a_hold_twice_as_long():
+def test_a_child_script_reads_the_bound_and_the_hold_from_the_environment():
     code = f"import os; print({CHILD_WAIT}, {CHILD_HOLD})"
     done = run([*PYTHON, "-c", code], text=True)
 
     assert os.environ[HANG_ENV] == str(HANG_SECONDS)
-    assert HOLD_SECONDS == 2 * HANG_SECONDS
     assert done.stdout.split() == [str(float(HANG_SECONDS)), str(float(HOLD_SECONDS))]
+
+
+def test_a_hold_outlasts_every_chain_of_waits_that_starts_after_it():
+    """Each wait in a chain may spend the whole bound. A hold that ran out before
+    the last one would release its lock, and that wait would pass a product that
+    never stopped the holder."""
+    assert HOLD_SECONDS > CHAINED_WAITS * HANG_SECONDS
