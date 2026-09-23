@@ -19,14 +19,15 @@ import re
 import socket
 import sys
 import time
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import IO, NamedTuple
 
-from .config import Lane, shell_segments, shell_words
+from .config import Lane
 from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_both_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts, worktree_root
+from .lane_command import pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -208,49 +209,6 @@ def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int, owner=No
         return None
 
 
-def _lane_runner(lane: Lane) -> str:
-    """The word this lane's command starts with, read by the shell that runs it.
-
-    `shell_words`, never a whitespace split: a quoted interpreter path breaks at
-    its space and half of `C:\\Program Files\\py\\python.exe` is not a program.
-    """
-    words = shell_words(lane.command)
-    return words[0] if words else lane.command
-
-
-# The names a python answers to, matched against the last segment of the word:
-# `python`, `python3`, `py`, `python3.12`, `C:/Program Files/py/python.exe`.
-# Init reads the same set (`_is_python` in cli/admin.py) to decide which lanes it
-# can name an interpreter for.
-_PYTHON_WORD = re.compile(r"py(thon3?(\.\d+)?)?(\.exe)?$", re.IGNORECASE)
-
-
-def _pytest_segment(command: str) -> list[str]:
-    """The one command on the line that runs pytest, or nothing when none does.
-    A lane chains steps (`coverage run -m pytest --cov=pylib && coverage json`)
-    and only the step holding pytest says anything about pytest-cov."""
-    for segment in shell_segments(command):
-        if any(token.endswith("pytest") for token in segment):
-            return segment
-    return []
-
-
-def _pytest_runner(lane: Lane) -> str:
-    """The interpreter this lane runs pytest with, or "" when no python does.
-
-    Init's rule: the word has to head the step that runs pytest, and it has to
-    be a python. `uv run pytest --cov` starts with `uv`, `coverage run -m pytest
-    --cov=pylib` starts with `coverage`, and a bare `pytest --cov` lane starts
-    with pytest. None of the three takes `-m pip install`, and both of the first
-    two are lanes this repo documents.
-    """
-    word = _lane_runner(lane)
-    segment = _pytest_segment(lane.command)
-    if not segment or segment[0] != word:
-        return ""
-    return word if _PYTHON_WORD.fullmatch(PurePath(word).name) else ""
-
-
 def _pytest_cov_home(lane: Lane) -> str:
     """Which environment the package has to land in, as concretely as the lane
     command allows.
@@ -263,7 +221,7 @@ def _pytest_cov_home(lane: Lane) -> str:
     stops there: an install line built around a word that has no `-m` flag costs
     the reader a second, unrelated failure before they are back where they were.
     """
-    word = _pytest_runner(lane)
+    word = pytest_python(lane.command)
     if not word:
         return "the environment the lane's suite runs in"
     return f"the environment `{word}` runs in (`{word} -m pip install pytest-cov`)"

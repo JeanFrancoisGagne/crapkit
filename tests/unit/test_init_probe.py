@@ -21,6 +21,7 @@ from crapkit import config, mutate_pool, procs
 from crapkit.cli.admin import _lane_command_problems, _pytest_cov_probe, _warn_missing_pytest_cov
 from crapkit.cli import admin
 from crapkit.config import Lane
+from crapkit.lane_command import first_word, is_python
 from crapkit.mutate import Mutant
 from crapkit.scaffold import LaneSpec
 
@@ -154,25 +155,8 @@ def test_a_probe_that_cannot_run_says_yes():
 
 # --- only a python can be asked to import pytest_cov -------------------------
 #
-# The probe assumed the first word is an interpreter. `coverage run -m pytest
-# --cov=pylib && coverage json` starts with `coverage`, so it shelled
-# `coverage -c "import pytest_cov"`, read coverage's own argument error as a
-# missing package, and printed the pip note where pytest_cov imports fine.
-
-@pytest.mark.parametrize("command, probed", [
-    ("python -m pytest --cov", True),
-    ("python3 -m pytest --cov", True),
-    ("py -3 -m pytest --cov", True),
-    ("/usr/bin/python3.12 -m pytest --cov", True),
-    ('"C:/Program Files/Python311/python.exe" -m pytest --cov', True),
-    ("npm run build && python -m pytest --cov", True),
-    ("coverage run -m pytest --cov=pylib && coverage json", False),
-    ("tox -e py311 -- --cov", False),  # no pytest on the line at all
-    ("npx vitest run --coverage", False),
-])
-def test_only_a_python_running_pytest_is_probe_able(command, probed):
-    assert (admin._probe_interpreter(command) is not None) is probed
-
+# Which python heads the pytest step is lane_command's rule, pinned in
+# test_lane_command.py. These tests pin what the probe does with its answer.
 
 def _recorded_probe(monkeypatch) -> list[str]:
     """Every command the probe hands the shell. Empty means it asked nothing."""
@@ -331,8 +315,8 @@ def test_an_interpreter_that_works_is_still_silent(capsys):
 # a python invocation at all: it exits non-zero and the probe would warn about
 # pytest-cov on every uv repo. Probing the real thing is worse — `uv run` and its
 # siblings CREATE or sync the project environment first, and init has no business
-# provisioning one to ask a question about it. `_probe_interpreter` is what says
-# no here: the pytest segment starts on `uv`, and `uv` is not a python.
+# provisioning one to ask a question about it. `lane_command.pytest_python` is
+# what says no here: the pytest step starts on `uv`, and `uv` is not a python.
 
 def _no_spawns(monkeypatch) -> None:
     def boom(*a, **k):
@@ -910,7 +894,7 @@ def test_the_venv_word_survives_the_config_it_is_written_into(tmp_path, monkeypa
 
     assert value.endswith("python.exe -m pytest --cov") or value.endswith("python -m pytest --cov")
     assert "//" not in value and "\\\\" not in value, "the escape unescapes to one separator"
-    assert admin._is_python(admin._first_word(word)), "the probe has to read it as a python"
+    assert is_python(first_word(word)), "the probe has to read it as a python"
 
 
 def test_the_pytest_import_probe_asks_a_real_interpreter():

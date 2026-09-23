@@ -10,11 +10,12 @@ import os
 import re
 import sys
 from functools import lru_cache
-from pathlib import Path, PurePath
+from pathlib import Path
 
 from .. import __version__, config
-from ..config import load_config_text, shell_words
+from ..config import load_config_text
 from ..doctor import Finding
+from ..lane_command import first_word, pytest_head, pytest_python
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
@@ -285,14 +286,6 @@ def _start_probe(word: str) -> int | None:
         return None
 
 
-def _first_word(command: str) -> str:
-    """The word the shell will try to start, read the way that shell reads the
-    line: a quoted interpreter path stays one word, where a whitespace split
-    would break it at its space. "" when the line holds no word at all."""
-    words = shell_words(command)
-    return words[0] if words else ""
-
-
 def _dead_first_word(command: str) -> tuple[str, int] | None:
     """The command's first word and the shell's verdict, when the shell cannot
     start it. None when it starts, and None when the word does not resolve on
@@ -300,7 +293,7 @@ def _dead_first_word(command: str) -> tuple[str, int] | None:
     proves nothing."""
     import shutil
 
-    word = _first_word(command)
+    word = first_word(command)
     if not word or shutil.which(word) is None:
         return None
     code = _start_probe(word)
@@ -319,46 +312,6 @@ def _probe_answered_no(returncode: int) -> bool:
     return returncode != 0
 
 
-# The names a python answers to. `-c "import pytest_cov"` is a python's flag
-# and nobody else's: `coverage -c` takes a config file and rejects the code.
-_PYTHON_NAME = re.compile(r"py(thon3?(\.\d+)?)?(\.exe)?$", re.IGNORECASE)
-
-
-def _is_python(word: str) -> bool:
-    """Does this word name a python interpreter? A bare name or a path, with or
-    without a version suffix: `python`, `python3`, `py`, `python3.12`,
-    `C:/Program Files/Python311/python.exe`."""
-    return _PYTHON_NAME.fullmatch(PurePath(word).name) is not None
-
-
-def _pytest_segment(command: str) -> list[str]:
-    """The command on the line that runs pytest, or nothing when none does. A
-    lane chains steps (`coverage run -m pytest --cov=pylib && coverage json`),
-    and only the one holding pytest says anything about pytest-cov."""
-    for segment in config.shell_segments(command):
-        if any(tok.endswith("pytest") for tok in segment):
-            return segment
-    return []
-
-
-def _probe_interpreter(command: str) -> str | None:
-    """The python this lane runs pytest with, or None when no python runs it.
-    `coverage run -m pytest` names no interpreter at all: the probe asked
-    `coverage` to import pytest_cov, read its argument error as a missing
-    package, and printed the pip note on a machine where pytest_cov imports.
-
-    An environment manager heads its segment for the same reason: `uv run` and
-    its siblings CREATE or sync the project environment before running anything,
-    so init has no business provisioning one to ask a question about it, and the
-    head word is not a python — `uv -c "import pytest_cov"` is not the probe it
-    looks like, and would have warned about the wrong gap on every uv repo.
-    """
-    segment = _pytest_segment(command)
-    if not segment or not _is_python(segment[0]):
-        return None
-    return segment[0]
-
-
 def _pytest_cov_probe(command: str) -> bool:
     """Can the interpreter this lane names import pytest_cov? The probe runs
     through the same shell as the lane, so a bare `python` resolves to the one
@@ -371,7 +324,7 @@ def _pytest_cov_probe(command: str) -> bool:
 
     from ..procs import run_bounded
 
-    word = _probe_interpreter(command)
+    word = pytest_python(command)
     if word is None or shutil.which(word) is None:
         return True
     probe = f'{_shell_quote(word)} -c "import pytest_cov"'
@@ -448,7 +401,7 @@ def _absent_manager(command: str) -> str | None:
     from ..scaffold import LOCKFILE_RUNNERS
 
     managers = {runner.split()[0] for _, runner in LOCKFILE_RUNNERS}
-    head = _first_word(command)
+    head = first_word(command)
     return head if head in managers and shutil.which(head) is None else None
 
 
@@ -470,7 +423,7 @@ def _lane_first_run_note(lane) -> str | None:
     dead = _dead_first_word(lane.command)
     if dead:
         return _dead_interpreter_note(lane.name, *dead)
-    word = _probe_interpreter(lane.command)
+    word = pytest_python(lane.command)
     if word and not _pytest_cov_probe(lane.command):
         return _missing_pytest_cov_note(lane.name, word)
     return None
@@ -886,21 +839,12 @@ def _foreign_interpreter(name: str, executable: str) -> list[Finding]:
                             "seen by the other")]
 
 
-def _pytest_head(command: str) -> str:
-    """The word in front of pytest: the manager or tool the lane runs pytest
-    through when no python does. A lane that chains steps runs pytest after
-    `&&`, so this is the segment's head, not the command's first word; the
-    first word only when no segment names pytest at all."""
-    segment = _pytest_segment(command)
-    return segment[0] if segment else _first_word(command)
-
-
 def _unprobed_lane_note(lane) -> Finding:
     """A lane no python heads names nothing doctor can ask: `uv run` and its
     siblings provision the environment they run in, and asking one would
     provision it to answer. Said out loud, because a lane that printed nothing
     read the same as one probed and found healthy."""
-    return Finding("note", f"lane {lane.name!r} runs pytest through `{_pytest_head(lane.command)}`, "
+    return Finding("note", f"lane {lane.name!r} runs pytest through `{pytest_head(lane.command)}`, "
                            "which is not a python doctor can ask: interpreter and pytest-cov not "
                            f"probed, the first `{_self()} coverage` will say whether the plugin imports")
 
@@ -919,7 +863,7 @@ def _lane_probe_findings(lane) -> list[Finding]:
     version report goes first: it imports pytest_cov on its way, so it answers
     the first-run question too, and a healthy lane costs one interpreter start
     instead of two."""
-    word = _probe_interpreter(lane.command)
+    word = pytest_python(lane.command)
     if word is None:
         return [_unprobed_lane_note(lane)]
     report = _runner_report(word)
