@@ -511,14 +511,43 @@ def _owner_cell(owners) -> int | str:
 class _StoredTwins:
     """One run's shingle index as the store holds it, read a query at a time.
 
-    It answers the four questions dup's FunctionIndex answers, from SQLite
+    It answers the two questions dup's FunctionIndex answers, from SQLite
     rather than memory, so brief and duplication take either one.
+
+    Storing a newer run's index drops this one, and a `brief --batch` can hold
+    this reader for minutes while another session does that. So every answer
+    is checked against the marker after its queries: the drop removes marker
+    and rows in one transaction, so a marker still there means the queries saw
+    the whole index. When it is gone, `build()` answers this question and every
+    later one, and the batch keeps its twins.
     """
 
-    def __init__(self, conn, run_id: int, min_lines: int) -> None:
+    def __init__(self, conn, run_id: int, min_lines: int, build) -> None:
         self._conn = conn
         self._run_id = run_id
         self.min_lines = min_lines
+        self._build = build
+        self._built = None
+
+    def holders(self, digests) -> dict[int, tuple]:
+        return self._answer(lambda: self._stored_holders(digests),
+                            lambda index: index.holders(digests))
+
+    def pair_inputs(self) -> tuple[list[tuple], list[list[int]]]:
+        return self._answer(self._stored_pair_inputs, lambda index: index.pair_inputs())
+
+    def _answer(self, stored, built):
+        if self._built is None:
+            answer = stored()
+            if self._intact():
+                return answer
+            self._built = self._build()
+        return built(self._built)
+
+    def _intact(self) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM twin_runs WHERE run_id = ? AND shingle_format = ?",
+            (self._run_id, SHINGLE_FORMAT)).fetchone() is not None
 
     def _chunked(self, sql: str, values):
         values = list(values)
@@ -527,25 +556,20 @@ class _StoredTwins:
             yield from self._conn.execute(sql.format(",".join("?" * len(chunk))),
                                           (self._run_id, *chunk))
 
-    def shared_counts(self, digests) -> dict[int, int]:
-        counts: dict[int, int] = {}
+    def _stored_holders(self, digests) -> dict[int, tuple]:
+        shared: dict[int, int] = {}
         for (cell,) in self._chunked(
                 "SELECT owners FROM twin_postings WHERE run_id = ? AND digest IN ({})", digests):
             for fn in _owner_list(cell):
-                counts[fn] = counts.get(fn, 0) + 1
-        return counts
+                shared[fn] = shared.get(fn, 0) + 1
+        return {fn: (_TwinRow(*rest), count, shared[fn])
+                for fn, count, *rest in self._chunked(_TWIN_ROWS + " AND t.fn IN ({})", shared)}
 
-    def rows_of(self, fns) -> dict[int, tuple]:
-        return {fn: (_TwinRow(*rest), count)
-                for fn, count, *rest in self._chunked(_TWIN_ROWS + " AND t.fn IN ({})", fns)}
-
-    def functions(self) -> list[tuple]:
-        """Dense by function number: the writer numbers them 0..N-1."""
-        return [(_TwinRow(*rest), count) for _, count, *rest in
-                self._conn.execute(_TWIN_ROWS + " ORDER BY t.fn", (self._run_id,))]
-
-    def pairable_owners(self) -> list[list[int]]:
-        return [_owner_list(cell) for (cell,) in self._conn.execute(
+    def _stored_pair_inputs(self) -> tuple[list[tuple], list[list[int]]]:
+        # dense by function number: the writer numbers them 0..N-1
+        functions = [(_TwinRow(*rest), count) for _, count, *rest in
+                     self._conn.execute(_TWIN_ROWS + " ORDER BY t.fn", (self._run_id,))]
+        return functions, [_owner_list(cell) for (cell,) in self._conn.execute(
             "SELECT owners FROM twin_postings WHERE run_id = ? AND typeof(owners) = 'text'",
             (self._run_id,))]
 
@@ -1451,18 +1475,18 @@ class SnapshotStore:
         process, looks digests up. `build` returns a dup.FunctionIndex and runs
         only when nothing usable is stored.
         """
-        stored = self._stored_twins(run_id)
+        stored = self._stored_twins(run_id, build)
         if stored is not None:
             return stored
         built = build()
         self._store_twins(run_id, built)
         return built
 
-    def _stored_twins(self, run_id: int) -> _StoredTwins | None:
+    def _stored_twins(self, run_id: int, build) -> _StoredTwins | None:
         found = self._conn.execute(
             "SELECT min_lines FROM twin_runs WHERE run_id = ? AND shingle_format = ?",
             (run_id, SHINGLE_FORMAT)).fetchone()
-        return None if found is None else _StoredTwins(self._conn, run_id, found[0])
+        return None if found is None else _StoredTwins(self._conn, run_id, found[0], build)
 
     def _store_twins(self, run_id: int, index) -> None:
         """Best effort, like the rollup: a write lock another process holds costs

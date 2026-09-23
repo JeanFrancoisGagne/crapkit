@@ -8,9 +8,10 @@ shingle are ever compared. Tiny functions are structural noise and stay out.
 
 A shingle is a stable 8-byte digest, so one run's index can be stored and read
 back by another process. Both readers take either kind of index: the
-FunctionIndex built here, or the one the store keeps for a run. They answer the
-same four questions: which functions hold these shingles, what those functions
-are, every function with its shingle count, and every shingle two of them share.
+FunctionIndex built here, or the one the store keeps for a run. Each answers
+two questions, each in one call so a stored answer comes from one version of
+the index: which functions hold these shingles (`holders`), and every function
+with every shingle two of them share (`pair_inputs`).
 """
 from __future__ import annotations
 
@@ -104,14 +105,16 @@ class FunctionIndex(NamedTuple):
     min_lines: int
     entries: list[tuple[InventoryRow, set[int]]]
 
-    def shared_counts(self, digests: set[int]) -> dict[int, int]:
-        """How many of `digests` each function holds, for those holding any."""
-        return {fn: n for fn, (_, shingles) in enumerate(self.entries)
+    def holders(self, digests: set[int]) -> dict[int, tuple]:
+        """Every function holding any of `digests`: its row, its shingle count,
+        and how many of `digests` it holds."""
+        return {fn: (row, len(shingles), n) for fn, (row, shingles) in enumerate(self.entries)
                 if (n := len(digests & shingles))}
 
-    def rows_of(self, fns) -> dict[int, tuple]:
-        """Each named function's row and shingle count."""
-        return {fn: (self.entries[fn][0], len(self.entries[fn][1])) for fn in fns}
+    def pair_inputs(self) -> tuple[list[tuple], list[list[int]]]:
+        """Every function's row and shingle count, and the owners of every
+        shingle two or more of them share."""
+        return self.functions(), _pairable_owners(self.entries)
 
     def functions(self) -> list[tuple]:
         """Every function's row and shingle count, in function-number order."""
@@ -119,9 +122,6 @@ class FunctionIndex(NamedTuple):
 
     def owners(self) -> dict[int, int | list[int]]:
         return _owners_by_shingle(self.entries)
-
-    def pairable_owners(self) -> list[list[int]]:
-        return _pairable_owners(self.entries)
 
 
 def function_index(rows: list[InventoryRow], sources: dict[str, str],
@@ -241,22 +241,20 @@ def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int
     return None if lines is None else _row_shingles(target, lines, min_lines)
 
 
-def _qualified_twins(size: int, target, candidates: dict[int, tuple],
-                     shared: dict[int, int], similarity: float):
+def _qualified_twins(size: int, target, holders: dict[int, tuple], similarity: float):
     """The raw containment meets the threshold, as in `_candidate`; only the
     similarity a twin reports is rounded."""
-    for fn, (row, count) in candidates.items():
+    for row, count, shared in holders.values():
         if _is_self(row, target):
             continue
-        score = shared[fn] / min(size, count)
+        score = shared / min(size, count)
         if score >= similarity:
             yield _twin_payload(row, score, _nested_spans(row, target))
 
 
 def _ranked_twins(index, target, mine: set[int], similarity: float, top: int) -> list[dict]:
     """`mine` scored against every function of `index` that holds any of it."""
-    shared = index.shared_counts(mine)
-    kept = list(_qualified_twins(len(mine), target, index.rows_of(shared), shared, similarity))
+    kept = list(_qualified_twins(len(mine), target, index.holders(mine), similarity))
     kept.sort(key=lambda t: (-t["similarity"], _function_key(t), t["contained"]))
     return kept[:top]
 
@@ -344,7 +342,7 @@ def _pair_inputs(indexed, rows: list[InventoryRow], load_sources,
     shingle set lives through the pair counting."""
     index = indexed if _built_at(indexed, min_lines) else \
         function_index(rows, load_sources(), min_lines)
-    return index.functions(), index.pairable_owners()
+    return index.pair_inputs()
 
 
 def find_duplicates(rows: list[InventoryRow], load_sources, *,
