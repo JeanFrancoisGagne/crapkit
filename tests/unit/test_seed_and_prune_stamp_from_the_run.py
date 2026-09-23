@@ -14,9 +14,11 @@ import pytest
 
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli.ratchet_cmds import cmd_ratchet
+from crapkit.cli.verifying import _guard_ratchet_stamp
 from crapkit.errors import ConfigError
 from crapkit.invocation import _self
 from crapkit.ratchet import metric_version, read_stamp, stamp_conflict
+from crapkit.ratchetfile import RatchetFile
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -137,9 +139,17 @@ def test_prune_against_a_run_that_recorded_no_metric_says_so(repo, capsys):
     assert f"; run {run_id} was measured under an unrecorded metric, not" in capsys.readouterr().out
 
 
-def test_prune_that_creates_the_marks_file_stamps_the_run_it_read(repo):
-    measured_run(repo, OLD)
+def test_prune_that_creates_the_marks_file_stamps_the_running_metric(repo, capsys):
+    """The new file holds no mark, so the running metric relabels no number.
+    Stamping the older run's metric made the next verify refuse a file with
+    zero marks, and the line claimed a recorded stamp there was none of."""
+    run_id = measured_run(repo, OLD)
 
     assert ratchet(repo, "prune") == 0
 
-    assert stamp(repo) == OLD_STAMP
+    assert stamp(repo) == metric_version()
+    assert _guard_ratchet_stamp(RatchetFile.read(repo / MARKS), MARKS) is None
+    assert capsys.readouterr().out == (
+        f"{MARKS}: pruned 0, followed 0 rename(s) - 0 mark(s) vs run {run_id} ({SHA[:11]}); "
+        f"run {run_id} was measured under [{OLD_STAMP}], not this crapkit's "
+        f"[{metric_version()}]\n")

@@ -271,7 +271,7 @@ Every write to the marks file sets the stamp by where its numbers came from:
 | Write | Metric stamp it leaves |
 |---|---|
 | `ratchet seed` | The metric the run it read was measured under. The only write that changes the stamp. |
-| `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. |
+| `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. A marks file prune creates holds no mark and takes the running metric. |
 | `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. |
 | The pre-commit hook's override | The recorded stamp. A marks file it creates takes the running metric. |
 

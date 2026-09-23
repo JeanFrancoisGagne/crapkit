@@ -244,9 +244,11 @@ def _ratchet_from_run(root: Path, cfg, action: str) -> int:
     """seed and prune: both work from the run verify would compare against.
 
     seed signs that run's numbers, so the marks take the metric the run was
-    measured under. prune adds no number, so the recorded stamp stays.
+    measured under. prune adds no number, so the recorded stamp stays; a file
+    prune creates holds no mark and takes the running metric, which relabels
+    nothing.
     """
-    from ..ratchet import run_stamp
+    from ..ratchet import metric_version
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -260,11 +262,11 @@ def _ratchet_from_run(root: Path, cfg, action: str) -> int:
         text = saved.reseeded(entries, _seed_metric(latest), keys=key_version)
     else:
         entries, note = _pruned(root, store, saved.entries, fresh)
-        text = saved.kept(entries, keys=key_version,
-                          new_file_metric=run_stamp(latest["tool_versions"]))
+        text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
+    metric_note = _metric_note(latest, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
-          f"({latest['commit'][:11]}){_skip_note(skipped)}{_metric_note(latest, action)}")
+          f"({latest['commit'][:11]}){_skip_note(skipped)}{metric_note}")
     return 0
 
 
@@ -292,7 +294,7 @@ def _seed_metric(run: dict) -> str:
     return metric
 
 
-def _metric_note(run: dict, action: str) -> str:
+def _metric_note(run: dict, action: str, *, created: bool) -> str:
     """Said only when the run seed or prune read is not this crapkit's metric."""
     from ..ratchet import metric_version, run_stamp
 
@@ -300,9 +302,18 @@ def _metric_note(run: dict, action: str) -> str:
     if measured == running:
         return ""
     said = f"[{measured}]" if measured else "an unrecorded metric"
-    after = (f", so verify refuses these marks until a fresh `{_self()} coverage` and another seed"
-             if action == "seed" else ", and the marks keep their recorded stamp")
-    return f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]{after}"
+    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]"
+            f"{_stamp_consequence(action, created)}")
+
+
+def _stamp_consequence(action: str, created: bool) -> str:
+    """What the older run means for the stamp the write left.
+
+    A file prune creates recorded no stamp to keep, so there is nothing to say.
+    """
+    if action == "seed":
+        return f", so verify refuses these marks until a fresh `{_self()} coverage` and another seed"
+    return "" if created else ", and the marks keep their recorded stamp"
 
 
 def _publish_checked(saved, text: str, entries: list, fresh: list, analysis_version) -> None:
