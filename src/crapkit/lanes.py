@@ -27,7 +27,7 @@ from .coverage_istanbul import FnCoverage
 from .covstream import lane_prefix, parse_coveragepy_both_file, parse_istanbul_both_file
 from .errors import GitError, ToolError
 from .gitio import GitFacts, worktree_root
-from .lane_command import pytest_python
+from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -132,13 +132,6 @@ def _log_tail(log_path: Path) -> str:
     return "\n".join([*cause, "...", *tail] if cause else tail)
 
 
-def _popen_kwargs(root: Path, lane: Lane) -> dict:
-    return {
-        "cwd": root / lane.cwd if lane.cwd else root,
-        "env": {**os.environ, **dict(lane.env)} if lane.env else None,
-    }
-
-
 def _deadline(lane: Lane) -> float | None:
     """The lane's own timeout, or None for no crapkit-owned deadline at all.
     0 is the config default and means the suite decides when it is done."""
@@ -185,7 +178,8 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int, owner=
         # measures progress even when the bounded files rotate.
         try:
             code = run_bounded(lane.command, _deadline(lane), stream=fh,
-                               no_progress=_no_progress(lane), owner=owner, **_popen_kwargs(root, lane))
+                               no_progress=_no_progress(lane), owner=owner,
+                               **launch_spec(root, lane).popen_kwargs())
         except NoProgress as stalled:
             _raise_stalled(fh, lane, log_path, attempt, stalled.seconds)
         except ToolError as failed:  # a failed start: the log says why, as it does for a kill
@@ -266,7 +260,7 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     """
     if lane.parser != "coveragepy":
         return ""
-    shard_dir = root / lane.cwd if lane.cwd else root
+    shard_dir = launch_spec(root, lane).cwd
     shards = sorted(shard_dir.glob(".coverage.*"))
     if not shards:
         return ""
@@ -1004,8 +998,7 @@ def _retest_owned(root: Path, lane: Lane, tests: set[str], owner) -> set[str]:
     from .logs import command_log
 
     command, additions = _retest_template(lane.retest_command, tests)
-    kwargs = _popen_kwargs(root, lane)
-    kwargs["env"] = {**(kwargs.get("env") or os.environ), **additions}
+    kwargs = launch_spec(root, lane).popen_kwargs(additions)
     log_path = _lane_log_path(root, lane)
     before = _mtime_ns(root / lane.results_artifact)
     with command_log(log_path, max_bytes=lane.log_max_bytes, append=True) as fh:

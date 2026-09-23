@@ -740,8 +740,9 @@ def test_an_empty_segment_names_no_problem(tmp_path):
     """A trailing operator leaves an empty segment; there is no runner in it
     to resolve and nothing it names."""
     from crapkit.cli import admin
+    from crapkit.lane_command import LaunchSpec
 
-    assert admin._segment_problems("py", tmp_path, []) == []
+    assert admin._segment_problems("py", LaunchSpec(tmp_path), []) == []
 
 # --- which interpreter init writes into the config ---------------------------
 
@@ -1002,24 +1003,8 @@ def test_a_mis_cased_path_key_is_read_the_way_the_child_will_read_it(tmp_path, m
             "POSIX reads PATH alone, so the lane runs on the process PATH here")
 
 
-def test_only_windows_reads_a_mis_cased_key_as_the_path():
-    """Both branches on one machine, since a platform-gated assertion only ever
-    exercises the half that machine runs. `windows` is the same injected-flag
-    shape `config.shell_words` uses for the same reason."""
-    lane = Lane(name="be", command="runner --cov", artifact="cov.json",
-                parser="coveragepy", scopes=("be",), env=(("Path", "/opt/bin"),))
-
-    assert admin._lane_path(lane, windows=True) == "/opt/bin"
-    assert admin._lane_path(lane, windows=False) is None
-
-
-def test_the_exact_key_is_the_lanes_path_on_either_platform():
-    lane = Lane(name="be", command="runner --cov", artifact="cov.json",
-                parser="coveragepy", scopes=("be",), env=(("PATH", "/opt/bin"),))
-
-    assert admin._lane_path(lane, windows=True) == "/opt/bin"
-    assert admin._lane_path(lane, windows=False) == "/opt/bin"
-
+# Which key names the PATH on which platform is the launch spec's rule, pinned
+# in test_lane_command.py; these tests pin the doctor finding it decides.
 
 def test_a_mis_cased_path_key_does_not_hide_the_process_path_from_posix(tmp_path,
                                                                         monkeypatch):

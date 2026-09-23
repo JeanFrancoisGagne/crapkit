@@ -1,12 +1,19 @@
-"""How a lane command reads: the step that runs pytest, and the python heading it.
+"""How a lane starts and how its command reads: the directory and environment its
+child gets, the step that runs pytest, and the python heading that step.
 
-lanes.py names that python in its missing pytest-cov hint, and doctor asks it
-whether pytest-cov imports. Both read the command through lane_command, so the
-rules are pinned here once rather than through either caller's privates.
+lanes.py starts the lane from these and names that python in its missing
+pytest-cov hint; doctor resolves words and asks that python whether pytest-cov
+imports. Both read the lane through lane_command, so the rules are pinned here
+once rather than through either caller's privates.
 """
+import os
+from pathlib import Path
+
 import pytest
 
-from crapkit.lane_command import first_word, is_python, pytest_head, pytest_python, pytest_step
+from crapkit.config import Lane
+from crapkit.lane_command import (first_word, is_python, launch_spec, pytest_head,
+                                  pytest_python, pytest_step)
 
 
 # --- only a python running pytest can be asked about pytest_cov ---------------
@@ -62,3 +69,111 @@ def test_a_quoted_interpreter_path_is_one_first_word():
 ])
 def test_a_python_is_named_by_the_last_segment_of_the_word(word, python):
     assert is_python(word) is python
+
+
+# --- where the lane's child starts, and what it sees ---------------------------
+#
+# lanes.py starts the lane from `root / cwd` with `{**os.environ, **lane.env}`,
+# and doctor used to rebuild each half by hand: the cwd three times, the PATH
+# key rule once, in a mirror of the merge. The launch spec is the one copy.
+
+def _lane(**fields) -> Lane:
+    return Lane(name="be", command="runner --cov", artifact="cov.json",
+                parser="coveragepy", scopes=("be",), **fields)
+
+
+def test_the_child_starts_in_the_lanes_cwd_under_the_root(tmp_path):
+    assert launch_spec(tmp_path, _lane(cwd="web")).cwd == tmp_path / "web"
+    assert launch_spec(tmp_path, _lane()).cwd == tmp_path
+
+
+def test_the_lanes_env_is_merged_over_the_process_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("CRAPKIT_SPEC_SET", "process")
+    monkeypatch.setenv("CRAPKIT_SPEC_KEPT", "process")
+
+    env = launch_spec(tmp_path, _lane(env=(("CRAPKIT_SPEC_SET", "lane"),))).child_env()
+
+    assert (env["CRAPKIT_SPEC_SET"], env["CRAPKIT_SPEC_KEPT"]) == ("lane", "process")
+
+
+def test_a_lane_that_adds_nothing_lets_the_child_inherit(tmp_path):
+    assert launch_spec(tmp_path, _lane()).popen_kwargs() == {"cwd": tmp_path, "env": None}
+
+
+def test_what_a_caller_adds_goes_over_the_lanes_own(tmp_path):
+    """The flake retest hands its test ids to the command through the
+    environment, on top of whatever the lane itself sets."""
+    assert launch_spec(tmp_path, _lane(env=(("A", "lane"),))).child_env({"A": "retest"})["A"] == \
+        "retest"
+    assert launch_spec(tmp_path, _lane()).popen_kwargs({"B": "1"})["env"]["B"] == "1"
+
+
+def test_lanes_with_one_cwd_and_env_share_one_spec(tmp_path):
+    """What a probe memo keys on: two lanes whose children start the same way
+    get one answer, and a different env is a different question."""
+    first = launch_spec(tmp_path, _lane())
+    second = launch_spec(tmp_path, Lane(name="ui", command="pnpm vitest", artifact="ui.json",
+                                        parser="istanbul", scopes=("ui",)))
+
+    assert first == second and hash(first) == hash(second)
+    assert launch_spec(tmp_path, _lane(env=(("CI", "1"),))) != first
+
+
+def test_only_windows_reads_a_mis_cased_key_as_the_path(tmp_path):
+    """`Path` and `PATH` are one name to Windows and two to POSIX. The merge is
+    a plain dict update, so on POSIX a lane declaring `Path` adds a second
+    variable and really runs on the process PATH. Both branches on one machine,
+    since a platform-gated assertion only exercises the half that machine runs."""
+    spec = launch_spec(tmp_path, _lane(env=(("Path", "/opt/bin"),)))
+
+    assert spec.path(windows=True) == "/opt/bin"
+    assert spec.path(windows=False) is None
+
+
+def test_the_exact_key_is_the_lanes_path_on_either_platform(tmp_path):
+    spec = launch_spec(tmp_path, _lane(env=(("PATH", "/opt/bin"),)))
+
+    assert spec.path(windows=True) == "/opt/bin"
+    assert spec.path(windows=False) == "/opt/bin"
+
+
+def test_a_lane_that_declares_no_path_leaves_the_process_one(tmp_path):
+    assert launch_spec(tmp_path, _lane(env=(("CI", "1"),))).path() is None
+
+
+def _runner_on(directory: Path) -> str:
+    """An executable named the way this platform names one, and the word a lane
+    would call it by."""
+    directory.mkdir(parents=True, exist_ok=True)
+    name = "suite.bat" if os.name == "nt" else "suite"
+    runner = directory / name
+    runner.write_text("", encoding="utf-8")
+    runner.chmod(0o755)
+    return name
+
+
+def test_a_word_with_a_separator_resolves_from_the_lanes_cwd(tmp_path, monkeypatch):
+    """The shell reads a path from the directory the lane runs in, and which()
+    reads it from wherever this process stands."""
+    repo = tmp_path / "repo"
+    name = _runner_on(repo / "web" / "bin")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    word = os.path.join("bin", name)
+
+    assert launch_spec(repo, _lane(cwd="web")).resolve(word) == str(repo / "web" / word)
+    assert launch_spec(repo, _lane()).resolve(word) is None
+
+
+def test_a_bare_name_resolves_on_the_lanes_own_path(tmp_path, monkeypatch):
+    toolchain = tmp_path / "toolchain"
+    name = _runner_on(toolchain)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+    found = launch_spec(tmp_path, _lane(env=(("PATH", str(toolchain)),))).resolve(name)
+
+    assert found is not None and Path(found).parent == toolchain
+    assert launch_spec(tmp_path, _lane()).resolve(name) is None

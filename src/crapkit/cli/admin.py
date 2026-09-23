@@ -15,7 +15,7 @@ from pathlib import Path
 from .. import __version__, config
 from ..config import load_config_text
 from ..doctor import Finding
-from ..lane_command import first_word, pytest_head, pytest_python
+from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
@@ -646,7 +646,7 @@ def _doctor_scopes(root: Path, cfg, files: list[str], show_files: bool) -> list[
 
 
 def _lane_problem(root: Path, lane) -> str | None:
-    if lane.cwd and not (root / lane.cwd).is_dir():
+    if not launch_spec(root, lane).cwd.is_dir():
         return f"lane {lane.name!r}: cwd {lane.cwd!r} does not exist"
     return None
 
@@ -660,61 +660,20 @@ def _missing_named_script(cwd: Path, tok: str) -> bool:
     return not (cwd / tok).is_file()
 
 
-def _lane_path(lane, windows: bool | None = None) -> str | None:
-    """The PATH the lane's runner will be looked for on, or None when the lane
-    names none and the process PATH is the whole answer.
+def _segment_problems(name: str, spec: LaunchSpec, tokens: list[str]) -> list[str]:
+    """One command's argv: its runner, looked up where the lane's shell looks
+    for it, then the files it names. Nothing is executed.
 
-    lanes.py starts the lane with `{**os.environ, **lane.env}`, so a lane that
-    ships its own toolchain through `[lane.env] PATH` runs a runner crapkit's
-    own process cannot see. doctor asked which() with its own environment and
-    FAILed that lane at exit 1 — a red CI check for a lane that works. The
-    lane's cwd was already threaded through this check; its env was not.
-
-    The key is matched the way that merge matches it, which is not the way
-    cmd.exe reads one. The merge is a plain dict update: on POSIX a lane
-    declaring `Path` adds a second variable and leaves `PATH` alone, so the lane
-    really runs on the process PATH and reading the mis-cased key here would
-    bring back the same false FAIL for a runner that resolves. Only on Windows,
-    where the env block is one case-insensitive namespace, does `Path` carry the
-    value the child will read.
-    """
-    windows = os.name == "nt" if windows is None else windows
-    for key, value in lane.env:
-        if key == "PATH" or (windows and key.upper() == "PATH"):
-            return value
-    return None
-
-
-def _missing_runner(cwd: Path, tok: str, path: str | None = None) -> bool:
-    r"""A runner the lane could not start, asked the way the shell will ask.
-
-    A first word carrying a separator is a path, and the shell reads it from the
-    directory the lane runs in (lanes.py starts the lane with cwd=root/lane.cwd).
-    which() reads it against whatever directory doctor itself was started in, so
-    the `.venv\Scripts\python.exe` init writes cleared doctor from inside the
-    repo and failed it from everywhere else — including `mcp_server._run_cli`,
-    which spawns `crapkit doctor --repo <repo>` with no cwd of its own.
-
-    A bare name stays PATH's question — the lane's PATH when it declares one,
-    which is what `path` carries.
-    """
-    import shutil
-
-    if os.sep in tok or "/" in tok:
-        return not (cwd / tok).is_file()
-    return shutil.which(tok, path=path) is None
-
-
-def _segment_problems(name: str, cwd: Path, tokens: list[str],
-                      path: str | None = None) -> list[str]:
-    """One command's argv: its runner, then the files it names. Nothing is
-    executed."""
+    A runner the lane's own `[lane.env] PATH` supplies resolves, and a relative
+    launcher resolves from the lane's cwd, whatever directory doctor started
+    in: `mcp_server._run_cli` spawns `crapkit doctor --repo <repo>` with no cwd
+    of its own, and asking from there failed every repo but the server's."""
     if not tokens:
         return []
     runner = ([f"lane {name!r}: executable {tokens[0]!r} does not resolve on PATH"]
-              if _missing_runner(cwd, tokens[0], path) else [])
+              if spec.resolve(tokens[0]) is None else [])
     return runner + [f"lane {name!r}: command names {tok!r}, which does not exist"
-                     for tok in tokens[1:] if _missing_named_script(cwd, tok)]
+                     for tok in tokens[1:] if _missing_named_script(spec.cwd, tok)]
 
 
 def _lane_command_problems(root: Path, lane) -> list[str]:
@@ -726,9 +685,9 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
     interpreter path at its space (`'"C:/Program'` resolves nowhere), it never
     looked past the first word, so a dead runner after `&&` passed doctor, and
     it read a quoted `-k "tests/gone.py or x"` as a test file the repo owes."""
-    cwd = root / lane.cwd if lane.cwd else root
+    spec = launch_spec(root, lane)
     return [problem for segment in config.shell_segments(lane.command)
-            for problem in _segment_problems(lane.name, cwd, segment, _lane_path(lane))]
+            for problem in _segment_problems(lane.name, spec, segment)]
 
 
 def _lane_start_problem(lane) -> str | None:
