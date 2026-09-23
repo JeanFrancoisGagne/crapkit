@@ -26,5 +26,5 @@ def test_worklist_refuses_twins_no_run_placed_on_their_line(tmp_path, capsys):
     assert code == 5
     assert json.loads(out)["error"] == {
         "exit": 5, "kind": "tool",
-        "message": "ambiguous legacy function identity in src/legacy.py: cb( ); "
+        "message": "ambiguous legacy function identity in src/legacy.py: cb( ) in run 1; "
                    "refresh analysis before selecting or comparing these functions"}
