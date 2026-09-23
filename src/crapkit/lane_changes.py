@@ -26,9 +26,9 @@ def _start(root: Path, *args: str):
     gitio owns how crapkit spawns git: the diff.relative and core.quotePath
     flags and the display state it strips. `--literal-pathspecs` makes every
     path a path, so a scope named `src/[id]` is not read as a glob."""
-    from .gitio import _Started
+    from .gitio import start_read
 
-    return _Started(root, ("--literal-pathspecs", *args), text=False, stdin=False)
+    return start_read(root, "--literal-pathspecs", *args)
 
 
 def _names(out: bytes) -> tuple[str, ...]:

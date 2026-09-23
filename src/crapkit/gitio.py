@@ -397,6 +397,12 @@ class _Started:
             self._proc.communicate()
 
 
+def start_read(root: Path, *args: str) -> _Started:
+    """One git read with no stdin, started now and collected later with
+    `.result()`, which answers bytes or raises GitError."""
+    return _Started(root, args, text=False, stdin=False)
+
+
 def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
                       force_text: bool = False) -> tuple[str, ...]:
     # Source body bytes need no character decoding to count hunk lines.
