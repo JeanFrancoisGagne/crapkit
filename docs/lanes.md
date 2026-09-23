@@ -308,7 +308,7 @@ py.json
 | `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
 | `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
 | `mutate-tmp/` | Recognized concurrent mutation runs, removed after completion or recovered under an exclusive lease. | |
-| `test-runs/` | Marked default development test evidence. Crapkit's development runner expires it by age and count at each default start. Explicit output and active leases are preserved. | |
+| `test-runs/` | Marked default test evidence from crapkit's own development runner, `tools/testing/run.py`, which prunes it by age and count (`--retention-days`, `--retention-count`) before each default run. `clean` leaves it alone. Explicit output and active leases are preserved. | |
 | `report.html` | Where `crapkit report` writes by default. | |
 
 Since 0.4.5 the rollup is filled once per run and pruned with its run, which is why `trend`

@@ -1026,9 +1026,11 @@ The additive `resources` object in ordinary `doctor --json` reports
 `pool_worker_limit`, `default_chunks_per_worker`, `default_source_bytes_per_worker`,
 `inherited_analysis_workers`, `memory_budget_mb`, `worker_memory_estimate_mb`,
 `memory_is_hard_limit`, `estimated_pool_memory_mb`, `budget_directory`,
-`coordination` and `serial_fallback`. It also carries
-`log_max_bytes`, `test_retention_days` and `test_retention_count`. These describe
-the effective policy, not sampled utilization. A memory budget is a pool-sizing
+`coordination` and `serial_fallback`. It also carries `log_max_bytes`.
+`test_retention_days` and `test_retention_count` are deprecated and always `0`:
+crapkit applies no test evidence retention, and its development runner takes
+`--retention-days` and `--retention-count` instead. These fields describe the
+effective policy, not sampled utilization. A memory budget is a pool-sizing
 estimate, not an operating-system allocation limit.
 
 The two automatic sizing fields describe the active multiprocessing start method:
@@ -1043,16 +1045,16 @@ These fields report policy; they are not configuration keys or memory limits.
 
 ### `clean --json`
 
-`clean --dry-run --json` previews configured retention and temporary mutation
-recovery. Removing `--dry-run` performs the eligible removals. The response has
-`schema: 1`, `dry_run`, `test_runs` and `temporary_mutations`.
+`clean --dry-run --json` previews temporary mutation recovery. Removing
+`--dry-run` performs the eligible recoveries. The response has `schema: 1`,
+`dry_run`, `test_runs` and `temporary_mutations`.
 
 | Field | Shape |
 |---|---|
-| `test_runs` | Object with path arrays `removed`, `planned`, `active`, `unproven` and `changed`. A changed receipt is preserved because its retention eligibility changed during cleanup. |
+| `test_runs` | Object with path arrays `removed`, `planned`, `active`, `unproven` and `changed`, always empty. `clean` applies no test evidence retention; crapkit's own development runner does, with `tools/testing/run.py --retention-days N --retention-count N`. The object stays so readers keep every key. |
 | `temporary_mutations` | Array of `{path, status, reason}`. Status is `recovered`, `planned`, `active`, `unproven` or `failed`. A failed recovery exits 1. |
 
-Active leases, unrecognized evidence and caller-managed output are preserved.
+Active leases and unrecognized evidence are preserved.
 Intentional mutation pools require the existing `mutate --drop-pool` command.
 
 ### `doctor --plugin-root PATH`
