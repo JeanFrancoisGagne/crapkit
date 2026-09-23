@@ -40,7 +40,8 @@ from pathlib import Path
 name = sys.argv[1]
 Path(name + ".json").write_text(json.dumps({
     "python": sys.executable,
-    "coverage_config": os.environ.get("COVERAGE_PROCESS_CONFIG")}), encoding="utf-8")
+    "coverage_config": os.environ.get("COVERAGE_PROCESS_CONFIG"),
+    "coverage_started": "coverage" in sys.modules}), encoding="utf-8")
 loc = {"start": {"line": 1, "column": 0}, "end": {"line": 3, "column": 1}}
 Path("coverage").mkdir(exist_ok=True)
 Path("coverage", name + ".json").write_text(json.dumps({"src/" + name + ".js": {
@@ -65,7 +66,8 @@ def recording_repo(tmp_path):
     (repo / "record.py").write_text(RECORDER, encoding="utf-8")
     (repo / ".gitignore").write_text(".crapkit/\ncoverage/\n*.json\n", encoding="utf-8")
     (repo / "crapkit.toml").write_text(
-        _lane("opted", 'env = { COVERAGE_PROCESS_CONFIG = "" }\n') + _lane("plain", ""),
+        _lane("opted", 'env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }\n')
+        + _lane("plain", ""),
         encoding="utf-8")
     git_commit_all(repo, "two recording lanes")
     return repo
@@ -94,6 +96,10 @@ def test_a_bare_python_lane_runs_the_suite_interpreter_and_keeps_its_opt_out(
             for name in ("opted", "plain")}
     assert {Path(row["python"]).parent for row in seen.values()} == {Path(SUITE_BIN)}
     assert not seen["opted"]["coverage_config"]
+    assert seen["opted"]["coverage_started"] is False
     # Under the suite's coverage run the CLI child re-serializes its config, so
-    # the plain lane is held to the same presence, not the same text.
-    assert bool(seen["plain"]["coverage_config"]) == bool(os.environ.get("COVERAGE_PROCESS_CONFIG"))
+    # the plain lane is held to the same presence, not the same text, and its
+    # coverage starts exactly when the suite measures subprocesses.
+    measured = bool(os.environ.get("COVERAGE_PROCESS_CONFIG"))
+    assert bool(seen["plain"]["coverage_config"]) == measured
+    assert seen["plain"]["coverage_started"] is measured

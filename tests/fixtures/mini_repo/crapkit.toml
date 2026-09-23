@@ -15,15 +15,16 @@ languages = ["python"]
 [exclude]
 globs = ["**/node_modules/**", "**/*.test.ts", "**/test_*.py", "make_cov.py", "append_alert.py"]
 
-# An empty COVERAGE_PROCESS_CONFIG stops the suite's own subprocess coverage
-# from starting in each lane child: nothing measures this fixture's tooling.
+# The suite's own subprocess coverage skips each lane child: nothing measures
+# this fixture's tooling. An empty COVERAGE_PROCESS_CONFIG disarms coverage's
+# hook (pytest-cov 7), an empty COV_CORE_DATAFILE pytest-cov 6's.
 [[lane]]
 name = "unit"
 command = "python make_cov.py"
 artifact = "coverage/coverage-final.json"
 parser = "istanbul"
 scopes = ["src"]
-env = { COVERAGE_PROCESS_CONFIG = "" }
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
 
 [[lane]]
 name = "py"
@@ -33,4 +34,4 @@ parser = "coveragepy"
 scopes = ["py"]
 full_suite = false
 results_artifact = "junit.xml"
-env = { COVERAGE_PROCESS_CONFIG = "" }
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
