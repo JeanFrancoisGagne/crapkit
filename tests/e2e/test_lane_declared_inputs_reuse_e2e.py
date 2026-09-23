@@ -207,6 +207,22 @@ def test_a_stamp_commit_that_left_history_reruns_the_lane(repo: Path):
     assert lane_unchanged(repo, _lane(repo)) is False
 
 
+def _refuse_kill(self):
+    raise AssertionError(f"a running git read was killed: {self.args}")
+
+
+def test_a_stamp_commit_that_left_history_kills_no_git_read(repo: Path, monkeypatch):
+    """Reuse stops at the ancestry answer and never needs the status reads. A
+    worktree `git diff` killed while it refreshes the index leaves
+    .git/index.lock behind, so those reads are waited for, never killed."""
+    _measure(repo)
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setattr(subprocess.Popen, "kill", _refuse_kill)
+
+    assert lane_unchanged(repo, _lane(repo)) is False
+    assert not (repo / ".git" / "index.lock").exists()
+
+
 def test_a_measurement_taken_over_dirty_inputs_is_no_proof(repo: Path):
     """The artifact describes the edited file, not the commit the stamp names."""
     _write(repo, "src/app.ts", APP_TS + "// wip\n")

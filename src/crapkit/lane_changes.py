@@ -12,6 +12,7 @@ was most of the cost, and none of its answer could change a verdict.
 """
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 
 from .errors import GitError
@@ -30,19 +31,9 @@ def _start(root: Path, *args: str):
     return _Started(root, ("--literal-pathspecs", *args), text=False, stdin=False)
 
 
-def _names(read) -> tuple[str, ...]:
+def _names(out: bytes) -> tuple[str, ...]:
     """NUL records, decoded without newline conversion, quoting or trimming."""
-    return tuple(name for name in read.result().decode("utf-8").split("\0") if name)
-
-
-def _behind_head(read) -> bool:
-    """`merge-base --is-ancestor` answers in its exit code alone: 0 is yes, and
-    anything else, a commit this clone does not hold included, is no."""
-    try:
-        read.result()
-    except GitError:
-        return False
-    return True
+    return tuple(name for name in out.decode("utf-8").split("\0") if name)
 
 
 class ChangeReads:
@@ -53,13 +44,16 @@ class ChangeReads:
     from the start; any other commit is started when first asked about, since a
     concurrent run can rewrite the stamps between two reads of them. With no
     paths nothing can change under them, so no diff or status read starts at
-    all. Use it as a context manager: a read nobody collected is stopped on the
-    way out.
+    all. Use it as a context manager: on the way out it waits for every read
+    nobody collected and drops the answer. None is killed: a worktree `git diff`
+    refreshes the index under .git/index.lock when tracked files are stat-dirty,
+    and one killed mid-refresh leaves the lock behind, after which every `git
+    add` and commit in the checkout fails.
     """
 
     def __init__(self, root: Path, commits, paths) -> None:
         self._root, self._spec, self._paths = root, ("--", *paths), bool(paths)
-        self._started: list = []
+        self._uncollected: set = set()
         self._ancestry: dict = {}
         self._diffs: dict = {}
         self._answers: dict = {}
@@ -81,8 +75,22 @@ class ChangeReads:
 
     def _begin(self, *args: str):
         read = _start(self._root, *args)
-        self._started.append(read)
+        self._uncollected.add(read)
         return read
+
+    def _collect(self, read) -> bytes:
+        """The read's answer. Each read is collected once, here or in close()."""
+        self._uncollected.discard(read)
+        return read.result()
+
+    def _succeeds(self, read) -> bool:
+        """`merge-base --is-ancestor` answers in its exit code alone: 0 is yes, and
+        anything else, a commit this clone does not hold included, is no."""
+        try:
+            self._collect(read)
+        except GitError:
+            return False
+        return True
 
     def _ancestor_read(self, commit: str):
         if commit not in self._ancestry:
@@ -101,23 +109,24 @@ class ChangeReads:
 
     def is_ancestor(self, commit: str) -> bool:
         return self._once(("ancestor", commit),
-                          lambda: _behind_head(self._ancestor_read(commit)))
+                          lambda: self._succeeds(self._ancestor_read(commit)))
 
     def diff_names_since(self, commit: str) -> tuple[str, ...]:
         read = self._diff_read(commit)
-        return self._once(("diff", commit), lambda: _names(read) if read else ())
+        return self._once(("diff", commit), lambda: _names(self._collect(read)) if read else ())
 
     def status_names(self) -> tuple[str, ...]:
         return self._once("status", lambda: tuple(sorted(
-            {name for read in self._status for name in _names(read)})))
+            {name for read in self._status for name in _names(self._collect(read))})))
 
     def changed_since(self, commit: str) -> tuple[str, ...]:
         """Committed, staged, unstaged or untracked: every change under the paths."""
         return tuple(sorted({*self.diff_names_since(commit), *self.status_names()}))
 
     def close(self) -> None:
-        for read in self._started:
-            read.close()
+        for read in tuple(self._uncollected):
+            with suppress(GitError):
+                self._collect(read)
 
     def __enter__(self) -> ChangeReads:
         return self

@@ -80,7 +80,7 @@ def test_a_commit_this_clone_does_not_hold_is_not_behind_head(repo):
         assert reads.is_ancestor("0" * 40) is False
 
 
-def test_a_failed_spawn_stops_the_reads_already_started(repo, monkeypatch):
+def test_a_failed_spawn_waits_for_the_reads_already_started(repo, monkeypatch):
     root, first = repo
     started = []
     real = lane_changes._start

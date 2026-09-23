@@ -125,6 +125,26 @@ def test_a_committed_change_under_a_scope_is_still_seen(repo):
     assert states["web"] == ""
 
 
+def _refuse_kill(self):
+    raise AssertionError(f"a running git read was killed: {self.args}")
+
+
+def test_a_stamp_commit_outside_history_reads_stale_and_kills_no_git_read(repo, monkeypatch):
+    """After an amend the verdict stops at the ancestry answer, so the status
+    reads are never collected. A worktree `git diff` refreshes the index under
+    .git/index.lock when tracked files are stat-dirty; killed mid-refresh it
+    leaves the lock behind and every later `git add` or commit fails."""
+    root, cfg = repo
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setattr(subprocess.Popen, "kill", _refuse_kill)
+
+    states = dict(lane_states(root, cfg))
+
+    assert "files in its scopes changed" in states["src"]
+    assert "files in its scopes changed" in states["web"]
+    assert not (root / ".git" / "index.lock").exists()
+
+
 def test_without_git_every_stamped_lane_reads_stale(repo, monkeypatch):
     """No git executable at all: nothing can prove an artifact current."""
     root, cfg = repo
