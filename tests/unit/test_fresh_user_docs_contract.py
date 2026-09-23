@@ -293,13 +293,14 @@ def _packet_keys(monkeypatch) -> set[str]:
                          ("_brief_versions", {"crapkit": "0"})):
         monkeypatch.setattr(queue, name, lambda *a, _v=answer, **k: _v)
     for module, name in ((crapkit.coupling_cache, "load_coupling"),
-                         (crapkit.dup, "find_twins"), (crapkit.gitio, "file_log_patches")):
+                         (crapkit.dup, "twins_in"), (crapkit.gitio, "file_log_patches")):
         monkeypatch.setattr(module, name, lambda *a, **k: [])
     store = SimpleNamespace(read_rows=lambda *a, **k: [row],
                             read_scored=lambda *a, **k: [row],
                             read_scored_file=lambda *a, **k: [row],
                             function_history=lambda *a, **k: [],
-                            attempts_for=lambda keys: {key: [] for key in keys})
+                            attempts_for=lambda keys: {key: [] for key in keys},
+                            twin_index=lambda run_id, build: build())
     loader = queue._BriefLoader(Path("/repo"), cfg, store, {"id": 7, "commit": "abc123def4567"})
     # `schema` is stamped on the way out by _print_json, not by the builder
     return set(queue._brief_packet(loader, row)) | {"schema"}

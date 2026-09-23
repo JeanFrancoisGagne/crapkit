@@ -522,10 +522,9 @@ def _brief_coupling(ranked: list, path: str) -> list[dict]:
 
 
 def _brief_twins(loader, row) -> list[dict]:
-    from ..dup import find_twins
+    from ..dup import twins_in
 
-    return packet.with_contained(find_twins(row, loader.rows(), loader.sources(),
-                                            indexed=loader.twin_index()))
+    return packet.with_contained(twins_in(loader.twin_index(), row, loader.source(row.path)))
 
 
 class _BriefLoader:
@@ -546,6 +545,7 @@ class _BriefLoader:
         self._scored_files: dict = {}
         self._file_keys: dict = {}
         self._attempts: dict = {}
+        self._texts: dict = {}
 
     def _once(self, key: str, build):
         """The one read behind `key`, kept for every packet after the first."""
@@ -556,26 +556,35 @@ class _BriefLoader:
     def rows(self) -> list:
         return self._once("rows", lambda: self.store.read_rows(self.latest["id"]))
 
-    def sources(self) -> dict:
-        return self._once("sources",
-                          lambda: _load_sources(self.root, {r.path for r in self.rows()}))
-
     def twin_index(self):
-        """Every function's shingles, built once for the whole batch.
+        """The run's shingle index, fetched once for the whole batch.
 
-        Built at find_twins' own min_lines. Nothing reaches brief with another
-        one today; a `brief --min-lines` would have to key this memo on it, and
-        until then find_twins rebuilds rather than answering at the wrong
-        threshold. Process-local by construction: shingles are builtin hash()
-        values, so this memo can never become a file.
+        The store keeps one per run. The first packet on a run builds it from
+        every scored file and stores it; every later packet, in this process or
+        another, shingles its own function and looks the rest up. Built at
+        dup.STORED_MIN_LINES, the only threshold brief asks at and the only one
+        the store is ever handed.
         """
-        from ..dup import function_index
-
         return self._once("twin_index",
-                          lambda: function_index(self.rows(), self.sources()))
+                          lambda: self.store.twin_index(self.latest["id"], self._build_twin_index))
+
+    def _build_twin_index(self):
+        from ..dup import STORED_MIN_LINES, function_index
+
+        rows = self.rows()
+        # the texts go straight into the build and die with it: a batch holds
+        # one file's text per packet, never the repo's
+        return function_index(rows, _load_sources(self.root, {r.path for r in rows}),
+                              STORED_MIN_LINES)
 
     def source(self, path: str) -> str | None:
-        return self.sources().get(path)
+        """One file's text, read the first time a packet asks for it.
+
+        Never the whole repo: a packet shows its own function and its twins come
+        from the stored index. A path that is not a file reads as None."""
+        if path not in self._texts:
+            self._texts[path] = _load_sources(self.root, {path}).get(path)
+        return self._texts[path]
 
     def churn(self) -> dict:
         return self._once("churn",

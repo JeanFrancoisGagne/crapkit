@@ -68,6 +68,12 @@ class _Store:
         self._seen("open_claims")
         return []
 
+    def twin_index(self, run_id, build):
+        """No index stored for the run yet, so every ask builds: the first
+        brief on a fresh run, the one that pays for the repo-wide read."""
+        self._seen("twin_index")
+        return build()
+
 
 @pytest.fixture()
 def counted(monkeypatch) -> dict:
@@ -92,7 +98,7 @@ def counted(monkeypatch) -> dict:
     monkeypatch.setattr(queue, "_ratchet_entries", counter("ratchet", None))
     monkeypatch.setattr(queue, "_brief_versions", counter("versions", {"crapkit": "0"}))
     monkeypatch.setattr(crapkit.coupling_cache, "load_coupling", counter("coupling", []))
-    monkeypatch.setattr(crapkit.dup, "find_twins", counter("twins", []))
+    monkeypatch.setattr(crapkit.dup, "twins_in", counter("twins", []))
     monkeypatch.setattr(crapkit.dup, "function_index", counter("twin_index", []))
     monkeypatch.setattr(crapkit.gitio, "file_log_patches", counter("mark_history", []))
     return seen
@@ -111,12 +117,14 @@ def test_two_packets_in_one_file_read_the_repo_once(counted):
     queue._brief_packet(ld, ALPHA)
     queue._brief_packet(ld, HELPER)
 
-    assert counted["sources"] == 1, "one source read for the whole batch"
+    assert counted["sources"] == 2, \
+        "one repo-wide read to build the twin index, one read of the file both packets show"
     assert counted["churn"] == 1
     assert counted["coupling"] == 1, "the global ranking is cut per path, not rebuilt"
     assert counted["tracked"] == 1, "one ls-files for the batch, not one per packet"
     assert counted["uncovered"] == 1 and counted["head"] == 1 and counted["versions"] == 1
     assert counted["twin_index"] == 1, "the repo is shingled once, not once per packet"
+    assert store.calls["twin_index"] == 1, "the stored index is asked for once per batch"
     assert counted["twins"] == 2, "each packet still asks about its own function"
     assert store.calls["read_rows"] == 1
     assert store.calls["read_scored_file"] == 1, "one scored-file read per distinct path"
@@ -130,7 +138,8 @@ def test_a_second_file_costs_its_own_scored_read_and_nothing_else(counted):
     queue._brief_packet(ld, BETA)
 
     assert store.calls["read_scored_file"] == 2, "two paths, two reads"
-    assert counted["sources"] == 1 and counted["churn"] == 1 and counted["coupling"] == 1
+    assert counted["sources"] == 3, "the index build, then each packet's own file once"
+    assert counted["churn"] == 1 and counted["coupling"] == 1
     assert counted["twin_index"] == 1, "the shingle index spans the batch, not one file"
 
 
