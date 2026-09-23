@@ -412,6 +412,11 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   each set `env = { COVERAGE_FILE = ".coverage.<lane>" }`.
 - `next-item`'s item and `get_next_item`'s output schema carry `occurrence`, as
   docs/agent-json.md always showed. The key was missing since 0.7.0.
+- The MCP output schemas declare every field their results carry: `occurrence` on
+  `list_worklist` rows, `get_function_brief`'s `scored` and `file_functions[]` and
+  `check_gate`'s `functions[]`, `handle` on `list_worklist` rows, and an integer value for
+  each path in `check_gate`'s `gate.ceilings`. The worklist example and field list in
+  docs/agent-json.md show `handle` and `occurrence`.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 

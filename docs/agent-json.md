@@ -628,15 +628,16 @@ $ crapkit worklist --json
     {
       "authors": 1, "ccn": 7, "ccn_std": 7, "commits": 2, "cov": 0.0, "crap": 56.0,
       "end": 15, "flag": "measured", "function": "render( rows , wide , totals , header )",
-      "nloc": 12, "path": "calc/report.py", "ratchet_mark": null, "remedy": "decompose",
-      "risk": 3.5, "scope": "calc", "start": 4, "weight": 0.5
+      "handle": "render", "nloc": 12, "occurrence": 1, "path": "calc/report.py",
+      "ratchet_mark": null, "remedy": "decompose", "risk": 3.5, "scope": "calc", "start": 4,
+      "weight": 0.5
     },
     {
       "authors": 1, "ccn": 14, "ccn_std": 14, "commits": 2, "cov": 0.45,
       "crap": 46.60950000000001, "end": 27, "flag": "measured",
-      "function": "classify( score , attempts , late , bonus )",
-      "nloc": 24, "path": "calc/grade.py", "ratchet_mark": null, "remedy": "decompose",
-      "risk": 0.0252, "scope": "calc", "start": 4, "weight": 0.0018
+      "function": "classify( score , attempts , late , bonus )", "handle": "classify",
+      "nloc": 24, "occurrence": 1, "path": "calc/grade.py", "ratchet_mark": null,
+      "remedy": "decompose", "risk": 0.0252, "scope": "calc", "start": 4, "weight": 0.0018
     }
   ],
   "active_total": 2,
@@ -668,7 +669,8 @@ Each entry carries `scope`, `path`, `function`, `start`, `end`, `occurrence`, `c
 run that scored it, and `ratchet_mark`: the committed mark's value, or `null` when the
 function carries no mark or the repo has no marks file. The mark is read under the
 function's own ratchet key, so twins sharing a long name report their own marks and not
-each other's. The four run fields are `null` on an inventory-only run, which scored no
+each other's. `handle` is the short name form `brief`, `explain` and `claims release` take:
+the bare identifier, or `(anonymous)#N` for a function lizard could not name. The four run fields are `null` on an inventory-only run, which scored no
 verdict. `worklist` still ranks on complexity times churn, never on `crap`: `next-item` is
 the queue ordered by score, and `brief` the whole packet.
 

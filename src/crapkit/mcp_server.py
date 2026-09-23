@@ -140,7 +140,12 @@ _WORKLIST_ITEM = {'type': 'object',
                 'ratchet_mark': {'type': ('number', 'null'),
                                  'description': 'the committed ratchet mark on this function, read '
                                                 'under its own ratchet key; null when it carries '
-                                                'none or the repo has no marks file'}}}
+                                                'none or the repo has no marks file'},
+                'occurrence': _OCCURRENCE,
+                'handle': {'type': 'string',
+                           'description': 'short name form: the bare identifier, or '
+                                          '(anonymous)#N for a function lizard could not name; '
+                                          'pass it to get_function_brief as name'}}}
 
 TOOLS: tuple[dict, ...] = (
     {
@@ -512,6 +517,7 @@ TOOLS: tuple[dict, ...] = (
                     "end": {
                         "type": "integer",
                         "description": "last line, inclusive"},
+                    "occurrence": _OCCURRENCE,
                     "ccn": {
                         "type": "integer",
                         "description": "min(ccn_std, ccn_mod)"},
@@ -603,7 +609,8 @@ TOOLS: tuple[dict, ...] = (
                         "crap": {
                             "type": "number",
                             "description": "score"},
-                        "remedy": _REMEDY}}},
+                        "remedy": _REMEDY,
+                        "occurrence": _OCCURRENCE}}},
             "file_totals": {
                 "type": "object",
                 "description": "the file rolled up",
@@ -1358,6 +1365,7 @@ TOOLS: tuple[dict, ...] = (
                             "type": "number",
                             "description": "score from fresh ccn and baseline cov"},
                         "remedy": _REMEDY,
+                        "occurrence": _OCCURRENCE,
                         "stale_coverage": {
                             "type": "boolean",
                             "description": ("always true: complexity is the working tree's, coverage "
@@ -1377,7 +1385,9 @@ TOOLS: tuple[dict, ...] = (
                     "ceilings": {
                         "type": "object",
                         "properties": {},
-                        "description": "map of path to the ccn ceiling it was judged against"},
+                        "additionalProperties": {"type": "integer"},
+                        "description": ("map of repo-relative path to the ccn ceiling it was "
+                        "judged against")},
                     "breaches": {
                         "type": "array",
                         "description": "the failing functions; empty when ok",
