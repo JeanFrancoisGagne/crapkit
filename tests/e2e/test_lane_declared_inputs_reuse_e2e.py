@@ -110,6 +110,15 @@ def _runs(repo: Path) -> int:
     return len(marker.read_text(encoding="utf-8").splitlines()) if marker.is_file() else 0
 
 
+def test_the_stamp_names_its_proof_apart_from_the_lane_input_paths(repo: Path):
+    """`Lane.inputs` holds paths; the hash reuse compares is the stamp's `proof`."""
+    _measure(repo)
+    stamps = json.loads((repo / ".crapkit" / "artifacts.json").read_text(encoding="utf-8"))
+    stamp = stamps[_lane(repo).artifact]
+
+    assert stamp["proof"] and "inputs" not in stamp
+
+
 # --- what does not block reuse --------------------------------------------------
 
 def test_a_commit_outside_the_inputs_leaves_the_lane_reusable(repo: Path):

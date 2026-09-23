@@ -401,6 +401,8 @@ def read_stamps(root: Path) -> dict:
 def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict) -> dict:
     """What produced this artifact: the commit reuse judges staleness against,
     plus the wall seconds the parallel scheduler starts the slowest lane on.
+    `proof` is the measurement key when it held from start to finish, else "";
+    it is named apart from `Lane.inputs`, which holds paths, not a hash.
 
     Empty in a non-git sandbox (unit tests), which records nothing. Lanes hand
     their stamp back rather than writing it, so N of them running at once cannot
@@ -412,7 +414,7 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, prove
         return {}
     clean = bool(measured) and measured == _measurement_key(git.root, lane)
     return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
-            "inputs": measured if clean else "", "artifacts": _artifact_digests(lane, provenance)}
+            "proof": measured if clean else "", "artifacts": _artifact_digests(lane, provenance)}
 
 
 def _artifact_digests(lane: Lane, provenance: dict) -> dict:
@@ -442,7 +444,8 @@ def _measurement_key(root: Path, lane: Lane) -> str:
 
 
 def _inputs_key(commit: str, lane: Lane) -> str:
-    """The lane's own configuration, env and inputs included, bound to a commit."""
+    """The `proof` a lane that declares `inputs` stamps: its own configuration,
+    env and input paths included, bound to a commit."""
     payload = json.dumps(("inputs", commit, lane), sort_keys=True).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
@@ -725,21 +728,24 @@ def lane_reuse_commit(root: Path, lane: Lane) -> str:
     measurement intact. So a lane that declares nothing is reused only at the
     same clean repository. A lane that declares `inputs` is reused while its
     commit is behind HEAD and no committed, staged, unstaged or untracked
-    change touches those paths. Either way the artifact bytes have to match the
-    stamp. Explicit artifact reuse remains a separate deliberate request.
+    change touches those paths. Either way the stamp's `proof` has to equal the
+    key the lane would stamp now and the artifact bytes have to match the stamp.
+    A stamp without a `proof` (one written before it had that name, or measured
+    while it did not hold) is never reused automatically. Explicit artifact
+    reuse remains a separate deliberate request.
     """
     stamp = stamp_for(read_stamps(root), lane.artifact)
     commit = _artifact_commit(root, lane)
-    if not (commit and stamp.get("inputs")):
+    if not (commit and stamp.get("proof")):
         return ""
-    proved = _inputs_proved(root, lane, stamp["inputs"], commit) and _same_artifacts(root, lane, stamp)
+    proved = _proof_holds(root, lane, stamp["proof"], commit) and _same_artifacts(root, lane, stamp)
     return commit if proved else ""
 
 
-def _inputs_proved(root: Path, lane: Lane, recorded: str, commit: str) -> bool:
+def _proof_holds(root: Path, lane: Lane, proof: str, commit: str) -> bool:
     if lane.inputs:
-        return recorded == _inputs_key(commit, lane) and _inputs_untouched(root, lane, commit)
-    return recorded == _measurement_key(root, lane)
+        return proof == _inputs_key(commit, lane) and _inputs_untouched(root, lane, commit)
+    return proof == _measurement_key(root, lane)
 
 
 def _inputs_untouched(root: Path, lane: Lane, commit: str) -> bool:
