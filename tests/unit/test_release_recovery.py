@@ -117,6 +117,8 @@ def publish_adapter(root, monkeypatch, fail_after=None):
                         if args[:2] == ("remote", "get-url") else git_read(root, *args))
     monkeypatch.setattr(release, "_execute", adapter.execute)
     monkeypatch.setattr(release, "_remote_json", adapter.remote_json, raising=False)
+    # In-memory surfaces never lag, so a readback retry has nothing to wait for.
+    monkeypatch.setattr(release, "READBACK_PAUSE", 0)
     return adapter
 
 
