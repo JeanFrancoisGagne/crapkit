@@ -129,6 +129,9 @@ def test_only_a_zero_resume_status_lets_the_command_run():
 class _RefusingOwner:
     """An owner that cannot take the command: Job assignment was refused."""
 
+    def __init__(self):
+        self.stopped = []
+
     def prepare(self, popen_kwargs):
         return None, popen_kwargs
 
@@ -136,13 +139,31 @@ class _RefusingOwner:
         raise PermissionError(13, "Access is denied")
 
     def stop(self, pid):
-        raise AssertionError("a command that was never registered is never stopped")
+        self.stopped.append(pid)
 
     def check_cancelled(self):
         pass
 
 
-def test_a_refused_registration_stops_the_command_before_it_runs(tmp_path, monkeypatch):
+@pytest.fixture
+def started(monkeypatch):
+    """Every process Popen starts during the test, the real objects, in order."""
+    processes = []
+
+    class Recorded(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            processes.append(self)
+
+    monkeypatch.setattr(procs.subprocess, "Popen", Recorded)
+    yield processes
+    for process in processes:  # a failing run must not leave a suspended command behind
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+
+
+def test_a_refused_registration_stops_the_command_before_it_runs(tmp_path, monkeypatch, started):
     # POSIX waits this long for a launcher behind a failed start line to exit.
     monkeypatch.setattr(procs, "_LAUNCHER_SETTLE", .1)
     marker = tmp_path / "ran"
@@ -152,6 +173,24 @@ def test_a_refused_registration_stops_the_command_before_it_runs(tmp_path, monke
     assert isinstance(caught.value, OSError)
     assert "never ran" in str(caught.value)
     assert not marker.exists()
+    assert started[0].poll() is not None, "the refused command must be stopped, not left waiting"
+
+
+@WINDOWS
+def test_a_refused_command_is_stopped_when_no_tree_kill_can_start(monkeypatch, started):
+    # A loaded box that fails process starts can fail taskkill's start as well.
+    def taskkill_cannot_start(pid):
+        raise FileNotFoundError(2, "The system cannot find the file specified", "taskkill")
+
+    monkeypatch.setattr(procs, "kill_process_tree", taskkill_cannot_start)
+    owner = _RefusingOwner()
+    with pytest.raises(ToolError) as caught:
+        procs.run_owned([BASE, "-c", "pass"], owner=owner)
+    assert isinstance(caught.value, OSError)
+    assert "never ran" in str(caught.value)
+    command, = started
+    assert command.poll() is not None, "the suspended command must not outlive its refusal"
+    assert owner.stopped == [command.pid]
 
 
 class _FakeCommand:
@@ -170,6 +209,9 @@ class _FakeCommand:
 
     def poll(self):
         return self.code
+
+    def kill(self):
+        self.events.append("kill")
 
 
 class _RecordingOwner:
@@ -205,6 +247,8 @@ def _suspended_start(monkeypatch, code):
     monkeypatch.setattr(procs.subprocess, "Popen", popen)
     monkeypatch.setattr(procs, "_resume", lambda process: events.append("resume"))
     monkeypatch.setattr(procs, "_wait_command", lambda process, timeout: process.wait(timeout))
+    # 4242 is not our process: a tree kill records itself instead of reaching it.
+    monkeypatch.setattr(procs, "kill_process_tree", lambda pid: events.append(("tree kill", pid)))
     return events, calls
 
 
@@ -236,3 +280,47 @@ def test_the_dll_init_failure_code_is_refused_after_cleanup(monkeypatch):
     with pytest.raises(ToolError, match="0xC0000142"):
         procs.run_bounded("runner", 10, owner=_RecordingOwner(events))
     assert ("stop", 4242) in events
+
+
+class _RefusingRecorder(_RecordingOwner):
+    def register_then(self, pid, release, registration=None):
+        self.events.append(("register", pid, registration))
+        raise PermissionError(13, "Access is denied")
+
+
+def test_a_refused_suspended_command_is_forgotten_then_terminated_directly(monkeypatch):
+    # A suspended command has no children, so its own handle ends it: no taskkill.
+    events, _ = _suspended_start(monkeypatch, None)
+    with pytest.raises(ToolError, match="never ran"):
+        procs.run_owned(["runner"], owner=_RefusingRecorder(events))
+    assert events == ["prepare", "popen", ("register", 4242, "registration"),
+                      ("stop", 4242), "kill", "wait"]
+
+
+def test_a_command_registered_but_never_resumed_leaves_no_registration(monkeypatch):
+    events, _ = _suspended_start(monkeypatch, None)
+
+    def refused(process):
+        events.append("resume")
+        raise OSError("NtResumeProcess refused the command: status 0xC0000008")
+
+    monkeypatch.setattr(procs, "_resume", refused)
+    with pytest.raises(ToolError, match="never ran"):
+        procs.run_owned(["runner"], owner=_RecordingOwner(events))
+    assert events == ["prepare", "popen", ("register", 4242, "registration"), "resume",
+                      ("stop", 4242), "kill", "wait"]
+
+
+class _GoneOwner(_RefusingRecorder):
+    """The guardian died: registration and the stop after it both fail."""
+
+    def stop(self, pid):
+        self.events.append(("stop", pid))
+        raise ToolError("measurement owner stopped during command registration")
+
+
+def test_an_owner_that_cannot_stop_does_not_hide_the_start_failure(monkeypatch):
+    events, _ = _suspended_start(monkeypatch, None)
+    with pytest.raises(ToolError, match="never ran"):
+        procs.run_owned(["runner"], owner=_GoneOwner(events))
+    assert events[-3:] == [("stop", 4242), "kill", "wait"]

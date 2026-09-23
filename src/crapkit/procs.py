@@ -162,8 +162,16 @@ def _suspended(command, stdout, stderr, owner, kwargs):
     process = subprocess.Popen(command, shell=isinstance(command, str), stdin=subprocess.DEVNULL,
                                stdout=stdout, stderr=stderr, creationflags=_SUSPENDED_GROUP,
                                **kwargs)
-    _hand_over(process, owner, registration, _resume, _unowned)
+    _hand_over(process, owner, registration, (_resume, _unowned, _terminate))
     yield process
+
+
+def _terminate(process):
+    """TerminateProcess through the handle Popen holds, with no taskkill to spawn
+    on a box that is already failing process starts. A command that never
+    resumed has no children; one that did was registered, and the owner's stop
+    ended its Job first."""
+    process.kill()
 
 
 def _resume(process):
@@ -204,9 +212,14 @@ def _launched(command, stdout, stderr, owner, kwargs):
                                     "-c", _OWNED_LAUNCH, json.dumps([command, descriptor, merge])],
                                    stdin=subprocess.PIPE, stdout=stdout, stderr=launcher_stderr,
                                    start_new_session=True, **kwargs)
-        _hand_over(process, owner, registration, _release_launcher, _dead_launcher)
+        _hand_over(process, owner, registration, (_release_launcher, _dead_launcher, _kill_group))
         yield process
         _raise_launch_error(errors)
+
+
+def _kill_group(process):
+    """A launcher's whole process group: it may have exec'd the command already."""
+    kill_process_tree(process.pid)
 
 
 def _launch_options(errors, stderr):
@@ -221,14 +234,29 @@ def _launch_options(errors, stderr):
 _START = _suspended if os.name == "nt" else _launched
 
 
-def _hand_over(process, owner, registration, release, refusal):
-    """Register the gated process, then let it run; a failed hand-over kills it."""
+def _hand_over(process, owner, registration, start):
+    """Register the gated process, then let it run; a failed hand-over kills it.
+
+    `start` is how this start gate releases the process, the error a refused
+    registration raises, and how the process dies when the hand-over fails.
+    """
+    release, refusal, kill = start
     try:
         _register(process, owner, registration, release, refusal)
     except BaseException:
-        _kill_tree(process)
-        _close_input(process)
+        _abandon(process, owner, kill)
         raise
+
+
+def _abandon(process, owner, kill):
+    """Forget any registration the owner took, then kill and reap the process.
+    The add may have succeeded before the release failed; an owner that cannot
+    answer any more must not hide the start failure."""
+    with suppress(ToolError, OSError):
+        owner.stop(process.pid)
+    kill(process)
+    process.wait()
+    _close_input(process)
 
 
 def _register(process, owner, registration, release, refusal):
