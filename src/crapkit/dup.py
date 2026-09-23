@@ -5,10 +5,17 @@ Normalized line shingles with CONTAINMENT scoring (shared / smaller set), so a
 copy-paste that later grew a few lines still surfaces. An inverted shingle
 index keeps a 14k-function repo tractable: only pairs that actually share a
 shingle are ever compared. Tiny functions are structural noise and stay out.
+
+A shingle is a stable 8-byte digest, so one run's index can be stored and read
+back by another process. Both readers take either kind of index: the
+FunctionIndex built here, or the one the store keeps for a run. They answer the
+same four questions: which functions hold these shingles, what those functions
+are, every function with its shingle count, and every shingle two of them share.
 """
 from __future__ import annotations
 
 from bisect import bisect_right
+from hashlib import blake2b
 import heapq
 from typing import NamedTuple
 
@@ -17,6 +24,14 @@ from .snapshot import InventoryRow
 
 WINDOW = 4  # consecutive normalized lines per shingle
 _COMMENT_PREFIXES = ("#", "//", "/*", "*", '"""', "'''")
+# What a stored digest was made with. A stored index is only comparable with a
+# target shingled the same way, so any change to _normalized_lines, _shingles or
+# _digest changes this string, and every stored index reads as absent until the
+# next build replaces it.
+SHINGLE_FORMAT = f"v1 blake2b-8 window {WINDOW}"
+# The one threshold a run's index is stored at: brief's, and duplication's
+# default. Any other min_lines builds its own index for that call.
+STORED_MIN_LINES = 8
 
 
 def _normalized_lines(file_lines: list[str], start: int, end: int) -> list[str]:
@@ -28,8 +43,22 @@ def _normalized_lines(file_lines: list[str], start: int, end: int) -> list[str]:
     return picked
 
 
+def _digest(window: bytes) -> int:
+    """A window's 64-bit name, the same in every process and on every machine.
+
+    Builtin hash() of the same tuple is salted per process: one index written
+    and read back in three fresh interpreters shared 0 of 37 shingles. Signed
+    so SQLite stores it as an INTEGER.
+    """
+    return int.from_bytes(blake2b(window, digest_size=8).digest(), "little", signed=True)
+
+
 def _shingles(lines: list[str]) -> set[int]:
-    return {hash(tuple(lines[i:i + WINDOW])) for i in range(len(lines) - WINDOW + 1)}
+    # A normalized line holds no whitespace at all, so a newline cannot occur
+    # inside one and joining on it keeps every window distinct.
+    encoded = [line.encode("utf-8", "surrogatepass") for line in lines]
+    return {_digest(b"\n".join(window))
+            for window in zip(*(encoded[i:] for i in range(WINDOW)))}
 
 
 def _split_once(path: str, sources: dict[str, str]) -> list[str] | None:
@@ -67,10 +96,32 @@ class FunctionIndex(NamedTuple):
     min_lines rides along because the index is only an answer at the threshold
     that produced it: a function too short at 8 is ABSENT from the entries, not
     scored low, so reading it at 4 would drop twins rather than report them.
+
+    A function's number in every answer below is its place in `entries`, which
+    is also the number the store files it under.
     """
 
     min_lines: int
     entries: list[tuple[InventoryRow, set[int]]]
+
+    def shared_counts(self, digests: set[int]) -> dict[int, int]:
+        """How many of `digests` each function holds, for those holding any."""
+        return {fn: n for fn, (_, shingles) in enumerate(self.entries)
+                if (n := len(digests & shingles))}
+
+    def rows_of(self, fns) -> dict[int, tuple]:
+        """Each named function's row and shingle count."""
+        return {fn: (self.entries[fn][0], len(self.entries[fn][1])) for fn in fns}
+
+    def functions(self) -> list[tuple]:
+        """Every function's row and shingle count, in function-number order."""
+        return [(row, len(shingles)) for row, shingles in self.entries]
+
+    def owners(self) -> dict[int, int | list[int]]:
+        return _owners_by_shingle(self.entries)
+
+    def pairable_owners(self) -> list[list[int]]:
+        return _pairable_owners(self.entries)
 
 
 def function_index(rows: list[InventoryRow], sources: dict[str, str],
@@ -79,14 +130,9 @@ def function_index(rows: list[InventoryRow], sources: dict[str, str],
 
     `brief --batch N` scores N functions against the same snapshot, and building
     this per packet re-shingled the whole repo N times (measured -60% wall on a
-    batch of 5 over a 31,459-file tree).
-
-    PROCESS-LOCAL ONLY. A shingle is builtin `hash()` of a tuple of strings and
-    CPython randomizes that per process, so this can never be a file. Measured:
-    one index written and read back in three fresh interpreters shared 0 of 37
-    shingles, containment 0.0000 every time, which empties `duplication_twins`
-    on a repo that did not change. A disk index needs a stable digest instead of
-    `hash()`, which is a different function with a different cost.
+    batch of 5 over a 31,459-file tree). The store keeps one of these per run
+    for the same reason across processes: `SnapshotStore.twin_index` builds it
+    on first ask and every later call reads it back.
     """
     return FunctionIndex(min_lines, _function_shingles(rows, sources, min_lines))
 
@@ -117,10 +163,13 @@ def _pairable_owners(indexed: list[tuple[InventoryRow, set[int]]]) -> list[list[
     return [o for o in _owners_by_shingle(indexed).values() if type(o) is list]
 
 
-def _owner_groups(indexed: list[tuple[InventoryRow, set[int]]]) -> dict[int, list[list[int]]]:
-    """Shared owner lists, referenced by every owner that has a later neighbor."""
+def _owner_groups(pairable: list[list[int]]) -> dict[int, list[list[int]]]:
+    """Shared owner lists, referenced by every owner that has a later neighbor.
+
+    Each list holds its owners in ascending function number, which is what lets
+    _neighbor_counts cut a list at the owner with one bisect."""
     groups: dict[int, list[list[int]]] = {}
-    for owners in _pairable_owners(indexed):
+    for owners in pairable:
         for owner in owners[:-1]:
             groups.setdefault(owner, []).append(owners)
     return groups
@@ -134,9 +183,9 @@ def _neighbor_counts(owner: int, groups: list[list[int]]) -> dict[int, int]:
     return counts
 
 
-def _shared_counts(indexed: list[tuple[InventoryRow, set[int]]]):
+def _shared_counts(pairable: list[list[int]]):
     """One owner's neighbors at a time; never retain all function pairs."""
-    for owner, groups in _owner_groups(indexed).items():
+    for owner, groups in _owner_groups(pairable).items():
         for neighbor, count in _neighbor_counts(owner, groups).items():
             yield owner, neighbor, count
 
@@ -192,48 +241,65 @@ def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int
     return None if lines is None else _row_shingles(target, lines, min_lines)
 
 
-def _qualified_twins(mine: set[int], target,
-                     entries: list[tuple[InventoryRow, set[int]]], similarity: float):
+def _qualified_twins(size: int, target, candidates: dict[int, tuple],
+                     shared: dict[int, int], similarity: float):
     """The raw containment meets the threshold, as in `_candidate`; only the
     similarity a twin reports is rounded."""
-    for row, other in entries:
+    for fn, (row, count) in candidates.items():
         if _is_self(row, target):
             continue
-        score = len(mine & other) / min(len(mine), len(other))
+        score = shared[fn] / min(size, count)
         if score >= similarity:
             yield _twin_payload(row, score, _nested_spans(row, target))
 
 
-def _entries_at(indexed: FunctionIndex | None, rows: list[InventoryRow],
-                sources: dict[str, str], min_lines: int) -> list[tuple[InventoryRow, set[int]]]:
-    """A prebuilt index only at the threshold it was built at; otherwise a fresh
-    one. Reusing it at another min_lines would silently lose the rows that
-    threshold admits, so a mismatch pays for the rebuild."""
-    if indexed is not None and indexed.min_lines == min_lines:
-        return indexed.entries
-    return _function_shingles(rows, sources, min_lines)
+def _ranked_twins(index, target, mine: set[int], similarity: float, top: int) -> list[dict]:
+    """`mine` scored against every function of `index` that holds any of it."""
+    shared = index.shared_counts(mine)
+    kept = list(_qualified_twins(len(mine), target, index.rows_of(shared), shared, similarity))
+    kept.sort(key=lambda t: (-t["similarity"], _function_key(t), t["contained"]))
+    return kept[:top]
+
+
+def _built_at(indexed, min_lines: int) -> bool:
+    """A prebuilt index answers only at the threshold it was built at. Reusing
+    it at another min_lines would silently lose the rows that threshold admits,
+    so a mismatch pays for a rebuild."""
+    return indexed is not None and indexed.min_lines == min_lines
+
+
+def twins_in(index, target, text: str | None, *, similarity: float = 0.8,
+             top: int = 10) -> list[dict]:
+    """ONE function's twins against a prebuilt index, the target shingled from `text`.
+
+    `index` is a FunctionIndex or the store's index for a run. brief reads the
+    stored one, so a packet shingles its own function and looks up the rest.
+    `text` is the target's file as it reads now, or None when it is gone.
+    """
+    mine = _target_shingles(target, {target.path: text}, index.min_lines)
+    return _ranked_twins(index, target, mine, similarity, top) if mine else []
 
 
 def find_twins(target, rows: list[InventoryRow], sources: dict[str, str], *,
                min_lines: int = 8, similarity: float = 0.8, top: int = 10,
-               indexed: FunctionIndex | None = None) -> list[dict]:
+               indexed=None) -> list[dict]:
     """The near-duplicates of ONE function, scored exactly as find_duplicates
     scores the pair it would appear in.
 
     One function's shingles against every other function's, so a brief costs a
-    single row's comparisons instead of the whole repo's pair counting.
+    single row's comparisons instead of the whole repo's pair counting. Only a
+    function that shares a shingle with the target is scored, as only such a
+    pair reaches find_duplicates, so a similarity of 0 lists no function at 0.
 
     `indexed` is that other side, shingled once by function_index and reused
-    across targets. Passing it changes nothing about the answer; leaving it out
-    builds the same thing for this call alone.
+    across targets, or the store's index for the run. Passing it changes nothing
+    about the answer; leaving it out builds the same thing for this call alone.
     """
     mine = _target_shingles(target, sources, min_lines)
     if not mine:
         return []
-    entries = _entries_at(indexed, rows, sources, min_lines)
-    kept = list(_qualified_twins(mine, target, entries, similarity))
-    kept.sort(key=lambda t: (-t["similarity"], _function_key(t), t["contained"]))
-    return kept[:top]
+    index = indexed if _built_at(indexed, min_lines) else function_index(rows, sources, min_lines)
+    return _ranked_twins(index, target, mine, similarity, top)
 
 
 class _Pair(NamedTuple):
@@ -247,9 +313,9 @@ def _row_key(row: InventoryRow) -> tuple:
     return row.path, row.start, row.end, row.long_name, row.nloc
 
 
-def _candidate(indexed, keys, left: int, right: int, count: int, minimum: float) -> _Pair | None:
-    a, b = indexed[left], indexed[right]
-    score = count / min(len(a[1]), len(b[1]))
+def _candidate(functions, keys, left: int, right: int, count: int, minimum: float) -> _Pair | None:
+    a, b = functions[left], functions[right]
+    score = count / min(a[1], b[1])
     if not (score >= minimum) or _nested_spans(a[0], b[0]):
         return None
     if keys[right] < keys[left]:
@@ -257,10 +323,10 @@ def _candidate(indexed, keys, left: int, right: int, count: int, minimum: float)
     return _Pair((-round(score, 4), keys[left], keys[right]), left, right, score)
 
 
-def _qualified_pairs(indexed, minimum: float):
-    keys = [_row_key(row) for row, _ in indexed]
-    for left, right, count in _shared_counts(indexed):
-        pair = _candidate(indexed, keys, left, right, count, minimum)
+def _qualified_pairs(functions, pairable: list[list[int]], minimum: float):
+    keys = [_row_key(row) for row, _ in functions]
+    for left, right, count in _shared_counts(pairable):
+        pair = _candidate(functions, keys, left, right, count, minimum)
         if pair is not None:
             yield pair
 
@@ -271,9 +337,19 @@ def _best_pairs(pairs, top: int) -> list[_Pair]:
     return heapq.nsmallest(top, pairs, key=lambda pair: pair.rank)
 
 
+def _pair_inputs(indexed, rows: list[InventoryRow], load_sources,
+                 min_lines: int) -> tuple[list[tuple], list[list[int]]]:
+    """Every function with its shingle count, and the owners of every shingle
+    two or more of them share. An index built here is dropped on return, so no
+    shingle set lives through the pair counting."""
+    index = indexed if _built_at(indexed, min_lines) else \
+        function_index(rows, load_sources(), min_lines)
+    return index.functions(), index.pairable_owners()
+
+
 def find_duplicates(rows: list[InventoryRow], load_sources, *,
                     min_lines: int = 8, similarity: float = 0.8,
-                    top: int = 50) -> list[dict]:
+                    top: int = 50, indexed=None) -> list[dict]:
     """Every near-duplicate pair in a snapshot, best containment first.
 
     A pair whose two spans nest is skipped: a factory and the closure defined
@@ -286,10 +362,28 @@ def find_duplicates(rows: list[InventoryRow], load_sources, *,
     indexed, and the pair counting below is where the heap actually goes. A
     caller that bound those texts to a name would pin all of them across it —
     measured 523 MB peak on a 104 MB repo against 377 MB with them released.
-    Passing the loader's dict straight into _function_shingles is what releases
+    Passing the loader's dict straight into function_index is what releases
     it: nothing here ever holds a reference, so the index outlives the texts.
+
+    `indexed` is the run's stored index, or any index built at `min_lines`: the
+    pairs come off its owner lists and `load_sources` is never called. At any
+    other threshold it is ignored and the index is built here.
     """
-    indexed = _function_shingles(rows, load_sources(), min_lines)
-    selected = _best_pairs(_qualified_pairs(indexed, similarity), top)
-    return [_pair_payload(indexed[pair.left][0], indexed[pair.right][0], pair.similarity)
+    functions, pairable = _pair_inputs(indexed, rows, load_sources, min_lines)
+    selected = _best_pairs(_qualified_pairs(functions, pairable, similarity), top)
+    return [_pair_payload(functions[pair.left][0], functions[pair.right][0], pair.similarity)
             for pair in selected]
+
+
+def run_index(store, run_id: int, rows: list[InventoryRow], load_sources,
+              min_lines: int = STORED_MIN_LINES):
+    """The index `find_duplicates` reads for one run, or None to build its own.
+
+    At the stored threshold it is the store's, built from `rows` and the texts
+    `load_sources` returns and stored on first ask. At any other threshold it is
+    None and the store is never touched: an index answers only at the min_lines
+    it was built at, and the one the store keeps is the one brief reads.
+    """
+    if min_lines != STORED_MIN_LINES:
+        return None
+    return store.twin_index(run_id, lambda: function_index(rows, load_sources(), min_lines))

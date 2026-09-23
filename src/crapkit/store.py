@@ -27,6 +27,7 @@ from typing import NamedTuple
 from .keys import (claim_holds, claim_key, expression_group, expression_reader_current,
                    key_names, position,
                    refuse_ambiguous, split_ordinal)
+from .dup import SHINGLE_FORMAT
 from .snapshot import InventoryRow
 from .worklist import Marks
 from .errors import CrapkitError, ToolError
@@ -71,6 +72,31 @@ _CODE_DDL = """CREATE TABLE IF NOT EXISTS {table} (
 # list is still stored, at a code minted after these.
 _CODE_SEEDS = {"flags": ("measured", "untested", "no-lane", "cc-only"),
                "remedies": ("ok", "add-tests", "decompose", "split-lines")}
+
+# One run's shingle index, for brief's twins and for duplication: the marker
+# row, every indexed function under its number, and each digest with the
+# functions that hold it. A lone owner is an INTEGER and two or more are TEXT
+# "3,17,42" in ascending order, the shape dup's inverted index has in memory:
+# 84% of digests have one owner, and a TEXT cell is exactly a shingle two
+# functions share. The marker commits in one transaction with the rest, so a
+# reader that finds it finds the whole index.
+_TWIN_TABLES = ("twin_runs", "twin_functions", "twin_postings")
+_TWIN_DDL = """CREATE TABLE IF NOT EXISTS twin_runs (
+    run_id INTEGER PRIMARY KEY REFERENCES runs(id),
+    min_lines INTEGER NOT NULL,
+    shingle_format TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS twin_functions (
+    run_id INTEGER NOT NULL, fn INTEGER NOT NULL,
+    identity_id INTEGER NOT NULL REFERENCES identities(id),
+    start INTEGER NOT NULL, end INTEGER NOT NULL, nloc INTEGER NOT NULL,
+    occurrence INTEGER NOT NULL, shingles INTEGER NOT NULL,
+    PRIMARY KEY (run_id, fn)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS twin_postings (
+    run_id INTEGER NOT NULL, digest INTEGER NOT NULL, owners NOT NULL,
+    PRIMARY KEY (run_id, digest)
+) WITHOUT ROWID;"""
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS runs (
@@ -118,6 +144,7 @@ CREATE TABLE IF NOT EXISTS run_collisions (
     legacy INTEGER NOT NULL,
     PRIMARY KEY (run_id, identity_id)
 ) WITHOUT ROWID;
+{_TWIN_DDL}
 """
 
 # Indexes run after the migration, never with it: on a store still in the old
@@ -140,7 +167,8 @@ _DEAD_INDEXES = ("idx_functions_run_path", "idx_identities_path")
 
 _CURRENT_OBJECTS = frozenset(("runs", "identities", "flags", "remedies", "functions",
                               "overrides", "attempts", "run_rollup", "run_collisions", "idx_functions_run",
-                              "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity"))
+                              "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity",
+                              *_TWIN_TABLES))
 _ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence"},
                   "runs": {"lanes", "kind", "verdict_ok", "findings"},
                   "attempts": {"handle", "key_name", "key_version"}}
@@ -444,6 +472,82 @@ def _identity_where(run_id, path, name) -> tuple[str, list]:
               (("f.run_id", run_id), ("i.path", path), ("i.long_name", name))
               if value is not None]
     return " AND ".join(f"{column} = ?" for column, _ in fields) or "1", [v for _, v in fields]
+
+
+class _TwinRow(NamedTuple):
+    """What a stored index keeps of a function: enough to name it, place it,
+    tell it from the target, and pay it out as a twin or a pair."""
+    scope: str
+    path: str
+    long_name: str
+    start: int
+    end: int
+    nloc: int
+    occurrence: int
+
+
+# SQLite caps the parameters one statement binds (999 before 3.32), so a lookup
+# of more values than this goes in pieces.
+_LOOKUP_CHUNK = 500
+# The page cache an index write runs with. At SQLite's default 2 MB the copy
+# spills to the file before it commits, and a spill takes the exclusive lock: a
+# reader was locked out for 8.8 s of a 9.4 s write of a 38 MB index on a large
+# consumer repo's store. With the pages held until the commit it waited 0.13 s.
+_TWIN_WRITE_CACHE_KIB = 131072
+_TWIN_ROWS = ("SELECT t.fn, t.shingles, i.scope, i.path, i.long_name, t.start, t.end, t.nloc, "
+              "t.occurrence FROM twin_functions t JOIN identities i ON i.id = t.identity_id "
+              "WHERE t.run_id = ?")
+
+
+def _owner_list(cell) -> list[int]:
+    """A postings cell back as function numbers: an INTEGER, or TEXT "3,17,42"."""
+    return [cell] if type(cell) is int else [int(fn) for fn in cell.split(",")]
+
+
+def _owner_cell(owners) -> int | str:
+    return owners if type(owners) is int else ",".join(map(str, owners))
+
+
+class _StoredTwins:
+    """One run's shingle index as the store holds it, read a query at a time.
+
+    It answers the four questions dup's FunctionIndex answers, from SQLite
+    rather than memory, so brief and duplication take either one.
+    """
+
+    def __init__(self, conn, run_id: int, min_lines: int) -> None:
+        self._conn = conn
+        self._run_id = run_id
+        self.min_lines = min_lines
+
+    def _chunked(self, sql: str, values):
+        values = list(values)
+        for at in range(0, len(values), _LOOKUP_CHUNK):
+            chunk = values[at:at + _LOOKUP_CHUNK]
+            yield from self._conn.execute(sql.format(",".join("?" * len(chunk))),
+                                          (self._run_id, *chunk))
+
+    def shared_counts(self, digests) -> dict[int, int]:
+        counts: dict[int, int] = {}
+        for (cell,) in self._chunked(
+                "SELECT owners FROM twin_postings WHERE run_id = ? AND digest IN ({})", digests):
+            for fn in _owner_list(cell):
+                counts[fn] = counts.get(fn, 0) + 1
+        return counts
+
+    def rows_of(self, fns) -> dict[int, tuple]:
+        return {fn: (_TwinRow(*rest), count)
+                for fn, count, *rest in self._chunked(_TWIN_ROWS + " AND t.fn IN ({})", fns)}
+
+    def functions(self) -> list[tuple]:
+        """Dense by function number: the writer numbers them 0..N-1."""
+        return [(_TwinRow(*rest), count) for _, count, *rest in
+                self._conn.execute(_TWIN_ROWS + " ORDER BY t.fn", (self._run_id,))]
+
+    def pairable_owners(self) -> list[list[int]]:
+        return [_owner_list(cell) for (cell,) in self._conn.execute(
+            "SELECT owners FROM twin_postings WHERE run_id = ? AND typeof(owners) = 'text'",
+            (self._run_id,))]
 
 
 class SnapshotStore:
@@ -1333,8 +1437,99 @@ class SnapshotStore:
             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_collisions WHERE run_id = ?", doomed)
+            self._drop_twins("run_id = ?", doomed)
             self._conn.executemany("DELETE FROM runs WHERE id = ?", doomed)
         return len(doomed)
+
+    def twin_index(self, run_id: int, build):
+        """The run's shingle index: read back when stored, otherwise `build()`,
+        stored for the next caller and handed back.
+
+        brief and duplication shingled every function in the repo on every call,
+        77,816 functions and 1.87 M shingles on a large consumer repo. A run never
+        changes once written, so the first ask pays and every later one, in any
+        process, looks digests up. `build` returns a dup.FunctionIndex and runs
+        only when nothing usable is stored.
+        """
+        stored = self._stored_twins(run_id)
+        if stored is not None:
+            return stored
+        built = build()
+        self._store_twins(run_id, built)
+        return built
+
+    def _stored_twins(self, run_id: int) -> _StoredTwins | None:
+        found = self._conn.execute(
+            "SELECT min_lines FROM twin_runs WHERE run_id = ? AND shingle_format = ?",
+            (run_id, SHINGLE_FORMAT)).fetchone()
+        return None if found is None else _StoredTwins(self._conn, run_id, found[0])
+
+    def _store_twins(self, run_id: int, index) -> None:
+        """Best effort, like the rollup: a write lock another process holds costs
+        the next caller the speedup, never this command its answer.
+
+        The postings are sorted and staged before the write lock is taken, so
+        other writers wait only for the copy: 0.6-0.7 s against 1.8-2.1 s for
+        inserting the same 1.55 M postings under the lock. The copy runs with a
+        cache wide enough to hold it, since a spill takes the exclusive lock.
+        """
+        previous = self._conn.execute("PRAGMA cache_size").fetchone()[0]
+        try:
+            self._stage_twin_postings(index.owners())
+            self._conn.execute(f"PRAGMA cache_size = -{_TWIN_WRITE_CACHE_KIB}")
+            with self._conn:
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._replace_twins(run_id, index)
+        except sqlite3.OperationalError:
+            pass
+        finally:
+            self._conn.execute("DROP TABLE IF EXISTS temp.twin_stage")
+            self._conn.execute(f"PRAGMA cache_size = {previous}")
+
+    def _stage_twin_postings(self, owners: dict) -> None:
+        """Every digest with its owners, in key order, in a table only this
+        connection sees. In key order because a B-tree filled that way writes
+        each page once: 1.87 M postings took 1.6 s sorted and 19 s unsorted."""
+        self._conn.execute("CREATE TEMP TABLE twin_stage (digest INTEGER NOT NULL, owners NOT NULL)")
+        self._conn.executemany(
+            "INSERT INTO temp.twin_stage (digest, owners) VALUES (?, ?)",
+            ((digest, _owner_cell(owners[digest])) for digest in sorted(owners)))
+        self._conn.commit()
+
+    def _replace_twins(self, run_id: int, index) -> None:
+        """This run's index, replacing every older run's. A newer run's stays:
+        brief reads the newest trusted run and duplication the newest run with
+        rows, and when those differ each keeps its own."""
+        if not self._twins_wanted(run_id):
+            return
+        self._drop_twins("run_id <= ?", [(run_id,)])
+        self._conn.execute(
+            "INSERT INTO twin_runs (run_id, min_lines, shingle_format) VALUES (?, ?, ?)",
+            (run_id, index.min_lines, SHINGLE_FORMAT))
+        self._insert_twin_functions(run_id, index.functions())
+        self._conn.execute(
+            "INSERT INTO twin_postings (run_id, digest, owners) "
+            "SELECT ?, digest, owners FROM temp.twin_stage ORDER BY rowid", (run_id,))
+
+    def _twins_wanted(self, run_id: int) -> bool:
+        """The run still exists and holds no current index. Asked under the write
+        lock: a prune or another process may have got in since the read."""
+        return bool(self._conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM runs WHERE id = ?) AND NOT EXISTS "
+            "(SELECT 1 FROM twin_runs WHERE run_id = ? AND shingle_format = ?)",
+            (run_id, run_id, SHINGLE_FORMAT)).fetchone()[0])
+
+    def _insert_twin_functions(self, run_id: int, functions: list[tuple]) -> None:
+        ids = self._identity_ids([row for row, _ in functions])
+        self._conn.executemany(
+            "INSERT INTO twin_functions (run_id, fn, identity_id, start, end, nloc, "
+            "occurrence, shingles) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ((run_id, fn, ids[row[:3]], row.start, row.end, row.nloc, position(row)[1], count)
+             for fn, (row, count) in enumerate(functions)))
+
+    def _drop_twins(self, where: str, params) -> None:
+        for table in _TWIN_TABLES:
+            self._conn.executemany(f"DELETE FROM {table} WHERE {where}", params)
 
     def vacuum(self) -> None:
         """Hand the freed pages back to the OS. A DELETE alone frees none of
