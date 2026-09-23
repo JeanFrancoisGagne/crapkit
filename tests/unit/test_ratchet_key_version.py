@@ -47,3 +47,51 @@ def test_unmarked_collisions_do_not_reassign_unrelated_marks():
 def test_current_keys_remain_current_when_a_marked_group_has_collisions():
     text = _text(("a.ts", "f( x )#2", 20), version=1)
     assert check_key_groups(text, set(), {("a.ts", "f( x )")}) == 1
+
+
+class _CountingSet(set):
+    """A set that counts the unions built from it, from either side of `|`."""
+    unions = 0
+
+    def __or__(self, other):
+        type(self).unions += 1
+        return set.__or__(self, other)
+
+    __ror__ = __or__
+
+
+def test_the_legacy_key_check_builds_its_group_union_once_not_once_per_mark(monkeypatch):
+    """A large consumer repo carries tens of thousands of legacy marks. Building
+    `present | collisions` once per mark copied the whole present set each
+    time, and every worklist and brief call paid about two minutes for it."""
+    monkeypatch.setattr(_CountingSet, "unions", 0)
+    marks = [(f"m{i}.py", "f( )", 20) for i in range(50)]
+    present = _CountingSet((path, "f( )") for path, _, _ in marks)
+
+    assert check_key_groups(_text(*marks), present, _CountingSet()) == 1
+
+    assert _CountingSet.unions <= 1
+
+
+def test_the_legacy_key_check_imports_nothing_per_mark(monkeypatch):
+    import builtins
+
+    calls = []
+    real = builtins.__import__
+
+    def counting(*args, **kwargs):
+        calls.append(args[0])
+        return real(*args, **kwargs)
+
+    def imports_for(count):
+        marks = [(f"m{i}.py", "f( )", 20) for i in range(count)]
+        present = {(path, "f( )") for path, _, _ in marks}
+        calls.clear()
+        monkeypatch.setattr(builtins, "__import__", counting)
+        try:
+            check_key_groups(_text(*marks), present, set())
+        finally:
+            monkeypatch.setattr(builtins, "__import__", real)
+        return len(calls)
+
+    assert imports_for(40) == imports_for(1)

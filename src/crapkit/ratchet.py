@@ -19,6 +19,7 @@ import math
 from typing import NamedTuple
 
 from .invocation import _self
+from .keys import split_ordinal
 from .score import ScoredRow
 from .records import decode_record, encode_record, record_lines
 
@@ -83,8 +84,6 @@ def _key_stamps(text: str) -> list[str]:
 
 
 def _marked_group(entry: RatchetEntry, groups: set) -> tuple[str, str]:
-    from .keys import split_ordinal
-
     exact = (entry.path, entry.long_name)
     return exact if exact in groups else (entry.path, split_ordinal(entry.long_name)[0])
 
@@ -121,14 +120,18 @@ def check_key_groups(text: str, present: set, collisions: set) -> int:
     version = read_key_version(text)
     if version == KEY_VERSION:
         return version
-    groups = {_marked_group(entry, present | collisions) for entry in read_ratchet(text)[0]}
-    unresolved = groups & collisions
+    known = present | collisions  # once: a union per mark copied `present` 40k times
+    groups = {_marked_group(entry, known) for entry in read_ratchet(text)[0]}
+    _refuse_ambiguous(groups & collisions)
+    return KEY_VERSION if groups <= present else 0
+
+
+def _refuse_ambiguous(unresolved: set) -> None:
     if unresolved:
         names = "; ".join(f"{path}: {name}" for path, name in sorted(unresolved))
         raise ValueError(f"legacy ratchet key identity is ambiguous for {names}; "
                          "preserve these marks and reconcile their function mapping "
                          "as described in docs/ratchet.md#same-line-function-identity")
-    return KEY_VERSION if groups <= present else 0
 
 
 def checked_key_version(text: str, rows, *, historical: set = frozenset()) -> int:
