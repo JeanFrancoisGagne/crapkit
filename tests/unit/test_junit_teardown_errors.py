@@ -119,14 +119,23 @@ def test_pytest_reports_with_teardown_errors_are_admitted(tmp_path, workers):
         "test_passes", "test_skips", "test_fails", "test_setup_fails")}
 
 
-def test_a_report_without_teardown_errors_never_counts_records(monkeypatch):
-    """The record total differs only where a test errored in teardown, so the
-    reports nearly every lane writes skip that pass."""
-    from crapkit import junitparse
+PYTEST_91_TWO_TESTS = (
+    '<testsuites><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="2">'
+    f'<testcase classname="m" name="a"><error message="{TEARDOWN}"/></testcase>'
+    '<testcase classname="m" name="b"/></testsuite></testsuites>')
 
-    def refuse(root):
-        raise AssertionError("counted records for a report with no teardown error")
 
-    monkeypatch.setattr(junitparse, "_declared_records", refuse)
-    plain = PASS_THEN_TEARDOWN.replace(f'<error message="{TEARDOWN}"/>', "").replace('tests="2"', 'tests="1"')
-    assert suite_summary(plain) == (set(), {"tests": 1, "skipped": 0})
+def test_a_pytest_91_report_short_by_its_teardown_difference_is_admitted():
+    """A known gap, kept on purpose. pytest 9.1 declared two tests, m::a (a pass
+    with a teardown error) and m::b, and m::b is lost. What is left is byte for
+    byte the report pytest before 9.1 wrote for a complete run of m::a alone,
+    which declares its two records. No rule that reads only the XML can tell the
+    two apart, so admission takes the complete reading. Changing this test means
+    choosing to refuse that complete pre-9.1 report."""
+    complete = suite_summary(PYTEST_91_TWO_TESTS)
+    lost_b = PYTEST_91_TWO_TESTS.replace('<testcase classname="m" name="b"/>', "")
+
+    assert complete == ({"m::a"}, {"tests": 2, "skipped": 0})
+    assert suite_summary(lost_b) == ({"m::a"}, {"tests": 1, "skipped": 0})
+    assert lost_b == PASS_THEN_TEARDOWN.replace('classname="test_m" name="test_pass_teardown_err"',
+                                                'classname="m" name="a"')

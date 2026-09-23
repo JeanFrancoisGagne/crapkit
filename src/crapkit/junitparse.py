@@ -140,9 +140,14 @@ def _refuse_partial(root: ET.Element) -> None:
 
     A suite declares its testcases, or, from pytest before 9.1, its records,
     which differ only where a test errored in teardown.
+
+    Accepting either total leaves one gap. A report holding teardown errors is
+    admitted when it is short by exactly its record-minus-testcase difference,
+    because pytest before 9.1 wrote that same XML for a complete run.
     """
     cases = _subtree_counts(root, dict.fromkeys(root.iter("testcase"), 1))
-    records = _subtree_counts(root, _declared_records(root)) if _teardown(root.iter("error")) else cases
+    teardown = _has_teardown_error(root.iter("error"))
+    records = _subtree_counts(root, _declared_records(root)) if teardown else cases
     for element in [*root.iter("testsuites"), *root.iter("testsuite")]:
         _admit_declared_count(element.get("tests"), {cases[element], records[element]})
 
@@ -171,12 +176,12 @@ def _declared_records(root: ET.Element) -> dict:
 
 
 def _records(case: ET.Element, failed: set[str]) -> int:
-    if not _teardown(case.findall("error")):
+    if not _has_teardown_error(case.findall("error")):
         return 1
     return 0 if _case_id(case) in failed else 2
 
 
-def _teardown(errors) -> bool:
+def _has_teardown_error(errors) -> bool:
     return any((error.get("message") or "").startswith(_TEARDOWN) for error in errors)
 
 
