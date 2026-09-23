@@ -111,6 +111,12 @@ CREATE TABLE IF NOT EXISTS run_rollup (
     crap_load REAL NOT NULL,
     PRIMARY KEY (run_id, ceiling_key, scope)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS run_collisions (
+    run_id INTEGER NOT NULL REFERENCES runs(id),
+    identity_id INTEGER NOT NULL,
+    legacy INTEGER NOT NULL,
+    PRIMARY KEY (run_id, identity_id)
+) WITHOUT ROWID;
 """
 
 # Indexes run after the migration, never with it: on a store still in the old
@@ -132,7 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_attempts_identity ON attempts(path, key_name);
 _DEAD_INDEXES = ("idx_functions_run_path", "idx_identities_path")
 
 _CURRENT_OBJECTS = frozenset(("runs", "identities", "flags", "remedies", "functions",
-                              "overrides", "attempts", "run_rollup", "idx_functions_run",
+                              "overrides", "attempts", "run_rollup", "run_collisions", "idx_functions_run",
                               "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity"))
 _ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence"},
                   "runs": {"lanes", "kind", "verdict_ok", "findings"},
@@ -198,6 +204,7 @@ _IDENTITY_MIGRATION = (
     f"{_CODE_JOIN}",
     "DROP TABLE functions",
     "ALTER TABLE functions_mig RENAME TO functions",
+    "DELETE FROM run_collisions",  # its identity ids named the old table's rows
 )
 
 # Re-key the identity table. Nothing moves but the UNIQUE, so the ids on every
@@ -356,6 +363,38 @@ _ROLLUP_READ = ("SELECT run_id, scope, functions, over_target, crap_load FROM ru
                 "WHERE ceiling_key = ? AND scope <> '' ORDER BY run_id, scope")
 
 
+# Same-line collision groups, one row per (run, identity), cached like the
+# rollup: a run's rows never change once written, and regrouping all of them on
+# every read was 4.17M rows and about 8 s on a 29-run store. The scan groups on
+# the integer identity rather than its three strings. A group collides when two
+# rows share a line with no recorded position, or its rows on one line carry
+# different positions; `legacy` marks a line with an unpositioned twin, the kind
+# no reader can place. identity_id 0 is the marker a scanned run leaves whether
+# or not it held a collision.
+_COLLISION_SCAN = (
+    "SELECT c.identity_id, i.path, i.long_name, c.legacy FROM ("
+    "SELECT identity_id, MAX(legacy) AS legacy FROM ("
+    "SELECT f.identity_id, SUM(f.occurrence = 0) > 1 "
+    "OR (MIN(f.occurrence) = 0 AND MAX(f.occurrence) > 0) AS legacy "
+    "FROM functions f WHERE f.run_id = ? GROUP BY f.identity_id, f.start "
+    "HAVING SUM(f.occurrence = 0) > 1 OR MIN(f.occurrence) <> MAX(f.occurrence)) "
+    "GROUP BY identity_id) c JOIN identities i ON i.id = c.identity_id")
+# Joined to runs: an older crapkit prunes a run without knowing this table.
+_COLLISION_READ = ("SELECT i.path, i.long_name, c.run_id, c.legacy FROM run_collisions c "
+                   "JOIN runs r ON r.id = c.run_id JOIN identities i ON i.id = c.identity_id "
+                   "WHERE c.identity_id > 0")
+_UNSCANNED = ("SELECT r.id FROM runs r WHERE NOT EXISTS (SELECT 1 FROM run_collisions c "
+              "WHERE c.run_id = r.id AND c.identity_id = 0)")
+# How many files a reader proves straight off the path index before the table
+# is cheaper. One file's history costs 1 to 12 ms there on a 4.17M-row store; a
+# run nothing has scanned costs about 60 ms, and a cold table 2.5 s.
+_PINNED_PATHS = 64
+
+
+def _one_run(run_id: int | None, column: str) -> tuple[str, tuple]:
+    return ("", ()) if run_id is None else (f" AND {column} = ?", (run_id,))
+
+
 def _summed(by_scope: dict[str, tuple]) -> tuple:
     """One run's scopes added back up into the whole-run triple."""
     parts = list(by_scope.values())
@@ -495,9 +534,11 @@ class SnapshotStore:
                 "ALTER TABLE functions ADD COLUMN cognitive INTEGER NOT NULL DEFAULT 0")
 
     def _add_occurrence_column(self) -> None:
+        """Every row reads as unpositioned now, so no earlier collision scan holds."""
         if "occurrence" not in self._existing_columns("functions"):
             self._conn.execute(
                 "ALTER TABLE functions ADD COLUMN occurrence INTEGER NOT NULL DEFAULT 0")
+            self._conn.execute("DELETE FROM run_collisions")
 
     def _add_run_provenance_columns(self) -> None:
         run_cols = self._existing_columns("runs")
@@ -781,17 +822,78 @@ class SnapshotStore:
             (run_id, run_id))
         return key_names([_Span(*row) for row in cur])
 
-    def historical_collision_groups(self) -> set[tuple[str, str]]:
-        """Raw-name groups that contained same-line twins in any stored run."""
-        return set(self._collision_groups())
+    def historical_collision_groups(self, paths=None) -> set[tuple[str, str]]:
+        """Raw-name groups that contained same-line twins in any stored run.
+
+        `paths` narrows the answer to the files a reader proves. A mark is only
+        ever compared with a row of its own file, so a group in a file the
+        reader does not read cannot mis-key anything it answers.
+        """
+        if paths is None:
+            return {(path, name) for path, name, _run, _legacy in self._collisions()}
+        return self._collisions_in(paths)
+
+    def _collisions_in(self, paths) -> set[tuple[str, str]]:
+        """A few files straight off the path index; more off the per-run table."""
+        if len(paths) > _PINNED_PATHS:
+            return {group for group in self.historical_collision_groups() if group[0] in paths}
+        return self._pinned_collisions(paths)
+
+    def _pinned_collisions(self, paths) -> set[tuple[str, str]]:
+        return {group for path in sorted(paths) for group in self._collision_groups(path=path)}
 
     def identity_witness_run_ids(self) -> set[int]:
         """One recent run per collision group keeps legacy key checks unchanged."""
         newest = {}
-        for path, name, run_id in self._collision_rows():
+        for path, name, run_id, _legacy in self._collisions():
             key = path, name
             newest[key] = max(run_id, newest.get(key, 0))
         return set(newest.values())
+
+    def _collisions(self, run_id: int | None = None) -> set[tuple[str, str, int, int]]:
+        """(path, raw name, run, legacy) for each collision group, off the per-run table.
+
+        A run nothing has scanned yet is scanned now and stored best effort, as
+        the rollup is: the scan's own rows answer even when the write loses the
+        lock, so an unscanned run is never read as a run without collisions.
+        `run_id` narrows both the scan and the read to that run.
+        """
+        clause, params = _one_run(run_id, "r.id")
+        unscanned = [rid for (rid,) in self._conn.execute(f"{_UNSCANNED}{clause} ORDER BY r.id", params)]
+        scanned = self._scan_collisions(unscanned)
+        clause, params = _one_run(run_id, "c.run_id")
+        return scanned | set(self._conn.execute(f"{_COLLISION_READ}{clause}", params))
+
+    def _scan_collisions(self, run_ids: list[int]) -> set[tuple[str, str, int, int]]:
+        """One run at a time: each scan seeks its run's rows, and one GROUP BY over
+        every run sorted all of them at once and took longer."""
+        found, rows = set(), []
+        for run in run_ids:
+            for identity, path, name, legacy in self._conn.execute(_COLLISION_SCAN, (run,)):
+                found.add((path, name, run, legacy))
+                rows.append((run, identity, legacy))
+            rows.append((run, 0, 0))
+        self._store_collisions(rows)
+        return found
+
+    def _store_collisions(self, rows: list[tuple]) -> None:
+        """Best effort, as _store_rollup: losing the cache is a cost, losing the command a bug."""
+        try:
+            with self._conn:
+                self._conn.executemany(
+                    "INSERT OR REPLACE INTO run_collisions (run_id, identity_id, legacy) "
+                    "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)",
+                    ((*row, row[0]) for row in rows))
+        except sqlite3.OperationalError:
+            pass  # another process holds the write lock, or the store is read-only
+
+    def _legacy_groups(self, run_id: int | None) -> dict[tuple[str, str], set[int]]:
+        """The groups holding a twin no reader can place, and the runs that hold them."""
+        held: dict[tuple[str, str], set[int]] = {}
+        for path, name, run, legacy in self._collisions(run_id):
+            if legacy:
+                held.setdefault((path, name), set()).add(run)
+        return held
 
     def _collision_groups(self, *, run_id=None, path=None, name=None,
                           legacy_only: bool = False) -> dict[tuple[str, str], set[int]]:
@@ -813,8 +915,11 @@ class SnapshotStore:
             f"HAVING SUM(f.occurrence = 0) > 1 OR ({multiple})", params)
 
     def _require_identity(self, *, run_id=None, path=None, name=None) -> None:
-        refuse_ambiguous(self._collision_groups(run_id=run_id, path=path, name=name,
-                                               legacy_only=True))
+        """Refuse twins the read run cannot place: a whole run off the per-run
+        table, one file off the path index."""
+        held = (self._legacy_groups(run_id) if path is None
+                else self._collision_groups(run_id=run_id, path=path, name=name, legacy_only=True))
+        refuse_ambiguous(held)
 
     def count_by_path(self, run_id: int, *, flag: str,
                       skip_scopes=frozenset()) -> list[tuple[str, int, int]]:
@@ -1211,10 +1316,10 @@ class SnapshotStore:
         functions reads as a real run that scored zero, which is how a prune
         turns a silent digest into a false alarm and a trend into fiction.
 
-        The cached rollup goes in the same transaction, and for the same
-        reason: a rollup row that outlives its run keeps answering for it, so
-        run_totals would still hand out totals for a run the store no longer
-        holds. Ids come from AUTOINCREMENT and are never handed out twice, so
+        The cached rollup and collision groups go in the same transaction, and
+        for the same reason: a cached row that outlives its run keeps answering
+        for it, so run_totals would still hand out totals, and the identity
+        proof collisions, for a run the store no longer holds. Ids come from AUTOINCREMENT and are never handed out twice, so
         nothing else would ever overwrite the row.
         """
         # A concurrent writer may add a run after the caller selected retention.
@@ -1224,6 +1329,7 @@ class SnapshotStore:
             doomed = self._doomed_ids(keep_ids, observed_ids)
             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
+            self._conn.executemany("DELETE FROM run_collisions WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM runs WHERE id = ?", doomed)
         return len(doomed)
 

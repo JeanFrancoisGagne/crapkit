@@ -275,17 +275,24 @@ def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _identity_history(root: Path, store=None) -> set:
+def _identity_history(root: Path, store, proof) -> set:
+    """Collision groups any stored run held, in the files the proof rows cover.
+
+    The paths come from the rows being proved, so check_gate, explain and the
+    commit gate prove the few files they read off the path index, and worklist,
+    brief and verify, whose rows are a whole run, prove every file it holds.
+    """
+    paths = {row.path for row in proof}
     if store is not None:
-        return store.historical_collision_groups()
-    path = root / ".crapkit" / "crap.sqlite"
-    if not path.is_file():
+        return store.historical_collision_groups(paths)
+    db = root / ".crapkit" / "crap.sqlite"
+    if not db.is_file():
         return set()
     from contextlib import closing
 
-    opened = SnapshotStore(path)
+    opened = SnapshotStore(db)
     with closing(opened._conn):
-        return opened.historical_collision_groups()
+        return opened.historical_collision_groups(paths)
 
 
 def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None) -> int:
@@ -299,7 +306,7 @@ def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None) 
         if not read_ratchet(text)[0]:
             return KEY_VERSION
         proof = rows() if callable(rows) else rows
-        return checked_key_version(text, proof, historical=_identity_history(root, store))
+        return checked_key_version(text, proof, historical=_identity_history(root, store, proof))
     except ValueError as exc:
         raise ConfigError(f"{name}: {exc}") from exc
 
