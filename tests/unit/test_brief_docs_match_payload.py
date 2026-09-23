@@ -137,6 +137,14 @@ def test_the_example_quotes_the_binds_sentence_every_packet_carries():
     assert _example()["gate_rule"]["binds"] == packet.GATE_BINDS
 
 
+def test_the_example_names_the_analysis_version_a_packet_carries(payload):
+    """Marks and scores from two analysis versions are not one series, so a
+    reader checks a packet's version against the page's."""
+    documented = _example()["versions"]["analysis_version"]
+
+    assert documented == payload["versions"]["analysis_version"]
+
+
 def test_every_type_the_field_table_names_is_the_payloads_type(payload):
     rows = _table(_subsection("What the session reads"))
 

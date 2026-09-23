@@ -382,7 +382,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
   "stale": false,
   "target": 6,
   "uncovered_lines": [6, 8, 12, 14],
-  "versions": {"analysis_version": 10, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
+  "versions": {"analysis_version": 11, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
 }
 ```
 
