@@ -73,12 +73,12 @@ def run_cli(repo: Path, *args: str, timeout: float | None = None, env_extra: dic
     """`python -m crapkit <args>` in `repo`, captured as text, under the hang
     bound unless `timeout` names another."""
     from cli_in_process import fits, run as in_process
+    bound = hang_guard.HANG_SECONDS if timeout is None else timeout
     if fits(args, spawn):
         return in_process(repo, args, env=child_env(env_extra), stdin=stdin,
-                          encoding=encoding, errors=errors, timeout=timeout)
+                          encoding=encoding, errors=errors, timeout=bound)
     if args and args[0] == 'mcp' and stdin is not None:
         from mcp_stdio import run
-        bound = hang_guard.HANG_SECONDS if timeout is None else timeout
         return run([*CRAPKIT, *args], cwd=repo, frames=stdin, env=child_env(env_extra),
                    timeout=bound, encoding=encoding, errors=errors)
     return hang_guard.run([*CRAPKIT, *args], cwd=repo, input=stdin, text=True,

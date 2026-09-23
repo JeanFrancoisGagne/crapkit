@@ -11,11 +11,13 @@ from conftest import run_cli
 PING = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}) + "\n"
 
 
-def test_a_cli_run_without_its_own_bound_waits_the_hang_bound(tmp_path, monkeypatch):
+@pytest.mark.parametrize("spawn, miss", [(True, "so the child was killed"),
+                                          (False, "so the call was stopped")])
+def test_a_cli_run_without_its_own_bound_waits_the_hang_bound(tmp_path, monkeypatch, spawn, miss):
     monkeypatch.setattr(hang_guard, "HANG_SECONDS", 0)
 
-    with pytest.raises(AssertionError, match="so the child was killed"):
-        run_cli(tmp_path, "--version")
+    with pytest.raises(AssertionError, match=f"within 0 s, {miss}"):
+        run_cli(tmp_path, "--version", spawn=spawn)
 
 
 def test_a_cli_run_inside_the_bound_returns_its_output(tmp_path):
