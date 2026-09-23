@@ -506,6 +506,46 @@ def test_a_path_keeps_the_commits_that_did_not_age_out(tmp_path, git, monkeypatc
     assert git.window_calls == 1
 
 
+HEAD_C = "cccc3333cccc3333cccc3333cccc3333cccc3333"
+DAVE = block("dave", 1000001500, 1000001500, "src/a.py")
+
+
+def stored_table(root) -> dict:
+    return json.loads(table_file(root).read_bytes().partition(b"\n")[2])
+
+
+def test_a_carry_and_an_expiry_in_one_miss_answer_a_cold_rebuild(tmp_path, git, monkeypatch):
+    """The first read on a new day after commits landed does both at once:
+    carol's and alice's new commits fold in on top while alice's first one
+    ages out. src/a.py then holds carol's fresh number above bob's, with the
+    aged one below both, the case expiry's shortcut has to get right."""
+    new_day(monkeypatch, "2026-08-21")
+    churn_cache.load_churn(tmp_path, 12)
+    new_day(monkeypatch, "2026-08-22")
+    move_head(git)
+    git.floor = 1000000100  # alice's first commit ages out as carol's lands
+
+    # bob is now the oldest author date and carol the newest: a.py sums carol's
+    # 0.5 and bob's 0.0000061; b.py holds alice's new commit, halfway (0.0024726).
+    assert churn_cache.load_churn(tmp_path, 12) == {
+        "src/a.py": FileChurn(2, 2, 0.5), "src/b.py": FileChurn(1, 1, 0.0025),
+        "src/c.py": FileChurn(1, 1, 0.5)}
+    git.head = HEAD_C
+    git.ranges[(HEAD_B, HEAD_C)] = list(DAVE)
+    carried = churn_cache.load_churn(tmp_path, 12)
+
+    table = stored_table(tmp_path)
+    kept = [seq for seq, *_ in table["commits"]]
+    assert table["files"]["src/a.py"][0] == max(kept), "dave numbers above every kept commit"
+    assert len(set(kept)) == len(kept) == 4
+
+    for stale in (tmp_path / ".crapkit").iterdir():
+        stale.unlink()
+    git.log = DAVE + RANGE + LOG
+    assert dump(churn_cache.load_churn(tmp_path, 12)) == dump(carried)
+    assert git.window_calls == 2
+
+
 def test_an_empty_window_carries_the_commits_that_arrive(tmp_path, git):
     git.log = []
     assert churn_cache.load_churn(tmp_path, 12) == {}
