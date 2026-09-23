@@ -40,6 +40,11 @@ _REMEDY_DESCRIPTION = ("decompose (ccn over ceiling), split-lines (another funct
                        "lines), add-tests (coverage short) or ok (nothing left to do)")
 _REMEDY = {"type": "string", "description": _REMEDY_DESCRIPTION, "enum": _REMEDIES}
 
+# Every function row carries it (docs/agent-json.md), so every row schema says so once.
+_OCCURRENCE = {"type": "integer", "description": (
+    "source creation order among functions sharing start, from 1; 0 on an older row with no "
+    "recorded position")}
+
 # The partition a large repo needs before `top` means anything: one --scope
 # per element, exact names as declared in crapkit.toml.
 _SCOPE = {
@@ -60,6 +65,7 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
                            'the edit this item asks for; pass it back as name'},
  'start': {'type': 'integer', 'description': 'first line, 1-based inclusive'},
  'end': {'type': 'integer', 'description': 'last line, 1-based inclusive'},
+ 'occurrence': _OCCURRENCE,
  'ccn': {'type': 'integer',
          'description': 'min(ccn_std, ccn_mod): the complexity the gate and the ratchet judge'},
  'ccn_std': {'type': 'integer', 'description': 'standard cyclomatic complexity'},

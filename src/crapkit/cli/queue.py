@@ -340,7 +340,8 @@ def _next_item_payload(top, adm, cfg, uncovered, handle: str | None = None) -> d
         # the name form that survives the session's own edit: a start line moves,
         # a position among the file's anonymous functions does not
         "handle": handle,
-        "start": top.start, "end": top.end, "ccn": top.ccn, "ccn_std": top.ccn_std,
+        "start": top.start, "end": top.end, "occurrence": position(top)[1],
+        "ccn": top.ccn, "ccn_std": top.ccn_std,
         "cov": top.cov, "flag": top.flag, "crap": top.crap, "remedy": top.remedy,
         "nloc": top.nloc, "nesting": top.nesting, "cognitive": top.cognitive,
         "commits": c.commits, "authors": c.authors,

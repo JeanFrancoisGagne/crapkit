@@ -410,6 +410,8 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   partial. `--tune` now holds the suggestion at 1 and names the lanes, `doctor` WARNs
   about them when `max_parallel_lanes` is above 1, and the testpath stubs `init` writes
   each set `env = { COVERAGE_FILE = ".coverage.<lane>" }`.
+- `next-item`'s item and `get_next_item`'s output schema carry `occurrence`, as
+  docs/agent-json.md always showed. The key was missing since 0.7.0.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 
