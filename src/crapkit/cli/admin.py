@@ -876,6 +876,19 @@ def _doctor_artifact_litter(cfg) -> list[Finding]:
             for item in artifact_litter(cfg.lanes, scope_top_dirs(cfg.scopes))]
 
 
+def _doctor_shared_coverage_data(cfg) -> list[Finding]:
+    """WARN when lanes that write one coverage.py data file may run at once.
+    Serial lanes take turns on it, so max_parallel_lanes = 1 says nothing."""
+    from ..doctor import shared_coverage_data, shared_data_words
+
+    if cfg.max_parallel_lanes < 2:
+        return []
+    return [Finding("WARN", f"{what}, and max_parallel_lanes = {cfg.max_parallel_lanes} can "
+                            "start them together, which can lose one to "
+                            f"sqlite3.OperationalError and leave the run partial; {fix}")
+            for what, fix in map(shared_data_words, shared_coverage_data(cfg.lanes))]
+
+
 def _lizard_version() -> str | None:
     try:
         import lizard
@@ -1089,6 +1102,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)
+            + _doctor_shared_coverage_data(cfg)
             + _doctor_hook_modes(root)
             + _doctor_hook_encoding(root)
             + _doctor_commit_graph(root)
@@ -1258,13 +1272,13 @@ def _lane_durations(root: Path, cfg) -> tuple[float, ...]:
 def _doctor_tune(root: Path, cfg) -> int:
     """Advisory only: knob lines from this machine's cpu count and whatever lane
     durations are already on disk. Nothing is written and nothing is executed."""
-    from ..doctor import suggest_knobs, tune_lines
+    from ..doctor import shared_coverage_data, suggest_knobs, tune_lines
     from ..resources import available_cpus
 
     for finding in _doctor_stamps(root, cfg.lanes):
         print(f"{finding.level} {finding.text}", file=sys.stderr)
     cpus, _ = available_cpus()
-    knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes))
+    knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes), shared=shared_coverage_data(cfg.lanes))
     for line in tune_lines(cpus=cpus, knobs=knobs, durations=_lane_durations(root, cfg)):
         print(line)
     return 0

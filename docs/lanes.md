@@ -733,8 +733,8 @@ write at all. The reported case is a `conftest.py` two testpaths both import, wh
 Setting `full_suite = false` on a single narrowed lane clears the refusal and measures one
 testpath; the other three go dark, their functions score `no-lane`, and nothing says so.
 
-Declare one lane per collectable testpath instead, each with `full_suite = false` and its
-own artifact:
+Declare one lane per collectable testpath instead, each with `full_suite = false`, its
+own artifact and its own coverage.py data file:
 
 ```toml
 [[lane]]
@@ -743,6 +743,7 @@ command = "python -m pytest conform --cov --cov-branch --cov-report=json:.crapki
 artifact = ".crapkit/cov/py-conform.json"
 results_artifact = ".crapkit/cov/junit-py-conform.xml"
 parser = "coveragepy"
+env = { COVERAGE_FILE = ".coverage.py-conform" }
 scopes = ["impl"]
 full_suite = false
 
@@ -752,9 +753,15 @@ command = "python -m pytest impl --cov --cov-branch --cov-report=json:.crapkit/c
 artifact = ".crapkit/cov/py-impl.json"
 results_artifact = ".crapkit/cov/junit-py-impl.xml"
 parser = "coveragepy"
+env = { COVERAGE_FILE = ".coverage.py-impl" }
 scopes = ["impl"]
 full_suite = false
 ```
+
+Both lanes start in the repo root, where coverage.py writes `.coverage` unless
+`COVERAGE_FILE` names another file. Serial lanes take turns on it; under
+[`max_parallel_lanes`](#running-lanes-in-parallel) two lanes on one data file can lose one
+to `sqlite3.OperationalError: table coverage_schema already exists`.
 
 Several lanes may name the same scope: the parts table at the top of this page forbids
 two lanes sharing an `artifact` path, and nothing else. Both lanes above name `impl`, the
@@ -1227,7 +1234,8 @@ Rules that keep this from hiding real failures:
 
 ## Running lanes in parallel
 
-Wall time, and nothing else. The scores come out identical.
+Wall time, and nothing else. The scores come out identical, as long as no two lanes
+write the same file.
 
 ```toml
 [crapkit]
@@ -1250,9 +1258,22 @@ Two things to check before raising it:
   directory manufacture failures that `verify` reads as a gate breach.
 - Runners that size their own worker pool from free memory (vitest does) need a per-lane
   `env` cap, or N lanes each claim the whole box.
+- Two `coveragepy` lanes that start in one directory write one coverage.py data file,
+  `.coverage` there. Run at once, one of them intermittently dies with
+  `sqlite3.OperationalError: table coverage_schema already exists` and the run comes back
+  partial, exit 5. Give each lane its own file:
+  `env = { COVERAGE_FILE = ".coverage.py-conform" }`. `doctor` WARNs about such lanes when
+  `max_parallel_lanes` is above 1.
 
 `crapkit doctor --tune` suggests a value from your cpu count and the recorded lane durations,
-and estimates the makespan. It writes nothing.
+and estimates the makespan. It writes nothing. While two `coveragepy` lanes write one data
+file, as the two testpath lanes above do without their `env` lines, it holds the suggestion
+at 1 and names them:
+
+```
+max_parallel_lanes = 1
+# held at 1: lanes 'py-conform', 'py-impl' write one coverage.py data file, and two lanes on it at once can lose one to sqlite3.OperationalError; give each its own, for example env = { COVERAGE_FILE = ".coverage.py-conform" }, then rerun doctor --tune
+```
 
 `[crapkit] analysis_workers` (default `0` = one process per core) caps the lizard pool
 separately. Set it when the analysis pass runs beside parallel lanes so the two are not both

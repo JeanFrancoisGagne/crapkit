@@ -427,14 +427,17 @@ def _testpath_slug(testpath: str) -> str:
 
 def _testpath_lane(lane: LaneSpec, testpath: str) -> LaneSpec:
     """The detected pytest lane narrowed to one testpath, carrying its own
-    artifact pair: two lanes may not declare the same artifact path."""
+    artifact pair: two lanes may not declare the same artifact path. It names
+    its own coverage.py data file too, since the siblings start in one directory
+    and two of them run at once would share `.coverage` there."""
     name = f"{lane.name}-{_testpath_slug(testpath)}"
     artifact = f"{_COV_DIR}/{name}.json"
     results = f"{_COV_DIR}/junit-{name}.xml"
     command = (lane.command.replace(_PYTEST_INVOCATION, f"{_PYTEST_INVOCATION}{testpath} ")
                .replace(lane.artifact, artifact).replace(lane.results_artifact, results))
     return lane._replace(name=name, command=command, artifact=artifact,
-                         results_artifact=results)
+                         results_artifact=results,
+                         env=(*lane.env, ("COVERAGE_FILE", f".coverage.{name}")))
 
 
 def _commented_lane(lane: LaneSpec, scope_names: tuple[str, ...]) -> list[str]:

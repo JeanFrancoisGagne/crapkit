@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from typing import NamedTuple
 
 from .universe import LANGUAGE_EXTENSIONS, scopes_with_tests
@@ -120,23 +121,58 @@ def files_template_gaps(scoped_tests, scope_paths: dict[str, tuple[str, ...]],
         name=name, paths=", ".join(scope_paths[name]))) for name in gaps)
 
 
+def _coverage_data_file(lane) -> str:
+    """Where a coveragepy lane's data file lands, as far as the config says.
+
+    COVERAGE_FILE from the lane's env, else coverage.py's default in the
+    directory the lane starts in. A command that passes its own `--data-file`
+    is keyed by that command, so it shares a file with no other lane."""
+    if "--data-file" in lane.command:
+        return lane.command
+    name = dict(lane.env).get("COVERAGE_FILE") or ".coverage"
+    return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
+
+
+def shared_coverage_data(lanes) -> tuple[tuple[str, ...], ...]:
+    """The names of coveragepy lanes that write one data file, one group each.
+
+    Two such lanes run at once collide on it: coverage.py's sqlite file refuses
+    the second writer with `table coverage_schema already exists`."""
+    groups: dict[str, list[str]] = {}
+    for lane in lanes:
+        if lane.parser == "coveragepy":
+            groups.setdefault(_coverage_data_file(lane), []).append(lane.name)
+    return tuple(tuple(names) for _, names in sorted(groups.items()) if len(names) > 1)
+
+
+def shared_data_words(names: tuple[str, ...]) -> tuple[str, str]:
+    """What one group shares and the fix, in the words doctor and doctor --tune
+    both print."""
+    listed = ", ".join(repr(name) for name in names)
+    return (f"lanes {listed} write one coverage.py data file", "give each its own, for example "
+            f"env = {{ COVERAGE_FILE = \".coverage.{names[0]}\" }}")
+
+
 class Knobs(NamedTuple):
     max_parallel_lanes: int
     analysis_workers: int
     mutation_workers: int
+    shared: tuple[tuple[str, ...], ...] = ()  # lane groups that held the slots at 1
 
 
-def suggest_knobs(*, cpus: int, lanes: int) -> Knobs:
+def suggest_knobs(*, cpus: int, lanes: int, shared: tuple[tuple[str, ...], ...] = ()) -> Knobs:
     """Advisory parallelism for this machine.
 
     One core stays for the shell watching the run. A lane and a mutation worker
     each hold a whole test suite in memory, so they get a quarter of the box
     rather than a core apiece, and there is never a reason to run more lane
-    slots than there are lanes.
+    slots than there are lanes. Lanes that share a coverage.py data file hold
+    the slots at 1: the scheduler does not know which lanes may run together.
     """
-    return Knobs(max_parallel_lanes=max(1, min(lanes, cpus // 4)),
+    slots = 1 if shared else max(1, min(lanes, cpus // 4))
+    return Knobs(max_parallel_lanes=slots,
                  analysis_workers=max(1, cpus - 1),
-                 mutation_workers=max(1, cpus // 4))
+                 mutation_workers=max(1, cpus // 4), shared=shared)
 
 
 def parallel_seconds(durations: tuple[float, ...], slots: int) -> float:
@@ -158,11 +194,21 @@ def _cost_line(slots: int, durations: tuple[float, ...]) -> str:
             f"~{parallel_seconds(durations, slots):.1f}s across {slots} lane slot(s)")
 
 
+def _held_lines(shared: tuple[tuple[str, ...], ...]) -> list[str]:
+    out = []
+    for names in shared:
+        what, fix = shared_data_words(names)
+        out.append(f"# held at 1: {what}, and two lanes on it at once can lose one to "
+                   f"sqlite3.OperationalError; {fix}, then rerun doctor --tune")
+    return out
+
+
 def tune_lines(*, cpus: int, knobs: Knobs, durations: tuple[float, ...]) -> list[str]:
     """Paste-ready [crapkit] knob lines plus what the suggestion was based on."""
     return [f"# doctor --tune: suggestions for {cpus} cpu(s); nothing was written",
             "[crapkit]",
             f"max_parallel_lanes = {knobs.max_parallel_lanes}",
+            *_held_lines(knobs.shared),
             f"analysis_workers = {knobs.analysis_workers}",
             f"mutation_workers = {knobs.mutation_workers}",
             _cost_line(knobs.max_parallel_lanes, durations)]

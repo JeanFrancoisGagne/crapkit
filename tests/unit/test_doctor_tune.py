@@ -5,7 +5,8 @@ The three parallelism knobs moved a weekly run from 136 to 56 minutes and were
 hand-derived every time. These are pure arithmetic on a cpu count and whatever
 lane durations already sit on disk: advisory, and identical for identical input.
 """
-from crapkit.doctor import parallel_seconds, suggest_knobs, tune_lines
+from crapkit.config import Lane
+from crapkit.doctor import parallel_seconds, shared_coverage_data, suggest_knobs, tune_lines
 from crapkit.junitparse import suite_seconds
 
 
@@ -103,3 +104,39 @@ def test_a_suite_with_no_time_falls_back_to_its_testcases():
 def test_a_report_with_no_timing_at_all_is_zero_seconds():
     assert suite_seconds('<testsuite><testcase classname="t" name="x"/></testsuite>') == 0.0
     assert suite_seconds('<testsuite time="nope"><testcase name="x"/></testsuite>') == 0.0
+
+
+def _lane(name: str, *, parser: str = "coveragepy", cwd: str = "", env=(),
+          command: str = "python -m pytest --cov --cov-report=json") -> Lane:
+    return Lane(name, command, f".crapkit/cov/{name}.json", parser, ("src",), cwd=cwd, env=env)
+
+
+def test_coveragepy_lanes_started_in_one_directory_write_one_data_file():
+    """Both write .coverage where they start; run at once, one dies with
+    `sqlite3.OperationalError: table coverage_schema already exists`."""
+    lanes = [_lane("a"), _lane("b"), _lane("ts", parser="istanbul"), _lane("c", cwd="pkg")]
+    assert shared_coverage_data(lanes) == (("a", "b"),)
+
+
+def test_a_lane_that_names_its_own_data_file_shares_none():
+    assert shared_coverage_data([_lane("a", env=(("COVERAGE_FILE", ".coverage.a"),)),
+                                 _lane("b", env=(("COVERAGE_FILE", ".coverage.b"),))]) == ()
+    assert shared_coverage_data([_lane("a", cwd="pkg_a"), _lane("b", cwd="pkg_b")]) == ()
+    assert shared_coverage_data([
+        _lane("a", command="coverage run --data-file=.coverage.a -m pytest"), _lane("b")]) == ()
+
+
+def test_one_coverage_file_named_in_both_lanes_is_still_shared():
+    env = (("COVERAGE_FILE", ".coverage.x"),)
+    assert shared_coverage_data([_lane("a", env=env), _lane("b", env=env)]) == (("a", "b"),)
+
+
+def test_lanes_sharing_a_data_file_hold_the_lane_slots_at_one():
+    knobs = suggest_knobs(cpus=16, lanes=2, shared=(("a", "b"),))
+    assert knobs.max_parallel_lanes == 1
+    lines = tune_lines(cpus=16, knobs=knobs, durations=())
+    assert lines[2:4] == [
+        "max_parallel_lanes = 1",
+        "# held at 1: lanes 'a', 'b' write one coverage.py data file, and two lanes on it at "
+        "once can lose one to sqlite3.OperationalError; give each its own, for example "
+        "env = { COVERAGE_FILE = \".coverage.a\" }, then rerun doctor --tune"]

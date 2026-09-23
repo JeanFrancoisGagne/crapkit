@@ -403,6 +403,13 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   such as a new module no test imports: every line of its functions, which score flag
   `untested`. Such a file was skipped, so a pull request adding one passed a ceiling of 0
   with no warning. Its lines outside any function still do not count.
+- `doctor --tune` suggested `max_parallel_lanes = 2` for two pytest-cov lanes started
+  from one directory, the per-testpath shape lanes.md recommends. Both write coverage.py's
+  `.coverage` there, and run at once one of them intermittently died with
+  `sqlite3.OperationalError: table coverage_schema already exists`, leaving the run
+  partial. `--tune` now holds the suggestion at 1 and names the lanes, `doctor` WARNs
+  about them when `max_parallel_lanes` is above 1, and the testpath stubs `init` writes
+  each set `env = { COVERAGE_FILE = ".coverage.<lane>" }`.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 

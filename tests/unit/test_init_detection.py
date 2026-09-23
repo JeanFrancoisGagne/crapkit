@@ -735,6 +735,24 @@ def test_an_uncommented_sibling_lane_parses_and_clears_the_full_suite_guard():
     assert lane.scopes == ("impl",)
 
 
+def test_sibling_lanes_each_name_their_own_coverage_data_file():
+    """Both stubs start in one directory, where coverage.py writes `.coverage`
+    unless told otherwise. Run at once under max_parallel_lanes, one of them
+    died with `sqlite3.OperationalError: table coverage_schema already exists`."""
+    from crapkit.doctor import shared_coverage_data
+
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), ""),
+                        testpaths=("conform", "impl"))
+
+    lanes = load_config_text('[[scope]]\nname = "impl"\npaths = ["impl"]\n'
+                             'languages = ["python"]\n'
+                             + _uncommented_lane(text, "py-conform")
+                             + _uncommented_lane(text, "py-impl")).lanes
+    assert [dict(lane.env) for lane in lanes] == [{"COVERAGE_FILE": ".coverage.py-conform"},
+                                                  {"COVERAGE_FILE": ".coverage.py-impl"}]
+    assert shared_coverage_data(lanes) == ()
+
+
 def test_a_repo_with_no_pytest_lane_gets_no_sibling_lanes():
     """testpaths without a detected pytest lane names no lane to split: the js
     lane measures none of those paths."""

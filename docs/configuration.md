@@ -397,7 +397,9 @@ mutation_workers = 6
 
 The cost line needs at least one recorded lane duration. With none it says so and the
 suggestion comes from the cpu count alone. The suggestion never proposes more lane slots
-than there are lanes.
+than there are lanes, and it stays at 1 while two `coveragepy` lanes write one coverage.py
+data file: a `# held at 1:` line names them and the `COVERAGE_FILE` that separates them
+([lanes.md](lanes.md#running-lanes-in-parallel)).
 
 ---
 
