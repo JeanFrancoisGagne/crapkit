@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from test_release_guards import repo, verified
+from test_release_guards import git, repo, verified
 from test_release_tool import release
 
 VERSION = "0.5.2"
@@ -41,6 +41,34 @@ def test_build_and_check_finish_before_any_push(tmp_path, monkeypatch):
     assert "artifacts" not in receipt(root)
 
 
+def _expanded(arg, root):
+    if arg.endswith("/*"):
+        return [str(p.relative_to(root)) for p in sorted(root.glob(arg))]
+    return [arg]
+
+
+def _normalized(command, root):
+    """The command with each `DIR/*` expanded to the files there and `--repo X` dropped."""
+    command = tuple(value for arg in command for value in _expanded(arg, root))
+    if "--repo" not in command:
+        return command
+    index = command.index("--repo")
+    return command[:index] + command[index + 2:]
+
+
+# First match wins, in this order: a twine check carries neither "build" nor "upload".
+PUBLICATIONS = (
+    (lambda command: "build" in command, "_build"),
+    (lambda command: command[:2] == ("git", "push"), "_push"),
+    (lambda command: "twine" in command and "upload" in command, "_pypi_upload"),
+    (lambda command: command[:3] == ("gh", "release", "create"), "_github_create"),
+    (lambda command: command[:3] == ("gh", "release", "upload"), "_github_upload"),
+    (lambda command: command[:3] == ("claude", "plugin", "update"), "_plugin"),
+    (lambda command: command[:2] == ("gh", "api"), "_pages"),
+    (lambda command: "check" in command, "_check"),
+)
+
+
 class PublicationAdapter:
     """A disposable repository plus in-memory publication responses."""
     def __init__(self, root, fail_after=None):
@@ -58,42 +86,47 @@ class PublicationAdapter:
             raise subprocess.CalledProcessError(1, command)
 
     def execute(self, command, root, dry_run):
-        from test_release_guards import git
-        command = tuple(value for arg in command for value in (
-            [str(p.relative_to(root)) for p in sorted(root.glob(arg))] if arg.endswith("/*") else [arg]))
-        if "--repo" in command:
-            index = command.index("--repo")
-            command = command[:index] + command[index + 2:]
-        if "build" in command:
-            output = root / command[command.index("--outdir") + 1]
-            output.mkdir(parents=True)
-            for name, raw in ARTIFACTS.items():
-                (output / name).write_bytes(raw)
-            self.event("build", command)
-        elif command[:2] == ("git", "push"):
-            git(root, *command[1:])
-            self.event("push", command)
-        elif "twine" in command and "upload" in command:
-            for value in command[command.index("--non-interactive") + 1:]:
-                self.pypi[Path(value).name] = hashlib.sha256((root / value).read_bytes()).hexdigest()
-                self.event("pypi:" + Path(value).name, command)
-        elif command[:3] == ("gh", "release", "create"):
-            self.github = {"tag_name": "v" + VERSION, "draft": False, "assets": []}
-            self.event("github:create", command)
-        elif command[:3] == ("gh", "release", "upload"):
-            for value in command[4:]:
-                digest = hashlib.sha256((root / value).read_bytes()).hexdigest()
-                self.github["assets"].append({"name": Path(value).name, "digest": "sha256:" + digest})
-                self.event("github:" + Path(value).name, command)
-        elif command[:3] == ("claude", "plugin", "update"):
-            self.event("plugin", command)
-        elif command[:2] == ("gh", "api"):
-            self.pages = {"commit": receipt(root)["head"], "status": "built"}
-            self.event("pages", command)
-        elif "check" in command:
-            self.event("check", command)
-        else:
-            raise AssertionError(command)
+        command = _normalized(command, root)
+        for matches, handler in PUBLICATIONS:
+            if matches(command):
+                return getattr(self, handler)(command, root)
+        raise AssertionError(command)
+
+    def _build(self, command, root):
+        output = root / command[command.index("--outdir") + 1]
+        output.mkdir(parents=True)
+        for name, raw in ARTIFACTS.items():
+            (output / name).write_bytes(raw)
+        self.event("build", command)
+
+    def _push(self, command, root):
+        git(root, *command[1:])
+        self.event("push", command)
+
+    def _pypi_upload(self, command, root):
+        for value in command[command.index("--non-interactive") + 1:]:
+            self.pypi[Path(value).name] = hashlib.sha256((root / value).read_bytes()).hexdigest()
+            self.event("pypi:" + Path(value).name, command)
+
+    def _github_create(self, command, root):
+        self.github = {"tag_name": "v" + VERSION, "draft": False, "assets": []}
+        self.event("github:create", command)
+
+    def _github_upload(self, command, root):
+        for value in command[4:]:
+            digest = hashlib.sha256((root / value).read_bytes()).hexdigest()
+            self.github["assets"].append({"name": Path(value).name, "digest": "sha256:" + digest})
+            self.event("github:" + Path(value).name, command)
+
+    def _plugin(self, command, root):
+        self.event("plugin", command)
+
+    def _pages(self, command, root):
+        self.pages = {"commit": receipt(root)["head"], "status": "built"}
+        self.event("pages", command)
+
+    def _check(self, command, root):
+        self.event("check", command)
 
     def remote_json(self, url, *, absent=False):
         if url.startswith("https://pypi.org/"):
@@ -348,7 +381,6 @@ def test_local_plugin_failure_can_retry_without_republishing(tmp_path, monkeypat
 
 
 def test_retry_allows_main_to_advance_after_confirmed_release_push(tmp_path, monkeypatch):
-    from test_release_guards import git
     root = repo(tmp_path, bumped=True)
     verified(root, monkeypatch)
     adapter = publish_adapter(root, monkeypatch, "pypi:" + sorted(ARTIFACTS)[0])
@@ -385,7 +417,6 @@ def test_artifact_change_during_check_refuses_before_push(tmp_path, monkeypatch)
 
 
 def test_conflicting_remote_tag_refuses_before_any_push(tmp_path, monkeypatch):
-    from test_release_guards import git
     root = repo(tmp_path, bumped=True)
     verified(root, monkeypatch)
     other = git(root, "commit-tree", "HEAD^{tree}", "-m", "different release")
