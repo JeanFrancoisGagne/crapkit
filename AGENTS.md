@@ -39,9 +39,7 @@ there can reach the WindowsApps stub or the base interpreter the venv wraps.
 
 `commands.refresh` is the fourth string: it creates a `coverage` run.
 Automatic reuse requires the same clean HEAD and unchanged configuration,
-environment and coverage/JUnit bytes, or, for a lane that lists its `inputs`, no
-change under those paths, its lane table or its `env` since the artifact's commit;
-every other lane reruns. That is what
+environment and coverage/JUnit bytes; every other lane reruns. That is what
 `stale: true` asks for. Nothing else clears it, because nothing else lands a run on the
 current commit. `commands.refresh_writes_run: true` marks that ledger write.
 The other commands can still write caches or test artifacts; the field does not
@@ -101,9 +99,7 @@ function alone, even when other names contain it — `route` is `route`, never
 `route_chain`. A NAME that names no function falls back to a substring search, so a
 half-remembered fragment still finds what holds it. `brief` and `explain` run the same
 rule on the same string, and both read a start line or an `(anonymous)#N` handle off the
-newest trusted run: a failed verify taken after it holds other positions. When that run
-dropped the file, `brief` refuses it and `explain` reads the newest trusted run that
-still holds it.
+newest trusted run: a failed verify taken after it holds other positions.
 
 A name that two functions answer to exits 1 and lists the candidates. Pass the long
 name or the start line instead:
@@ -155,11 +151,9 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
 - `remedy: split-lines`: another function shares this one's source lines, so coverage
   cannot tell them apart and the score stays at uncovered whatever you test. Put each
   definition on its own lines, then `crapkit coverage`. The next run says whether tests
-  are still owed. A Python def whose body starts on the line its signature ends gets
-  the same remedy under a coverage.py lane: coverage.py reads that body as the `def`
-  statement, which runs at import, so it cannot see a call. That covers a one-line
-  def and a body on the last line of a signature that spans several lines. Move the
-  body to its own line after the signature.
+  are still owed. A Python def written on one line under a coverage.py lane gets the
+  same remedy: its only line is the `def` statement, which runs at import, so
+  coverage.py cannot see a call. Move its body to the line after the `def`.
 - New file: `rescore --gate` gates it in full (every function, with an `untracked`
   warning on stderr) because git diff cannot scope it. `git add` it so later runs judge
   only your edits; the pre-commit hook only ever sees staged content.
@@ -182,8 +176,6 @@ Three rules decide what it judges:
 - **Exemption**: a function carrying a ratchet mark it has not exceeded passes. Push it
   past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
   mark that rose in a function the diff never touched.
-  The marks file is read only when a changed function is over its ceiling, so a clean
-  gate never reports a marks file it cannot parse; the next gate that breaches does.
 
 | Exit | Meaning | Next action |
 |---|---|---|
@@ -475,10 +467,6 @@ They print which run they took and which they passed over:
 
     crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 3 (86fb0cc6bce), skipped failed verify run 4
 
-`--baseline ID` names the run instead, as it does for verify, and is refused for the same
-reasons. When a failed verify stands in front of a newer trusted run, the line names that
-run and the flag that reads it.
-
 The `worklist_floor` is not part of the judgement: a function under the floor whose CRAP
 is over its ceiling is queued like any other, so an empty queue is never the floor hiding
 debt.
@@ -595,7 +583,7 @@ Twelve tools, every one the CLI command's `--json` form:
 | `list_duplicate_functions` | `similarity` | JSON |
 | `get_ratchet_report` | none | JSON |
 | `list_claims` | none | JSON (`claims list --json`) |
-| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach (exit 6), answered as a result, not a tool error |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears the commit gate; `ok` false on a breach (exit 6), answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
@@ -641,11 +629,12 @@ key and ignores it, so the floor is the half that keeps the warning from being t
 story. Measured on `tests/e2e/test_init_doctor_e2e.py`: `cli/admin.py` scores 0/498
 statements without it under pytest-cov 7.1.0, 317/498 with it under 7.1.0 and 6.3.0 alike.
 
-xdist is not a convenience either: `tests/fixtures/mini_repo` declares a lane that shells
-out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` gives the one test about
-xdist fragments combining `pytest ... -n 2`; without xdist either subprocess dies on an
-unrecognized `-n`, failing the e2e tests that assert the lane exited 0. CI installs this
-extra and nothing else, so a pytest plugin a committed fixture lane needs belongs in it.
+xdist is not a convenience either. `tests/fixtures/mini_repo` declares a lane that shells
+out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` keeps `-n 2` for the one
+test in `test_inventory_e2e.py` about xdist fragments combining. pytest rejects `-n`
+without xdist, `-n 0` included, so either lane dies on an unrecognized `-n` and fails the
+e2e tests that assert it exited 0. CI installs this extra and nothing else, so a pytest
+plugin a committed fixture lane needs belongs in it.
 
 The second line arms the complexity gate. Without it your commits pass locally and get
 rejected in review.
@@ -665,8 +654,7 @@ python -m pytest tests/e2e -n 8 -p no:randomly --dist worksteal
 four-worker unit and eight-worker CLI schedule used by development, CI and self-verification.
 Use `--unit-workers 1` on the shared runner to reproduce a unit failure serially.
 Use `--coverage` to combine both suites' branch coverage, test contexts and JUnit
-results. Either suite failing makes the runner fail. Use `--suite unit` or
-`--suite e2e` to run one session, the way each Windows CI job does.
+results. Either suite failing makes the runner fail.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
@@ -697,19 +685,22 @@ clears tempfile's cached directory for the call. These files do:
 | `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
 | `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
 
+Every test-side wait on a child goes through `tests/hang_guard.py`, whose one bound,
+`HANG_SECONDS` (120), replaces a guess per call site: verify run 103 failed six tests on a
+correct tree, each a 5 to 30 s bound that a saturated machine outlasted. A guard wait
+returns the moment its state appears, so the bound costs a passing test nothing, and on a
+miss it kills the child and reports what the child printed. A child script written from a
+template spells `CHILD_WAIT` where it waits and `CHILD_HOLD` where it holds a lock until
+the test releases it. `run_cli` and `mcp_stdio.run` wait the bound unless a call names
+another. A product deadline under test keeps its own number, listed with its reason in
+`tests/unit/test_one_hang_bound.py`, which fails on any other wait bounded under the hang
+bound in any file under `tests/`.
+
 A fixture that builds a measured repo builds it once per worker through
 `tests/e2e/repo_templates.py` and hands each test a copy. A test that asserts what a first
 run does gets a fresh build. A copy's lane artifacts still key files by the build's
 staging dir, which is gone, so a test that reads dark lines or reuses artifacts runs
 `coverage` in its copy first, or builds fresh.
-
-A test waits on a child through `tests/hang_guard.py`: one bound, `HANG_SECONDS`, that a
-passing wait never pays, and a miss that kills the child and fails with what it printed.
-A child script spells `CHILD_WAIT` for a state and `CHILD_HOLD` for a lock the test
-releases; a hold outlasts the longest chain of waits a test starts after it.
-`tests/unit/test_one_hang_bound.py` refuses a wait bound spelled as a number, and
-`tests/unit/test_loaded_machine_waits.py` refuses a CLI, lane or mutation deadline under
-the bound unless a test is about it.
 
 ## Where code goes
 
@@ -727,8 +718,8 @@ Shared rules belong to these modules:
 | `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread |
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
+| `retention.py` | which completed test runs are eligible for cleanup under their own leases |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
-| `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
@@ -775,7 +766,7 @@ Five reader modules sit beside the core, all registered in `analyze.py`'s
 | `lizardrust.py` | counts Rust `match` arms, which lizard does not (lizard #494) |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
-| `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax; blanks the template-literal characters lizard's tokenizer misreads, such as a nested template's backticks, before a JavaScript-family reader sees the file |
+| `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax |
 
 Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child
 imports `analyze.py`, so a reader registered anywhere later leaves spawned workers
