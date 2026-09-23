@@ -134,10 +134,12 @@ _SUSPENDED_GROUP = 0x200 | 0x4
 
 
 class _StartFailed(ToolError, OSError):
-    """The command never ran. A ToolError to the lane layer, which fails and
-    retries that one lane. Still an OSError to the doctor and init probes, which
-    read an OSError from run_bounded as a question that could not be put and
-    answer with a finding."""
+    """A start failed, so the exit code is no answer to read: a launcher died
+    at its start gate, an owner refused the registration, or the command exited
+    0xC0000142 because a process in it failed to start. A ToolError to the lane
+    layer, which fails and retries that one lane. Still an OSError to the doctor
+    and init probes, which read an OSError from run_bounded as a question that
+    could not be put and answer with a finding."""
 
 
 def _run(command, streams, owner, kwargs, watch):
@@ -180,10 +182,13 @@ def _unowned(process, error: OSError):
 
 def _refuse_failed_start(code):
     """A process whose DLL initialisation failed exits 0xC0000142 before its own
-    code runs. The lane layer retries that start instead of reading a result."""
+    code runs. A shell exits with its last process's code, so work before that
+    process may have run. The lane layer retries the command instead of reading
+    a result."""
     if code == _DLL_INIT_FAILED:
         raise _StartFailed(f"command exited with code {code} (0xC0000142, "
-                           "STATUS_DLL_INIT_FAILED) during process start-up, so its work never ran")
+                           "STATUS_DLL_INIT_FAILED): a process in it failed to start, "
+                           "so the code is not the command's answer")
 
 
 @contextmanager

@@ -83,7 +83,21 @@ def test_a_dll_init_failure_exit_is_the_retry_trigger(shell):
     assert isinstance(caught.value, OSError), "doctor and init probes read an OSError"
     message = str(caught.value)
     assert "3221225794 (0xC0000142, STATUS_DLL_INIT_FAILED)" in message
-    assert "never ran" in message
+    assert "failed to start" in message
+
+
+@WINDOWS
+def test_a_shell_whose_last_process_failed_to_start_is_not_called_unrun(tmp_path):
+    # cmd.exe exits with its last command's code, so the work before it did run.
+    log = tmp_path / "lane.log"
+    command = f'"{BASE}" -c "print(\'work ran\')" && "{BASE}" -c "{EXIT_DLL_INIT_FAILED}"'
+    with open(log, "wb") as stream, pytest.raises(ToolError) as caught:
+        procs.run_bounded(command, 30, stream=stream)
+    assert log.read_bytes() == b"work ran\r\n"
+    assert isinstance(caught.value, OSError), "doctor and init probes read an OSError"
+    assert str(caught.value) == (
+        "command exited with code 3221225794 (0xC0000142, STATUS_DLL_INIT_FAILED): a process "
+        "in it failed to start, so the code is not the command's answer")
 
 
 @WINDOWS
