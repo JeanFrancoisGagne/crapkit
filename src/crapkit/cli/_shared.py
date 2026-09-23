@@ -285,7 +285,10 @@ def _proved_paths(root: Path, proof, marks) -> set:
     a file git renamed, which the working tree no longer has, onto a proved
     file. And with no rows at all the reader matches marks against another
     run: explain on a file the newest run dropped. So a marked file the tree
-    lost is proved, and an empty proof proves every marked file.
+    lost is proved, and an empty proof proves every marked file. The helper
+    cannot tell that explain from `rescore --gate` on a file with no functions,
+    which compares no mark, so that gate pays the whole proof too, as it did
+    before the proof was narrowed to the rows' files.
     """
     paths = {row.path for row in proof}
     marked = {entry.path for entry in marks}
