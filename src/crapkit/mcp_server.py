@@ -34,10 +34,10 @@ _NAME_DESCRIPTION = ("the bare identifier (classify, or route for a Rust "
 # its outputSchema does not list is rejected whole by a validating client.
 _REMEDIES = ("decompose", "split-lines", "add-tests", "ok")
 _REMEDY_DESCRIPTION = ("decompose (ccn over ceiling), split-lines (another function shares its "
-                       "source lines, or a one-line Python def shares its only line with its def "
-                       "statement, so coverage cannot tell them apart and no test lowers the "
-                       "score until they sit on separate lines), add-tests (coverage short) or ok "
-                       "(nothing left to do)")
+                       "source lines, or a Python def's body starts on the line its signature "
+                       "ends, where coverage.py reads it as the def statement, so coverage cannot "
+                       "tell them apart and no test lowers the score until they sit on separate "
+                       "lines), add-tests (coverage short) or ok (nothing left to do)")
 _REMEDY = {"type": "string", "description": _REMEDY_DESCRIPTION, "enum": _REMEDIES}
 
 # The partition a large repo needs before `top` means anything: one --scope

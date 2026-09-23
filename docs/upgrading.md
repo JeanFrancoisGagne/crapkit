@@ -64,9 +64,10 @@ The one-line change moves `ccn` for the def and for the defs whose lines it used
 take, and a generic def with a constrained bound and a line break after a default,
 which read two lines at ccn 1, now reads its whole body. A newly listed def, or an
 enclosing def that read short before, can be over its ceiling and fails the gate the
-next time its file changes. Under a coverage.py lane a one-line def scores as
-uncovered with remedy `split-lines`, because its only line is the `def` statement
-that runs at import.
+next time its file changes. Under a coverage.py lane a def whose body starts on the
+line its signature ends, a one-line def or a body on the last line of a signature
+that spans several lines, scores as uncovered with remedy `split-lines`, because
+coverage.py reads that body as the `def` statement that runs at import.
 
 After upgrading, in each repo:
 

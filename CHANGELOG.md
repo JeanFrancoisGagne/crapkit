@@ -75,11 +75,18 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
 ### A one-line Python def is told to split its lines
 
 - A Python def written on one line, in a scope a lane measures, scores as uncovered with
-  remedy `split-lines` in the coverage run, `rescore`, `rescore --gate` and `check_gate`
-  alike. Its only line is the `def` statement, which runs at import, so coverage.py
-  could not show whether a test called it: an uncalled `def one(x): return x` read 1 of
-  2 branches covered, and an uncalled one-liner that is its module's only line read cov
-  1.0. Move the body to the line after the `def` and measure again.
+  remedy `split-lines` in the coverage run, `rescore`, `rescore --gate`, `check_gate`,
+  `brief` and `next-item` alike. Its only line is the `def` statement, which runs at
+  import, so coverage.py could not show whether a test called it: an uncalled
+  `def one(x): return x` read 1 of 2 branches covered, and an uncalled one-liner that is
+  its module's only line read cov 1.0. Move the body to the line after the `def` and
+  measure again.
+- So does a def whose body starts on the last line of a signature that spans several
+  lines, or goes on from the colon's line inside brackets or after a backslash:
+  coverage.py reads that body as the `def` statement too. Called, the first shape read
+  measured cov 0.0; uncalled, `def f(x): return [` with `x]` on the next line read 0.5.
+  The store keeps the reader's mark for such a def in a new `inline_body` column, which
+  the TSV exports and `brief --json` leave out.
 - A one-line TypeScript function keeps its istanbul number, since istanbul counts calls
   per function, and the shared-span note still names only spans two functions declare.
 
