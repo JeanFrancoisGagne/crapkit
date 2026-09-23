@@ -50,11 +50,13 @@ class _WorkRun(NamedTuple):
     """The run seed or prune reads, and how it came to be that one.
 
     `skipped` holds the failed verifies newer than `run` that verify's rule
-    walked back past. `named` says `--baseline` chose the run instead, which
+    walked back past, and `newer` the newest trusted run above `run`: the one
+    `--baseline` reads instead. `named` says `--baseline` chose the run, which
     skips nothing.
     """
     run: dict
     skipped: list[dict]
+    newer: dict | None
     named: bool
 
 
@@ -75,9 +77,18 @@ def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _Wor
 
     runs = store.list_runs()
     if requested is not None:
-        return _WorkRun(admit_baseline(runs, requested, none_trusted=_no_trusted_run()), [], True)
+        run = admit_baseline(runs, requested, none_trusted=_no_trusted_run())
+        return _WorkRun(run, [], _newer_trusted(runs, run["id"]), True)
     run = _picked_run(runs)
-    return _WorkRun(run, _skipped_failed_verifies(runs, run["id"]), False)
+    return _WorkRun(run, _skipped_failed_verifies(runs, run["id"]),
+                    _newer_trusted(runs, run["id"]), False)
+
+
+def _newer_trusted(runs: list[dict], run_id: int) -> dict | None:
+    """The newest trusted run above `run_id`, or None when `run_id` is the newest."""
+    from ..store import is_trusted
+
+    return next((r for r in reversed(runs) if r["id"] > run_id and is_trusted(r)), None)
 
 
 def _picked_run(runs: list[dict]) -> dict:
@@ -89,12 +100,24 @@ def _picked_run(runs: list[dict]) -> dict:
     return pick.run
 
 
-def _skip_note(skipped: list[dict]) -> str:
+def _skip_note(skipped: list[dict], newer: dict | None = None) -> str:
     """Why the line names an older run than the newest one in the store."""
     if not skipped:
         return ""
     ids = ", ".join(str(r["id"]) for r in skipped)
-    return f", skipped failed verify {'runs' if len(skipped) > 1 else 'run'} {ids}"
+    label = "runs" if len(skipped) > 1 else "run"
+    return f", skipped failed verify {label} {ids}{_newer_note(newer)}"
+
+
+def _newer_note(newer: dict | None) -> str:
+    """The newer run the fallback passed over, and the flag that reads it.
+
+    Without it the line showed an older run id and no way to reach the newer
+    one, which is half of how #75 left no command that worked.
+    """
+    if newer is None:
+        return ""
+    return f" and the newer run {newer['id']} (pass `--baseline {newer['id']}` to read it)"
 
 
 def _merge_stamp(texts: list[str]) -> None:
@@ -299,7 +322,8 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     from ._shared import _check_ratchet_identity
 
     store = _open_store(root)
-    latest, skipped, _ = _latest_full_run(store, requested)
+    work = _latest_full_run(store, requested)
+    latest = work.run
     fresh = store.read_scored(latest["id"])
     saved = RatchetFile.read(root / cfg.ratchet_file)
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store)
@@ -312,7 +336,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
     metric_note = _metric_note(latest, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
-          f"({latest['commit'][:11]}){_skip_note(skipped)}{metric_note}")
+          f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
     return 0
 
 

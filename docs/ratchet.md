@@ -207,14 +207,15 @@ run 3 the fresh `coverage` somebody ran to move on. Both actions walk back to ru
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2 and the newer run 3 (pass `--baseline 3` to read it)
 
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2
+crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2 and the newer run 3 (pass `--baseline 3` to read it)
 ```
 
-The clause names the failed verifies only, so the ordinary line is unchanged when nothing was
-skipped. `crapkit verify` on that store lands on run 1 too, and says so on stderr:
+The clause names the failed verifies and the newest run they stand in front of, with the flag
+that reads it. The ordinary line is unchanged when nothing was skipped. `crapkit verify` on
+that store lands on run 1 too, and says so on stderr:
 
 ```
 $ crapkit verify

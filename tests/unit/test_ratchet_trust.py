@@ -180,14 +180,15 @@ def test_the_seed_line_names_both_skipped_verifies(tmp_path, capsys):
     repo, store = repo_with_store(tmp_path)
     trusted = coverage_run(store)
     first = verify_run(store, False)
-    coverage_run(store, commit=LAUNDER_SHA)
+    newer = coverage_run(store, commit=LAUNDER_SHA)
     second = verify_run(store, False, commit=SECOND_FAIL_SHA)
 
     assert seed(repo) == 0
 
     line = capsys.readouterr().out.strip()
     assert f"vs run {trusted} ({TRUSTED_SHA[:11]})" in line
-    assert line.endswith(f", skipped failed verify runs {first}, {second}")
+    assert line.endswith(f", skipped failed verify runs {first}, {second} and the newer run "
+                         f"{newer} (pass `--baseline {newer}` to read it)")
 
 
 def test_a_failed_verify_with_nothing_older_names_the_verify_that_blocks(tmp_path):
