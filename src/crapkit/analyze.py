@@ -159,7 +159,7 @@ class _CreationOrder:
 # or a line break after a default such as `()`. The def read as two lines at ccn
 # 1 whatever its body held and passed every gate on that reading.
 # crapkit.lizardpython reads those signatures to the body's colon. Measured on
-# 6,866 stdlib, site-packages and openclaw files: all 59 defs lizard cut off read
+# 6,866 stdlib, site-packages and consumer files: all 59 defs lizard cut off read
 # their full span, and of the defs lizard read whole only the 20 nested inside a
 # cut-off def changed, each gaining its parent's name as a prefix (one of them
 # also scores 1 lower on cognitive).

@@ -13,7 +13,7 @@ The left one is a return annotation opened on the def line. The right one is a
 line break after a parameter default that holds brackets, which is what black
 and ruff write for a long signature. Measured before the fix: 39 such defs in
 the 3,742 stdlib and site-packages files of crapkit's own Python 3.11
-environment, and 20 in 3,130 openclaw files.
+environment, and 20 in the 3,130 files of a large consumer repo.
 
 Three mechanics combine, all in lizard_languages/python.py:
 
