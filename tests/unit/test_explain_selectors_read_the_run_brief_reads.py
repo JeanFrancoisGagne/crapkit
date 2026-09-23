@@ -104,14 +104,33 @@ def test_a_name_still_reaches_every_run_that_scored_it(root, capsys):
     assert [h["run_id"] for h in function["history"]] == [1, 2]
 
 
+def test_a_start_line_reads_the_newest_of_several_trusted_runs(root, capsys):
+    """Two coverage runs, both trusted, and the functions swapped lines between
+    them. brief reads the newer one, so line 1 is g in both commands."""
+    store = open_store(root)
+    store.write_run(commit="a" * 40, tool_versions={},
+                    rows=[scored("src/a.py", "f( )", 1), scored("src/a.py", "g( )", 5)])
+    store.write_run(commit="b" * 40, tool_versions={},
+                    rows=[scored("src/a.py", "g( )", 1), scored("src/a.py", "f( )", 5)])
+    baseline = default_baseline(store)["id"]
+
+    briefed = _pick_function("src/a.py", store.read_scored_file(baseline, "src/a.py"), "1")
+
+    assert briefed.long_name == "g( )"
+    assert explained(root, capsys, "src/a.py", "1") == ["g( )"]
+
+
 def test_a_store_with_no_trusted_run_reads_its_newest_run_with_rows(root, capsys):
     """`crapkit inventory` alone scores no coverage, so no run is trusted and
-    `brief` has nothing to read. explain still answers off what was measured."""
+    `brief` has nothing to read. explain still answers off what was measured
+    last: the second inventory swapped the two functions, and line 5 is f."""
     store = open_store(root)
     store.write_run(commit="a" * 40, tool_versions={}, kind="inventory",
                     rows=[inventoried("src/a.py", "f( )", 1), inventoried("src/a.py", "g( )", 5)])
+    store.write_run(commit="b" * 40, tool_versions={}, kind="inventory",
+                    rows=[inventoried("src/a.py", "g( )", 1), inventoried("src/a.py", "f( )", 5)])
 
-    assert explained(root, capsys, "src/a.py", "5") == ["g( )"]
+    assert explained(root, capsys, "src/a.py", "5") == ["f( )"]
 
 
 def test_a_store_with_no_run_at_all_matches_nothing(root, capsys):
