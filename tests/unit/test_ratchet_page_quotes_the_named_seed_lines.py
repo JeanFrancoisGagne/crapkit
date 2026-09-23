@@ -48,7 +48,8 @@ def test_the_page_quotes_the_refusal_a_named_failed_verify_gets():
 
 
 def test_the_page_quotes_the_legacy_refusal_on_a_pinned_run():
-    work = _WorkRun(run={"id": 1}, skipped=[{"id": 2}], newer={"id": 3}, named=False)
+    work = _WorkRun(run={"id": 1}, skipped=[{"id": 2}], newer={"id": 3}, named=False,
+                    blocker={"id": 2})
 
     with pytest.raises(ToolError) as refused:
         require_unambiguous([twin(), twin()], run_id=1, advice=_identity_advice(work, "seed"))

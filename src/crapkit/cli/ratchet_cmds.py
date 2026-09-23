@@ -52,12 +52,14 @@ class _WorkRun(NamedTuple):
     `skipped` holds the failed verifies newer than `run` that verify's rule
     walked back past, and `newer` the newest trusted run above `run`: the one
     `--baseline` reads instead. `named` says `--baseline` chose the run, which
-    skips nothing.
+    skips nothing. `blocker` is the failed verify that keeps verify's rule on
+    `run`, the one verify's taint warning names; None when nothing pins it.
     """
     run: dict
     skipped: list[dict]
     newer: dict | None
     named: bool
+    blocker: dict | None
 
 
 def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _WorkRun:
@@ -78,10 +80,12 @@ def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _Wor
     runs = store.list_runs()
     if requested is not None:
         run = admit_baseline(runs, requested, none_trusted=_no_trusted_run())
-        return _WorkRun(run, [], _newer_trusted(runs, run["id"]), True)
-    run = _picked_run(runs)
-    return _WorkRun(run, _skipped_failed_verifies(runs, run["id"]),
-                    _newer_trusted(runs, run["id"]), False)
+        return _WorkRun(run, [], _newer_trusted(runs, run["id"]), True, None)
+    pick = _usable_pick(runs)
+    run = pick.run
+    skipped = _skipped_failed_verifies(runs, run["id"])
+    return _WorkRun(run, skipped, _newer_trusted(runs, run["id"]), False,
+                    _pinning_verify(pick, skipped))
 
 
 def _newer_trusted(runs: list[dict], run_id: int) -> dict | None:
@@ -91,13 +95,28 @@ def _newer_trusted(runs: list[dict], run_id: int) -> dict | None:
     return next((r for r in reversed(runs) if r["id"] > run_id and is_trusted(r)), None)
 
 
-def _picked_run(runs: list[dict]) -> dict:
+def _usable_pick(runs: list[dict]):
+    """verify's pick, refused when it holds no run to work from."""
     from ..store import pick_baseline
 
     pick = pick_baseline(runs)
     if pick.run is None:
         raise CrapkitError(_no_full_run(pick))
-    return pick.run
+    return pick
+
+
+def _pinning_verify(pick, skipped: list[dict]) -> dict | None:
+    """The failed verify that keeps seed on `pick.run`.
+
+    The pick's own blocker when it passed a trusted run over, so seed names the
+    failure verify's taint warning names: naming the first skipped failure sent
+    the reader to findings a later failure had replaced. With no trusted run
+    after the failures, the pick records none, and the newest failure is the
+    one no verify has answered (a passing verify is trusted, so none came after).
+    """
+    if pick.blocker is not None:
+        return pick.blocker
+    return skipped[-1] if skipped else None
 
 
 def _skip_note(skipped: list[dict], newer: dict | None = None) -> str:
@@ -364,8 +383,8 @@ def _pinned_by(work: _WorkRun, action: str) -> str | None:
     run_id = work.run["id"]
     if work.named:
         return f"{action} reads run {run_id} because `--baseline {run_id}` names it"
-    if work.skipped:
-        return (f"{action} reads run {run_id} because verify run {work.skipped[0]['id']} "
+    if work.blocker is not None:
+        return (f"{action} reads run {run_id} because verify run {work.blocker['id']} "
                 "FAILED after it and no verify has passed since")
     return None
 

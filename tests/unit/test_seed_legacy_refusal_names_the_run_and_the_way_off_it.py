@@ -8,7 +8,7 @@ already (#75). Now the sentence names the run, the verify that pins it or the
 `--baseline` that named it, and the command that reads another run.
 """
 from cli_inproc_repo import repo, template_repo  # noqa: F401
-from pinned_store import failed_verify, fresh_run, legacy_run, pinned
+from pinned_store import failed_verify, fresh_run, legacy_run, pinned, stale_marks
 
 import pytest
 
@@ -37,6 +37,25 @@ def test_behind_a_failed_verify_it_names_the_verify_and_the_newer_run(repo, caps
                    f"`{_self()} coverage` alone changes nothing; pass `--baseline {fresh}` "
                    f"to read run {fresh}")
     assert REFRESH_ADVICE not in err
+
+
+def test_with_two_failures_it_names_the_verify_that_verifys_warning_names(repo, capsys):
+    """[legacy, failed verify, fresh, failed verify, fresh]: the second failure is
+    the one no verify has answered, so verify's warning names it. Seed named the
+    first, a failure whose findings are not the outstanding ones."""
+    legacy, _, _ = pinned(repo)
+    outstanding = failed_verify(repo)
+    fresh_run(repo)
+    stale_marks(repo)  # verify stops at the stamp guard, after its warning
+    capsys.readouterr()
+
+    verify_code = main(["verify", "--reuse-artifacts", "--repo", str(repo)])
+    warning = capsys.readouterr().err
+    code, err = ratchet(repo, capsys, "seed")
+
+    assert verify_code == 3 and f"verify run {outstanding} FAILED with" in warning, warning
+    assert code == 5
+    assert f"seed reads run {legacy} because verify run {outstanding} FAILED after it" in err, err
 
 
 def test_with_no_newer_run_behind_the_failure_it_asks_for_one_and_its_name(repo, capsys):
