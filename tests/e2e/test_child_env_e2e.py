@@ -97,9 +97,11 @@ def test_a_bare_python_lane_runs_the_suite_interpreter_and_keeps_its_opt_out(
     assert {Path(row["python"]).parent for row in seen.values()} == {Path(SUITE_BIN)}
     assert not seen["opted"]["coverage_config"]
     assert seen["opted"]["coverage_started"] is False
-    # Under the suite's coverage run the CLI child re-serializes its config, so
-    # the plain lane is held to the same presence, not the same text, and its
-    # coverage starts exactly when the suite measures subprocesses.
+    # The CLI call runs in the pytest worker, so the plain lane inherits the
+    # worker's config through child_env. A spawn=True file's CLI child would
+    # re-serialize that config, which is why the plain lane is held to the same
+    # presence, not the same text. Its coverage starts exactly when the suite
+    # measures subprocesses.
     measured = bool(os.environ.get("COVERAGE_PROCESS_CONFIG"))
     assert bool(seen["plain"]["coverage_config"]) == measured
     assert seen["plain"]["coverage_started"] is measured
