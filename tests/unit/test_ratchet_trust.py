@@ -75,10 +75,12 @@ def test_a_passing_verify_is_still_the_run_to_seed_from(tmp_path):
 
 
 def test_a_store_whose_only_full_run_is_a_failed_verify_has_nothing_to_seed(tmp_path):
+    """The refusal names that verify: a coverage run taken next would stand
+    behind it, so "run coverage first" only led to a second refusal."""
     store = SnapshotStore(tmp_path / "crap.sqlite")
     verify_run(store, False)
 
-    with pytest.raises(CrapkitError, match="failed verifies"):
+    with pytest.raises(CrapkitError, match="no run to work from: verify run 1 FAILED"):
         _latest_full_run(store)
 
 
