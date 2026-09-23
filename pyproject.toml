@@ -91,10 +91,11 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-q --tb=short -p no:cacheprovider"
 
-# Every CLI entry point crapkit ships is exercised through `subprocess.run` by
-# tests/e2e and by nothing else, so without a subprocess measurement `cmd_init`
-# and its siblings read 0% and the gate fires on any `cmd_*` a diff touches.
-# pytest-cov 7.0.0 dropped the mechanism that used to do this (its own
+# tests/e2e runs most CLI calls inside the pytest worker, where they are
+# measured like any test. The files that bind cli_runner(spawn=True), and every
+# Python child crapkit starts, run in processes of their own, so without a
+# subprocess measurement the code only they reach reads 0% and the gate fires
+# on any function of it a diff touches. pytest-cov 7.0.0 dropped the mechanism that used to do this (its own
 # `pytest-cov.pth` reading COV_CORE_*) and pointed at coverage's own patch
 # system, added in coverage 7.10. Measured on tests/e2e/test_init_doctor_e2e.py:
 # src/crapkit/cli/admin.py scores 0/498 statements under pytest-cov 7.1.0 with

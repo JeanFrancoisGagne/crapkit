@@ -1,8 +1,10 @@
 """Measure what pytest-cov 7 stopped measuring, four ways.
 
-Every `cmd_*` in `src/crapkit/cli/` is reached through `subprocess.run` by
-tests/e2e and by nothing else, so whether the CLI is measured at all comes down
-to whether coverage follows a child process. pytest-cov did that itself until
+When this ran, every `cmd_*` in `src/crapkit/cli/` was reached through
+`subprocess.run` by tests/e2e and by nothing else, so whether the CLI was
+measured at all came down to whether coverage follows a child process. The
+file it runs, test_init_doctor_e2e.py, still spawns its CLI calls, so the
+counts hold. pytest-cov followed children itself until
 7.0.0 ("Dropped support for subprocesses measurement"); the job now belongs to
 coverage's own `[run] patch = ["subprocess"]`, added in coverage 7.10.
 

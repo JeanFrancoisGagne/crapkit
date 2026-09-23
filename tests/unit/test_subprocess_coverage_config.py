@@ -1,7 +1,8 @@
 """The two pyproject keys that keep the CLI entry points measured.
 
-Every `cmd_*` in src/crapkit/cli is reached through `subprocess.run` by tests/e2e
-and by nothing else. What carries coverage into those children used to be
+tests/e2e runs most CLI calls inside the pytest worker, but the files that bind
+cli_runner(spawn=True), and every Python child crapkit starts, run in processes
+of their own. What carries coverage into those children used to be
 pytest-cov's own `pytest-cov.pth`; pytest-cov 7.0.0 deleted it ("Dropped support
 for subprocesses measurement") and the job is now coverage's
 `[run] patch = subprocess`, added in coverage 7.10.

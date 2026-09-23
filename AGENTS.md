@@ -620,9 +620,11 @@ The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist` and `coverage`. None 
 four is a convenience.
 
 `coverage>=7.10.6` is the floor `[tool.coverage.run] patch = ["subprocess"]` needs, and
-that key is what measures the CLI at all: tests/e2e drives every `cmd_*` through
-`subprocess.run`, pytest-cov 7.0.0 dropped its own subprocess measurement, and without
-the patch every entry point reads 0% with nothing said. An older coverage warns about the
+the key stays although tests/e2e now runs most CLI calls inside the pytest worker, where
+they are measured like any test. The files that bind `cli_runner(spawn=True)`, and every
+Python child crapkit starts, run in processes of their own and are measured only through
+that patch. pytest-cov 7.0.0 dropped its own subprocess measurement, and without the
+patch what only they reach reads 0% with nothing said. An older coverage warns about the
 key and ignores it, so the floor is the half that keeps the warning from being the whole
 story. Measured on `tests/e2e/test_init_doctor_e2e.py`: `cli/admin.py` scores 0/498
 statements without it under pytest-cov 7.1.0, 317/498 with it under 7.1.0 and 6.3.0 alike.
