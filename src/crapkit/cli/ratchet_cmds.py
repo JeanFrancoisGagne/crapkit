@@ -347,7 +347,8 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
-    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store)
+    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
+                                          moves_marks=True)
     if action == "seed":
         entries, note = _seeded(saved.entries, fresh, cfg)
         text = saved.reseeded(entries, _seed_metric(latest), keys=key_version)

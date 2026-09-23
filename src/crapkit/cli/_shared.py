@@ -275,19 +275,21 @@ def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _proved_paths(root: Path, proof, marks) -> set:
+def _proved_paths(root: Path, proof, marks, *, moves_marks: bool = False) -> set:
     """The files whose history the legacy mark proof must cover.
 
-    A mark is compared with a row of its own file, so the rows' files come
-    first: check_gate, the commit gate, explain and brief prove the few files
-    they read, and worklist and verify every file their run holds. One reader
-    compares a mark with a row the proof does not hold: `ratchet prune` moves a
-    mark off a file git renamed, which the working tree no longer has, onto a
-    proved file. So a marked file the tree lost is proved too. explain proves
-    the run it resolved the name in, which holds the file even when the newest
-    run dropped it, so an empty proof names no file the tree still holds.
+    A reader compares a mark with a row of its own file, so it proves the rows'
+    files: check_gate, the commit gate, explain and brief prove the few files
+    they read, and worklist and verify every file their run holds. explain
+    proves the run it resolved the name in, which holds the file even when the
+    newest run dropped it. `ratchet prune` also moves a mark off a file git
+    renamed, which the working tree no longer has, onto a proved file, so seed
+    and prune, which share one proof, pass `moves_marks` and prove every marked
+    file the tree lost too.
     """
     paths = {row.path for row in proof}
+    if not moves_marks:
+        return paths
     marked = {entry.path for entry in marks}
     return paths | _lost_files(root, marked - paths)
 
@@ -329,10 +331,11 @@ def _identity_history(root: Path, store, paths: set) -> set:
 
 
 def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None,
-                            entries=None) -> int:
+                            entries=None, *, moves_marks: bool = False) -> int:
     """The key version the marks in `text` can be compared under, or a refusal.
     `entries` is `read_ratchet(text)[0]` when the caller already parsed it, so
-    the proof parses the file only when nobody has."""
+    the proof parses the file only when nobody has. `moves_marks` is for the
+    writer that moves a mark onto another file, as `_proved_paths` says."""
     from ..ratchet import (KEY_VERSION, check_reader_keys, checked_key_version, parsed_marks,
                            read_key_version)
 
@@ -342,7 +345,7 @@ def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None,
         if read_key_version(text) == KEY_VERSION or not marks:
             return KEY_VERSION
         proof = rows() if callable(rows) else rows
-        paths = _proved_paths(root, proof, marks)
+        paths = _proved_paths(root, proof, marks, moves_marks=moves_marks)
         return checked_key_version(text, proof, historical=_identity_history(root, store, paths),
                                    entries=marks)
     except ValueError as exc:

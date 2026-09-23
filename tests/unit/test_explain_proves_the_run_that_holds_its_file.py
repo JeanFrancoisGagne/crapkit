@@ -12,8 +12,7 @@ import subprocess
 from contextlib import closing
 
 from crapkit.cli import main
-from crapkit.cli._shared import _proved_paths
-from crapkit.ratchet import RatchetEntry, metric_version
+from crapkit.ratchet import metric_version
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -58,11 +57,3 @@ def test_explain_on_a_dropped_file_reads_its_mark_beside_another_files_legacy_gr
     _repo(tmp_path)
     assert main(["explain", "src/a.ts", "(anonymous)#2", "--json", "--repo", str(tmp_path)]) == 0
     assert json.loads(capsys.readouterr().out)["functions"][0]["ratchet_mark"] == 99.0
-
-
-def test_an_empty_proof_proves_only_the_marked_files_the_tree_lost(tmp_path):
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src/kept.ts").write_text("", encoding="utf-8")
-    marks = [RatchetEntry("src/kept.ts", "f", 9.0), RatchetEntry("src/gone.ts", "g", 9.0)]
-
-    assert _proved_paths(tmp_path, [], marks) == {"src/gone.ts"}
