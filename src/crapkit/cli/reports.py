@@ -343,11 +343,16 @@ def _newest_id(runs: list[dict], *admits) -> int | None:
 
 
 def _selector_run(runs: list[dict]) -> int | None:
-    """The run a start line and an `(anonymous)#N` handle name a position in:
-    the newest run with rows, the one the context below reads."""
-    from ..store import is_rowful
+    """The run a start line and an `(anonymous)#N` handle name a position in.
 
-    return _newest_id(runs, is_rowful)
+    The one `brief` reads, the newest trusted run, so one line names one
+    function in both commands. A failed verify after it holds other positions
+    and is not that run. A store with no trusted run yet, where `brief` has
+    nothing to read, falls back to its newest run with rows.
+    """
+    from ..store import is_rowful, is_trusted
+
+    return _newest_id(runs, is_trusted, is_rowful)
 
 
 def _explain_selection(store: SnapshotStore, run_id: int | None, path: str,

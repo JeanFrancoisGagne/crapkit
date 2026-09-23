@@ -59,7 +59,9 @@ def test_explain_keeps_explicit_twin_and_line_selectors_on_the_same_history(tmp_
 
     inventory = [InventoryRow(*r[:11]) for r in [row(start=3, ccn=9), row(start=22, ccn=4)]]
     store.write_run(commit="inventory", tool_versions={}, rows=inventory, kind="inventory")
-    for name in ("f#2", "22"):
+    # The line is a position in the run brief reads, the newest trusted one: the
+    # inventory run moved the twin to 22, and brief still opens it at 20.
+    for name in ("f#2", "20"):
         args.name = name
         assert cmd_explain(args) == 0
         (function,) = json.loads(capsys.readouterr().out)["functions"]

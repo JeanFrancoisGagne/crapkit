@@ -96,7 +96,8 @@ Exact first: a NAME that IS a function's long name or bare identifier resolves t
 function alone, even when other names contain it — `route` is `route`, never
 `route_chain`. A NAME that names no function falls back to a substring search, so a
 half-remembered fragment still finds what holds it. `brief` and `explain` run the same
-rule on the same string.
+rule on the same string, and both read a start line or an `(anonymous)#N` handle off the
+newest trusted run: a failed verify taken after it holds other positions.
 
 A name that two functions answer to exits 1 and lists the candidates. Pass the long
 name or the start line instead:
