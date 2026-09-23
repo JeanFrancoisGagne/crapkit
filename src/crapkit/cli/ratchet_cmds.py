@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from typing import NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
@@ -29,19 +30,35 @@ def _skipped_failed_verifies(runs: list[dict], chosen_id: int) -> list[dict]:
     return [r for r in runs if r["id"] > chosen_id and _is_failed_verify(r)]
 
 
+def _no_trusted_run() -> str:
+    return (f"no trusted full run to work from — run `{_self()} coverage` first "
+            "(failed verifies and hook runs never serve as baselines)")
+
+
 def _no_full_run(pick) -> str:
     """Why there is nothing to seed or prune against: no trusted run at all, or
     a failure standing in front of every one there is."""
     if pick.blocker is None:
-        return (f"no trusted full run to work from — run `{_self()} coverage` first "
-                "(failed verifies and hook runs never serve as baselines)")
+        return _no_trusted_run()
     return (f"no run to work from: verify run {pick.blocker['id']} FAILED with "
             f"{pick.blocker['findings']} finding(s), nothing older is left to work from, "
             f"and a fresh `{_self()} coverage` would only be refused the same way — "
             "fix the findings and let a verify pass")
 
 
-def _latest_full_run(store: SnapshotStore) -> tuple[dict, list[dict]]:
+class _WorkRun(NamedTuple):
+    """The run seed or prune reads, and how it came to be that one.
+
+    `skipped` holds the failed verifies newer than `run` that verify's rule
+    walked back past. `named` says `--baseline` chose the run instead, which
+    skips nothing.
+    """
+    run: dict
+    skipped: list[dict]
+    named: bool
+
+
+def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _WorkRun:
     """The run seed and prune work from, and the failed verifies passed over.
 
     `pick_baseline` — verify's own choice, not a weaker rule that agrees with it
@@ -49,14 +66,27 @@ def _latest_full_run(store: SnapshotStore) -> tuple[dict, list[dict]]:
     a failed verify IS trusted, and seeding off it signs marks at values verify
     refuses as a comparison point, which is how the failure's findings stop
     being touched. Reading trust alone was that bug; reading neither was #16.
+
+    `requested` is `--baseline ID`, admitted by the rule `verify --baseline`
+    runs. Without it a failed verify in front of every newer run pinned seed
+    to an old run with no way off it but a passing verify (#75).
     """
-    from ..store import pick_baseline
+    from ..store import admit_baseline
 
     runs = store.list_runs()
+    if requested is not None:
+        return _WorkRun(admit_baseline(runs, requested, none_trusted=_no_trusted_run()), [], True)
+    run = _picked_run(runs)
+    return _WorkRun(run, _skipped_failed_verifies(runs, run["id"]), False)
+
+
+def _picked_run(runs: list[dict]) -> dict:
+    from ..store import pick_baseline
+
     pick = pick_baseline(runs)
     if pick.run is None:
         raise CrapkitError(_no_full_run(pick))
-    return pick.run, _skipped_failed_verifies(runs, pick.run["id"])
+    return pick.run
 
 
 def _skip_note(skipped: list[dict]) -> str:
@@ -232,6 +262,7 @@ def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
 
 
 def cmd_ratchet(args: argparse.Namespace) -> int:
+    requested = _requested_run(args)
     if args.action == "merge":  # a git merge driver runs with no crapkit.toml in sight
         return _ratchet_merge(args.files)
     root = _command_root(args.repo)
@@ -240,11 +271,23 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
         return _ratchet_report(root, cfg, args.json, args.enforce)
     if args.action == "move":  # a hand-declared rename needs no run to follow
         return _ratchet_move(root, cfg, args.files, _stand(args.repo))
-    return _ratchet_from_run(root, cfg, args.action)
+    return _ratchet_from_run(root, cfg, args.action, requested)
 
 
-def _ratchet_from_run(root: Path, cfg, action: str) -> int:
-    """seed and prune: both work from the run verify would compare against.
+def _requested_run(args: argparse.Namespace) -> int | None:
+    """`--baseline ID`, which only the two actions that read a run take.
+
+    Ignoring it elsewhere would let `ratchet report --baseline 3` read as a
+    report about run 3.
+    """
+    if args.baseline is not None and args.action not in ("seed", "prune"):
+        raise ConfigError(f"ratchet {args.action} reads no run, so it takes no --baseline")
+    return args.baseline
+
+
+def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> int:
+    """seed and prune: both work from the run verify would compare against,
+    or from the run `--baseline` names.
 
     seed signs that run's numbers, so the marks take the metric the run was
     measured under. prune adds no number, so the recorded stamp stays; a file
@@ -256,7 +299,7 @@ def _ratchet_from_run(root: Path, cfg, action: str) -> int:
     from ._shared import _check_ratchet_identity
 
     store = _open_store(root)
-    latest, skipped = _latest_full_run(store)
+    latest, skipped, _ = _latest_full_run(store, requested)
     fresh = store.read_scored(latest["id"])
     saved = RatchetFile.read(root / cfg.ratchet_file)
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store)

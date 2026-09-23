@@ -403,6 +403,10 @@ def build_parser() -> argparse.ArgumentParser:
     rat.add_argument("files", nargs="*", metavar="FILE", default=[],
                      help="for merge: the three files git passes as %%O %%A %%B; "
                           "for move: OLD NEW, where a trailing '/' on OLD moves a directory")
+    rat.add_argument("--baseline", type=int, default=None, metavar="ID",
+                     help="seed and prune: read run ID instead of the run verify would pick, "
+                          "the audited way past a failed verify; refused for a failed verify, "
+                          "a hook, a partial or an inventory run")
     rat.add_argument("--json", action="store_true", help="machine output (report)")
     rat.add_argument("--enforce", action="store_true",
                      help="report: exit 1 on debt policy violations (age, repayment quota)")

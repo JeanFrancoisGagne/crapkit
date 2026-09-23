@@ -56,7 +56,7 @@ def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
              for name, stamp in (("base", OLD), ("ours", OLD), ("theirs", NEW))]
 
     with pytest.raises(ConfigError) as refused:
-        cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None))
+        cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
 
     assert str(refused.value) == (
         f"ratchet merge refused: ours is [{OLD}] and theirs is [{NEW}] — marks from different "

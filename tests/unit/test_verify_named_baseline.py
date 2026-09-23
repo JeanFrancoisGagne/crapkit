@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli.verifying import _named_baseline, _untrusted_reason
+from crapkit.cli.verifying import _named_baseline
 from crapkit.errors import CrapkitError
 from crapkit.invocation import _self
+from crapkit.store import untrusted_reason
 
 ROOT = Path("/repo")
 
@@ -78,9 +79,9 @@ def test_a_run_of_any_other_kind_measured_no_lanes_and_says_so():
     caller ever hands this helper: a passing verify is trusted and never
     reaches it, so asserting the reason on `ok=True` pinned a state the code
     cannot produce."""
-    assert _untrusted_reason(run(2, "legacy")) == "a legacy run that measured no lanes"
-    assert _untrusted_reason(run(2, None)) == "a legacy run that measured no lanes"
-    assert _untrusted_reason(run(2, "verify", ok=None)) == "a verify with no verdict"
+    assert untrusted_reason(run(2, "legacy")) == "a legacy run that measured no lanes"
+    assert untrusted_reason(run(2, None)) == "a legacy run that measured no lanes"
+    assert untrusted_reason(run(2, "verify", ok=None)) == "a verify with no verdict"
 
 
 def test_the_trusted_runs_are_listed_newest_last_and_the_newest_is_the_hint():

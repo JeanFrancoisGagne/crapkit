@@ -49,7 +49,7 @@ def repo_with_store(tmp_path: Path) -> tuple[Path, SnapshotStore]:
 
 
 def seed(repo: Path) -> int:
-    return cmd_ratchet(argparse.Namespace(action="seed", repo=str(repo)))
+    return cmd_ratchet(argparse.Namespace(action="seed", repo=str(repo), baseline=None))
 
 
 def test_seed_falls_back_past_a_failed_verify_to_the_newest_trusted_run(tmp_path):
@@ -57,7 +57,7 @@ def test_seed_falls_back_past_a_failed_verify_to_the_newest_trusted_run(tmp_path
     trusted = coverage_run(store)
     failed = verify_run(store, False)
 
-    latest, skipped = _latest_full_run(store)
+    latest, skipped = _latest_full_run(store)[:2]
 
     assert latest["id"] == trusted
     assert [r["id"] for r in skipped] == [failed]
@@ -69,7 +69,7 @@ def test_a_passing_verify_is_still_the_run_to_seed_from(tmp_path):
     coverage_run(store)
     passed = verify_run(store, True)
 
-    latest, skipped = _latest_full_run(store)
+    latest, skipped = _latest_full_run(store)[:2]
 
     assert latest["id"] == passed and skipped == []
 
@@ -110,7 +110,7 @@ def test_prune_reads_the_same_trusted_run_as_seed(tmp_path, capsys):
     trusted = coverage_run(store)
     failed = verify_run(store, False)
 
-    assert cmd_ratchet(argparse.Namespace(action="prune", repo=str(repo))) == 0
+    assert cmd_ratchet(argparse.Namespace(action="prune", repo=str(repo), baseline=None)) == 0
 
     line = capsys.readouterr().out.strip()
     assert f"vs run {trusted} ({TRUSTED_SHA[:11]})" in line
@@ -154,7 +154,7 @@ def test_seed_takes_the_run_verify_takes_not_the_one_that_launders_it(tmp_path):
     failed = verify_run(store, False)
     coverage_run(store, commit=LAUNDER_SHA)
 
-    latest, skipped = _latest_full_run(store)
+    latest, skipped = _latest_full_run(store)[:2]
 
     assert latest["id"] == trusted
     assert [r["id"] for r in skipped] == [failed]
@@ -170,7 +170,7 @@ def test_the_note_names_every_failed_verify_above_the_run_it_used(tmp_path):
     coverage_run(store, commit=LAUNDER_SHA)
     second = verify_run(store, False, commit=SECOND_FAIL_SHA)
 
-    latest, skipped = _latest_full_run(store)
+    latest, skipped = _latest_full_run(store)[:2]
 
     assert latest["id"] == trusted
     assert [r["id"] for r in skipped] == [first, second]

@@ -57,7 +57,7 @@ def write_marks(repo, stamp: str) -> None:
 
 
 def ratchet(repo, action: str) -> int:
-    return cmd_ratchet(argparse.Namespace(action=action, repo=str(repo)))
+    return cmd_ratchet(argparse.Namespace(action=action, repo=str(repo), baseline=None))
 
 
 def stamp(repo) -> str:

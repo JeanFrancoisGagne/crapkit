@@ -31,7 +31,7 @@ def repo(tmp_path: Path) -> Path:
 
 
 def move(old: str, new: str, repo: str | None = None) -> int:
-    return cmd_ratchet(argparse.Namespace(action="move", repo=repo, files=[old, new]))
+    return cmd_ratchet(argparse.Namespace(action="move", repo=repo, files=[old, new], baseline=None))
 
 
 def marks(repo: Path) -> list[str]:

@@ -60,7 +60,7 @@ def test_a_failed_verify_is_invisible_to_both_readers_of_run_history(tmp_path: P
     failed = run(store, "verify", [scored(72.0)], ok=False)
     asking = run(store, "verify", [scored(20.0)])
 
-    latest, skipped = _latest_full_run(store)
+    latest, skipped = _latest_full_run(store)[:2]
 
     assert (latest["id"], [r["id"] for r in skipped]) == (trusted, [failed]), "seed (#16)"
     assert store.prior_scored_run(commit=SHA, before=asking) == trusted, "damping (#15)"
@@ -76,7 +76,7 @@ def test_a_passing_verify_is_the_comparison_point_for_both(tmp_path: Path):
     passed = run(store, "verify", [scored(20.0)], ok=True)
     asking = run(store, "verify", [scored(72.0)])
 
-    latest, _ = _latest_full_run(store)
+    latest = _latest_full_run(store).run
 
     assert latest["id"] == passed
     assert store.prior_scored_run(commit=SHA, before=asking) == passed
@@ -154,7 +154,7 @@ def test_both_branches_tightening_one_twin_keeps_the_lower_mark():
 def seed(repo: Path) -> int:
     from crapkit.cli.ratchet_cmds import cmd_ratchet
 
-    return cmd_ratchet(argparse.Namespace(action="seed", repo=str(repo)))
+    return cmd_ratchet(argparse.Namespace(action="seed", repo=str(repo), baseline=None))
 
 
 def test_seed_records_every_twin_and_verify_gates_each_of_them(tmp_path: Path):

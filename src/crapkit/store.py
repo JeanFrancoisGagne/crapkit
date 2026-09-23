@@ -29,7 +29,8 @@ from .keys import (claim_holds, claim_key, expression_group, expression_reader_c
                    refuse_ambiguous, split_ordinal)
 from .snapshot import InventoryRow
 from .worklist import Marks
-from .errors import ToolError
+from .errors import CrapkitError, ToolError
+from .invocation import _self
 
 # {table} so the migration can build the same shape under a temp name and swap
 # it in last: the live table is never dropped until its replacement is filled.
@@ -1394,6 +1395,61 @@ def pick_baseline(runs: list[dict]) -> BaselinePick:
             picked = (BaselinePick(picked.run, run, blocker) if blocker
                       else BaselinePick(run, None, None))
     return picked
+
+
+def admit_baseline(runs: list[dict], requested: int, *, none_trusted: str) -> dict:
+    """The run `--baseline ID` names, when the trust rule admits it.
+
+    Naming a run is the audited way past the taint rule `pick_baseline`
+    applies, and past nothing else. verify, `ratchet seed` and `ratchet prune`
+    all admit a named run here, so all three refuse it for the same four
+    reasons (a failed verify, a hook run, a partial run, an inventory run) in
+    the same words. `none_trusted` is the caller's own line for a store that
+    holds no trusted run at all.
+    """
+    trusted = list(filter(is_trusted, runs))
+    admitted = _run_by_id(trusted, requested)
+    if admitted is not None:
+        return admitted
+    if not trusted:
+        raise CrapkitError(none_trusted)
+    raise CrapkitError(_refused_baseline(runs, requested, trusted))
+
+
+def _run_by_id(runs: list[dict], run_id: int) -> dict | None:
+    return next((r for r in runs if r["id"] == run_id), None)
+
+
+def _refused_baseline(runs: list[dict], requested: int, trusted: list[dict]) -> str:
+    """A named run that cannot serve, beside the runs that can.
+
+    The trusted ids are listed oldest first, so the last one is the newest and
+    the hint names it: that is the escape an operator reaching for `--baseline`
+    was after, and a fresh `coverage` run is the expensive wrong one (#27).
+    """
+    ids = ", ".join(str(r["id"]) for r in trusted)
+    named = _run_by_id(runs, requested)
+    if named is None:
+        return (f"no run {requested} in the store (`{_self()} runs` lists them); "
+                f"trusted runs: {ids}")
+    return (f"run {requested} is {untrusted_reason(named)} and cannot serve as a baseline; "
+            f"trusted runs: {ids}; pass `--baseline {trusted[-1]['id']}` for the newest")
+
+
+# The kinds `is_trusted` refuses, worded for the operator who named one.
+_UNTRUSTED_KINDS = {"hook": "a hook run",
+                    "partial": "a partial run (a lane subset, or a lane that failed)",
+                    "inventory": "an inventory run (no coverage was measured)"}
+
+
+def untrusted_reason(run: dict) -> str:
+    """Why a run that exists cannot be measured against, in the store's own terms."""
+    kind = run["kind"]
+    if kind == "verify":
+        return "a failed verify" if run["verdict_ok"] is False else "a verify with no verdict"
+    if kind in _UNTRUSTED_KINDS:
+        return _UNTRUSTED_KINDS[kind]
+    return f"a {kind or 'legacy'} run that measured no lanes"
 
 
 def is_trusted(r: dict) -> bool:
