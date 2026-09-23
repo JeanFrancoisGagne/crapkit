@@ -738,13 +738,27 @@ class _GateVerdict(NamedTuple):
         return not self.breaches
 
 
+def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
+    """The touched breaches no ratchet mark pardons, reading the marks only
+    when there is a breach to pardon.
+
+    hook-precommit follows the same rule. On a large consumer repo the read
+    cost a clean gate several seconds, most of it proving legacy ratchet keys
+    against every stored run. The trade: a clean gate no longer reports a marks
+    file it cannot parse, and the next gate that breaches still does.
+    """
+    if not touched:
+        return []
+    return _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
+
+
 def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int]) -> _GateVerdict:
     from ..keys import key_names
 
     untracked = _untracked_of(root, overlay)
     candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
-    breaches = _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
+    breaches = _unpardoned_breaches(root, cfg, overlay, touched)
     return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked))
 
 

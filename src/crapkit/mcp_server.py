@@ -1283,10 +1283,10 @@ TOOLS: tuple[dict, ...] = (
         "changed function against its scope's ceiling less pardoned ratchet debt. "
         "Call it after an edit once get_function_brief states the rule. CLI verify "
         "gives the repo-wide verdict. It runs no tests, and a breach reads gate.ok "
-        "false, not an error. path is repo-relative or absolute inside repo, outside "
-        "or missing is a config error. A tracked file is judged on its diff from "
-        "HEAD, an untracked one in full, an unchanged or unscoped one judges 0. repo "
-        "may be any directory under the checkout."),
+        "false, not an error. Marks are read only on a breach, so a clean gate never "
+        "reports a broken marks file. path is repo-relative or absolute inside repo, "
+        "outside or missing is a config error. A tracked file is judged on its diff "
+        "from HEAD, an untracked one in full."),
         "properties": {
             "path": {
                 "type": "string",
