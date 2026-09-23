@@ -72,17 +72,20 @@ After upgrading, in each repo:
 
 ```sh
 crapkit coverage
-crapkit ratchet seed
 crapkit ratchet prune
+crapkit ratchet seed
 ```
 
-`coverage` measures under version 11, and `ratchet seed` stamps the marks with the
-metric of the run it reads, so a seed from a run 0.7.x measured keeps the old stamp.
-`ratchet prune` then drops the marks left under the old names. When a failed verify
+`coverage` measures under version 11, and `ratchet prune` drops the marks left under
+the old names. `ratchet seed` then stamps the marks with the metric of the run it
+reads, so a seed from a run 0.7.x measured keeps the old stamp. Prune goes first
+because a marks file with no `# crapkit-keys=1` line keeps the old key format while
+any mark names a function the run lacks, and that format cannot key a function that
+shares its start line with another, so seed refuses to add one. When a failed verify
 pins the baseline, seed and prune both read the pinned run: pass the new run's id to
-each, `crapkit ratchet seed --baseline N` then `crapkit ratchet prune --baseline N`;
-the seed line and verify's refusal both name it. Review the diff and commit it before
-the next `crapkit verify`.
+each, `crapkit ratchet prune --baseline N` then `crapkit ratchet seed --baseline N`;
+their lines and verify's refusal name it. Review the diff and commit it before the
+next `crapkit verify`.
 
 ### Analysis version 10
 

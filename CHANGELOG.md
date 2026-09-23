@@ -11,13 +11,14 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
 ### Upgrading from 0.7.x
 
 - Analysis version 11 renames some Python functions and moves some scores (next
-  section). In each repo run `crapkit coverage`, then `crapkit ratchet seed`, then
-  `crapkit ratchet prune`. Seed stamps the marks with the metric of the run it reads, so
-  a seed before the fresh coverage run keeps the old stamp and verify keeps refusing.
-  When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet
-  seed --baseline N` and then `crapkit ratchet prune --baseline N`; the seed line and
-  verify's refusal both name it. Prune then drops the marks left under the old names.
-  The first `inventory` or `coverage` analyzes every file again. See the [upgrade
+  section). In each repo run `crapkit coverage`, then `crapkit ratchet prune`, then
+  `crapkit ratchet seed`. Prune drops the marks left under the old names, and on a marks
+  file with no `# crapkit-keys=1` line it has to go first. Seed stamps the marks with
+  the metric of the run it reads, so a seed before the fresh coverage run keeps the old
+  stamp and verify keeps refusing. When a failed verify pins the baseline, pass the new
+  run to both, `crapkit ratchet prune --baseline N` and then `crapkit ratchet seed
+  --baseline N`; their lines and verify's refusal name it. The first `inventory` or
+  `coverage` analyzes every file again. See the [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.0/docs/upgrading.md#analysis-version-11).
 - `test_retention_days` and `test_retention_count` are deprecated and ignored. A config
   that sets them still loads, including values that used to be refused, and `doctor`
@@ -108,6 +109,12 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   and prune behind a failed verify it names that verify, the one verify's taint warning
   names, and the `--baseline` to pass, where it advised refreshing analysis, which a
   fresh coverage run could not satisfy.
+- A marks file with no `# crapkit-keys=1` line keeps the old key format while any mark
+  names a function the run lacks, and that format cannot key two functions that start on
+  one line. A seed that would add a mark for one of them now refuses before writing and
+  names `ratchet prune`, with the same `--baseline`, which drops those marks. It used to
+  render the file and then refuse the twin groups it was adding as saved marks to
+  reconcile: 170 groups on a large consumer repo, none of them in the file.
 
 ### Marks keep the metric stamp of the run that measured them
 

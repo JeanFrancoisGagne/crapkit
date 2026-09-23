@@ -55,3 +55,20 @@ def test_the_page_quotes_the_legacy_refusal_on_a_pinned_run():
         require_unambiguous([twin(), twin()], run_id=1, advice=_identity_advice(work, "seed"))
 
     assert f"crapkit: {refused.value}\nEXIT=5" in page()
+
+
+def test_the_page_quotes_the_prune_first_refusal_on_legacy_keys():
+    from crapkit.cli.ratchet_cmds import _refuse_unkeyable_twins
+    from crapkit.errors import ConfigError
+    from crapkit.ratchet import RatchetEntry
+
+    work = _WorkRun(run={"id": 3}, skipped=[], newer=None, named=True, blocker=None)
+    fresh = [twin()._replace(occurrence=1), twin()._replace(occurrence=2)]
+    prior = [RatchetEntry("src/gone.ts", "gone( )", 50.0)]
+    seeded = prior + [RatchetEntry("src/a.ts", "(anonymous)", 2.0),
+                      RatchetEntry("src/a.ts", "(anonymous)#2", 2.0)]
+
+    with pytest.raises(ConfigError) as refused:
+        _refuse_unkeyable_twins("crapkit-ratchet.tsv", work, prior, seeded, fresh, 0)
+
+    assert f"crapkit: {refused.value}\nEXIT=3" in page()

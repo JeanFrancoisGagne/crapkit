@@ -270,6 +270,20 @@ advice: `refresh analysis before selecting or comparing these functions`. When t
 carry an older metric stamp, the way out is the same name; see
 [the metric stamp](#the-metric-stamp).
 
+The named run can then meet a marks file written before the key stamp. That file keeps the
+start-only key format while any of its marks names a function the run lacks, and the format
+cannot key two functions that start on one line. So seed refuses to add a mark for either
+and names the prune that drops the marks the run lacks:
+
+```
+$ crapkit ratchet seed --baseline 3
+crapkit: crapkit-ratchet.tsv: 1 mark(s) name functions run 3 does not hold, first src/gone.ts: gone( ), so the file keeps the start-only key format, which cannot key the same-line twins in 1 group(s) this seed would mark, first src/a.ts: (anonymous); run `crapkit ratchet prune --baseline 3` first, then seed again: prune drops those marks and seed then writes the positioned keys
+EXIT=3
+```
+
+After the prune every mark names a function run 3 holds, and the seed writes
+`# crapkit-keys=1`; see [same-line function identity](#same-line-function-identity).
+
 ---
 
 ## The metric stamp
@@ -821,7 +835,10 @@ The two stamps answer different questions:
 A missing key-version comment means the old start-only rule. For unchanged groups
 whose reader identity is proved, seed, prune and a successful tightening can keep
 the keys and values and add the new key marker. Marks for absent names retain the
-old key format until their mapping can be checked. Named functions and functions
+old key format until their mapping can be checked. While they do, seed refuses to add
+a mark for a function that shares its start line with another, since the old format
+cannot key it, and names `ratchet prune`, which drops those marks, as the way on; see
+[naming the run to seed from](#naming-the-run-to-seed-from). Named functions and functions
 in other languages keep compatible reseed behavior when their groups have no
 unresolved collision. An explicit move preserves both stamps; a merge refuses
 different key versions without rewriting OURS.

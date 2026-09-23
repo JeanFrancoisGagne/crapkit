@@ -28,6 +28,7 @@ OLD_SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
 FAILED_SHA = "4f1c0aa9d3b2e5768190a2b3c4d5e6f70819a2b3"
 NEW_SHA = "7c2d1bb0e4c3f6879201b3c4d5e6f7081920a3b4"
 MARKS = "crapkit-ratchet.tsv"
+ROOT = Path(__file__).resolve().parents[2]
 # Legacy keys: a metric stamp and no key stamp. The one mark names a file the run lacks.
 LEGACY = (f"# {stamp_text(ANALYSIS_VERSION, lizard.version)}\npath\tlong_name\tcrap\n"
           "src/gone.ts\tgone( )\t50.0000\n")
@@ -106,6 +107,28 @@ def test_prune_then_seed_writes_both_twins_under_the_positioned_keys(repo, capsy
     assert lines[1:] == ["# crapkit-keys=1", "path\tlong_name\tcrap",
                          "src/app.ts\t(anonymous)\t90.0000",
                          "src/app.ts\t(anonymous)#2\t90.0000"], lines
+
+
+def _after(page: str, anchor: str) -> str:
+    """The 600 characters from ANCHOR on, with the page's line breaks read as spaces."""
+    text = " ".join((ROOT / page).read_text(encoding="utf-8").split())
+    start = text.index(anchor)
+    return text[start:start + 600]
+
+
+@pytest.mark.parametrize("page,anchor,recipe", [
+    ("docs/upgrading.md", "After upgrading, in each repo:",
+     "```sh crapkit coverage crapkit ratchet prune crapkit ratchet seed ```"),
+    ("CHANGELOG.md", "In each repo run",
+     "run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`"),
+])
+def test_the_upgrade_recipe_prunes_before_it_seeds(page, anchor, recipe):
+    """Seed first refuses on a legacy-keyed file whose old-name marks the run lacks."""
+    pinned = _after(page, "When a failed verify pins the baseline")
+
+    assert recipe in _after(page, anchor)
+    assert (pinned.index("`crapkit ratchet prune --baseline N`")
+            < pinned.index("`crapkit ratchet seed --baseline N`")), pinned
 
 
 def test_a_seed_that_adds_no_twin_mark_keeps_the_legacy_file_as_before(repo, capsys):

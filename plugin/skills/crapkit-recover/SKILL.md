@@ -188,6 +188,11 @@ as `crapkit verify --baseline N`. It is the way out when seed refuses the pinned
 means run M was stored before crapkit recorded where same-line functions sit, and no
 coverage run changes which run seed reads. The line ends with the `--baseline` to pass:
 [docs: naming the run to seed from](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#naming-the-run-to-seed-from).
+The named seed can then refuse at exit 3 with `N mark(s) name functions run M does not hold`
+and `same-line twins in K group(s) this seed would mark`: the marks file has no
+`# crapkit-keys=1` line, and those marks hold it at the old key format. Run the
+`crapkit ratchet prune --baseline M` it names, then the seed again. The twin groups it lists
+are marks the seed would add, not saved marks to reconcile.
 
 Owner: [README: the trusted baseline](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-trusted-baseline).
 `crapkit runs list` prints `verdict=-` on runs that rendered no verdict.
