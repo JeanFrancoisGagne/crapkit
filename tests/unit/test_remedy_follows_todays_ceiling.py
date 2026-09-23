@@ -16,6 +16,7 @@ import json
 
 import pytest
 
+from crapkit.mcp_server import tool_listing
 from hand_scored_repo import make_repo, run, scored, write_run, write_toml
 
 # Scored under a ceiling of 6.
@@ -102,6 +103,30 @@ def test_a_raised_ceiling_turns_decompose_into_the_advice_left(raised, capsys):
 def test_a_raised_ceiling_drops_the_cleared_row_from_the_queue(raised, capsys):
     assert _offered(raised, capsys) == {"twin_a( )": "split-lines", "twin_b( )": "split-lines",
                                         "wide( )": "add-tests"}
+
+
+def _listed(root, capsys) -> dict:
+    code, out, err = run(root, capsys, "worklist", "--json")
+    assert code == 0, err
+    payload = json.loads(out)
+    return {e["function"]: e["remedy"] for e in payload["active"] + payload["dormant_top"]}
+
+
+def _served_worklist_remedy() -> str:
+    tool = next(t for t in tool_listing() if t["name"] == "list_worklist")
+    return tool["outputSchema"]["properties"]["active"]["items"]["properties"]["remedy"]["description"]
+
+
+def test_list_worklist_says_its_remedy_is_the_runs_verdict(raised, capsys):
+    """worklist prints the verdict the run stored, so after the raise it still
+    calls big( ) decompose while next-item has dropped it. list_worklist's
+    schema said every row but ok reaches get_next_item."""
+    described = _served_worklist_remedy()
+
+    assert _listed(raised, capsys)["big( )"] == "decompose"
+    assert "big( )" not in _offered(raised, capsys)
+    assert "as the run judged it" in described, described
+    assert "get_next_item's own remedy decides" in described, described
 
 
 def test_the_batch_packets_carry_todays_remedy(lowered, capsys):
