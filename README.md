@@ -1106,7 +1106,7 @@ not empty when the burn-down does. `next-item` is the other view of that run: it
 
 ```
 $ crapkit next-item
-{"commit": "fae4db93108b4841a00959f9117430679e7250ca", "empty": false, "item": {"authors": 1, "ccn": 14, "ccn_std": 14, "cognitive": 13, "commits": 1, "cov": 0.5, "crap": 38.5, "end": 28, "est_splits": 3, "est_uncovered_paths": 7, "flag": "measured", "function": "classify( score , attempts , late , bonus )", "handle": "classify", "nesting": 3, "nloc": 22, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 7, "target": 6, "uncovered_lines": [9, 11, 15, 17, 19, 24, 25, 26, 27, 28]}, "run_id": 1, "schema": 1, "skipped_no_lane": 0, "stale": false}
+{"commit": "fae4db93108b4841a00959f9117430679e7250ca", "empty": false, "item": {"authors": 1, "ccn": 14, "ccn_std": 14, "cognitive": 13, "commits": 1, "cov": 0.5, "crap": 38.5, "end": 28, "est_splits": 3, "est_uncovered_paths": 7, "flag": "measured", "function": "classify( score , attempts , late , bonus )", "handle": "classify", "nesting": 3, "nloc": 22, "occurrence": 1, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 7, "target": 6, "uncovered_lines": [9, 11, 15, 17, 19, 24, 25, 26, 27, 28]}, "run_id": 1, "schema": 1, "skipped_no_lane": 0, "stale": false}
 ```
 
 `remedy: "decompose"`, `est_splits: 3` (this needs roughly three pieces to fit under 6),
