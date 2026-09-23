@@ -61,7 +61,8 @@ _POOL_THRESHOLD = 16
 ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each enclosing def once.
 #                       A Python def whose body sits on its colon line is listed and ends
 #                       with that logical line, so the lines after it go back to its
-#                       parent and a later def no longer carries its name.
+#                       parent and a later def no longer carries its name. A file that
+#                       ends inside a def's signature is refused under either reader.
 # 10: separate sibling JavaScript/TypeScript expression arrows.
 # 9: a Python row's nesting is the depth the cognitive
 #                          pass measured, not lizard's ND count of structures,
@@ -177,6 +178,12 @@ class _CreationOrder:
 # retires: that reader names a PEP 695 def after the `]` or `:` before its `(`,
 # so a count started at the function's first token began at depth -1 or on a
 # colon.
+#
+# A file that ends inside a signature leaves that def pending, and lizard lists
+# a pending def only when an enclosing def is popped at the end of the file. A
+# nested one was refused that way; a top-level one, or a method, was never
+# listed, and the file scored as if the def were not there. The net lists the
+# def whose signature is still open when the tokens run out.
 _DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
@@ -193,21 +200,33 @@ class _DefSignatures:
     keeps True when the rest of a cut-off child's signature is charged to it.
     A function some other reader produced never gets the attribute, which is
     what keeps `_unread_defs` to Python.
+
+    `signature_owner` is the function current at the last signature token. A
+    file that ends before that signature's colon leaves its def pending, and
+    lizard lists a pending def only when an enclosing def is popped at the end
+    of the file. `finish` lists it, so the net names it either way.
     """
 
     def __init__(self, context):
         self.context = context
         self.depth = None
         self.colon_owner = None
+        self.signature_owner = None
 
     def step(self, token: str) -> None:
         fn = self.context.current_function
         if self.colon_owner is not None:
             self._settle_colon(fn)
-        if self.depth is None:
-            self.depth = 0 if token == "def" else None
-        else:
+        if self.depth is not None:
             self._signature(fn, token)
+        elif token == "def":
+            self.depth, self.signature_owner = 0, None
+
+    def finish(self) -> None:
+        """List the def the file ended inside of its signature, if lizard did not."""
+        listed = self.context.fileinfo.function_list
+        if self.depth is not None and self.signature_owner is not None and self.signature_owner not in listed:
+            listed.append(self.signature_owner)
 
     def _settle_colon(self, fn) -> None:
         if fn is self.colon_owner:
@@ -218,6 +237,7 @@ class _DefSignatures:
         # A parent the stock reader hands the rest of a cut-off signature to
         # was read to its body already, and keeps that.
         fn.crapkit_body = getattr(fn, "crapkit_body", False)
+        self.signature_owner = fn
         if token == ":" and self.depth == 0:
             self.colon_owner, self.depth = fn, None
         else:
@@ -242,6 +262,7 @@ class _PythonBodies:
         for token in tokens:
             yield token
             signatures.step(token)
+        signatures.finish()  # after lizard's own end-of-file pops, which run upstream
 
 
 def _chain(cognitive_index: int) -> list:
