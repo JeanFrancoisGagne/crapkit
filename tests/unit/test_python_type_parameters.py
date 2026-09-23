@@ -47,7 +47,12 @@ SHAPES = [
      [("f( a )", 1, 7, 4)]),
     ("constrained bound", "def f[T: (int, str)](a):\n" + BODY,
      [("f( a )", 1, 7, 4)]),
+    # The list ends at the `]` that closes it, not at the first `]` inside it.
+    ("bound with a subscript", "def f[T: list[int]](a):\n" + BODY,
+     [("f( a )", 1, 7, 4)]),
     ("default (PEP 696)", "def f[T = int](a):\n" + BODY,
+     [("f( a )", 1, 7, 4)]),
+    ("default with a subscript (PEP 696)", "def f[T = dict[str, int]](a):\n" + BODY,
      [("f( a )", 1, 7, 4)]),
     ("variadic and parameter spec", "def f[*Ts, **P](a):\n" + BODY,
      [("f( a )", 1, 7, 4)]),
@@ -76,8 +81,19 @@ def test_a_generic_def_reads_under_its_own_name_over_its_whole_span(name, source
     assert _read(source) == expected
 
 
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="ast parses PEP 695 from Python 3.12")
-@pytest.mark.parametrize("name, source, expected", SHAPES, ids=[s[0] for s in SHAPES])
+# ast parses a type parameter list from Python 3.12, and a default inside one
+# (PEP 696) from 3.13. CI runs the suite on 3.12.
+_AST_PARSES_FROM = {"default (PEP 696)": (3, 13), "default with a subscript (PEP 696)": (3, 13)}
+
+
+def _ast_case(name, source, expected):
+    since = _AST_PARSES_FROM.get(name, (3, 12))
+    reason = "ast parses this shape from Python {}.{}".format(*since)
+    return pytest.param(name, source, expected, id=name,
+                        marks=pytest.mark.skipif(sys.version_info < since, reason=reason))
+
+
+@pytest.mark.parametrize("name, source, expected", [_ast_case(*shape) for shape in SHAPES])
 def test_the_hand_counted_spans_match_ast(name, source, expected):
     defs = (ast.FunctionDef, ast.AsyncFunctionDef)
     spans = sorted((n.lineno, n.end_lineno) for n in ast.walk(ast.parse(source)) if isinstance(n, defs))
