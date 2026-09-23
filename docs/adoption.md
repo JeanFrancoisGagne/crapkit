@@ -173,7 +173,8 @@ dealing packets. The batch call reads the store, the churn log and the ratchet f
 and since 0.4.5 it shingles the repo once for the whole batch instead of once per packet. A
 batch of 5 went from 11.8 s to 5.2 s, output byte-identical. That saving is the
 orchestrator's; a session briefing the handful of items in its own batch pays a cold start
-either way.
+either way. Twins are the exception: the store keeps the run's shingle index, so only a
+brief that finds none stored shingles the repo.
 
 **The coupling cache is per checkout, and the first run in each pays for it.** Ranked
 co-change pairs live in `.crapkit/coupling-cache-v1.json`, which `init` already gitignores

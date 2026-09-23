@@ -604,9 +604,10 @@ orchestrator pays the store, churn-log and ratchet-file reads once for a whole f
 instead of once per session, and so every session starts at step 1 with nothing left to
 look up. Since 0.4.5 it also shingles the repo once per batch rather than once per packet,
 which is what `duplication_twins` costs: a batch of 5 on the 31,459-file corpus the 0.4.5
-work was measured against fell from 11.8 s to 5.2 s, output byte-identical. The shingles are
-built on Python's per-process randomized hash, so there is no on-disk cache behind that
-number and one call is the whole saving. Hand one packet to one session, and see
+work was measured against fell from 11.8 s to 5.2 s, output byte-identical. Since 0.8.0 the
+store keeps the run's shingle index, so only a brief that finds none stored shingles the
+repo; every later brief, batched or not and in any process, shingles its own function and
+looks the rest up ([read commands that write](#read-commands-that-write)). Hand one packet to one session, and see
 [Multi-agent sessions](../AGENTS.md#multi-agent-sessions) for the file-disjoint split
 that keeps their diffs mergeable.
 
@@ -1172,7 +1173,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
 | `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. |
 
-### Two read commands that write
+### Read commands that write
 
 `trend` and `report` are still read commands to their caller, and since 0.4.5 they write to
 the store. Both used to re-derive per-run totals from every scored row of every run, twice,
@@ -1189,6 +1190,22 @@ Two consequences for a caller.
 - **The cache is keyed on the ceiling the totals were decided against**, repo target plus
   per-scope targets. Change a ceiling in `crapkit.toml` and the next `trend` refills under a
   new key rather than reporting the old numbers.
+
+`run_collisions` follows the same pattern for the legacy mark proof. The first reader that
+needs a run's same-line collision groups scans that run once and stores them: `worklist`,
+`next-item`, `brief`, `verify`, `ratchet seed`, `ratchet prune`, `runs prune`, and the MCP
+tools that read marks (`list_worklist`, `get_next_item`, `get_function_brief`). `explain`
+and `rescore --gate` prove the few files they read off the path index and fill it only
+when they prove more than 64 files. The write is best effort, like the rollup: a locked or
+read-only store still answers from the scan. A prune takes a run's collision rows with it.
+
+`brief` writes the run's shingle index, the digests `duplication_twins` is looked up in
+(`twin_runs` and its two posting tables). A brief on a run with no stored index builds it
+from every scored file and stores it; every later brief, batched or not and in any
+process, reads it back and opens only its own function's file. Storing one run's index
+drops every older run's, and `runs prune` drops it with its run; on a large consumer repo
+one index is 37.8 MB. The write is best effort too: a locked store answers from the index
+it built.
 
 ### The coupling cache
 
