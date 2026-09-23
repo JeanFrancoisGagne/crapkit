@@ -1,5 +1,365 @@
 # Changelog
 
+## 0.8.0 — 2026-09-23
+
+The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
+`ratchet seed` and `ratchet prune` take `--baseline ID`, the way out when a failed
+verify pins them to a run they cannot read (#75). Reads on a large store get faster, and
+`--reuse-unchanged` can reuse a lane across commits once the lane lists its inputs. The
+twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
+
+### Upgrading from 0.7.x
+
+- Analysis version 11 renames some Python functions and moves some scores (next
+  section). In each repo run `crapkit coverage`, then `crapkit ratchet seed`, then
+  `crapkit ratchet prune`. Seed stamps the marks with the metric of the run it reads, so
+  a seed before the fresh coverage run keeps the old stamp and verify keeps refusing.
+  When a failed verify pins the baseline, pass the new run to `crapkit ratchet seed
+  --baseline N`; the seed line and verify's refusal both name it. Prune then drops the
+  marks left under the old names. The first `inventory` or `coverage` analyzes every
+  file again. See the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.0/docs/upgrading.md#analysis-version-11).
+- `test_retention_days` and `test_retention_count` are deprecated and ignored. A config
+  that sets them still loads, including values that used to be refused, and `doctor`
+  prints one WARN per key naming the development runner's flag that replaced it,
+  `--retention-days` or `--retention-count`. Delete them. `doctor --json` keeps both
+  fields under `resources`, always 0, and neither the editor schema nor an unknown-key
+  message lists them.
+- A lane can now list the paths its command reads as `inputs`. The reuse proof covers
+  that field, and the stamp stores it as `proof`, so the first `--reuse-unchanged` after
+  upgrading reruns every lane once. Declare `inputs` on each lane to get reuse across
+  commits.
+- Library API: `dump_ratchet` takes no default stamp, `RatchetFile` renders every marks
+  write through `kept`, `measured` or `reseeded`, and `record_override` requires
+  `metric=`. The coverage `parse_*` readers moved from `covstream` to one adapter module
+  per format, `coverage_istanbul` and `coverage_py`, and the unused
+  `parse_istanbul_file` and `parse_coveragepy_file` are gone.
+
+### A Python def is read under its own name, whatever its shape (analysis version 11)
+
+- A def with a PEP 695 type parameter list, such as `def f[T](a: int):`, was named after
+  the bracket or colon before its `(`: `]( a : int )`, or `:( int , str )` for a
+  constrained bound. It is now named `f( a : int )`. The old name collided across every
+  generic def in a file that took the same parameters, made each `]` in the body count
+  as recursion in `cognitive`, and started a def whose type parameter list spans several
+  lines on that list's last line. A generic def with no annotated parameter (`def
+  f[T](a):`) no longer gets its whole file refused, and one with a constrained bound and
+  a line break after a default reads its whole body instead of two lines at ccn 1.
+- A def nested three or more deep names each enclosing def once: `a.b.c( x )`, where it
+  read `a.a.b.c( x )`. A decorator factory's inner function read
+  `require_admin.require_admin.decorator.with_admin( self )` and now reads
+  `require_admin.decorator.with_admin( self )`.
+- A def whose body sits on its colon line (`def f(x): return x`, `def g(): ...`, a stub
+  after an exploded signature) is listed as the same def written over two lines is, one
+  line shorter. It was missing from every report, gate and mark, the lines after it
+  counted toward it, an enclosing def lost its own conditions, and a later def could
+  carry its name. One-line `@overload` stubs take twin keys as two-line stubs do. A
+  one-line body that leaves a bracket count open, such as the fill character in
+  `f"{x:(>10}"`, no longer hides the defs after it.
+- Cognitive complexity and nesting count a def's body from the colon that ends its
+  signature. A body on the colon line read cognitive 0 and nesting 0 whatever it held,
+  and a signature's continuation lines counted as body: a default naming the function
+  read as recursion, and a parameter named `do` as a loop.
+- A Python file that ends inside a def's signature is refused and names that def, under
+  crapkit's reader and lizard's stock reader alike. Before, only a nested def was
+  refused this way, and a top-level def or a method was left out of a file that scored.
+  The advisory hook still reads such a half-typed file quietly.
+- Measured over 5,746 stdlib, site-packages and application files: 1,632 rows are added
+  and 557 existing rows change name, end line or ccn; the nested-name fix alone renames
+  442 of 121,648 rows, and 19 of 123,320 rows move `cognitive`, 2 of them `nesting`.
+  Over 187 PEP 695 files, 422 of 4,730 rows change name and no `ccn` moves. Some added
+  rows are enclosing defs that were never listed, and they can be over a ceiling.
+  crapkit's own tree reads the same apart from two renamed test helpers.
+
+### A one-line Python def is told to split its lines
+
+- A Python def written on one line, in a scope a lane measures, scores as uncovered with
+  remedy `split-lines` in the coverage run, `rescore`, `rescore --gate` and `check_gate`
+  alike. Its only line is the `def` statement, which runs at import, so coverage.py
+  could not show whether a test called it: an uncalled `def one(x): return x` read 1 of
+  2 branches covered, and an uncalled one-liner at the end of a module read cov 1.0.
+  Move the body to the line after the `def` and measure again.
+- A one-line TypeScript function keeps its istanbul number, since istanbul counts calls
+  per function, and the shared-span note still names only spans two functions declare.
+
+### `ratchet seed` and `prune` take `--baseline ID`, the way past a failed verify (#75)
+
+- `crapkit ratchet seed --baseline ID` and `ratchet prune --baseline ID` read a named
+  run. They admit it by the rule `verify --baseline ID` uses and refuse a failed verify,
+  a hook run, a partial run or an inventory run in the same words. A store whose marks
+  carried an older stamp, with a failed verify in front of a run stored before same-line
+  positions, left no command that worked: seed read the pinned run, refused its twins,
+  and a fresh coverage run changed nothing. `ratchet merge`, `move` and `report` refuse
+  the flag.
+- When a failed verify makes seed or prune fall back to an older run, their line names
+  the newer run it passed over and the flag that reads it: ``skipped failed verify run 2
+  and the newer run 3 (pass `--baseline 3` to read it)``.
+- verify reads its baseline before the metric-stamp check. A named run that cannot serve
+  is refused for itself, and the taint warning prints before a stamp refusal. On a store
+  a failed verify pins, the stamp refusal ends with the seed that clears it (re-baseline
+  from run N with `crapkit ratchet seed --baseline N`), naming the run the taint warning
+  names, under a plain `verify`, `--baseline ID` and `--base` alike.
+- The seed line for a run an older crapkit measured no longer promises that a fresh
+  coverage run and another seed clear the stamp when a failed verify pins seed or
+  `--baseline` named the run. It names the newer run to pass to `--baseline`, or asks
+  for a coverage run and its id.
+- The legacy-identity refusal names the run it read: `ambiguous legacy function identity
+  in src/a.ts: (anonymous) in run 1; ...`. From seed and prune behind a failed verify it
+  names that verify, the one verify's taint warning names, and the `--baseline` to pass,
+  where it advised refreshing analysis, which a fresh coverage run could not satisfy.
+
+### Marks keep the metric stamp of the run that measured them
+
+- `ratchet seed` stamps the marks with the metric of the run it read, not the running
+  one, and refuses a run that recorded no metric. After an upgrade, run `crapkit
+  coverage` before `ratchet seed`: a seed from an older run keeps verify refusing, and
+  the seed line says so.
+- `ratchet prune` keeps the recorded stamp, and its line names the run's metric when it
+  differs from this crapkit's. A marks file prune creates holds no mark and takes the
+  running metric, so the next verify accepts it.
+- The pre-commit hook's `CRAPKIT_OVERRIDE_REASON` grant no longer restamps the marks
+  file: a file recorded under another metric stays stale until `crapkit coverage` and a
+  reseed. Under a stamp older than analysis 10, the grant refuses an anonymous
+  JavaScript or TypeScript callback and writes no alert, store row or mark. It used to
+  write an `(anonymous)` mark that every later reader refused with exit 3.
+- verify's stamp refusal, its unstamped-file warning and the merge driver's refusal say
+  to run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`. Seed alone,
+  right after an upgrade, kept the old stamp.
+- `ratchet move` reads OLD and NEW like every other path argument, so `./` prefixes,
+  Windows backslashes and paths typed below the root file the mark under its
+  repo-relative key.
+
+### brief, explain and next-item agree on which function a name means
+
+- explain, brief and get_function_history answer for a same-line twin when an older run
+  recorded the twins without positions. The history leaves out only the runs that cannot
+  place the twin, and a `runs prune` that keeps such a run no longer blocks these reads.
+  A name reads only its own twins' positions, so a legacy collision elsewhere in the
+  file no longer refuses it.
+- check_gate, explain and the commit gate prove legacy mark identity for the files they
+  read, plus any marked file the working tree no longer has. A legacy twin group in
+  another file still on disk no longer refuses them. `ratchet prune` still refuses to
+  carry a legacy mark through a rename, and explain still refuses a legacy mark on a
+  file the newest run dropped.
+- explain and get_function_history answer a bare twin name with the worst twin, as brief
+  does. They reported the first twin's history and mark whenever the worse twin came
+  later in the file.
+- explain reads a start line and an `(anonymous)#N` handle off the newest trusted run,
+  the run brief reads, so a failed verify taken after it no longer changes which
+  function they name. With no trusted run yet it reads the newest run with rows, and a
+  file the newest trusted run dropped is read from the newest one that holds it. A start
+  line that opens several functions exits 1 with the handles to use, as brief does; it
+  exited 5 without them.
+- brief and next-item judge `remedy` against the ceiling crapkit.toml holds now, the
+  number `target` and the budget already came from. After an uncommitted edit from 6 to
+  4, a ccn-5 function read `remedy: ok` beside `est_splits: 2`, and next-item never
+  offered it. worklist still prints the verdict the run stored.
+- `brief --batch` skips a function another session holds under `next-item --claim`, as
+  next-item does, and the envelope carries `skipped_claimed` when a claim hid a row.
+- brief's twins apply the similarity threshold to the raw containment, as `duplication`
+  does, so a pair just under the threshold appears in neither.
+- On a store that holds no run with rows, such as one holding only hook runs,
+  `duplication` and `worklist` say `no run with rows in <root>` instead of `no
+  snapshot`.
+
+### check_gate and the MCP schemas say what they check
+
+- check_gate's title, its description and the MCP server instructions name the rule it
+  applies, `rescore --gate`'s: a ratchet mark pardons a changed function only while its
+  crap is at or under the mark. That is stricter than the pre-commit hook, and a breach
+  predicts a verify refusal. The `path` argument says it takes an absolute path inside
+  the repo, that an outside or missing path is a config error, and that an unchanged or
+  unscoped file judges 0.
+- `rescore`, `rescore --gate` and `check_gate` gave two functions edited onto one line
+  span their old measured coverage and called them ok. They now score both untested at
+  cov 0 with remedy `split-lines`, as the next `coverage` run does.
+- `list_worklist`'s output schema refused the null `remedy` every row of an
+  inventory-only run carries, so an MCP client that validates structured results dropped
+  the whole answer.
+- The docs quote the MCP argument refusals as the server prints them
+  (`get_function_brief needs name (see inputSchema.required)`), and show `brief --json`
+  as the payload has it, checked against a live payload.
+
+### Reads on a large store are faster
+
+- The legacy ratchet key check builds its group union once instead of once per mark. On
+  a large consumer repo with 39,496 legacy marks, `worklist` fell from 133.9 s to 12.4 s
+  and `brief --json` from 150.3 s to 22.0 s (warm medians, byte-identical output).
+  `ratchet report` and `ratchet prune` run the same check.
+- Each run's same-line collision groups are scanned once, kept in a per-run
+  `run_collisions` table and deleted by `runs prune` with the run. On a 4.17M-row,
+  29-run store, explain went from 14.0 to 2.8 s and check_gate from 12.0 to 2.5 s; with
+  the key-group hoist, worklist went from 14.7 to 4.7 s and brief from 13.0 to 4.4 s.
+- brief reads only the file it is about. Its twins come from a shingle index the store
+  keeps for the run: the first brief on a run builds and stores it, and every later
+  brief in any process looks its function up. On a large consumer repo the source and
+  twins fields went from 3.2-4.1 s to 0.001 s per brief, the first brief on a run pays
+  about 7 s more once, and the index takes 37.8 MB of the store. A shingle is an 8-byte
+  blake2b digest, so one process's index reads the same in another. Storing a run's
+  index drops every older run's, and `runs prune` drops it with its run.
+- `rescore --gate` and `check_gate` read the marks only when a changed function is over
+  its ceiling, as `hook-precommit` did. A clean check_gate on a large consumer repo went
+  from 14.2 s to 2.1 s (warm medians, loaded machine). A clean gate no longer reports a
+  marks file it cannot parse; the next gate that breaches still does.
+- `rescore` of fewer than 16 files that total under 256 KB runs lizard on them in
+  process and leaves `.crapkit/cache.json` and `.crapkit/stat-stamps.json` unread and
+  unwritten; past either limit it folds its records into the cache. Rescoring an edited
+  56 KB file on a large consumer repo went from 1.6 s to 0.43 s. On that path a file
+  that gives one name to two functions prints its twin-name note on every run.
+- An empty next-item queue parses no lane artifact and asks git nothing about lane
+  sources. On crapkit's own empty queue the warm median fell from 4.41 s to 0.94 s,
+  output byte-identical.
+- `next-item`, `brief`, `explain` and `report` start their lane staleness git reads
+  together and narrow them to the lanes' scope paths, so a large untracked tree outside
+  every scope no longer costs a full listing. On a large consumer repo, the git time
+  outside process creation fell from 2.46 s to 0.11 s per call.
+- Coverage artifacts are read through a 4 MB window, so most file members decode in C.
+  crapkit's own coverage.py report with contexts parses in 0.26 s instead of 1.03 s.
+  Peak heap rises about 12 MB on a 112 MB istanbul artifact.
+- The first churn read after a commit (next-item, worklist, brief) folds in only the new
+  commits, from a new `.crapkit/churn-commits-v1.json` that keeps the churn window's
+  commits. On a 73k-commit window, where the file is about 9.4 MB, the map's CPU after a
+  20-commit HEAD move went from 1.84 s to 0.88 s. A rewritten history, another window, a
+  shallow clone, a damaged file or a cutoff that moved back rebuilds in full. After a
+  HEAD move, brief and `worklist --batches` spawn git 3 times instead of 6.
+- The churn log is walked from the HEAD its key names, so a commit that lands during the
+  walk is no longer counted twice. When git's `N months ago` cutoff moves back at a
+  month end (6 months before Aug 31 is Mar 3, before Sep 1 is Mar 1), the log is walked
+  again instead of re-dated. A path's churn weight is summed with math.fsum, so a
+  carried commit table and a cold rebuild round alike.
+
+### verify names a failure that passed its retry
+
+- A new failure that passes its flake retry is named on the OK line as `(1 new failure
+  passed on rerun, first ID)` and in a new `--json` key `retried_passes`. It no longer
+  counts among the unchanged failures forgiven, which now lists only failures the
+  baseline also has.
+- A failure passes its flake retry only when every lane that failed it reran it and
+  passed it. A second lane that failed the same id with no `retest_command` used to be
+  passed over, and verify exited 0.
+- `dirty_failures` no longer names a failure that passed its retry; it stays a subset of
+  `new_failures`.
+- A verify that passed only because a test passed its retry no longer forgives that
+  test's later real failure when it serves as the baseline. The stored run names those
+  ids under each lane's `retried_passes`, and `failures` keeps the lane's own report.
+- `verify --base` and `hook-precommit --base` say `no merge base between REF and HEAD`
+  when git finds none, and in a shallow clone add `set fetch-depth: 0 on the checkout or
+  run git fetch --unshallow`.
+
+### A lane that lists its inputs is reused across commits
+
+- `coverage --reuse-unchanged` and `verify --reuse-unchanged` reuse a lane that lists
+  its `inputs` while the commit its artifact was built at is still behind HEAD, no
+  committed, staged, unstaged or untracked change touches those paths, the artifact
+  bytes match, and the lane's own table, `env` included, is the one it was measured
+  with. Lanes without `inputs` keep the same-clean-HEAD rule. Entries are literal paths
+  from the root, spelled like scope paths; one holding `*` or `?`, or one that is
+  absolute or climbs out of the root, is a config error.
+- An istanbul lane that sets `path_prefix` no longer hides a measured path from another
+  tree: the wrong-tree check takes the prefix back off coverage.py keys only.
+
+### doctor checks a lane the way the lane starts
+
+- doctor's start check, version report and pytest-cov probe ran under doctor's own PATH
+  and directory. They now run from the lane's `cwd` with its `[lane.env]` merged in, and
+  a lane whose own PATH carries a python with pytest-cov no longer FAILs doctor.
+- A lane headed by a relative launcher such as `.venv\Scripts\python.exe` FAILed doctor
+  from the repo root and passed from a subdirectory. doctor gives the same finding from
+  anywhere under the root and names the absolute file. On Windows it finds a bare lane
+  word the way cmd.exe does: the lane's `cwd` first unless
+  `NoDefaultCurrentDirectoryInExePath` is set, then each PATH entry with each PATHEXT
+  extension.
+- `doctor --json`, `doctor --tune` and MCP `check_config` crashed with an AttributeError
+  when `.crapkit/artifacts.json` held an entry that is not an object. doctor reads such
+  an entry as no stamp and WARNs, naming the lane whose next run replaces it, or saying
+  to delete one no declared lane writes.
+- `doctor --tune` finds a lane's duration after its artifact path changed, as the lane
+  start order does.
+- After a lane failed for want of pytest-cov, the hint named no interpreter for chained
+  commands such as `cd web && python -m pytest --cov=src`. It names the python heading
+  the pytest step, with its `-m pip install pytest-cov` line.
+- With pytest before 9.1, a lane whose test errored in teardown was refused as a partial
+  report. JUnit admission accepts either total pytest declares: records before 9.1,
+  testcases from 9.1 on.
+- A lane attempt that failed to start writes its reason into the lane log, so a retried
+  lane's log no longer runs one attempt's output into the next attempt's header.
+- init and doctor read a backslash in a git-listed name as part of the filename, not as
+  a directory separator.
+
+### Windows starts an owned command with no launcher in between
+
+- Windows starts an owned command suspended and resumes it once its Job holds it, with
+  no Python launcher in between. Each owned command runs one process fewer and costs
+  about 47-62 ms less CPU; an MCP tool call saves one interpreter start.
+- A command that exits 0xC0000142 (STATUS_DLL_INIT_FAILED) is the lane layer's retry
+  trigger, as a launcher that died at spawn was. An owned command's NTSTATUS exit code,
+  such as 0xC0000005, reaches the caller unchanged; the launcher turned every code above
+  2^31 into 4294967295. A worktree teardown whose git failed to start still falls back
+  to removing the directory.
+
+### `crapkit clean` recovers mutations only
+
+- `crapkit clean` recovers abandoned temporary mutation checkouts and no longer touches
+  test evidence. `clean --json` keeps its `test_runs` object with every array empty. On
+  a linked `.crapkit`, clean refuses with mutation recovery's sentence; the exit stays
+  5.
+- Test evidence retention moved to crapkit's development runner, the only writer of
+  `.crapkit/test-runs`. `tools/testing/run.py` prunes finished default runs at each
+  start by `--retention-days` (default 7) and `--retention-count` (default 10); a
+  negative or non-integer value exits 2. `--preview-retention` prints what the limits
+  would remove and runs no suite.
+- An expired run the filesystem will not fully delete keeps its receipt, so the preview
+  still lists it and the next start tries again. It used to abort the prune, and with it
+  every default development test run and `crapkit clean` before mutation recovery.
+
+### The advisory hook reads encoded marks, and report commands paste into cmd.exe
+
+- The advisory hook honours a ratchet mark written as an encoded record (a path that
+  starts with `#`, or holds a tab, a line break or a Unicode separator), and a legacy
+  raw mark whose path starts with `#` no longer silences the advisory for other files.
+- The HTML report's explain commands paste intact into cmd.exe as well as PowerShell and
+  sh. A path that starts with a hyphen is passed after `--`, a handle holding a double
+  quote goes through the encoded PowerShell line, and a long encoded line wraps in its
+  cell instead of widening the table.
+- The help for `mutate --files` and `claims release PATH` says the path is repo-relative
+  and read from the working directory without `--repo`.
+
+### CI, tests and release tooling
+
+- CI runs each Windows suite as its own job and measures the verdict's base and
+  candidate in two parallel jobs (`tools/testing/ci.py --measure base|candidate`). A
+  join job (`--join`) checks each uploaded wheel against its recorded bytes and commit,
+  reinstalls it and proves its source before verifying. A measurement that stops before
+  its hand-off uploads `failure.json` with the phase and the error. A newer push to a
+  pull request cancels the older run; pushes to main always finish.
+  `tools/testing/run.py --suite unit` or `--suite e2e` runs one session, judged by
+  junitparse's rules.
+- Every test-side wait on a child goes through `tests/hang_guard.py`: one 120 s bound
+  that a wait leaves the moment its state appears, and a miss that kills the child and
+  fails with what it printed. Six tests had failed verify on a correct tree while the
+  machine was saturated, each on a guessed bound of 5 to 30 s. A child that holds a lock
+  until the test releases it holds for three bounds.
+- tests/e2e runs a CLI call inside the pytest worker unless its file binds
+  `cli_runner(spawn=True)`, and builds a measured fixture repo once per xdist worker. On
+  a 24-core Windows machine the e2e suite used 20 to 22% less CPU and started 3,825
+  fewer processes. An in-process call past its bound fails its own test with argv,
+  output and stack, and the session goes on.
+- mini_repo's py lane runs pytest with `-n 0`, and fixture lanes turn the suite's
+  coverage off in their children. One `crapkit coverage` on mini_repo went from 6.73 to
+  1.30 s of CPU.
+- Releasing: stage 1 no longer runs the full coverage lane, `ratchet seed` or `ratchet
+  prune`. After a passing verify, the verify stage runs seed and prune against that run
+  and stops the release, with the marks file put back, when either would change it, so a
+  release runs one full py lane instead of two. `release.py check` refuses only a
+  release interpreter that cannot import build or twine and a missing PyPI credential.
+  `release.py verify` prints `unconfirmed (cannot run gh: ...)` or `unreachable (not the
+  version JSON: ...)` instead of a traceback, and a staged rename out of a path starting
+  `# ` reads as a dirty tree.
+- The dependency-venv fixture carries every site directory the parent imports from, so
+  the throwaway-venv tests pass under a `--system-site-packages` venv. The publish
+  adapter retries readbacks without sleeping, 55 s off one unit test, and three release
+  test files spawn git 1,425 times instead of 2,426.
+
 ## 0.7.6 — 2026-09-20
 
 ### A function on a shared line is told to split it, not to add tests
