@@ -170,8 +170,9 @@ def test_crapkits_caches_hold_nothing_after_a_call(scoped_repo):
     another. A new process starts with every cache empty, and so does the next
     in-process call."""
     from crapkit.cli import admin
+    from crapkit.lane_command import LaunchSpec
 
-    admin._start_probe("python")
+    admin._start_probe("python", LaunchSpec(Path(scoped_repo)))
     assert admin._start_probe.cache_info().currsize == 1
 
     run_cli(scoped_repo, "doctor")
