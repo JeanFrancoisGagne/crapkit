@@ -32,19 +32,6 @@
   The old github.io address redirects there. The README, the package metadata, the
   registry manifest and the landing page's canonical link name the new address.
 
-### Running it from a repo that is not Python
-
-- The README now shows the path a TypeScript, Go or Rust repo takes: `uvx crapkit init`
-  runs the tool from uv's own cache and adds nothing to the repo's manifest, and
-  `uv tool install crapkit` or `pipx install crapkit` puts the command on PATH for the
-  commit gate and the plugin.
-
-### The docs site has a new address
-
-- The handbook is served from https://www.jfgagne.com/crapkit/handbook.html over HTTPS.
-  The old github.io address redirects there. The README, the package metadata, the
-  registry manifest and the landing page's canonical link name the new address.
-
 ## 0.7.5 — 2026-09-15
 
 ### A source line two functions share no longer ends the coverage run
