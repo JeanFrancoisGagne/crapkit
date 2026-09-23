@@ -75,6 +75,34 @@ def test_a_well_formed_file_adds_no_warn(repo, capsys):
     assert [w for w in json.loads(out)["warnings"] if "not an object" in w] == []
 
 
+def _warns_about(key: str, warnings: list[str]) -> list[str]:
+    return [text for text in warnings if f"{key!r}" in text and "not an object" in text]
+
+
+def test_the_warn_names_the_lane_whose_run_replaces_the_entry(repo, capsys):
+    _mangle(repo)
+
+    _, out, _ = _run(["doctor", "--json"], repo, capsys)
+
+    [warn] = _warns_about("coverage/unit.json", json.loads(out)["warnings"])
+    assert warn.endswith("lane 'unit' replaces it on its next successful run, "
+                         "or delete the entry"), warn
+
+
+def test_an_entry_no_declared_lane_writes_is_one_to_delete(repo, capsys):
+    """write_stamps merges this run's stamps over the file, so a key no lane
+    declares (an old artifact path, a typo) is never rewritten, and a WARN
+    promising the next run would replace it repeated on every doctor run."""
+    stamps = repo / ".crapkit" / "artifacts.json"
+    stamps.parent.mkdir(parents=True, exist_ok=True)
+    stamps.write_text(json.dumps({"old/gone.json": "garbage"}), encoding="utf-8")
+
+    _, out, _ = _run(["doctor", "--json"], repo, capsys)
+
+    [warn] = _warns_about("old/gone.json", json.loads(out)["warnings"])
+    assert warn.endswith("no declared lane writes this key, so delete the entry"), warn
+
+
 def test_check_config_answers_over_the_entry(repo):
     _mangle(repo)
 

@@ -1087,7 +1087,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_lanes(root, cfg)
-            + _doctor_stamps(root)
+            + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)
             + _doctor_hook_modes(root)
             + _doctor_hook_encoding(root)
@@ -1147,19 +1147,25 @@ def _lane_reports(root: Path, cfg) -> list[dict]:
     return [_lane_report(root, lane, stamp_for(stamps, lane.artifact)) for lane in cfg.lanes]
 
 
-def _unreadable_stamp_note(key: str) -> str:
+def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
+    """`writers` maps each declared lane's artifact to the lane's name. A run
+    merges its stamps over the file and rewrites only the keys its lanes own,
+    so an entry no lane declares stays until someone deletes it."""
+    writer = writers.get(key)
+    fix = (f"lane {writer!r} replaces it on its next successful run, or delete the entry"
+           if writer else "no declared lane writes this key, so delete the entry")
     return (f".crapkit/artifacts.json: the entry for {key!r} is not an object, so crapkit "
-            "reads it as no stamp (no commit, no duration); the lane's next run replaces "
-            "it, or delete the entry")
+            f"reads it as no stamp (no commit, no duration); {fix}")
 
 
-def _doctor_stamps(root: Path) -> list[Finding]:
+def _doctor_stamps(root: Path, lanes) -> list[Finding]:
     """WARN, never FAIL: every reader already takes a mangled entry as no stamp.
     Named anyway, because the file is hand-edited and the reader has to find the
     line doctor skipped."""
     from ..lanes import read_stamps, unreadable_stamps
 
-    return [Finding("WARN", _unreadable_stamp_note(key))
+    writers = {lane.artifact: lane.name for lane in lanes}
+    return [Finding("WARN", _unreadable_stamp_note(key, writers))
             for key in unreadable_stamps(read_stamps(root))]
 
 
@@ -1245,7 +1251,7 @@ def _doctor_tune(root: Path, cfg) -> int:
     from ..doctor import suggest_knobs, tune_lines
     from ..resources import available_cpus
 
-    for finding in _doctor_stamps(root):
+    for finding in _doctor_stamps(root, cfg.lanes):
         print(f"{finding.level} {finding.text}", file=sys.stderr)
     cpus, _ = available_cpus()
     knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes))
