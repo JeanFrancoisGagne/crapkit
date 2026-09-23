@@ -74,7 +74,7 @@ do next.
 | `est_splits`, `est_uncovered_paths` | the same two budget numbers `next-item` prints, out of the same code |
 | `params` | its parameters in order, each `{name, type}`, so a new test can call it without opening the file |
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
-| `gate_rule` | `ceiling` is the number step 3 judges ccn against, `binds` names which limit fires first |
+| `gate_rule` | `ceiling` is the number step 3 judges ccn against; `binds` is the gate's scope rule as one fixed sentence: print it, do not branch on it |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
 | `stale` | `true` means the run predates HEAD: run `commands.refresh` before trusting `cov` |
 | `file_functions`, `file_totals` | the siblings an extracted helper lands beside, and the file's rollup |

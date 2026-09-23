@@ -497,7 +497,7 @@ current commit. Another `brief` re-reads the same snapshot and reports the same 
 |---|---|
 | the long name | `"parse_row( text , strict , sep , header )"` |
 | the bare identifier | `parse_row` |
-| the function's start line | `4` |
+| the function's start line | `1` |
 | the ordinal handle | `"(anonymous)#2"` |
 | the twin selector | `"__post_init__#2"` |
 
@@ -583,9 +583,10 @@ $ crapkit brief --batch 3 --json
 
 ```json
 {
-  "commit": "1b7b76bb6c16824a7bcee2d9e4c7f71a69eb4c3d",
-  "packets": [{"function": "parse_row( text , strict , sep , header )", "...": "..."}],
-  "run_id": 2,
+  "commit": "9c7eed1a91d12a4b84b51ecefbbf9e1f5551d216",
+  "packets": [{"function": "parse_line( text , strict , sep , header )", "...": "..."},
+              {"function": "parse_row( text , strict , sep , header )", "...": "..."}],
+  "run_id": 4,
   "schema": 1,
   "stale": false
 }
