@@ -257,7 +257,9 @@ def test_coverage_reuse_unchanged_skips_a_lane_whose_inputs_did_not_move(repo: P
 
     assert second.returncode == 0, second.stderr
     assert _runs(repo) == 1, "a docs commit and an untracked doc must not rerun the lane"
-    assert "reusing" in second.stderr
+    measured = _git(repo, "rev-parse", "HEAD~1").strip()
+    assert ("crapkit: lane 'unit': measurement inputs unchanged; reusing without rerun "
+            f"(artifact built at {measured[:11]})") in second.stderr
     assert json.loads(second.stdout)["functions"] == json.loads(first.stdout)["functions"]
 
 

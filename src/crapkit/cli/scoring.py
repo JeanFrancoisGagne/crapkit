@@ -127,13 +127,14 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 
 def _lane_reuse(root: Path, lane, reuse_artifacts: bool, reuse_unchanged: bool) -> bool:
-    from ..lanes import lane_unchanged
+    from ..lanes import lane_reuse_commit
 
     if reuse_artifacts:
         return True
-    if reuse_unchanged and lane_unchanged(root, lane):
-        print(f"crapkit: lane {lane.name!r}: measurement inputs unchanged; reusing without rerun",
-              file=sys.stderr)
+    commit = lane_reuse_commit(root, lane) if reuse_unchanged else ""
+    if commit:
+        print(f"crapkit: lane {lane.name!r}: measurement inputs unchanged; reusing without rerun "
+              f"(artifact built at {commit[:11]})", file=sys.stderr)
         return True
     return False
 
