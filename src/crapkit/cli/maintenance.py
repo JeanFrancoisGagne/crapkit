@@ -26,7 +26,12 @@ def cmd_clean(args) -> int:
         _print_json(result)
     else:
         _print_cleanup(result)
-    return int(any(row["status"] == "failed" for row in result["temporary_mutations"]))
+    return int(_failed(result))
+
+
+def _failed(result: dict) -> bool:
+    return bool(result["test_runs"]["failed"]) or any(
+        row["status"] == "failed" for row in result["temporary_mutations"])
 
 
 def _cleanup(root, cfg, dry_run: bool) -> dict:

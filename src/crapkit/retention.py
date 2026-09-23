@@ -17,6 +17,7 @@ from .procs import own_processes
 DEFAULT_TEST_RETENTION_DAYS = 7
 DEFAULT_TEST_RETENTION_COUNT = 10
 _RECEIPT = ".crapkit-test-run.json"
+_STATUSES = ("removed", "planned", "active", "unproven", "changed", "failed")
 
 
 def _same_place(path: Path, resolved: Path) -> bool:
@@ -98,6 +99,10 @@ def _prune_one(path: Path, root: Path, dry_run: bool, stamp: float) -> str:
             return _remove_recognized(path, root, dry_run, stamp)
     except ToolError:
         return "active"
+    except OSError:
+        # A file Windows will not delete (read-only, or held open) fails this
+        # run alone; the next run and the caller's other cleanup still happen.
+        return "failed"
 
 
 def _remove_recognized(path: Path, root: Path, dry_run: bool, stamp: float) -> str:
@@ -123,12 +128,13 @@ def prune_test_runs(root: Path, *, keep: int = DEFAULT_TEST_RETENTION_COUNT,
     """Remove marked idle runs beyond either enabled retention limit.
 
     Active leases, redirected paths and unrecognized evidence are preserved.
-    Zero disables the corresponding limit. Explicit output has no marker and
-    never participates. The stable lease remains after removal for safe reuse.
+    A run the filesystem refuses to delete is reported `failed`. Zero disables
+    the corresponding limit. Explicit output has no marker and never
+    participates. The stable lease remains after removal for safe reuse.
     """
     root = root.resolve()
     cutoff = _cutoff(keep, days)
-    result = {key: [] for key in ("removed", "planned", "active", "unproven", "changed")}
+    result = {key: [] for key in _STATUSES}
     for index, (stamp, path) in enumerate(_candidates(_parent(root), root)):
         if _expired(index, stamp, keep, cutoff):
             result[_prune_one(path, root, dry_run, stamp)].append(str(path))
