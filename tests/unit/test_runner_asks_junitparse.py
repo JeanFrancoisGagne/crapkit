@@ -8,6 +8,8 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+import pytest
+
 from test_suite_schedule import SCRIPT, fixture_env, fixture_repo
 
 
@@ -81,3 +83,23 @@ def test_a_teardown_error_still_publishes_its_failed_measurement(tmp_path):
     assert runner_record(tmp_path, "unit") == []
     assert (tmp_path / ".crapkit/cov/py.json").is_file()
     assert not list((tmp_path / ".crapkit/cov").glob("incomplete/*"))
+
+
+# pytest returns the session's exitstatus after pytest_sessionfinish, so a
+# conftest that rewrites it produces a finished, passing report with that exit.
+EXIT_CONFTEST = '''def pytest_sessionfinish(session):
+    session.exitstatus = {code}
+'''
+
+
+@pytest.mark.parametrize("code", [1, 3])
+def test_an_exit_the_report_does_not_explain_is_refused(tmp_path, code):
+    fixture_repo(tmp_path, "")
+    (tmp_path / "tests/unit/conftest.py").write_text(EXIT_CONFTEST.format(code=code), encoding="utf-8")
+
+    result = run(tmp_path, "--unit-workers", "1")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert runner_record(tmp_path, "unit") == [
+        f"unit exited {code}; JUnit did not record a completed pytest run"]
+    assert not (tmp_path / ".crapkit/cov/py.json").exists()
