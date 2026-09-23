@@ -30,9 +30,10 @@ _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
 # non-ASCII file fell out of every set built by intersecting the two: lane reuse
 # republished a stale score and its scope read as unchanged. Off, status_names,
 # diff_names_since, unstaged_paths, the churn window's log (churn_log, through
-# _git_lines) and the `diff -U0` headers all spell the path the way ls-files does. git still quotes a path holding a
-# double-quote or a control character whatever this says, which is why
-# gitpaths.unquote_path stays for line-oriented history and diff headers.
+# _git_lines) and the `diff -U0` headers all spell the path the way ls-files
+# does. git still quotes a path holding a double-quote or a control character
+# whatever this says, which is why gitpaths.unquote_path stays for
+# line-oriented history and diff headers.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
 # Parsed patches are a protocol, independent of display settings and converters.
 _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",

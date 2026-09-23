@@ -16,14 +16,15 @@ Two things are stored beyond the author and author date a churn header needs.
 The commit date (%ct) rides along on every header line, so an aged-out commit
 can be expired without asking git, and the lines are served that way: coupling
 only asks which lines open a commit and the churn parser reads either header
-shape, so no reader pays a pass to strip it. And the key records the HEAD the log was built from, so a HEAD that
-grew from it costs `git log cached..HEAD` instead of the window — 0.77 s instead
-of 6.9 s at a day-old HEAD, for the same 628k lines. Commit date is not author
-date: `--since` filters on the committer's clock while the recency weight uses
-the author's, and a rebased commit has two different ones. The key also records
-the cutoff the log was cut at, because that cutoff can move back: git's month
-arithmetic puts 6 months before Aug 31 on Mar 3 and before Sep 1 on Mar 1, and
-a log cut at the later cutoff cannot be re-dated to the earlier one.
+shape, so no reader pays a pass to strip it. And the key records the HEAD the
+log was built from, so a HEAD that grew from it costs `git log cached..HEAD`
+instead of the window — 0.77 s instead of 6.9 s at a day-old HEAD, for the
+same 628k lines. Commit date is not author date: `--since` filters on the
+committer's clock while the recency weight uses the author's, and a rebased
+commit has two different ones. The key also records the cutoff the log was cut
+at, because that cutoff can move back: git's month arithmetic puts 6 months
+before Aug 31 on Mar 3 and before Sep 1 on Mar 1, and a log cut at the later
+cutoff cannot be re-dated to the earlier one.
 
 A cache is disposable. An unreadable, torn or unkeyable log reads as cold, never
 as a crash, and a HEAD the cached log is not an ancestor of (a rewind, a rebase,
