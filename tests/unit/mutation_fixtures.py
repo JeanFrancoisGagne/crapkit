@@ -15,7 +15,7 @@ def holding_suite(root, events, phase='mutant'):
     """The suite holds its writer lock until the test releases it. The fixture's
     mutation deadline rises to the hold, so the product cannot end a hold the
     test is still counting on."""
-    script = (root / 'suite.py').read_text()
+    script = (root / 'suite.py').read_text(encoding='utf-8')
     script = script.replace('time.sleep(.1)',
         f'if phase == {phase!r}:\n'
         '    from crapkit.locks import exclusive_lock\n'
@@ -27,9 +27,14 @@ def holding_suite(root, events, phase='mutant'):
         '            time.sleep(.02)\n'
         '        (events / "finished").touch()\n')
     (root / 'suite.py').write_text(script, encoding='utf-8')
-    config = root / 'crapkit.toml'
-    held = re.sub(r'mutation_timeout_seconds=\d+', f'mutation_timeout_seconds={HOLD_SECONDS}',
-                  config.read_text(encoding='utf-8'))
+    _raise_deadline_to_the_hold(root / 'crapkit.toml')
+
+
+def _raise_deadline_to_the_hold(config):
+    held, count = re.subn(r'mutation_timeout_seconds\s*=\s*\d+',
+                          f'mutation_timeout_seconds={HOLD_SECONDS}',
+                          config.read_text(encoding='utf-8'))
+    assert count == 1, f'{config} spells no single mutation_timeout_seconds to raise to the hold'
     config.write_text(held, encoding='utf-8')
 
 
