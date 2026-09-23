@@ -1224,6 +1224,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_lanes(root, cfg)
+            + _doctor_stamps(root)
             + _doctor_artifact_litter(cfg)
             + _doctor_hook_modes(root)
             + _doctor_hook_encoding(root)
@@ -1277,10 +1278,26 @@ def _lane_report(root: Path, lane, stamp: dict) -> dict:
 
 
 def _lane_reports(root: Path, cfg) -> list[dict]:
-    from ..lanes import read_stamps
+    from ..lanes import read_stamps, stamp_for
 
     stamps = read_stamps(root)
-    return [_lane_report(root, lane, stamps.get(lane.artifact, {})) for lane in cfg.lanes]
+    return [_lane_report(root, lane, stamp_for(stamps, lane.artifact)) for lane in cfg.lanes]
+
+
+def _unreadable_stamp_note(key: str) -> str:
+    return (f".crapkit/artifacts.json: the entry for {key!r} is not an object, so crapkit "
+            "reads it as no stamp (no commit, no duration); the lane's next run replaces "
+            "it, or delete the entry")
+
+
+def _doctor_stamps(root: Path) -> list[Finding]:
+    """WARN, never FAIL: every reader already takes a mangled entry as no stamp.
+    Named anyway, because the file is hand-edited and the reader has to find the
+    line doctor skipped."""
+    from ..lanes import read_stamps, unreadable_stamps
+
+    return [Finding("WARN", _unreadable_stamp_note(key))
+            for key in unreadable_stamps(read_stamps(root))]
 
 
 def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
@@ -1342,7 +1359,9 @@ def _lane_seconds(root: Path, lane, stamps: dict) -> float | None:
     """What this lane costs, best signal first: the duration its own run
     recorded, else the wall time its junit report claims. None means this lane
     has never left a cost signal on disk — which is not the same as costing 0."""
-    recorded = stamps.get(lane.artifact, {}).get("seconds")
+    from ..lanes import stamp_for
+
+    recorded = stamp_for(stamps, lane.artifact).get("seconds")
     if isinstance(recorded, (int, float)):
         return float(recorded)
     return _junit_seconds(root / lane.results_artifact) if lane.results_artifact else None
@@ -1362,6 +1381,8 @@ def _doctor_tune(root: Path, cfg) -> int:
     from ..doctor import suggest_knobs, tune_lines
     from ..resources import available_cpus
 
+    for finding in _doctor_stamps(root):
+        print(f"{finding.level} {finding.text}", file=sys.stderr)
     cpus, _ = available_cpus()
     knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes))
     for line in tune_lines(cpus=cpus, knobs=knobs, durations=_lane_durations(root, cfg)):

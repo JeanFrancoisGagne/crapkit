@@ -513,11 +513,17 @@ def write_stamps(root: Path, entries: dict[str, dict]) -> None:
                     encoding="utf-8")
 
 
-def _stamp_dict(stamps: dict, artifact: str) -> dict:
+def stamp_for(stamps: dict, artifact: str) -> dict:
     """One artifact's entry, or {} when the file records none, or something
     hand-mangled under that key."""
     entry = stamps.get(artifact)
     return entry if isinstance(entry, dict) else {}
+
+
+def unreadable_stamps(stamps: dict) -> list[str]:
+    """The keys whose entry is not an object, sorted. Every reader here takes
+    such an entry as no stamp at all; this is what lets doctor name them."""
+    return sorted(key for key, entry in stamps.items() if not isinstance(entry, dict))
 
 
 def _stamp_commit(entry: dict) -> str:
@@ -555,7 +561,7 @@ def refusal_stamp(root: Path, lane: Lane, error: object) -> dict[str, dict]:
     refused = getattr(error, "refused_mtimes", {}).get(lane.artifact)
     if refused is None:
         return {}
-    entry = _stamp_dict(read_stamps(root), lane.artifact)
+    entry = stamp_for(read_stamps(root), lane.artifact)
     return {lane.artifact: {**entry, "lane": lane.name, "refused_mtime_ns": refused}}
 
 
@@ -636,7 +642,7 @@ def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: s
 def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) -> None:
     """On reuse: say when the artifact predates changes touching this lane's scopes.
     Uncommitted working-tree edits count — that is the most common way to go stale."""
-    commit = _stamp_commit(_stamp_dict(read_stamps(git.root), lane.artifact))
+    commit = _stamp_commit(stamp_for(read_stamps(git.root), lane.artifact))
     if not commit or not scope_paths:
         return
     try:
@@ -656,7 +662,7 @@ def _facts(root: Path, git: GitFacts | None) -> GitFacts:
 
 def _artifact_commit(root: Path, lane: Lane) -> str:
     """The recorded commit of an existing artifact with no pending write refusal."""
-    stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    stamp = stamp_for(read_stamps(root), lane.artifact)
     path = root / lane.artifact
     if not path.is_file() or _refused_on_disk(stamp, path):
         return ""
@@ -688,7 +694,7 @@ def lane_unchanged(root: Path, lane: Lane) -> bool:
     Source ownership cannot prove that a changed path leaves its measurement
     intact. Explicit artifact reuse remains a separate deliberate request.
     """
-    stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    stamp = stamp_for(read_stamps(root), lane.artifact)
     if not stamp.get("inputs") or not _artifact_commit(root, lane):
         return False
     return stamp["inputs"] == _measurement_key(root, lane) and _same_artifacts(root, lane, stamp)
@@ -1124,7 +1130,7 @@ def _refuse_unwritten_artifact(root: Path, lane: Lane) -> None:
     that is gone falls through to `_artifact_path`, whose sentence is the one
     the recover skill triages on."""
     path = root / lane.artifact
-    stamp = _stamp_dict(read_stamps(root), lane.artifact)
+    stamp = stamp_for(read_stamps(root), lane.artifact)
     if path.is_file() and _refused_on_disk(stamp, path):
         _raise_no_artifact(root, lane, _lane_log_path(root, lane), None,
                            {lane.artifact: stamp["refused_mtime_ns"]}, reuse=True)
