@@ -19,7 +19,7 @@ import shlex
 
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
-from .score import _remedy, shares_its_def_line
+from .score import remedy, shares_its_def_line
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -216,7 +216,7 @@ def rejudged(row, ceiling: int, rows_of):
     called only for a row whose stored verdict cannot say whether another
     function declares its lines.
     """
-    verdict = _remedy(row.ccn, row.crap, ceiling)
+    verdict = remedy(row.ccn, row.crap, ceiling)
     if verdict == "add-tests" and _shares_span(row, rows_of):
         verdict = "split-lines"
     return row if verdict == row.remedy else row._replace(remedy=verdict)

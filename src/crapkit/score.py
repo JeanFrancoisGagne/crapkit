@@ -128,7 +128,7 @@ def _best_match(row: InventoryRow, candidates: list[FnCoverage]) -> FnCoverage |
     return best
 
 
-def _remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> str:
+def remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> str:
     """The first thing that can lower this score. A function sharing its source
     line span with another scores as uncovered whatever its tests do, so
     add-tests there is advice nobody can follow: splitting the definitions is,
@@ -142,7 +142,7 @@ def _remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> 
 
 def _finish(row, cov: float, flag: str, *, target: int, scope_targets,
             shared_span: bool = False) -> ScoredRow:
-    # cc-only is the pre-commit hook's rule: crap IS ccn, so _remedy can only
+    # cc-only is the pre-commit hook's rule: crap IS ccn, so remedy can only
     # answer ok or decompose. Feeding it cov=0 through the formula would say
     # add-tests about code no test can reach.
     score = float(row.ccn) if flag == "cc-only" else crap(row.ccn, cov)
@@ -153,7 +153,7 @@ def _finish(row, cov: float, flag: str, *, target: int, scope_targets,
     # built a throwaway dict per row and looked every field up by name.
     return ScoredRow(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7],
                      row[8], row[9], row[10],
-                     cov, flag, score, _remedy(row[7], score, ceiling, shared_span), row[11], row[12])
+                     cov, flag, score, remedy(row[7], score, ceiling, shared_span), row[11], row[12])
 
 
 def _nearest_overlay(row, candidates) -> list:
