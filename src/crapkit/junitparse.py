@@ -84,7 +84,9 @@ def _refuse_unfinished(root: ET.Element) -> None:
     a quarter of the scope scores cov 0. Reported on a 15,300-test lane where
     one dead worker left 4,626 tests unexecuted (#21).
     """
-    notes = _crash_notes(root) + _session_notes(root) + _collection_notes(root)
+    # A runner that refused this report records these words in an error of its
+    # own, so the same crash can appear twice; the reader names it once.
+    notes = list(dict.fromkeys(_crash_notes(root) + _session_notes(root) + _collection_notes(root)))
     if notes:
         raise ToolError("junit reports a run that did not finish, so its coverage measures "
                         f"a partial suite: {'; '.join(notes)}")

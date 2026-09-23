@@ -10,6 +10,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from crapkit.errors import ToolError
+from crapkit.junitparse import suite_summary
 from test_suite_schedule import SCRIPT, fixture_env, fixture_repo
 
 
@@ -26,19 +28,37 @@ def runner_record(root, suite):
     return [message for message in messages if message.startswith(f"{suite} exited ")]
 
 
-def test_a_crashed_worker_is_refused_in_junitparse_words(tmp_path):
-    fixture_repo(tmp_path, "")
-    (tmp_path / "tests/unit/test_crash.py").write_text(
-        "import os\ndef test_worker_dies():\n    os._exit(13)\n")
-    environment = fixture_env(tmp_path)
-    environment["PYTEST_ADDOPTS"] = "--max-worker-restart=0"
+CRASH = "crashed while running 'tests/unit/test_crash.py::test_worker_dies'"
 
-    result = run(tmp_path, env=environment)
+
+def crashed_run(root):
+    """The runner's report of a unit session whose xdist worker died mid-test."""
+    fixture_repo(root, "")
+    (root / "tests/unit/test_crash.py").write_text(
+        "import os\ndef test_worker_dies():\n    os._exit(13)\n")
+    environment = fixture_env(root)
+    environment["PYTEST_ADDOPTS"] = "--max-worker-restart=0"
+    return run(root, env=environment)
+
+
+def test_a_crashed_worker_is_refused_in_junitparse_words(tmp_path):
+    result = crashed_run(tmp_path)
 
     assert result.returncode == 1, result.stdout + result.stderr
     record, = runner_record(tmp_path, "unit")
     assert "junit reports a run that did not finish" in record, record
-    assert "crashed while running 'tests/unit/test_crash.py::test_worker_dies'" in record, record
+    assert CRASH in record, record
+
+
+def test_the_lane_names_a_crash_the_runner_recorded_once(tmp_path):
+    """The runner's record repeats junitparse's words for the crash, so the lane
+    reading the combined report finds the same crash in two errors."""
+    crashed_run(tmp_path)
+
+    with pytest.raises(ToolError) as refused:
+        suite_summary((tmp_path / ".crapkit/cov/junit.xml").read_text(encoding="utf-8"))
+
+    assert str(refused.value).count(CRASH) == 1, refused.value
 
 
 # Rewrites the finished report so it declares one test more than it holds: the
