@@ -19,6 +19,8 @@ import pytest
 
 from crapkit import packet
 from crapkit.cli import main
+from crapkit.snapshot import InventoryRow
+from crapkit.store import SnapshotStore
 from hand_scored_repo import make_repo, run, scored, write_run
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -181,6 +183,34 @@ def test_regrown_is_documented_as_ccn_falling_and_rising_over_every_run(payload)
     assert payload["regrowth"]["history"] == [[1, 9], [2, 7]], "[run_id, ccn] per run"
     assert "`ccn` fell" in rows["regrown"][1], rows["regrown"]
     assert "every stored run" in rows["history"][1], rows["history"]
+
+
+PARSE = "parse( text , sep )"
+
+
+def test_history_counts_the_run_kinds_the_page_names(tmp_path, capsys):
+    """Runs 1 to 3 are an inventory run, a partial run and a refused verify.
+    The packet comes off run 4, the coverage run after them."""
+    root = make_repo(tmp_path / "repo")
+    write_run(root, [InventoryRow("src", "src/app.py", PARSE, 1, 20, 9, 9, 9, 20, 0, 0, 0, 1)],
+              kind="inventory")
+    write_run(root, [scored(PARSE, 1, 20, ccn=8, cov=0.0, crap=72.0, remedy="decompose")],
+              kind="partial")
+    _refuse(root, write_run(root, [scored(PARSE, 1, 20, ccn=10, cov=0.0, crap=110.0,
+                                          remedy="decompose")], kind="verify"))
+    write_run(root, [scored(PARSE, 1, 20, ccn=7, cov=0.0, crap=56.0, remedy="decompose")])
+    code, out, err = run(root, capsys, "brief", "src/app.py", "parse", "--json")
+    documented = _table(_subsection("`regrowth`: did this get fixed before?"))["history"][1]
+
+    assert code == 0, err
+    assert "an inventory run, a partial run and a refused verify each count" in documented
+    assert json.loads(out)["regrowth"]["history"] == [[1, 9], [2, 8], [3, 10], [4, 7]]
+
+
+def _refuse(root: Path, run_id: int) -> None:
+    store = SnapshotStore(root / ".crapkit" / "crap.sqlite")
+    with contextlib.closing(store._conn):
+        store.set_verdict_ok(run_id, False, findings=1)
 
 
 def test_a_batch_packet_is_the_brief_payload_without_schema(tmp_path, capsys):
