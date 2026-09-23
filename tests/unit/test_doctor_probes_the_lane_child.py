@@ -10,6 +10,7 @@ from the root and passed silently from any subdirectory.
 """
 import json
 import os
+import shutil
 import sys
 import venv
 
@@ -112,3 +113,29 @@ def test_a_repo_venv_launcher_gets_one_answer_from_any_directory(tmp_path, monke
     code, problems = answers[1]
     named = [p for p in problems if f"names `{word}`" in p and "cannot import pytest_cov" in p]
     assert code == 1 and len(named) == 1, problems
+
+
+def test_a_manager_the_lanes_own_path_carries_is_not_called_absent(tmp_path, monkeypatch, capsys):
+    """`uv sync && python -m pytest --cov` starts with a manager. The lane's
+    PATH carries `uv` and doctor's does not, so the lane can start and the gap
+    to name is the python's missing pytest-cov, not a manager to install."""
+    lane_bin = tmp_path / "lane-bin"
+    _python_shim(lane_bin, "exit /b 1", "exit 1")
+    if os.name == "nt":
+        (lane_bin / "uv.bat").write_text("@exit /b 0\n", encoding="utf-8")
+    else:
+        (lane_bin / "uv").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        (lane_bin / "uv").chmod(0o755)
+    repo = _repo(tmp_path, _toml("uv sync && python -m pytest --cov=src",
+                                 f"\n[lane.env]\nPATH = '{lane_bin}'\n"))
+    git_only = os.path.dirname(shutil.which("git"))
+    if shutil.which("uv", path=git_only):
+        pytest.skip("uv sits beside git here, so doctor's own PATH cannot leave it out")
+    monkeypatch.setenv("PATH", git_only)
+
+    code, out = _doctor(["doctor", "--repo", str(repo), "--json"], capsys)
+
+    problems = json.loads(out)["problems"]
+    assert code == 1
+    assert [p for p in problems if "cannot import pytest_cov" in p], problems
+    assert not [p for p in problems if "runs through `uv`" in p], problems
