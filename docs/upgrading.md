@@ -54,7 +54,11 @@ numbers, and the stamp records the rules, so every marks file re-seeds once:
   it read `a.a.b.c( x )`.
 - A def whose body sits on its colon line, such as `def one(x): return x`, is listed
   as its own function. Before, no report showed it and the lines after it counted
-  toward it. A def that encloses one can gain conditions it had lost.
+  toward it. A def that encloses one can gain conditions it had lost. A same-named
+  def after it moves to the next twin key: where a one-line `f( x )` sits above a
+  multi-line `f( x )`, the multi-line def is now `f( x )#2`, a mark recorded under
+  `f( x )` binds the one-line def, and `ratchet seed` marks `f( x )#2` if it is over
+  its ceiling.
 - Cognitive complexity and nesting count a def's body from the colon that ends its
   signature, so a one-line body counts and a signature's continuation lines do not.
 - A Python file that ends inside a def's signature is refused and names that def;
