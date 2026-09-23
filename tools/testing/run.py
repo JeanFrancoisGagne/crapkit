@@ -362,8 +362,12 @@ def _coverage(root: Path, scratch: Path, output: Path, suites, owner=None) -> No
     run = _runtime()[1].run_owned
     run([*command, "combine", "--keep", *sources], cwd=root, env=environment,
         owner=owner).check_returncode()
-    run([*command, "json", "--show-contexts", "-o", str(output)],
-        cwd=root, env=environment, owner=owner).check_returncode()
+    # --cov=crapkit names a module, so the data also holds any stand-in
+    # `crapkit` a test ran from its temp dir, and pytest deletes that dir when
+    # later sessions rotate their basetemps. The report reads only the package
+    # the lane scores, where [paths] has already mapped an installed wheel.
+    run([*command, "json", "--show-contexts", "--include", str(root / "src/crapkit/*"),
+         "-o", str(output)], cwd=root, env=environment, owner=owner).check_returncode()
 
 
 def _retain_incomplete(scratch: Path, output: Path) -> None:

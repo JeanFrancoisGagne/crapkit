@@ -69,6 +69,35 @@ def test_real_runner_keeps_both_suites_and_subprocess_branches(tmp_path, failure
         assert (tmp_path / ".crapkit/cov" / (suite + ".coverage")).is_file()
 
 
+STAND_IN = (
+    "import os, shutil, subprocess, sys\n"
+    "def test_stand_in(tmp_path):\n"
+    "    (tmp_path / 'crapkit').mkdir()\n"
+    "    (tmp_path / 'crapkit/__init__.py').write_text('value = 1\\n')\n"
+    "    env = dict(os.environ, PYTHONPATH=str(tmp_path))\n"
+    "    subprocess.run([sys.executable, '-c', 'import crapkit'], env=env, check=True)\n"
+    "    shutil.rmtree(tmp_path / 'crapkit')\n")
+
+
+def test_a_stand_in_crapkit_gone_before_the_report_leaves_the_report_whole(tmp_path):
+    """A test that runs a stand-in `crapkit` from its temp dir in a child gets
+    that child measured: `--cov=crapkit` names a module, and the stand-in is
+    one. pytest deletes the temp dir when later sessions rotate their
+    basetemps, and a report over every measured file then stopped at
+    "No source for code" and wrote no py.json."""
+    fixture_repo(tmp_path, "")
+    (tmp_path / "tests/unit/test_stand_in.py").write_text(STAND_IN)
+
+    result = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(tmp_path),
+                             "--coverage", "--workers", "2", "--unit-workers", "1",
+                             "--output", ".crapkit/cov"], env=fixture_env(tmp_path),
+                            capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    coverage = json.loads((tmp_path / ".crapkit/cov/py.json").read_text())
+    assert [name.replace("\\", "/") for name in coverage["files"]] == ["src/crapkit/__init__.py"]
+
+
 def test_startup_failure_replaces_old_passing_evidence_and_keeps_the_other_suite(tmp_path):
     fixture_repo(tmp_path, "")
     env = fixture_env(tmp_path)
