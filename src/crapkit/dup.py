@@ -1,5 +1,6 @@
-"""Near-duplicate function detection. Pure: inventory rows + file texts in,
-ranked pairs out.
+"""Near-duplicate function detection: inventory rows + file texts in, ranked
+pairs out. Pure, except run_index: the one function here that touches the
+store, reading a run's index back or building it and writing it there.
 
 Normalized line shingles with CONTAINMENT scoring (shared / smaller set), so a
 copy-paste that later grew a few lines still surfaces. An inverted shingle
