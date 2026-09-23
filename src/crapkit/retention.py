@@ -77,10 +77,12 @@ def _receipt_time(value: dict) -> float:
     return float(stamp)
 
 
-def _candidates(parent: Path, root: Path) -> list[tuple[float, Path]]:
-    if not parent.is_dir():
+def _candidates(root: Path) -> list[tuple[float, Path]]:
+    # Only a repository a runner used has test-runs. Without one, a linked
+    # .crapkit is mutation recovery's to refuse, under its own name.
+    if not (root / ".crapkit" / "test-runs").is_dir():
         return []
-    records = [(record[0], path) for path in parent.iterdir()
+    records = [(record[0], path) for path in _parent(root).iterdir()
                if (record := _read_receipt(path, root)) is not None]
     return sorted(records, reverse=True)
 
@@ -135,7 +137,7 @@ def prune_test_runs(root: Path, *, keep: int = DEFAULT_TEST_RETENTION_COUNT,
     root = root.resolve()
     cutoff = _cutoff(keep, days)
     result = {key: [] for key in _STATUSES}
-    for index, (stamp, path) in enumerate(_candidates(_parent(root), root)):
+    for index, (stamp, path) in enumerate(_candidates(root)):
         if _expired(index, stamp, keep, cutoff):
             result[_prune_one(path, root, dry_run, stamp)].append(str(path))
     return result
