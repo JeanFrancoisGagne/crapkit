@@ -32,13 +32,20 @@ process. Files that test those keep `spawn=True` (AGENTS.md says which).
 Two calls cannot run at once, since each one owns the process for its
 duration; a second call while one is running raises instead of corrupting both.
 
-A call cannot be stopped from another thread, so its bound ends the worker:
-faulthandler dumps every thread's stack to the worker's stderr and exits, and
-xdist reports the test the worker died in. That is the in-process form of the
-spawn path's kill-on-timeout, and a hang never outlives its bound either way.
+A call past its bound fails its own test, as the spawn path's kill-on-timeout
+does. A watch thread raises _PastBound in the call's thread, which arrives at
+its next Python instruction; a BaseException, so crapkit's `except Exception`
+handlers let it through. Every context above puts the worker back on the way
+out, and the test fails with an AssertionError naming argv, the bound and what
+the call printed, and the session goes on. A thread stuck in C code never
+reaches another Python instruction, so GRACE_SECONDS later faulthandler writes
+every thread's stack to the file `log_hangs_to` named, and the worker exits.
+The suite names a file under the worker's basetemp, because pytest's capture
+owns descriptor 2 during a test and a dump sent there dies with the worker.
 """
 from __future__ import annotations
 
+import ctypes
 import faulthandler
 import gc
 import io
@@ -59,6 +66,20 @@ _DEFAULT_FILTERS = (("ignore", DeprecationWarning), ("ignore", PendingDeprecatio
 
 _ONE_CALL = threading.Lock()
 
+GRACE_SECONDS = 30
+_HANG_LOG = sys.__stderr__
+
+
+def log_hangs_to(file) -> None:
+    """Write the stack of a call stuck past its bound to `file`, an open text
+    file with a descriptor, which the caller keeps open while calls run."""
+    global _HANG_LOG
+    _HANG_LOG = file
+
+
+class _PastBound(BaseException):
+    """What the call's thread raises once its bound runs out."""
+
 
 def fits(args, spawn: bool) -> bool:
     """Whether a call can run here: not when its file asked for a child, and
@@ -72,13 +93,23 @@ def run(repo: Path, args, *, env: dict, stdin: str | None = None,
     """`python -m crapkit <args>` in `repo` under `env`, run in this process."""
     argv = [sys.executable, "-m", "crapkit", *args]
     with _only_call(), tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        with ExitStack() as stack:
-            _enter_child(stack, repo, env, (out, err), timeout)
-            stack.enter_context(_child_stdin(stdin, encoding, errors))
-            stack.enter_context(_swapped(sys, "argv", [_main_path(), *args]))
-            code = _exit_status(list(args))
+        try:
+            with ExitStack() as stack:
+                _enter_child(stack, repo, env, (out, err))
+                stack.enter_context(_child_stdin(stdin, encoding, errors))
+                stack.enter_context(_swapped(sys, "argv", [_main_path(), *args]))
+                code = _watched(argv, timeout)
+        except _PastBound:
+            raise AssertionError(_miss(argv, timeout, (out, err), encoding)) from None
         return subprocess.CompletedProcess(argv, code, _decoded(out, encoding, errors),
                                            _decoded(err, encoding, errors))
+
+
+def _miss(argv: list[str], timeout: float, files, encoding: str | None) -> str:
+    """hang_guard's report of a missed wait, for a call stopped in place."""
+    printed = "".join(_decoded(file, encoding, "replace") for file in files)
+    return (f"never saw {argv!r} finish within {timeout} s, so the call was stopped\n"
+            f"--- the call printed ---\n{printed or '(nothing)'}")
 
 
 @contextmanager
@@ -94,12 +125,11 @@ def _only_call() -> Iterator[None]:
         _ONE_CALL.release()
 
 
-def _enter_child(stack: ExitStack, repo: Path, env: dict, files, timeout) -> None:
+def _enter_child(stack: ExitStack, repo: Path, env: dict, files) -> None:
     stack.enter_context(_collected())
     stack.enter_context(_cold_crapkit_caches())
     stack.enter_context(_working_directory(repo))
     stack.enter_context(_environment(env))
-    stack.enter_context(_bounded(timeout))
     for fd, file in zip((1, 2), files):
         stack.enter_context(_descriptor(fd, file))
     stack.enter_context(_child_streams())
@@ -275,16 +305,71 @@ def _cold_crapkit_caches() -> Iterator[None]:
         _clear_crapkit_caches()
 
 
-@contextmanager
-def _bounded(timeout: float | None) -> Iterator[None]:
-    """Past `timeout` seconds, dump every thread's stack to the worker's
-    stderr as it stood before the call, and end the worker."""
+def _watched(argv: list[str], timeout: float | None) -> int:
+    """The call's status, under its bound when it has one.
+
+    _PastBound can arrive at any instruction until the watch stops, the first
+    call to stop() included. It arrives once, so a second stop() completes."""
     if timeout is None:
-        yield
-        return
-    with open(os.dup(2), "w", closefd=True) as stderr:
-        faulthandler.dump_traceback_later(timeout, exit=True, file=stderr)
+        return _exit_status(argv[3:])
+    watch = _Watch(argv, timeout)
+    try:
+        watch.start()
+        return _exit_status(argv[3:])
+    finally:
         try:
-            yield
-        finally:
-            faulthandler.cancel_dump_traceback_later()
+            watch.stop()
+        except _PastBound:
+            watch.stop()
+            raise
+
+
+def _set_async(thread_id: int, exception) -> None:
+    """Make `thread_id` raise `exception` at its next Python instruction, or
+    with None, drop one it has not raised yet."""
+    ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), exception)
+
+
+class _Watch:
+    """One call's bound, kept by a thread of its own. The lock orders firing
+    against stopping: once stop() holds it, nothing new can fire, and an
+    exception fired but not yet raised is dropped, since the call returned."""
+
+    def __init__(self, argv: list[str], timeout: float):
+        self._call = threading.get_ident()
+        self._argv, self._timeout = argv, timeout
+        self._test = os.environ.get("PYTEST_CURRENT_TEST", "")
+        self._lock = threading.Lock()
+        self._stopped = threading.Event()
+        self._fired = False
+        self._done = False
+        self._thread = threading.Thread(target=self._keep, name="in-process CLI bound",
+                                        daemon=True)
+
+    def start(self) -> None:
+        faulthandler.dump_traceback_later(self._timeout + GRACE_SECONDS, exit=True,
+                                          file=_HANG_LOG)
+        self._thread.start()
+
+    def _keep(self) -> None:
+        if not self._stopped.wait(self._timeout):
+            self._fire()
+
+    def _fire(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self._fired = True
+            _set_async(self._call, ctypes.py_object(_PastBound))
+        print(f"{self._test}: {self._argv!r} past its {self._timeout} s bound. Stopping it; "
+              f"if it has not returned {GRACE_SECONDS} s from now, every thread's stack "
+              f"follows and the worker exits.", file=_HANG_LOG, flush=True)
+
+    def stop(self) -> None:
+        with self._lock:
+            self._done = True
+            if self._fired:
+                _set_async(self._call, None)
+        faulthandler.cancel_dump_traceback_later()
+        self._stopped.set()
+        self._thread.join()

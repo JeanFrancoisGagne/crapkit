@@ -14,6 +14,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -126,19 +127,30 @@ def _crapkit_cache_sizes() -> dict[str, int]:
     return sizes
 
 
+def _process_state() -> dict:
+    """What the runner itself changes for a call and must put back."""
+    return {"cwd": os.getcwd(), "env": dict(os.environ), "argv": list(sys.argv),
+            "streams": (sys.stdin, sys.stdout, sys.stderr),
+            "threads": threading.active_count(),
+            "fds": tuple(os.fstat(fd).st_ino for fd in (1, 2)),
+            "warnings": (list(warnings.filters), warnings.showwarning),
+            "frozen": gc.get_freeze_count()}
+
+
 def _worker_state() -> dict:
     loggers = [logging.getLogger(), *[logging.getLogger(name) for name in
                                       logging.Logger.manager.loggerDict]]
-    return {"cwd": os.getcwd(), "env": dict(os.environ), "argv": list(sys.argv),
-            "streams": (sys.stdin, sys.stdout, sys.stderr),
-            "handlers": {logger.name: list(logger.handlers) for logger in loggers},
-            "threads": threading.active_count(),
-            "fds": tuple(os.fstat(fd).st_ino for fd in (1, 2))}
+    return {**_process_state(),
+            "handlers": {logger.name: list(logger.handlers) for logger in loggers}}
 
 
 def test_a_call_leaves_the_worker_as_it_found_it(scoped_repo):
     """env_extra sets a key, doctor loads the admin commands, test-scoped
-    starts a child. None of it may outlive the call."""
+    starts a child. None of it may outlive the call. Importing crapkit adds
+    loggers, so the handlers are compared after a first call; what the runner
+    changes is compared from before any call, where a change it left behind
+    the same way every time still shows."""
+    first = _process_state()
     run_cli(scoped_repo, "--version")
     before = _worker_state()
 
@@ -147,6 +159,7 @@ def test_a_call_leaves_the_worker_as_it_found_it(scoped_repo):
 
     assert "runner out" in scoped.stdout and doctor.stdout
     assert _worker_state() == before
+    assert _process_state() == first
     assert "CRAPKIT_PROBE_MARK" not in os.environ
 
 
@@ -193,27 +206,6 @@ def test_stdin_reaches_the_command_as_a_child_would_read_it(tmp_path, monkeypatc
     done = run_cli(tmp_path, "claude-hook", stdin="{\"a\": \"é\"}\nsecond\n", encoding="utf-8")
 
     assert (done.returncode, done.stdout) == (4, repr("{\"a\": \"é\"}\nsecond\n") + "\n")
-
-
-def test_a_call_past_its_bound_ends_the_worker_instead_of_hanging_it(tmp_path):
-    """No thread can stop a call running in the worker's main thread, so the
-    bound ends the process: xdist then names the test the worker died in."""
-    import cli_in_process
-
-    script = tmp_path / "hang.py"
-    script.write_text(
-        "import sys, time\n"
-        f"sys.path[:0] = [{str(Path(cli_in_process.__file__).parent)!r}]\n"
-        "import crapkit.cli, cli_in_process\n"
-        "crapkit.cli.main = lambda argv: time.sleep(60)\n"
-        "cli_in_process.run(sys.argv[1], ['worklist'], env={**__import__('os').environ},"
-        " timeout=1)\n", encoding="utf-8")
-
-    done = subprocess.run([sys.executable, str(script), str(tmp_path)], capture_output=True,
-                          text=True, encoding="utf-8", errors="replace", timeout=120)
-
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert "Timeout" in done.stderr and "time.sleep" not in done.stdout
 
 
 def test_a_second_call_while_one_runs_refuses_instead_of_sharing_the_process(

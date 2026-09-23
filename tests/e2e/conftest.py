@@ -47,6 +47,7 @@ import sys
 from pathlib import Path
 
 import hang_guard
+import pytest
 
 CRAPKIT = [sys.executable, "-m", "crapkit"]
 
@@ -89,6 +90,19 @@ def cli_runner(**contract):
     """A `run_cli` with this file's contract bound. A call site may still
     override any of it, which is what a one-off env or stdin is."""
     return functools.partial(run_cli, **contract)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def in_process_hang_log(tmp_path_factory):
+    """Where an in-process call stuck in C code past its bound leaves every
+    thread's stack before the worker exits: in-process-hangs.log under the
+    worker's basetemp (popen-gw<N> under xdist), outside pytest's capture."""
+    from cli_in_process import log_hangs_to
+    path = tmp_path_factory.getbasetemp() / "in-process-hangs.log"
+    with open(path, "a", encoding="utf-8") as log:
+        log_hangs_to(log)
+        yield path
+    log_hangs_to(sys.__stderr__)
 
 
 def git(repo: Path, *args: str) -> None:
