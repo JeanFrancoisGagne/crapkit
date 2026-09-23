@@ -6,13 +6,20 @@ from crapkit.score import ScoredRow, overlay_stale_coverage
 from crapkit.snapshot import InventoryRow
 
 
+def end_of(occurrence, start):
+    """Each callback ends on its own line. Two that share the whole span score
+    as uncovered whatever the baseline says (test_overlay_floors_a_shared_span),
+    and these tests are about the join by occurrence."""
+    return start + max(occurrence, 1) - 1
+
+
 def inventory(occurrence, start=1, scope="src"):
-    return InventoryRow(scope, "a.ts", "(anonymous)", start, start, 2, 2, 2,
+    return InventoryRow(scope, "a.ts", "(anonymous)", start, end_of(occurrence, start), 2, 2, 2,
                         1, 0, 0, occurrence=occurrence)
 
 
 def baseline(occurrence, cov, start=1, scope="src"):
-    return ScoredRow(scope, "a.ts", "(anonymous)", start, start, 2, 2, 2,
+    return ScoredRow(scope, "a.ts", "(anonymous)", start, end_of(occurrence, start), 2, 2, 2,
                      1, 0, 0, cov, "measured", 2.0, "ok", occurrence=occurrence)
 
 

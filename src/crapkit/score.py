@@ -273,8 +273,10 @@ def overlay_stale_coverage(
     Joins by function name, nearest start among same-name twins, and occurrence
     when callbacks share a line. A renamed or new function joins NOTHING —
     a span join here would hand it a neighbour's stale number and mislead
-    the preview. Coverage values are the baseline's; the caller labels them
-    stale.
+    the preview. A function on a span another one shares scores as uncovered,
+    as score_rows scores it, so the preview never passes what the next
+    coverage run fails. Coverage values are the baseline's; the caller labels
+    them stale.
     """
     require_unambiguous(rows)
     require_unambiguous(baseline_scored)
@@ -288,10 +290,23 @@ def overlay_stale_coverage(
     scored = []
     for row in rows:
         verdict = _cov_without_join(row, lane_scopes, cc_only_scopes)
-        cov, flag = verdict or _named_overlay_cov(row, by_key, positions)
+        on_shared = _on_shared_span(row, verdict, shared)
+        cov, flag = verdict or _floored_overlay_cov(row, on_shared, by_key, positions)
         scored.append(_finish(row, cov, flag, target=target, scope_targets=scope_targets,
-                              shared_span=_on_shared_span(row, verdict, shared)))
+                              shared_span=on_shared))
     return scored
+
+
+def _floored_overlay_cov(row, on_shared: bool, by_key: dict, positions: dict) -> tuple[float, str]:
+    """Uncovered on a shared span, the floor score_rows gives a measured one.
+
+    Joining by name there handed two functions edited onto one line their old
+    separate numbers, and the preview called ok what the coverage run scores
+    untested. Tests cannot lift the floor: only splitting the span can.
+    """
+    if on_shared:
+        return 0.0, "untested"
+    return _named_overlay_cov(row, by_key, positions)
 
 
 class SharedSpanFold:
