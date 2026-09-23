@@ -1,8 +1,13 @@
-"""The churn cache: git's tree walk runs once per (HEAD, window, UTC day).
+"""The churn cache: the map is served for as long as (HEAD, window, UTC day) holds.
 
 Both git calls are monkeypatched, so a served cache is proven by the git seam
-never firing — not by a stopwatch. Every rebuild path is a miss on one key
+never firing, not by a stopwatch. Every rebuild path is a miss on one key
 field, because a wrong key is the only way this cache can lie.
+
+The fixture log is undated: its headers carry no commit date, so no commit
+table is kept and every miss here walks the window. A dated log keeps one, and
+a HEAD that grew from it walks only the new commits instead;
+test_churn_carried_commits.py covers that path.
 """
 import json
 
@@ -57,7 +62,7 @@ def test_the_warm_read_is_byte_identical_to_the_cold_one(tmp_path, git):
     assert _dump(cold) == _dump(parse_git_log(LOG)), "the cache must not reshape the parse"
 
 
-def test_a_moved_head_rebuilds(tmp_path, git):
+def test_a_moved_head_without_a_commit_table_rebuilds(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
     git.head = "beef" * 10
     git.log = "\x01carol\x023000000000\nsrc/c.ts\n"
