@@ -26,7 +26,12 @@ from typing import IO, Iterator
 from .coverage_istanbul import (FnCoverage, _dead_lines, _file_coverage, _rel_path)
 from .errors import ToolError
 
-CHUNK = 1 << 20
+# Sized to hold a whole file member. A member that crosses the window edge is
+# framed token by token in Python (_ValueFrame) before C decodes it: at 1 MB,
+# 9 of 81 members in a report with contexts (half its bytes) took that route,
+# 0.88 s against 0.21-0.26 s at 4 MB, for about 12 MB more peak heap on a
+# 112 MB artifact. Callers that pass their own chunk keep it.
+CHUNK = 4 << 20
 
 _WS = r"[ \t\r\n]*"
 _MEMBER = r'("(?:[^"\\]|\\.)*")' + _WS + ':' + _WS
