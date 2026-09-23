@@ -222,7 +222,7 @@ def _print_duplication(as_json: bool, pairs, latest: dict) -> None:
 
 
 def cmd_duplication(args: argparse.Namespace) -> int:
-    from ..dup import find_duplicates
+    from ..dup import find_duplicates, run_index
     from ..store import rowful_runs
 
     _positive_top("duplication", args.top)
@@ -234,10 +234,15 @@ def cmd_duplication(args: argparse.Namespace) -> int:
         # the store opened, so what is missing is a run that scored anything
         raise CrapkitError(f"no run with rows in {root} — run `{_self()} inventory` first")
     rows = store.read_rows(runs[-1]["id"])
+
     # A loader, never a bound dict: whoever names those texts pins every byte of
     # them across the pair counting (146 MB of peak on a 104 MB repo).
-    pairs = find_duplicates(rows, lambda: _load_sources(root, {r.path for r in rows}),
-                            min_lines=args.min_lines,
-                            similarity=args.similarity, top=args.top)
+    def texts() -> dict[str, str]:
+        return _load_sources(root, {r.path for r in rows})
+
+    # the run's stored index at the default min_lines, so no file is read
+    pairs = find_duplicates(rows, texts, min_lines=args.min_lines,
+                            similarity=args.similarity, top=args.top,
+                            indexed=run_index(store, runs[-1]["id"], rows, texts, args.min_lines))
     _print_duplication(args.json, pairs, runs[-1])
     return 0

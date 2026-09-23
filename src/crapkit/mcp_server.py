@@ -440,9 +440,9 @@ TOOLS: tuple[dict, ...] = (
         "scored row, uncovered lines and the refresh, test, gate and verify command "
         "lines, none of them run. Use it once a function is chosen. Skip it for "
         "picking what to fix, that is get_next_item, and for a score across runs, "
-        "get_function_history. Every call shingles the repo for twins, seconds on a "
-        "large corpus. name must live in path. name takes the long name, a bare "
-        "identifier, a start line or NAME#2, exact match first. A miss lists the "
+        "get_function_history. Twins come from the run's stored index, whose first "
+        "build takes seconds. name must live in path. name takes the long name, a "
+        "bare identifier, a start line or NAME#2, exact match first. A miss lists the "
         "file's functions instead of erroring."),
         "properties": {
             "path": {
@@ -1159,11 +1159,12 @@ TOOLS: tuple[dict, ...] = (
             "similarity": "--similarity"},
         "description": ("Lists near-duplicate function pairs in the newest run, at most 50. Use it "
         "before a refactor so twins are folded together, and get_function_brief for "
-        "one function's twins. It shingles source on every call, seconds on a large "
-        "repo, skips functions under 8 lines and same-file pairs, and an empty list "
-        "means no pair reached similarity. similarity is shared shingles over the "
-        "smaller function: 1.0 admits only a function found whole inside another, 0.8 "
-        "four lines in five, and repo may be any directory under the checkout."),
+        "one function's twins. It reads the run's stored index, whose first build "
+        "takes seconds on a large repo, skips functions under 8 lines and same-file "
+        "pairs, and an empty list means no pair reached similarity. similarity is "
+        "shared shingles over the smaller function: 1.0 admits only a function found "
+        "whole inside another, 0.8 four lines in five, and repo may be any directory "
+        "under the checkout."),
         "properties": {
             "similarity": {
                 "type": "number",

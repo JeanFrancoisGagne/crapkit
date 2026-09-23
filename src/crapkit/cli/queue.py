@@ -561,9 +561,12 @@ class _BriefLoader:
     def twin_index(self):
         """The run's shingle index, fetched once for the whole batch.
 
-        The store keeps one per run. The first packet on a run builds it from
-        every scored file and stores it; every later packet, in this process or
-        another, shingles its own function and looks the rest up. Built at
+        The store keeps one per run, and coverage stores it as it records the
+        run. verify does not, to keep the commit gate off that cost, so on a
+        verify run the first packet builds it from every scored file and stores
+        it, paying more than a packet did before the index existed. Every
+        later packet, in this process or another, shingles its own function
+        and looks the rest up. Built at
         dup.STORED_MIN_LINES, the only threshold brief asks at and the only one
         the store is ever handed.
         """
