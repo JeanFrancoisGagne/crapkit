@@ -25,13 +25,12 @@ because a shallow clone keeps no commit table to carry.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .churn import FileChurn, WindowCommits, fold
 from .churn_commits import carried_commits, store_commits
-from .churn_log import dated_lines, has_cache, sweep_legacy, walk_lines
+from .churn_log import Window, has_cache, stored_window, sweep_legacy, walked_window
 from .errors import GitError
 from .gitio import head_commit
 from .gitpaths import PATH_FORMAT
@@ -46,7 +45,7 @@ CACHE_NAME = "churn-cache-v2.json"
 LEGACY_NAME = "churn-cache.json"
 
 
-def _window_lines(root: Path, months: int, head: str | None) -> Iterator[str]:
+def _window_lines(root: Path, months: int, head: str | None) -> Window:
     """The raw window log a map rebuild parses.
 
     Read through the deflated log cache when one is on disk (free at an exact
@@ -54,10 +53,11 @@ def _window_lines(root: Path, months: int, head: str | None) -> Iterator[str]:
     A map-only command never lays the log down — the commands that need its
     per-commit structure (brief, batches, coupling) already do. Either way the
     headers keep their commit date, which the stored table needs to expire, and
-    the log is the one at `head`, the HEAD the map and table are keyed on."""
+    the log is the one at `head`, the HEAD the map and table are keyed on. The
+    floor comes with it: the table records the floor its lines were cut at."""
     if has_cache(root):
-        return dated_lines(root, months, head)
-    return walk_lines(root, months, head)
+        return stored_window(root, months, head)
+    return walked_window(root, months, head)
 
 
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
@@ -84,8 +84,9 @@ def _window_commits(root: Path, months: int, key: dict | None) -> WindowCommits:
     head = key["head"] if key else None
     table = carried_commits(root, months, head)
     if table is None:
-        table = fold(_window_lines(root, months, head))
-        store_commits(root, months, head, table)
+        window = _window_lines(root, months, head)
+        table = fold(window.lines)
+        store_commits(root, months, head, window.cutoff, table)
     return table
 
 

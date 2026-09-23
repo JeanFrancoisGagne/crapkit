@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from crapkit import churn_cache
+from crapkit import churn_cache, churn_log
 from crapkit.churn import FileChurn, parse_git_log
 from crapkit.errors import GitError
 
@@ -25,15 +25,15 @@ class FakeGit:
         self.log = log
         self.log_calls = 0
 
-    def lines(self, root, months, head):
+    def window(self, root, months, head):
         self.log_calls += 1
-        return iter(self.log.splitlines())
+        return churn_log.Window(iter(self.log.splitlines()), None)
 
 
 @pytest.fixture()
 def git(monkeypatch) -> FakeGit:
     fake = FakeGit()
-    monkeypatch.setattr(churn_cache, "walk_lines", fake.lines)
+    monkeypatch.setattr(churn_cache, "walked_window", fake.window)
     monkeypatch.setattr(churn_cache, "head_commit", lambda root: fake.head)
     return fake
 

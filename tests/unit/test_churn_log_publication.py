@@ -61,9 +61,11 @@ def test_competing_process_never_stamps_another_windows_bytes(tmp_path):
             worker.join(30)
         assert [worker.exitcode for worker in workers] == [0, 0]
         key = churn_log._cache_key(tmp_path, 1)
-        cached = churn_log._cached(tmp_path / ".crapkit" / churn_log.LOG_NAME, key)
-        assert cached is None or "old.txt\n" not in list(cached)
-        fresh = [churn_log._shipped(line) for line in churn_log._window_log(tmp_path, 1, None)]
+        path = tmp_path / ".crapkit" / churn_log.LOG_NAME
+        cached = churn_log._served(path, churn_log._read_key(path), key)
+        assert cached is None or "old.txt\n" not in list(cached.lines)
+        fresh = [churn_log._shipped(line)
+                 for line in churn_log._window_log(tmp_path, 1, None, None)]
         assert list(churn_log.log_lines(tmp_path, 1)) == fresh
         assert list((tmp_path / ".crapkit").glob("*.part")) == []
     finally:

@@ -24,6 +24,9 @@ CRAPKIT = Path(".crapkit")
 CACHE = CRAPKIT / "coupling-cache-v1.json"
 LOG_Z = CRAPKIT / "churn-log-v2.z"
 LOG_KEY = CRAPKIT / "churn-log-v2.json"
+# A window walk is cut at the floor: --max-age when crapkit read it first,
+# --since when git named none.
+WINDOW_FLOOR = ("--since", "--max-age")
 
 APP_PY = """def plain(x):
     a = x + 1
@@ -122,7 +125,7 @@ def window_walks(repo: Path, tmp_path: Path, tag: str, *args: str):
     trace.mkdir()
     res = run_cli(repo, *args, env_extra={"GIT_TRACE2_EVENT": str(trace)})
     walks = [argv for argv in _argvs(trace)
-             if _subcommand(argv) == "log" and any(a.startswith("--since") for a in argv)]
+             if _subcommand(argv) == "log" and any(a.startswith(WINDOW_FLOOR) for a in argv)]
     return res, walks
 
 

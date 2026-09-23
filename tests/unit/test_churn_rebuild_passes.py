@@ -46,8 +46,8 @@ def git(monkeypatch):
     monkeypatch.setattr(churn_cache, "head_commit", lambda root: HEAD)
     opened = churn_log._open_part
 
-    def counted(path, key):
-        part = opened(path, key)
+    def counted(path):
+        part = opened(path)
         if part is not None:
             part = CountingPart(part)
             state["parts"].append(part)

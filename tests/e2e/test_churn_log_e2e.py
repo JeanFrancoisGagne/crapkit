@@ -20,6 +20,7 @@ from conftest import cli_runner
 CRAPKIT = Path(".crapkit")
 LOG_Z = CRAPKIT / "churn-log-v2.z"
 LOG_KEY = CRAPKIT / "churn-log-v2.json"
+WINDOW_FLOOR = ("--since", "--max-age")
 COUPLING_CACHE = CRAPKIT / "coupling-cache-v1.json"
 
 APP_PY = """def plain(x):
@@ -116,7 +117,9 @@ def _subcommand(argv: list[str]) -> str:
 
 
 def window_walks(walks: list[list[str]]) -> list[list[str]]:
-    return [argv for argv in walks if any(a.startswith("--since") for a in argv)]
+    """Walks cut at the window floor: --max-age when crapkit read the floor
+    first, --since when git named none."""
+    return [argv for argv in walks if any(a.startswith(WINDOW_FLOOR) for a in argv)]
 
 
 def range_walks(walks: list[list[str]]) -> list[list[str]]:

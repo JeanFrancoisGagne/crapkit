@@ -47,6 +47,18 @@ AT_B = {"src/a.py": FileChurn(3, 3, 0.5025), "src/b.py": FileChurn(2, 1, 0.0474)
         "src/c.py": FileChurn(1, 1, 0.5)}
 
 
+def since(lines: list[str], floor: int | None) -> list[str]:
+    """The commit blocks committed at or after `floor`; all of them when git
+    names no floor."""
+    kept, keep = [], True
+    for line in lines:
+        if line.startswith("\x01"):
+            keep = floor is None or int(line.rstrip("\n").rpartition("\x02")[2]) >= floor
+        if keep:
+            kept.append(line)
+    return kept
+
+
 class FakeGit:
     """Counts the walks the table is supposed to save."""
 
@@ -62,6 +74,7 @@ class FakeGit:
         self.range_calls: list[tuple[str, str]] = []
         self.inflates = 0
         self.after_read = None  # a commit that lands right after the next HEAD read
+        self.floor_after_walk: int | None = None  # the clock crosses a month end mid-read
 
     def read_head(self, root):
         head = self.head
@@ -71,9 +84,13 @@ class FakeGit:
         return head
 
     def window(self, root, months, head=None, *rest):
-        """The window at `head`; the current HEAD's when no head is named."""
+        """The window at `head` (the current HEAD's when no head is named),
+        cut at the floor as git's --since would cut it."""
         self.window_calls += 1
-        return iter(self.logs.get(head, self.log))
+        walked = since(self.logs.get(head, self.log), self.floor)
+        if self.floor_after_walk is not None:
+            self.floor, self.floor_after_walk = self.floor_after_walk, None
+        return iter(walked)
 
     def range(self, root, base, head):
         self.range_calls.append((base, head))
@@ -122,7 +139,9 @@ def move_head(git: FakeGit) -> None:
 
 
 def new_day(monkeypatch, day: str) -> None:
+    """A new UTC day for the map and the laid-down log alike."""
     monkeypatch.setattr(churn_cache, "_utc_date", lambda: day)
+    monkeypatch.setattr(churn_log, "_utc_date", lambda: day)
 
 
 def test_a_moved_head_folds_in_only_the_new_commits(tmp_path, git):
@@ -244,11 +263,41 @@ def test_a_head_the_table_is_not_behind_rebuilds_in_full(tmp_path, git):
 
 
 def test_a_cutoff_behind_the_stored_one_rebuilds_in_full(tmp_path, git, monkeypatch):
-    """A clock that went back widens the window past commits the table dropped."""
+    """git's month arithmetic moves the floor back at a month end: 6 months
+    before Aug 31 reads Mar 3, before Sep 1 reads Mar 1. The window widens past
+    commits the table dropped, so only a walk has them."""
     git.floor = 1000000100
     churn_cache.load_churn(tmp_path, 12)
     new_day(monkeypatch, "2099-01-01")
     git.floor = 1000000000
+
+    assert churn_cache.load_churn(tmp_path, 12) == AT_A
+    assert git.window_calls == 2
+
+
+def test_a_cutoff_behind_the_stored_one_walks_past_a_laid_log(tmp_path, git, monkeypatch):
+    """The same month end with a log on disk. The log was cut at the higher
+    floor too, so re-dating it at the lower one still lacks alice's commit:
+    the rebuild has to walk the window, not refresh the log."""
+    git.floor = 1000000100
+    list(churn_log.log_lines(tmp_path, 12))
+    churn_cache.load_churn(tmp_path, 12)
+    new_day(monkeypatch, "2099-01-01")
+    git.floor = 1000000000
+
+    assert churn_cache.load_churn(tmp_path, 12) == AT_A
+    assert git.window_calls == 2
+
+
+def test_the_table_records_the_floor_its_walk_was_cut_at(tmp_path, git, monkeypatch):
+    """The floor is read again after the walk and has moved back meanwhile, a
+    month end crossed mid-read. A table stamped with that later, lower floor
+    claims alice's commit is in it when the walk cut it out, and the next
+    carry would never bring it back."""
+    git.floor = 1000000100
+    git.floor_after_walk = 1000000000
+    churn_cache.load_churn(tmp_path, 12)
+    new_day(monkeypatch, "2099-01-01")
 
     assert churn_cache.load_churn(tmp_path, 12) == AT_A
     assert git.window_calls == 2

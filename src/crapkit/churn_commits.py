@@ -12,10 +12,11 @@ Read only on a map miss. Expiry reads the commit date at git's own --since
 cutoff while the weights read the author date, so a carried table answers what
 a full parse of the same commits would, byte for byte. A HEAD the table is not
 behind (a rewind, a rebase, a force-push), another window, another path format,
-or a cutoff earlier than the stored one (a clock that went back) is a full
-rebuild. A shallow clone keeps no table: deepening one adds history under an
-unmoved HEAD, and only a walk sees it. (A full clone later cut shallow keeps
-the commits its table already holds, as the stored log does.)
+or a cutoff earlier than the stored one is a full rebuild. git's month
+arithmetic is what moves the cutoff back: 6 months before Aug 31 is Mar 3, and
+before Sep 1 it is Mar 1. A shallow clone keeps no table: deepening one adds
+history under an unmoved HEAD, and only a walk sees it. (A full clone later cut
+shallow keeps the commits its table already holds, as the stored log does.)
 
 The file is one key line, then the table as JSON. The key line carries the
 body's size and CRC: a torn or corrupted table reads as cold, never as a
@@ -61,14 +62,15 @@ def carried_commits(root: Path, months: int, head: str | None) -> WindowCommits 
     return table
 
 
-def store_commits(root: Path, months: int, head: str | None, table: WindowCommits) -> None:
-    """Keep a table parsed in full for the next miss to carry. Only a dated
-    one: a commit without its commit date can never be expired."""
-    if head is None or not table.dated or _shallow(root):
+def store_commits(root: Path, months: int, head: str | None, cutoff: int | None,
+                  table: WindowCommits) -> None:
+    """Keep a table parsed in full for the next miss to carry, stamped with the
+    floor its log was cut at. Only a dated one: a commit without its commit
+    date can never be expired. And only one cut at a known floor: stamped with
+    a floor read later, it could claim commits the walk left out."""
+    if head is None or cutoff is None or not table.dated or _shallow(root):
         return
-    cutoff = window_cutoff(root, months)
-    if cutoff is not None:
-        _write(root, months, head, cutoff, table)
+    _write(root, months, head, cutoff, table)
 
 
 def _shallow(root: Path) -> bool:
