@@ -265,3 +265,25 @@ def test_the_store_is_closed_when_the_call_returns(scoped_repo, no_automatic_gc)
 
     assert _live_connections() == before
     (scoped_repo / ".crapkit").rename(scoped_repo / "moved")
+
+
+class _Cycle:
+    def __init__(self):
+        self.me = self
+
+
+def test_the_calls_collection_scans_only_what_the_call_made(scoped_repo, no_automatic_gc):
+    """A worker holds about 100,000 objects, and scanning them all cost most of
+    an in-process call. Garbage the worker made before the call is the worker's
+    collector's business, so the call leaves it where it is."""
+    import weakref
+
+    older = _Cycle()
+    alive = weakref.ref(older)
+    del older
+
+    assert run_cli(scoped_repo, "--version").returncode == 0
+
+    assert alive() is not None, "the call's collection reached the worker's own garbage"
+    gc.collect()
+    assert alive() is None

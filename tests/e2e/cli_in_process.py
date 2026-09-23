@@ -112,11 +112,15 @@ def _collected() -> Iterator[None]:
     cycles are collected instead. One of them holds a file open: sqlite3's
     statement cache wraps its own connection, so reference counting never
     closes crapkit's store, and Windows refuses to rename or delete a repo whose
-    store is still open."""
+    store is still open. Freezing what the worker held before the call keeps
+    that collection to what the call made: a worker holds about 100,000
+    objects, and scanning them all took most of an in-process call's cost."""
+    gc.freeze()
     try:
         yield
     finally:
         gc.collect()
+        gc.unfreeze()
 
 
 def _main_path() -> str:
