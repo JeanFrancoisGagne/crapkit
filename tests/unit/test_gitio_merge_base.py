@@ -70,5 +70,7 @@ def test_an_unrelated_history_has_no_merge_base(tmp_path: Path):
     git(tmp_path, "checkout", "-q", "--orphan", "other")
     commit(tmp_path, "two")
 
-    with pytest.raises(GitError):
+    with pytest.raises(GitError) as refused:
         merge_base(tmp_path, "main")
+
+    assert str(refused.value) == f"no merge base between main and HEAD in {tmp_path}"
