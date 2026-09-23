@@ -1,0 +1,81 @@
+"""A wait that only guards against a hung child survives a loaded machine.
+
+Verify run 103 failed six tests on a correct tree, all waits that hit their own
+bound while the machine was saturated: three e2e files bound the CLI at 30 s, a
+mutation run allowed its two-file suite 5 s, and two helpers waited 10 s and
+15 s for a marker. Each of those numbers was a guess about how slow a child can
+be. The hang bound replaces the guess; these tests hold the suite to it.
+
+The loaded machine here is a clock that moves only when a wait sleeps, one
+second per poll, so no test measures wall-clock time.
+"""
+import ast
+from pathlib import Path
+import re
+import time
+
+import pytest
+
+import test_r2_execution_lifetime
+from hang_guard import HANG_SECONDS
+
+TESTS = Path(__file__).resolve().parents[1]
+LATE = 60  # past every bound run 103 tripped on, well inside the hang bound
+
+
+@pytest.fixture
+def loaded_machine(tmp_path, monkeypatch):
+    """A marker the child writes LATE seconds in, on a clock only sleeps advance."""
+    marker = tmp_path / "started"
+    now = [0.0]
+
+    def sleep(_seconds):
+        now[0] += 1
+        if now[0] >= LATE:
+            marker.touch()
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(time, "sleep", sleep)
+    return marker
+
+
+@pytest.mark.parametrize("helper", [test_r2_execution_lifetime], ids=lambda module: module.__name__)
+def test_a_marker_a_loaded_machine_writes_late_is_still_seen(loaded_machine, helper):
+    helper.wait_for(loaded_machine)
+
+    assert loaded_machine.exists()
+
+
+def _is_cli_runner(node):
+    return isinstance(node, ast.Call) and getattr(node.func, "id", None) == "cli_runner"
+
+
+def _spelled_timeouts(call):
+    return [keyword.value.value for keyword in call.keywords
+            if keyword.arg == "timeout" and isinstance(keyword.value, ast.Constant)]
+
+
+def _cli_runner_bounds(path):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [bound for node in ast.walk(tree) if _is_cli_runner(node)
+            for bound in _spelled_timeouts(node)]
+
+
+def test_no_e2e_file_binds_the_cli_below_the_hang_bound():
+    tight = {path.name: bound for path in sorted((TESTS / "e2e").glob("*.py"))
+             for bound in _cli_runner_bounds(path) if bound < HANG_SECONDS}
+
+    assert tight == {}, "an e2e CLI run bounded under the hang bound fails on a loaded machine"
+
+
+MUTATION_DEADLINE = re.compile(r"""mutation_timeout_seconds["']?\s*[:=]\s*(\d+)""")
+
+
+def test_a_mutation_run_that_is_not_about_its_deadline_waits_the_hang_bound():
+    tight = [f"{path.relative_to(TESTS).as_posix()}:{text.count(chr(10), 0, found.start()) + 1}"
+             for path in sorted(TESTS.rglob("*.py"))
+             for text in [path.read_text(encoding="utf-8")]
+             for found in MUTATION_DEADLINE.finditer(text)
+             if int(found.group(1)) < HANG_SECONDS]
+
+    assert tight == [], "a suite that must finish is bounded by the hang bound, not a guess"

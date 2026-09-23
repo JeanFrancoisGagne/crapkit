@@ -14,6 +14,7 @@ import pytest
 from crapkit.cli import main
 from crapkit import mutate_pool, procs
 from crapkit.locks import exclusive_lock
+from hang_guard import HANG_SECONDS
 from mutation_fixtures import holding_suite, running_mutation, stop_caller, wait_for
 
 
@@ -48,7 +49,7 @@ def mutation_repo(tmp_path):
               + 'time.sleep(.1)\n')
     (root / 'suite.py').write_text(runner, encoding='utf-8')
     command = f'"{sys.executable}" suite.py'
-    config = ('[crapkit]\nmutation_workers=1\nmutation_timeout_seconds=10\n'
+    config = (f'[crapkit]\nmutation_workers=1\nmutation_timeout_seconds={HANG_SECONDS}\n'
               f'mutation_command={json.dumps(command)}\n'
               '[[scope]]\nname="py"\npaths=["app.py"]\nlanguages=["python"]\n')
     (root / 'crapkit.toml').write_text(config, encoding='utf-8')

@@ -13,7 +13,6 @@ between two runs is there.
 """
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,7 @@ from crapkit import mutate_pool
 from crapkit.errors import GitError
 from crapkit.locks import exclusive_lock
 from crapkit.mutate_pool import _worktrees, drop_pool, pool_dir
+from hang_guard import HANG_SECONDS, exited, wait_for
 
 
 def git(repo: Path, *args: str) -> str:
@@ -253,7 +253,7 @@ def test_one_worker_uses_a_private_pool(repo, monkeypatch):
     """One worker has the same isolation contract as several workers."""
     monkeypatch.setattr(mutate_pool, "run_one", lambda tree, cfg, mutant, owner=None: True)
     cfg = type("Cfg", (), {"mutation_workers": 1, "mutation_command": f'"{sys.executable}" -c "pass"',
-                           "mutation_timeout_seconds": 5})()
+                           "mutation_timeout_seconds": HANG_SECONDS})()
     mutant = type("M", (), {"path": "m.py", "line": 1, "op": "x"})()
 
     assert mutate_pool.run_mutants(repo, cfg, [mutant], lambda *a: None) == [True]
@@ -287,7 +287,7 @@ def test_every_worker_measures_dirty_tests_config_dependencies_and_deletions(rep
     (repo / 'new_fixture.txt').write_text('untracked input', encoding='utf-8')
     (repo / 'gone.py').unlink()
     mutant = file_mutants(source, None, 'python')[0]._replace(path='m.py')
-    cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=5,
+    cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=HANG_SECONDS,
                           mutation_command=f'"{sys.executable}" runner.py')
 
     assert mutate_pool.run_mutants(repo, cfg, [mutant, mutant], lambda *a: None) == [True, True]
@@ -308,14 +308,11 @@ def test_drop_pool_refuses_while_another_process_owns_the_workers(repo):
         '    while not (root / "release").exists(): time.sleep(0.02)\n', encoding='utf-8')
     child = subprocess.Popen([sys.executable, str(script), str(repo)])
     try:
-        deadline = time.monotonic() + 10
-        while not (repo / 'ready').exists() and time.monotonic() < deadline:
-            time.sleep(0.02)
-        assert (repo / 'ready').exists(), 'the other process must own a real worker'
+        wait_for(repo / 'ready', child)
         with pytest.raises(ToolError, match='in use'):
             drop_pool(repo)
         assert (pool_dir(repo) / 'w0' / 'm.py').is_file()
     finally:
         (repo / 'release').touch()
-        child.wait(timeout=10)
+        exited(child)
     assert len(drop_pool(repo)) == 1

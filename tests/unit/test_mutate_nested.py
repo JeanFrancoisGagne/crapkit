@@ -6,6 +6,7 @@ import pytest
 
 from crapkit.mutate import file_mutants
 from crapkit.mutate_pool import drop_pool, run_mutants
+from hang_guard import HANG_SECONDS
 from test_mutate_pool_kept import commit, repo
 
 
@@ -42,7 +43,7 @@ def test_nested_workers_capture_inputs_across_the_git_checkout(repo, workers):
     (app / ".crapkit").mkdir()
     (app / ".crapkit" / "private-state").write_text("keep local", encoding="utf-8")
     mutant = file_mutants(source, None, "python")[0]._replace(path="m.py")
-    cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=5,
+    cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=HANG_SECONDS,
                           mutation_command=f'"{sys.executable}" runner.py')
     try:
         for _ in range(2):

@@ -7,7 +7,7 @@ import pytest
 from conftest import cli_runner, git, git_init_repo
 
 
-run_cli = cli_runner(encoding="utf-8", timeout=30)
+run_cli = cli_runner(encoding="utf-8")
 
 
 def _parent(tmp_path: Path, path: str) -> Path:

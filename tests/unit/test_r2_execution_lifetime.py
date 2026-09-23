@@ -1,20 +1,12 @@
 """Resource ownership ends only after the command's writers have stopped."""
 import json
-from pathlib import Path
 import sys
-import time
 
 from crapkit.config import Lane
 from crapkit.lanes import measurement_owner, run_lane
 from crapkit.locks import exclusive_lock
 from crapkit.procs import run_bounded
-
-
-def wait_for(path):
-    deadline = time.monotonic() + 15
-    while not path.exists() and time.monotonic() < deadline:
-        time.sleep(.02)
-    assert path.exists(), f"process did not reach {path.name}"
+from hang_guard import wait_for
 
 
 def late_writer(root):

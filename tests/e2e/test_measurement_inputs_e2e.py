@@ -8,7 +8,7 @@ import pytest
 from conftest import cli_runner, git_commit_all, git_init_repo
 
 
-run_cli = cli_runner(encoding="utf-8", timeout=30)
+run_cli = cli_runner(encoding="utf-8")
 RUNNER = '''import json, os
 from pathlib import Path
 state = os.environ.get('CRAPKIT_TEST_MEASUREMENT_RESULT', Path('tests/state.txt').read_text().strip())

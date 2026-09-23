@@ -13,6 +13,7 @@ from crapkit.diffparse import changed_ranges
 from crapkit.errors import GitError
 from crapkit.mutate import file_mutants
 from crapkit.mutate_pool import drop_pool, run_mutants
+from hang_guard import HANG_SECONDS
 
 
 def git(root, *args):
@@ -77,7 +78,7 @@ def test_mutation_workers_receive_dirty_leading_space_dependency(repository, wor
     git(repository, "commit", "-qm", "initial")
     (repository / " dependency.txt").write_text("current", encoding="utf-8")
     mutant = file_mutants(source, None, "python")[0]._replace(path="m.py")
-    cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=10,
+    cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=HANG_SECONDS,
                           mutation_command=f'"{sys.executable}" runner.py')
     try:
         assert run_mutants(repository, cfg, [mutant, mutant], lambda *args: None) == [True, True]

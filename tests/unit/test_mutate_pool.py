@@ -16,6 +16,7 @@ from crapkit import mutate_pool
 from crapkit.errors import GitError
 from crapkit.locks import exclusive_lock
 from crapkit.mutate_pool import _merge, _shards, _worktrees, drop_pool, pool_dir
+from hang_guard import HANG_SECONDS
 
 
 def test_round_robin_covers_every_mutant_exactly_once():
@@ -185,7 +186,7 @@ class _Cfg:
 
     def __init__(self, command: str, workers: int = 1):
         self.mutation_command = command
-        self.mutation_timeout_seconds = 60
+        self.mutation_timeout_seconds = HANG_SECONDS
         self.mutation_workers = workers
 
 
