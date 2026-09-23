@@ -121,3 +121,17 @@ def test_the_gate_judges_a_function_appended_after_a_nested_template(repo, capsy
     err = capsys.readouterr().err
     assert code == 6, err
     assert "knotty" in err, err
+
+
+def test_a_cache_written_before_the_template_reader_reads_cold(tmp_path):
+    """cache=5 records came from the reader that ended a template at its first inner
+    backtick; read warm, they would keep hiding the functions that reader hid."""
+    from crapkit.analyze import analyze_files, fingerprint
+    source = "export function a(): void {\n  " + BODIES["nested template"] + "\n}\n" + AFTER
+    (tmp_path / "mod.ts").write_text(source, encoding="utf-8")
+    _, _, old = analyze_files(tmp_path, ["mod.ts"], cache={})
+    old["fp"] = fingerprint().rsplit(";cache=", 1)[0] + ";cache=5"
+
+    _, hits, _ = analyze_files(tmp_path, ["mod.ts"], cache=old)
+
+    assert hits == 0

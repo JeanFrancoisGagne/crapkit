@@ -73,6 +73,15 @@ line its signature ends, a one-line def or a body on the last line of a signatur
 that spans several lines, scores as uncovered with remedy `split-lines`, because
 coverage.py reads that body as the `def` statement that runs at import.
 
+Version 11 also reads JavaScript and TypeScript template literals whole. lizard ended
+a template at the first backtick inside it, so a template nested in another's `${...}`,
+an escaped backtick, or a brace inside a string within `${...}` hid every function
+after it in the file: each was folded into the function around it or not listed at
+all. Those functions are now listed, and the function that held them reads only its
+own lines and branches. A newly listed function can be over its ceiling and fails the
+gate the next time its file changes. A function written inside `${...}` is still not
+listed.
+
 After upgrading, in each repo:
 
 ```sh

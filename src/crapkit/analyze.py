@@ -71,7 +71,9 @@ ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each 
 #                       123,320 rows move cognitive, 2 of them nesting too.
 #                       A record marks a def whose body starts on its colon's line
 #                       (inline_body); the cache's own `cache=5` drops records
-#                       read before the mark existed.
+#                       read before the mark existed. A JavaScript-family
+#                       template literal ends at its own closing backtick; the
+#                       cache's `cache=6` drops records read before that.
 # 10: separate sibling JavaScript/TypeScript expression arrows.
 # 9: a Python row's nesting is the depth the cognitive
 #                          pass measured, not lizard's ND count of structures,
@@ -598,9 +600,10 @@ def content_hash(path: Path) -> str:
 
 
 def fingerprint() -> str:
-    """cache=5: a record carries inline_body, which a cache=4 record lacks."""
+    """cache=6: a JavaScript-family template literal ends at its own closing backtick,
+    which a cache=5 record's reader did not do; cache=5 added inline_body."""
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=5"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=6"
 
 
 def _analysis_key(path: str, digest: str) -> str:
