@@ -4,10 +4,16 @@ The log format is one \\x01-prefixed author line per commit followed by the
 commit's file paths (git log --format=%x01%an --name-only). A header may carry
 the author date after a \\x02 (%at), and the stored log adds the commit date
 after another (%ct); the parser reads both shapes.
+
+Churn is a pure function of the window's commits (`WindowCommits`): who wrote
+each one, its two dates, and which paths it touched. A table carried to a new
+HEAD, the new commits folded in on top and the aged-out ones expired, answers
+what parsing the whole window again would.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+import math
+from collections.abc import Callable, Iterable, Iterator
 from typing import NamedTuple
 
 from .gitpaths import history_line, unquote_path
@@ -17,6 +23,12 @@ class FileChurn(NamedTuple):
     commits: int
     authors: int
     weight: float = 0.0  # recency-weighted commit sum; commit count when untimestamped
+
+
+class Commit(NamedTuple):
+    author: int  # index into WindowCommits.authors
+    at: int | None  # author date: what the recency weight reads
+    ct: int | None  # commit date: what --since, and so expiry, reads
 
 
 def _twr(ts: int, oldest: int, newest: int) -> float:
@@ -30,19 +42,21 @@ def _twr(ts: int, oldest: int, newest: int) -> float:
     commit counts once, the degrade an untimestamped log already gets, so the
     ranking is ccn times one until the history grows.
     """
-    import math
-
     if newest == oldest:
         return 1.0
     t_norm = (ts - oldest) / (newest - oldest)
     return 1.0 / (1.0 + math.exp(-12.0 * t_norm + 12.0))
 
 
-def _split_author(line: str) -> tuple[str, int | None]:
-    """The author and author date off a header, whether or not a commit date follows."""
+def _stamp(raw: str) -> int | None:
+    return int(raw) if raw.isdigit() else None
+
+
+def _split_header(line: str) -> tuple[str, int | None, int | None]:
+    """Author, author date and commit date off a header; a date it lacks is None."""
     name, _, dates = line[1:].partition("\x02")
-    raw = dates.partition("\x02")[0]
-    return name, int(raw) if raw.isdigit() else None
+    at, _, ct = dates.partition("\x02")
+    return name, _stamp(at), _stamp(ct)
 
 
 def _blocks(lines: Iterable[str]) -> Iterator[tuple[str | None, list[str]]]:
@@ -62,20 +76,119 @@ def _blocks(lines: Iterable[str]) -> Iterator[tuple[str | None, list[str]]]:
     yield header, paths
 
 
-def _collect(lines: Iterable[str]):
-    commits: dict[str, int] = {}
-    authors: dict[str, set[str]] = {}
-    stamps: dict[str, list[int]] = {}
+def _weight(seqs: list[int], weights: dict[int, float]) -> float:
+    """The path's commits summed in log order, the order the full parse adds
+    them in, so the float is the same to the last bit."""
+    stamped = [weights[seq] for seq in seqs if seq in weights]
+    return round(sum(stamped), 4) if stamped else float(len(seqs))
+
+
+class WindowCommits:
+    """The window's commits, newest first, and for every path the commits that
+    touched it, newest first.
+
+    A commit is named by a sequence number that only grows toward the present:
+    a full parse numbers the newest 0 and counts down, and commits folded in on
+    top continue upward. A path's numbers therefore always fall along the log,
+    which is the order both its weight and its expiry read them in. Commits
+    that touched no path are not kept: they weigh nothing and date no range.
+    """
+
+    def __init__(self, authors: list[str], commits: dict[int, Commit],
+                 files: dict[str, list[int]]):
+        self.authors = authors
+        self.commits = commits
+        self.files = files
+
+    @property
+    def dated(self) -> bool:
+        """Whether every commit carries its commit date, without which it cannot expire."""
+        return all(commit.ct is not None for commit in self.commits.values())
+
+    def churn(self) -> dict[str, FileChurn]:
+        author = {seq: commit.author for seq, commit in self.commits.items()}.__getitem__
+        weight = self._weigher()
+        return {path: FileChurn(len(seqs), len(set(map(author, seqs))), weight(seqs))
+                for path, seqs in self.files.items()}
+
+    def _weigher(self) -> Callable[[list[int]], float]:
+        """A path's weight from its commits. Every commit git lists has an
+        author date, and then each weight is one lookup per commit; an
+        untimestamped header, which only a hand-written log carries, takes the
+        path that skips it."""
+        weights = self._weights()
+        if len(weights) == len(self.commits):
+            return lambda seqs: round(sum(map(weights.__getitem__, seqs)), 4)
+        return lambda seqs: _weight(seqs, weights)
+
+    def _weights(self) -> dict[int, float]:
+        stamped = {seq: commit.at for seq, commit in self.commits.items()
+                   if commit.at is not None}
+        if not stamped:
+            return {}
+        oldest, newest = min(stamped.values()), max(stamped.values())
+        return {seq: _twr(at, oldest, newest) for seq, at in stamped.items()}
+
+    def carry(self, newer: WindowCommits) -> None:
+        """Fold `newer`, the commits HEAD added since this table, in on top."""
+        shift = next(iter(self.commits), 0) + len(newer.commits)
+        ids = self._author_ids(newer.authors)
+        fresh = {seq + shift: Commit(ids[c.author], c.at, c.ct)
+                 for seq, c in newer.commits.items()}
+        self.commits = {**fresh, **self.commits}
+        for path, seqs in newer.files.items():
+            self.files[path] = [seq + shift for seq in seqs] + self.files.get(path, [])
+
+    def _author_ids(self, names: list[str]) -> list[int]:
+        """This table's id for each name, adding the names it has not seen."""
+        ids = {name: i for i, name in enumerate(self.authors)}
+        for name in names:
+            ids.setdefault(name, len(ids))
+        self.authors = list(ids)
+        return [ids[name] for name in names]
+
+    def expire(self, cutoff: int) -> None:
+        """Drop every commit a `--since` walk would no longer list: the ones
+        committed before `cutoff`. The commit date, not the author date:
+        --since reads the committer's clock, and a rebased commit has two."""
+        gone = {seq for seq, commit in self.commits.items() if _aged(commit, cutoff)}
+        if gone:
+            self._drop(gone)
+
+    def _drop(self, gone: set[int]) -> None:
+        for seq in gone:
+            del self.commits[seq]
+        newest = max(gone)
+        for path in [path for path, seqs in self.files.items() if seqs[-1] <= newest]:
+            self._drop_from(path, gone)
+
+    def _drop_from(self, path: str, gone: set[int]) -> None:
+        kept = [seq for seq in self.files[path] if seq not in gone]
+        if kept:
+            self.files[path] = kept
+        else:
+            del self.files[path]
+
+
+def _aged(commit: Commit, cutoff: int) -> bool:
+    return commit.ct is None or commit.ct < cutoff
+
+
+def fold(lines: Iterable[str]) -> WindowCommits:
+    """The window's commits off a log, in either header shape."""
+    ids: dict[str, int] = {}
+    commits: dict[int, Commit] = {}
+    files: dict[str, list[int]] = {}
+    seq = 0
     for header, paths in _blocks(lines):
-        if header is None:
+        if header is None or not paths:
             continue
-        author, ts = _split_author(header)
+        name, at, ct = _split_header(header)
+        commits[seq] = Commit(ids.setdefault(name, len(ids)), at, ct)
         for path in paths:
-            commits[path] = commits.get(path, 0) + 1
-            authors.setdefault(path, set()).add(author)
-            if ts is not None:
-                stamps.setdefault(path, []).append(ts)
-    return commits, authors, stamps
+            files.setdefault(path, []).append(seq)
+        seq -= 1
+    return WindowCommits(list(ids), commits, files)
 
 
 def parse_git_log(text: str) -> dict[str, FileChurn]:
@@ -85,14 +198,4 @@ def parse_git_log(text: str) -> dict[str, FileChurn]:
 
 def parse_git_log_lines(lines: Iterable[str]) -> dict[str, FileChurn]:
     """Streaming entrypoint: one commit block resident at a time, whatever the log's size."""
-    commits, authors, stamps = _collect(lines)
-    all_stamps = [s for lst in stamps.values() for s in lst]
-    oldest, newest = (min(all_stamps), max(all_stamps)) if all_stamps else (0, 0)
-
-    def weight(path: str, count: int) -> float:
-        if path not in stamps:
-            return float(count)  # untimestamped log: degrade to commit count
-        return round(sum(_twr(s, oldest, newest) for s in stamps[path]), 4)
-
-    return {p: FileChurn(commits=c, authors=len(authors[p]), weight=weight(p, c))
-            for p, c in commits.items()}
+    return fold(lines).churn()

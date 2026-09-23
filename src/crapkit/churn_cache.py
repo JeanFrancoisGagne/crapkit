@@ -12,10 +12,15 @@ a window one day wider than today's; the format marker retires maps whose
 paths predate exact path decoding. Anything else is a miss, and a miss
 rebuilds.
 
+A miss is not a full parse when it can be avoided: the map is computed from
+the window's commits, which `churn_commits` keeps, so a HEAD that grew from
+the stored table walks only the new commits (see that module).
+
 A cache is disposable: unreadable, corrupt or unkeyable content reads as cold,
 never as a crash. Uncommitted work is invisible to churn either way. The one
 thing a sha does not pin is depth — deepening a shallow clone adds history
-under an unmoved HEAD — and that resolves itself at the next date rollover.
+under an unmoved HEAD — and that resolves itself at the next date rollover,
+because a shallow clone keeps no commit table to carry.
 """
 from __future__ import annotations
 
@@ -24,10 +29,11 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .churn import FileChurn, parse_git_log_lines
-from .churn_log import dated_lines, has_cache, sweep_legacy
+from .churn import FileChurn, WindowCommits, fold
+from .churn_commits import carried_commits, store_commits
+from .churn_log import dated_lines, has_cache, sweep_legacy, walk_lines
 from .errors import GitError
-from .gitio import churn_log_lines, head_commit
+from .gitio import head_commit
 from .gitpaths import PATH_FORMAT
 
 # The format lives in the file name. Two crapkit versions on one working tree
@@ -46,11 +52,11 @@ def _window_lines(root: Path, months: int) -> Iterator[str]:
     Read through the deflated log cache when one is on disk (free at an exact
     key, a cached..HEAD range walk otherwise); straight from git when none is.
     A map-only command never lays the log down — the commands that need its
-    per-commit structure (brief, batches, coupling) already do. The stored
-    headers keep their commit date, which the parser reads past on its own."""
+    per-commit structure (brief, batches, coupling) already do. Either way the
+    headers keep their commit date, which the stored table needs to expire."""
     if has_cache(root):
         return dated_lines(root, months)
-    return churn_log_lines(root, months)
+    return walk_lines(root, months)
 
 
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
@@ -66,9 +72,20 @@ def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
         return cached
     sweep_legacy(root)
     _drop(path.with_name(LEGACY_NAME))
-    churn = parse_git_log_lines(_window_lines(root, months))
+    churn = _window_commits(root, months, key).churn()
     _write_cache(path, key, churn)
     return churn
+
+
+def _window_commits(root: Path, months: int, key: dict | None) -> WindowCommits:
+    """The stored table carried to HEAD when HEAD grew from it; else the whole
+    window parsed, and kept for the next miss to carry."""
+    head = key["head"] if key else None
+    table = carried_commits(root, months, head)
+    if table is None:
+        table = fold(_window_lines(root, months))
+        store_commits(root, months, head, table)
+    return table
 
 
 def _drop(path: Path) -> None:

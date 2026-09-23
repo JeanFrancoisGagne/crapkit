@@ -33,7 +33,7 @@ class FakeGit:
 @pytest.fixture()
 def git(monkeypatch) -> FakeGit:
     fake = FakeGit()
-    monkeypatch.setattr(churn_cache, "churn_log_lines", fake.lines)
+    monkeypatch.setattr(churn_cache, "walk_lines", fake.lines)
     monkeypatch.setattr(churn_cache, "head_commit", lambda root: fake.head)
     return fake
 

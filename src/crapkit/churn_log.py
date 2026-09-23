@@ -78,6 +78,23 @@ def dated_lines(root: Path, months: int) -> Iterator[str]:
     return _stored_lines(root, months)
 
 
+def walk_lines(root: Path, months: int) -> Iterator[str]:
+    """The window straight from git in the stored shape, laying nothing down:
+    for a reader that needs commit dates where no log is on disk yet."""
+    return _window_log(root, months)
+
+
+def commits_since(root: Path, base: str, head: str) -> Iterator[str]:
+    """What `head` added on top of `base`, in the stored shape; nothing when they match."""
+    return _fresh_commits(root, base, head)
+
+
+def window_cutoff(root: Path, months: int) -> int | None:
+    """git's --since floor for the window, the commit date a commit must reach
+    to stay in it; None when git will not name one."""
+    return _window_cutoff(root, months)
+
+
 def has_cache(root: Path) -> bool:
     """Whether a laid-down log exists to serve or refresh from, whatever its key.
 
