@@ -29,10 +29,14 @@ def workflow():
 def matrix_rows(matrix):
     """Every job a matrix expands to: the product of its axes less each row an exclude matches."""
     assert "include" not in matrix, "this expansion handles exclude rows only"
-    axes = {key: values for key, values in matrix.items() if key != "exclude"}
-    rows = [dict(zip(axes, values)) for values in itertools.product(*axes.values())]
-    return [row for row in rows
-            if not any(rule.items() <= row.items() for rule in matrix.get("exclude", []))]
+    axes = dict(matrix)
+    rules = axes.pop("exclude", [])
+    rows = (dict(zip(axes, values)) for values in itertools.product(*axes.values()))
+    return [row for row in rows if not _excluded(row, rules)]
+
+
+def _excluded(row, rules):
+    return any(rule.items() <= row.items() for rule in rules)
 
 
 def rendered(text, row):
@@ -104,7 +108,9 @@ def test_the_join_reads_both_hand_offs_where_the_measurements_left_them():
                  if str(item.get("uses", "")).startswith("actions/download-artifact@")}
 
     assert join["needs"] == "verdict-measure"
-    assert args.join and args.base == "$BASE_REF" and args.measure is None
+    assert args.join
+    assert args.base == "$BASE_REF"
+    assert args.measure is None
     assert downloads == {name: args.measured / side
                          for side, (name, _, _) in measurement_hand_offs(jobs).items()}
     retained = step(join, "uses", "actions/upload-artifact@")
