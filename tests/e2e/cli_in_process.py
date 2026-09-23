@@ -353,15 +353,18 @@ def _watched(argv: list[str], timeout: float | None) -> int:
 
 
 def _set_async(thread_id: int, exception) -> None:
-    """Make `thread_id` raise `exception` at its next Python instruction, or
-    with None, drop one it has not raised yet."""
+    """Make `thread_id` raise `exception` at its next Python instruction."""
     ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), exception)
 
 
 class _Watch:
     """One call's bound, kept by a thread of its own. The lock orders firing
-    against stopping: once stop() holds it, nothing new can fire, and an
-    exception fired but not yet raised is dropped, since the call returned."""
+    against stopping: once stop() holds it, nothing new can fire. One that
+    fired first still arrives, in stop() at the latest, and the call fails as
+    past its bound, which it was. Dropping it with PyThreadState_SetAsyncExc
+    and NULL left Python 3.11's eval breaker set for good, even after the call
+    had raised it, and a thread under a trace function, coverage's in the py
+    lane, then spun forever at its next call."""
 
     def __init__(self, argv: list[str], timeout: float):
         self._call = threading.get_ident()
@@ -369,7 +372,6 @@ class _Watch:
         self._test = os.environ.get("PYTEST_CURRENT_TEST", "")
         self._lock = threading.Lock()
         self._stopped = threading.Event()
-        self._fired = False
         self._done = False
         self._thread = threading.Thread(target=self._keep, name="in-process CLI bound",
                                         daemon=True)
@@ -387,7 +389,6 @@ class _Watch:
         with self._lock:
             if self._done:
                 return
-            self._fired = True
             _set_async(self._call, ctypes.py_object(_PastBound))
         print(f"{self._test}: {self._argv!r} past its {self._timeout} s bound. Stopping it; "
               f"if it has not returned {GRACE_SECONDS} s from now, every thread's stack "
@@ -396,8 +397,6 @@ class _Watch:
     def stop(self) -> None:
         with self._lock:
             self._done = True
-            if self._fired:
-                _set_async(self._call, None)
         faulthandler.cancel_dump_traceback_later()
         self._stopped.set()
         self._thread.join()

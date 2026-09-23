@@ -83,6 +83,21 @@ def test_a_call_past_its_bound_fails_its_test_and_the_next_test_runs(tmp_path, w
     assert "test_spins.py:11: in spins" in report, "the stack the call was stopped in"
 
 
+def test_a_traced_session_goes_on_after_a_call_past_its_bound(tmp_path):
+    """The py lane runs this suite under coverage, which traces the worker.
+    Python 3.11 under a trace function spun forever at the next call once the
+    stopped call's exception was cleared after it had been raised, so a
+    measured session never reached its second test. A bare sys.settrace
+    stands in for coverage's tracer."""
+    (tmp_path / "tracing.py").write_text(
+        "import sys\ndef trace(frame, event, arg):\n    return trace\nsys.settrace(trace)\n",
+        encoding="utf-8")
+
+    done = _session(tmp_path, "test_spins.py", SPINS, "-n", "0", "-p", "tracing")
+
+    assert "1 failed, 1 passed" in done.stdout + done.stderr, done.stdout + done.stderr
+
+
 def test_a_call_stuck_in_c_code_ends_the_worker_and_leaves_its_stack_in_basetemp(tmp_path):
     """Nothing reaches a thread that never returns to Python, so after a grace
     period the worker ends. The stack goes to a file under the worker's
