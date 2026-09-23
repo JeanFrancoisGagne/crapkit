@@ -104,11 +104,17 @@ class Verdict(NamedTuple):
     uncovered_violations: tuple[UncoveredViolation, ...] = ()
 
 
+def _any_finding(verdict: Verdict) -> bool:
+    return bool(verdict.gate_violations or verdict.ratchet_regressions
+                or verdict.new_failures or verdict.uncovered_violations)
+
+
 def settle_verdict(verdict: Verdict) -> Verdict:
-    """Derive success from every remaining finding after a grant or retry."""
-    ok = not (verdict.gate_violations or verdict.ratchet_regressions
-              or verdict.new_failures or verdict.uncovered_violations)
-    return verdict._replace(ok=ok)
+    """Re-derive what the remaining findings decide after a grant or retry:
+    the dirty subset of new_failures, and success."""
+    remaining = set(verdict.new_failures)
+    return verdict._replace(ok=not _any_finding(verdict),
+                            dirty_failures=[f for f in verdict.dirty_failures if f in remaining])
 
 
 def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
