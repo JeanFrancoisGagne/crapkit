@@ -568,10 +568,26 @@ def _emit_coverage_findings(root: Path, args, scored, cfg) -> None:
 
 def _rescored_records(root: Path, cache_path: Path, flat: list,
                       workers: int | None = None, worker_budget: int = 0) -> dict:
+    """Fresh records for `flat`.
+
+    A commit's worth of files is analyzed outright, the hook's rule: loading
+    and rewriting the shared cache costs more than lizard on a few files (0.41 s
+    to load a 21.8 MB cache, 0.17 s to rewrite it after an edit, against tens of
+    milliseconds a file). The next inventory analyzes those few files once.
+    """
+    from ..hook import commit_sized, working_tree_records
+
+    if commit_sized(flat):
+        return working_tree_records(root, flat)
+    return _cached_records(root, cache_path, flat, workers, worker_budget)
+
+
+def _cached_records(root: Path, cache_path: Path, flat: list,
+                    workers: int | None, worker_budget: int) -> dict:
     """Fresh records for `flat`, folded INTO the shared cache rather than over it.
 
-    A rescore knows about a handful of files; writing its entry map straight out
-    would throw away every other file's analysis and leave the next full run cold.
+    Writing the rescore's own entry map straight out would throw away every
+    other file's analysis and leave the next full run cold.
     """
     _, analyze_files, load_cache, save_cache = _analysis_tools()
     prior = load_cache(cache_path)
