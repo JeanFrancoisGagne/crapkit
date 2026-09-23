@@ -91,10 +91,14 @@ defs carried a one-line def's name.
 
 `_SignatureIndents` ends such a def with the logical line that holds its body:
 at the first newline outside brackets, or at the end of the file. A line inside
-the body's brackets sets no nesting. The def is then listed as the same def with
-its body on the next line is, one line shorter: `def f(): ...` reads `f( )` at
-ccn 1 over one line, an `@overload` stub on one line takes its twin key as a
-two-line stub does, and the lines after it go back to its parent.
+the body's brackets sets no nesting. A `def` or `class` ends the body even when
+the bracket count says it is still open, since no bracket can hold either one:
+lizard's f-string expansion reads `f"{x:(>10}"` as `x : ( > 10`, and before
+this every def after it replaced the pending one unlisted. The def is then
+listed as the same def with its body on the next line is, one line shorter:
+`def f(): ...` reads `f( )` at ccn 1 over one line, an `@overload` stub on one
+line takes its twin key as a two-line stub does, and the lines after it go back
+to its parent.
 
 The class name
 --------------
@@ -134,6 +138,8 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 
 _OPENERS = frozenset("([{")
 _CLOSERS = frozenset(")]}")
+# Keywords that start a statement and never sit inside brackets.
+_BODY_ENDERS = frozenset({"def", "class"})
 
 # The states between the `def` keyword and the body colon. `_state_colon` is
 # the one lizard enters after the parameter list's `)`.
@@ -260,8 +266,8 @@ class _SignatureIndents(PythonIndents):
 
     A code token after the body colon on the colon's own line starts a body on
     the colon line. `body_depth` counts that body's brackets and is None
-    outside one: its lines inside brackets set no nesting, and a newline at
-    depth 0 ends it.
+    outside one: its lines inside brackets set no nesting, a newline at depth 0
+    or below ends it, and so does a `def` or `class`, which no bracket can hold.
     """
 
     def __init__(self, context, states):
@@ -277,7 +283,7 @@ class _SignatureIndents(PythonIndents):
         elif self.leading:
             self._leading(token)
         elif self.body_depth is not None:
-            self.body_depth += _depth_change(token)
+            self._in_body(token)
         elif self.states.colon_read:
             self._after_colon(token)
 
@@ -289,7 +295,7 @@ class _SignatureIndents(PythonIndents):
     def _line_ends(self) -> None:
         self.spaces, self.leading = 0, True
         self.states.colon_read = False  # a colon that ends its line opens the body below
-        if self.body_depth == 0:
+        if self.body_depth is not None and self.body_depth <= 0:
             self._end_body()
 
     def _leading(self, token: str) -> None:
@@ -307,9 +313,25 @@ class _SignatureIndents(PythonIndents):
         signature passes the `)` that ends the long name.
         """
         if self.body_depth is not None:
-            self.body_depth += _depth_change(token)
+            self._in_body(token)
         elif not self.states.in_signature:
             self.set_nesting(self.spaces, token)
+
+    def _in_body(self, token: str) -> None:
+        """A token of a body on its colon line, counted unless it ends the body.
+
+        No bracket can hold a `def` or a `class`, so either ends the body
+        whatever the count says. The count can be wrong: lizard's f-string
+        expansion hands a format spec's fill character over as a token, so
+        `f"{x:(>10}"` leaves a `(` open, and the def after it would otherwise
+        replace this one unlisted. The lines before that `def`, a decorator or
+        the `async` of an `async def`, stay with this def.
+        """
+        if token in _BODY_ENDERS:
+            self._end_body()
+            self.set_nesting(self.spaces, token)
+        else:
+            self.body_depth += _depth_change(token)
 
     def _after_colon(self, token: str) -> None:
         if token.isspace() or token.startswith("#"):

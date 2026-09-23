@@ -142,6 +142,40 @@ def test_a_one_line_def_on_the_last_line_without_a_newline_is_listed():
     assert _read("class A:\n    def f(self): return 1") == [("f( self )", 2, 2, 1, 1, 1)]
 
 
+# lizard's f-string expansion hands a format spec's fill character over as a
+# token, so `f"{x:(>10}"` reads `x : ( > 10`: a `(` that nothing closes. The
+# body's bracket count never came back to 0, every later line read as part of
+# the body, and each later def replaced the pending one unlisted. Only the def
+# still pending at the end of the file was listed, here `m`. A `def` or `class`
+# cannot sit inside brackets, so it ends the body whatever the count says.
+_FILL = 'def f(x): return f"{x:(>10}"\n'
+_G = "def g(a):\n    if a:\n        return 1\n    return 2\n"
+_GHI = "    if a:\n        return 1\n    return 2\ndef h(b):\n    if b:\n        return 3\n    return 4\n"
+_K = "class K:\n    def m(self):\n        if self:\n            return 5\n"
+
+
+def test_an_unclosed_bracket_in_a_one_line_body_ends_the_body_at_the_next_def_or_class():
+    two_lines = 'def f(x):\n    return f"{x:(>10}"\ndef g(a):\n' + _GHI + _K
+    assert _read(two_lines) == [("f( x )", 1, 2, 1, 2, 1), ("g( a )", 3, 6, 2, 4, 1), ("h( b )", 7, 10, 2, 4, 1),
+                                ("m( self )", 12, 14, 2, 3, 1)]
+    assert _read(_FILL + "def g(a):\n" + _GHI + _K) == [
+        ("f( x )", 1, 1, 1, 1, 1), ("g( a )", 2, 5, 2, 4, 1), ("h( b )", 6, 9, 2, 4, 1), ("m( self )", 11, 13, 2, 3, 1)]
+
+
+def test_the_lines_before_that_def_stay_with_the_one_line_def():
+    """The count cannot tell a decorator, or the `async` of an `async def`, from
+    a body line: the one-line def holds that line, and the def after it keeps its
+    own name and body. The `def` of an `async def` is not its line's first token."""
+    assert _read(_FILL + "async " + _G) == [("f( x )", 1, 2, 1, 2, 1), ("g( a )", 2, 5, 2, 4, 1)]
+    assert _read(_FILL + "@dec\n" + _G) == [("f( x )", 1, 2, 1, 2, 1), ("g( a )", 3, 6, 2, 4, 1)]
+
+
+def test_a_stray_closer_in_a_one_line_body_ends_the_body_with_its_line():
+    """The count went below 0 and never came back to it, so only `h` was listed."""
+    source = "def f(x): return x)\ndef g(a):\n" + _GHI
+    assert _read(source) == [("f( x )", 1, 1, 1, 1, 1), ("g( a )", 2, 5, 2, 4, 1), ("h( b )", 6, 9, 2, 4, 1)]
+
+
 # --- the unread-def net keeps its answers for a one-line def, under both readers -----
 
 
