@@ -400,6 +400,12 @@ EXIT=3
 
 `move` needs no run and no store; it reads the file and rewrites it.
 
+Both paths are read like every other path argument, so the marks land under the key a
+scored row carries. `./calc/grading.py` and, on Windows, `calc\grading.py` name
+`calc/grading.py`. Typed from a directory below the root, a path is read from there: in
+`calc/`, `crapkit ratchet move grade.py grading.py` is the first example above. Under
+`--repo` the paths stay root-relative. The line names the paths as the marks file spells them.
+
 ---
 
 ## The git merge driver
