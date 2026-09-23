@@ -89,12 +89,18 @@ def _marked_group(entry: RatchetEntry, groups: set) -> tuple[str, str]:
     return exact if exact in groups else (entry.path, split_ordinal(entry.long_name)[0])
 
 
-def check_reader_keys(text: str) -> None:
-    """Old expression readers lost callbacks, so their anonymous ordinals lack proof."""
+def parsed_marks(text: str, entries=None) -> list:
+    """The marks a caller already parsed out of `text`, or a parse of it now."""
+    return read_ratchet(text)[0] if entries is None else entries
+
+
+def check_reader_keys(text: str, entries=None) -> None:
+    """Old expression readers lost callbacks, so their anonymous ordinals lack proof.
+    `entries` is `read_ratchet(text)[0]` when the caller already holds it."""
     stamp = read_stamp(text)
     prefix = "crapkit-analysis="
     version = stamp[len(prefix):].partition(" ")[0] if stamp.startswith(prefix) else None
-    check_reader_version(read_ratchet(text)[0], version)
+    check_reader_version(parsed_marks(text, entries), version)
 
 
 def check_reader_version(entries, version) -> None:
@@ -111,18 +117,21 @@ def check_reader_version(entries, version) -> None:
                          "marks with their original functions before reseeding")
 
 
-def check_key_groups(text: str, present: set, collisions: set) -> int:
+def check_key_groups(text: str, present: set, collisions: set, entries=None) -> int:
     """Prove old marks still name the same functions before comparing or rewriting.
 
     An unseen mark stays intact with its old version. A known collision needs
     a reviewed mapping, because it also shifts every later ordinal of that name.
+    `entries` is `read_ratchet(text)[0]` when the caller already holds it: one
+    parse of a 39,496-mark file takes 71 ms.
     """
-    check_reader_keys(text)
+    entries = parsed_marks(text, entries)
+    check_reader_keys(text, entries)
     version = read_key_version(text)
     if version == KEY_VERSION:
         return version
     known = present | collisions  # once: a union per mark copied `present` 40k times
-    groups = {_marked_group(entry, known) for entry in read_ratchet(text)[0]}
+    groups = {_marked_group(entry, known) for entry in entries}
     _refuse_ambiguous(groups & collisions)
     return KEY_VERSION if groups <= present else 0
 
@@ -135,11 +144,11 @@ def _refuse_ambiguous(unresolved: set) -> None:
                          "as described in docs/ratchet.md#same-line-function-identity")
 
 
-def checked_key_version(text: str, rows, *, historical: set = frozenset()) -> int:
+def checked_key_version(text: str, rows, *, historical: set = frozenset(), entries=None) -> int:
     from .keys import ambiguous_groups
 
     present = {(row.path, row.long_name) for row in rows}
-    return check_key_groups(text, present, ambiguous_groups(rows) | set(historical))
+    return check_key_groups(text, present, ambiguous_groups(rows) | set(historical), entries)
 
 
 def stamp_conflict(recorded: str, current: str) -> str | None:

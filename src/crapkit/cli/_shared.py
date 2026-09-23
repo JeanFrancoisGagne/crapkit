@@ -329,28 +329,31 @@ def _identity_history(root: Path, store, paths: set) -> set:
         return opened.historical_collision_groups(paths)
 
 
-def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None) -> int:
-    from ..ratchet import (KEY_VERSION, check_reader_keys, checked_key_version,
-                           read_key_version, read_ratchet)
+def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None,
+                            entries=None) -> int:
+    """The key version the marks in `text` can be compared under, or a refusal.
+    `entries` is `read_ratchet(text)[0]` when the caller already parsed it, so
+    the proof parses the file only when nobody has."""
+    from ..ratchet import (KEY_VERSION, check_reader_keys, checked_key_version, parsed_marks,
+                           read_key_version)
 
     try:
-        check_reader_keys(text)
-        if read_key_version(text) == KEY_VERSION:
-            return KEY_VERSION
-        marks = read_ratchet(text)[0]
-        if not marks:
+        marks = parsed_marks(text, entries)
+        check_reader_keys(text, marks)
+        if read_key_version(text) == KEY_VERSION or not marks:
             return KEY_VERSION
         proof = rows() if callable(rows) else rows
         paths = _proved_paths(root, proof, marks)
-        return checked_key_version(text, proof, historical=_identity_history(root, store, paths))
+        return checked_key_version(text, proof, historical=_identity_history(root, store, paths),
+                                   entries=marks)
     except ValueError as exc:
         raise ConfigError(f"{name}: {exc}") from exc
 
 
-def _ratchet_key_version(root: Path, cfg, rows, store=None) -> int:
+def _ratchet_key_version(root: Path, cfg, rows, store=None, entries=None) -> int:
     path = root / cfg.ratchet_file
     text = repo_text(path, cfg.ratchet_file) if path.is_file() else ""
-    return _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store)
+    return _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store, entries)
 
 
 def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
@@ -373,7 +376,7 @@ def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
     text = repo_text(ratchet_path, cfg.ratchet_file)
     entries, complaints = read_ratchet(text)
     if rows is not None:
-        _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store)
+        _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store, entries)
     for complaint in complaints:
         print(f"crapkit: skipped an unreadable mark in {cfg.ratchet_file}: {complaint}",
               file=sys.stderr)

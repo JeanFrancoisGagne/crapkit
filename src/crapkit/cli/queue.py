@@ -638,7 +638,8 @@ class _BriefLoader:
         entries = self._once("marks", lambda: _ratchet_entries(self.root, self.cfg))
         self._once(f"marks-proof:{row.path}",
                    lambda: _ratchet_key_version(self.root, self.cfg,
-                                                lambda: self.scored_file(row.path), self.store))
+                                                lambda: self.scored_file(row.path), self.store,
+                                                entries))
         return _brief_mark(entries, self.key(row))
 
     def mark_age(self, row, mark: float | None) -> int | None:
