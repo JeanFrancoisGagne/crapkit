@@ -137,9 +137,21 @@ def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, gi
     return _verify_baseline(root, store, args.baseline)
 
 
-def _named_run(args, baseline: dict) -> dict | None:
-    """The baseline when `--baseline ID` chose it; None when verify's rule did."""
-    return baseline if args.baseline is not None else None
+def _seed_source(store: SnapshotStore, args, baseline: dict) -> dict | None:
+    """The run a stamp refusal says to seed from; None keeps coverage-then-seed.
+
+    `--baseline ID` names it. Otherwise the refusal is about the run a plain
+    `ratchet seed` reads, which is verify's rule's pick whatever this verify
+    measures against. Behind a failed verify that pick is pinned: the seed signs
+    its old stamp again, a fresh coverage run lands behind the failure too, and
+    the stock remedy led back to this refusal (#75). The newer run the rule
+    passed over, which the taint warning names, is the one to seed from.
+    """
+    from ..store import pick_baseline
+
+    if args.baseline is not None:
+        return baseline
+    return pick_baseline(store.list_runs()).skipped
 
 
 def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, str]:
@@ -189,7 +201,8 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
     It runs after the baseline is read, so `named`, the run `--baseline ID`
-    names, can be the run the refusal says to seed from.
+    names or the one a failed verify kept verify's rule from, can be the run
+    the refusal says to seed from.
     """
     from ..ratchet import coverage_then_seed, metric_version
 
@@ -205,13 +218,13 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
 
 
 def _stamp_refusal(conflict: str, named: dict | None) -> str:
-    """The stamp refusal, naming the seed that clears it when verify names its baseline.
+    """The stamp refusal, naming the seed that clears it when there is a run to name.
 
     The stock remedy's `ratchet seed` reads the run verify would pick. A failed
     verify can pin that to a run an older crapkit measured, or one written
     before same-line positions, and seed then keeps the old stamp or refuses
-    outright, so the remedy led back to this refusal (#75). A named run is the
-    one to seed from.
+    outright, so the remedy led back to this refusal (#75). `named` is the run
+    to seed from instead.
     """
     from ..ratchet import coverage_then_seed
 
@@ -647,7 +660,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     git = GitFacts(root)
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
-    _guard_ratchet_stamp(saved, cfg.ratchet_file, _named_run(args, baseline))
+    _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.

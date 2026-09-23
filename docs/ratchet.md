@@ -335,8 +335,9 @@ A failed verify can leave that remedy with nothing to work on. Seed reads the ru
 pick, and after a failed verify that is the run before the failure until a verify passes
 ([seed and prune pick the run verify picks](#seed-and-prune-pick-the-run-verify-picks)). A
 fresh `coverage` run sits behind the failure too, so seed reads the old run again and keeps
-its old stamp. Name the newer run instead. verify reads `--baseline ID` before it checks the
-stamp, so its refusal names the seed that clears it:
+its old stamp. Name the newer run instead. On such a store the refusal names it: a plain
+`crapkit verify` names the run its taint warning names, and `crapkit verify --baseline ID`
+names run ID, since verify reads `--baseline` before it checks the stamp:
 
 ```
 $ crapkit verify --baseline 12

@@ -70,8 +70,8 @@ versions are not comparable; ccn did not move. Run `crapkit coverage`, then
 `crapkit ratchet seed`: seed stamps the metric of the run it reads, so a seed from a run the
 older crapkit measured keeps the old stamp and verify keeps refusing. When a failed verify
 pins the baseline, plain seed reads the pinned run. Name the newer one with
-`crapkit ratchet seed --baseline N`, which is the seed `crapkit verify --baseline N` prints
-in the same refusal:
+`crapkit ratchet seed --baseline N`: on such a store the refusal itself ends with that seed,
+under plain `crapkit verify` and under `crapkit verify --baseline N` alike:
 [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp).
 
 `lane 'py': positional argument 'slow'' narrows a full-suite coverage run ... (cmd.exe
