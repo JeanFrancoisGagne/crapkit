@@ -20,6 +20,9 @@ it rebuilds what the child had and puts the worker back afterwards:
   one PATH must not answer the next test, which may have another.
 - The call's garbage is collected on the way out, which closes the store the
   way a process exit does.
+- crapkit's analysis pool refuses with a RuntimeError. On Linux the pool forks
+  the worker, and a repo past 32 cold files asks for it there; Windows asks
+  only for a bigger repo, so the refusal holds on every OS.
 - The status is main's return or SystemExit's code. An uncaught exception is
   exit 1 with its traceback on stderr, which is how the interpreter reports one.
 - The bytes are decoded as subprocess.run decodes a child's: the caller's
@@ -130,6 +133,7 @@ def _enter_child(stack: ExitStack, repo: Path, env: dict, files) -> None:
     stack.enter_context(_cold_crapkit_caches())
     stack.enter_context(_working_directory(repo))
     stack.enter_context(_environment(env))
+    stack.enter_context(_swapped(_analysis_pool(), "analysis_pool", _refuse_pool))
     for fd, file in zip((1, 2), files):
         stack.enter_context(_descriptor(fd, file))
     stack.enter_context(_child_streams())
@@ -151,6 +155,20 @@ def _collected() -> Iterator[None]:
     finally:
         gc.collect()
         gc.unfreeze()
+
+
+def _analysis_pool():
+    import crapkit._analysis_pool
+    return crapkit._analysis_pool
+
+
+def _refuse_pool(**_):
+    """The analysis pool forks its caller under Linux's start method, which
+    here would fork the pytest worker. Windows asks for the pool only for a
+    bigger repo, so the same call would pass there and fork the worker on
+    Linux CI; refusing on every OS fails it on the machine it was written on."""
+    raise RuntimeError("this call reached the analysis pool; its file binds "
+                       "cli_runner(spawn=True)")
 
 
 def _main_path() -> str:

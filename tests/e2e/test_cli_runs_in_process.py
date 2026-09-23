@@ -279,3 +279,36 @@ def test_the_calls_collection_scans_only_what_the_call_made(scoped_repo, no_auto
     assert alive() is not None, "the call's collection reached the worker's own garbage"
     gc.collect()
     assert alive() is None
+
+
+POOLED = """[crapkit]
+target = 6
+
+[[scope]]
+name = "pkg"
+paths = ["pkg"]
+languages = ["python"]
+"""
+
+
+def test_a_call_that_reaches_the_analysis_pool_refuses_on_every_os(tmp_path, monkeypatch):
+    """The analysis pool forks its caller on Linux, which in the worker forks
+    pytest itself. Only a repo past 32 cold files asks for the pool, and on
+    Windows a chunk quantum of 4 keeps that same repo out of it, so a test with
+    a big repo passed there and forked the worker only on Linux CI. The quantum
+    here is Linux's, and the call refuses before anything starts."""
+    import crapkit.resources
+
+    monkeypatch.setattr(crapkit.resources, "default_chunks_per_worker", lambda: 1)
+    (tmp_path / "crapkit.toml").write_text(POOLED, encoding="utf-8")
+    (tmp_path / "pkg").mkdir()
+    for n in range(40):
+        (tmp_path / "pkg" / f"mod{n}.py").write_text(f"def f{n}(x):\n    return x + {n}\n",
+                                                     encoding="utf-8")
+    git_commit_all(git_init_repo(tmp_path), "init")
+
+    done = run_cli(tmp_path, "inventory")
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert ("RuntimeError: this call reached the analysis pool; its file binds "
+            "cli_runner(spawn=True)") in done.stderr
