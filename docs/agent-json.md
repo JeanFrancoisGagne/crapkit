@@ -688,7 +688,11 @@ under their ceiling and rows no lane measures, so it never empties and holds no 
 condition. [`next-item`](#next-item) is the actionable queue: it drops the `no-lane` rows,
 counts them in `skipped_no_lane`, ranks by `crap` descending, and reports `empty` once
 nothing it ranks has work left. Read `flag` and `remedy` on an entry to tell which of its
-rows the queue will hand you: `no-lane` never, `ok` never, anything else next. The two
+rows the queue will hand you: `no-lane` never, `ok` never, anything else next. Both are
+the verdict the run stored, and `next-item` judges `remedy` against the ceiling
+`crapkit.toml` holds now. After a ceiling edit no run has scored yet, `next-item`'s
+`remedy` decides: lower `target` and it can hand out a row this list calls `ok`; raise it
+and a row this list calls `decompose` can leave the queue. The two
 payloads on this page come from one run of one repo: `worklist` leads with `render` at
 risk 3.5, `next-item` hands out `classify` at crap 46.6. Neither is wrong.
 
