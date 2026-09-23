@@ -161,16 +161,19 @@ def test_a_retried_pass_is_new_again_when_it_fails_against_that_run(retry_repo, 
     counted `renders` as failing, so B's failure is new, not forgiven."""
     _junit(retry_repo, FLAKY)
     _rerun(retry_repo, passes=True)
-    first, _, err = verify(retry_repo, capsys)
+    first, out, err = verify(retry_repo, capsys, "--json")
     assert first == 0, err
+    stored_run = json.loads(out)["run_id"]
 
     _junit(retry_repo, FLAKY)
     _rerun(retry_repo, passes=False)
-    code, out, err = verify(retry_repo, capsys)
+    code, out, err = verify(retry_repo, capsys, "--json")
 
+    payload = json.loads(out)
     assert code == 8, out + err
-    assert f"NEW FAILURE  {FLAKY}" in out, out
-    assert "forgiven" not in out, out
+    assert payload["baseline_run"] == stored_run, "B must measure against A, the retried run"
+    assert payload["new_failures"] == [FLAKY]
+    assert payload["forgiven_failures"] == []
 
 
 def test_a_failure_the_stored_run_carried_is_still_forgiven(retry_repo, capsys):
