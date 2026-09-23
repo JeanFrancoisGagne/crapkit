@@ -155,6 +155,19 @@ def test_windows_commands_quote_shell_operators_and_hide_expansion_text(monkeypa
                       "$LASTEXITCODE = 1; & $command.Source 'test-scoped' 'src/a''%VAR%.py'; exit $LASTEXITCODE")
 
 
+def test_windows_commands_escape_a_double_quote_for_powershell_to_pass_on(monkeypatch):
+    """Windows PowerShell 5.1 escapes no quote inside a native argument, so the
+    script carries the C runtime's escapes: a backslash before the quote, and
+    the two backslashes before the closing quote doubled to four."""
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="nt"))
+    encoded = packet.console_command(["explain", "src/cls.py", 'g( s = "a\\\\" )'])
+    prefix = "powershell -NoProfile -NonInteractive -EncodedCommand "
+    assert encoded.startswith(prefix)
+    script = base64.b64decode(encoded.removeprefix(prefix)).decode("utf-16le")
+    assert script.endswith(r"""& $command.Source 'explain' 'src/cls.py' 'g( s = \"a\\\\\" )'; """
+                           "exit $LASTEXITCODE")
+
+
 # --- regrowth: complexity that came back --------------------------------------
 
 def hist(*ccns: int) -> list[dict]:

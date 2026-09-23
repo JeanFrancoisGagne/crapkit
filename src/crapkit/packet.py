@@ -104,13 +104,37 @@ def lane_record(lane) -> dict | None:
             "timeout_seconds": lane.timeout_seconds}
 
 
+def _native_argument(argument: str) -> str:
+    """The argument as Windows PowerShell 5.1 must hold it to hand it on intact.
+
+    5.1 wraps an argument that holds a space in double quotes and escapes none
+    of the quotes inside, so `run( self , mode = "fast" )` reached crapkit cut
+    in two. Each quote carries a backslash, and the backslashes before it
+    double, which is what the C runtime reading crapkit's command line undoes.
+
+    5.1 wraps only on a space that follows an even count of quotes. A handle
+    has such a space, the one lizard prints after `name(`, and a Windows path
+    holds no quote at all.
+    """
+    return re.sub(r'(\\*)"', lambda run: run.group(1) * 2 + '\\"', argument)
+
+
+# How a Windows command opens when its arguments hide inside base64: a reader
+# cannot see which function it names, so a page that prints one says so beside it.
+ENCODED_PREFIX = "powershell -NoProfile -NonInteractive -EncodedCommand "
+
+
 def _windows_encoded(arguments: list[str]) -> str:
     """Cross cmd expansion and PowerShell parsing without exposing path text."""
-    quoted = " ".join("'" + arg.replace("'", "''") + "'" for arg in arguments)
+    quoted = " ".join("'" + _native_argument(arg).replace("'", "''") + "'" for arg in arguments)
     script = ("$command = Get-Command crapkit -CommandType Application -TotalCount 1 -ErrorAction Stop; "
               "$LASTEXITCODE = 1; & $command.Source " + quoted + "; exit $LASTEXITCODE")
     encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-    return "powershell -NoProfile -NonInteractive -EncodedCommand " + encoded
+    return ENCODED_PREFIX + encoded
+
+
+# What cmd.exe or PowerShell rewrites even inside double quotes.
+_INTERPRETED = frozenset('"%!$`\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029')
 
 
 def _windows_argument(argument: str) -> str:
@@ -119,11 +143,22 @@ def _windows_argument(argument: str) -> str:
     return '"' + argument + '"'
 
 
-def _console_command(arguments: list[str]) -> str:
+def console_command(arguments: list[str]) -> str:
+    """One crapkit command line that hands `arguments` over intact.
+
+    POSIX quotes for sh. On Windows the line pastes into cmd.exe and PowerShell
+    alike: a plain argument prints bare, and one holding a space or an operator
+    goes in double quotes, which both shells read. An argument that either
+    shell rewrites even inside double quotes (expansion text, a line break, a
+    double quote of its own) takes the encoded PowerShell form instead.
+    """
     if os.name != "nt":
         return "crapkit " + " ".join(shlex.quote(arg) for arg in arguments)
-    interpreted = set('%!$`\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029')
-    if any(interpreted.intersection(arg) for arg in arguments):
+    return _windows_command(arguments)
+
+
+def _windows_command(arguments: list[str]) -> str:
+    if any(_INTERPRETED.intersection(arg) for arg in arguments):
         return _windows_encoded(arguments)
     return "crapkit " + " ".join(_windows_argument(arg) for arg in arguments)
 
@@ -132,7 +167,7 @@ def _file_command(command: str, path: str, flags=()) -> str:
     arguments = [command, path, *flags]
     if path.startswith("-"):
         arguments = [command, *flags, "--", path]
-    return _console_command(arguments)
+    return console_command(arguments)
 
 
 def commands(path: str, scoped: bool, note: str = "") -> dict:
