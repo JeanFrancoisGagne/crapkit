@@ -160,6 +160,23 @@ class WindowCommits:
         gone = {seq for seq, commit in self.commits.items() if _aged(commit, cutoff)}
         if gone:
             self._drop(gone)
+            self._forget_authors()
+
+    def _forget_authors(self) -> None:
+        """Keep only the names a commit still carries, numbered in commit order
+        the way a fold numbers them. A name whose last commit aged out goes, or
+        a table that is only ever carried keeps every name since its last full
+        rebuild."""
+        ids: dict[int, int] = {}
+        for commit in self.commits.values():
+            ids.setdefault(commit.author, len(ids))
+        if len(ids) < len(self.authors):
+            self._renumber(ids)
+
+    def _renumber(self, ids: dict[int, int]) -> None:
+        self.authors = [self.authors[old] for old in ids]
+        self.commits = {seq: commit._replace(author=ids[commit.author])
+                        for seq, commit in self.commits.items()}
 
     def _drop(self, gone: set[int]) -> None:
         for seq in gone:

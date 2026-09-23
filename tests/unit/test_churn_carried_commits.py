@@ -546,6 +546,25 @@ def test_a_carry_and_an_expiry_in_one_miss_answer_a_cold_rebuild(tmp_path, git, 
     assert git.window_calls == 2
 
 
+def test_an_author_whose_last_commit_aged_out_leaves_the_table(tmp_path, git, monkeypatch):
+    """alice's only commit ages out. Her name must go with it: a table that is
+    only ever carried would otherwise keep every name seen since its last full
+    rebuild. What is left is the table a cold fold of bob's commit writes."""
+    new_day(monkeypatch, "2026-08-21")
+    churn_cache.load_churn(tmp_path, 12)
+    new_day(monkeypatch, "2026-08-22")
+    git.floor = 1000000100
+
+    assert churn_cache.load_churn(tmp_path, 12) == {"src/a.py": FileChurn(1, 1, 1.0)}
+    carried = stored_table(tmp_path)
+    assert carried["authors"] == ["bob"]
+
+    for stale in (tmp_path / ".crapkit").iterdir():
+        stale.unlink()
+    churn_cache.load_churn(tmp_path, 12)
+    assert stored_table(tmp_path) == carried
+
+
 def test_an_empty_window_carries_the_commits_that_arrive(tmp_path, git):
     git.log = []
     assert churn_cache.load_churn(tmp_path, 12) == {}
