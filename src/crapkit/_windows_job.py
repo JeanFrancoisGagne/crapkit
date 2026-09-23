@@ -1,4 +1,4 @@
-"""Own a Windows command tree before its launcher starts the command.
+"""Own a Windows command tree before the suspended command runs any code.
 
 The Job follows descendants after their parent exits. Breakaway is disabled;
 closing the owner's last handle also stops the Job if the owner crashes.
@@ -40,7 +40,7 @@ def _checked(result):
 
 
 class Job:
-    """A registered launcher and all of its descendants, until stop completes."""
+    """A registered command and all of its descendants, until stop completes."""
 
     def __init__(self, pid: int):
         self.kernel = _kernel()

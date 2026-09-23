@@ -151,7 +151,18 @@ def _run(command, streams, owner, kwargs, watch):
 @contextmanager
 def _suspended(command, stdout, stderr, owner, kwargs):
     """Windows: the command starts suspended and runs no code, so it creates no
-    child, until its owner holds it in a Job and resumes it."""
+    child, until its owner holds it in a Job and resumes it.
+
+    One window stays open. A caller killed after Popen and before its owner
+    holds the command leaves the command suspended for good, holding every
+    handle it inherited, where the launcher this replaced exited on stdin EOF.
+    The local owner holds it once the Job assignment returns; a guardian holds
+    it once the add request is written, and stops it on EOF even if the caller
+    dies before the reply. The window includes any wait for the owner's request
+    lock, which another thread can hold through a whole Job stop. Creating the
+    process inside its Job, with PROC_THREAD_ATTRIBUTE_JOB_LIST through a raw
+    CreateProcess, is the known way to close it.
+    """
     registration, kwargs = owner.prepare(kwargs)
     process = subprocess.Popen(command, shell=isinstance(command, str), stdin=subprocess.DEVNULL,
                                stdout=stdout, stderr=stderr, creationflags=_SUSPENDED_GROUP,
@@ -374,6 +385,10 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
     measurement locks until registered command trees stop after a caller crash.
     Without an owner, this call creates one for the command's lifetime. A root
     exit stops remaining descendants before returning, even without a deadline.
+
+    On Windows an exit of 0xC0000142 raises the start failure, a ToolError that
+    is also an OSError, after cleanup. Every other exit code, NTSTATUS codes
+    included, comes back unchanged.
     """
     ownership = own_processes(()) if owner is None else nullcontext(owner)
     out = subprocess.DEVNULL if stream is None else stream
@@ -389,7 +404,10 @@ def run_owned(command: str | list[str], timeout: float | None = None, *, owner=N
     Input is DEVNULL. Output is inherited unless capture_output requests separate
     UTF-8 stdout/stderr strings. Background descendants stop with their command;
     callers wanting a persistent service must launch that service separately.
-    TimeoutExpired and CommandCancelled are raised only after tree cleanup.
+    TimeoutExpired and CommandCancelled are raised only after tree cleanup. So
+    is the start failure, a ToolError that is also an OSError, which a Windows
+    exit of 0xC0000142 raises; every other exit code, NTSTATUS codes included,
+    comes back unchanged as the returncode.
     """
     ownership = own_processes(()) if owner is None else nullcontext(owner)
     with ownership as held, ExitStack() as stack:

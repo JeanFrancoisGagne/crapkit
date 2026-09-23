@@ -1080,8 +1080,17 @@ $ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 ### The kill takes the whole process tree
 
 `command` runs under a shell, so stopping the shell alone can leave the suite running.
-Crapkit registers the launcher before releasing it to start the command. A separate
-owner keeps resource locks until command cleanup finishes, even if the caller dies.
+Crapkit registers the command before it runs any code: Windows starts it suspended and
+resumes it once its Job holds it, and POSIX holds a launcher at a start gate that execs
+the command after registration. A separate owner keeps resource locks until command
+cleanup finishes, even if the caller dies.
+
+One window stays open on Windows. A caller killed after the command starts and before
+crapkit writes the command's add request to its owner leaves the command suspended for
+good, holding every file it inherited, the lane log among them. That hand-over can wait
+behind another command's stop on the same owner. Creating the process inside its Job,
+with `PROC_THREAD_ATTRIBUTE_JOB_LIST` through a raw `CreateProcess`, is the known way to
+close it.
 
 Windows uses a Job that retains descendants after their parent exits. POSIX uses
 the command's process group and keeps its leader unreaped until cleanup completes.
