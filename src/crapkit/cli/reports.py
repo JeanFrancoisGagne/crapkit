@@ -325,10 +325,11 @@ def cmd_explain(args: argparse.Namespace) -> int:
     store = _open_store(root)
     args.path = _repo_relative(args.path, root, _stand(args.repo))  # from where the user stands
     runs = store.list_runs()
-    matches = _explain_selection(store, _selector_run(store, runs, args.path), args.path, args.name)
+    selector = _selector_run(store, runs, args.path)
+    matches = _explain_selection(store, selector, args.path, args.name)
     if not matches:
         raise CrapkitError(f"no function matching {args.name!r} in {args.path} appears in any run")
-    ctx = _explain_ctx(root, cfg, store, args, runs)
+    ctx = _explain_ctx(root, cfg, store, args, runs, selector)
     _print_explain(args, [_explain_payload(ctx, store, args, *match) for match in matches])
     return 0
 
@@ -377,11 +378,15 @@ def _explain_selection(store: SnapshotStore, run_id: int | None, path: str,
     return select(rows, name, store.long_names(path), run_id=run_id)
 
 
-def _explain_ctx(root: Path, cfg, store: SnapshotStore, args, runs: list[dict]) -> _ExplainCtx:
+def _explain_ctx(root: Path, cfg, store: SnapshotStore, args, runs: list[dict],
+                 selector: int | None) -> _ExplainCtx:
+    """The legacy mark proof reads SELECTOR's rows, the run the name was
+    resolved in. The newest run can hold nothing of a file it dropped, and an
+    empty proof covers no file the tree still holds."""
     from ..store import is_rowful
 
     run_id = _newest_id(runs, is_rowful)
-    rows = store.read_positions(run_id, args.path) if run_id is not None else []
+    rows = store.read_positions(selector, args.path) if selector is not None else []
     return _ExplainCtx(root, args.path, run_id,
                        load_uncovered(root, cfg), _ratchet_entries(root, cfg, rows, store),
                        _contexts_for_path(root, cfg, args.path) if args.tests else {})

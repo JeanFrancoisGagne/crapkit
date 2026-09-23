@@ -279,20 +279,17 @@ def _proved_paths(root: Path, proof, marks) -> set:
     """The files whose history the legacy mark proof must cover.
 
     A mark is compared with a row of its own file, so the rows' files come
-    first: check_gate and the commit gate prove the few files they read, and
-    worklist, brief and verify every file their run holds. Two readers compare
-    a mark with a row the proof does not hold. `ratchet prune` moves a mark off
-    a file git renamed, which the working tree no longer has, onto a proved
-    file. And with no rows at all the reader matches marks against another
-    run: explain on a file the newest run dropped. So a marked file the tree
-    lost is proved, and an empty proof proves every marked file. The helper
-    cannot tell that explain from `rescore --gate` on a file with no functions,
-    which compares no mark, so that gate pays the whole proof too, as it did
-    before the proof was narrowed to the rows' files.
+    first: check_gate, the commit gate, explain and brief prove the few files
+    they read, and worklist and verify every file their run holds. One reader
+    compares a mark with a row the proof does not hold: `ratchet prune` moves a
+    mark off a file git renamed, which the working tree no longer has, onto a
+    proved file. So a marked file the tree lost is proved too. explain proves
+    the run it resolved the name in, which holds the file even when the newest
+    run dropped it, so an empty proof names no file the tree still holds.
     """
     paths = {row.path for row in proof}
     marked = {entry.path for entry in marks}
-    return (paths | _lost_files(root, marked - paths)) if paths else marked
+    return paths | _lost_files(root, marked - paths)
 
 
 def _lost_files(root: Path, paths: set) -> set:
