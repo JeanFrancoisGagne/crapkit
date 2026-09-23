@@ -143,8 +143,9 @@ ok   lizard 1.24.0
 doctor: 1 problem(s)
 ```
 
-The probe is memoized on the word, so a repo declaring 14 lanes over 2 runners starts two
-processes, not fourteen.
+The probe runs from the lane's `cwd` with its `env` merged in, the way the lane itself
+starts, and is memoized on the word and that directory and environment, so a repo declaring
+14 lanes over 2 runners from one directory starts two processes, not fourteen.
 
 ---
 
@@ -518,10 +519,11 @@ A lane that reaches `crapkit coverage` with the plugin still missing gets the sa
 the refusal: the package has to land in the environment the SUITE runs in, not in the shell's
 active venv. Before 0.4.12 it read `pip install pytest-cov` and named no environment at all,
 so a reader whose lane ran its own venv installed the package where it changed nothing. The
-refusal binds the install to an interpreter under the same condition the probe uses — the
-lane starts with the word that runs pytest, and that word is a python — so
-`python -m pytest --cov` earns `python -m pip install pytest-cov` while `uv run pytest --cov`
-and `coverage run -m pytest --cov=pylib` name the environment and stop there. Neither `uv`
+refusal binds the install to an interpreter under the same condition the probe uses: the
+step that runs pytest starts with a python. So `python -m pytest --cov` and
+`cd web && python -m pytest --cov` earn `python -m pip install pytest-cov`, while
+`uv run pytest --cov` and `coverage run -m pytest --cov=pylib` name the environment and stop
+there. Neither `uv`
 nor `coverage` has a `-m pip install`, and a reader who runs one gets a second, unrelated
 failure.
 
