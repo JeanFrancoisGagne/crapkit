@@ -9,6 +9,16 @@ writes a worker's basetemp.
 
 A copy differs from a fresh build in two ways, and a fixture that uses one must
 not depend on either: the absolute path the build ran in, and the time it ran.
+
+The path is the staging dir `template` deletes after the rename. The `.crapkit`
+store holds no absolute path, but a lane artifact the build's `coverage` wrote
+(cov.json, cov/unit.json) keys each file by it, and in 7 of the 18 templates
+the copy still holds that artifact. Against a copy, `brief`, `next` and
+`worklist` read the dark lines as unmeasured ("no lane artifact measured
+src/app.ts"), and `--reuse-artifacts` and `--reuse-unchanged` reuse an
+artifact that measures nothing here. A test that reads dark lines or reuses
+artifacts runs `coverage` in its copy first, or builds fresh.
+
 The time is why the build's UTC day is part of the stored name. crapkit keys its
 churn caches on the UTC date, so a tree built before midnight would give a test
 that runs after it caches the CLI throws away, and that test would take a cold

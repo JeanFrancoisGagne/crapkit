@@ -685,7 +685,9 @@ clears tempfile's cached directory for the call. These files do:
 
 A fixture that builds a measured repo builds it once per worker through
 `tests/e2e/repo_templates.py` and hands each test a copy. A test that asserts what a first
-run does gets a fresh build.
+run does gets a fresh build. A copy's lane artifacts still key files by the build's
+staging dir, which is gone, so a test that reads dark lines or reuses artifacts runs
+`coverage` in its copy first, or builds fresh.
 
 ## Where code goes
 

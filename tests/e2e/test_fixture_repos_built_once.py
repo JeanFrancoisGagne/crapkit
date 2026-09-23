@@ -3,8 +3,11 @@
 The copy has to be the build: same files, same `.git`, same `.crapkit`, and
 private to the test that asked. These tests pin that contract on a small real
 repo, and pin the two ways a stored build must not be reused: after a build
-that failed, and on a later UTC day than the one it was built on.
+that failed, and on a later UTC day than the one it was built on. The last test
+pins what a copy does not carry over: a lane artifact keyed by the build's
+deleted staging dir.
 """
+import json
 import subprocess
 from pathlib import Path
 
@@ -145,3 +148,31 @@ def test_a_later_build_lays_over_an_unchanged_copy(tmp_path):
 
     assert (repo / ".crapkit" / "crap.sqlite").read_bytes() == b"scored"
     assert _head(repo) == _head(built)
+
+
+def _dark_lines(repo: Path) -> tuple:
+    import test_report_e2e
+
+    done = test_report_e2e.run_cli(repo, "brief", "src/app.ts", "plain", "--json")
+    assert done.returncode == 0, done.stdout + done.stderr
+    brief = json.loads(done.stdout)
+    return brief["uncovered_lines"], brief.get("uncovered_lines_note")
+
+
+def test_a_copys_lane_artifact_names_the_deleted_build_until_coverage_runs(tmp_path):
+    """The report fixture's lane keys cov.json by the absolute path it ran in,
+    the staging dir template() deletes after the rename. So a copy reads its
+    dark lines as unmeasured, and one `coverage` run in the copy rewrites the
+    artifact and answers what a fresh build does."""
+    import test_report_e2e
+
+    (here,) = _worker(tmp_path, "one")
+    copy = test_report_e2e.scored_repo.__wrapped__(here)
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    test_report_e2e._build_scored_repo(fresh)
+
+    assert _dark_lines(copy) == (None, "no lane artifact measured src/app.ts")
+    assert _dark_lines(fresh) == ([], None)
+    assert test_report_e2e.run_cli(copy, "coverage", "--json").returncode == 0
+    assert _dark_lines(copy) == _dark_lines(fresh)
