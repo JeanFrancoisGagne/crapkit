@@ -40,8 +40,18 @@ def _digest(data: bytes | None) -> str | None:
     return None if data is None else hashlib.sha256(data).hexdigest()
 
 
-def _replace(path: Path, text: str) -> None:
-    handle = NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+def _lf(text: str | None) -> str | None:
+    return None if text is None else text.replace("\r\n", "\n")
+
+
+def _newline(text: str | None) -> str:
+    """The line ending the file on disk already uses. A Windows checkout under
+    core.autocrlf=true holds the marks as CRLF, and git reads them back as LF."""
+    return "\r\n" if text and "\r\n" in text else "\n"
+
+
+def _replace(path: Path, text: str, newline: str) -> None:
+    handle = NamedTemporaryFile(mode="w", encoding="utf-8", newline=newline,
                                 dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False)
     temporary = Path(handle.name)
     try:
@@ -139,10 +149,12 @@ class RatchetFile:
             raise ToolError(f"cannot publish ratchet {self.path.name}: {exc}") from exc
 
     def _publish_locked(self, text: str) -> bool:
+        """A text that differs from the admitted one only in line endings is the
+        same marks, so the file is left alone; a real change keeps its endings."""
         if _digest(_read(self.path)) != self.sha256:
             raise ConfigError(f"ratchet {self.path.name} changed during the command; "
                               "rerun against the current marks; file left unchanged")
-        if text == self.text:
+        if _lf(text) == _lf(self.text):
             return False
-        _replace(self.path, text)
+        _replace(self.path, _lf(text), _newline(self.text))
         return True

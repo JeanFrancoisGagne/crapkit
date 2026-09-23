@@ -392,6 +392,14 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   still lists it and the next start tries again. It used to abort the prune, and with it
   every default development test run and `crapkit clean` before mutation recovery.
 
+### Found installing the release candidate from scratch
+
+- A green verify on a Windows checkout under `core.autocrlf=true` rewrote a CRLF marks
+  file as LF and printed `ratchet: restamped -> git add crapkit-ratchet.tsv` over a diff
+  git showed as empty, and `--json` counted `{"dropped": 0, "tightened": 0}`. A text that
+  differs only in line endings now leaves the file alone, and a real write keeps the
+  file's own line ending.
+
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 
 - The advisory hook honours a ratchet mark written as an encoded record (a path that

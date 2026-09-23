@@ -963,6 +963,38 @@ def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, 
     assert "ratchet:" not in out and "git add" not in out, out
 
 
+def _crlf_marks(repo, *entries: tuple[str, str, float]) -> bytes:
+    """The marks file as a Windows checkout under core.autocrlf=true holds it."""
+    data = dump_ratchet([RatchetEntry(*e) for e in entries], stamp=metric_version(),
+                        key_version=1).replace("\n", "\r\n").encode("utf-8")
+    (repo / MARKS).write_bytes(data)
+    return data
+
+
+def test_a_crlf_checkout_with_nothing_to_move_leaves_the_marks_file_alone(marked_debt, capsys):
+    """Line endings are the checkout's, not the marks': a green run that moved no
+    mark rewrote the file as LF and asked for a `git add` of a diff git showed as
+    empty."""
+    before = _crlf_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0))
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+
+    assert (code, err) == (0, "")
+    assert json.loads(out)["ratchet_changes"] is None
+    assert (marked_debt / MARKS).read_bytes() == before, "the file was rewritten"
+
+
+def test_a_crlf_checkout_keeps_its_line_endings_through_a_tighten(marked_debt, capsys):
+    _crlf_marks(marked_debt, ("src/app.ts", "knotty ( n )", 100.0))
+
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert (code, err) == (0, "")
+    assert "ratchet: 0 dropped, 1 tightened" in out, out
+    data = (marked_debt / MARKS).read_bytes()
+    assert b"knotty ( n )\t16.0000\r\n" in data and data.count(b"\n") == data.count(b"\r\n"), data
+
+
 def test_a_marks_file_written_before_stamping_is_restamped_and_says_so(marked_debt, capsys):
     """The one rewrite that moves no mark: a legacy file gains the stamp line.
     `0 dropped, 0 tightened` explained nothing about the dirty file it left."""
