@@ -1,7 +1,9 @@
 """Shell commands whose completion includes cleanup of their descendants.
 
-A separate owner registers each gated launcher before the command starts.
-Windows Jobs and POSIX process groups retain ownership after the shell exits.
+An owner registers each command before it runs any code. Windows starts the
+command suspended and resumes it once its Job holds it; POSIX holds a launcher
+at a start gate that execs the command after registration. Windows Jobs and
+POSIX process groups retain ownership after the shell exits.
 Completion, timeout and caller death stop the owned group before its resources
 are released. POSIX commands must keep their inherited group; an explicit
 setsid daemon is outside that ownership. Untimed commands have no deadline.
@@ -9,7 +11,7 @@ setsid daemon is outside that ownership. Untimed commands have no deadline.
 from __future__ import annotations
 
 import os
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext, suppress
 import json
 import re
 import shlex
@@ -24,9 +26,6 @@ from .errors import ToolError
 
 __all__ = ["CommandCancelled", "NoProgress", "own_processes", "prepare_template",
            "run_bounded", "run_owned"]
-
-_OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-              if os.name == "nt" else {"start_new_session": True})
 
 # How often the progress watch looks at the stream. Small enough that the kill
 # lands close to the deadline, large enough that watching a two-hour suite costs
@@ -115,10 +114,9 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 
 
 def _close_input(process) -> None:
-    try:
-        process.stdin.close()
-    except OSError:
-        pass
+    if process.stdin is not None:
+        with suppress(OSError):
+            process.stdin.close()
 
 
 # How long a launcher whose input pipe is already dead gets to settle its exit
@@ -126,22 +124,110 @@ def _close_input(process) -> None:
 _LAUNCHER_SETTLE = 2.0
 
 # The code a Windows process exits with when a DLL's initialisation fails,
-# 0xC0000142. Seen at spawn on a loaded machine, before Python reads stdin.
+# 0xC0000142. Seen at spawn on a loaded machine, before the process ran any
+# code of its own.
 _DLL_INIT_FAILED = 3221225794
 
-
-class _LauncherDied(ToolError, OSError):
-    """A ToolError to the lane layer, which fails and retries that one lane.
-    Still an OSError to the doctor and init probes, which read an OSError from
-    run_bounded as a question that could not be put and answer with a finding."""
+# CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED, spelled out so the Windows start
+# can be driven on any platform.
+_SUSPENDED_GROUP = 0x200 | 0x4
 
 
-def _start(owner, process, registration):
-    """Register and release one launcher atomically against cancellation."""
+class _StartFailed(ToolError, OSError):
+    """The command never ran. A ToolError to the lane layer, which fails and
+    retries that one lane. Still an OSError to the doctor and init probes, which
+    read an OSError from run_bounded as a question that could not be put and
+    answer with a finding."""
+
+
+def _run(command, streams, owner, kwargs, watch):
+    """Start one owned command, wait for it and its cleanup, and return its code.
+
+    `streams` are the command's stdout and stderr. `watch` is the deadline, the
+    progress stream and the no-progress limit. None means the deadline passed.
+    """
+    with _START(command, *streams, owner, kwargs) as process:
+        code = _complete_command(process, *watch, owner)
+    _refuse_failed_start(code)
+    return code
+
+
+@contextmanager
+def _suspended(command, stdout, stderr, owner, kwargs):
+    """Windows: the command starts suspended and runs no code, so it creates no
+    child, until its owner holds it in a Job and resumes it."""
+    registration, kwargs = owner.prepare(kwargs)
+    process = subprocess.Popen(command, shell=isinstance(command, str), stdin=subprocess.DEVNULL,
+                               stdout=stdout, stderr=stderr, creationflags=_SUSPENDED_GROUP,
+                               **kwargs)
+    _hand_over(process, owner, registration, _resume, _unowned)
+    yield process
+
+
+def _resume(process):
+    import ctypes
+    status = ctypes.WinDLL("ntdll").NtResumeProcess(ctypes.c_void_p(int(process._handle)))
+    if status:
+        raise OSError(f"NtResumeProcess refused the command: status 0x{status & 0xFFFFFFFF:08X}")
+
+
+def _unowned(process, error: OSError):
+    return _StartFailed(f"command could not start under its owner ({error}), so it never ran")
+
+
+def _refuse_failed_start(code):
+    """A process whose DLL initialisation failed exits 0xC0000142 before its own
+    code runs. The lane layer retries that start instead of reading a result."""
+    if code == _DLL_INIT_FAILED:
+        raise _StartFailed(f"command exited with code {code} (0xC0000142, "
+                           "STATUS_DLL_INIT_FAILED) during process start-up, so its work never ran")
+
+
+@contextmanager
+def _launched(command, stdout, stderr, owner, kwargs):
+    """POSIX: a launcher waits at its start gate until the owner registers it,
+    then execs the command. A private file carries an exec OSError back here,
+    so no exit code needs a sentinel and no unread pipe can block completion."""
+    with tempfile.TemporaryFile() as errors:
+        launcher_stderr, descriptor, merge, passed = _launch_options(errors, stderr)
+        registration, kwargs = owner.prepare({**kwargs, **passed})
+        # The base interpreter with startup hooks off starts nothing before its gate.
+        process = subprocess.Popen([getattr(sys, "_base_executable", sys.executable), "-I", "-S",
+                                    "-c", _OWNED_LAUNCH, json.dumps([command, descriptor, merge])],
+                                   stdin=subprocess.PIPE, stdout=stdout, stderr=launcher_stderr,
+                                   start_new_session=True, **kwargs)
+        _hand_over(process, owner, registration, _release_launcher, _dead_launcher)
+        yield process
+        _raise_launch_error(errors)
+
+
+def _launch_options(errors, stderr):
+    """The launcher's stderr, the payload's error descriptor and merge flag, and
+    the descriptor to pass. A merged command's launcher reports through its own
+    stderr, the error file, and joins the command's stderr to stdout itself."""
+    if stderr == subprocess.STDOUT:
+        return errors, None, True, {}
+    return stderr, errors.fileno(), False, {"pass_fds": (errors.fileno(),)}
+
+
+_START = _suspended if os.name == "nt" else _launched
+
+
+def _hand_over(process, owner, registration, release, refusal):
+    """Register the gated process, then let it run; a failed hand-over kills it."""
     try:
-        owner.register_then(process.pid, lambda: _release_launcher(process), registration)
+        _register(process, owner, registration, release, refusal)
+    except BaseException:
+        _kill_tree(process)
+        _close_input(process)
+        raise
+
+
+def _register(process, owner, registration, release, refusal):
+    try:
+        owner.register_then(process.pid, lambda: release(process), registration)
     except OSError as error:
-        raise _dead_launcher(process, error) from error
+        raise refusal(process, error) from error
 
 
 def _release_launcher(process):
@@ -150,25 +236,21 @@ def _release_launcher(process):
 
 
 def _dead_launcher(process, error: OSError):
-    """The launcher exited before its start gate: registration or the start
-    line failed at the OS level. Windows Job assignment refuses an exited
-    process with access denied; the start line hits EINVAL there, EPIPE on
-    POSIX. Either is one lane's failure, which the lane layer retries, not a
-    crash of the whole run.
+    """The launcher exited before its start gate: the start line hit EPIPE, or
+    registration failed at the OS level. Either is one lane's failure, which
+    the lane layer retries, not a crash of the whole run.
     """
     try:
         code = process.wait(timeout=_LAUNCHER_SETTLE)
     except subprocess.TimeoutExpired:
         code = None
-    return _LauncherDied(f"command launcher {_launcher_fate(code, error)}, so the command never ran")
+    return _StartFailed(f"command launcher {_launcher_fate(code, error)}, so the command never ran")
 
 
 def _launcher_fate(code, error: OSError) -> str:
     if code is None:
         return (f"was still running {_LAUNCHER_SETTLE:g}s after its start gate failed "
                 f"({error})")
-    if code == _DLL_INIT_FAILED:
-        return f"exited with code {code} (0xC0000142, STATUS_DLL_INIT_FAILED) before its start gate"
     return f"exited with code {code} before its start gate"
 
 
@@ -178,9 +260,6 @@ if sys.stdin.buffer.readline() != b'go\\n':
 command, error_descriptor, merge = json.loads(sys.argv[1])
 if error_descriptor is None:
     error_fd = os.dup(2)
-elif os.name == 'nt':
-    import msvcrt
-    error_fd = msvcrt.open_osfhandle(error_descriptor, os.O_WRONLY)
 else:
     error_fd = error_descriptor
 os.set_inheritable(error_fd, False)
@@ -188,39 +267,15 @@ with os.fdopen(error_fd, 'w', encoding='utf-8') as errors:
     if merge:
         os.dup2(1, 2)
     try:
-        if os.name != 'nt':
-            with open(os.devnull, 'rb') as source:
-                os.dup2(source.fileno(), 0)
-            if isinstance(command, str):
-                os.execl('/bin/sh', '/bin/sh', '-c', command)
-            os.execvp(command[0], command)
-        import subprocess
-        code = subprocess.call(command, shell=isinstance(command, str), stdin=subprocess.DEVNULL)
+        with open(os.devnull, 'rb') as source:
+            os.dup2(source.fileno(), 0)
+        if isinstance(command, str):
+            os.execl('/bin/sh', '/bin/sh', '-c', command)
+        os.execvp(command[0], command)
     except OSError as error:
-        json.dump([error.errno, error.strerror, error.filename,
-                   getattr(error, 'winerror', None), error.filename2], errors)
-        code = 1
-raise SystemExit(code)
+        json.dump([error.errno, error.strerror, error.filename, None, error.filename2], errors)
+raise SystemExit(1)
 """
-
-
-def _spawn(command, out, errors, owner, kwargs, *, error_descriptor=None, merge=True) -> subprocess.Popen:
-    # A Windows venv executable redirects into another process before Python
-    # reaches the start gate. Use the base interpreter with startup hooks off,
-    # so Job assignment precedes every child the launcher can create.
-    launcher = getattr(sys, "_base_executable", sys.executable)
-    payload = json.dumps([command, error_descriptor, merge])
-    registration, kwargs = owner.prepare(kwargs)
-    process = subprocess.Popen([launcher, "-I", "-S", "-c", _OWNED_LAUNCH, payload],
-                               stdin=subprocess.PIPE, stdout=out, stderr=errors,
-                               **_OWN_GROUP, **kwargs)
-    try:
-        _start(owner, process, registration)
-        return process
-    except BaseException:
-        _kill_tree(process)
-        _close_input(process)
-        raise
 
 
 def _stream_size(stream: IO | None) -> int:
@@ -291,19 +346,10 @@ def run_bounded(command: str, timeout: float | None, *, stream: IO | None = None
     exit stops remaining descendants before returning, even without a deadline.
     """
     ownership = own_processes(()) if owner is None else nullcontext(owner)
-    with ownership as held:
-        return _run_owned(command, timeout, stream, no_progress, held, popen_kwargs)
-
-
-def _run_owned(command, timeout, stream, no_progress, owner, popen_kwargs):
     out = subprocess.DEVNULL if stream is None else stream
-    # A private file carries launch errors without an exit-code sentinel or a
-    # pipe whose unread payload could block command completion.
-    with tempfile.TemporaryFile() as errors:
-        proc = _spawn(command, out, errors, owner, popen_kwargs)
-        code = _complete_command(proc, timeout, stream, no_progress, owner)
-        _raise_launch_error(errors)
-        return code
+    with ownership as held:
+        return _run(command, (out, subprocess.STDOUT), held, popen_kwargs,
+                    (timeout, stream, no_progress))
 
 
 def run_owned(command: str | list[str], timeout: float | None = None, *, owner=None,
@@ -318,8 +364,9 @@ def run_owned(command: str | list[str], timeout: float | None = None, *, owner=N
     ownership = own_processes(()) if owner is None else nullcontext(owner)
     with ownership as held, ExitStack() as stack:
         output = _capture_streams(stack, capture_output)
-        errors = stack.enter_context(tempfile.TemporaryFile())
-        code = _owned_status(command, timeout, held, output, errors, {"cwd": cwd, "env": env})
+        code = _run(command, output, held, {"cwd": cwd, "env": env}, (timeout, None, None))
+        if code is None:
+            raise subprocess.TimeoutExpired(command, timeout)
         return subprocess.CompletedProcess(command, code, *map(_captured_text, output))
 
 
@@ -336,36 +383,7 @@ def _captured_text(stream):
     return stream.read().decode("utf-8").replace("\r\n", "\n")
 
 
-def _owned_status(command, timeout, owner, output, errors, kwargs):
-    with _error_transport(errors) as (descriptor, transport):
-        proc = _spawn(command, *output, owner, {**kwargs, **transport},
-                      error_descriptor=descriptor, merge=False)
-    code = _complete_command(proc, timeout, None, None, owner)
-    _raise_launch_error(errors)
-    if code is None:
-        raise subprocess.TimeoutExpired(command, timeout)
-    return code
-
-
-@contextmanager
-def _error_transport(stream):
-    if os.name != "nt":
-        yield stream.fileno(), {"pass_fds": (stream.fileno(),)}
-        return
-    import msvcrt
-    descriptor = os.dup(stream.fileno())
-    try:
-        os.set_inheritable(descriptor, True)
-        handle = msvcrt.get_osfhandle(descriptor)
-        startup = subprocess.STARTUPINFO()
-        startup.lpAttributeList = {"handle_list": [handle]}
-        yield handle, {"startupinfo": startup}
-    finally:
-        os.close(descriptor)
-
-
 def _raise_launch_error(errors):
-    from .errors import ToolError
     errors.seek(0)
     payload = errors.read()
     if not payload:

@@ -6,6 +6,10 @@ The "go" line then hit a dead pipe, the OSError climbed out of the coverage
 command as a traceback, and one dead launcher killed a run whose other lanes
 were fine. The lane layer already retries a ToolError from run_bounded; an
 OSError it does not know.
+
+Windows now starts the command itself suspended, and that exit code is its
+retry trigger (test_suspended_start.py). The start-gate launcher is POSIX's;
+these tests fake Popen and drive it on every platform.
 """
 import sys
 from contextlib import nullcontext
@@ -16,12 +20,17 @@ import pytest
 from crapkit import procs
 from crapkit.errors import ToolError
 
-DLL_INIT_FAILED = 3221225794
+KILLED = -9
+
+
+@pytest.fixture(autouse=True)
+def launcher_start(monkeypatch):
+    monkeypatch.setattr(procs, "_START", procs._launched)
 
 
 class _DeadPipe:
     """The launcher's stdin after the launcher has gone: the write or the flush
-    reaches nobody. Windows reports EINVAL there; POSIX reports EPIPE."""
+    reaches nobody and reports EPIPE."""
 
     def __init__(self, fails_on: str, error: OSError):
         self.fails_on = fails_on
@@ -81,13 +90,13 @@ class _RecordingOwner:
         pass
 
 
-# Windows registers the bare pid; POSIX registers it with its process family.
+# The registration is opaque to procs: none, or a POSIX process family.
 _REGISTRATIONS = pytest.mark.parametrize("family", [None, "crapkit-family-4242"],
-                                         ids=["windows-bare-pid", "posix-family"])
+                                         ids=["no-family", "posix-family"])
 
 
 def _dead_at_spawn(monkeypatch, code, fails_on="flush", error=None):
-    error = OSError(22, "Invalid argument") if error is None else error
+    error = BrokenPipeError(32, "Broken pipe") if error is None else error
     launcher = _DeadLauncher(code, _DeadPipe(fails_on, error))
     monkeypatch.setattr(procs.subprocess, "Popen", lambda *args, **kwargs: launcher)
     # The tree kill would otherwise taskkill/killpg a pid that is not ours.
@@ -95,42 +104,25 @@ def _dead_at_spawn(monkeypatch, code, fails_on="flush", error=None):
     return launcher
 
 
-@pytest.mark.parametrize("fails_on, error", [
-    ("flush", OSError(22, "Invalid argument")),
-    ("write", BrokenPipeError(32, "Broken pipe")),
-], ids=["windows-einval-on-flush", "posix-epipe-on-write"])
-def test_run_bounded_names_the_dll_init_failure_as_a_tool_error(monkeypatch, fails_on, error):
-    _dead_at_spawn(monkeypatch, DLL_INIT_FAILED, fails_on, error)
+@pytest.mark.parametrize("fails_on", ["flush", "write"])
+def test_run_bounded_names_the_dead_launcher_as_a_tool_error(monkeypatch, fails_on):
+    _dead_at_spawn(monkeypatch, KILLED, fails_on)
     with pytest.raises(ToolError) as caught:
         procs.run_bounded("unused", 10, owner=_RecordingOwner())
+    assert isinstance(caught.value, OSError)
     message = str(caught.value)
-    assert "3221225794" in message
-    assert "0xC0000142" in message
-    assert "STATUS_DLL_INIT_FAILED" in message
-    assert "before its start gate" in message
+    assert "exited with code -9 before its start gate" in message
     assert "never ran" in message
+    assert "0x" not in message
 
 
-def test_run_owned_names_the_dll_init_failure_as_a_tool_error(monkeypatch):
-    _dead_at_spawn(monkeypatch, DLL_INIT_FAILED)
+def test_run_owned_names_the_dead_launcher_as_a_tool_error(monkeypatch):
+    _dead_at_spawn(monkeypatch, KILLED)
     with pytest.raises(ToolError) as caught:
         procs.run_owned(["unused"], 10, owner=_RecordingOwner(), capture_output=True)
     message = str(caught.value)
-    assert "3221225794" in message
-    assert "0xC0000142" in message
-    assert "STATUS_DLL_INIT_FAILED" in message
+    assert "exited with code -9 before its start gate" in message
     assert "never ran" in message
-
-
-def test_another_exit_code_is_named_in_decimal_without_the_windows_status(monkeypatch):
-    _dead_at_spawn(monkeypatch, 7)
-    with pytest.raises(ToolError) as caught:
-        procs.run_bounded("unused", 10, owner=_RecordingOwner())
-    message = str(caught.value)
-    assert "exited with code 7 " in message
-    assert "0x" not in message
-    assert "STATUS_DLL_INIT_FAILED" not in message
-    assert "before its start gate" in message
 
 
 def test_a_launcher_still_running_behind_a_dead_pipe_is_reported_as_running(monkeypatch):
@@ -153,7 +145,7 @@ def test_a_launcher_still_running_behind_a_dead_pipe_is_reported_as_running(monk
 
 @_REGISTRATIONS
 def test_the_spawn_cleanup_still_kills_the_tree_and_closes_the_pipe(monkeypatch, family):
-    launcher = _dead_at_spawn(monkeypatch, DLL_INIT_FAILED)
+    launcher = _dead_at_spawn(monkeypatch, KILLED)
     owner = _RecordingOwner(family)
     with pytest.raises(ToolError):
         procs.run_bounded("unused", 10, owner=owner)
@@ -166,8 +158,7 @@ def test_the_spawn_cleanup_still_kills_the_tree_and_closes_the_pipe(monkeypatch,
 
 
 class _RefusingOwner(_RecordingOwner):
-    """A Windows Job refuses an already-exited launcher with access denied,
-    one step before the start line is written."""
+    """Registration fails at the OS level one step before the start line."""
 
     def register_then(self, pid, release, registration=None):
         self.registered.append((pid, registration))
@@ -176,13 +167,12 @@ class _RefusingOwner(_RecordingOwner):
 
 @_REGISTRATIONS
 def test_a_launcher_gone_before_registration_is_the_same_tool_error(monkeypatch, family):
-    launcher = _dead_at_spawn(monkeypatch, DLL_INIT_FAILED)
+    launcher = _dead_at_spawn(monkeypatch, KILLED)
     owner = _RefusingOwner(family)
     with pytest.raises(ToolError) as caught:
         procs.run_bounded("unused", 10, owner=owner)
     message = str(caught.value)
-    assert "3221225794" in message
-    assert "STATUS_DLL_INIT_FAILED" in message
+    assert "exited with code -9 before its start gate" in message
     assert "never ran" in message
     assert owner.registered == [(launcher.pid, family)]
     assert launcher.killed == [launcher.pid]
@@ -195,7 +185,7 @@ def test_a_launcher_gone_before_registration_is_the_same_tool_error(monkeypatch,
 # the lane layer reads the same failure as a ToolError.
 
 def _probes_meet_a_dead_launcher(monkeypatch):
-    _dead_at_spawn(monkeypatch, DLL_INIT_FAILED)
+    _dead_at_spawn(monkeypatch, KILLED)
     # The probes pass no owner, so run_bounded builds one; hand it the recording one.
     monkeypatch.setattr(procs, "own_processes", lambda paths: nullcontext(_RecordingOwner()))
 

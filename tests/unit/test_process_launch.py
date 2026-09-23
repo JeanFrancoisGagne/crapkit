@@ -47,6 +47,7 @@ def test_shell_launch_os_error_reaches_caller_after_cleanup(tmp_path, monkeypatc
     assert owned.value.filename == direct.value.filename
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows starts the command itself, with no launcher")
 def test_unexpected_launcher_failure_is_a_tool_error(monkeypatch):
     monkeypatch.setattr(procs, "_OWNED_LAUNCH", "import sys; sys.stdin.buffer.readline(); "
                         "raise RuntimeError('launcher startup failed')")
