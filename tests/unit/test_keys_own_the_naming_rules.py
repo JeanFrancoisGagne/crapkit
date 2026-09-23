@@ -135,3 +135,19 @@ def test_nothing_selected_is_an_empty_list_for_the_caller_to_word():
     assert keys.select(TWINS, "(anonymous)#1") == []
     assert keys.select(TWINS, "nope") == []
     assert keys.select([], "__post_init__") == []
+
+
+# --- brief words its own misses -------------------------------------------------
+
+def test_brief_lists_the_lines_that_do_open_a_function_when_a_line_opens_none():
+    """The transcript docs/agent-json.md quotes for `brief calc/grade.py 12`."""
+    from crapkit.cli.queue import _pick_function
+
+    rows = [scored("classify( score )", 1, 9.0)._replace(path="calc/grade.py"),
+            scored("summarize( rows )", 24, 9.0)._replace(path="calc/grade.py")]
+
+    with pytest.raises(CrapkitError) as err:
+        _pick_function("calc/grade.py", rows, "12")
+
+    assert str(err.value) == ("no function starts at line 12 in calc/grade.py in the latest "
+                              "scored run — it starts functions at: 1, 24")
