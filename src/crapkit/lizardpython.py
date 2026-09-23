@@ -33,8 +33,8 @@ The fix, and what it keeps
 signature only at a `:` at depth 0, after the parameter list and after any
 return annotation. `PythonSignatureReader.preprocess` sets no nesting while the
 states are inside a signature, so the body's first line is the one that pushes
-the def. A body on the colon line (`) -> None: ...`) is the one exception,
-kept as lizard reads it: see `_SignatureIndents`.
+the def. A body on the colon line (`) -> None: ...`) pushes no line: see "A
+body on the colon line" below.
 
 From the def's `(` on, every token still reaches the long name and the
 parameter list exactly as lizard routes it. lizard stops both at the
@@ -77,11 +77,24 @@ four deep `a.a.b.a.a.b.c.d`. `_name_under_parent` qualifies the def by its
 innermost enclosing def alone: `a.b.c`. A class adds nothing to the name, as
 under lizard.
 
-What this leaves as lizard reads it: a def whose body sits on its colon line
-(`def g(self): pass`) and whose signature pushed no level is never listed and
-stays pending on the nesting stack, so the next def pushed deeper carries its
-name: `test_autospec.g.a( self )` for a method `a` of a class declared after
-`g`.
+A body on the colon line
+------------------------
+lizard lists a def when a later line pushes a nesting level for it, and
+`def g(self): pass` pushes none unless a line of its signature did. Such a def
+is never listed and stays pending on the nesting stack: the lines after it at
+its own indent are charged to it, so an enclosing def loses its own `if`, and
+the next line indented deeper pushes it, so a later def carries its name,
+`test_autospec.g.a( self )` for a method `a` of a class declared after `g`.
+Measured before the fix over 5,746 stdlib, site-packages and application files:
+ast finds 1,826 such defs, lizard left 1,392 of them unlisted, and 213 later
+defs carried a one-line def's name.
+
+`_SignatureIndents` ends such a def with the logical line that holds its body:
+at the first newline outside brackets, or at the end of the file. A line inside
+the body's brackets sets no nesting. The def is then listed as the same def with
+its body on the next line is, one line shorter: `def f(): ...` reads `f( )` at
+ccn 1 over one line, an `@overload` stub on one line takes its twin key as a
+two-line stub does, and the lines after it go back to its parent.
 
 The class name
 --------------
@@ -100,12 +113,13 @@ too.
 
 Retirement
 ----------
-Three tests in tests/unit/test_lizardpython.py pin the stock reader's wrong
+Four tests in tests/unit/test_lizardpython.py pin the stock reader's wrong
 answers: test_stock_reader_still_cuts_the_issue_def_off for #72,
-test_stock_reader_still_names_a_generic_def_after_a_bracket for PEP 695, and
-test_stock_reader_still_repeats_the_outer_names_three_deep for nested names.
-Each fails on the lizard release that fixes its part. Delete this module, with
-the `register()` call, once all three fail; while one still passes, the
+test_stock_reader_still_names_a_generic_def_after_a_bracket for PEP 695,
+test_stock_reader_still_repeats_the_outer_names_three_deep for nested names, and
+test_stock_reader_still_leaves_a_one_line_def_pending for a body on the colon
+line. Each fails on the lizard release that fixes its part. Delete this module,
+with the `register()` call, once all four fail; while one still passes, the
 override for that part stays.
 """
 from __future__ import annotations
@@ -234,11 +248,14 @@ class _SignatureIndents(PythonIndents):
     what happens to it depends on where the body starts:
 
       * on the next line: dropped, and the body's first line pushes the def
-      * on the colon line (`) -> None: ...`): pushed at the body's first token,
-        so the def ends where lizard ends it, at the next line indented no
-        deeper. lizard lists a def of that shape only when its signature pushed
-        a level, and lists no def written `def f(x): return x` at all; this
-        keeps both answers.
+      * on the colon line (`) -> None: ...`, `def f(x): return x`): dropped,
+        and the def ends with the logical line that holds its body. See "A body
+        on the colon line" above.
+
+    `after_signature` says the last code token was read inside a signature, so
+    a code token that is not is the first of a body on the colon line.
+    `body_depth` counts that body's brackets and is None outside one: its
+    lines inside brackets set no nesting, and a newline at depth 0 ends it.
     """
 
     def __init__(self, context, states):
@@ -247,18 +264,28 @@ class _SignatureIndents(PythonIndents):
         self.spaces = 0
         self.leading = True
         self.held = None
+        self.after_signature = False
+        self.body_depth = None
 
     def see(self, token: str) -> None:
         if token == "\n":
             self._line_ends()
         elif self.leading:
             self._leading(token)
-        elif self.held is not None:
-            self._after_signature(token)
+        elif not (token.isspace() or token.startswith("#")):
+            self._code(token)
+
+    def reset(self) -> None:
+        if self.body_depth is not None:  # the file ends on a body on its colon line
+            self._end_body()
+        super().reset()
 
     def _line_ends(self) -> None:
         self.spaces, self.leading = 0, True
-        if not self.states.in_signature:
+        if self.body_depth == 0:
+            self._end_body()
+        self.after_signature = self.states.in_signature
+        if not self.after_signature:
             self.held = None
 
     def _leading(self, token: str) -> None:
@@ -266,22 +293,38 @@ class _SignatureIndents(PythonIndents):
             self.spaces += count_spaces(token)
             return
         self.leading = False
-        if token.startswith("#"):
-            return
+        if not token.startswith("#"):
+            self._line_starts(token)
+
+    def _line_starts(self, token: str) -> None:
+        """A line's first code token: held in a signature, no nesting inside a body on its colon line."""
         if self.states.in_signature:
             self._hold()
-        elif self._lizard_sets_nesting():
+        elif self.body_depth is None and self._lizard_sets_nesting():
             self.set_nesting(self.spaces, token)
+        self._code(token)
 
     def _hold(self) -> None:
         if self.held is None and self._lizard_sets_nesting() and self.spaces > self.indents[-1]:
             self.held = self.spaces
 
-    def _after_signature(self, token: str) -> None:
-        if self.states.in_signature or token.isspace() or token.startswith("#"):
-            return
-        self.set_nesting(self.held, token)
-        self.held = None
+    def _code(self, token: str) -> None:
+        in_signature = self.states.in_signature
+        if self.body_depth is not None:
+            self.body_depth += _depth_change(token)
+        elif self.after_signature and not in_signature:
+            self.held, self.body_depth = None, _depth_change(token)
+        self.after_signature = in_signature
+
+    def _end_body(self) -> None:
+        """End the def whose body sat on its colon line, as a dedent past it would.
+
+        The def is still pending on lizard's nesting stack: pushing it and
+        popping it lists it and hands the lines after it back to its parent.
+        """
+        self.body_depth = None
+        self.context.add_bare_nesting()
+        self.context.pop_nesting()
 
     def _lizard_sets_nesting(self) -> bool:
         function = self.context.current_function

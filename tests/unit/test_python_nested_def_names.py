@@ -21,9 +21,8 @@ def _read(source: str):
 THREE_DEEP = ("def a(x):\n    def b(y):\n        def c(z):\n            if z:\n                return 1\n"
               "            return 2\n        return c\n    return b\n")
 
-# The decorator factory the three-deep case came from. The second stub (lines
-# 12-14) is not listed: lizard lists no def whose body sits on its colon line
-# unless its signature pushed a nesting level, and this reader keeps that.
+# The decorator factory the three-deep case came from. Both stubs keep their
+# body on the colon line and end there; neither lends its name to the factory.
 STUB_THEN_FACTORY = '''def require_admin(
     _func: None = None,
     *,
@@ -73,6 +72,7 @@ SHAPES = [
      [("a.b.c( z : T )", 3, 4, 1), ("a.b( y )", 2, 5, 1), ("a( x )", 1, 6, 1)]),
     ("a decorator factory after an overload stub", STUB_THEN_FACTORY,
      [("require_admin( _func : None = None , * , permission : str | None = None , )", 1, 8, 1),
+      ("require_admin( _func : int , )", 12, 14, 1),
       ("require_admin.decorator.with_admin( self )", 19, 22, 2),
       ("require_admin.decorator( func )", 18, 23, 1),
       ("require_admin( a )", 17, 24, 1)]),

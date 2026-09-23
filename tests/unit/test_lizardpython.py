@@ -16,9 +16,11 @@ test_stock_reader_still_cuts_the_issue_def_off is the retirement signal: it
 fails on the lizard release that reads these signatures.
 test_stock_reader_still_names_a_generic_def_after_a_bracket is the same signal
 for PEP 695 type parameter lists (tests/unit/test_python_type_parameters.py),
-and test_stock_reader_still_repeats_the_outer_names_three_deep for the name of a
-def nested three deep (tests/unit/test_python_nested_def_names.py).
-src/crapkit/lizardpython.py goes, with its register() call, once all three fail.
+test_stock_reader_still_repeats_the_outer_names_three_deep for the name of a
+def nested three deep (tests/unit/test_python_nested_def_names.py), and
+test_stock_reader_still_leaves_a_one_line_def_pending for a def whose body sits
+on its colon line (tests/unit/test_python_one_line_defs.py).
+src/crapkit/lizardpython.py goes, with its register() call, once all four fail.
 """
 import ast
 
@@ -131,6 +133,19 @@ def test_stock_reader_still_repeats_the_outer_names_three_deep():
     assert [f.name for f in stock.function_list] == ["a.a.b.c", "a.b", "a"]
 
 
+def test_stock_reader_still_leaves_a_one_line_def_pending():
+    """The one-line half, pinned: `def f(x): return x` is not ended with its
+    line, so the class body after it pushes `f`, which then spans lines 1-4
+    and names the method `f.g`. Fails the day lizard ends that def with its line."""
+    lizard_languages.PythonReader = StockPythonReader
+    try:
+        stock = lizard.analyze_file.analyze_source_code(
+            "oneline.py", "def f(x): return x\nclass A:\n    def g(self):\n        return 1\n")
+    finally:
+        register()
+    assert [(f.name, f.start_line, f.end_line) for f in stock.function_list] == [("f.g", 3, 4), ("f", 1, 4)]
+
+
 # --- slice 2: the shapes lizard cut off read their whole span and real ccn ----------
 
 # long_name keeps lizard's spelling, which stops at the signature's first ')'
@@ -194,8 +209,6 @@ def test_a_signature_lizard_cut_off_reads_its_whole_span_and_real_ccn(name, sour
 WHOLE = [
     ("signature on one line", "def g(a, b):\n" + BODY,
      [("g( a , b )", 1, 7, 4, 7, 2)]),
-    # lizard lists no one-line def at all, and neither does the corrected reader.
-    ("one-line def", "def g(x): return x\n", []),
     ("exploded parameters with a trailing comma",
      'def g(\n    a: int,\n    b: str = "",\n) -> bool:\n' + BODY,
      [('g( a : int , b : str = "" , )', 1, 10, 4, 10, 2)]),
@@ -222,18 +235,15 @@ WHOLE = [
     ("exploded parameters with a call default",
      "def g(\n    a=frozenset(),\n    b=1,\n):\n" + BODY,
      [("g( a = frozenset ( )", 1, 10, 4, 10, 1)]),
-    # A stub on the colon line is listed only when a signature line after the
-    # first ')' pushed a nesting level, as lizard lists it.
+    # lizard lists a stub on the colon line when a signature line after the
+    # first ')' pushed a nesting level. Without that push it lists none, and
+    # tests/unit/test_python_one_line_defs.py holds what this reader lists.
     ("exploded parameters with a parenthesized annotation, body on the colon line",
      "class R:\n    def __init__(\n        self,\n        expected: (\n            type[E] | tuple[type[E], ...]\n"
      "        ),\n        /,\n        *,\n        match: str | None = ...,\n    ) -> None: ...\n\n"
      "    def other(self):\n        return 1\n",
      [("__init__( self , expected : ( type [ E ] | tuple [ type [ E ] , ... ] )", 2, 10, 1, 9, 2),
       ("other( self )", 12, 13, 1, 2, 1)]),
-    ("exploded parameters, body on the colon line",
-     "class S:\n    def __init__(\n        self,\n        match: str | None,\n    ) -> None: ...\n\n"
-     "    def other(self):\n        return 1\n",
-     [("other( self )", 7, 8, 1, 2, 1)]),
 ]
 
 
