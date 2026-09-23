@@ -31,10 +31,9 @@ python -m pytest tests/e2e -n 8 -p no:randomly --dist worksteal
 `[tool.pytest.ini_options]` in pyproject.toml sets `testpaths = ["tests"]` and
 `addopts = "-q --tb=short -p no:cacheprovider"`. The shared runner runs `tests/unit`
 with four workers and `tests/e2e` with eight workers. Use `--unit-workers 1` on the
-shared runner to reproduce a unit failure serially, and `--suite unit` or
-`--suite e2e` to run one session, the way each Windows CI job does. Each worker
-has its own Python process and test directories. Both suites disable a globally
-installed pytest-randomly plugin.
+shared runner to reproduce a unit failure serially. Each worker has its own Python
+process and test directories. Both suites disable a globally installed
+pytest-randomly plugin.
 
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
 measurements, configured test contexts and JUnit results. Every direct run retains its
@@ -132,23 +131,19 @@ functions your diff touched, and checks that no ratchet mark rose and no test th
 in the baseline fails now. CI also runs the event-base hook and a complete verdict
 against separate base and candidate wheel installations.
 
-**In CI** (`.github/workflows/ci.yml`), five jobs. A newer push to a pull request cancels the run it replaces; every push to main runs to the end.
+**In CI** (`.github/workflows/ci.yml`), four jobs:
 
 | Job | Runs | What fails the job |
 |---|---|---|
-| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu job runs both suites; each Windows suite is a job of its own. | A test failure. |
-| `verdict-measure` | One job per side: `python tools/testing/ci.py --base "$BASE_REF" --measure base` or `--measure candidate` builds and verifies that side's wheel, measures both suites and uploads the coverage evidence, the wheel and its proof. | A build, install or provenance failure. A failing suite still uploads; the join judges it. |
-| `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
+| `test` | Editable dev install, console-script check and `python tools/testing/run.py` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows. Ubuntu/Python 3.12 also runs `hook-precommit --base "$BASE_REF"`. | A test failure or event-base complexity breach. |
+| `verdict` | `python tools/testing/ci.py --base "$BASE_REF"` builds and verifies separate base/candidate wheels, measures both suites, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
-| `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
+| `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit. | Action execution errors. Its `gate: false` setting leaves score enforcement to `verdict`. |
 
-Both verdict jobs check installed source bytes: a measurement before mapping
-coverage paths, the join before an uploaded measurement stands for its revision.
-The join compares its JSON verdict with the actual run ledger. Each measurement
-uploads its hand-off from `.crapkit/ci-measure/<side>`, and one that stops before
-the hand-off uploads `failure.json` there, naming the phase it reached and the
-error. The join's evidence is uploaded from `.crapkit/ci-verdict`. Repository
-branch protection controls which checks are required for merging.
+The verdict job checks installed source bytes before mapping coverage paths and
+compares its JSON verdict with the actual run ledger. Its evidence is uploaded
+from `.crapkit/ci-verdict`. Repository branch protection controls which checks
+are required for merging.
 
 An older baseline can have existing test failures. CI keeps its exit code,
 failed test IDs and counts, and requires complete JUnit evidence from both
