@@ -611,18 +611,18 @@ def _refuse_missing(root: Path, rel_paths: list) -> None:
 
 def _rescore_analyze(root: Path, cfg, files, cwd: Path | None = None) -> tuple[list, list, dict]:
     """Fresh complexity for the named files, said from `cwd` where the user
-    stands; the shared cache is merged, never truncated."""
+    stands. A commit's worth of files leaves the shared cache alone; more are
+    merged into it, never truncated."""
     from ..hook import file_ceilings
 
     rel_paths = sorted({_repo_relative(p, root, cwd) for p in files})
     _refuse_missing(root, rel_paths)
     files_by_scope = assign_files(rel_paths, cfg, size_of=_file_sizer(root))
-    flat = sorted(set().union(*files_by_scope.values())) if files_by_scope else []
+    flat = _tracked_files(files_by_scope)
     records_by_path = _rescored_records(root, root / ".crapkit" / "cache.json", flat,
                                         _analysis_workers(cfg), cfg.analysis_worker_budget)
-    by_scope = {scope: [r for f in scope_files for r in records_by_path[f]]
-                for scope, scope_files in files_by_scope.items()}
-    return build_inventory_rows(by_scope), flat, file_ceilings(cfg, files_by_scope, flat)
+    rows = build_inventory_rows(_records_by_scope(files_by_scope, records_by_path))
+    return rows, flat, file_ceilings(cfg, files_by_scope, flat)
 
 
 def _baseline_rows(store: SnapshotStore, run_id: int, flat: list) -> list:
