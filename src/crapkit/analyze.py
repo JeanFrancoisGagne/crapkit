@@ -168,11 +168,12 @@ class _CreationOrder:
 # `:` at bracket depth 0 with a token after it; one cut off in its signature has
 # not. A def the reader still cannot finish is refused, never scored at ccn 1.
 #
-# The net counts from the `def` keyword, a token no reader renames, and reads
-# nothing lizardpython decides. It has to hold under lizard's stock reader too,
-# which is what runs once that module retires: that reader names a PEP 695 def
-# after the `]` or `:` before its `(`, so a count started at the function's
-# first token began at depth -1 or on a colon.
+# The net counts from the `def` keyword, a token no reader renames, so where it
+# starts does not depend on how the reader names the def. It has to hold under
+# lizard's stock reader too, which is what runs once crapkit.lizardpython
+# retires: that reader names a PEP 695 def after the `]` or `:` before its `(`,
+# so a count started at the function's first token began at depth -1 or on a
+# colon.
 _DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 

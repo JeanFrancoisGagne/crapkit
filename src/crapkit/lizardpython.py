@@ -132,9 +132,10 @@ class PythonSignatureStates(PythonStates):
     """lizard's PythonStates, reading a signature to the colon at bracket depth 0.
 
     `depth` counts the brackets open since the def's own `(`, and before
-    that since the `[` of a type parameter list. The inherited
-    states keep every decision about the long name and the parameter list;
-    these overrides only choose where a state goes next.
+    that since the `[` of a type parameter list. The inherited states keep
+    every decision about the long name and the parameter list; these
+    overrides choose where a state goes next, and keep a type parameter list
+    out of the name.
     """
 
     def __init__(self, context, reader):
