@@ -141,7 +141,7 @@ def test_current_run_records_reader_proof_and_allows_precise_arrow_claims(tmp_pa
     assert first != second
     store = SnapshotStore(tmp_path / '.crapkit/crap.sqlite')
     with closing(store._conn):
-        assert store.list_runs()[-1]['tool_versions']['analysis_version'] == '10'
+        assert store.list_runs()[-1]['tool_versions']['analysis_version'] == str(analyze.ANALYSIS_VERSION)
         assert [claim['key_version'] for claim in store.open_claims()] == [1, 1]
 
 
