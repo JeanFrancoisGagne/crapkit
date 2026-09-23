@@ -275,14 +275,29 @@ def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _identity_history(root: Path, store, proof) -> set:
-    """Collision groups any stored run held, in the files the proof rows cover.
+def _proved_paths(root: Path, proof, marks) -> set:
+    """The files whose history the legacy mark proof must cover.
 
-    The paths come from the rows being proved, so check_gate, explain and the
-    commit gate prove the few files they read off the path index, and worklist,
-    brief and verify, whose rows are a whole run, prove every file it holds.
+    A mark is compared with a row of its own file, so the rows' files come
+    first: check_gate and the commit gate prove the few files they read, and
+    worklist, brief and verify every file their run holds. Two readers compare
+    a mark with a row the proof does not hold. `ratchet prune` moves a mark off
+    a file git renamed, which the working tree no longer has, onto a proved
+    file. And with no rows at all the reader matches marks against another
+    run: explain on a file the newest run dropped. So a marked file the tree
+    lost is proved, and an empty proof proves every marked file.
     """
     paths = {row.path for row in proof}
+    marked = {entry.path for entry in marks}
+    return (paths | _lost_files(root, marked - paths)) if paths else marked
+
+
+def _lost_files(root: Path, paths: set) -> set:
+    return {path for path in paths if not (root / path).exists()}
+
+
+def _identity_history(root: Path, store, paths: set) -> set:
+    """Collision groups any stored run held in `paths`."""
     if store is not None:
         return store.historical_collision_groups(paths)
     db = root / ".crapkit" / "crap.sqlite"
@@ -303,10 +318,12 @@ def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None) 
         check_reader_keys(text)
         if read_key_version(text) == KEY_VERSION:
             return KEY_VERSION
-        if not read_ratchet(text)[0]:
+        marks = read_ratchet(text)[0]
+        if not marks:
             return KEY_VERSION
         proof = rows() if callable(rows) else rows
-        return checked_key_version(text, proof, historical=_identity_history(root, store, proof))
+        paths = _proved_paths(root, proof, marks)
+        return checked_key_version(text, proof, historical=_identity_history(root, store, paths))
     except ValueError as exc:
         raise ConfigError(f"{name}: {exc}") from exc
 
