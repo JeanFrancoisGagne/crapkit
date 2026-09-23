@@ -15,6 +15,9 @@ no branch could see:
 import argparse
 from pathlib import Path
 
+import lizard
+
+from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli.ratchet_cmds import _latest_full_run, _ratchet_merge
 from crapkit.cli.verifying import _prior_crap
 from crapkit.ratchet import RatchetEntry, load_ratchet, merge_ratchets, unstable_marks
@@ -26,6 +29,8 @@ PATH = "src/models.py"
 NAME = "__post_init__( self )"
 STAMP = "# crapkit-analysis=4 lizard=1.17.31"
 HEADER = "path\tlong_name\tcrap"
+# The running metric: seed stamps the one its run recorded, and refuses a run with none.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
 
 
 def scored(crap: float, *, start: int = 1, ccn: int = 8, name: str = NAME) -> ScoredRow:
@@ -35,7 +40,7 @@ def scored(crap: float, *, start: int = 1, ccn: int = 8, name: str = NAME) -> Sc
 
 
 def run(store: SnapshotStore, kind: str, rows: list, *, ok: bool | None = None) -> int:
-    run_id = store.write_run(commit=SHA, tool_versions={}, rows=rows, kind=kind,
+    run_id = store.write_run(commit=SHA, tool_versions=MEASURED, rows=rows, kind=kind,
                              lanes={"unit": {"tests_total": 40}})
     if ok is not None:
         store.set_verdict_ok(run_id, ok, findings=0 if ok else 3)

@@ -42,9 +42,15 @@ class TightenRefusal(NamedTuple):
     fresh: float
 
 
-def stamp_text(analysis_version: int, lizard_version: str) -> str:
+def stamp_text(analysis_version: int | str, lizard_version: str) -> str:
     """The metric identity a set of marks was measured under, as one line."""
     return f"crapkit-analysis={analysis_version} lizard={lizard_version}"
+
+
+def run_stamp(tool_versions: dict) -> str:
+    """The metric a stored run was measured under; "" for a run that recorded none."""
+    analysis, lizard = tool_versions.get("analysis_version"), tool_versions.get("lizard")
+    return stamp_text(analysis, lizard) if analysis and lizard else ""
 
 
 def metric_version() -> str:

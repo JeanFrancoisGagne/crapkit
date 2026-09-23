@@ -266,23 +266,47 @@ verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files)
 EXIT=0
 ```
 
-After their identity checks pass, `ratchet seed` and `prune` rewrite the stamp to the
-running metric. An upgrade that changes which functions a reader finds needs a reviewed
-mapping first; fresh coverage alone cannot supply it. See
-[same-line function identity](#same-line-function-identity). An explicit move preserves
-both stamps. The merge driver writes the stamps both sides already shared, so two legacy
-sides stay legacy.
+Every write to the marks file sets the stamp by where its numbers came from:
 
-Upgrading lizard changes the stamp, so the next comparison refuses existing marks.
-Reseeding can update compatible marks; changed function membership needs the identity
-review below first.
+| Write | Metric stamp it leaves |
+|---|---|
+| `ratchet seed` | The metric the run it read was measured under. The only write that changes the stamp. |
+| `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. |
+| `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. |
+| The pre-commit hook's override | The recorded stamp. A marks file it creates takes the running metric. |
+
+Seed and prune run their identity checks first. An upgrade that changes which functions a
+reader finds needs a reviewed mapping first; fresh coverage alone cannot supply it. See
+[same-line function identity](#same-line-function-identity). The merge driver writes the
+stamps both sides already shared, so two legacy sides stay legacy.
+
+Upgrading lizard or the analysis version changes the running metric, so the next comparison
+refuses existing marks. Run `crapkit coverage` first, then `ratchet seed`: a seed from a run
+the older version measured signs the older metric, and verify keeps refusing. The seed line
+says so, and prune's line names the run's metric the same way:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=9 lizard=1.24.0], not this crapkit's [crapkit-analysis=10 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
+```
+
+A run stored before crapkit recorded its metric vouches for none, and seed refuses it:
+
+```
+$ crapkit ratchet seed
+crapkit: ratchet seed: run 3 recorded no metric (analysis version and lizard), so the marks it measured cannot be stamped; run `crapkit coverage` and seed again
+EXIT=3
+```
+
+Reseeding from a fresh run can update compatible marks; changed function membership needs
+the identity review below first.
 
 ### Upgrading to 0.4.5: analysis version 8
 
-This historical transition changed analysis version 7 to 8. The transcript above
-belongs to that upgrade; the current reader uses version 10. Follow
+This historical transition changed analysis version 7 to 8. The verify refusal quoted
+above belongs to that upgrade; the current reader uses version 10. Follow
 [Upgrading](upgrading.md) for current saved-state checks. In the older transition,
-reseeding updated the stamp as follows:
+reseeding from a fresh coverage run updated the stamp as follows:
 
 ```
 $ crapkit ratchet seed
@@ -296,8 +320,8 @@ What version 8 changed is one rule: shell cognitive complexity now nests, becaus
 `done` and `esac` close a level. A 4-deep `if` in a `.sh` file reads 10, the way it does in
 every other language crapkit scans, instead of 4. So **cognitive numbers move in shell
 files and nowhere else, and ccn does not move at all.** CRAP is built from ccn and coverage,
-so the marks themselves land where they landed before; the re-seed is the stamp catching up,
-not a repricing of the debt.
+so the marks themselves land where they landed before; the re-seed from a run measured under
+version 8 is the stamp catching up, not a repricing of the debt.
 
 A repo with no shell in it still has to re-seed. The stamp records the rules the numbers
 were measured under, not which of them a given file exercised.

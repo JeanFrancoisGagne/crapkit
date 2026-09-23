@@ -8,8 +8,10 @@ point, and a failed verify can carry them from a red tree.
 import argparse
 from pathlib import Path
 
+import lizard
 import pytest
 
+from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli.ratchet_cmds import _latest_full_run, cmd_ratchet
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
@@ -17,6 +19,8 @@ from crapkit.store import SnapshotStore
 
 TRUSTED_SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
 FAILED_SHA = "4f1c0aa9d3b2e5768190a2b3c4d5e6f70819a2b3"
+# The running metric: seed stamps the one its run recorded, and refuses a run with none.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
 CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n')
 
@@ -27,12 +31,12 @@ def scored(ccn: int = 8) -> ScoredRow:
 
 
 def coverage_run(store: SnapshotStore, commit: str = TRUSTED_SHA) -> int:
-    return store.write_run(commit=commit, tool_versions={}, rows=[scored()],
+    return store.write_run(commit=commit, tool_versions=MEASURED, rows=[scored()],
                            kind="coverage", lanes={"unit": {}})
 
 
 def verify_run(store: SnapshotStore, ok: bool, commit: str = FAILED_SHA) -> int:
-    run_id = store.write_run(commit=commit, tool_versions={}, rows=[scored()],
+    run_id = store.write_run(commit=commit, tool_versions=MEASURED, rows=[scored()],
                              kind="verify", lanes={"unit": {}})
     store.set_verdict_ok(run_id, ok, findings=0 if ok else 3)
     return run_id
@@ -117,9 +121,9 @@ def test_seeded_marks_come_from_the_trusted_run_not_the_failed_verify(tmp_path, 
     """The failed verify measured a worse tree. Seeding from it would sign debt
     at a value verify would not accept as a comparison point."""
     repo, store = repo_with_store(tmp_path)
-    store.write_run(commit=TRUSTED_SHA, tool_versions={}, rows=[scored(ccn=8)],
+    store.write_run(commit=TRUSTED_SHA, tool_versions=MEASURED, rows=[scored(ccn=8)],
                     kind="coverage", lanes={"unit": {}})
-    failed = store.write_run(commit=FAILED_SHA, tool_versions={}, rows=[scored(ccn=20)],
+    failed = store.write_run(commit=FAILED_SHA, tool_versions=MEASURED, rows=[scored(ccn=20)],
                              kind="verify", lanes={"unit": {}})
     store.set_verdict_ok(failed, False, findings=3)
 

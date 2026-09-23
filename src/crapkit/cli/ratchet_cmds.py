@@ -241,36 +241,73 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
 
 
 def _ratchet_from_run(root: Path, cfg, action: str) -> int:
-    """seed and prune: both work from the run verify would compare against."""
-    from ..ratchet import seed_ratchet
+    """seed and prune: both work from the run verify would compare against.
+
+    seed signs that run's numbers, so the marks take the metric the run was
+    measured under. prune adds no number, so the recorded stamp stays.
+    """
+    from ..ratchet import run_stamp
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
     store = _open_store(root)
     latest, skipped = _latest_full_run(store)
     fresh = store.read_scored(latest["id"])
-    ratchet_path = root / cfg.ratchet_file
-    saved = RatchetFile.read(ratchet_path)
-    prior = saved.entries
+    saved = RatchetFile.read(root / cfg.ratchet_file)
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store)
     if action == "seed":
-        entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target,
-                                                 scope_targets=cfg.scope_targets)
-        note = f"added {added}, tightened {tightened}"
+        entries, note = _seeded(saved.entries, fresh, cfg)
+        text = saved.reseeded(entries, _seed_metric(latest), keys=key_version)
     else:
-        entries, note = _pruned(root, store, prior, fresh)
-    _write_checked_marks(saved, entries, fresh, key_version,
-                          latest['tool_versions'].get('analysis_version'))
+        entries, note = _pruned(root, store, saved.entries, fresh)
+        text = saved.kept(entries, keys=key_version,
+                          new_file_metric=run_stamp(latest["tool_versions"]))
+    _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
-          f"({latest['commit'][:11]}){_skip_note(skipped)}")
+          f"({latest['commit'][:11]}){_skip_note(skipped)}{_metric_note(latest, action)}")
     return 0
 
 
-def _write_checked_marks(saved, entries, fresh, key_version: int,
-                          analysis_version) -> None:
-    from ..ratchet import check_reader_version, checked_key_version, metric_version
+def _seeded(prior: list, fresh: list, cfg) -> tuple[list, str]:
+    from ..ratchet import seed_ratchet
 
-    text = saved.reseeded(entries, metric_version(), keys=key_version)
+    entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target,
+                                             scope_targets=cfg.scope_targets)
+    return entries, f"added {added}, tightened {tightened}"
+
+
+def _seed_metric(run: dict) -> str:
+    """The stamp seed signs with: the metric its run was measured under.
+
+    A run from before crapkit recorded one cannot vouch for any metric, and
+    stamping the running one is how old numbers passed for new ones.
+    """
+    from ..ratchet import run_stamp
+
+    metric = run_stamp(run["tool_versions"])
+    if not metric:
+        raise ConfigError(f"ratchet seed: run {run['id']} recorded no metric (analysis version "
+                          "and lizard), so the marks it measured cannot be stamped; run "
+                          f"`{_self()} coverage` and seed again")
+    return metric
+
+
+def _metric_note(run: dict, action: str) -> str:
+    """Said only when the run seed or prune read is not this crapkit's metric."""
+    from ..ratchet import metric_version, run_stamp
+
+    measured, running = run_stamp(run["tool_versions"]), metric_version()
+    if measured == running:
+        return ""
+    said = f"[{measured}]" if measured else "an unrecorded metric"
+    after = (f", so verify refuses these marks until a fresh `{_self()} coverage` and another seed"
+             if action == "seed" else ", and the marks keep their recorded stamp")
+    return f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]{after}"
+
+
+def _publish_checked(saved, text: str, entries: list, fresh: list, analysis_version) -> None:
+    from ..ratchet import check_reader_version, checked_key_version
+
     try:
         check_reader_version(entries, analysis_version)
         checked_key_version(text, fresh)
