@@ -83,11 +83,17 @@ def _shape_gaps(doc, real, where: str) -> list[str]:
     on either side says nothing about shape, and neither does an empty list."""
     if doc is None or real is None:
         return []
-    if isinstance(doc, dict) and isinstance(real, dict):
-        return _dict_gaps(doc, real, where)
-    if isinstance(doc, list) and isinstance(real, list):
-        return _shape_gaps(doc[0], real[0], where + "[]") if doc and real else []
+    compare = {("dict", "dict"): _dict_gaps, ("list", "list"): _list_gaps}.get(
+        (_kind(doc), _kind(real)), _scalar_gaps)
+    return compare(doc, real, where)
+
+
+def _scalar_gaps(doc, real, where: str) -> list[str]:
     return [] if _kind(doc) == _kind(real) else [f"{where}: docs {doc!r}, payload {real!r}"]
+
+
+def _list_gaps(doc: list, real: list, where: str) -> list[str]:
+    return _shape_gaps(doc[0], real[0], where + "[]") if doc and real else []
 
 
 def _dict_gaps(doc: dict, real: dict, where: str) -> list[str]:
@@ -142,16 +148,24 @@ def test_every_braced_key_list_names_the_keys_the_payload_carries(payload):
             **{f"regrowth.{k}": v for k, v in _table(_subsection(
                 "`regrowth`: did this get fixed before?")).items()}}
 
-    wrong = {}
-    for key, (_, meaning) in rows.items():
-        named = _BRACED.search(meaning)
-        value = _lookup(payload, key)
-        if named and value:
-            real = value if isinstance(value, dict) else value[0]
-            documented = set(named.group(1).split(", "))
-            if not isinstance(real, dict) or documented != set(real):
-                wrong[key] = (sorted(documented), real)
-    assert wrong == {}
+    found = {key: _braced_mismatch(meaning, _lookup(payload, key))
+             for key, (_, meaning) in rows.items()}
+    assert {key: gap for key, gap in found.items() if gap} == {}
+
+
+def _braced_mismatch(meaning: str, value):
+    """(the keys a row names, what the payload holds) when they differ, else
+    None. The names describe the object, or each element of an array."""
+    named = _BRACED.search(meaning)
+    if not named or not value:
+        return None
+    documented = set(named.group(1).split(", "))
+    real = value if isinstance(value, dict) else value[0]
+    return None if documented == _keys(real) else (sorted(documented), real)
+
+
+def _keys(value) -> set | None:
+    return set(value) if isinstance(value, dict) else None
 
 
 def _lookup(payload: dict, dotted: str):

@@ -31,15 +31,21 @@ def _answer(tmp_path: Path, tool: str, arguments: dict) -> str:
     return result["content"][0]["text"]
 
 
+def _probes() -> list[tuple[str, dict]]:
+    """A missing first positional and a missing `name` on every tool that takes
+    them, then an undeclared key and a wrong type."""
+    missing = [(tool["name"], {}) for tool in mcp_server.TOOLS if tool["positional"]]
+    unnamed = [(tool["name"], {"path": "a.py"}) for tool in mcp_server.TOOLS
+               if "name" in tool["positional"]]
+    return missing + unnamed + [("list_worklist", {"bogus": 1}),
+                                ("list_worklist", {"top": "three"})]
+
+
 @pytest.fixture(scope="module")
 def spoken(tmp_path_factory) -> set[str]:
     """Every refusal sentence the pages could be quoting, as the server says it."""
     root = tmp_path_factory.mktemp("mcp")
-    probes = [(tool["name"], {}) for tool in mcp_server.TOOLS if tool["positional"]]
-    probes += [(tool["name"], {"path": "a.py"}) for tool in mcp_server.TOOLS
-               if "name" in tool["positional"]]
-    probes += [("list_worklist", {"bogus": 1}), ("list_worklist", {"top": "three"})]
-    return {_answer(root, tool, arguments) for tool, arguments in probes}
+    return {_answer(root, tool, arguments) for tool, arguments in _probes()}
 
 
 @pytest.mark.parametrize("page", sorted(PAGES))
