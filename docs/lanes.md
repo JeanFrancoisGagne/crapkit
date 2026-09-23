@@ -973,6 +973,8 @@ shared helpers: any tracked or untracked change, or a new commit, reruns the lan
 With [`inputs`](configuration.md#lane) it covers exactly those paths, literal paths
 from the root with no globs, so a docs commit or an untracked draft elsewhere reruns
 nothing, and a file the command reads that the list leaves out is never checked.
+An entry that matches no tracked file, and no untracked file outside `.gitignore`,
+hides every change behind it, so `doctor` fails on it and names the entry.
 Measurements made while their proof did not hold (a dirty tree, or dirty inputs)
 and older stamps without this proof cannot be reused automatically. Environment
 values are hashed together; stamps do not store them.

@@ -36,6 +36,16 @@ def _names(out: bytes) -> tuple[str, ...]:
     return tuple(name for name in out.decode("utf-8").split("\0") if name)
 
 
+def visible_paths(root: Path, paths) -> tuple[str, ...]:
+    """The tracked and untracked files under `paths`, ignored ones left out:
+    every file whose change ChangeReads can report. No paths asks git nothing."""
+    if not paths:
+        return ()
+    read = _start(root, "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+                  "--", *paths)
+    return _names(read.result())
+
+
 class ChangeReads:
     """Git's answers for some stamp commits, narrowed to `paths`, all started at once.
 

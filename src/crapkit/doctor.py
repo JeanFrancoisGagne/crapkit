@@ -216,6 +216,31 @@ def artifact_litter(lanes, scope_tops: frozenset[str]) -> tuple[ArtifactLitter, 
                  for path in _lane_outputs(lane) if _artifact_top(path) not in clean)
 
 
+_UNMATCHED_INPUT = (
+    "lane {lane!r}: inputs entry {entry!r} matches no file that is tracked, or untracked "
+    "and not ignored, so --reuse-unchanged never sees a change through it; fix the "
+    "spelling or drop the entry"
+)
+
+
+def _under(entry: str, path: str) -> bool:
+    return entry == "." or path == entry or path.startswith(f"{entry}/")
+
+
+def _matches_nothing(entry: str, visible: tuple[str, ...]) -> bool:
+    return not any(_under(entry, path) for path in visible)
+
+
+def unmatched_inputs(lanes, visible: tuple[str, ...]) -> tuple[Finding, ...]:
+    """Lane `inputs` entries no visible path falls under. FAIL: git reads an entry
+    as a literal pathspec, so a typo such as `scr` for `src` matches nothing and
+    keeps the lane reusable while its real sources change. The config still
+    loads, so a path created later is only doctor's problem until it exists."""
+    return tuple(Finding("FAIL", _UNMATCHED_INPUT.format(lane=lane.name, entry=entry))
+                 for lane in lanes for entry in lane.inputs
+                 if _matches_nothing(entry, visible))
+
+
 _PLAIN_FILE_MODE = "100644"  # git's non-executable file; 100755 is the armed one
 
 

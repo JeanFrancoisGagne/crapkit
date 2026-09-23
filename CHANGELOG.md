@@ -276,8 +276,11 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   bytes match, and the lane's own table, `env` included, is the one it was measured
   with. Lanes without `inputs` keep the same-clean-HEAD rule. Entries are literal paths
   from the root, spelled like scope paths; one holding `*` or `?`, or one that is
-  absolute or climbs out of the root, is a config error. The reuse line ends with the
-  commit the artifact was built at: `(artifact built at 1a2b3c4d5e6)`.
+  absolute or climbs out of the root, is a config error. An entry that matches no
+  tracked file, and no untracked file outside `.gitignore`, such as `scr` for `src`,
+  still loads, and `doctor` fails on it: reuse would see no change through it. The
+  reuse line ends with the commit the artifact was built at: `(artifact built at
+  1a2b3c4d5e6)`.
 - An istanbul lane that sets `path_prefix` no longer hides a measured path from another
   tree: the wrong-tree check takes the prefix back off coverage.py keys only.
 

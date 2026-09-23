@@ -1086,6 +1086,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_lanes(root, cfg)
+            + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)
             + _doctor_hook_modes(root)
@@ -1094,6 +1095,16 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))
+
+
+def _doctor_inputs(root: Path, lanes) -> list[Finding]:
+    """A lane `inputs` entry that matches no file git sees (FAIL). One git read
+    narrowed to the entries, and none when no lane declares inputs."""
+    from ..doctor import unmatched_inputs
+    from ..lane_changes import visible_paths
+
+    entries = sorted({entry for lane in lanes for entry in lane.inputs})
+    return list(unmatched_inputs(lanes, visible_paths(root, entries)))
 
 
 def _doctor_scoped_tests(cfg, files: list[str]) -> list[Finding]:
