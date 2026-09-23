@@ -65,12 +65,8 @@ def metric_version() -> str:
 def read_stamp(text: str) -> str:
     """The metric a marks file was written under; "" for one written before stamping."""
     for line in record_lines(text):
-        if _comment(line) and line.startswith(_KEY_STAMP):
-            continue
-        if _comment(line):
-            return line[1:].strip()
-        if line.strip():
-            return ""
+        if line.strip() and not _key_stamp(line):
+            return line[1:].strip() if comment_line(line) else ""
     return ""
 
 
@@ -85,8 +81,7 @@ def read_key_version(text: str) -> int:
 
 
 def _key_stamps(text: str) -> list[str]:
-    return [line[len(_KEY_STAMP):] for line in record_lines(text)
-            if _comment(line) and line.startswith(_KEY_STAMP)]
+    return [line[len(_KEY_STAMP):] for line in record_lines(text) if _key_stamp(line)]
 
 
 def _marked_group(entry: RatchetEntry, groups: set) -> tuple[str, str]:
@@ -169,13 +164,19 @@ def coverage_then_seed(rebaseline: str = "re-baseline") -> str:
     return f"run `{_self()} coverage`, then {rebaseline} with `{_self()} ratchet seed`"
 
 
-def _comment(line: str) -> bool:
+def comment_line(line: str) -> bool:
+    """A format comment: the metric stamp or the key stamp. A `#` line that holds
+    a tab is a legacy raw mark whose path starts with `#`, not a comment."""
     return line.startswith("#") and "\t" not in line
+
+
+def _key_stamp(line: str) -> bool:
+    return comment_line(line) and line.startswith(_KEY_STAMP)
 
 
 def _is_skippable(line: str) -> bool:
     """Blank lines, the header and comment lines (the metric stamp) carry no mark."""
-    return not line.strip() or line == _HEADER or _comment(line)
+    return not line.strip() or line == _HEADER or comment_line(line)
 
 
 def _finite_mark(text: str) -> float:

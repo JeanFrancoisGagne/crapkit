@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet
+from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 
 _BRANCHES = "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8))
 BREACH = f"def sprawl(n):\n{_BRANCHES}    return n\n"  # ccn 8, over the ceiling of 6
@@ -42,11 +42,12 @@ def _advise(edited: Path, root: Path, monkeypatch, capsys) -> tuple[int, str]:
 
 @pytest.mark.parametrize("scope_path, rel", [
     ("#calc", "#calc/grade.py"),
-    ("calc", "calc/grade two.py"),
+    ("calc", "calc/grade\u2028two.py"),
 ])
 def test_a_mark_written_as_an_encoded_record_silences_the_advisory(scope_path, rel, tmp_path,
                                                                    monkeypatch, capsys):
-    marks = dump_ratchet([RatchetEntry(rel, "sprawl( n )", 72.0)], key_version=1)
+    marks = dump_ratchet([RatchetEntry(rel, "sprawl( n )", 72.0)], key_version=1,
+                         stamp=metric_version())
     assert "@crapkit-record-v1" in marks
     edited = _repo(tmp_path, scope_path, rel, marks)
 
@@ -56,7 +57,8 @@ def test_a_mark_written_as_an_encoded_record_silences_the_advisory(scope_path, r
 
 
 def test_another_files_encoded_mark_never_covers_this_one(tmp_path, monkeypatch, capsys):
-    marks = dump_ratchet([RatchetEntry("#calc/grade.py", "sprawl( n )", 72.0)], key_version=1)
+    marks = dump_ratchet([RatchetEntry("#calc/grade.py", "sprawl( n )", 72.0)], key_version=1,
+                         stamp=metric_version())
     edited = _repo(tmp_path, "calc", "calc/grade.py", marks)
 
     code, err = _advise(edited, tmp_path, monkeypatch, capsys)
