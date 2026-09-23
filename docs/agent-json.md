@@ -515,8 +515,8 @@ packet and three in a trajectory.
 
 The start line resolves a function only when that line names one source position.
 When several functions start there, the command refuses the numeric selector and lists
-their handles. Use the handle to select one. `explain` resolves against the newest run
-that scored the path, just as `brief` does:
+their handles. Use the handle to select one. `explain` resolves against the run `brief`
+reads, the newest trusted one:
 
 ```
 $ crapkit explain calc/grade.py 1
@@ -548,7 +548,7 @@ does hold:
 crapkit: no (anonymous)#5 in app/parse_csv.py in the latest scored run — it holds: (anonymous)#1, (anonymous)#2
 ```
 
-`explain` resolves the handle the same way, against the newest run that scored the path.
+`explain` resolves the handle the same way, against the run `brief` reads.
 Note that the store keys a function's identity on its long name, so one file's anonymous
 functions share one history there: the handle picks the position, and `explain`'s history
 covers every anonymous function in the file.

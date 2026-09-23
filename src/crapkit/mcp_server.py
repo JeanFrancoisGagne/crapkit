@@ -832,9 +832,10 @@ TOOLS: tuple[dict, ...] = (
         "measured it, oldest first, plus its ratchet mark. Use it to tell improving "
         "from decaying or regrown, and get_function_brief instead to start an edit. "
         "history true spawns git log -L capped at 10 commits, and tests true is null "
-        "unless the lane recorded contexts. name resolves off the newest run that "
-        "scored path, so a substring such as \"eval\" fans out to one entry per long "
-        "name matched, and repo may be any directory under the measured checkout."),
+        "unless the lane recorded contexts. name matches the long names any run scored "
+        "in path, so a fragment like \"eval\" returns one entry per match. A bare twin "
+        "name picks the worst twin, as get_function_brief does. repo may be any "
+        "directory under the measured checkout."),
         "properties": {
             "path": {
                 "type": "string",

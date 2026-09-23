@@ -322,7 +322,7 @@ def _colliding_names(records: list[FunctionRecord]) -> list[str]:
     Anonymous functions are exempt from the line. lizard calls every one of them
     `(anonymous)`, so a file with two arrow callbacks collides by construction
     and the line would name nothing anyone could act on. They take the same
-    ordinal keys as any other twin; `packet.handles` already addresses them as
+    ordinal keys as any other twin; `keys.handles` already addresses them as
     `(anonymous)#N`.
     """
     seen: set[str] = set()

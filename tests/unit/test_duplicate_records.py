@@ -15,7 +15,7 @@ classes in one module with an `__init__` collide.
 Anonymous functions are exempt from the line. lizard names every one of them
 `(anonymous)`, so a file with two arrow callbacks collides by construction and
 the line would name nothing a reader could act on. They take the same ordinal
-keys as any other twin, and `packet.handles` already addresses them as
+keys as any other twin, and `keys.handles` already addresses them as
 `(anonymous)#N`.
 """
 from crapkit.analyze import analyze_source
