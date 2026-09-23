@@ -671,6 +671,45 @@ def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict,
         return False
 
 
+def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):
+    """The git answers lane staleness reads, for every lane of one command.
+
+    A caller's own facts are used as they stand. Without them every read starts
+    at once, narrowed to the scope paths of the lanes still undecided: a lane
+    with no artifact or no stamp commit is decided before git is asked and adds
+    nothing to the pathspec. The per-lane verdict holds because the pathspec
+    covers every scope path of every lane that still asks.
+    """
+    if git is not None:
+        return nullcontext(git)
+    undecided = _undecided(root, lanes)
+    commits = dict.fromkeys(commit for _, commit in undecided)
+    paths = dict.fromkeys(path for lane, _ in undecided for path in _declared_paths(lane, scope_paths))
+    return _started_reads(root, tuple(commits), tuple(paths))
+
+
+def _undecided(root: Path, lanes) -> list[tuple[Lane, str]]:
+    """(lane, stamp commit) for each lane whose artifact only git can judge."""
+    stamped = ((lane, _artifact_commit(root, lane)) for lane in lanes)
+    return [(lane, commit) for lane, commit in stamped if commit]
+
+
+def _declared_paths(lane: Lane, scope_paths: dict) -> tuple[str, ...]:
+    """The paths this lane's scopes declare, as written in the config."""
+    return tuple(path for name in lane.scopes for path in scope_paths.get(name, ()))
+
+
+def _started_reads(root: Path, commits: tuple, paths: tuple):
+    """ChangeReads, or lazy GitFacts when git cannot even start: each question
+    then raises GitError and the lane reads stale, as it always has."""
+    from .lane_changes import ChangeReads
+
+    try:
+        return ChangeReads(root, commits, paths)
+    except GitError:
+        return nullcontext(GitFacts(root))
+
+
 def lane_unchanged(root: Path, lane: Lane) -> bool:
     """Whether --reuse-unchanged may reuse this lane's artifact without a rerun."""
     return bool(lane_reuse_commit(root, lane))

@@ -199,12 +199,15 @@ def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:
     for a reader who wants to know WHICH lane to rerun. The report's staleness
     banner reads this list; the joined note is built from it, so a lane cannot be
     fresh in one and stale in the other.
-    """
-    from .gitio import GitFacts
 
-    facts = git if git is not None else GitFacts(root)
-    return [(lane.name, _artifact_state(root, lane, cfg.scope_paths, facts))
-            for lane in cfg.lanes]
+    Without `git` the reads start together, scoped to the lanes git has to
+    judge (lanes.staleness_reads).
+    """
+    from .lanes import staleness_reads
+
+    with staleness_reads(root, cfg.lanes, cfg.scope_paths, git) as facts:
+        return [(lane.name, _artifact_state(root, lane, cfg.scope_paths, facts))
+                for lane in cfg.lanes]
 
 
 def _staleness_note(root: Path, cfg, git) -> str:
@@ -219,11 +222,10 @@ def load_uncovered(root: Path, cfg, git=None) -> MissingLines:
     turn a question about the worklist into a tooling exit code.
     """
     from .errors import ToolError
-    from .gitio import GitFacts
 
     if not cfg.lanes:
         return MissingLines({}, "no [[lane]] declared, so no artifact can say which lines are dark")
-    note = _staleness_note(root, cfg, git or GitFacts(root))
+    note = _staleness_note(root, cfg, git)
     if note:
         return MissingLines({}, note)
     try:
