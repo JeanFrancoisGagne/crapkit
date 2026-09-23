@@ -755,7 +755,7 @@ def _brief_packet(loader, row) -> dict:
     return {
         "run_id": loader.latest["id"], "commit": loader.latest["commit"],
         "path": row.path, "function": row.long_name,
-        "handle": keys.handles(rows)[lookup(row)],
+        "handle": keys.handles(rows, run_id=loader.latest["id"])[lookup(row)],
         "scored": dict(row._asdict()),
         "target": ceiling,
         "remedy": row.remedy,
