@@ -204,3 +204,46 @@ def test_the_stored_run_keeps_the_first_attempt_and_names_the_retried_pass(retry
 
     assert lane["failures"] == [OLD, FLAKY]
     assert lane["retried_passes"] == [FLAKY]
+
+
+# --- a test that two lanes failed --------------------------------------------
+
+def _both_lanes_report(repo, *failing: str) -> None:
+    """The same junit for both lanes; `ui` reads its own copy, since two lanes
+    may not share an artifact path."""
+    _junit(repo, *failing)
+    (repo / "junit-ui.xml").write_bytes((repo / "junit.xml").read_bytes())
+
+
+@pytest.fixture()
+def two_lane_repo(repo, capsys):
+    """`unit` declares a retest and `ui` does not, and both report the same
+    tests, so a failure is failed by both lanes and only `unit` reruns it."""
+    _declare_retest(repo)
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(text.replace(
+        'artifact = "coverage/ui.json"',
+        'artifact = "coverage/ui.json"\nresults_artifact = "junit-ui.xml"'), encoding="utf-8")
+    _both_lanes_report(repo, OLD)
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo
+
+
+def test_a_failure_a_lane_never_reran_stays_new_when_another_lanes_rerun_passed(
+        two_lane_repo, capsys):
+    """`unit` reran `renders` and it passed; `ui` failed it too and has no
+    retest. Nothing says `ui`'s failure was a flake, so it stays new."""
+    _both_lanes_report(two_lane_repo, FLAKY)
+    _rerun(two_lane_repo, passes=True)
+
+    code, out, err = verify(two_lane_repo, capsys, "--json")
+
+    payload = json.loads(out)
+    assert code == 8, out + err
+    assert payload["new_failures"] == [FLAKY]
+    assert payload["retried_passes"] == []
+    lanes = SnapshotStore(two_lane_repo / ".crapkit" / "crap.sqlite").list_runs()[-1]["lanes"]
+    assert lanes["ui"]["failures"] == [FLAKY]
+    assert "retried_passes" not in lanes["ui"], lanes["ui"]

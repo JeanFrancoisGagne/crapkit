@@ -701,17 +701,27 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def _flake_retry(root: Path, cfg, provenance: dict, new_failures: set) -> set:
-    """Rerun just the newly-failed ids in lanes that declare retest_command;
-    lanes without one keep their failures untouched."""
-    from ..lanes import retest_lane
-
-    survivors = set(new_failures)
+    """Rerun just the newly-failed ids in lanes that declare retest_command.
+    An id leaves the survivors only when every lane that failed it reran it
+    and the rerun passed: a lane without retest_command keeps its failures,
+    whatever another lane's rerun said about the same id."""
+    passed, kept = set(), set()
     for lane in cfg.lanes:
         lane_new = set(provenance.get(lane.name, {}).get("failures", ())) & new_failures
-        if not lane_new or not lane.retest_command:
-            continue
-        survivors -= retest_lane(root, lane, lane_new)
-    return survivors
+        cleared = _rerun_passes(root, lane, lane_new)
+        passed |= cleared
+        kept |= lane_new - cleared
+    return new_failures - (passed - kept)
+
+
+def _rerun_passes(root: Path, lane, tests: set) -> set:
+    """The ids this lane's rerun passed; none when it failed nothing new or
+    declares no retest_command."""
+    from ..lanes import retest_lane
+
+    if not tests or not lane.retest_command:
+        return set()
+    return retest_lane(root, lane, tests)
 
 
 def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
