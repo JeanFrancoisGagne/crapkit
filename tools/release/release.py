@@ -326,10 +326,23 @@ def _git_tag(root: Path) -> str:
 
 
 def _gh_release(root: Path, version: str) -> str:
-    done = subprocess.run(["gh", "release", "view", f"v{version}", "--repo", GITHUB_REPO,
-                           "--json", "url", "--jq", ".url"],
-                          cwd=root, capture_output=True, text=True)
+    try:
+        done = subprocess.run(["gh", "release", "view", f"v{version}", "--repo", GITHUB_REPO,
+                               "--json", "url", "--jq", ".url"],
+                              cwd=root, capture_output=True, text=True)
+    except OSError as exc:
+        raise ReleaseError(f"cannot run gh: {exc}") from exc
     return done.stdout.strip()
+
+
+def _github_row(version: str, read: Callable) -> Row:
+    """A shell without gh cannot say whether the release exists, so the row says
+    unconfirmed rather than `none`."""
+    try:
+        url = read()
+    except ReleaseError as exc:
+        return Row("GitHub release", f"v{version}", f"unconfirmed ({exc})", False)
+    return Row("GitHub release", f"v{version}", url or "none", f"v{version}" in url)
 
 
 def _row(surface: str, expected: str, observed: str) -> Row:
@@ -472,9 +485,8 @@ def verify(root: Path, version: str, *, fetch: Callable | None = None,
     fetch = fetch or _urlopen
     tag = _answer(git_tag, lambda: _git_tag(root))
     commit = _answer(tag_commit, lambda: _tag_commit(root, version))
-    url = gh_release(version) if gh_release else _gh_release(root, version)
-    rows = [_row("git tag", f"v{version}", tag),
-            Row("GitHub release", f"v{version}", url or "none", f"v{version}" in url),
+    read_github = (lambda: gh_release(version)) if gh_release else (lambda: _gh_release(root, version))
+    rows = [_row("git tag", f"v{version}", tag), _github_row(version, read_github),
             _pypi_row(version, fetch)]
     rows += _registry_rows(version, fetch)
     carries = contains or (lambda ancestor, built: _contains(root, ancestor, built))
