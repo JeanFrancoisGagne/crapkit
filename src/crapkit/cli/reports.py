@@ -324,29 +324,58 @@ def cmd_explain(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     store = _open_store(root)
     args.path = _repo_relative(args.path, root, _stand(args.repo))  # from where the user stands
-    matches = store.find_functions(args.path, args.name)
+    runs = store.list_runs()
+    matches = _explain_selection(store, _selector_run(runs), args.path, args.name)
     if not matches:
         raise CrapkitError(f"no function matching {args.name!r} in {args.path} appears in any run")
-    ctx = _explain_ctx(root, cfg, store, args)
-    _print_explain(args, [_explain_payload(ctx, store, args, name) for name in matches])
+    ctx = _explain_ctx(root, cfg, store, args, runs)
+    _print_explain(args, [_explain_payload(ctx, store, args, *match) for match in matches])
     return 0
 
 
-def _explain_ctx(root: Path, cfg, store: SnapshotStore, args) -> _ExplainCtx:
-    from ..store import rowful_runs
+def _newest_id(runs: list[dict], *admits) -> int | None:
+    """The newest run the first rule to admit any run admits, rules in order."""
+    for admit in admits:
+        ids = [r["id"] for r in runs if admit(r)]
+        if ids:
+            return ids[-1]
+    return None
 
-    runs = rowful_runs(store)
-    run_id = runs[-1]["id"] if runs else None
+
+def _selector_run(runs: list[dict]) -> int | None:
+    """The run a start line and an `(anonymous)#N` handle name a position in:
+    the newest run with rows, the one the context below reads."""
+    from ..store import is_rowful
+
+    return _newest_id(runs, is_rowful)
+
+
+def _explain_selection(store: SnapshotStore, run_id: int | None, path: str,
+                       name: str) -> list[tuple[str, str]]:
+    """What NAME selects, as (long name, key name) pairs, by the rule `brief`
+    runs: `keys.select` over one run's positions in the file. Names match
+    against every long name a stored run scored there, so a function that run
+    no longer holds keeps its trajectory, under the key its ordinal spells."""
+    from ..keys import select
+
+    rows = store.read_positions(run_id, path) if run_id is not None else []
+    return select(rows, name, store.long_names(path))
+
+
+def _explain_ctx(root: Path, cfg, store: SnapshotStore, args, runs: list[dict]) -> _ExplainCtx:
+    from ..store import is_rowful
+
+    run_id = _newest_id(runs, is_rowful)
     rows = store.read_positions(run_id, args.path) if run_id is not None else []
     return _ExplainCtx(root, args.path, run_id,
                        load_uncovered(root, cfg), _ratchet_entries(root, cfg, rows, store),
                        _contexts_for_path(root, cfg, args.path) if args.tests else {})
 
 
-def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: str) -> dict:
+def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: str,
+                     key: str) -> dict:
     """One function's whole packet. The span is looked up once and passed down:
     dark lines, --history and --tests all want the same line range."""
-    key = store.function_key(ctx.path, long_name, args.name)
     span = _latest_span(store, ctx.run_id, ctx.path, key)
     out = {"long_name": long_name,
            "history": store.function_history(ctx.path, key),
@@ -387,7 +416,7 @@ def _mark_fields(ratchet: list | None, path: str, long_name: str) -> dict:
     and a repo with no ratchet both read as null, and they want different moves.
 
     `long_name` arrives as the KEY name, so `explain path f#2` reads the second
-    twin's mark and a bare `f` reads the first's.
+    twin's mark and a bare `f` reads the worst twin's, as `brief` does.
     """
     from ..ratchet import mark_for
 

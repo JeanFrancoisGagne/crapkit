@@ -231,7 +231,7 @@ def test_the_migrated_store_answers_every_surface_the_same(tmp_path):
     assert migrated.read_scored_file(1, "src/m1.py") == fresh.read_scored_file(1, "src/m1.py")
     assert migrated.function_span(1, "src/m1.py", "f1( a )") == \
         fresh.function_span(1, "src/m1.py", "f1( a )")
-    assert migrated.find_functions("src/m1.py", "f") == fresh.find_functions("src/m1.py", "f")
+    assert migrated.long_names("src/m1.py") == fresh.long_names("src/m1.py")
     assert [h["ccn"] for h in migrated.function_history("src/m1.py", "f1( a )")] == \
         [h["ccn"] for h in fresh.function_history("src/m1.py", "f1( a )")]
 
@@ -310,7 +310,7 @@ def test_the_path_scoped_reads_seek_the_identity_index(tmp_path):
     store, run_id = seeded(tmp_path)
     calls = (("read_scored_file", lambda: store.read_scored_file(run_id, "src/m1.py")),
              ("function_span", lambda: store.function_span(run_id, "src/m1.py", "f1( a )")),
-             ("find_functions", lambda: store.find_functions("src/m1.py", "f")),
+             ("long_names", lambda: store.long_names("src/m1.py")),
              ("function_history", lambda: store.function_history("src/m1.py", "f1( a )")))
     for label, call in calls:
         lines = plans(store, call)

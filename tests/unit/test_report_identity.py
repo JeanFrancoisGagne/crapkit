@@ -107,4 +107,6 @@ def test_position_read_keeps_inventory_scope_copies_without_other_paths_or_metri
         store._conn.set_trace_callback(None)
     selects = [q for q in queries if q.startswith('SELECT')]
     assert len(selects) == 1
-    assert selects[0].split(' FROM ')[0] == 'SELECT i.scope, i.path, i.long_name, f.start, f.occurrence'
+    # One metric rides along: the CRAP keys.select ranks twins by for a bare name.
+    assert selects[0].split(' FROM ')[0] == ('SELECT i.scope, i.path, i.long_name, f.start, '
+                                             'f.occurrence, f.crap')

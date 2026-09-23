@@ -339,7 +339,9 @@ def _explain_mark(repo, capsys, name: str) -> float:
     return payload["ratchet_mark"]
 
 
-def test_explain_reads_the_first_twins_mark_for_a_bare_name(marked_repo, capsys):
+def test_explain_reads_the_worst_twins_mark_for_a_bare_name(marked_repo, capsys):
+    """Here the worst twin is also the first. The worst-second case, where the
+    two rules disagree, is test_explain_answers_a_bare_twin_name_with_the_worst_twin."""
     repo, _, _ = marked_repo
 
     assert _explain_mark(repo, capsys, "__post_init__") == 66.0714

@@ -13,6 +13,7 @@ import pytest
 from crapkit.config import Config
 from crapkit import keys, packet
 from crapkit.cli.queue import _claims_to_release, _next_item_payload, _pick_function
+from crapkit.cli.reports import _explain_selection
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -138,18 +139,19 @@ def test_explain_resolves_the_handle_form_the_packets_print(tmp_path):
     long_name holds. Its own resolution is positional or it rejects a string
     every other command accepts."""
     store = SnapshotStore(tmp_path / "crap.sqlite")
-    store.write_run(commit="c1", tool_versions={},
-                    rows=[anon(9), anon(41), named("mount", 60)])
+    run = store.write_run(commit="c1", tool_versions={},
+                          rows=[anon(9), anon(41), named("mount", 60)])
 
-    assert store.find_functions(PATH, "(anonymous)#2") == ["(anonymous)"]
-    assert store.find_functions(PATH, "(anonymous)#3") == [], "there is no third"
-    assert store.find_functions(PATH, "mount") == ["mount( a , b )"]
+    assert _explain_selection(store, run, PATH, "(anonymous)#2") == [
+        ("(anonymous)", "(anonymous)#2")]
+    assert _explain_selection(store, run, PATH, "(anonymous)#3") == [], "there is no third"
+    assert _explain_selection(store, run, PATH, "mount") == [("mount( a , b )", "mount( a , b )")]
 
 
 def test_a_handle_for_a_path_no_run_scored_resolves_to_nothing(tmp_path):
     store = SnapshotStore(tmp_path / "crap.sqlite")
 
-    assert store.find_functions("web/gone.js", "(anonymous)#1") == []
+    assert _explain_selection(store, None, "web/gone.js", "(anonymous)#1") == []
 
 
 def test_a_claim_taken_before_handles_existed_reads_back_null(tmp_path):

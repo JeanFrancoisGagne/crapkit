@@ -24,8 +24,8 @@ import zlib
 from pathlib import Path
 from typing import NamedTuple
 
-from .keys import (bare_name, claim_holds, claim_key, expression_group, expression_reader_current,
-                   handle_ordinal, key_name, key_names, matching_names, position,
+from .keys import (claim_holds, claim_key, expression_group, expression_reader_current,
+                   key_names, position,
                    refuse_ambiguous, split_ordinal)
 from .snapshot import InventoryRow
 from .worklist import Marks
@@ -224,12 +224,14 @@ _CODE_MIGRATION = (
 
 
 class _Span(NamedTuple):
-    """What `keys.key_names` reads off a row: where a function is and what it is called."""
+    """What `keys.key_names` reads off a row: where a function is and what it is
+    called. `crap` is what `keys.select` ranks twins by, null on an inventory run."""
     scope: str
     path: str
     long_name: str
     start: int
     occurrence: int
+    crap: float | None = None
 
 
 class CrapRow(NamedTuple):
@@ -729,9 +731,10 @@ class SnapshotStore:
         ))
 
     def read_positions(self, run_id: int, path: str) -> list[_Span]:
-        """One file's complete positions, including rows ranking filters omit."""
+        """One file's complete positions, including rows ranking filters omit,
+        each with the CRAP a bare twin name is resolved by."""
         cur = self._conn.execute(
-            f"SELECT i.scope, i.path, i.long_name, f.start, f.occurrence {_BY_PATH} "
+            f"SELECT i.scope, i.path, i.long_name, f.start, f.occurrence, f.crap {_BY_PATH} "
             "WHERE i.path = ? AND f.run_id = ? ORDER BY f.start, f.occurrence, i.long_name",
             (path, run_id))
         return [_Span(*row) for row in cur]
@@ -1142,36 +1145,10 @@ class SnapshotStore:
                FROM overrides o JOIN runs r ON r.id = o.run_id ORDER BY o.run_id, o.path""")
         return list(cur.fetchall())
 
-    def find_functions(self, path: str, name_fragment: str) -> list[str]:
-        """The long_names in a path that one NAME resolves to, across all runs.
-
-        `keys.matching_names` is the rule, shared with `brief`: exact first,
-        the fragment only when nothing matches exactly. This used to be a SQL
-        `LIKE '%name%'` and nothing else, so `explain src/lib.rs route` printed
-        the trajectories of `route`, `route_chain` and `route_num` for a
-        question about one function. Matching in Python also makes `_` and `%`
-        the characters they are rather than LIKE's wildcards.
-
-        A bare start line selects only when one function opens there. Same-line
-        callbacks require a handle, as they do in `brief`.
-
-        `(anonymous)#N` is resolved by position instead: an anonymous function
-        carries no text to match, and the fragment would otherwise hunt for a
-        `#` no long_name has.
-
-        A named `f#2` is the twin selector, so the `#2` comes off before the
-        match: no long_name carries it, and the caller re-attaches it to reach
-        that twin's ratchet key.
-        """
-        if name_fragment.isdigit():
-            return self._at_start_line(path, int(name_fragment))
-        ordinal = handle_ordinal(name_fragment)
-        if ordinal is not None:
-            return self._nth_anonymous(path, ordinal)
-        return matching_names(self._long_names(path), split_ordinal(name_fragment)[0])
-
-    def _long_names(self, path: str) -> list[str]:
-        """Every distinct long_name a surviving run scored in this path.
+    def long_names(self, path: str) -> list[str]:
+        """Every distinct long_name a surviving run scored in this path: the names
+        `explain` matches a NAME against, so a function gone from the newest run
+        still has a trajectory to show.
 
         Joined to functions rather than read off identities alone: a prune drops
         the rows of a run and leaves its identities behind, and a name no
@@ -1181,80 +1158,6 @@ class SnapshotStore:
             f"SELECT DISTINCT i.long_name {_BY_PATH} WHERE i.path = ? "
             "ORDER BY i.long_name", (path,))
         return [n for (n,) in cur]
-
-    def _at_start_line(self, path: str, start: int) -> list[str]:
-        """The function opening on this line, or nothing when none does.
-
-        Read off the newest run that scored the path, like the anonymous
-        ordinal: a line number names a position in the file as it stands now,
-        and an older run held other positions. `brief` answers the same line off
-        the same file, so a session that read a line out of one packet can hand
-        it to either command.
-        """
-        run_id = self._newest_run_for(path)
-        if run_id is None:
-            return []
-        self._require_line(path, run_id, start)
-        cur = self._conn.execute(
-            f"SELECT DISTINCT i.long_name {_BY_PATH} WHERE i.path = ? AND f.run_id = ? AND f.start = ?",
-            (path, run_id, start))
-        return [n for (n,) in cur]
-
-    def _nth_anonymous(self, path: str, ordinal: int) -> list[str]:
-        """The path's Nth anonymous function, or nothing when there is no Nth.
-
-        Read off the newest run that scored the path, because the ordinal names
-        a position in the file as it stands now; an older run held other
-        positions. Nothing found is a list, not an error: the caller already
-        reports a name that matched no function.
-        """
-        names = self._anonymous_names(path)
-        return names[ordinal - 1:ordinal] if ordinal >= 1 else []
-
-    def _anonymous_names(self, path: str) -> list[str]:
-        """The long_names of the path's anonymous functions, in file order."""
-        run_id = self._newest_run_for(path)
-        if run_id is None:
-            return []
-        self._require_identity(run_id=run_id, path=path)
-        cur = self._conn.execute(
-            f"SELECT DISTINCT f.start, f.occurrence, i.long_name {_BY_PATH} "
-            "WHERE i.path = ? AND f.run_id = ? ORDER BY f.start, f.occurrence, i.long_name", (path, run_id))
-        return [n for _, _, n in cur if not bare_name(n)]
-
-    def function_key(self, path: str, long_name: str, selector: str) -> str:
-        """The key of an already-resolved selector, including inventory rows."""
-        self._require_identity(run_id=self._newest_run_for(path), path=path, name=long_name)
-        if selector.isdigit():
-            return key_name(long_name, self._ordinal_at_start(path, long_name, int(selector)))
-        anonymous = handle_ordinal(selector)
-        ordinal = (self._anonymous_names(path)[:anonymous].count(long_name)
-                   if anonymous is not None else split_ordinal(selector)[1])
-        return key_name(long_name, ordinal)
-
-    def _ordinal_at_start(self, path: str, name: str, start: int) -> int:
-        run_id = self._newest_run_for(path)
-        self._require_line(path, run_id, start)
-        cur = self._conn.execute(
-            f"SELECT COUNT(*) FROM (SELECT DISTINCT f.start, f.occurrence {_BY_PATH} "
-            "WHERE i.path = ? AND i.long_name = ? AND f.run_id = ? AND f.start <= ?)",
-            (path, name, run_id, start))
-        return cur.fetchone()[0]
-
-    def _require_line(self, path: str, run_id: int | None, start: int) -> None:
-        self._require_identity(run_id=run_id, path=path)
-        cur = self._conn.execute(
-            f"SELECT DISTINCT i.long_name, f.occurrence {_BY_PATH} "
-            "WHERE i.path = ? AND f.run_id = ? AND f.start = ?", (path, run_id, start))
-        if len(cur.fetchmany(2)) > 1:
-            raise ToolError(f"line {start} in {path} identifies multiple functions; use a function handle")
-
-    def _newest_run_for(self, path: str) -> int | None:
-        """The last run that holds a row for this path. Hook runs carry no rows,
-        so they never win it."""
-        cur = self._conn.execute(f"SELECT MAX(f.run_id) {_BY_PATH} WHERE i.path = ?",
-                                 (path,))
-        return cur.fetchone()[0]
 
     def function_history(self, path: str, long_name: str) -> list[dict]:
         """One row per run this function appears in: the trajectory behind a verdict.

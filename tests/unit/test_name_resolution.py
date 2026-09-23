@@ -15,6 +15,7 @@ import pytest
 
 from crapkit import keys
 from crapkit.cli.queue import _pick_function
+from crapkit.cli.reports import _explain_selection
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -41,6 +42,12 @@ def store(tmp_path) -> SnapshotStore:
     return st
 
 
+def explained(store: SnapshotStore, name: str) -> list[str]:
+    """The long names `explain` reports for NAME off the store's one run."""
+    run = store.list_runs()[-1]["id"]
+    return [long_name for long_name, _ in _explain_selection(store, run, PATH, name)]
+
+
 # --- the shared rule ---------------------------------------------------------
 
 def test_an_exact_bare_name_beats_the_two_names_that_contain_it():
@@ -63,26 +70,26 @@ def test_an_empty_name_matches_nothing_rather_than_everything():
     assert keys.matching_names(NAMES, "") == []
 
 
-# --- explain, through the store ----------------------------------------------
+# --- explain, through its selection -----------------------------------------
 
 def test_explain_resolves_an_exact_bare_name_to_one_function(store: SnapshotStore):
     """What a fresh session saw: three trajectories for a question about one."""
-    assert store.find_functions(PATH, "route") == [NAMES[0]]
+    assert explained(store, "route") == [NAMES[0]]
 
 
 def test_explain_keeps_the_fragment_search_when_nothing_matches_exactly(
         store: SnapshotStore):
-    assert store.find_functions(PATH, "route_") == sorted(NAMES[1:])
+    assert explained(store, "route_") == sorted(NAMES[1:])
 
 
 def test_explain_takes_the_long_name_a_payload_printed(store: SnapshotStore):
-    assert store.find_functions(PATH, NAMES[2]) == [NAMES[2]]
+    assert explained(store, NAMES[2]) == [NAMES[2]]
 
 
 def test_a_sql_wildcard_in_a_name_is_a_literal_now(store: SnapshotStore):
     """`LIKE` read `_` as "any character", so `route_num` was a pattern that also
     matched `routeXnum`. Python containment reads it as the character it is."""
-    assert store.find_functions(PATH, "route%") == []
+    assert explained(store, "route%") == []
 
 
 # --- brief, through the rows -------------------------------------------------
@@ -104,13 +111,13 @@ def test_brief_now_takes_a_fragment_too_and_reports_the_ambiguity():
 def test_a_unique_fragment_resolves_in_brief(store: SnapshotStore):
     """The pin on the two commands agreeing: one string, one function, both ways."""
     assert _pick_function(PATH, ROWS, "_chain").long_name == NAMES[1]
-    assert store.find_functions(PATH, "_chain") == [NAMES[1]]
+    assert explained(store, "_chain") == [NAMES[1]]
 
 
 def test_a_name_no_function_holds_is_still_an_error(store: SnapshotStore):
     with pytest.raises(CrapkitError):
         _pick_function(PATH, ROWS, "nope")
-    assert store.find_functions(PATH, "nope") == []
+    assert explained(store, "nope") == []
 
 
 # --- the start line, which both commands take --------------------------------
@@ -121,10 +128,10 @@ def test_a_start_line_resolves_to_the_same_function_in_both_commands(
     answered "no function matching '30'". The start line is the one handle every
     function has, anonymous ones included, so both commands read it."""
     assert _pick_function(PATH, ROWS, "30").long_name == NAMES[1]
-    assert store.find_functions(PATH, "30") == [NAMES[1]]
+    assert explained(store, "30") == [NAMES[1]]
 
 
 def test_a_line_no_function_opens_on_resolves_to_nothing(store: SnapshotStore):
     """Inside a function is not the same as opening it: the caller reports the
-    miss, so the store answers with an empty list rather than a guess."""
-    assert store.find_functions(PATH, "31") == []
+    miss, so the selection answers with an empty list rather than a guess."""
+    assert explained(store, "31") == []

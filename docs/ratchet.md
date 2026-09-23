@@ -72,8 +72,10 @@ crapkit: calc/iso_cost.py defines __post_init__( self ) more than once; each one
 ```
 
 To address one twin by hand, `brief` and `explain` take the same suffix:
-`crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves — to the
-worst twin, the one the queue ranks.
+`crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves, to the
+worst twin: the one the queue ranks. `brief`, `explain` and the MCP tool
+`get_function_history` all pick it, so the history and the mark each reports belong to
+that twin, wherever it sits in the file.
 
 ---
 

@@ -116,7 +116,8 @@ the handles the file does hold:
 
 One file can also give one name to several NAMED functions: several dataclasses each
 with a `__post_init__`, both arms of an `#ifdef` fork. A bare name resolves to the worst
-of them, which is the one the queue ranks. `NAME#2` selects the second in file order and
+of them, which is the one the queue ranks, in `brief`, `explain` and
+`get_function_history` alike. `NAME#2` selects the second in file order and
 `NAME#3` the third — the same ordinals the ratchet keys their marks on, so the mark in a
 packet is the mark on the function that packet opened. An ordinal past the last twin
 exits 1:

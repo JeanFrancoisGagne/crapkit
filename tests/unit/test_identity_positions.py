@@ -5,7 +5,8 @@ from contextlib import closing
 import pytest
 
 from crapkit import keys
-from crapkit.errors import ToolError
+from crapkit.cli.reports import _explain_selection
+from crapkit.errors import CrapkitError, ToolError
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 from crapkit.worklist import RatchetMarks
@@ -57,7 +58,8 @@ def test_stored_same_line_callbacks_keep_scores_spans_and_history(tmp_path):
         assert store.read_marks(run).score(second) == (20, 0)
         assert store.function_span(run, 'app.ts', '(anonymous)#2') == (1, 1)
         assert store.function_history('app.ts', '(anonymous)#2')[0]['crap'] == 20
-        assert store.function_key('app.ts', '(anonymous)', '(anonymous)#2') == '(anonymous)#2'
+        assert _explain_selection(store, run, 'app.ts', '(anonymous)#2') == [
+            ('(anonymous)', '(anonymous)#2')]
         ratchet = RatchetMarks({('app.ts', '(anonymous)#2'): 25}, store.twin_key_names(run))
         assert ratchet.of(second) == 25
         assert ratchet.of(first) is None
@@ -124,10 +126,13 @@ def test_same_line_numeric_selection_refuses_and_ordinal_claims_stay_separate(tm
     with closing(store._conn):
         rows = [row(1), row(2)]
         run = store.write_run(commit='fixture', tool_versions={'analysis_version': '10'}, rows=rows)
-        with pytest.raises(ToolError, match='multiple functions'):
-            store.find_functions('app.ts', '1')
-        with pytest.raises(ToolError, match='multiple functions'):
-            store.function_key('app.ts', '(anonymous)', '1')
+        # explain refuses the line with brief's words and brief's exit 1: a
+        # selector the caller can fix is not a tool failure.
+        with pytest.raises(CrapkitError) as refused:
+            _explain_selection(store, run, 'app.ts', '1')
+        assert refused.value.exit_code == 1
+        assert str(refused.value) == ('line 1 in app.ts is ambiguous; use a handle: '
+                                      '(anonymous)#1, (anonymous)#2')
         names, handles = keys.key_names(rows), keys.handles(rows)
         claims = [store.record_claim(path=r.path, long_name=r.long_name, commit='fixture',
                                     handle=handles[keys.lookup(r)], key_name=keys.key_of(names, r)[1],
