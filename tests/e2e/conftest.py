@@ -1,4 +1,4 @@
-"""The one way tests/e2e spawns the CLI, and the git lines every repo fixture needs.
+"""The one way tests/e2e runs the CLI, and the git lines every repo fixture needs.
 
 AGENTS.md fixes the contract these tests run under: tests/e2e drives
 `python -m crapkit` against a real git repo in a tmp dir and asserts through the
@@ -29,6 +29,13 @@ A fixture lane spells a bare `python`, which its shell finds through PATH, so th
 suite's own interpreter directory goes first on the child's PATH. With another
 project's virtualenv first, each nested pytest loaded that environment's
 plugins, and one e2e file spent twice the CPU.
+
+The call itself runs in this process unless the file asks otherwise:
+cli_in_process.py calls `crapkit.cli.main` with the child's cwd, environment,
+stdio and argv in place and puts the worker back afterwards, which saves an
+interpreter start per call. `spawn=True` starts the real child, and a file that
+tests the process boundary binds it in its `cli_runner` line (AGENTS.md lists
+them). `mcp` always spawns: the server reads a real stdin descriptor.
 """
 
 from __future__ import annotations
@@ -61,9 +68,13 @@ def child_env(env_extra: dict | None = None) -> dict:
 
 def run_cli(repo: Path, *args: str, timeout: float | None = None, env_extra: dict | None = None,
             encoding: str | None = None, errors: str | None = None,
-            stdin: str | None = None) -> subprocess.CompletedProcess:
+            stdin: str | None = None, spawn: bool = False) -> subprocess.CompletedProcess:
     """`python -m crapkit <args>` in `repo`, captured as text, under the hang
     bound unless `timeout` names another."""
+    from cli_in_process import fits, run as in_process
+    if fits(args, spawn):
+        return in_process(repo, args, env=child_env(env_extra), stdin=stdin,
+                          encoding=encoding, errors=errors, timeout=timeout)
     if args and args[0] == 'mcp' and stdin is not None:
         from mcp_stdio import run
         bound = hang_guard.HANG_SECONDS if timeout is None else timeout

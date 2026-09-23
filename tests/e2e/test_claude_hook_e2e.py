@@ -26,7 +26,11 @@ from pathlib import Path
 import pytest
 
 import crapkit
-from conftest import child_env, run_cli
+from conftest import child_env, cli_runner
+
+# The hook is a process Claude Code starts per edit: stdin payload, start
+# time and PYTHONPATH shims all need the real child.
+run_cli = cli_runner(spawn=True)
 
 PY = sys.executable
 GOLDENS = Path(__file__).resolve().parent.parent / "goldens" / "claude_hook"

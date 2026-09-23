@@ -138,7 +138,9 @@ TOML = ('[crapkit]\ntarget = 6\n\n'
 CPP_FILES = 17
 
 
-run_cli = cli_runner(timeout=300)
+# These repos reach the analysis pool, which forks its caller on Linux; a
+# pytest worker, with xdist's threads in it, is not a process to fork.
+run_cli = cli_runner(timeout=300, spawn=True)
 
 
 def write(path: Path, text: str) -> None:

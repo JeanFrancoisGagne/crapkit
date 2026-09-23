@@ -23,7 +23,8 @@ import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
 
-_run = cli_runner(timeout=120, encoding="utf-8", errors="replace")
+# The child's own stdio encoding is what this file tests.
+_run = cli_runner(timeout=120, encoding="utf-8", errors="replace", spawn=True)
 
 CP1252 = {"PYTHONIOENCODING": "cp1252"}
 

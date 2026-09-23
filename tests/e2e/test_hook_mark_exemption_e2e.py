@@ -11,8 +11,8 @@ The hook exempts on EXISTENCE of a (path, long_name) mark, not on the numeric
 no CRAP to compare against a mark. `verify` keeps the numeric worsening check,
 which is what catches a mark that actually rose.
 
-These run against the real subcommand, spawned, because the gate's answer is
-the process exit code a git commit reads.
+These run against the real subcommand through `run_cli`, because the gate's
+answer is the exit code a git commit reads.
 """
 import subprocess
 from pathlib import Path

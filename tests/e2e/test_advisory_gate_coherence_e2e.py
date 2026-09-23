@@ -23,7 +23,10 @@ from pathlib import Path
 import pytest
 
 import crapkit
-from conftest import run_cli
+from conftest import cli_runner
+
+# PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
+run_cli = cli_runner(spawn=True)
 
 CONFIG = """[crapkit]
 target = 6

@@ -10,7 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import run_cli
+from conftest import cli_runner
+
+# PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
+run_cli = cli_runner(spawn=True)
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 

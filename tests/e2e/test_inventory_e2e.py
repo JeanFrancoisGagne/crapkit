@@ -14,7 +14,10 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from conftest import git_commit_all, git_init_repo, run_cli
+from conftest import cli_runner, git_commit_all, git_init_repo
+
+# PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
+run_cli = cli_runner(spawn=True)
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 

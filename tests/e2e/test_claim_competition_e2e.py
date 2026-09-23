@@ -7,7 +7,9 @@ from crapkit.store import SnapshotStore
 from conftest import cli_runner, git_init_repo, git_commit_all
 
 
-run_cli = cli_runner(encoding="utf-8")
+# Sessions race for claims from separate processes, and one test starts
+# three at once, so every call here is its own child.
+run_cli = cli_runner(encoding="utf-8", spawn=True)
 
 
 def seeded(repo):

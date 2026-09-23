@@ -21,7 +21,10 @@ from crapkit.cli.verifying import cmd_hook_precommit
 from crapkit.cli import verifying
 from crapkit.errors import GitError
 
-from conftest import run_cli
+from conftest import cli_runner
+
+# PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
+run_cli = cli_runner(spawn=True)
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 SRC = str(Path(gitio.__file__).resolve().parent.parent)

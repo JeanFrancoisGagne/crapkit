@@ -45,7 +45,8 @@ RATCHET = "crapkit-ratchet.tsv"
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
-run_cli = cli_runner(timeout=180)
+# PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
+run_cli = cli_runner(timeout=180, spawn=True)
 
 
 @pytest.fixture()

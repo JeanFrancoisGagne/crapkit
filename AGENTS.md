@@ -654,12 +654,33 @@ results. Either suite failing makes the runner fail.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
-`python -m crapkit` against real git repos in tmp dirs and asserts through the CLI only.
-It spawns that child one way, `run_cli` in `tests/e2e/conftest.py`. Bind your file's
-contract once at the top with `cli_runner(...)` rather than writing another
-`subprocess.run`; before that file there were 42 copies of those four lines, 23 of them
-different, with nothing to say which differences were deliberate. Each e2e command
-injects its own git identity, so no global git config is required.
+the CLI against real git repos in tmp dirs and asserts through the CLI only. Every call
+goes through `run_cli` in `tests/e2e/conftest.py`. Bind your file's contract once at the
+top with `cli_runner(...)` rather than writing another `subprocess.run`; before that file
+there were 42 copies of those four lines, 23 of them different, with nothing to say which
+differences were deliberate. Each e2e command injects its own git identity, so no global
+git config is required.
+
+`run_cli` runs the command inside the pytest worker, which saves an interpreter start per
+call; `tests/e2e/cli_in_process.py` says what of the child it rebuilds and what it puts
+back. A file whose assertions need the process itself binds `cli_runner(spawn=True)`: a
+signal, a killed child, the console script, the child's own stdio decoding, PYTHONPATH
+(only a new interpreter reads it), calls made at once, or a patch on crapkit's own
+modules that is live while `run_cli` runs. These files do:
+
+| File | What needs the process |
+|---|---|
+| `test_encoding_e2e.py` | the child's stdio encoding under a legacy code page |
+| `test_mcp_e2e.py`, `test_mcp_no_config.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
+| `test_claude_hook_e2e.py` | the hook as Claude Code starts it: stdin payload, start time, PYTHONPATH shims |
+| `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py` | PYTHONPATH set through `env_extra` |
+| `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
+| `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
+| `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
+
+A fixture that builds a measured repo builds it once per worker through
+`tests/e2e/repo_templates.py` and hands each test a copy. A test that asserts what a first
+run does gets a fresh build.
 
 ## Where code goes
 

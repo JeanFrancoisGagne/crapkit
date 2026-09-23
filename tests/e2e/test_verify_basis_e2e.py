@@ -371,7 +371,7 @@ def test_a_refused_override_says_why_through_the_process_seam(receipt_repo: Path
     the regression, one stderr line naming it and the escape, stdout untouched."""
     mark(receipt_repo, 0.1)
 
-    res = run_cli(receipt_repo, "verify", "--override", "hotfix")
+    res = run_cli(receipt_repo, "verify", "--override", "hotfix", spawn=True)
 
     assert res.returncode == 7, res.stdout + res.stderr
     assert ("override refused: 1 ratchet regression (src/mod.py alpha( n ) 0.1 -> 2.0) "

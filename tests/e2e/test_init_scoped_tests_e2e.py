@@ -15,7 +15,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from conftest import run_cli
+from conftest import cli_runner
+
+# PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
+run_cli = cli_runner(spawn=True)
 
 _MOD = "def g(x):\n    return x or 0\n"
 _TEST = "from pkg.x import g\n\n\ndef test_g():\n    assert g(0) == 0\n"

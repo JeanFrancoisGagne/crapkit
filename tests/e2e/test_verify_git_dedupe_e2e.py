@@ -81,7 +81,9 @@ def commit(repo: Path, message: str) -> None:
     git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", message)
 
 
-run_cli = cli_runner(timeout=300, encoding="utf-8")
+# The tests patch crapkit's own functions while run_cli builds their repos, and
+# an in-process build would run the patched code.
+run_cli = cli_runner(timeout=300, encoding="utf-8", spawn=True)
 
 
 def base_repo(tmp_path: Path, lane_args: str = "") -> Path:

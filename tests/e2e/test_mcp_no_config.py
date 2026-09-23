@@ -15,7 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import git_commit_all, git_init_repo, run_cli
+from conftest import cli_runner, git_commit_all, git_init_repo
+
+# The MCP server is a stdio process, and this file tests it as one.
+run_cli = cli_runner(spawn=True)
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
