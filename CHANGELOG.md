@@ -30,6 +30,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   that field, and the stamp stores it as `proof`, so the first `--reuse-unchanged` after
   upgrading reruns every lane once. Declare `inputs` on each lane to get reuse across
   commits.
+- The Claude Code plugin needs the crapkit CLI of its own release. Both manifests said
+  0.4.0 or newer, but the recover skill runs `ratchet seed --baseline N`, which a 0.7.x
+  CLI rejects, and `crapkit doctor --plugin-root` reports any version gap. Upgrade the
+  CLI and the plugin together.
 - Library API: `dump_ratchet` takes no default stamp, `RatchetFile` renders every marks
   write through `kept`, `measured` or `reseeded`, and `record_override` requires
   `metric=`. The coverage `parse_*` readers moved from `covstream` to one adapter module
@@ -430,7 +434,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   release interpreter that cannot import build or twine and a missing PyPI credential.
   `release.py verify` prints `unconfirmed (cannot run gh: ...)` or `unreachable (not the
   version JSON: ...)` instead of a traceback, and a staged rename out of a path starting
-  `# ` reads as a dirty tree.
+  `# ` reads as a dirty tree. `verify` gives the MCP registry search 120 s, because a
+  search on a cold registry cache took 78 to 87 s and a 20 s read called a correct entry
+  unconfirmed. `run glama VERSION` prints the manual Sync Server step, and an unknown
+  stage is refused with every stage `plan` prints.
 - The dependency-venv fixture carries every site directory the parent imports from, so
   the throwaway-venv tests pass under a `--system-site-packages` venv. The publish
   adapter retries readbacks without sleeping, 55 s off one unit test, and three release
