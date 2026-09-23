@@ -26,7 +26,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
     from .lizardtypescript import LizardExtension as _TypeScriptExpressions
-    from .lizardtypescript import uses_type_syntax
+    from .lizardtypescript import mask_templates, reads_templates, uses_type_syntax
 
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
@@ -545,10 +545,25 @@ _install_decoder()
 lizard.get_reader_for = _reader_for
 
 
+class _Analyzer(lizard.FileAnalyzer):
+    """lizard's FileAnalyzer, handing a JavaScript-family reader its source with
+    the template-literal characters its tokenizer misreads blanked.
+
+    Every path into lizard comes through here: a file on disk
+    (`FileAnalyzer.__call__` reads it and calls this method), a staged blob and
+    a verified worker input.
+    """
+
+    def analyze_source_code(self, filename, code):
+        if reads_templates(lizard.get_reader_for(filename)):
+            code = mask_templates(code)
+        return super().analyze_source_code(filename, code)
+
+
 def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     abs_path, rel_path = args
     try:
-        analysis = lizard.FileAnalyzer(_extensions_for(rel_path))(abs_path)
+        analysis = _Analyzer(_extensions_for(rel_path))(abs_path)
         return rel_path, _trusted_records(rel_path, analysis.function_list)
     except Exception as exc:  # loud and counted, never fatal: see _note_unanalyzable
         return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
@@ -565,7 +580,7 @@ def analyze_source(rel_path: str, code: str, *, note: bool = True) -> list[Funct
     half-typed edit on purpose.
     """
     try:
-        analyzer = lizard.FileAnalyzer(_extensions_for(rel_path))
+        analyzer = _Analyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
         records = _trusted_records(rel_path, analysis.function_list)
     except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
@@ -826,7 +841,7 @@ def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionReco
     if hashlib.sha256(raw).hexdigest() != expected:
         raise ToolError(f"{relative}: source changed during analysis; rerun analysis")
     try:
-        analyzer = lizard.FileAnalyzer(_extensions_for(relative))
+        analyzer = _Analyzer(_extensions_for(relative))
         analysis = analyzer.analyze_source_code(relative, decode_source(raw))
         return relative, _trusted_records(relative, analysis.function_list)
     except Exception as exc:  # a parse refusal, unlike the read and hash above, is per-file

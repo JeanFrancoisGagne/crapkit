@@ -773,7 +773,7 @@ Five reader modules sit beside the core, all registered in `analyze.py`'s
 | `lizardrust.py` | counts Rust `match` arms, which lizard does not (lizard #494) |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
-| `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax |
+| `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax; blanks the template-literal characters lizard's tokenizer misreads, such as a nested template's backticks, before a JavaScript-family reader sees the file |
 
 Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child
 imports `analyze.py`, so a reader registered anywhere later leaves spawned workers

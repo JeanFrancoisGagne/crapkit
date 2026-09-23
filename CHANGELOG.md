@@ -72,6 +72,29 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   rows are enclosing defs that were never listed, and they can be over a ceiling.
   crapkit's own tree reads the same apart from two renamed test helpers.
 
+### A template literal nested in another's `${...}` no longer hides the functions after it
+
+- lizard reads a JavaScript, JSX, TypeScript or TSX template literal as everything up to
+  the next backtick, so the opening backtick of a template nested in `${...}` closed the
+  outer one. An escaped backtick in the text did the same, and so did a brace inside a
+  string, comment, regex literal or nested template's text within `${...}`, which threw
+  off lizard's count of where the expression ends. The reader then stayed inside a
+  template until the next backtick in the file: every function after it was folded into
+  the function around it or dropped, so reports, marks and `rescore --gate` never saw
+  it. On a large consumer repo a ccn-10 function appended after one passed the gate with
+  0 functions judged. 0.7.x reads these files the same way.
+- crapkit now blanks those characters with spaces before lizard reads the file, so every
+  line and column stays put and each template reads as a flat one does. A file with no
+  such template reaches lizard unchanged. A function written inside `${...}` is still
+  not listed, as in a flat template.
+- Measured over a large consumer repo's 12,547 scored TypeScript files: 696 hold such a
+  template and 492 of them read differently. 5,955 rows are added, 1,061 go and 513 keep
+  their name but change span or ccn. 251 of the rows that go were functions written
+  inside one of those templates. A top-level function appended to a file was
+  missing from 703 files and is now missing from 336; the rest come from other shapes
+  lizard misreads, such as a template inside a `case` label's block, and 8 files showed
+  one only because a nested template flipped the reader back out of one of them.
+
 ### A one-line Python def is told to split its lines
 
 - A Python def written on one line, in a scope a lane measures, scores as uncovered with

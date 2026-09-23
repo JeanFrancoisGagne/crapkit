@@ -10,14 +10,171 @@ comma is ambiguous here: the comma can separate type arguments or expressions.
 Refuse that file instead of guessing. Parentheses or a block around the arrow
 body give the reader the missing delimiter. Generic arrow parameters still use
 the stock declaration reader and remain supported.
+
+Template literals are fixed in the source text instead, before any reader sees
+it. The stock tokenizer reads a template as the regex `.*?` between two
+backticks, so the first backtick inside one closes it: the opening backtick of a
+template nested in `${...}`, or an escaped one in the text. It then counts every
+brace inside a `${...}` to find its end, including one in a string or in a
+nested template's text. Either way the reader sits inside a template until the
+next backtick in the file, and every function after it is folded into the
+enclosing one or dropped. `mask_templates` blanks exactly the characters that
+mislead it, so the tokens that come out are the ones a flat template gives.
 """
 from __future__ import annotations
 
-from lizard_languages.typescript import TypeScriptStates
+import re
+
+from lizard_languages.javascript import JavaScriptReader
+from lizard_languages.tsx import TSXReader
+from lizard_languages.typescript import TypeScriptReader, TypeScriptStates
 
 from .errors import ToolError
 
 _ANGLE_DELTAS = {"<": 1, ">": -1}
+
+# The readers that tokenize with TypeScriptReader's template regex and nothing
+# ahead of it that can swallow a quote or a backtick. VueReader is left out: its
+# tag token runs `.*?` up to the next `>`, across quotes and backticks alike.
+_TEMPLATE_READERS = (TypeScriptReader, JavaScriptReader, TSXReader)
+
+# The tokens of lizard's pattern that can hold a quote, a backtick or a slash: a
+# block or line comment, a template, a string, a digit-separated number. No other
+# token it reads can, so a search for these finds the template starts lizard
+# finds. Each alternative opens on its own first character, which lets the search
+# skip every other one; the lookbehind after a number's first digit is lizard's
+# token boundary, since a digit after a word character is part of that word.
+_LIZARD_SKIPS = re.compile(
+    r"/\*.*?\*/|//(?:\\\n|[^\n])*|(?P<tick>`)|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*?'"
+    r"|\d(?<!\w\d)\d*'(?:\d+')*\d+|0(?<!\w0)x(?:[0-9A-Fa-f]+')+[0-9A-Fa-f]+"
+    r"|0(?<!\w0)b(?:[01]+')+[01]+",
+    re.S)
+# The outermost template's text: an escaped backtick or `\${` misleads lizard,
+# any other escape does not.
+_OUTER_TEXT = re.compile(r"(?P<hide>\\(?:`|\$\{))|\\.|(?P<close>`)|(?P<open>\$\{)", re.S)
+# A nested template's text sits inside lizard's brace count, so every brace in it goes.
+_NESTED_TEXT = re.compile(r"(?P<hide>\\.|[{}])|(?P<close>`)|(?P<open>\$\{)", re.S)
+# The code inside `${...}`.
+_CODE = re.compile(
+    r"(?P<hide>/\*.*?\*/|//[^\n]*|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*')"
+    r"|(?P<open>`)|(?P<brace>\{)|(?P<shut>\})|(?P<slash>/)", re.S)
+_DEPTH = {"brace": 1, "shut": -1}
+_REGEX_LITERAL = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n\[])+/")
+_BEFORE_REGEX = frozenset("(,=:[!&|?{};")
+_MISLEADING = re.compile(r"[`{}]")
+
+
+def reads_templates(reader) -> bool:
+    """True for a reader class whose tokenizer `mask_templates` mirrors."""
+    return reader in _TEMPLATE_READERS
+
+
+def mask_templates(code: str) -> str:
+    """CODE with every character that misreads a template literal blanked.
+
+    Blanked means a space in its place, so every line and column stays put. A
+    nested template's backticks go, with every brace in its text; so do a
+    backtick or brace inside a string, comment or regex literal in `${...}`, an
+    escaped backtick, and the `{` of an escaped `\\${`. A template the file
+    never closes is left as lizard reads it. A file with nothing to blank comes
+    back as the same string.
+    """
+    if "`" not in code:
+        return code
+    mask = _TemplateMask(code)
+    pos = 0
+    while hit := _LIZARD_SKIPS.search(code, pos):
+        pos = mask.after(hit)
+    return mask.applied()
+
+
+class _Unterminated(Exception):
+    """The file ended inside a template or one of its expressions."""
+
+
+class _TemplateMask:
+    def __init__(self, code: str):
+        self.code = code
+        self.hidden: list[int] = []
+
+    def after(self, hit) -> int:
+        """Where lizard's next token starts once it has read HIT."""
+        if hit.lastgroup != "tick":
+            return hit.end()
+        kept = len(self.hidden)
+        try:
+            return self.template(hit.end(), _OUTER_TEXT)
+        except _Unterminated:
+            del self.hidden[kept:]
+            return len(self.code)
+
+    def template(self, pos: int, text) -> int:
+        """The index just past the backtick that closes the template open at POS."""
+        while hit := text.search(self.code, pos):
+            pos = hit.end()
+            if hit.lastgroup == "close":
+                return pos
+            if hit.lastgroup == "open":
+                pos = self.expression(pos)
+            else:
+                self._hide(hit.start(), pos)
+        raise _Unterminated
+
+    def expression(self, pos: int) -> int:
+        """The index just past the `}` that closes the `${` before POS."""
+        depth = 1
+        while depth:
+            hit = _CODE.search(self.code, pos)
+            if hit is None:
+                raise _Unterminated
+            depth += _DEPTH.get(hit.lastgroup, 0)
+            pos = self._code_step(hit)
+        return pos
+
+    def _code_step(self, hit) -> int:
+        kind = hit.lastgroup
+        if kind == "hide":
+            self._hide(hit.start(), hit.end())
+        elif kind == "open":
+            return self._nested(hit.end())
+        elif kind == "slash":
+            return self._regex_or_division(hit.start())
+        return hit.end()
+
+    def _nested(self, pos: int) -> int:
+        self.hidden.append(pos - 1)
+        end = self.template(pos, _NESTED_TEXT)
+        self.hidden.append(end - 1)
+        return end
+
+    def _regex_or_division(self, start: int) -> int:
+        literal = _REGEX_LITERAL.match(self.code, start)
+        if literal is None or not _regex_may_start(self.code, start):
+            return start + 1
+        self._hide(start, literal.end())
+        return literal.end()
+
+    def _hide(self, start: int, end: int) -> None:
+        self.hidden.extend(m.start() for m in _MISLEADING.finditer(self.code, start, end))
+
+    def applied(self) -> str:
+        if not self.hidden:
+            return self.code
+        chars = list(self.code)
+        for i in self.hidden:
+            chars[i] = " "
+        return "".join(chars)
+
+
+def _regex_may_start(code: str, slash: int) -> bool:
+    """A `/` after an operator or an opening bracket starts a regex literal.
+
+    Only asked inside `${...}`, so the `{` of the `${` stops the walk back.
+    """
+    i = slash - 1
+    while code[i].isspace():
+        i -= 1
+    return code[i] in _BEFORE_REGEX
 
 
 def uses_type_syntax(filename: str) -> bool:

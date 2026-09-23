@@ -191,7 +191,7 @@ shell and PowerShell.
 
 | Module | Why it exists |
 |---|---|
-| `lizardtypescript.py` | keeps sibling JavaScript and TypeScript expression arrows separate; refuses ambiguous TypeScript angle syntax instead of guessing. It extends each reader instance without changing the installed lizard package. |
+| `lizardtypescript.py` | keeps sibling JavaScript and TypeScript expression arrows separate; refuses ambiguous TypeScript angle syntax instead of guessing. It extends each reader instance without changing the installed lizard package. `mask_templates` blanks the template-literal characters lizard's tokenizer misreads, so a template nested in `${...}` no longer hides the functions after it; `analyze.py` applies it to every JavaScript-family file. |
 | `lizardrust.py` | lizard's Rust reader counts a `match` block once no matter how many arms it has (lizard #494). This one counts each non-wildcard arm, and retires itself the day upstream fixes it. |
 | `lizardshell.py` | lizard ships no shell reader, and answers `.sh` with `CLikeReader` rather than a failure, so the numbers were plausible and wrong. |
 | `lizardpowershell.py` | same for `.ps1` and `.psm1`, plus a cp1252 decode fallback. |
