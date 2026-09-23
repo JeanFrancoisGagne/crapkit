@@ -725,6 +725,13 @@ still refuses it until `crapkit ratchet seed` re-baselines the marks. A marks fi
 creates takes the stamp of the crapkit that ran it. A `verify --override` grant is measured, so
 marks another metric recorded refuse it the way they refuse `verify` itself.
 
+The kept stamp also decides whether the hook can grant an anonymous JavaScript or TypeScript
+callback. Under a stamp older than analysis version 10, the `(anonymous)` mark the grant adds
+has no reader proof, and every later reader would refuse the file (see
+[same-line function identity](#same-line-function-identity)). So the hook refuses that grant
+and writes no alert line, no store row and no mark. The grant is refused until
+`crapkit coverage` and `crapkit ratchet seed` restamp the file.
+
 An empty reason is refused. Runs an override names are pinned in the store: `runs prune`
 never deletes them.
 

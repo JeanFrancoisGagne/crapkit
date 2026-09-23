@@ -5,12 +5,15 @@ has nothing to say about which metric recorded the marks already there. It used
 to restamp the whole file with the running metric: marks recorded under
 analysis 7 then carried the analysis 10 stamp, and the next verify, which had
 refused them, compared them instead. A stale file now stays stale, and verify
-keeps refusing it until `ratchet seed` re-baselines the marks.
+keeps refusing it until a fresh `coverage` and `ratchet seed` re-baseline the marks.
 """
+from contextlib import closing
+
 from cli_inproc_repo import add_knotty, git, repo, seed_artifacts, template_repo  # noqa: F401
 
 from crapkit.cli import main
 from crapkit.ratchet import metric_version, read_stamp
+from crapkit.store import SnapshotStore
 
 MARKS = "crapkit-ratchet.tsv"
 STALE = "crapkit-analysis=7 lizard=1.17.10"
@@ -66,3 +69,35 @@ def test_a_hook_grant_that_creates_the_marks_file_stamps_the_metric_it_ran_under
     """No marks were recorded, so the only numbers in the new file are the
     grant's own, scored by this crapkit."""
     assert read_stamp(grant_knotty(repo, capsys, monkeypatch)) == metric_version()
+
+
+# An anonymous callback past the ceiling of 6: seven ifs, ccn 8.
+ANON_TS = ("export const out = [1, 2].map((n: number) => {\n"
+           + "".join(f"  if (n > {i}) {{ return {i}; }}\n" for i in range(1, 8))
+           + "  return 0;\n});\n")
+
+
+def test_a_hook_grant_for_an_anonymous_callback_under_an_older_reader_grants_nothing(
+        repo, capsys, monkeypatch):
+    """Expression reader 10 renumbered anonymous callbacks, so an anonymous mark
+    under an older analysis stamp has no proof it names the same function. The
+    grant keeps the recorded stamp, so its own `(anonymous)` mark would carry
+    that older stamp and every later reader, seed included, would refuse the
+    file. The grant refuses first: no alert, no override row, no mark."""
+    (repo / MARKS).write_text("# crapkit-analysis=9 lizard=1.24.0\n# crapkit-keys=1\n"
+                              "path\tlong_name\tcrap\nsrc/app.ts\tdispatch ( kind )\t90.0000\n",
+                              encoding="utf-8", newline="\n")
+    before = (repo / MARKS).read_bytes()
+    (repo / "src" / "anon.ts").write_text(ANON_TS, encoding="utf-8", newline="\n")
+    git(repo, "add", "src/anon.ts")
+    monkeypatch.setenv("CRAPKIT_OVERRIDE_REASON", "hotfix, ticket 41")
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert code != 0, out + err
+    assert "expression reader 10 changed anonymous function ordinals in src/anon.ts" in err, err
+    assert (repo / MARKS).read_bytes() == before
+    assert not (repo / "alerts.log").exists()
+    store = SnapshotStore(repo / ".crapkit" / "crap.sqlite")
+    with closing(store._conn):
+        assert all(not store.read_overrides(run["id"]) for run in store.list_runs())

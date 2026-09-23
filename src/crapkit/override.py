@@ -42,9 +42,8 @@ def record_override(
     verify keeps refusing it. `metric` then stamps only a file the grant
     creates. Without a metric nothing is stamped by omission."""
     saved = ratchet_input or RatchetFile.read(root / ratchet_file)
-    _check_saved_reader(saved)
-    granted = _granted_marks(saved.entries, violations, raise_marks=raise_marks)
-    text = _grant_text(saved, granted, raise_marks=raise_marks, keys=key_version, metric=metric)
+    text = _checked_grant_text(saved, violations, raise_marks=raise_marks, keys=key_version,
+                               metric=metric)
     _validate_override_keys(text, identity_rows, key_version)
     _require_auditable_override(reason, alert_command)
     _alert_or_refuse(alert_command, root, violations, reason)
@@ -69,11 +68,28 @@ def _validate_override_keys(text: str, rows, key_version: int | None) -> None:
         raise ConfigError(str(exc)) from exc
 
 
-def _check_saved_reader(saved: RatchetFile) -> None:
+def _checked_grant_text(saved: RatchetFile, violations: list[GateViolation], *,
+                        raise_marks: bool, keys: int | None, metric: str | None) -> str:
+    """The marks file after the grant, refused before any side effect when a
+    reader cannot prove its keys.
+
+    Both texts are checked. The saved marks can already lack proof. The grant
+    text can lack it too: a kept analysis 9 stamp gives the `(anonymous)` key
+    the grant adds no proof, and every later reader, seed included, refused the
+    file it wrote.
+    """
+    _check_reader(saved.text or "")
+    granted = _granted_marks(saved.entries, violations, raise_marks=raise_marks)
+    text = _grant_text(saved, granted, raise_marks=raise_marks, keys=keys, metric=metric)
+    _check_reader(text)
+    return text
+
+
+def _check_reader(text: str) -> None:
     from .ratchet import check_reader_keys
 
     try:
-        check_reader_keys(saved.text or "")
+        check_reader_keys(text)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
 
