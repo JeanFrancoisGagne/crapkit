@@ -117,3 +117,16 @@ def test_pytest_reports_with_teardown_errors_are_admitted(tmp_path, workers):
     failed, _ = suite_summary(report.read_text(encoding="utf-8"))
     assert failed == {f"test_teardown::{name}" for name in (
         "test_passes", "test_skips", "test_fails", "test_setup_fails")}
+
+
+def test_a_report_without_teardown_errors_never_counts_records(monkeypatch):
+    """The record total differs only where a test errored in teardown, so the
+    reports nearly every lane writes skip that pass."""
+    from crapkit import junitparse
+
+    def refuse(root):
+        raise AssertionError("counted records for a report with no teardown error")
+
+    monkeypatch.setattr(junitparse, "_declared_records", refuse)
+    plain = PASS_THEN_TEARDOWN.replace(f'<error message="{TEARDOWN}"/>', "").replace('tests="2"', 'tests="1"')
+    assert suite_summary(plain) == (set(), {"tests": 1, "skipped": 0})

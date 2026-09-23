@@ -140,10 +140,9 @@ def _refuse_partial(root: ET.Element) -> None:
     which differ only where a test errored in teardown.
     """
     cases = _subtree_counts(root, dict.fromkeys(root.iter("testcase"), 1))
-    records = _subtree_counts(root, _declared_records(root))
-    for element in root.iter():
-        if element.tag in ("testsuite", "testsuites"):
-            _admit_declared_count(element.get("tests"), {cases[element], records[element]})
+    records = _subtree_counts(root, _declared_records(root)) if _teardown(root.iter("error")) else cases
+    for element in [*root.iter("testsuites"), *root.iter("testsuite")]:
+        _admit_declared_count(element.get("tests"), {cases[element], records[element]})
 
 
 def _subtree_counts(root: ET.Element, weights: dict) -> dict:
@@ -170,13 +169,13 @@ def _declared_records(root: ET.Element) -> dict:
 
 
 def _records(case: ET.Element, failed: set[str]) -> int:
-    if not _teardown_error(case):
+    if not _teardown(case.findall("error")):
         return 1
     return 0 if _case_id(case) in failed else 2
 
 
-def _teardown_error(case: ET.Element) -> bool:
-    return any((error.get("message") or "").startswith(_TEARDOWN) for error in case.findall("error"))
+def _teardown(errors) -> bool:
+    return any((error.get("message") or "").startswith(_TEARDOWN) for error in errors)
 
 
 def _admit_declared_count(declared: str | None, counts: set[int]) -> None:
