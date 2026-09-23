@@ -68,7 +68,7 @@ A failed `check` row prints its line and `check` exits 1. The first line names o
 the tools that are missing:
 
 ```
-the release interpreter cannot import build, twine; stage 2b runs `python -m build` and `python -m twine` before the push, so install both into the environment that runs release.py
+the release interpreter cannot import build, twine; stage 2b runs `python -m build` and `python -m twine` before the push, so install build, twine into the environment that runs release.py
 no PyPI credential is reachable: twine ignores .pypirc when --repository-url is passed, so set TWINE_USERNAME and TWINE_PASSWORD, or store the token in keyring
 ```
 

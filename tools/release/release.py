@@ -198,11 +198,11 @@ def _twine_credential():
 
 
 def _tooling_problems(locate: Callable) -> list[str]:
-    missing = [name for name in RELEASE_TOOLING if locate(name) is None]
+    missing = ", ".join(name for name in RELEASE_TOOLING if locate(name) is None)
     if not missing:
         return []
-    return [f"the release interpreter cannot import {', '.join(missing)}; stage 2b runs "
-            "`python -m build` and `python -m twine` before the push, so install both "
+    return [f"the release interpreter cannot import {missing}; stage 2b runs "
+            f"`python -m build` and `python -m twine` before the push, so install {missing} "
             "into the environment that runs release.py"]
 
 
@@ -219,7 +219,9 @@ def preflight(*, locate: Callable | None = None,
 
     Every fault of the 0.7.2 release fired after PyPI and the GitHub release were
     already public, because nothing proved the machine first. Both checks here
-    take milliseconds and both cost a published half-release when skipped."""
+    take milliseconds. A missing credential costs a published half-release when
+    skipped; a missing build or twine stops stage 2b before the push, and check
+    catches it before stage 1."""
     return (_tooling_problems(locate or _module_origin)
             + _credential_problems(credential or _twine_credential))
 

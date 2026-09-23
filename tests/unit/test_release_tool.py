@@ -370,8 +370,10 @@ def test_preflight_names_each_release_tool_this_interpreter_cannot_import(tmp_pa
 
     problems = release.preflight(locate=locate, credential=lambda: True)
 
-    assert len(problems) == 1, problems
-    assert problems[0].startswith("the release interpreter cannot import twine;"), problems
+    assert problems == [
+        "the release interpreter cannot import twine; stage 2b runs `python -m build` and "
+        "`python -m twine` before the push, so install twine into the environment that runs "
+        "release.py"]
 
 
 def test_preflight_refuses_before_a_push_when_no_pypi_credential_is_reachable(tmp_path):
