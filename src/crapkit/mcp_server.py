@@ -34,10 +34,16 @@ _NAME_DESCRIPTION = ("the bare identifier (classify, or route for a Rust "
 # its outputSchema does not list is rejected whole by a validating client.
 _REMEDIES = ("decompose", "split-lines", "add-tests", "ok")
 _REMEDY_DESCRIPTION = ("decompose (ccn over ceiling), split-lines (another function shares its "
-                       "source lines, so coverage cannot tell them apart and no test lowers the "
-                       "score until the definitions sit on separate lines), add-tests (coverage "
-                       "short) or ok (nothing left to do)")
+                       "source lines, or a Python def's body starts on the line its signature "
+                       "ends, where coverage.py reads it as the def statement, so coverage cannot "
+                       "tell them apart and no test lowers the score until they sit on separate "
+                       "lines), add-tests (coverage short) or ok (nothing left to do)")
 _REMEDY = {"type": "string", "description": _REMEDY_DESCRIPTION, "enum": _REMEDIES}
+
+# Every function row carries it (docs/agent-json.md), so every row schema says so once.
+_OCCURRENCE = {"type": "integer", "description": (
+    "source creation order among functions sharing start, from 1; 0 on an older row with no "
+    "recorded position")}
 
 # The partition a large repo needs before `top` means anything: one --scope
 # per element, exact names as declared in crapkit.toml.
@@ -59,6 +65,7 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
                            'the edit this item asks for; pass it back as name'},
  'start': {'type': 'integer', 'description': 'first line, 1-based inclusive'},
  'end': {'type': 'integer', 'description': 'last line, 1-based inclusive'},
+ 'occurrence': _OCCURRENCE,
  'ccn': {'type': 'integer',
          'description': 'min(ccn_std, ccn_mod): the complexity the gate and the ratchet judge'},
  'ccn_std': {'type': 'integer', 'description': 'standard cyclomatic complexity'},
@@ -133,7 +140,12 @@ _WORKLIST_ITEM = {'type': 'object',
                 'ratchet_mark': {'type': ('number', 'null'),
                                  'description': 'the committed ratchet mark on this function, read '
                                                 'under its own ratchet key; null when it carries '
-                                                'none or the repo has no marks file'}}}
+                                                'none or the repo has no marks file'},
+                'occurrence': _OCCURRENCE,
+                'handle': {'type': 'string',
+                           'description': 'short name form: the bare identifier, or '
+                                          '(anonymous)#N for a function lizard could not name; '
+                                          'pass it to get_function_brief as name'}}}
 
 TOOLS: tuple[dict, ...] = (
     {
@@ -505,6 +517,7 @@ TOOLS: tuple[dict, ...] = (
                     "end": {
                         "type": "integer",
                         "description": "last line, inclusive"},
+                    "occurrence": _OCCURRENCE,
                     "ccn": {
                         "type": "integer",
                         "description": "min(ccn_std, ccn_mod)"},
@@ -596,7 +609,8 @@ TOOLS: tuple[dict, ...] = (
                         "crap": {
                             "type": "number",
                             "description": "score"},
-                        "remedy": _REMEDY}}},
+                        "remedy": _REMEDY,
+                        "occurrence": _OCCURRENCE}}},
             "file_totals": {
                 "type": "object",
                 "description": "the file rolled up",
@@ -745,8 +759,8 @@ TOOLS: tuple[dict, ...] = (
                         "earlier decomposition did not hold")},
                     "history": {
                         "type": "array",
-                        "description": ("one [run_id, ccn] pair for every stored run that scored "
-                        "the function, whatever its kind, oldest first"),
+                        "description": ("one [run_id, ccn] pair for every stored run that "
+                        "scored the function, whatever its kind, oldest first"),
                         "items": {
                             "type": "array",
                             "items": {
@@ -832,14 +846,14 @@ TOOLS: tuple[dict, ...] = (
         "flags": {
             "history": "--history",
             "tests": "--tests"},
-        "description": ("Returns one function's ccn, coverage, crap and flag in every run that "
-        "measured it, oldest first, plus its ratchet mark. Use it to tell improving "
-        "from decaying or regrown, and get_function_brief instead to start an edit. "
-        "history true spawns git log -L capped at 10 commits, and tests true is null "
-        "unless the lane recorded contexts. name matches the long names any run scored "
-        "in path, so a fragment like \"eval\" returns one entry per match. A bare twin "
-        "name picks the worst twin, as get_function_brief does. repo may be any "
-        "directory under the measured checkout."),
+        "description": ("Returns one function's ccn, coverage, crap and flag per run, oldest "
+        "first, plus its ratchet mark. Use it to tell improving from decaying or "
+        "regrown, and get_function_brief to start an edit. history true spawns git log "
+        "-L capped at 10 commits, and tests true is null unless the lane recorded "
+        "contexts. name matches the long names any run scored in path, so a fragment "
+        "returns one entry per match, and a bare twin name picks the worst twin. A "
+        "same-line twin's history skips runs stored before same-line positions. repo "
+        "may be any directory under the checkout."),
         "properties": {
             "path": {
                 "type": "string",
@@ -979,7 +993,8 @@ TOOLS: tuple[dict, ...] = (
         "description": ("Checks that crapkit.toml agrees with the repo: typo keys, empty scopes, "
         "missing lane cwds, runners that fail to start. Run it first when any tool "
         "answers strangely or the ranking misses a file, and list_runs when only the "
-        "history is in question. It needs no run, probes each runner once, runs no "
+        "history is in question. It needs no run, probes each runner once per lane "
+        "directory and environment, runs no "
         "lane, and any problem arrives with isError true. repo can be any directory "
         "under the checkout, and one with no crapkit.toml above it answers a pointer, "
         "never a parent's config."),
@@ -1350,6 +1365,7 @@ TOOLS: tuple[dict, ...] = (
                             "type": "number",
                             "description": "score from fresh ccn and baseline cov"},
                         "remedy": _REMEDY,
+                        "occurrence": _OCCURRENCE,
                         "stale_coverage": {
                             "type": "boolean",
                             "description": ("always true: complexity is the working tree's, coverage "
@@ -1369,7 +1385,9 @@ TOOLS: tuple[dict, ...] = (
                     "ceilings": {
                         "type": "object",
                         "properties": {},
-                        "description": "map of path to the ccn ceiling it was judged against"},
+                        "additionalProperties": {"type": "integer"},
+                        "description": ("map of repo-relative path to the ccn ceiling it was "
+                        "judged against")},
                     "breaches": {
                         "type": "array",
                         "description": "the failing functions; empty when ok",
