@@ -347,13 +347,14 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
+    marks = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
-                                          moves_marks=True)
+                                          entries=marks, moves_marks=True)
     if action == "seed":
-        entries, note = _seeded(saved.entries, fresh, cfg)
+        entries, note = _seeded(marks, fresh, cfg)
         text = saved.reseeded(entries, _seed_metric(latest), keys=key_version)
     else:
-        entries, note = _pruned(root, store, saved.entries, fresh)
+        entries, note = _pruned(root, store, marks, fresh)
         text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
     metric_note = _metric_note(work, action, created=saved.text is None)
@@ -467,11 +468,12 @@ def _measured_here(run: dict | None) -> dict | None:
 
 
 def _publish_checked(saved, text: str, entries: list, fresh: list, analysis_version) -> None:
+    """Refuse to write `text`, which holds `entries`, when its marks cannot be keyed."""
     from ..ratchet import check_reader_version, checked_key_version
 
     try:
         check_reader_version(entries, analysis_version)
-        checked_key_version(text, fresh)
+        checked_key_version(text, fresh, entries=entries)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
     saved.publish(text)

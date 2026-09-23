@@ -673,7 +673,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     ranges = changed_ranges(diff_since(root, basis))
     ratchet = saved.entries
-    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store)
+    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store,
+                                          entries=ratchet)
 
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
@@ -986,7 +987,7 @@ def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:
     if not violations:
         return []
     entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
-    _ratchet_key_version(root, cfg, records)
+    _ratchet_key_version(root, cfg, records, entries=entries)
     gated, exempt = _split_marked(violations, entries)
     _note_marked_staged(exempt)
     return gated
