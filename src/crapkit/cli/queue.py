@@ -108,8 +108,8 @@ class _Handles:
     def of(self, row) -> str:
         if row.path not in self._by_path:
             rows = self._store.read_positions(self._run_id, row.path)
-            self._by_path[row.path] = keys.handles(rows)
-            self._keys[row.path] = key_names(rows)
+            self._by_path[row.path] = keys.handles(rows, run_id=self._run_id)
+            self._keys[row.path] = key_names(rows, run_id=self._run_id)
         return self._by_path[row.path][lookup(row)]
 
     def key(self, row) -> tuple[str, str]:
@@ -452,17 +452,18 @@ def _no_handle_message(path: str, name: str, rows: list) -> str:
             f" — it holds: {held or 'no anonymous functions'}")
 
 
-def _pick_function(path: str, rows: list, name: str):
+def _pick_function(path: str, rows: list, name: str, run_id: int | None = None):
     """The one row `name` names, or an error listing what the file does hold.
 
     `keys.select` decides which function NAME means: a bare twin name means
     the worst twin, `name#2` the second in file order. What is left here is
-    brief's own wording for a miss.
+    brief's own wording for a miss. A legacy-identity refusal names RUN_ID,
+    the run the rows came from, as explain's does.
     """
-    picked = keys.select(rows, name)
+    picked = keys.select(rows, name, run_id=run_id)
     if len(picked) != 1:
         raise CrapkitError(_miss_message(path, name, rows, picked))
-    return _selected_row(path, rows, name, picked[0])
+    return _selected_row(path, rows, name, picked[0], run_id)
 
 
 def _miss_message(path: str, name: str, rows: list, picked: list) -> str:
@@ -479,11 +480,12 @@ def _miss_message(path: str, name: str, rows: list, picked: list) -> str:
     return _no_match_message(path, name, rows, sorted(long for long, _ in picked))
 
 
-def _selected_row(path: str, rows: list, name: str, picked: tuple[str, str]):
+def _selected_row(path: str, rows: list, name: str, picked: tuple[str, str],
+                  run_id: int | None = None):
     """The row behind the selected key. One span scored under two scopes is one
     function, and the worse copy answers for it."""
     long_name, key = picked
-    names = key_names(rows)
+    names = key_names(rows, run_id=run_id)
     held = [r for r in rows if key_of(names, r)[1] == key]
     if not held:
         raise CrapkitError(_past_the_last_twin(path, name, rows, long_name))
@@ -625,7 +627,8 @@ class _BriefLoader:
         about one file would otherwise recount its ordinals per packet.
         """
         if row.path not in self._file_keys:
-            self._file_keys[row.path] = key_names(self.scored_file(row.path))
+            self._file_keys[row.path] = key_names(self.scored_file(row.path),
+                                                  run_id=self.latest["id"])
         return key_of(self._file_keys[row.path], row)
 
     def mark(self, row) -> float | None:
@@ -868,7 +871,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
         return 0
     path, name = _brief_target(args)
     path = _repo_relative(path, root, _stand(args.repo))  # said from where the user stands
-    row = _pick_function(path, loader.scored_file(path), name)
+    row = _pick_function(path, loader.scored_file(path), name, latest["id"])
     _print_brief(args.json, _brief_packet(loader, row))
     return 0
 
