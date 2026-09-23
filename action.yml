@@ -245,6 +245,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         PR: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       run: |
         code=0
         lookup=0
@@ -265,9 +266,14 @@ runs:
           gh api --silent --method POST "repos/$REPO/issues/$PR/comments" \
             --input "$CRAPKIT_STATE/crapkit-comment.json" || code=$?
         fi
+        # Only a pull request from another repository carries the read-only
+        # token; bad credentials, a missing gh or a job without
+        # pull-requests: write fail here too, and gh has said which above.
         why=""
-        if [ "$code" != 0 ]; then
+        if [ "$code" != 0 ] && [ "$HEAD_REPO" != "$REPO" ]; then
           why=": a fork pull request's token cannot write comments, and the verdict is in this job's log"
+        elif [ "$code" != 0 ]; then
+          why=": gh's own error is above, and the verdict is in this job's log"
         fi
         echo "posting the crapkit comment exited $code$why"
 

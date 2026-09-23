@@ -451,6 +451,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   Bash beside the PowerShell and cmd.exe forms. Git Bash is where most Windows users run
   git, and neither printed form works there. The hook cannot tell the shell apart: git for
   Windows sets `MSYSTEM` and `SHELL` for it whichever shell started the commit.
+- The Action blames a fork's read-only token for a failed comment post only when the pull
+  request comes from another repository. Bad credentials, a missing `gh` and a job
+  without `pull-requests: write` were all told they came from a fork; they now read `gh's
+  own error is above`.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 
