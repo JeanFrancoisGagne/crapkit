@@ -379,7 +379,8 @@ _COLLISION_SCAN = (
     "FROM functions f WHERE f.run_id = ? GROUP BY f.identity_id, f.start "
     "HAVING SUM(f.occurrence = 0) > 1 OR MIN(f.occurrence) <> MAX(f.occurrence)) "
     "GROUP BY identity_id) c JOIN identities i ON i.id = c.identity_id")
-# Joined to runs: an older crapkit prunes a run without knowing this table.
+# Joined to runs: an older crapkit prunes a run without knowing this table, and
+# a prune can land between a scan and its write, so a row can outlive its run.
 _COLLISION_READ = ("SELECT i.path, i.long_name, c.run_id, c.legacy FROM run_collisions c "
                    "JOIN runs r ON r.id = c.run_id JOIN identities i ON i.id = c.identity_id "
                    "WHERE c.identity_id > 0")
@@ -882,8 +883,7 @@ class SnapshotStore:
             with self._conn:
                 self._conn.executemany(
                     "INSERT OR REPLACE INTO run_collisions (run_id, identity_id, legacy) "
-                    "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)",
-                    ((*row, row[0]) for row in rows))
+                    "VALUES (?, ?, ?)", rows)
         except sqlite3.OperationalError:
             pass  # another process holds the write lock, or the store is read-only
 
@@ -1316,11 +1316,13 @@ class SnapshotStore:
         functions reads as a real run that scored zero, which is how a prune
         turns a silent digest into a false alarm and a trend into fiction.
 
-        The cached rollup and collision groups go in the same transaction, and
-        for the same reason: a cached row that outlives its run keeps answering
-        for it, so run_totals would still hand out totals, and the identity
-        proof collisions, for a run the store no longer holds. Ids come from AUTOINCREMENT and are never handed out twice, so
-        nothing else would ever overwrite the row.
+        The cached rollup goes in the same transaction, and for the same
+        reason: a rollup row that outlives its run keeps answering for it, so
+        run_totals would still hand out totals for a run the store no longer
+        holds. Ids come from AUTOINCREMENT and are never handed out twice, so
+        nothing else would ever overwrite the row. The run's collision groups
+        go too. Their reads join runs, so a row this prune missed would answer
+        for nothing, but nothing else would ever delete it either.
         """
         # A concurrent writer may add a run after the caller selected retention.
         # Only runs that selection observed can be candidates for deletion.
