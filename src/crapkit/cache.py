@@ -53,9 +53,10 @@ def updated_cache(
 def merged_cache(prior: dict, fresh: dict) -> dict:
     """Fold a partial run's entries into the prior map instead of replacing it.
 
-    A run that analyzed a handful of files (rescore, watch, the pre-commit hook)
-    knows nothing about the rest of the corpus, so its `entries` map is not a new
-    cache but an addition to one. Merging leaves entries for content that has
+    A run that analyzed part of the corpus (a rescore of 16 or more files, or of
+    256 KB of source or more; a smaller one leaves the cache alone) knows nothing
+    about the rest of the corpus, so its `entries` map is not a new cache but an
+    addition to one. Merging leaves entries for content that has
     left the corpus behind; the whole-corpus runs (inventory, coverage) save their
     rebuilt map without merging, and that stays the one eviction point.
 

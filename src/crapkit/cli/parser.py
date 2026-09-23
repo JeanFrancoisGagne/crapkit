@@ -198,7 +198,8 @@ def build_parser() -> argparse.ArgumentParser:
                           "baseline, so rerun the rest with --reuse-unchanged")
     cov.add_argument("--reuse-artifacts", action="store_true", help="skip lane commands, parse existing artifacts")
     cov.add_argument("--reuse-unchanged", action="store_true",
-                     help="rerun only lanes whose scope files changed since their artifact; reuse the rest")
+                     help="reuse a lane whose stamp proves nothing it reads changed (the same "
+                          "clean HEAD, or no change under its declared inputs); rerun the rest")
     cov.add_argument("--export", default=None, help="write scored TSV export, relative to the repo")
     cov.add_argument("--sarif", default=None, metavar="PATH",
                      help="write over-target findings as SARIF 2.1.0, relative to the repo")
@@ -326,7 +327,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="also write the baseline run as a portable TSV, relative to the repo")
     ver.add_argument("--reuse-artifacts", action="store_true", help="skip lane commands, parse existing artifacts")
     ver.add_argument("--reuse-unchanged", action="store_true",
-                     help="rerun only lanes whose scope files changed since their artifact; reuse the rest")
+                     help="reuse a lane whose stamp proves nothing it reads changed (the same "
+                          "clean HEAD, or no change under its declared inputs); rerun the rest")
     ver.add_argument("--override", default=None, metavar="REASON",
                      help="audited exemption for gate violations: alert + ratchet debt + snapshot record")
     ver.add_argument("--no-tighten", action="store_true",

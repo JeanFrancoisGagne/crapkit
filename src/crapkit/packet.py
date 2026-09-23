@@ -33,8 +33,9 @@ _CLOSERS = ")]}>"
 # `stale` clears when a run lands on the current commit and never before. The
 # packet used to answer its own staleness warning with another `brief`, which
 # re-reads the snapshot that is already stale. `--reuse-unchanged` reruns only
-# the lanes whose scope files moved and parses the rest off the artifacts they
-# already have, so it is the cheapest call that still writes a run.
+# the lanes whose stamp cannot prove their inputs unchanged and parses the rest
+# off the artifacts they already have, so it is the cheapest call that still
+# writes a run.
 #
 # Every command the packet names is spelled as the console script, the
 # resolution the hooks and the plugin manifest already trust (#20, #37). Bare
