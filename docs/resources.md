@@ -34,9 +34,10 @@ values retain the unset behavior. Use lane `env` settings to constrain pytest,
 Node or other test tools that create their own workers.
 
 `crapkit doctor --json` reports the effective CPU and worker policy, memory
-estimate and log limit. The reported pool limit is an upper bound; work sizing and slot availability can reduce it. These settings leave
-the scoring algorithm and the analysis version unchanged. A package upgrade
-rebuilds the versioned analysis cache automatically; no manual deletion is needed.
+estimate and log limit. The reported pool limit is an upper bound; work sizing and
+slot availability can reduce it. These settings leave the scoring algorithm and
+the analysis version unchanged. A package upgrade rebuilds the versioned analysis
+cache automatically; no manual deletion is needed.
 
 ## Command lifetime
 
@@ -82,16 +83,17 @@ Set `log_max_bytes = 0` when retaining the complete unbounded log is required.
 Crapkit's development runner, `tools/testing/run.py`, marks default
 `.crapkit/test-runs/run-*` directories and is the only command that removes them.
 At each default start it expires idle runs older than `--retention-days` (7) or
-beyond the `--retention-count` (10) most recent. Zero disables that limit;
-setting both to zero keeps all recognized runs. `--preview-retention` prints the
-runs the limits would remove, as JSON, and runs no suite. A run the filesystem
-will not fully delete, such as one holding a read-only file, keeps its receipt:
+beyond the `--retention-count` (10) most recent. Zero disables that limit; setting
+both to zero keeps all recognized runs. `--preview-retention` prints the runs the
+limits would remove, as JSON, and runs no suite. A run the filesystem will not
+fully delete, such as one holding a read-only file, keeps its receipt:
 `--preview-retention` still lists it and the next start tries again. Explicit
-`--output` destinations remain caller-managed. Explicitly selecting an existing retained run, or a directory inside it, removes
-its retention receipt under the same lease and makes that run caller-managed.
-Retention runs once at startup, outside individual tests and analysis calls.
-The `test_retention_days` and `test_retention_count` configuration keys are
-deprecated and ignored; `crapkit doctor` warns once for each key a config sets.
+`--output` destinations remain caller-managed. Explicitly selecting an existing
+retained run, or a directory inside it, removes its retention receipt under the
+same lease and makes that run caller-managed. Retention runs once at startup,
+outside individual tests and analysis calls. The `test_retention_days` and
+`test_retention_count` configuration keys are deprecated and ignored; `crapkit
+doctor` warns once for each key a config sets.
 
 Mutation retains only the requested number of canonical pool workers on reuse.
 Concurrent temporary worktrees carry versioned ownership receipts. Recovery

@@ -637,11 +637,11 @@ key and ignores it, so the floor is the half that keeps the warning from being t
 story. Measured on `tests/e2e/test_init_doctor_e2e.py`: `cli/admin.py` scores 0/498
 statements without it under pytest-cov 7.1.0, 317/498 with it under 7.1.0 and 6.3.0 alike.
 
-xdist is not a convenience either: `tests/fixtures/mini_repo` declares a lane that
-shells out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` gives the one test
-about xdist fragments combining `pytest ... -n 2`; without xdist either subprocess dies
-on an unrecognized `-n`, failing the e2e tests that assert the lane exited 0. CI installs this extra and nothing else, so
-a pytest plugin a committed fixture lane needs belongs in it.
+xdist is not a convenience either: `tests/fixtures/mini_repo` declares a lane that shells
+out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` gives the one test about
+xdist fragments combining `pytest ... -n 2`; without xdist either subprocess dies on an
+unrecognized `-n`, failing the e2e tests that assert the lane exited 0. CI installs this
+extra and nothing else, so a pytest plugin a committed fixture lane needs belongs in it.
 
 The second line arms the complexity gate. Without it your commits pass locally and get
 rejected in review.
