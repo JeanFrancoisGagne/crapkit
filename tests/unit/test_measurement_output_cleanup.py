@@ -4,6 +4,7 @@ import sys
 
 from crapkit.config import Lane
 from crapkit.lanes import run_lane
+from hang_guard import HANG_SECONDS
 
 
 RUNNER = """import json, shutil
@@ -32,7 +33,7 @@ def test_runner_can_delete_and_recreate_its_owned_report_directory(tmp_path, mon
     (reports / "stale.txt").write_text("remove this old output", encoding="utf-8")
     (tmp_path / "runner.py").write_text(RUNNER, encoding="utf-8")
     lane = Lane("reports", f'"{sys.executable}" runner.py', "reports/cov.json", "istanbul", (),
-                results_artifact="reports/junit.xml", timeout_seconds=20)
+                results_artifact="reports/junit.xml", timeout_seconds=HANG_SECONDS)
     outcome = run_lane(tmp_path, lane)
     assert outcome.provenance["exit_code"] == 0
     assert outcome.provenance["tests_total"] == 1

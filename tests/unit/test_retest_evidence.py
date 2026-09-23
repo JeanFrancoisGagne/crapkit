@@ -5,6 +5,7 @@ import pytest
 
 from crapkit.config import Lane
 from crapkit.lanes import retest_lane
+from hang_guard import HANG_SECONDS
 
 
 def retry(tmp_path, report, code=0):
@@ -14,7 +15,7 @@ def retry(tmp_path, report, code=0):
         f"Path('junit.xml').write_text({report!r}, encoding='utf-8')\n"
         f"raise SystemExit({code})\n", encoding="utf-8")
     lane = Lane("unit", "unused", "cov.json", "coveragepy", ("src",),
-                results_artifact="junit.xml", timeout_seconds=5,
+                results_artifact="junit.xml", timeout_seconds=HANG_SECONDS,
                 retest_command=f'"{sys.executable}" "{script}"')
     return retest_lane(tmp_path, lane, {"test_math::fails"})
 
@@ -62,8 +63,6 @@ def test_retry_delivers_literal_test_ids(tmp_path, monkeypatch, name):
         '    ET.SubElement(root, "testcase", classname=classname, name=name)\n'
         'ET.ElementTree(root).write("junit.xml", encoding="utf-8")\n', encoding='utf-8')
     lane = Lane('unit', 'unused', 'cov.json', 'coveragepy', ('src',),
-                # a bound against a hung child, not a budget: on a loaded Windows box the
-                # interpreter alone has taken nine seconds to start
-                results_artifact='junit.xml', timeout_seconds=60,
+                results_artifact='junit.xml', timeout_seconds=HANG_SECONDS,
                 retest_command=f'"{sys.executable}" "{script}" {{tests}}')
     assert retest_lane(tmp_path, lane, {test_id}) == {test_id}
