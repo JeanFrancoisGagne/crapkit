@@ -491,6 +491,16 @@ crapkit: baseline commit a74260f321f is not an ancestor of HEAD in this shallow 
 That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at full depth.
 On a full clone the same exit blames what it used to, a rebase or an amend that rewrote
 history, and asks for a fresh baseline instead.
+`verify --base` and `hook-precommit --base` look up the fork point with `git merge-base`,
+and in the same clone they refuse with exit 4 and the same fix:
+
+```
+$ crapkit hook-precommit --base c47a37b1df69c434ba42eec5979ddad03d2bf1e4
+crapkit: git merge-base c47a37b1df69c434ba42eec5979ddad03d2bf1e4 HEAD failed in /home/runner/work/app/app: fatal: Not a valid commit name c47a37b1df69c434ba42eec5979ddad03d2bf1e4; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow
+```
+
+When the clone holds both commits but not the one they fork from, the line reads
+`no merge base between REF and HEAD in ROOT`, followed by the same fix.
 Set `fetch-depth: 0` on the checkout step, which is what crapkit's own
 [.github/workflows/ci.yml](https://github.com/JeanFrancoisGagne/crapkit/blob/main/.github/workflows/ci.yml) does.
 
