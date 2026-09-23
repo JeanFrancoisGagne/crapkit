@@ -270,7 +270,7 @@ Every write to the marks file sets the stamp by where its numbers came from:
 
 | Write | Metric stamp it leaves |
 |---|---|
-| `ratchet seed` | The metric the run it read was measured under. The only write that changes the stamp. |
+| `ratchet seed` | The metric the run it read was measured under. The only write that replaces a recorded metric stamp. |
 | `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. A marks file prune creates holds no mark and takes the running metric. |
 | `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. |
 | The pre-commit hook's override | The recorded stamp. A marks file it creates takes the running metric. |
@@ -466,7 +466,7 @@ conflict for you to resolve after re-seeding one side:
 
 ```
 $ git merge legacy
-crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] — marks from different metric versions cannot merge; re-baseline one side with `crapkit ratchet seed`
+crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] — marks from different metric versions cannot merge; run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`
 Auto-merging crapkit-ratchet.tsv
 CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
@@ -721,9 +721,10 @@ repayment.
 
 The hook path leaves the metric stamp alone too. Its score comes from ccn alone and it compares
 no mark, so a marks file stamped under an older metric keeps that stamp, and the next `verify`
-still refuses it until `crapkit ratchet seed` re-baselines the marks. A marks file the grant
-creates takes the stamp of the crapkit that ran it. A `verify --override` grant is measured, so
-marks another metric recorded refuse it the way they refuse `verify` itself.
+still refuses it until a fresh `crapkit coverage` and `crapkit ratchet seed` re-baseline the
+marks. A marks file the grant creates takes the stamp of the crapkit that ran it. A
+`verify --override` grant is measured, so marks another metric recorded refuse it the way they
+refuse `verify` itself.
 
 The kept stamp also decides whether the hook can grant an anonymous JavaScript or TypeScript
 callback. Under a stamp older than analysis version 10, the `(anonymous)` mark the grant adds

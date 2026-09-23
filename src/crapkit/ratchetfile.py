@@ -7,8 +7,8 @@ picks a stamp of its own:
   grant), so both recorded stamps stay.
 - `measured`: the write adds numbers one metric produced (verify's tighten and
   its grant), and marks another metric recorded refuse it.
-- `reseeded`: seed, the one write that changes the metric stamp, to the metric
-  of the stored run it read.
+- `reseeded`: seed, the only write that replaces a recorded metric stamp, with
+  the metric of the stored run it read.
 
 Then `publish` replaces the admitted text, or refuses a change another writer made.
 """
