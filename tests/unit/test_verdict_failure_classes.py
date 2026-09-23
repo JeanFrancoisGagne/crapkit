@@ -6,6 +6,10 @@ failure that passes its flake retry is a retried pass. A gate violation an
 prints, serializes and stores what the Verdict holds, and settling re-derives
 every field that depends on what is left.
 """
+from pathlib import Path
+from types import SimpleNamespace
+
+from crapkit.cli import verifying
 from crapkit.verify import GateViolation, evaluate, settle_flake_retry, settle_verdict
 
 OLD, FLAKY, REAL = "tests/t.py::old", "tests/t.py::flaky", "tests/t.py::real"
@@ -45,11 +49,34 @@ def test_a_retry_that_cleared_every_new_failure_passes_the_verdict():
     assert verdict.retried_passes == (FLAKY, REAL)
 
 
-def test_a_granted_gate_violation_stays_on_the_verdict_as_overridden():
-    gated = found(fresh_failures={OLD})._replace(ok=False, gate_violations=[GATE])
+def _grant(monkeypatch, verdict, reason):
+    """verify's own --override grant, with the audit write it makes recorded
+    instead of performed: the marks file, alert and store are record_override's."""
+    granted = []
+    monkeypatch.setattr("crapkit.override.record_override",
+                        lambda **kw: granted.append(kw["violations"]))
+    cfg = SimpleNamespace(ratchet_file="crapkit-ratchet.tsv", alert_command=None)
+    return verifying._apply_verify_override(None, 7, Path("."), cfg, verdict, reason), granted
 
-    granted = settle_verdict(gated._replace(gate_violations=[], overridden=(GATE,)))
 
-    assert granted.ok is True
-    assert granted.overridden == (GATE,)
-    assert granted.forgiven_failures == (OLD,)
+def test_a_granted_gate_violation_stays_on_the_verdict_as_overridden(monkeypatch):
+    gated = settle_verdict(found(fresh_failures={OLD})._replace(gate_violations=[GATE]))
+
+    verdict, granted = _grant(monkeypatch, gated, "shipping the spike")
+
+    assert granted == [[GATE]]
+    assert verdict.ok is True
+    assert verdict.gate_violations == []
+    assert verdict.overridden == (GATE,)
+    assert verdict.forgiven_failures == (OLD,)
+
+
+def test_an_override_with_no_reason_grants_nothing(monkeypatch):
+    gated = settle_verdict(found(fresh_failures={OLD})._replace(gate_violations=[GATE]))
+
+    verdict, granted = _grant(monkeypatch, gated, None)
+
+    assert granted == []
+    assert verdict.ok is False
+    assert verdict.gate_violations == [GATE]
+    assert verdict.overridden == ()

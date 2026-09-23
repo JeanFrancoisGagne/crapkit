@@ -300,13 +300,13 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
     from ..verify import settle_verdict
 
     if not _override_applies(verdict, reason):
-        return verdict, []
+        return verdict
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=verdict.gate_violations,
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
                     ratchet_input=ratchet_input)
     overridden = verdict.gate_violations
-    return settle_verdict(verdict._replace(gate_violations=[], overridden=tuple(overridden))), overridden
+    return settle_verdict(verdict._replace(gate_violations=[], overridden=tuple(overridden)))
 
 
 def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
@@ -384,7 +384,7 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry],
     return ratchet_delta(prior, updated)
 
 
-def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
+def _settle_verify(store: SnapshotStore, run_id: int, verdict,
                    saved, ratchet, scored, cfg, *, args,
                    commit: str, key_version: int | None = None) -> RatchetDelta | None:
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
@@ -397,7 +397,7 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict, overridden,
     from ..verify import dirty_counts
 
     changes = None
-    if verdict.ok and not overridden and not args.no_tighten:
+    if verdict.ok and not verdict.overridden and not args.no_tighten:
         hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
         updated = update_ratchet(ratchet, scored, target=cfg.target,
                                  scope_targets=cfg.scope_targets, hold=hold)
@@ -683,10 +683,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
-    verdict, overridden = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
-                                                 key_version=key_version, identity_rows=scored,
-                                                 ratchet_input=saved)
-    changes = _settle_verify(store, run_id, verdict, overridden, saved, ratchet, scored,
+    verdict = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
+                                     key_version=key_version, identity_rows=scored,
+                                     ratchet_input=saved)
+    changes = _settle_verify(store, run_id, verdict, saved, ratchet, scored,
                              cfg, args=args, commit=commit, key_version=key_version)
     _release_claims(store, git, cfg, scored)
     _emit_verify_findings(root, args, verdict, uncovered)
