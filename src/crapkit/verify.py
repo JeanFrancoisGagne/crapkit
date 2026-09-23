@@ -102,6 +102,12 @@ class Verdict(NamedTuple):
     new_failures: list[str]
     dirty_failures: list[str]
     uncovered_violations: tuple[UncoveredViolation, ...] = ()
+    # What the verdict settled without failing on it: fresh failures the
+    # baseline carries too, new failures that passed their flake retry, and
+    # gate violations an --override granted.
+    forgiven_failures: tuple[str, ...] = ()
+    retried_passes: tuple[str, ...] = ()
+    overridden: tuple[GateViolation, ...] = ()
 
 
 def _any_finding(verdict: Verdict) -> bool:
@@ -115,6 +121,15 @@ def settle_verdict(verdict: Verdict) -> Verdict:
     remaining = set(verdict.new_failures)
     return verdict._replace(ok=not _any_finding(verdict),
                             dirty_failures=[f for f in verdict.dirty_failures if f in remaining])
+
+
+def settle_flake_retry(verdict: Verdict, survivors: set[str]) -> Verdict:
+    """The verdict after a flake retry: the new failures missing from
+    `survivors` passed their rerun and become retried passes."""
+    passed = tuple(sorted(set(verdict.new_failures) - survivors))
+    return settle_verdict(verdict._replace(
+        new_failures=[f for f in verdict.new_failures if f in survivors],
+        retried_passes=verdict.retried_passes + passed))
 
 
 def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
@@ -275,4 +290,5 @@ def evaluate(
         ratchet_regressions=regressions,
         new_failures=new_failures,
         dirty_failures=dirty_failure_ids(new_failures, dirty),
+        forgiven_failures=tuple(sorted(fresh_failures & baseline_failures)),
     )

@@ -306,7 +306,7 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
                     ratchet_input=ratchet_input)
     overridden = verdict.gate_violations
-    return settle_verdict(verdict._replace(gate_violations=[])), overridden
+    return settle_verdict(verdict._replace(gate_violations=[], overridden=tuple(overridden))), overridden
 
 
 def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
@@ -419,7 +419,7 @@ def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
                                        scope_targets=cfg.scope_targets, stale_commits=stale))
 
 
-def _print_verify_findings(verdict, overridden) -> None:
+def _print_verify_findings(verdict) -> None:
     dirty_ids = set(verdict.dirty_failures)
     for v in verdict.gate_violations:
         print(_gate_line(v))
@@ -427,7 +427,7 @@ def _print_verify_findings(verdict, overridden) -> None:
         print(f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(r.dirty)}")
     for f in verdict.new_failures:
         print(f"  NEW FAILURE  {f}{_dirty_tag(f in dirty_ids)}")
-    for v in overridden:
+    for v in verdict.overridden:
         print(f"  OVERRIDDEN  {v.path}:{v.start}  {v.long_name}")
 
 
@@ -475,7 +475,7 @@ def _verify_attribution(verdict) -> dict:
             "dirty_failures": list(verdict.dirty_failures)}
 
 
-def _verify_result(verdict, overridden, run_id: int, baseline: dict, commit: str, ranges,
+def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
                    uncovered: list, diff_uncovered_max: int | None,
                    unmarked_over_target: int) -> dict:
     """`diff_uncovered_max` travels with the count it judges: a reader of exit 9
@@ -493,7 +493,7 @@ def _verify_result(verdict, overridden, run_id: int, baseline: dict, commit: str
         "gate_violations": [v._asdict() for v in verdict.gate_violations],
         "ratchet_regressions": [r._asdict() for r in verdict.ratchet_regressions],
         "new_failures": verdict.new_failures,
-        "overridden": [v._asdict() for v in overridden],
+        "overridden": [v._asdict() for v in verdict.overridden],
         "diff_uncovered_count": len(uncovered),
         "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
         "diff_uncovered_max": diff_uncovered_max,
@@ -572,7 +572,7 @@ def _forgiven_suffix(out: dict) -> str:
     return f" ({len(forgiven)} unchanged failure{plural} forgiven, first {forgiven[0]})"
 
 
-def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: str) -> None:
+def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None:
     if as_json:
         _print_json(out)
         return
@@ -580,8 +580,8 @@ def _report_verify(as_json: bool, out: dict, verdict, overridden, ratchet_file: 
     print(f"verify {state} @ {out['commit'][:11]} vs baseline {out['baseline_commit'][:11]} "
           f"({out['changed_files']} changed files)"
           f"{_forgiven_suffix(out)}"
-          f"{_ratchet_suffix(out['ratchet_changes'], overridden, ratchet_file)}")
-    _print_verify_findings(verdict, overridden)
+          f"{_ratchet_suffix(out['ratchet_changes'], verdict.overridden, ratchet_file)}")
+    _print_verify_findings(verdict)
     _print_finding_split(verdict)
 
 
@@ -662,11 +662,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _emit_verify_findings(root, args, verdict, uncovered)
 
     _report_verify(args.json,
-                   {**_verify_result(verdict, overridden, run_id, baseline, commit, ranges,
+                   {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
                     **_receipt(tool_versions, saved.sha256, changes),
                     "forgiven_failures": sorted(set(fresh_failures) - set(verdict.new_failures))},
-                   verdict, overridden, cfg.ratchet_file)
+                   verdict, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
 
@@ -686,7 +686,7 @@ def _flake_retry(root: Path, cfg, provenance: dict, new_failures: set) -> set:
 
 
 def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
-    from ..verify import settle_verdict
+    from ..verify import settle_flake_retry
 
     if not verdict.new_failures:
         return verdict
@@ -695,7 +695,7 @@ def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
         return verdict
     print(f"flake retry: {len(verdict.new_failures) - len(survivors)} of "
           f"{len(verdict.new_failures)} new failures passed on rerun", file=sys.stderr)
-    return settle_verdict(verdict._replace(new_failures=sorted(survivors)))
+    return settle_flake_retry(verdict, survivors)
 
 
 def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
