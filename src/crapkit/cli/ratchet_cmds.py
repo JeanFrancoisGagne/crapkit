@@ -352,6 +352,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
                                           entries=marks, moves_marks=True)
     if action == "seed":
         entries, note = _seeded(marks, fresh, cfg)
+        _refuse_unkeyable_twins(cfg.ratchet_file, work, marks, entries, fresh, key_version)
         text = saved.reseeded(entries, _seed_metric(latest), keys=key_version)
     else:
         entries, note = _pruned(root, store, marks, fresh)
@@ -404,6 +405,43 @@ def _seeded(prior: list, fresh: list, cfg) -> tuple[list, str]:
     entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target,
                                              scope_targets=cfg.scope_targets)
     return entries, f"added {added}, tightened {tightened}"
+
+
+def _refuse_unkeyable_twins(name: str, work: _WorkRun, prior: list, entries: list, fresh: list,
+                            key_version: int) -> None:
+    """Refuse a seed that would add same-line twin marks to start-only keys.
+
+    A file with no key stamp keeps the start-only format while any mark names a
+    function the run lacks, and that format cannot say which of two functions on
+    one line a mark belongs to. The publish check refused the file seed rendered
+    and told the reader to reconcile the twin marks seed itself was adding: on a
+    large consumer repo 170 groups, none of them in the file. Prune drops the
+    unseen marks, and the next seed writes the positioned keys.
+    """
+    from ..ratchet import KEY_VERSION, marked_collisions
+
+    twins = set() if key_version == KEY_VERSION else marked_collisions(entries, fresh)
+    if twins:
+        raise ConfigError(_prune_first(name, work, prior, fresh, twins))
+
+
+def _prune_first(name: str, work: _WorkRun, prior: list, fresh: list, twins: set) -> str:
+    from ..ratchet import unseen_marks
+
+    run_id = work.run["id"]
+    unseen = [(entry.path, entry.long_name) for entry in unseen_marks(prior, fresh)]
+    flag = f" --baseline {run_id}" if work.named else ""
+    return (f"{name}: {len(unseen)} mark(s) name functions run {run_id} does not hold, "
+            f"first {_first_key(unseen)}, so the file keeps the start-only key format, which "
+            f"cannot key the same-line twins in {len(twins)} group(s) this seed would mark, "
+            f"first {_first_key(twins)}; run `{_self()} ratchet prune{flag}` first, then seed "
+            "again: prune drops those marks and seed then writes the positioned keys")
+
+
+def _first_key(keys) -> str:
+    """The first of `keys` in marks-file order, as `path: name`."""
+    path, key_name = min(keys)
+    return f"{path}: {key_name}"
 
 
 def _seed_metric(run: dict) -> str:

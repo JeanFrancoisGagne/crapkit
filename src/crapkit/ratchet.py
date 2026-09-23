@@ -151,6 +151,22 @@ def checked_key_version(text: str, rows, *, historical: set = frozenset(), entri
     return check_key_groups(text, present, ambiguous_groups(rows) | set(historical), entries)
 
 
+def unseen_marks(entries, rows) -> list[RatchetEntry]:
+    """The marks whose name group `rows` lacks. In a file with no key stamp they
+    hold the start-only format: no row proves what their ordinals meant."""
+    present = {(row.path, row.long_name) for row in rows}
+    return [entry for entry in entries if _marked_group(entry, present) not in present]
+
+
+def marked_collisions(entries, rows) -> set:
+    """The same-line twin groups of `rows` that `entries` mark: the groups the
+    start-only format cannot key, as `checked_key_version` judges them."""
+    from .keys import ambiguous_groups
+
+    present = {(row.path, row.long_name) for row in rows}
+    return {_marked_group(entry, present) for entry in entries} & ambiguous_groups(rows)
+
+
 def stamp_conflict(recorded: str, current: str) -> str | None:
     """The refusal when marks and the running metric disagree; None when they compare.
 
