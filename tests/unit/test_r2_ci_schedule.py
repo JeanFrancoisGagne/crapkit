@@ -10,6 +10,8 @@ import tomllib
 import pytest
 import yaml
 
+from test_ci_parallel_jobs import matrix_rows
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -23,8 +25,7 @@ def step(steps, key, prefix):
 
 
 def matrix_platforms(matrix):
-    excluded = {(row["os"], row["python"]) for row in matrix.get("exclude", [])}
-    return set(itertools.product(matrix["os"], matrix["python"])) - excluded
+    return {(row["os"], row["python"]) for row in matrix_rows(matrix)}
 
 
 def assert_source_install(job):
@@ -56,7 +57,7 @@ def test_source_platform_matrix_has_one_owner_and_keeps_install_and_gate_contrac
     assert step(dogfood["steps"], "run", 'python -m crapkit hook-precommit --base "$BASE_REF"') is not None
     config = tomllib.loads((ROOT / "crapkit.toml").read_text(encoding="utf-8"))
     assert config["lane"][0]["command"] == "python tools/testing/run.py --coverage --output .crapkit/cov"
-    assert step(jobs["verdict"]["steps"], "run", 'python tools/testing/ci.py --base "$BASE_REF"') is not None
+    assert step(jobs["verdict"]["steps"], "run", 'python tools/testing/ci.py --base "$BASE_REF" --join') is not None
 
 
 @pytest.mark.parametrize(("xml", "passes"), [

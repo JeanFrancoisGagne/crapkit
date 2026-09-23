@@ -127,10 +127,10 @@ def _suite_xml(scratch: Path, name: str, code: int) -> tuple[list, bool]:
     return parts, True
 
 
-def _junit(scratch: Path, output: Path, results: list[int]) -> bool:
+def _junit(scratch: Path, output: Path, results: dict[str, int]) -> bool:
     combined = ET.Element("testsuites")
     complete = []
-    for name, code in zip(SUITES, results):
+    for name, code in results.items():
         parts, valid = _suite_xml(scratch, name, code)
         individual = ET.Element("testsuites")
         individual.extend(parts)
@@ -142,9 +142,9 @@ def _junit(scratch: Path, output: Path, results: list[int]) -> bool:
     return all(complete)
 
 
-def _coverage(root: Path, scratch: Path, output: Path, owner=None) -> None:
+def _coverage(root: Path, scratch: Path, output: Path, suites, owner=None) -> None:
     environment = dict(os.environ, COVERAGE_FILE=str(scratch / ".coverage"))
-    sources = [str(scratch / (".coverage." + name)) for name in SUITES]
+    sources = [str(scratch / (".coverage." + name)) for name in suites]
     command = [sys.executable, "-m", "coverage"]
     run = _runtime()[1].run_owned
     run([*command, "combine", "--keep", *sources], cwd=root, env=environment,
@@ -166,7 +166,7 @@ def _retain_suite_data(scratch: Path, output: Path) -> None:
             shutil.copyfile(source, output / (name + ".coverage"))
 
 
-def _collect(root: Path, scratch: Path, output: Path, results: list[int], coverage: bool,
+def _collect(root: Path, scratch: Path, output: Path, results: dict[str, int], coverage: bool,
              owner=None) -> bool:
     _retain_suite_data(scratch, output)
     complete = _junit(scratch, output / "junit.xml", results)
@@ -175,7 +175,7 @@ def _collect(root: Path, scratch: Path, output: Path, results: list[int], covera
         return False
     try:
         if coverage:
-            _coverage(root, scratch, output / "py.json", owner)
+            _coverage(root, scratch, output / "py.json", results, owner)
     except (OSError, subprocess.CalledProcessError):
         _retain_incomplete(scratch, output)
         raise
@@ -188,28 +188,36 @@ def _clear_outputs(output: Path) -> None:
 
 
 def run_suites(root: Path, *, coverage: bool = False, workers: int = E2E_WORKERS,
-               output: Path | None = None, unit_workers: int = UNIT_WORKERS) -> int:
-    """Run both suites unless cancelled; stop descendants before releasing output."""
+               output: Path | None = None, unit_workers: int = UNIT_WORKERS,
+               suites: tuple[str, ...] = SUITES) -> int:
+    """Run the selected suites unless cancelled; stop descendants before releasing output."""
     root = root.resolve()
     retention, _ = _runtime()
+    schedule = _schedule(suites, workers, unit_workers)
     with retention.test_run_directory(root, selected=output, **_retention_limits(root)) as held:
-        return _run_owned_suites(root, *held, coverage, workers, unit_workers)
+        return _run_owned_suites(root, *held, coverage, schedule)
 
 
-def _run_owned_suites(root, output, owner, coverage, workers, unit_workers) -> int:
+def _schedule(suites, workers: int, unit_workers: int) -> dict[str, list[str]]:
+    """The selected suites' commands, in the order the shared schedule runs them."""
+    commands = zip(SUITES, test_commands(sys.executable, workers, unit_workers))
+    return {name: command for name, command in commands if name in suites}
+
+
+def _run_owned_suites(root, output, owner, coverage, schedule) -> int:
     print(f"test evidence: {output}", flush=True)
     _clear_outputs(output)
     with tempfile.TemporaryDirectory(prefix="suites-", dir=output) as directory:
         scratch = Path(directory)
-        results = _execute_suites(root, scratch, output, owner, coverage, workers, unit_workers)
+        results = _execute_suites(root, scratch, output, owner, coverage, schedule)
         complete = _collect(root, scratch, output, results, coverage, owner)
-    return int(any(results) or not complete)
+    return int(any(results.values()) or not complete)
 
 
-def _execute_suites(root, scratch, output, owner, coverage, workers, unit_workers) -> list[int]:
+def _execute_suites(root, scratch, output, owner, coverage, schedule) -> dict[str, int]:
     try:
-        return [_suite(command, root, scratch, name, coverage, owner)
-                for name, command in zip(SUITES, test_commands(sys.executable, workers, unit_workers))]
+        return {name: _suite(command, root, scratch, name, coverage, owner)
+                for name, command in schedule.items()}
     except BaseException:
         _retain_incomplete(scratch, output)
         raise
@@ -225,20 +233,28 @@ def _known_failures() -> tuple:
     return tuple(failures)
 
 
-def main(argv: list[str] | None = None) -> int:
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--coverage", action="store_true")
     parser.add_argument("--workers", type=int, default=E2E_WORKERS)
     parser.add_argument("--unit-workers", type=int, default=UNIT_WORKERS,
                         help="unit processes (default: 4); use 1 for a serial reproduction")
+    parser.add_argument("--suite", nargs="+", choices=SUITES, default=list(SUITES),
+                        help="run only these pytest sessions (default: both); CI gives each "
+                             "slow Windows session its own job")
     parser.add_argument("--output", type=Path,
                         help="replace evidence in this directory inside --repo; caller owns it "
                              "(default: a unique retained .crapkit/test-runs directory)")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_arguments(argv)
     try:
         return run_suites(args.repo, coverage=args.coverage, workers=args.workers,
-                          output=args.output, unit_workers=args.unit_workers)
+                          output=args.output, unit_workers=args.unit_workers,
+                          suites=tuple(args.suite))
     except KeyboardInterrupt:
         print("test run cancelled; owned descendants stopped", file=sys.stderr)
         return 130

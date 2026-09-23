@@ -4,6 +4,13 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a pull request cancels the run it replaces: three pushes in
+# four minutes used to keep three full sets of jobs busy. A push to main takes a
+# group named after its own run, so every main run finishes and none waits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     strategy:
@@ -11,10 +18,20 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12", "3.13"]
-        # dogfood runs this exact source suite with coverage and checks JUnit.
+        # Windows runs the unit and e2e sessions four to five times slower than
+        # Ubuntu, so each Windows session is a job of its own and the two run
+        # side by side. Ubuntu keeps both sessions in one job.
+        suite: ["unit e2e", unit, e2e]
         exclude:
+          # dogfood runs this exact source suite with coverage and checks JUnit.
           - os: ubuntu-latest
             python: "3.12"
+          - os: ubuntu-latest
+            suite: unit
+          - os: ubuntu-latest
+            suite: e2e
+          - os: windows-latest
+            suite: unit e2e
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,9 +52,47 @@ jobs:
       # all four with no test failure, so this line is the test.
       - name: the console script resolves
         run: crapkit --version
-      - run: python tools/testing/run.py
+      - run: python tools/testing/run.py --suite ${{ matrix.suite }}
 
+  # The verdict compares installed base and candidate wheels. Each side builds,
+  # installs and measures its own wheel in a job of its own, the two side by
+  # side, and hands off its coverage evidence, the wheel and a proof of both. A
+  # failing suite still hands off; the join decides what it means.
+  verdict-measure:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [base, candidate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - name: measure one installed wheel
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python tools/testing/ci.py --base "$BASE_REF" --measure ${{ matrix.side }}
+      - name: hand the measurement to the verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crapkit-measure-${{ matrix.side }}
+          path: .crapkit/ci-measure/${{ matrix.side }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          overwrite: true
+
+  # The join installs each uploaded wheel into a fresh venv, proves again that
+  # it holds that checkout's source, and runs verify over the uploaded evidence.
   verdict:
+    needs: verdict-measure
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,12 +103,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install build
-      - name: compare installed base and candidate wheels
+      - uses: actions/download-artifact@v4
+        with:
+          name: crapkit-measure-base
+          path: .crapkit/ci-measure/base
+      - uses: actions/download-artifact@v4
+        with:
+          name: crapkit-measure-candidate
+          path: .crapkit/ci-measure/candidate
+      - name: judge the two measured wheels
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python tools/testing/ci.py --base "$BASE_REF"
+        run: python tools/testing/ci.py --base "$BASE_REF" --join
       - name: retain the verdict and wheel provenance
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,6 +124,7 @@ jobs:
           path: .crapkit/ci-verdict
           include-hidden-files: true
           if-no-files-found: warn
+          overwrite: true
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
   # test can schema-check: a malformed handler fails here with exit 1. The two

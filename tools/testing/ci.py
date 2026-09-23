@@ -19,6 +19,9 @@ import tempfile
 
 
 SCHEDULE = Path(__file__).with_name("run.py")
+SIDES = ("base", "candidate")
+# What the join reads from each measurement job's hand-off before trusting it.
+PROOF_FIELDS = ("wheel", "wheel_sha256", "commit", "suite_exit")
 _OWNER = ContextVar("ci_command_owner", default=None)
 JUNIT_PROBE = (
     "from pathlib import Path\nimport json\n"
@@ -102,20 +105,64 @@ def installed_source(root: Path, python: Path, environment: dict) -> dict:
     return {"package": str(package), "source_sha256": expected}
 
 
+def _install_wheel(destination: Path, requirement: str) -> tuple[Path, dict]:
+    """A fresh venv holding one wheel requirement and nothing from the caller's site."""
+    venv = destination / "venv"
+    _run([sys.executable, "-m", "venv", str(venv)], check=True)
+    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    environment = _environment(python)
+    _run([str(python), "-m", "pip", "install", requirement], env=environment, check=True)
+    return python, environment
+
+
 def install_revision(root: Path, destination: Path) -> tuple[Path, dict, dict]:
     """Build one wheel, install it in a clean environment, and verify its bytes."""
     dist = destination / "dist"
     _run([sys.executable, "-m", "build", "--wheel", "--outdir", str(dist), str(root)], check=True)
     wheel, = dist.glob("*.whl")
-    venv = destination / "venv"
-    _run([sys.executable, "-m", "venv", str(venv)], check=True)
-    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    environment = _environment(python)
-    _run([str(python), "-m", "pip", "install", str(wheel) + "[dev]"],
-                   env=environment, check=True)
+    python, environment = _install_wheel(destination, str(wheel) + "[dev]")
     proof = installed_source(root, python, environment)
     proof.update(wheel=wheel.name, wheel_sha256=_sha(wheel), commit=_git(root, "rev-parse", "HEAD"))
     return python, environment, proof
+
+
+def reinstall_revision(root: Path, measured: Path, destination: Path) -> tuple[Path, dict, dict]:
+    """Install the wheel a measurement job handed off, and prove it is this checkout's.
+
+    The measurement ran on another runner. Its wheel must be the bytes it recorded
+    and come from the commit checked out here, and the installed source must be
+    this checkout's, before its coverage evidence stands for this revision. The
+    join runs no suite, so the wheel goes in without the dev extra.
+    """
+    proof = _read_proof(measured)
+    wheel = _measured_wheel(root, measured, proof)
+    python, environment = _install_wheel(destination, str(wheel))
+    proof["reinstalled"] = installed_source(root, python, environment)["package"]
+    _copy_evidence(measured / "cov", root / ".crapkit/cov")
+    return python, environment, proof
+
+
+def _read_proof(measured: Path) -> dict:
+    proof = json.loads((measured / "proof.json").read_text(encoding="utf-8"))
+    missing = [field for field in PROOF_FIELDS if field not in proof]
+    if missing:
+        raise ValueError(f"{measured.name} proof lacks {', '.join(missing)}")
+    return proof
+
+
+def _measured_wheel(root: Path, measured: Path, proof: dict) -> Path:
+    wheel = measured / proof["wheel"]
+    if _sha(wheel) != proof["wheel_sha256"]:
+        raise ValueError(f"{wheel.name} is not the wheel its measurement recorded")
+    commit = _git(root, "rev-parse", "HEAD")
+    if proof["commit"] != commit:
+        raise ValueError(f"measurement of {proof['commit']} cannot stand for checkout {commit}")
+    return wheel
+
+
+def _copy_evidence(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        shutil.copytree(source, destination)
 
 
 def _measure(root: Path, python: Path, environment: dict, proof: dict) -> int:
@@ -204,9 +251,7 @@ def _checkout(repo: Path, directory: Path, ref: str) -> Path:
 
 def _retain_revision(source: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    coverage = source / ".crapkit/cov"
-    if coverage.is_dir():
-        shutil.copytree(coverage, destination / "cov")
+    _copy_evidence(source / ".crapkit/cov", destination / "cov")
     ledger = source / ".crapkit/crap.sqlite"
     if ledger.is_file():
         _copy_baseline(ledger, destination / "crap.sqlite")
@@ -223,25 +268,96 @@ def _retain_evidence(scratch: Path, output: Path, evidence: dict) -> None:
         (retained / "verdict.json").write_text(text, encoding="utf-8")
 
 
-def _compare_checkouts(repo: Path, base_ref: str, scratch: Path, evidence: dict) -> int:
-    base = _checkout(repo, scratch / "base", base_ref)
-    candidate = _checkout(repo, scratch / "candidate", "HEAD")
-    evidence["phase"] = "base-install"
-    bp, be, evidence["base"] = install_revision(base, scratch / "base-install")
-    evidence["phase"] = "candidate-install"
-    cp, ce, evidence["candidate"] = install_revision(candidate, scratch / "candidate-install")
-    evidence["phase"] = "measure"
-    results = [_measure(base, bp, be, evidence["base"]),
-               _measure(candidate, cp, ce, evidence["candidate"])]
+def _side_ref(side: str, base_ref: str) -> str:
+    return base_ref if side == "base" else "HEAD"
+
+
+def _checkouts(repo: Path, base_ref: str, scratch: Path) -> dict[str, Path]:
+    return {side: _checkout(repo, scratch / side, _side_ref(side, base_ref)) for side in SIDES}
+
+
+def _installed(roots: dict, evidence: dict, install) -> dict[str, tuple[Path, dict]]:
+    """Install each side in turn, recording its proof and the phase reached."""
+    installs = {}
+    for side in SIDES:
+        evidence["phase"] = side + "-install"
+        python, environment, evidence[side] = install(side, roots[side])
+        installs[side] = (python, environment)
+    return installs
+
+
+def _judge(roots: dict, installs: dict, results: list[int], evidence: dict) -> int:
     evidence["suite_exits"] = results
     evidence["phase"] = "verify"
-    code, evidence["verdict"] = verify_pair(base, candidate, bp, cp, be, ce)
+    (base_python, base_env), (candidate_python, candidate_env) = installs["base"], installs["candidate"]
+    code, evidence["verdict"] = verify_pair(roots["base"], roots["candidate"], base_python,
+                                            candidate_python, base_env, candidate_env)
     evidence["phase"] = "complete"
     return code or int(bool(results[1]))
 
 
+def _compare_checkouts(repo: Path, base_ref: str, scratch: Path, evidence: dict) -> int:
+    roots = _checkouts(repo, base_ref, scratch)
+    installs = _installed(roots, evidence, lambda side, root: install_revision(
+        root, scratch / (side + "-install")))
+    evidence["phase"] = "measure"
+    results = [_measure(roots[side], *installs[side], evidence[side]) for side in SIDES]
+    return _judge(roots, installs, results, evidence)
+
+
+def _join_checkouts(repo: Path, base_ref: str, measured: Path, scratch: Path, evidence: dict) -> int:
+    roots = _checkouts(repo, base_ref, scratch)
+    installs = _installed(roots, evidence, lambda side, root: reinstall_revision(
+        root, measured / side, scratch / (side + "-install")))
+    return _judge(roots, installs, [evidence[side]["suite_exit"] for side in SIDES], evidence)
+
+
+def measure(repo: Path, base_ref: str, side: str, measured: Path) -> int:
+    """Measure one side's installed wheel and hand the join what it needs to judge it.
+
+    A failing suite still hands off: whether a baseline failure stands and a
+    candidate failure fails is the join's call, the same one compare makes.
+    """
+    with tempfile.TemporaryDirectory(prefix="crapkit-ci-") as directory:
+        scratch = Path(directory)
+        with _commands():
+            root = _checkout(repo, scratch / side, _side_ref(side, base_ref))
+            python, environment, proof = install_revision(root, scratch / "install")
+            proof["suite_exit"] = _measure(root, python, environment, proof)
+        _hand_off(root, scratch / "install/dist" / proof["wheel"], proof, measured / side)
+    return 0
+
+
+def _hand_off(root: Path, wheel: Path, proof: dict, destination: Path) -> None:
+    """Replace one side's hand-off: its coverage evidence, its wheel and their proof."""
+    _clear_hand_off(destination)
+    _copy_evidence(root / ".crapkit/cov", destination / "cov")
+    shutil.copyfile(wheel, destination / wheel.name)
+    (destination / "proof.json").write_text(json.dumps(proof, indent=2) + "\n", encoding="utf-8")
+
+
+def _clear_hand_off(destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    if (destination / "cov").is_dir():
+        shutil.rmtree(destination / "cov")
+    for stale in [destination / "proof.json", *destination.glob("*.whl")]:
+        stale.unlink(missing_ok=True)
+
+
+def join(repo: Path, base_ref: str, measured: Path, output: Path) -> int:
+    """Judge the two hand-offs, then persist the verdict and provenance."""
+    return _judged(output, lambda scratch, evidence: _join_checkouts(
+        repo, base_ref, measured, scratch, evidence))
+
+
 def compare(repo: Path, base_ref: str, output: Path) -> int:
     """Measure isolated installations, then persist the verdict and provenance."""
+    return _judged(output, lambda scratch, evidence: _compare_checkouts(
+        repo, base_ref, scratch, evidence))
+
+
+def _judged(output: Path, judge) -> int:
+    """Run one judgment under owned commands and retain its evidence either way."""
     output.mkdir(parents=True, exist_ok=True)
     retained = Path(tempfile.mkdtemp(prefix="attempt-", dir=output))
     evidence = {"phase": "checkout", "base": None, "candidate": None,
@@ -250,7 +366,7 @@ def compare(repo: Path, base_ref: str, output: Path) -> int:
         scratch = Path(directory)
         try:
             with _commands():
-                return _compare_checkouts(repo, base_ref, scratch, evidence)
+                return judge(scratch, evidence)
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             evidence["error"] = str(exc)
             raise
@@ -258,17 +374,37 @@ def compare(repo: Path, base_ref: str, output: Path) -> int:
             _retain_evidence(scratch, output, evidence)
 
 
-def main(argv=None) -> int:
+def parse_arguments(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--base", required=True)
     parser.add_argument("--output", type=Path, default=Path(".crapkit/ci-verdict"))
-    args = parser.parse_args(argv)
+    parser.add_argument("--measured", type=Path, default=Path(".crapkit/ci-measure"),
+                        help="where --measure hands off one side and --join reads both")
+    split = parser.add_mutually_exclusive_group()
+    split.add_argument("--measure", choices=SIDES,
+                       help="measure one side's installed wheel and hand it off, one CI job per side")
+    split.add_argument("--join", action="store_true",
+                       help="judge both hand-offs after proving each wheel again")
+    return parser.parse_args(argv)
+
+
+def main(argv=None) -> int:
+    args = parse_arguments(argv)
     try:
-        return compare(args.repo.resolve(), args.base, args.output.resolve())
+        return _dispatch(args)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"isolated CI verification failed: {exc}", file=sys.stderr)
         return 1
+
+
+def _dispatch(args: argparse.Namespace) -> int:
+    repo = args.repo.resolve()
+    if args.measure:
+        return measure(repo, args.base, args.measure, args.measured.resolve())
+    if args.join:
+        return join(repo, args.base, args.measured.resolve(), args.output.resolve())
+    return compare(repo, args.base, args.output.resolve())
 
 
 if __name__ == "__main__":
