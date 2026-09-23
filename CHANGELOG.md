@@ -14,10 +14,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   section). In each repo run `crapkit coverage`, then `crapkit ratchet seed`, then
   `crapkit ratchet prune`. Seed stamps the marks with the metric of the run it reads, so
   a seed before the fresh coverage run keeps the old stamp and verify keeps refusing.
-  When a failed verify pins the baseline, pass the new run to `crapkit ratchet seed
-  --baseline N`; the seed line and verify's refusal both name it. Prune then drops the
-  marks left under the old names. The first `inventory` or `coverage` analyzes every
-  file again. See the [upgrade
+  When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet
+  seed --baseline N` and then `crapkit ratchet prune --baseline N`; the seed line and
+  verify's refusal both name it. Prune then drops the marks left under the old names.
+  The first `inventory` or `coverage` analyzes every file again. See the [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.0/docs/upgrading.md#analysis-version-11).
 - `test_retention_days` and `test_retention_count` are deprecated and ignored. A config
   that sets them still loads, including values that used to be refused, and `doctor`

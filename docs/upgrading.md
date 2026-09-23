@@ -73,10 +73,11 @@ crapkit ratchet prune
 
 `coverage` measures under version 11, and `ratchet seed` stamps the marks with the
 metric of the run it reads, so a seed from a run 0.7.x measured keeps the old stamp.
-When a failed verify pins the baseline, seed reads the pinned run: pass the new run's
-id, `crapkit ratchet seed --baseline N`; the seed line and verify's refusal both name
-it. `ratchet prune` then drops the marks left under the old names. Review the diff and
-commit it before the next `crapkit verify`.
+`ratchet prune` then drops the marks left under the old names. When a failed verify
+pins the baseline, seed and prune both read the pinned run: pass the new run's id to
+each, `crapkit ratchet seed --baseline N` then `crapkit ratchet prune --baseline N`;
+the seed line and verify's refusal both name it. Review the diff and commit it before
+the next `crapkit verify`.
 
 ### Analysis version 10
 
