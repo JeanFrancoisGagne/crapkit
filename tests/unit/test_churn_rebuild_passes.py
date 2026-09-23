@@ -80,6 +80,14 @@ def test_a_small_log_is_deflated_in_one_write_and_its_flush(tmp_path, git):
     assert stored_text(tmp_path) == "".join(LOG)
 
 
+def test_an_empty_window_is_laid_down_as_the_flush_alone(tmp_path, git):
+    git["log"] = []
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == []
+    assert [part.writes for part in git["parts"]] == [1]
+    assert stored_text(tmp_path) == ""
+
+
 def test_a_large_log_is_deflated_a_megabyte_at_a_time(tmp_path, git):
     git["log"] = big_log(int(2.5 * MIB))
 
