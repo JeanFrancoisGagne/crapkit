@@ -19,7 +19,7 @@ import shlex
 
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
-from .score import _remedy
+from .score import _remedy, shares_its_def_line
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -223,16 +223,19 @@ def rejudged(row, ceiling: int, rows_of):
 
 
 def _shares_span(row, rows_of) -> bool:
-    """Whether another function declares this row's source lines.
+    """Whether another function declares this row's source lines, or a one-line
+    Python def shares its line with its own `def` statement.
 
     The run answered it for every row it judged between its ccn and its CRAP:
     split-lines is yes, add-tests is no. Only a row it judged ok or decompose
-    costs a read of the file's rows.
+    costs a read of the file's rows, and a one-line def answers without one.
     """
     if row.remedy in ("add-tests", "split-lines"):
         return row.remedy == "split-lines"
-    return row.flag not in _UNJOINED and any(_same_span(row, other)
-                                             for other in rows_of(row.path))
+    if row.flag in _UNJOINED:
+        return False
+    return shares_its_def_line(row) or any(_same_span(row, other)
+                                           for other in rows_of(row.path))
 
 
 def _same_span(row, other) -> bool:

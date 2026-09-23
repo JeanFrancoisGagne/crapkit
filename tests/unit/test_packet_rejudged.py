@@ -4,14 +4,15 @@ The shared-span half is the one a stored run cannot always answer. A row the run
 judged `add-tests` or `split-lines` already says whether another function
 declares its lines; a row it judged `ok` or `decompose` does not, and only that
 row may cost a read of its file. The rows below score CRAP = ccn^2 x
-(1 - cov)^3 + ccn by hand.
+(1 - cov)^3 + ccn by hand. They span two lines, since a one-line Python def is
+split-lines on its own (test_packet_rejudges_a_one_line_def.py).
 """
 from crapkit import packet
 from crapkit.score import ScoredRow
 
 
 def row(name: str, *, ccn: int = 2, crap: float = 6.0, remedy: str = "ok",
-        flag: str = "untested", scope: str = "src", start: int = 30, end: int = 30,
+        flag: str = "untested", scope: str = "src", start: int = 30, end: int = 31,
         occurrence: int = 1) -> ScoredRow:
     return ScoredRow(scope, "src/app.py", name, start, end, ccn, ccn, ccn, 1, 0, 0,
                      0.0, flag, crap, remedy, 0, occurrence)
@@ -47,7 +48,7 @@ def test_a_neighbour_on_the_same_lines_makes_an_ok_row_split_lines():
 
 def test_a_row_alone_on_its_lines_is_told_to_add_tests():
     left = row("left( )")
-    below = row("below( )", start=31, end=31)
+    below = row("below( )", start=32, end=33)
 
     assert packet.rejudged(left, 4, lambda path: [left, below]).remedy == "add-tests"
 
