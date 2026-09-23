@@ -72,12 +72,16 @@ def test_a_few_files_are_rescored_without_reading_the_cache(scored, capsys, monk
     assert len({f["path"] for f in payload["functions"]}) == _HOOK_POOL_THRESHOLD - 1
 
 
+def cache_entries(repo) -> set[str]:
+    return set(json.loads(cache_bytes(repo))["entries"])
+
+
 def test_the_hooks_threshold_of_files_still_folds_into_the_cache(scored, capsys):
-    before = cache_bytes(scored)
+    before = cache_entries(scored)
 
     rescore(scored, capsys, small_files(scored, _HOOK_POOL_THRESHOLD))
 
-    assert cache_bytes(scored) != before
+    assert before < cache_entries(scored), "every prior entry stays, and the new files join them"
 
 
 def test_both_paths_score_a_file_the_same(scored, capsys):
