@@ -783,12 +783,18 @@ def _resolve_batch(requested: int) -> int:
     return requested
 
 
-def _batch_rows(loader, count: int) -> list:
-    """The top N actionable queue items, admitted exactly as next-item admits them."""
-    scored = loader.store.read_scored(loader.latest["id"],
-                                      min_ccn=_pushdown_floor(loader.cfg))
+def _batch_rows(loader, count: int) -> tuple[list, int]:
+    """The top N actionable queue items, admitted exactly as next-item admits
+    them, and how many rows an open claim hid.
+
+    The claim filter is next-item's own: a function one session holds under
+    `next-item --claim` is not handed to another session inside a packet.
+    """
+    run_id = loader.latest["id"]
+    scored = loader.store.read_scored(run_id, min_ccn=_pushdown_floor(loader.cfg))
     ranked, _ = _next_ranked(scored, admission(loader.churn(), loader.cfg.worklist_floor))
-    return _actionable(ranked)[:count]
+    ranked, skipped_claimed = _unclaimed(loader.store, ranked, _Handles(loader.store, run_id))
+    return _actionable(ranked)[:count], skipped_claimed
 
 
 def _brief_batch(loader, count: int) -> dict:
@@ -797,12 +803,18 @@ def _brief_batch(loader, count: int) -> dict:
     A session that briefs its whole batch one command at a time pays for the
     store, the config, the churn window, the git log and every file text once
     per function. Here they are read once and every packet is cut from them.
+
+    `skipped_claimed` appears only when a claim hid something, as on next-item,
+    so a store nobody claims in emits the payload it always did.
     """
-    rows = _batch_rows(loader, count)
+    rows, skipped_claimed = _batch_rows(loader, count)
     loader.prime_attempts(rows)
-    return {"run_id": loader.latest["id"], "commit": loader.latest["commit"],
-            "stale": loader.stale(),
-            "packets": [_brief_packet(loader, row) for row in rows]}
+    out = {"run_id": loader.latest["id"], "commit": loader.latest["commit"],
+           "stale": loader.stale(),
+           "packets": [_brief_packet(loader, row) for row in rows]}
+    if skipped_claimed:
+        out["skipped_claimed"] = skipped_claimed
+    return out
 
 
 def _brief_target(args: argparse.Namespace) -> tuple[str, str]:

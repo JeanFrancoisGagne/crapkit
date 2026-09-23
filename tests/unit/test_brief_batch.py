@@ -64,6 +64,10 @@ class _Store:
         self._seen("attempts_for")
         return {key: [] for key in keys}
 
+    def open_claims(self):
+        self._seen("open_claims")
+        return []
+
 
 @pytest.fixture()
 def counted(monkeypatch) -> dict:
