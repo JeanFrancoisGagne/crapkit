@@ -25,11 +25,10 @@ contract test compares the two.
 from __future__ import annotations
 
 from html import escape
-import os
-import shlex
 
 from .errors import ConfigError
 from .invocation import _self
+from .packet import _console_command
 
 # Measured at 46,567 rows / 9.85 MB. A few thousand rows is already a page
 # nobody scrolls; past that it is a page nobody opens.
@@ -266,17 +265,14 @@ def _remedy_tone(remedy) -> str:
 
 
 def _drill_down(entry: dict) -> str:
-    """The command that opens the row: dark lines, history, the committed mark."""
+    """The command that opens the row: dark lines, history, the committed mark.
+
+    Spelled by the brief's own builder, so one line pastes intact into sh, cmd.exe
+    and PowerShell. A path that starts with a hyphen follows `--`, where argparse
+    reads it as the path rather than an option."""
     selector = entry.get("handle") or str(entry["start"])
-    return _esc(f'crapkit explain {_command_arg(entry["path"])} {_command_arg(selector)}')
-
-
-def _command_arg(value: str) -> str:
-    """Quote for PowerShell on Windows and POSIX shells elsewhere."""
-    quoted = shlex.quote(value)
-    if os.name == "nt" and quoted != value:
-        return "'" + value.replace("'", "''") + "'"
-    return quoted
+    marker = ["--"] if entry["path"].startswith("-") else []
+    return _esc(_console_command(["explain", *marker, entry["path"], selector]))
 
 
 # --- the trend series --------------------------------------------------------

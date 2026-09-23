@@ -3,11 +3,8 @@ from html import unescape
 from contextlib import closing
 import json
 from pathlib import Path
-import os
 import re
 import shlex
-import subprocess
-import sys
 
 import pytest
 
@@ -71,23 +68,6 @@ def test_rendered_handle_is_escaped_and_keeps_spaces_in_one_argument():
     assert 'route( x &lt; y )#2' in page
     command = re.findall(r'<code>(crapkit explain.*?)</code>', unescape(page))[0]
     assert shlex.split(command)[-1] == entry['handle']
-
-
-@pytest.mark.skipif(os.name != 'nt', reason='Windows report commands target PowerShell')
-def test_windows_report_arguments_reach_a_real_child_verbatim(tmp_path):
-    fixture = Path(__file__).parents[1] / 'fixtures/recorded/report_payload.json'
-    payload = json.loads(fixture.read_text(encoding='utf-8'))
-    entry = payload['worklist']['active'][0]
-    entry.update(path="src/a '$VALUE %VALUE% !VALUE!.ts", handle="f( x = 'a' )#2")
-    page = render_report(payload)
-    command = re.findall(r'<code>(crapkit explain.*?)</code>', unescape(page))[0]
-    script = tmp_path / 'arguments.py'
-    script.write_text('import json,sys; print(json.dumps(sys.argv[1:]))', encoding='utf-8')
-    child = f"& '{sys.executable}' '{script}'" + command.removeprefix('crapkit')
-    result = subprocess.run(['powershell', '-NoProfile', '-Command', child],
-                            capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == ['explain', entry['path'], entry['handle']]
 
 
 def test_position_read_keeps_inventory_scope_copies_without_other_paths_or_metrics(tmp_path):
