@@ -38,21 +38,23 @@ def _enum_errors(value, schema: dict, where: str) -> list[str]:
     return []
 
 
-def _child_errors(value, schema: dict, where: str) -> list[str]:
-    errors = []
-    if isinstance(value, dict):
-        for key, sub in schema.get("properties", {}).items():
-            if key in value:
-                errors += schema_errors(value[key], sub, f"{where}/{key}")
-    if isinstance(value, list) and "items" in schema:
-        for i, item in enumerate(value):
-            errors += schema_errors(item, schema["items"], f"{where}/{i}")
-    return errors
+def _property_errors(value, schema: dict, where: str) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    return [error for key, sub in schema.get("properties", {}).items() if key in value
+            for error in schema_errors(value[key], sub, f"{where}/{key}")]
+
+
+def _item_errors(value, schema: dict, where: str) -> list[str]:
+    if not (isinstance(value, list) and "items" in schema):
+        return []
+    return [error for i, item in enumerate(value)
+            for error in schema_errors(item, schema["items"], f"{where}/{i}")]
 
 
 def schema_errors(value, schema: dict, where: str = "") -> list[str]:
     return (_type_errors(value, schema, where) + _enum_errors(value, schema, where)
-            + _child_errors(value, schema, where))
+            + _property_errors(value, schema, where) + _item_errors(value, schema, where))
 
 
 def output_schema(name: str) -> dict:
