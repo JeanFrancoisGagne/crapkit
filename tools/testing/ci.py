@@ -312,20 +312,38 @@ def _join_checkouts(repo: Path, base_ref: str, measured: Path, scratch: Path, ev
     return _judge(roots, installs, [evidence[side]["suite_exit"] for side in SIDES], evidence)
 
 
+# What stops a verdict step and becomes its recorded error, not a traceback.
+_FAILURES = (OSError, ValueError, subprocess.CalledProcessError)
+
+
 def measure(repo: Path, base_ref: str, side: str, measured: Path) -> int:
     """Measure one side's installed wheel and hand the join what it needs to judge it.
 
     A failing suite still hands off: whether a baseline failure stands and a
-    candidate failure fails is the join's call, the same one compare makes.
+    candidate failure fails is the join's call, the same one compare makes. A
+    step that stops the measurement hands off failure.json instead, naming the
+    phase it reached and the error, because the join never runs after it.
     """
-    with tempfile.TemporaryDirectory(prefix="crapkit-ci-") as directory:
-        scratch = Path(directory)
-        with _commands():
-            root = _checkout(repo, scratch / side, _side_ref(side, base_ref))
-            python, environment, proof = install_revision(root, scratch / "install")
-            proof["suite_exit"] = _measure(root, python, environment, proof)
-        _hand_off(root, scratch / "install/dist" / proof["wheel"], proof, measured / side)
+    record = {"phase": "checkout"}
+    try:
+        with tempfile.TemporaryDirectory(prefix="crapkit-ci-") as directory:
+            _measure_side(repo, base_ref, side, Path(directory), measured / side, record)
+    except _FAILURES as exc:
+        _record_failure(measured / side, dict(record, error=str(exc)))
+        raise
     return 0
+
+
+def _measure_side(repo: Path, base_ref: str, side: str, scratch: Path, destination: Path,
+                  record: dict) -> None:
+    with _commands():
+        root = _checkout(repo, scratch / side, _side_ref(side, base_ref))
+        record["phase"] = "install"
+        python, environment, proof = install_revision(root, scratch / "install")
+        record["phase"] = "measure"
+        proof["suite_exit"] = _measure(root, python, environment, proof)
+    record["phase"] = "hand-off"
+    _hand_off(root, scratch / "install/dist" / proof["wheel"], proof, destination)
 
 
 def _hand_off(root: Path, wheel: Path, proof: dict, destination: Path) -> None:
@@ -336,11 +354,17 @@ def _hand_off(root: Path, wheel: Path, proof: dict, destination: Path) -> None:
     (destination / "proof.json").write_text(json.dumps(proof, indent=2) + "\n", encoding="utf-8")
 
 
+def _record_failure(destination: Path, failure: dict) -> None:
+    """Replace one side's hand-off with why its measurement stopped."""
+    _clear_hand_off(destination)
+    (destination / "failure.json").write_text(json.dumps(failure, indent=2) + "\n", encoding="utf-8")
+
+
 def _clear_hand_off(destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     if (destination / "cov").is_dir():
         shutil.rmtree(destination / "cov")
-    for stale in [destination / "proof.json", *destination.glob("*.whl")]:
+    for stale in [destination / "proof.json", destination / "failure.json", *destination.glob("*.whl")]:
         stale.unlink(missing_ok=True)
 
 
@@ -367,7 +391,7 @@ def _judged(output: Path, judge) -> int:
         try:
             with _commands():
                 return judge(scratch, evidence)
-        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        except _FAILURES as exc:
             evidence["error"] = str(exc)
             raise
         finally:
@@ -393,7 +417,7 @@ def main(argv=None) -> int:
     args = parse_arguments(argv)
     try:
         return _dispatch(args)
-    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+    except _FAILURES as exc:
         print(f"isolated CI verification failed: {exc}", file=sys.stderr)
         return 1
 

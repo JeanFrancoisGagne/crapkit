@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -92,11 +93,66 @@ def test_a_second_hand_off_replaces_the_first(tmp_path, monkeypatch):
     (stale / "cov").mkdir(parents=True)
     (stale / "cov/stale.xml").write_text("an earlier attempt")
     (stale / "crapkit-9.9.9-py3-none-any.whl").write_text("an earlier wheel")
+    (stale / "failure.json").write_text('{"phase": "install", "error": "an earlier failure"}')
 
     assert hand_offs(ci, repo, base, measured)[0] == 0
 
     assert sorted(path.name for path in stale.iterdir()) == sorted(["cov", "proof.json", WHEEL])
     assert not (stale / "cov/stale.xml").exists()
+
+
+def raising(error):
+    def fail(*args):
+        raise error
+    return fail
+
+
+PIP_FAILED = subprocess.CalledProcessError(1, ["pip", "install", WHEEL])
+NO_RUNNER = ValueError("revision has no tools/testing/run.py; select a baseline with the shared runner")
+DISK_FULL = OSError(28, "No space left on device")
+
+
+@pytest.mark.parametrize(("step", "error", "phase"), [
+    ("install_revision", PIP_FAILED, "install"),
+    ("_measure", NO_RUNNER, "measure"),
+    ("_hand_off", DISK_FULL, "hand-off"),
+], ids=["install", "measure", "hand-off"])
+def test_a_measurement_that_stops_hands_off_why_instead_of_nothing(tmp_path, monkeypatch, step, error, phase):
+    """The join never runs after a failed measurement job, so the upload carries the diagnosis."""
+    ci = driver()
+    repo, base = repository(tmp_path)
+    measured = tmp_path / "measured"
+    earlier = measured / "candidate"
+    earlier.mkdir(parents=True)
+    (earlier / "proof.json").write_text('{"commit": "an earlier attempt"}')
+    measuring(ci, monkeypatch)
+    monkeypatch.setattr(ci, step, raising(error))
+
+    code = ci.main(["--repo", str(repo), "--base", base, "--measure", "candidate",
+                    "--measured", str(measured)])
+
+    assert code == 1
+    assert sorted(path.name for path in earlier.iterdir()) == ["failure.json"]
+    expected = {
+        "install": "Command '['pip', 'install', 'crapkit-0.0.0-py3-none-any.whl']' returned non-zero exit status 1.",
+        "measure": "revision has no tools/testing/run.py; select a baseline with the shared runner",
+        "hand-off": "[Errno 28] No space left on device",
+    }[phase]
+    assert json.loads((earlier / "failure.json").read_text(encoding="utf-8")) == {"phase": phase, "error": expected}
+
+
+def test_a_measurement_of_a_missing_base_records_its_checkout_failure(tmp_path):
+    ci = driver()
+    repo, _ = repository(tmp_path)
+    measured = tmp_path / "measured"
+
+    code = ci.main(["--repo", str(repo), "--base", "missing-ref", "--measure", "base",
+                    "--measured", str(measured)])
+
+    failure = json.loads((measured / "base/failure.json").read_text(encoding="utf-8"))
+    assert code == 1
+    assert failure["phase"] == "checkout"
+    assert "missing-ref" in failure["error"], failure
 
 
 @pytest.mark.parametrize("lost_coverage", [False, True])
