@@ -10,7 +10,7 @@ A caller asks `prepare` for a command's registration before spawning it and
 hands that registration back to `register_then` unread. Requests to the
 guardian are built and parsed here and nowhere else.
 """
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext, suppress
 import json
 import os
 from pathlib import Path
@@ -203,16 +203,17 @@ def _external_owner(paths, *, optional: bool = False, label: str = "measurement"
     finally:
         with _OWNER_INPUTS_LOCK:
             _OWNER_INPUTS.discard(raw_input)
-            _close_input(process)
+            close_input(process)
         process.wait()
         process.stdout.close()
 
 
-def _close_input(process) -> None:
-    try:
-        process.stdin.close()
-    except OSError:
-        pass
+def close_input(process) -> None:
+    """Close a child's input pipe when it has one. A child that already exited
+    took its end of the pipe with it, and that close error is not ours."""
+    if process.stdin is not None:
+        with suppress(OSError):
+            process.stdin.close()
 
 
 def _reply(value: dict) -> None:

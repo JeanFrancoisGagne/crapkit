@@ -21,7 +21,7 @@ import tempfile
 import time
 from typing import IO
 
-from ._process_owner import CommandCancelled, kill_process_tree, own_processes
+from ._process_owner import CommandCancelled, close_input, kill_process_tree, own_processes
 from .errors import ToolError
 
 __all__ = ["CommandCancelled", "NoProgress", "own_processes", "prepare_template",
@@ -111,12 +111,6 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     """The shell and everything under it, then reap the shell."""
     kill_process_tree(proc.pid)
     proc.wait()
-
-
-def _close_input(process) -> None:
-    if process.stdin is not None:
-        with suppress(OSError):
-            process.stdin.close()
 
 
 # How long a launcher whose input pipe is already dead gets to settle its exit
@@ -256,7 +250,7 @@ def _abandon(process, owner, kill):
         owner.stop(process.pid)
     kill(process)
     process.wait()
-    _close_input(process)
+    close_input(process)
 
 
 def _register(process, owner, registration, release, refusal):
@@ -435,7 +429,7 @@ def _complete_command(proc, timeout, stream, no_progress, owner):
     try:
         return _wait_bounded(proc, timeout, no_progress, stream)
     finally:
-        _close_input(proc)
+        close_input(proc)
         try:
             owner.stop(proc.pid)
         except BaseException:

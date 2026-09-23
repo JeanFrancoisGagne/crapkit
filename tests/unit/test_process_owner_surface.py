@@ -89,3 +89,22 @@ def test_every_owner_prepares_commands_the_same_way(monkeypatch):
     monkeypatch.setattr(owner_module, "command_registration", lambda kwargs: ("named", kwargs))
     with procs.own_processes(()) as owner:
         assert owner.prepare({"cwd": "here"}) == ("named", {"cwd": "here"})
+
+
+class _GonePipe:
+    """A child's input pipe after the child exited: closing it fails."""
+
+    def __init__(self):
+        self.closes = 0
+
+    def close(self):
+        self.closes += 1
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+def test_one_input_close_serves_procs_and_the_guardian():
+    assert procs.close_input is owner_module.close_input
+    owner_module.close_input(SimpleNamespace(stdin=None))  # DEVNULL input: no pipe to close
+    pipe = _GonePipe()
+    owner_module.close_input(SimpleNamespace(stdin=pipe))
+    assert pipe.closes == 1
