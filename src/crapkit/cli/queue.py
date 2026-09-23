@@ -86,7 +86,7 @@ def cmd_next_item(args: argparse.Namespace) -> int:
     head = _next_head(latest, skipped_no_lane, skipped_claimed + conflicts,
                       latest["commit"] != commit)
     _emit_next(store, head, ranked, args.top, adm, cfg, scored, excludes, scopes,
-               load_uncovered(root, cfg), handles)
+               lambda: load_uncovered(root, cfg), handles)
     return 0
 
 
@@ -212,19 +212,23 @@ def _next_reasons(store, run_id: int, ranked: list, scored, adm, cfg,
 
 
 def _emit_next(store, head: dict, ranked, top: int, adm, cfg, scored,
-               excludes: list, scopes: list, uncovered, handles=None) -> None:
+               excludes: list, scopes: list, load_lines, handles=None) -> None:
+    """`load_lines` reads the lane artifacts' dark lines, and only an item
+    prints them: an empty queue never parses an artifact or asks git whether a
+    lane's sources moved, which was nearly all of an empty call's time."""
     if not _actionable(ranked):
         head.update(empty=True,
                     reasons=_next_reasons(store, head["run_id"], ranked, scored, adm, cfg,
                                           excludes, scopes))
     elif top > 1:
+        uncovered = load_lines()
         head.update(empty=False,
                     items=[_next_item_payload(r, adm, cfg, uncovered, _handle(handles, r))
                            for r in _claimable(ranked, top)])
     else:
         first = _claimable(ranked, 1)[0]
         head.update(empty=False,
-                    item=_next_item_payload(first, adm, cfg, uncovered,
+                    item=_next_item_payload(first, adm, cfg, load_lines(),
                                             _handle(handles, first)))
     _print_json(head)
 
