@@ -118,17 +118,44 @@ def test_coveragepy_lanes_started_in_one_directory_write_one_data_file():
     assert shared_coverage_data(lanes) == (("a", "b"),)
 
 
-def test_a_lane_that_names_its_own_data_file_shares_none():
-    assert shared_coverage_data([_lane("a", env=(("COVERAGE_FILE", ".coverage.a"),)),
-                                 _lane("b", env=(("COVERAGE_FILE", ".coverage.b"),))]) == ()
+def _file(name: str) -> tuple[tuple[str, str], ...]:
+    return (("COVERAGE_FILE", name),)
+
+
+def test_lanes_that_each_name_their_own_data_file_share_none():
+    assert shared_coverage_data([_lane("a", env=_file(".coverage.a")),
+                                 _lane("b", env=_file(".coverage.b"))]) == ()
     assert shared_coverage_data([_lane("a", cwd="pkg_a"), _lane("b", cwd="pkg_b")]) == ()
     assert shared_coverage_data([
-        _lane("a", command="coverage run --data-file=.coverage.a -m pytest"), _lane("b")]) == ()
+        _lane("a", command="coverage run --data-file=.coverage.a -m pytest"),
+        _lane("b", env=_file(".coverage.b"))]) == ()
 
 
 def test_one_coverage_file_named_in_both_lanes_is_still_shared():
-    env = (("COVERAGE_FILE", ".coverage.x"),)
+    env = _file(".coverage.x")
     assert shared_coverage_data([_lane("a", env=env), _lane("b", env=env)]) == (("a", "b"),)
+
+
+def test_a_lane_on_the_default_file_shares_with_siblings_named_after_it():
+    """pytest-cov deletes `.coverage` and every `.coverage.*` beside it when a
+    lane starts, and combines `.coverage.*` when it ends, so a lane left on the
+    default takes in the file and the in-flight pieces of a lane on
+    `.coverage.b`. Run at once, one of them failed with WinError 32 on
+    `.coverage.b.<host>.pid<N>.<rand>` and the run came back partial."""
+    assert shared_coverage_data([_lane("a"), _lane("b", env=_file(".coverage.b"))]) == (
+        ("a", "b"),)
+    assert shared_coverage_data([_lane("b", env=_file(".coverage.b")), _lane("a"),
+                                 _lane("c", env=_file(".coverage.c"))]) == (("b", "a", "c"),)
+    assert shared_coverage_data([
+        _lane("a", command="coverage run --data-file .coverage.a -m pytest"), _lane("b")]) == (
+        ("a", "b"),)
+
+
+def test_a_dotted_name_in_another_directory_is_not_combined():
+    assert shared_coverage_data([_lane("a"), _lane("b", env=_file("sub/.coverage.b"))]) == ()
+    assert shared_coverage_data([_lane("a"), _lane("b", env=_file(".coverage.d/b"))]) == ()
+    assert shared_coverage_data([_lane("a", env=_file(".coverage.a")),
+                                 _lane("b", env=_file(".coverage.ab"))]) == ()
 
 
 def test_lanes_sharing_a_data_file_hold_the_lane_slots_at_one():
@@ -137,6 +164,7 @@ def test_lanes_sharing_a_data_file_hold_the_lane_slots_at_one():
     lines = tune_lines(cpus=16, knobs=knobs, durations=())
     assert lines[2:4] == [
         "max_parallel_lanes = 1",
-        "# held at 1: lanes 'a', 'b' write one coverage.py data file, and two lanes on it at "
-        "once can lose one to sqlite3.OperationalError; give each its own, for example "
-        "env = { COVERAGE_FILE = \".coverage.a\" }, then rerun doctor --tune"]
+        "# held at 1: lanes 'a', 'b' write coverage.py data files that one of them deletes "
+        "and combines, and two of them at once can fail one lane; give each lane its own "
+        "COVERAGE_FILE, for example env = { COVERAGE_FILE = \".coverage.a\" } in lane 'a' and "
+        "env = { COVERAGE_FILE = \".coverage.b\" } in lane 'b', then rerun doctor --tune"]

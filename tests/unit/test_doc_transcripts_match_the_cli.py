@@ -141,3 +141,21 @@ def test_the_lanes_page_quotes_the_refusal_an_fnmap_entry_without_decl_draws(tmp
                                         "/repo/.crapkit/cov/js/coverage-final.json")
 
     assert f"crapkit: lane 'js' FAILED: {printed}\n" in _page("docs/lanes.md"), printed
+
+
+def test_the_lanes_page_quotes_the_held_line_tune_prints_for_its_testpath_lanes():
+    """The page shows doctor --tune holding the lane slots at 1 for its two
+    testpath lanes once one drops its `env` line. A lane left on `.coverage`
+    deletes and combines the other's `.coverage.py-impl`, and the line quoted
+    there still spoke of one shared file and named one lane's fix."""
+    from crapkit.doctor import shared_coverage_data, suggest_knobs, tune_lines
+
+    lanes = [Lane("py-conform", "python -m pytest conform --cov", "a.json", "coveragepy",
+                  ("impl",)),
+             Lane("py-impl", "python -m pytest impl --cov", "b.json", "coveragepy", ("impl",),
+                  env=(("COVERAGE_FILE", ".coverage.py-impl"),))]
+    knobs = suggest_knobs(cpus=16, lanes=2, shared=shared_coverage_data(lanes))
+    held = tune_lines(cpus=16, knobs=knobs, durations=())[3]
+
+    assert held.startswith("# held at 1: "), held
+    assert f"\n{held}\n" in _page("docs/lanes.md"), held

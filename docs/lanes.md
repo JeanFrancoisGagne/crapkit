@@ -762,9 +762,13 @@ full_suite = false
 ```
 
 Both lanes start in the repo root, where coverage.py writes `.coverage` unless
-`COVERAGE_FILE` names another file. Serial lanes take turns on it; under
-[`max_parallel_lanes`](#running-lanes-in-parallel) two lanes on one data file can lose one
-to `sqlite3.OperationalError: table coverage_schema already exists`.
+`COVERAGE_FILE` names another file. When a lane starts, pytest-cov deletes its data file and
+every file named after it plus a dot, and when it ends it combines those files, so a lane
+left on `.coverage` also takes in the other lane's `.coverage.py-impl`. Serial lanes take
+turns on these files. Under [`max_parallel_lanes`](#running-lanes-in-parallel), two lanes on
+one data file can lose one to `sqlite3.OperationalError: table coverage_schema already
+exists`, and a lane on `.coverage` beside one on `.coverage.py-impl` can lose one to
+`PermissionError: [WinError 32]` on Windows. Keep the `env` line in both.
 
 Several lanes may name the same scope: the parts table at the top of this page forbids
 two lanes sharing an `artifact` path, and nothing else. Both lanes above name `impl`, the
@@ -1255,27 +1259,31 @@ Every reuse decision is taken up front on one thread, before any lane starts, be
 command writes to the working tree and deciding lane by lane would let one lane's output
 change the next lane's answer.
 
-Two things to check before raising it:
+Three things to check before raising it:
 
 - Raise it only when the suites are independent. Two lanes sharing a port or a temp
   directory manufacture failures that `verify` reads as a gate breach.
 - Runners that size their own worker pool from free memory (vitest does) need a per-lane
   `env` cap, or N lanes each claim the whole box.
-- Two `coveragepy` lanes that start in one directory write one coverage.py data file,
-  `.coverage` there. Run at once, one of them intermittently dies with
-  `sqlite3.OperationalError: table coverage_schema already exists` and the run comes back
-  partial, exit 5. Give each lane its own file:
-  `env = { COVERAGE_FILE = ".coverage.py-conform" }`. `doctor` WARNs about such lanes when
-  `max_parallel_lanes` is above 1.
+- Two `coveragepy` lanes that start in one directory can share coverage.py data there. Two
+  lanes left on `.coverage` write one file. A lane on `.coverage` also deletes and combines
+  every `.coverage.*` beside it, which takes in a lane on `.coverage.py-impl` and the pieces
+  that lane writes while it runs. Run at once, one of them intermittently dies, with
+  `sqlite3.OperationalError: table coverage_schema already exists` or, on Windows,
+  `PermissionError: [WinError 32]`, and the run comes back partial, exit 5. Give every lane
+  its own `COVERAGE_FILE`, none named after another's plus a dot:
+  `env = { COVERAGE_FILE = ".coverage.py-conform" }` in one and
+  `env = { COVERAGE_FILE = ".coverage.py-impl" }` in the other. `doctor` WARNs about such
+  lanes when `max_parallel_lanes` is above 1.
 
 `crapkit doctor --tune` suggests a value from your cpu count and the recorded lane durations,
-and estimates the makespan. It writes nothing. While two `coveragepy` lanes write one data
-file, as the two testpath lanes above do without their `env` lines, it holds the suggestion
-at 1 and names them:
+and estimates the makespan. It writes nothing. While one `coveragepy` lane deletes and
+combines another's data files, as happens to the two testpath lanes above once either drops
+its `env` line, it holds the suggestion at 1 and names them:
 
 ```
 max_parallel_lanes = 1
-# held at 1: lanes 'py-conform', 'py-impl' write one coverage.py data file, and two lanes on it at once can lose one to sqlite3.OperationalError; give each its own, for example env = { COVERAGE_FILE = ".coverage.py-conform" }, then rerun doctor --tune
+# held at 1: lanes 'py-conform', 'py-impl' write coverage.py data files that one of them deletes and combines, and two of them at once can fail one lane; give each lane its own COVERAGE_FILE, for example env = { COVERAGE_FILE = ".coverage.py-conform" } in lane 'py-conform' and env = { COVERAGE_FILE = ".coverage.py-impl" } in lane 'py-impl', then rerun doctor --tune
 ```
 
 `[crapkit] analysis_workers` (default `0` = one process per core) caps the lizard pool

@@ -877,15 +877,16 @@ def _doctor_artifact_litter(cfg) -> list[Finding]:
 
 
 def _doctor_shared_coverage_data(cfg) -> list[Finding]:
-    """WARN when lanes that write one coverage.py data file may run at once.
-    Serial lanes take turns on it, so max_parallel_lanes = 1 says nothing."""
+    """WARN when lanes whose coverage.py data files one of them deletes and
+    combines may run at once. A serial lane deletes the others' files before it
+    starts and they are done with them, so max_parallel_lanes = 1 says nothing."""
     from ..doctor import shared_coverage_data, shared_data_words
 
     if cfg.max_parallel_lanes < 2:
         return []
     return [Finding("WARN", f"{what}, and max_parallel_lanes = {cfg.max_parallel_lanes} can "
-                            "start them together, which can lose one to "
-                            f"sqlite3.OperationalError and leave the run partial; {fix}")
+                            "start them together, which can fail one lane and leave the run "
+                            f"partial; {fix}")
             for what, fix in map(shared_data_words, shared_coverage_data(cfg.lanes))]
 
 

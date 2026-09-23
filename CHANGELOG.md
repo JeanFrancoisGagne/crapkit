@@ -409,7 +409,11 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   `sqlite3.OperationalError: table coverage_schema already exists`, leaving the run
   partial. `--tune` now holds the suggestion at 1 and names the lanes, `doctor` WARNs
   about them when `max_parallel_lanes` is above 1, and the testpath stubs `init` writes
-  each set `env = { COVERAGE_FILE = ".coverage.<lane>" }`.
+  each set `env = { COVERAGE_FILE = ".coverage.<lane>" }`. Both checks also catch a lane
+  left on `.coverage` beside a lane on `.coverage.b`: pytest-cov deletes and combines
+  every `.coverage.*` beside a lane's data file, and run at once one of the two failed
+  with `PermissionError: [WinError 32]` on the other's piece. A lane command's own
+  `--data-file` counts as its data file.
 - `next-item`'s item and `get_next_item`'s output schema carry `occurrence`, as
   docs/agent-json.md always showed. The key was missing since 0.7.0.
 - The MCP output schemas declare every field their results carry: `occurrence` on

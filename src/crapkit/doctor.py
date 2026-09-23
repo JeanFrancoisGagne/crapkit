@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
+import re
 from typing import NamedTuple
 
 from .universe import LANGUAGE_EXTENSIONS, scopes_with_tests
@@ -121,36 +122,54 @@ def files_template_gaps(scoped_tests, scope_paths: dict[str, tuple[str, ...]],
         name=name, paths=", ".join(scope_paths[name]))) for name in gaps)
 
 
+_DATA_FILE_FLAG = re.compile(r"""--data-file[=\s]+["']?([^\s"']+)""")
+
+
 def _coverage_data_file(lane) -> str:
     """Where a coveragepy lane's data file lands, as far as the config says.
 
-    COVERAGE_FILE from the lane's env, else coverage.py's default in the
-    directory the lane starts in. A command that passes its own `--data-file`
-    is keyed by that command, so it shares a file with no other lane."""
-    if "--data-file" in lane.command:
-        return lane.command
-    name = dict(lane.env).get("COVERAGE_FILE") or ".coverage"
+    The command's own `--data-file`, else COVERAGE_FILE from the lane's env,
+    else coverage.py's default, in the directory the lane starts in."""
+    flag = _DATA_FILE_FLAG.search(lane.command)
+    name = flag.group(1) if flag else dict(lane.env).get("COVERAGE_FILE") or ".coverage"
     return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
 
 
-def shared_coverage_data(lanes) -> tuple[tuple[str, ...], ...]:
-    """The names of coveragepy lanes that write one data file, one group each.
+def _coverage_data_files(lanes) -> dict[str, str]:
+    """Each coveragepy lane's data file, by lane name."""
+    return {lane.name: _coverage_data_file(lane) for lane in lanes if lane.parser == "coveragepy"}
 
-    Two such lanes run at once collide on it: coverage.py's sqlite file refuses
-    the second writer with `table coverage_schema already exists`."""
-    groups: dict[str, list[str]] = {}
-    for lane in lanes:
-        if lane.parser == "coveragepy":
-            groups.setdefault(_coverage_data_file(lane), []).append(lane.name)
-    return tuple(tuple(names) for _, names in sorted(groups.items()) if len(names) > 1)
+
+def _lanes_taken_in(base: str, files: dict[str, str]) -> tuple[str, ...]:
+    """The lanes whose data files a lane on `base` touches. pytest-cov deletes
+    every `<base>.*` beside `base` when a lane starts and combines them when it
+    ends, which takes in another lane's `<base>.b` and the pieces it writes
+    while it runs."""
+    return tuple(name for name, path in files.items() if path == base or (
+        path.startswith(base + ".") and os.sep not in path[len(base) + 1:]))
+
+
+def shared_coverage_data(lanes) -> tuple[tuple[str, ...], ...]:
+    """The names of coveragepy lanes whose data files one of them deletes and
+    combines, one group per such lane's file.
+
+    Two lanes on one file collide on it: coverage.py's sqlite file refuses the
+    second writer with `table coverage_schema already exists`. A lane left on
+    `.coverage` beside one on `.coverage.b` deletes the other's pieces while
+    it writes them, which Windows refuses with WinError 32."""
+    files = _coverage_data_files(lanes)
+    groups = {base: _lanes_taken_in(base, files) for base in files.values()}
+    return tuple(names for _, names in sorted(groups.items()) if len(names) > 1)
 
 
 def shared_data_words(names: tuple[str, ...]) -> tuple[str, str]:
     """What one group shares and the fix, in the words doctor and doctor --tune
     both print."""
     listed = ", ".join(repr(name) for name in names)
-    return (f"lanes {listed} write one coverage.py data file", "give each its own, for example "
-            f"env = {{ COVERAGE_FILE = \".coverage.{names[0]}\" }}")
+    each = " and ".join(f"env = {{ COVERAGE_FILE = \".coverage.{name}\" }} in lane {name!r}"
+                        for name in names)
+    return (f"lanes {listed} write coverage.py data files that one of them deletes and combines",
+            f"give each lane its own COVERAGE_FILE, for example {each}")
 
 
 class Knobs(NamedTuple):
@@ -198,8 +217,8 @@ def _held_lines(shared: tuple[tuple[str, ...], ...]) -> list[str]:
     out = []
     for names in shared:
         what, fix = shared_data_words(names)
-        out.append(f"# held at 1: {what}, and two lanes on it at once can lose one to "
-                   f"sqlite3.OperationalError; {fix}, then rerun doctor --tune")
+        out.append(f"# held at 1: {what}, and two of them at once can fail one lane; "
+                   f"{fix}, then rerun doctor --tune")
     return out
 
 
