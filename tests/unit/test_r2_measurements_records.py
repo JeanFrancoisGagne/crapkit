@@ -3,7 +3,7 @@ import pytest
 
 from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, read_key_version, read_ratchet, read_stamp
 from crapkit.score import parse_scored_tsv, scored_tsv_lines
-from crapkit.snapshot import InventoryRow, tsv_lines
+from crapkit.snapshot import INVENTORY_COLUMNS, InventoryRow, tsv_lines
 from crapkit.verify import baseline_tsv_lines, parse_baseline_tsv
 from test_portable_baseline import ROW
 
@@ -63,7 +63,7 @@ def test_inventory_uses_the_same_lossless_record_encoding():
     from crapkit.records import decode_record, record_lines
 
     lines = list(record_lines("".join(tsv_lines([row]))))
-    assert decode_record(lines[1]) == list(map(str, row))
+    assert decode_record(lines[1]) == list(map(str, row[:len(INVENTORY_COLUMNS)]))
 
 
 def test_valid_legacy_marker_named_path_is_not_reinterpreted():

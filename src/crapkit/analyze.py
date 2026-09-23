@@ -69,6 +69,9 @@ ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each 
 #                       signature's continuation lines no longer do. Measured over
 #                       5,746 stdlib, site-packages and application files: 19 of
 #                       123,320 rows move cognitive, 2 of them nesting too.
+#                       A record marks a def whose body starts on its colon's line
+#                       (inline_body); the cache's own `cache=5` drops records
+#                       read before the mark existed.
 # 10: separate sibling JavaScript/TypeScript expression arrows.
 # 9: a Python row's nesting is the depth the cognitive
 #                          pass measured, not lizard's ND count of structures,
@@ -207,6 +210,11 @@ class _DefSignatures:
     A function some other reader produced never gets the attribute, which is
     what keeps `_unread_defs` to Python.
 
+    `crapkit_inline_body` is True on a def whose first body token sits on the
+    colon's line, or behind a backslash that joins the colon's line to the
+    next: coverage.py reads such a body as the `def` statement itself
+    (FunctionRecord.inline_body).
+
     `signature_owner` is the last def current at a signature token. A file
     that ends before that signature's colon leaves its def pending, and lizard
     lists a pending def only when an enclosing def is popped at the end of the
@@ -220,12 +228,13 @@ class _DefSignatures:
         self.context = context
         self.depth = None
         self.colon_owner = None
+        self.colon_line = 0
         self.signature_owner = None
 
     def step(self, token: str) -> None:
         fn = self.context.current_function
         if self.colon_owner is not None:
-            self._settle_colon(fn)
+            self._settle_colon(fn, token)
         if self.depth is not None:
             self._signature(fn, token)
         elif token == "def":
@@ -237,9 +246,10 @@ class _DefSignatures:
         if self.depth is not None and self.signature_owner is not None and self.signature_owner not in listed:
             listed.append(self.signature_owner)
 
-    def _settle_colon(self, fn) -> None:
+    def _settle_colon(self, fn, token: str) -> None:
         if fn is self.colon_owner:
             fn.crapkit_body = True
+            fn.crapkit_inline_body = token == "\\\n" or self.context.current_line == self.colon_line
         self.colon_owner = None
 
     def _signature(self, fn, token: str) -> None:
@@ -250,6 +260,7 @@ class _DefSignatures:
             self.signature_owner = fn
         if token == ":" and self.depth == 0:
             self.colon_owner, self.depth = fn, None
+            self.colon_line = self.context.current_line
         else:
             self.depth += _DEPTH_CHANGE.get(token, 0)
 
@@ -346,6 +357,7 @@ def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
         nesting=_nesting_depth(rel_path, fn),
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
         occurrence=occurrence,
+        inline_body=int(getattr(fn, "crapkit_inline_body", False)),
     )
 
 
@@ -571,8 +583,9 @@ def content_hash(path: Path) -> str:
 
 
 def fingerprint() -> str:
+    """cache=5: a record carries inline_body, which a cache=4 record lacks."""
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=4"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=5"
 
 
 def _analysis_key(path: str, digest: str) -> str:
@@ -582,15 +595,23 @@ def _analysis_key(path: str, digest: str) -> str:
     return f"{reader.__module__}.{reader.__qualname__}:{chain}:{int(uses_type_syntax(path))}:{digest}"
 
 
+_CACHED_TYPES = (str, str) + (int,) * (len(FunctionRecord._fields) - 2)
+
+
 def _cached_record(values) -> FunctionRecord:
-    if not isinstance(values, list) or len(values) != 12:
+    if not isinstance(values, list) or len(values) != len(_CACHED_TYPES):
         raise ValueError("cached function fields must be a record list")
-    types = (str, str) + (int,) * 10
-    if any(type(value) is not expected for value, expected in zip(values, types)):
+    if any(type(value) is not expected for value, expected in zip(values, _CACHED_TYPES)):
         raise ValueError("cached function fields have invalid types")
-    if values[-1] < 0:
+    return _in_range(FunctionRecord(*values))
+
+
+def _in_range(record: FunctionRecord) -> FunctionRecord:
+    if record.occurrence < 0:
         raise ValueError("cached function occurrence must be nonnegative")
-    return FunctionRecord(*values)
+    if record.inline_body not in (0, 1):
+        raise ValueError("cached function inline_body must be 0 or 1")
+    return record
 
 
 def _cached_rows(rows) -> list[FunctionRecord]:

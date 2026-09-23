@@ -10,8 +10,8 @@ from crapkit.cli._shared import _emit_findings, _write_tsv
 from crapkit.cli.scoring import _export_scored
 from crapkit.merge import FunctionRecord
 from crapkit.sarif import over_target_results, sarif_document
-from crapkit.score import ScoredRow
-from crapkit.snapshot import InventoryRow, build_inventory_rows, tsv_lines
+from crapkit.score import SCORED_COLUMNS, ScoredRow
+from crapkit.snapshot import INVENTORY_COLUMNS, InventoryRow, build_inventory_rows, tsv_lines
 
 
 def rec(i: int) -> FunctionRecord:
@@ -24,17 +24,19 @@ def scored(i: int) -> ScoredRow:
 
 
 def _legacy_inventory_tsv(rows) -> str:
-    """snapshot.export_tsv as it stood before the streaming rewrite."""
-    lines = ["\t".join(InventoryRow._fields)]
+    """snapshot.export_tsv as it stood before the streaming rewrite, over the
+    columns the export has carried since: every field through occurrence."""
+    lines = ["\t".join(INVENTORY_COLUMNS)]
     for r in rows:
-        lines.append("\t".join(str(v) for v in r))
+        lines.append("\t".join(str(v) for v in r[:len(INVENTORY_COLUMNS)]))
     return "\n".join(lines) + "\n"
 
 
 def _legacy_scored_tsv(rows) -> str:
-    """cli._export_scored as it stood before the streaming rewrite."""
-    header = "\t".join(rows[0]._fields) if rows else ""
-    lines = [header] + ["\t".join(str(v) for v in r) for r in rows]
+    """cli._export_scored as it stood before the streaming rewrite, over the
+    same seventeen columns."""
+    header = "\t".join(SCORED_COLUMNS) if rows else ""
+    lines = [header] + ["\t".join(str(v) for v in r[:len(SCORED_COLUMNS)]) for r in rows]
     return "\n".join(lines) + "\n"
 
 
@@ -127,12 +129,13 @@ def _awkward_rows():
 
 
 def test_the_scored_export_emits_one_column_per_field():
-    from crapkit.score import ScoredRow, scored_tsv_lines
+    """Every field through occurrence; inline_body stays in the store."""
+    from crapkit.score import scored_tsv_lines
 
     lines = list(scored_tsv_lines(_awkward_rows()))
-    assert lines[0].rstrip("\n").split("\t") == list(ScoredRow._fields)
+    assert lines[0].rstrip("\n").split("\t") == list(ScoredRow._fields[:-1]) == list(SCORED_COLUMNS)
     for line in lines[1:]:
-        assert len(line.rstrip("\n").split("\t")) == len(ScoredRow._fields)
+        assert len(line.rstrip("\n").split("\t")) == len(SCORED_COLUMNS)
 
 
 def test_the_scored_export_round_trips_through_its_own_parser():

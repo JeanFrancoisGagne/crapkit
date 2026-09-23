@@ -48,7 +48,8 @@ _FUNCTIONS_DDL = """CREATE TABLE IF NOT EXISTS {table} (
     nloc INTEGER NOT NULL, params INTEGER NOT NULL, nesting INTEGER NOT NULL,
     cov REAL, flag INTEGER, crap REAL, remedy INTEGER,
     cognitive INTEGER NOT NULL DEFAULT 0,
-    occurrence INTEGER NOT NULL DEFAULT 0
+    occurrence INTEGER NOT NULL DEFAULT 0,
+    inline_body INTEGER NOT NULL DEFAULT 0
 )"""
 
 # The UNIQUE leads with the path, and that ordering IS the index the path-scoped
@@ -169,7 +170,8 @@ _CURRENT_OBJECTS = frozenset(("runs", "identities", "flags", "remedies", "functi
                               "overrides", "attempts", "run_rollup", "run_collisions", "idx_functions_run",
                               "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity",
                               *_TWIN_TABLES))
-_ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence"},
+_ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence",
+                                "inline_body"},
                   "runs": {"lanes", "kind", "verdict_ok", "findings"},
                   "attempts": {"handle", "key_name", "key_version"}}
 
@@ -181,12 +183,13 @@ _JOINED = "FROM functions f JOIN identities i ON i.id = f.identity_id"
 _BY_PATH = "FROM identities i CROSS JOIN functions f ON f.identity_id = i.id"
 _ID_COLS = "i.scope, i.path, i.long_name"
 _METRIC_COLS = "f.start, f.end, f.ccn_std, f.ccn_mod, f.ccn, f.nloc, f.params, f.nesting"
-_INV_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cognitive, f.occurrence"
-_ALL_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cov, f.flag, f.crap, f.remedy, f.cognitive, f.occurrence"
+_INV_COLS = f"{_ID_COLS}, {_METRIC_COLS}, f.cognitive, f.occurrence, f.inline_body"
+_ALL_COLS = (f"{_ID_COLS}, {_METRIC_COLS}, f.cov, f.flag, f.crap, f.remedy, f.cognitive, "
+             "f.occurrence, f.inline_body")
 _CRAP_COLS = f"{_ID_COLS}, f.crap, f.start, f.occurrence"
 # what write_run binds per row: everything but the three identity strings
 _WRITE_COLS = ("start, end, ccn_std, ccn_mod, ccn, nloc, params, nesting, "
-               "cov, flag, crap, remedy, cognitive, occurrence")
+               "cov, flag, crap, remedy, cognitive, occurrence, inline_body")
 _N_COLS = _WRITE_COLS.count(",") + 3  # every _WRITE_COLS column plus run_id and identity_id
 # the identity strings, never the ids: a row's place in an export may not depend
 # on when its identity was first seen
@@ -319,10 +322,16 @@ def _inflate(stored) -> str:
     return zlib.decompress(stored).decode("utf-8") if isinstance(stored, bytes) else stored
 
 
+# A scored row has 16 fields or more: the 15 metric and verdict columns and
+# cognitive, then occurrence and inline_body when it carries them. An
+# inventory row has 14 at most.
+_SCORED_WIDTH = 16
+
+
 def _verdict_names(rows: list) -> tuple[set, set]:
     """The flag and remedy strings this batch stores. Inventory rows carry
     neither, so they name nothing."""
-    scored = [row for row in rows if len(row) in (16, 17)]
+    scored = [row for row in rows if len(row) >= _SCORED_WIDTH]
     return ({row[12] for row in scored} - {None}, {row[14] for row in scored} - {None})
 
 
@@ -330,12 +339,14 @@ def _writable(row, flags: dict, remedies: dict):
     """A row's metric columns in _WRITE_COLS order, identity dropped, verdict coded.
 
     Scored rows already carry the four coverage columns; inventory rows carry
-    cognitive last, so the four unscored columns slot in before it.
+    cognitive after nesting, so the four unscored columns slot in before it. A
+    row built before inline_body existed is stored unmarked.
     """
-    occurrence = position(row)[1]
-    if len(row) in (16, 17):
-        return (*row[3:12], _code(flags, row[12]), row[13], _code(remedies, row[14]), row[15], occurrence)
-    return (*row[3:11], None, None, None, None, row[11], occurrence)
+    occurrence, inline_body = position(row)[1], getattr(row, "inline_body", 0)
+    if len(row) >= _SCORED_WIDTH:
+        return (*row[3:12], _code(flags, row[12]), row[13], _code(remedies, row[14]), row[15],
+                occurrence, inline_body)
+    return (*row[3:11], None, None, None, None, row[11], occurrence, inline_body)
 
 
 def _own_ceilings(target: int, scope_targets: dict[str, int] | None) -> list[tuple[str, int]]:
@@ -450,8 +461,9 @@ def _scored_rows(cur, flags: dict, remedies: dict) -> list:
     from .score import ScoredRow
     si = sys.intern
     return [ScoredRow(si(scope), si(path), si(name), a, b, c, d, e, f, g, h, cov,
-                      _name(flags, flag), crap, _name(remedies, remedy), cog, occurrence)
-            for scope, path, name, a, b, c, d, e, f, g, h, cov, flag, crap, remedy, cog, occurrence in cur]
+                      _name(flags, flag), crap, _name(remedies, remedy), cog, occurrence, inline)
+            for scope, path, name, a, b, c, d, e, f, g, h, cov, flag, crap, remedy, cog, occurrence, inline
+            in cur]
 
 
 def _scope_clause(scopes, *, keyword: str = "IN") -> tuple[str, list]:
@@ -639,6 +651,7 @@ class SnapshotStore:
         self._add_coverage_columns()
         self._add_cognitive_column()
         self._add_occurrence_column()
+        self._add_inline_body_column()
         self._add_run_provenance_columns()
         self._add_claim_handle_column()
         self._conn.commit()
@@ -673,6 +686,13 @@ class SnapshotStore:
             self._conn.execute(
                 "ALTER TABLE functions ADD COLUMN occurrence INTEGER NOT NULL DEFAULT 0")
             self._conn.execute("DELETE FROM run_collisions")
+
+    def _add_inline_body_column(self) -> None:
+        """Rows written before it read unmarked, and the packet's one-line test still
+        holds for them (score.shares_its_def_line)."""
+        if "inline_body" not in self._existing_columns("functions"):
+            self._conn.execute(
+                "ALTER TABLE functions ADD COLUMN inline_body INTEGER NOT NULL DEFAULT 0")
 
     def _add_run_provenance_columns(self) -> None:
         run_cols = self._existing_columns("runs")
@@ -860,8 +880,8 @@ class SnapshotStore:
             (run_id, min_ccn, *names),
         )
         si = sys.intern
-        return [InventoryRow(si(scope), si(path), si(name), a, b, c, d, e, f, g, h, cog, occurrence)
-                for scope, path, name, a, b, c, d, e, f, g, h, cog, occurrence in cur]
+        return [InventoryRow(si(scope), si(path), si(name), a, b, c, d, e, f, g, h, cog, occurrence, inline)
+                for scope, path, name, a, b, c, d, e, f, g, h, cog, occurrence, inline in cur]
 
     def read_scored(self, run_id: int, *, min_ccn: int = 0,
                     scopes: list[str] | None = None) -> list:

@@ -40,22 +40,25 @@ LANE = {"src"}
 
 def test_the_inventory_row_is_the_scored_rows_prefix():
     inventory = InventoryRow._fields
-    assert ScoredRow._fields[:len(inventory) - 2] == inventory[:-2]
-    assert ScoredRow._fields[-2:] == inventory[-2:] == ("cognitive", "occurrence")
-    assert ScoredRow._fields[len(inventory) - 2:-2] == ("cov", "flag", "crap", "remedy")
+    tail = ("cognitive", "occurrence", "inline_body")
+    assert ScoredRow._fields[:len(inventory) - 3] == inventory[:-3]
+    assert ScoredRow._fields[-3:] == inventory[-3:] == tail
+    assert ScoredRow._fields[len(inventory) - 3:-3] == ("cov", "flag", "crap", "remedy")
 
 
 def test_every_inventory_field_lands_in_its_own_scored_slot():
     """Distinct values in every slot, so a splice that shifts one column shows.
-    cognitive sits LAST in both tuples with four fields between, so splicing the
-    inventory row in positionally without moving it lands it in cov."""
-    row = InventoryRow("src", "p/q.ts", "name( a )", 3, 40, 5, 6, 7, 80, 9, 10, 11, 12)
+    cognitive, occurrence and inline_body sit LAST in both tuples with four fields
+    between, so splicing the inventory row in positionally without moving them
+    lands cognitive in cov."""
+    row = InventoryRow("src", "p/q.ts", "name( a )", 3, 40, 5, 6, 7, 80, 9, 10, 11, 12, 1)
 
     (out,) = score_rows([row], {}, lane_scopes=LANE)
 
     assert out[:11] == row[:11]
     assert out.cognitive == 11
     assert out.occurrence == 12
+    assert out.inline_body == 1
     assert (out.cov, out.flag) == (0.0, "untested")
 
 

@@ -75,5 +75,5 @@ def test_old_cache_fingerprint_cannot_supply_unknown_positions(tmp_path):
 def test_negative_cached_occurrence_reads_cold(tmp_path):
     path = tmp_path / "cache.json"
     path.write_text(json.dumps({"fp": fingerprint(), "entries": {
-        "bad": [["a.py", "f()", 1, 2, 1, 1, 1, 1, 0, 0, 0, -1]]}}), encoding="utf-8")
+        "bad": [["a.py", "f()", 1, 2, 1, 1, 1, 1, 0, 0, 0, -1, 0]]}}), encoding="utf-8")
     assert load_cache(path) == {}

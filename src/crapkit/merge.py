@@ -17,6 +17,10 @@ class FunctionRecord(NamedTuple):
     nesting: int
     cognitive: int = 0  # Sonar-spec, from the standard pass; reporting only
     occurrence: int = 0  # Positive source order on one start line; 0 is legacy
+    # 1 for a Python def whose body starts on the line its signature's colon
+    # ends: coverage.py reads that body as the `def` statement, which runs at
+    # import, so no test can show a call (score.shares_its_def_line)
+    inline_body: int = 0
 
 
 class UnanalyzableFile(list):

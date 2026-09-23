@@ -26,13 +26,20 @@ class InventoryRow(NamedTuple):
     nesting: int
     cognitive: int = 0  # Sonar-spec cognitive complexity; reporting only, never gated
     occurrence: int = 0  # Positive source order on one start line; 0 is legacy
+    inline_body: int = 0  # FunctionRecord.inline_body: stored, never exported
+
+
+# The export's columns end at occurrence. inline_body is an input the run
+# applies to cov, flag and remedy, and those are what a reader of the export
+# acts on, so a portable file keeps the columns every crapkit reads.
+INVENTORY_COLUMNS = InventoryRow._fields[:InventoryRow._fields.index("inline_body")]
 
 
 def build_inventory_rows(by_scope: dict[str, list[FunctionRecord]]) -> list[InventoryRow]:
     rows = [
         InventoryRow(scope, r.path, r.long_name, r.start, r.end,
                      r.ccn_std, r.ccn_mod, r.ccn, r.nloc, r.params, r.nesting,
-                     r.cognitive, r.occurrence)
+                     r.cognitive, r.occurrence, r.inline_body)
         for scope, records in by_scope.items()
         for r in records
     ]
@@ -48,6 +55,7 @@ def tsv_lines(rows: Iterable[InventoryRow]) -> Iterator[str]:
     exist. The caller writes these straight to a file opened with
     newline="\\n", which is where the byte-identical guarantee is kept.
     """
-    yield "\t".join(InventoryRow._fields) + "\n"
+    yield "\t".join(INVENTORY_COLUMNS) + "\n"
+    width = len(INVENTORY_COLUMNS)
     for r in rows:
-        yield encode_record(r) + "\n"
+        yield encode_record(r[:width]) + "\n"

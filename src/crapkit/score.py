@@ -56,20 +56,26 @@ class ScoredRow(NamedTuple):
     remedy: str
     cognitive: int = 0  # Sonar-spec cognitive complexity; reporting only, never gated
     occurrence: int = 0  # Positive source order on one start line; 0 is legacy
+    inline_body: int = 0  # FunctionRecord.inline_body: stored, never exported
 
 
 _FIELD_TYPES = (str, str, str, int, int, int, int, int, int, int, int,
                 float, str, float, str, int, int)
-_SCORED_HEADER = "\t".join(ScoredRow._fields)
-_SCORED_HEADERS = {"\t".join(ScoredRow._fields[:-1]): 16, _SCORED_HEADER: 17}
+# The export's columns end at occurrence, as the inventory export's do
+# (snapshot.INVENTORY_COLUMNS), and brief's `scored` object publishes the same
+# seventeen.
+SCORED_COLUMNS = ScoredRow._fields[:ScoredRow._fields.index("inline_body")]
+_SCORED_HEADER = "\t".join(SCORED_COLUMNS)
+_SCORED_HEADERS = {"\t".join(SCORED_COLUMNS[:-1]): 16, _SCORED_HEADER: 17}
 
 
 def scored_tsv_lines(rows: list[ScoredRow]) -> Iterator[str]:
     """Header then one newline-terminated line per row. With no rows the header
     is the empty string, so the file stays the single newline it always was."""
     yield (_SCORED_HEADER if rows else "") + "\n"
+    width = len(SCORED_COLUMNS)
     for r in rows:
-        yield encode_record(r) + "\n"
+        yield encode_record(r[:width]) + "\n"
 
 
 def parse_scored_row(line: str) -> ScoredRow:
@@ -153,7 +159,8 @@ def _finish(row, cov: float, flag: str, *, target: int, scope_targets,
     # built a throwaway dict per row and looked every field up by name.
     return ScoredRow(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7],
                      row[8], row[9], row[10],
-                     cov, flag, score, remedy(row[7], score, ceiling, shared_span), row[11], row[12])
+                     cov, flag, score, remedy(row[7], score, ceiling, shared_span), row[11], row[12],
+                     row[13])
 
 
 def _nearest_overlay(row, candidates) -> list:
@@ -375,17 +382,22 @@ _LINE_COUNTED_SUFFIXES = (".py",)
 
 
 def shares_its_def_line(row) -> bool:
-    """A Python function written on one line, which shares it with its `def`.
+    """A Python function whose body starts on its `def` statement's last line.
 
     The `def` statement runs when the module is imported, and coverage.py
     counts lines and arcs, not calls: an uncalled `def one(x): return x` reads
-    1 of its 2 branches covered, and a called one reads its line run. No test
-    can tell the two apart, so the function takes the shared-span floor and
-    its remedy, split-lines. The coverage run, rescore's preview and a
-    rejudged packet all ask this one question. istanbul keeps a call counter
-    per function, so a one-line TypeScript function keeps its number.
+    1 of its 2 branches covered, and a called one reads its line run. A body
+    that starts on the line a multi-line signature's colon ends, or that goes
+    on inside brackets, is read as that same statement. No test can tell a
+    called def from an uncalled one there, so the function takes the
+    shared-span floor and its remedy, split-lines. The reader marks the shape
+    (`inline_body`); a row stored before the mark keeps the one-line test. The
+    coverage run, rescore's preview and a rejudged packet all ask this one
+    question. istanbul keeps a call counter per function, so a one-line
+    TypeScript function keeps its number.
     """
-    return row.start == row.end and row.path.lower().endswith(_LINE_COUNTED_SUFFIXES)
+    return ((row.start == row.end or row.inline_body == 1)
+            and row.path.lower().endswith(_LINE_COUNTED_SUFFIXES))
 
 
 def _joined_cov(row, ambiguous: dict, coverage_by_path: dict,
