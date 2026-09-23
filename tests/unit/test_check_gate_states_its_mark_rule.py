@@ -12,27 +12,52 @@ from cli_inproc_repo import add_knotty, git, repo, seed_artifacts, template_repo
 
 import pytest
 
+from crapkit import mcp_server
 from crapkit.cli import main
 from crapkit.mcp_server import tool_listing
 
 
+def entry() -> dict:
+    (gate,) = [t for t in tool_listing() if t["name"] == "check_gate"]
+    return gate
+
+
 def description() -> str:
-    (entry,) = [t for t in tool_listing() if t["name"] == "check_gate"]
-    return entry["description"]
+    return entry()["description"]
 
 
 def test_the_description_names_the_rule_check_gate_applies():
+    """The mark is weighed against crap, not ccn: a function at ccn 8 under a
+    mark of 20 still fails when its crap is 72."""
     text = description()
 
     assert "rescore --gate's rule" in text, text
-    assert "pardoned only at or under its ratchet mark" in text, text
+    assert "pardoned only while its crap is at or under its ratchet mark" in text, text
 
 
 def test_the_description_says_the_hook_is_more_lenient():
     text = description()
 
     assert "The hook's commit gate pardons any marked function" in text, text
-    assert "stricter" in text and "predicts a CLI verify refusal" in text, text
+    assert "stricter" in text and "predicts a verify refusal" in text, text
+
+
+def test_no_other_surface_calls_check_gate_the_commit_gate():
+    """The title and the server instructions are the first text a model reads."""
+    assert "Commit gate verdict" not in entry()["title"], entry()["title"]
+    assert "rescore --gate" in entry()["title"], entry()["title"]
+    assert "clears the commit gate" not in mcp_server._INSTRUCTIONS
+    assert "clears rescore --gate, which is stricter than the commit hook" in mcp_server._INSTRUCTIONS
+
+
+def test_the_path_argument_says_what_it_accepts_and_what_judges_nothing():
+    """The facts the 560-character description has no room for."""
+    text = entry()["inputSchema"]["properties"]["path"]["description"]
+
+    assert "absolute inside repo" in text, text
+    assert "Outside the repo or missing answers a config error" in text, text
+    assert "an unchanged or unscoped file judges 0" in text, text
+    assert "any directory under the checkout" in text, text
 
 
 @pytest.fixture()

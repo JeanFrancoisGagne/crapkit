@@ -1274,24 +1274,27 @@ TOOLS: tuple[dict, ...] = (
     },
     {
         "name": "check_gate",
-        "title": "Commit gate verdict for an edited file",
+        "title": "rescore --gate verdict for an edited file",
         "argv": ("rescore", "--gate"),
         "json_flag": True,
         "positional": ("path",),
         "flags": {},
         "verdict_exits": (6,),
-        "description": ("Checks an edited file by rescore --gate's rule: each changed function's fresh "
-        "ccn against its scope's ceiling, pardoned only at or under its ratchet mark. "
-        "The hook's commit gate pardons any marked function, so this is stricter and "
-        "a breach predicts a CLI verify refusal. Call it after an edit once "
+        "description": ("Checks an edited file by rescore --gate's rule: each changed function's "
+        "ccn against its scope's ceiling, pardoned only while its crap is at or under its "
+        "ratchet mark. The hook's commit gate pardons any marked function, so this is "
+        "stricter and a breach predicts a verify refusal. Call it after an edit once "
         "get_function_brief states the rule. It runs no tests, and a breach reads gate.ok "
         "false, not an error. Marks are read only on a breach, so a clean gate skips a "
-        "broken marks file. path is repo-relative or absolute inside repo. An untracked "
-        "file is judged in full."),
+        "broken marks file. A tracked file is judged on its diff from HEAD, an untracked "
+        "one in full."),
         "properties": {
             "path": {
                 "type": "string",
-                "description": "repo-relative source file to judge as edited"}},
+                "description": ("repo-relative, or absolute inside repo, source file to judge "
+                "as edited. Outside the repo or missing answers a config error, and an "
+                "unchanged or unscoped file judges 0. repo may be any directory under the "
+                "checkout, and path stays relative to the root it walks up to.")}},
         "output": {
             "schema": {
                 "type": "integer",
@@ -1655,7 +1658,7 @@ _INSTRUCTIONS = (
     "coverage); an unmeasured repo answers with a one-line pointer instead of data. Start "
     "with get_next_item for one function to fix, list_worklist for the whole ranking, "
     "get_function_brief for everything about one function, and check_gate after an edit to "
-    "learn whether the file clears the commit gate.")
+    "learn whether the file clears rescore --gate, which is stricter than the commit hook.")
 
 
 def _negotiated(params: dict) -> str:
