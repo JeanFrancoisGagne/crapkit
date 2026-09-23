@@ -55,7 +55,8 @@ already public, because nothing checked the machine first.
 pushes anything. Besides the version surfaces and the changelog heading, it reads
 the two rows marked `check` below. Confirm the two rows marked `you` yourself:
 `check` never looks at PATH or at `gh`.
-Each takes seconds; each cost a published half-release when skipped.
+Each takes seconds. A missing credential or gh login shows up only after the push;
+a wrong PATH python or a missing build or twine stops the release before it.
 
 | Check | Checked by | Command | Why it bites |
 | --- | --- | --- | --- |
