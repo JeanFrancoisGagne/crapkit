@@ -14,7 +14,6 @@ from collections.abc import Iterator
 from typing import NamedTuple
 
 from .coverage_istanbul import FnCoverage
-from .coverage_py import LineRegion
 from .errors import ToolError
 from .keys import require_unambiguous
 from .records import decode_record, encode_record, record_lines
@@ -246,18 +245,15 @@ def _best_exact(row, bucket) -> FnCoverage | None:
     return best
 
 
-def _span_match(row, coverage_by_path: dict, start_index: dict) -> FnCoverage | None:
+def _span_join_cov(row, coverage_by_path: dict, start_index: dict) -> tuple[float, str]:
     candidates = coverage_by_path.get(row.path)
     if candidates is None:
-        return None
+        return 0.0, "untested"
     # The bucket answers for most rows; the scan is the fallback for a row that
     # starts where no candidate does, or whose bucket overlaps it nowhere.
     match = _best_exact(row, start_index[row.path].get(row.start, ()))
-    return match if match is not None else _best_match(row, candidates)
-
-
-def _span_join_cov(row, coverage_by_path: dict, start_index: dict) -> tuple[float, str]:
-    match = _span_match(row, coverage_by_path, start_index)
+    if match is None:
+        match = _best_match(row, candidates)
     if match is None:
         return 0.0, "untested"
     return match.coverage, "measured"
@@ -277,10 +273,10 @@ def overlay_stale_coverage(
     Joins by function name, nearest start among same-name twins, and occurrence
     when callbacks share a line. A renamed or new function joins NOTHING —
     a span join here would hand it a neighbour's stale number and mislead
-    the preview. A function on a span another one shares scores as uncovered,
-    as score_rows scores it, so the preview never passes what the next
-    coverage run fails. Coverage values are the baseline's; the caller labels
-    them stale.
+    the preview. A function on a span another one shares, or a Python def on
+    its own def line, scores as uncovered, as score_rows scores it, so the
+    preview never passes what the next coverage run fails. Coverage values are
+    the baseline's; the caller labels them stale.
     """
     require_unambiguous(rows)
     require_unambiguous(baseline_scored)
@@ -371,36 +367,41 @@ def _ambiguous_spans(shared: dict, coverage_by_path: dict, start_index: dict) ->
     return ambiguous
 
 
-def _def_line_spans(rows, coverage_by_path: dict, start_index: dict) -> set:
-    """The one-line functions a coverage.py region measures.
+# The files coverage.py reads. It is the one parser for Python, and it counts
+# lines and arcs where istanbul counts calls per function.
+_LINE_COUNTED_SUFFIXES = (".py",)
 
-    Such a function's only line is its `def` statement, which runs at import,
-    so the region reads as run whether a test called it or not
-    (coverage_py.LineRegion). Its measurement cannot be told from the
-    statement's, the way a shared span's cannot be told from a neighbour's, and
-    it takes the same floor and the same remedy.
+
+def shares_its_def_line(row) -> bool:
+    """A Python function written on one line, which shares it with its `def`.
+
+    The `def` statement runs when the module is imported, and coverage.py
+    counts lines and arcs, not calls: an uncalled `def one(x): return x` reads
+    1 of its 2 branches covered, and a called one reads its line run. No test
+    can tell the two apart, so the function takes the shared-span floor and
+    its remedy, split-lines. The coverage run, rescore's preview and a
+    rejudged packet all ask this one question. istanbul keeps a call counter
+    per function, so a one-line TypeScript function keeps its number.
     """
-    return {(r.path, r.start, r.end) for r in rows
-            if r.start == r.end and isinstance(_span_match(r, coverage_by_path, start_index),
-                                               LineRegion)}
+    return row.start == row.end and row.path.lower().endswith(_LINE_COUNTED_SUFFIXES)
 
 
-def _joined_cov(row, floored, coverage_by_path: dict,
+def _joined_cov(row, ambiguous: dict, coverage_by_path: dict,
                 start_index: dict) -> tuple[float, str]:
     """Uncovered on an ambiguous span or a def line, never the neighbour's
     number: the honest floor for a function whose measurement cannot be told
     from another's."""
-    if (row.path, row.start, row.end) in floored:
+    if (row.path, row.start, row.end) in ambiguous or shares_its_def_line(row):
         return 0.0, "untested"
     return _span_join_cov(row, coverage_by_path, start_index)
 
 
-def _on_shared_span(row, verdict, shared) -> bool:
-    """A row some lane measures, on a span it shares. Measured yet or not: tests
-    would only make the span measured, and then it scores as uncovered. A
-    coverage.py region on a one-line def's line counts too: the def shares
-    that line with its own `def` statement."""
-    return verdict is None and (row.path, row.start, row.end) in shared
+def _on_shared_span(row, verdict, shared: dict) -> bool:
+    """A row some lane measures, on a span it shares with another function or
+    with its own def statement. Measured yet or not: tests would only make the
+    span measured, and then it scores as uncovered."""
+    return verdict is None and (shares_its_def_line(row)
+                                or (row.path, row.start, row.end) in shared)
 
 
 def score_rows(
@@ -419,14 +420,10 @@ def score_rows(
     for members in ambiguous.values():
         if shared_spans is not None:
             shared_spans.add(members)
-    # A one-line def under coverage.py is floored like a shared span but is no
-    # site of two functions, so it stays out of the fold the run reports.
-    def_lines = _def_line_spans(rows, coverage_by_path, start_index)
-    floored, split = ambiguous.keys() | def_lines, shared.keys() | def_lines
     scored = []
     for r in rows:
         verdict = _cov_without_join(r, lane_scopes, cc_only_scopes)
-        cov, flag = verdict or _joined_cov(r, floored, coverage_by_path, start_index)
+        cov, flag = verdict or _joined_cov(r, ambiguous, coverage_by_path, start_index)
         scored.append(_finish(r, cov, flag, target=target, scope_targets=scope_targets,
-                              shared_span=_on_shared_span(r, verdict, split)))
+                              shared_span=_on_shared_span(r, verdict, shared)))
     return scored

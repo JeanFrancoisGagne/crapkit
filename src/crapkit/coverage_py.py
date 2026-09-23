@@ -41,26 +41,12 @@ def _admit_summary(name: str, summary: dict) -> dict:
     return counts
 
 
-class LineRegion(FnCoverage):
-    """A coverage.py function region, which counts lines and arcs but no calls.
-
-    A function written on one line shares that line with its own `def`
-    statement, which runs when the module is imported, so its region reads as
-    run whether a test called it or not: an uncalled `def one(x): return x`
-    reads 1 of its 2 branches covered. score.py floors a one-line function
-    joined to such a region the way it floors a function on a shared span.
-    istanbul counts calls per function, and its regions stay plain FnCoverage.
-    """
-
-    __slots__ = ()
-
-
-def _fn_coverage(name: str, fn: dict) -> LineRegion:
+def _fn_coverage(name: str, fn: dict) -> FnCoverage:
     summary = _admit_summary(name, fn.get("summary", {}))
     lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
     start = fn.get("start_line") or (min(lines) if lines else 0)
     end = max(lines) if lines else start
-    return LineRegion(name=name, start=start, end=end,
+    return FnCoverage(name=name, start=start, end=end,
                       invoked=summary.get("covered_lines", 0) > 0,
                       branches_total=summary.get("num_branches", 0),
                       branches_covered=summary.get("covered_branches", 0),
