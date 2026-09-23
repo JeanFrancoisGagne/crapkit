@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from crapkit import covstream
+from crapkit import coverage_istanbul, coverage_py
 from crapkit.errors import ToolError
 from crapkit.score import score_rows
 from crapkit.snapshot import InventoryRow
@@ -25,29 +25,28 @@ def test_nonfinite_coverage_is_refused_before_scoring(tmp_path, number, chunk):
     artifact.write_text(report(number), encoding='utf-8')
     row = InventoryRow('core', 'app.py', 'f', 1, 1, 7, 7, 7, 1, 0, 0, 0, 1)
     with pytest.raises(ToolError, match='non-finite JSON number'):
-        coverage, _ = covstream.parse_coveragepy_file(artifact, path_prefix='', chunk=chunk)
+        coverage, _, _ = coverage_py.parse_coveragepy_both_file(artifact, path_prefix='', chunk=chunk)
         score_rows([row], coverage, lane_scopes={'core'})
 
 
-@pytest.mark.parametrize('reader', ['istanbul', 'istanbul_missing', 'istanbul_both',
+@pytest.mark.parametrize('reader', ['istanbul_missing', 'istanbul_both',
                                    'python_missing', 'python_contexts'])
 @pytest.mark.parametrize('number', ['NaN', 'Infinity', '-Infinity', '1e999'])
 def test_every_projection_rejects_nonfinite_numbers(tmp_path, reader, number):
     artifact = tmp_path / 'coverage.json'
     if reader.startswith('istanbul'):
         artifact.write_text('{"app.ts":{"metadata":' + number + '}}', encoding='utf-8')
-        calls = {'istanbul': covstream.parse_istanbul_file,
-                 'istanbul_missing': covstream.parse_istanbul_missing_file,
-                 'istanbul_both': covstream.parse_istanbul_both_file}
+        calls = {'istanbul_missing': coverage_istanbul.parse_istanbul_missing_file,
+                 'istanbul_both': coverage_istanbul.parse_istanbul_both_file}
         with pytest.raises(ToolError, match='non-finite JSON number'):
             calls[reader](artifact, repo_root='', chunk=1)
     else:
         artifact.write_text(report(number), encoding='utf-8')
         with pytest.raises(ToolError, match='non-finite JSON number'):
             if reader == 'python_missing':
-                covstream.parse_coveragepy_missing_file(artifact, path_prefix='', chunk=1)
+                coverage_py.parse_coveragepy_missing_file(artifact, path_prefix='', chunk=1)
             else:
-                covstream.parse_coveragepy_contexts_file(
+                coverage_py.parse_coveragepy_contexts_file(
                     artifact, path_prefix='', source_path='absent.py', chunk=1)
 
 
@@ -55,7 +54,7 @@ def test_finite_exponents_and_strings_preserve_values_and_digest(tmp_path):
     artifact = tmp_path / 'coverage.json'
     raw = report('1e0').replace('"f"', '"NaN Infinity"').encode('utf-8')
     artifact.write_bytes(raw)
-    coverage, digest = covstream.parse_coveragepy_file(artifact, path_prefix='', chunk=1)
+    coverage, _, digest = coverage_py.parse_coveragepy_both_file(artifact, path_prefix='', chunk=1)
     assert coverage['app.py'][0].name == 'NaN Infinity'
     assert coverage['app.py'][0].coverage == 0.5
     assert digest == hashlib.sha256(raw).hexdigest()

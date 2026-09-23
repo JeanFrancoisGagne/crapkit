@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from crapkit.covstream import parse_coveragepy_both_file, parse_istanbul_both_file
+from crapkit.coverage_istanbul import parse_istanbul_both_file
+from crapkit.coverage_py import parse_coveragepy_both_file
 from crapkit.errors import ToolError
 
 

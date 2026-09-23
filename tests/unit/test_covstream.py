@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 
 from coverage_oracles import parse_istanbul, parse_istanbul_missing
-from crapkit.covstream import (parse_istanbul_both_file, parse_istanbul_file,
-                               parse_istanbul_missing_file)
+from crapkit.coverage_istanbul import parse_istanbul_both_file, parse_istanbul_missing_file
+from crapkit.coverage_py import parse_coveragepy_both_file
 from crapkit.errors import ToolError
 
 COMPOSITE = {
@@ -38,6 +38,17 @@ COMPOSITE = {
 }
 
 CHUNKS = [1, 2, 3, 7, 17, 64, 1 << 20]
+
+
+def parse_istanbul_file(path, **kwargs):
+    """Coverage and digest, the pair the lane records."""
+    per_file, _, digest = parse_istanbul_both_file(path, **kwargs)
+    return per_file, digest
+
+
+def parse_coveragepy_file(path, **kwargs):
+    per_file, _, digest = parse_coveragepy_both_file(path, **kwargs)
+    return per_file, digest
 
 
 def _write(tmp_path, obj, **dumps):
@@ -140,16 +151,16 @@ def test_an_istanbul_lane_streams_its_artifact_off_the_file(tmp_path, monkeypatc
     """The lane must hand the PATH to the streaming reader. Decoding the file
     into one str first is what put a second whole copy of a 150 MB artifact on
     the heap, and no equality test can see that."""
-    from crapkit import lanes
+    from crapkit import coverage_istanbul, lanes
 
     seen = []
-    real = lanes.parse_istanbul_both_file
+    real = coverage_istanbul.parse_istanbul_both_file
 
     def spy(path, **kwargs):
         seen.append(Path(path).name)
         return real(path, **kwargs)
 
-    monkeypatch.setattr(lanes, "parse_istanbul_both_file", spy)
+    monkeypatch.setattr(coverage_istanbul, "parse_istanbul_both_file", spy)
     _write(tmp_path, COMPOSITE)
     lanes.run_lane(tmp_path, _lane("istanbul", "cov.json"), reuse_artifact=True)
     assert seen == ["cov.json"]
@@ -193,7 +204,6 @@ REPORT = {
 @pytest.mark.parametrize("indent", [None, 1])
 def test_streamed_coveragepy_equals_the_whole_document_parse(tmp_path, chunk, indent):
     from coverage_oracles import parse_coveragepy
-    from crapkit.covstream import parse_coveragepy_file
 
     path = _write(tmp_path, REPORT, indent=indent)
     text = path.read_text(encoding="utf-8")
@@ -209,7 +219,6 @@ def test_streamed_coveragepy_equals_the_whole_document_parse(tmp_path, chunk, in
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_streamed_coveragepy_applies_the_lane_path_prefix(tmp_path, chunk):
     from coverage_oracles import parse_coveragepy
-    from crapkit.covstream import parse_coveragepy_file
 
     path = _write(tmp_path, REPORT)
     per_file, _ = parse_coveragepy_file(path, path_prefix="scripts/", chunk=chunk)
@@ -220,7 +229,7 @@ def test_streamed_coveragepy_applies_the_lane_path_prefix(tmp_path, chunk):
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_streamed_coveragepy_missing_equals_the_whole_document_parse(tmp_path, chunk):
     from coverage_oracles import parse_coveragepy_missing
-    from crapkit.covstream import parse_coveragepy_missing_file
+    from crapkit.coverage_py import parse_coveragepy_missing_file
 
     path = _write(tmp_path, REPORT)
     assert (parse_coveragepy_missing_file(path, path_prefix="py", chunk=chunk)
@@ -232,7 +241,6 @@ def test_a_report_without_branch_data_streams_the_same_statement_scores(tmp_path
     """The stream and the whole-document parser make the same salvage, so a
     lane cannot score one way and a test another."""
     from coverage_oracles import parse_coveragepy
-    from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "meta": {"branch_coverage": False}}
     path = _write(tmp_path, report)
@@ -244,7 +252,6 @@ def test_a_report_without_branch_data_streams_the_same_statement_scores(tmp_path
 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_a_streamed_report_with_no_data_to_divide_by_is_still_refused(tmp_path, chunk):
-    from crapkit.covstream import parse_coveragepy_file
 
     report = {"meta": {"branch_coverage": False},
               "files": {"a.py": {"functions": {"f": {
@@ -258,7 +265,6 @@ def test_a_streamed_report_with_no_data_to_divide_by_is_still_refused(tmp_path, 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_one_streamed_file_without_regions_leaves_the_others_scored(tmp_path, chunk):
     from coverage_oracles import parse_coveragepy
-    from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "files": {**REPORT["files"], "tpl/page.html": {"executed_lines": []}}}
     path = _write(tmp_path, report)
@@ -271,7 +277,6 @@ def test_one_streamed_file_without_regions_leaves_the_others_scored(tmp_path, ch
 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_a_streamed_report_with_no_regions_at_all_is_still_refused(tmp_path, chunk):
-    from crapkit.covstream import parse_coveragepy_file
 
     report = {**REPORT, "files": {"a.py": {"executed_lines": []}}}
     path = _write(tmp_path, report)
@@ -284,7 +289,6 @@ def test_a_streamed_old_report_without_cov_branch_still_names_the_version(tmp_pa
     """The same verdict order as the whole-document reader: a report with no
     regions and no branch data is the coverage-too-old case, whichever reader
     read it."""
-    from crapkit.covstream import parse_coveragepy_file
 
     report = {"meta": {"branch_coverage": False},
               "files": {"a.py": {"executed_lines": []}, "b.py": {"executed_lines": []}}}
@@ -295,7 +299,6 @@ def test_a_streamed_old_report_without_cov_branch_still_names_the_version(tmp_pa
 
 @pytest.mark.parametrize("chunk", CHUNKS)
 def test_a_malformed_report_is_still_a_loud_error(tmp_path, chunk):
-    from crapkit.covstream import parse_coveragepy_file
 
     path = tmp_path / "cov.json"
     path.write_text('{"files": ', encoding="utf-8")
@@ -304,16 +307,16 @@ def test_a_malformed_report_is_still_a_loud_error(tmp_path, chunk):
 
 
 def test_a_coveragepy_lane_streams_its_artifact_off_the_file(tmp_path, monkeypatch):
-    from crapkit import lanes
+    from crapkit import coverage_py, lanes
 
     seen = []
-    real = lanes.parse_coveragepy_both_file
+    real = coverage_py.parse_coveragepy_both_file
 
     def spy(path, **kwargs):
         seen.append(Path(path).name)
         return real(path, **kwargs)
 
-    monkeypatch.setattr(lanes, "parse_coveragepy_both_file", spy)
+    monkeypatch.setattr(coverage_py, "parse_coveragepy_both_file", spy)
     _write(tmp_path, REPORT)
     lanes.run_lane(tmp_path, _lane("coveragepy", "cov.json"), reuse_artifact=True)
     assert seen == ["cov.json"]
@@ -326,12 +329,13 @@ def test_missing_by_path_streams_every_lane_artifact(tmp_path, monkeypatch):
     artifact whole put all of them on the heap one after another."""
     from types import SimpleNamespace
 
-    from crapkit import covstream, uncovered
+    from crapkit import coverage_istanbul, coverage_py, uncovered
 
     seen = []
-    for name in ("parse_istanbul_missing_file", "parse_coveragepy_missing_file"):
-        real = getattr(covstream, name)
-        monkeypatch.setattr(covstream, name,
+    for module, name in ((coverage_istanbul, "parse_istanbul_missing_file"),
+                         (coverage_py, "parse_coveragepy_missing_file")):
+        real = getattr(module, name)
+        monkeypatch.setattr(module, name,
                             lambda path, _r=real, _n=name, **kw: (seen.append(_n), _r(path, **kw))[1])
 
     (tmp_path / "ist.json").write_text(json.dumps(COMPOSITE), encoding="utf-8")
@@ -369,16 +373,16 @@ def _istanbul_cfg(*names_and_artifacts):
 
 
 def _spy_on_the_missing_reader(monkeypatch) -> list:
-    from crapkit import covstream
+    from crapkit import coverage_istanbul
 
     seen = []
-    real = covstream.parse_istanbul_missing_file
+    real = coverage_istanbul.parse_istanbul_missing_file
 
     def spy(path, **kwargs):
         seen.append(Path(path).name)
         return real(path, **kwargs)
 
-    monkeypatch.setattr(covstream, "parse_istanbul_missing_file", spy)
+    monkeypatch.setattr(coverage_istanbul, "parse_istanbul_missing_file", spy)
     return seen
 
 
@@ -473,7 +477,6 @@ def test_a_report_written_with_sorted_keys_still_finds_its_branch_flag(tmp_path,
     """json.dump(sort_keys=True) writes "files" BEFORE "meta", so a reader that
     decides at the first file refuses a perfectly good report."""
     from coverage_oracles import parse_coveragepy
-    from crapkit.covstream import parse_coveragepy_file
 
     path = _write(tmp_path, REPORT, sort_keys=True)
     per_file, _ = parse_coveragepy_file(path, path_prefix="", chunk=chunk)
@@ -487,7 +490,6 @@ def test_missing_regions_outrank_missing_branch_data_whatever_order_they_are_in(
     either, so `--cov-branch` is a rerun that changes nothing. Member order must
     not flip it — json.dump(sort_keys=True) writes "files" before "meta"."""
     from coverage_oracles import parse_coveragepy
-    from crapkit.covstream import parse_coveragepy_file
 
     report = {"files": {"a.py": {"executed_lines": []}}, "meta": {"branch_coverage": False}}
     path = _write(tmp_path, report, sort_keys=True)
@@ -503,7 +505,7 @@ def test_a_truncated_report_is_unreadable_not_empty(tmp_path, chunk, text):
     """A walk that stops at the first thing it cannot read reports NO dark lines,
     which reads exactly like a fully covered repo. It has to fail instead."""
     from coverage_oracles import parse_coveragepy_missing
-    from crapkit.covstream import parse_coveragepy_missing_file
+    from crapkit.coverage_py import parse_coveragepy_missing_file
 
     path = tmp_path / "cov.json"
     path.write_text(text, encoding="utf-8")

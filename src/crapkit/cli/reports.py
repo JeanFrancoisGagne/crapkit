@@ -470,21 +470,20 @@ def _tests_fields(contexts: dict, span) -> dict:
 
 
 def _contexts_for_path(root: Path, cfg, path: str) -> dict[int, set]:
-    """line -> test ids for ONE file, off every coveragepy artifact, parsed once.
+    """line -> test ids for ONE file, off every lane artifact, parsed once.
 
     Every matched function used to reparse every artifact to ask the same
-    question about the same file.
+    question about the same file. Each lane's format adapter answers; istanbul
+    records no contexts and answers without opening its artifact.
     """
-    from ..covstream import parse_coveragepy_contexts_file
+    from ..coverage_format import lane_format
 
     by_line: dict[int, set] = {}
     for lane in cfg.lanes:
         artifact = root / lane.artifact
-        if lane.parser != "coveragepy" or not artifact.is_file():
+        if not artifact.is_file():
             continue
-        ctx = parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                            source_path=path)
-        for line, ids in ctx.items():
+        for line, ids in lane_format(lane).contexts(lane, root, artifact, path).items():
             by_line.setdefault(line, set()).update(ids)
     return by_line
 

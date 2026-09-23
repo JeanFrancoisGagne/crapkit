@@ -6,13 +6,25 @@ only with no statements either to invocation (hit or not) — a straight-line
 function half-executed must not read as fully covered. Written for the
 AST-remapped output of @vitest/coverage-v8 >= 3.2, which is istanbul-schema-identical.
 
-covstream owns artifact decoding. This module receives one decoded file and
-keeps attribution independent of file I/O and JSON framing.
+This module is also the istanbul adapter (coverage_format looks it up from a
+lane's `parser`): it reads the artifact through covstream's framing, keys each
+file by stripping the checkout root, and owns the advice a wrong-tree refusal
+gives an istanbul lane. Attribution itself stays independent of file I/O and
+JSON framing.
 """
 from __future__ import annotations
 
 import heapq
-from typing import NamedTuple
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, NamedTuple
+
+from . import covstream
+from .errors import ToolError
+
+if TYPE_CHECKING:
+    from .config import Lane
+
 
 class FnCoverage(NamedTuple):
     name: str
@@ -198,3 +210,126 @@ def _dead_lines(cov: dict) -> set[int]:
             if hits_by_id.get(sid, 0) == 0}
     dead.discard(None)
     return dead
+
+
+# --- reading the artifact ----------------------------------------------------
+
+_BAD_ISTANBUL = "unparseable istanbul artifact"
+
+
+def _istanbul_map(w, repo_root: str, per_file) -> dict:
+    return {_rel_path(abs_path, repo_root): per_file(cov)
+            for abs_path, cov in covstream.split_window(w)}
+
+
+def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
+    per_file, dead = {}, {}
+    for abs_path, cov in covstream.split_window(w):
+        rel = _rel_path(abs_path, repo_root)
+        per_file[rel] = _file_coverage(cov)
+        dead[rel] = _dead_lines(cov)
+    return per_file, dead
+
+
+_CLAMPED_NAMED = 3
+
+
+def _loudest_clamped(counts: dict[str, int]) -> list[tuple[str, int]]:
+    """The files worth naming: most counters clamped first, ties by path."""
+    return sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))[:_CLAMPED_NAMED]
+
+
+def _clamped_counts(per_file: dict) -> dict[str, int]:
+    """path -> how many branch counters that file needed clamped, when any."""
+    return {path: rows.clamped for path, rows in per_file.items()
+            if getattr(rows, "clamped", 0)}
+
+
+def _note_clamped_branches(per_file: dict) -> None:
+    """Name the derived branch counters this artifact needed clamped.
+
+    Loud but not fatal, the shape _note_unanalyzable settled for reader
+    refusals: one underflowed counter degrades one branch measurement, and
+    ending the run over it blocks every commit in the repo.
+    """
+    counts = _clamped_counts(per_file)
+    if not counts:
+        return
+    print(f"crapkit: {sum(counts.values())} negative derived branch count(s) in "
+          f"{len(counts)} file(s) clamped to 0; the producer's else-path subtraction "
+          "underflowed and each such branch reads as uncovered:", file=sys.stderr)
+    for path, count in _loudest_clamped(counts):
+        print(f"crapkit:   {path}: {count}", file=sys.stderr)
+    if len(counts) > _CLAMPED_NAMED:
+        print(f"crapkit:   ... and {len(counts) - _CLAMPED_NAMED} more", file=sys.stderr)
+
+
+def _require_files(per_file: dict) -> None:
+    """A zero-file artifact scores as full coverage if it is let through."""
+    if not per_file:
+        raise ToolError(
+            "istanbul artifact is empty (zero files) — the coverage run measured nothing")
+
+
+def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK
+                             ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
+    """Function coverage AND dead lines from ONE walk, plus the sha256 of the
+    artifact's own bytes.
+
+    verify asks both questions of every istanbul artifact: the lane wants
+    function coverage, diff coverage wants the lines no statement ran. Asking
+    them separately decoded every member twice: 12.85 s over 13 lanes of a
+    31,459-file tree, against 7.80 s merged. Decoding is the whole cost;
+    _dead_lines over an already decoded file is near free.
+    """
+    (per_file, dead), digest = covstream.read_walk(
+        path, lambda w: _istanbul_both(w, repo_root), f"{_BAD_ISTANBUL} {path}", chunk)
+    _require_files(per_file)
+    _note_clamped_branches(per_file)
+    return per_file, dead, digest
+
+
+def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
+                                chunk: int = covstream.CHUNK) -> dict[str, set[int]]:
+    """Per measured file, the lines whose statement never ran."""
+    missing, _ = covstream.read_walk(
+        path, lambda w: _istanbul_map(w, repo_root, _dead_lines), _BAD_ISTANBUL, chunk)
+    return missing
+
+
+# --- the adapter a lane reads through ------------------------------------------
+#
+# The reader takes the checkout root, rebases every path under it and never
+# reads path_prefix, so a path that stayed absolute came from another tree and
+# no key on the lane can rebase it.
+
+WRONG_TREE_FIX = ("The reader rebases every path under this checkout's root, so these were "
+                  "written against another one: rerun the suite here rather than reusing an "
+                  "artifact copied in or restored from a CI cache")
+ABSOLUTE_FIX = ("The reader strips this checkout's root off every measured path "
+                "literally, so the reporter spelled that root some other way: point "
+                "it at this checkout with its own cwd/root option, then rerun the lane")
+UNMEASURED_READING = "or the suite measured a part of the tree these scopes do not name"
+
+
+def read(lane: Lane, root: Path, artifact: Path
+         ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
+    """The lane's function coverage, dead lines and artifact digest, one walk."""
+    return parse_istanbul_both_file(artifact, repo_root=str(root))
+
+
+def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
+    """The lines no statement ran, per measured file."""
+    return parse_istanbul_missing_file(artifact, repo_root=str(root))
+
+
+def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
+    """Istanbul records no per-line test contexts, so there is nothing to read."""
+    return {}
+
+
+def as_reported(lane: Lane, key: str) -> str:
+    """The key as the runner wrote it. The reader only ever strips the root, so
+    a key that still looks absolute is spelled the way the artifact spells it,
+    and path_prefix, which this reader never adds, is never taken off."""
+    return key

@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from crapkit.covstream import parse_istanbul_file
+from crapkit.coverage_istanbul import parse_istanbul_both_file
 
 from conftest import cli_runner, git_commit_all, git_init_repo
 
@@ -207,7 +207,7 @@ def solo_of(artifact: dict):
     with TemporaryDirectory() as directory:
         path = Path(directory) / "coverage.json"
         path.write_text(json.dumps(artifact), encoding="utf-8")
-        per_file, _ = parse_istanbul_file(path, repo_root="C:/repo")
+        per_file, _, _ = parse_istanbul_both_file(path, repo_root="C:/repo")
     (fn,) = per_file["web/solo.ts"]
     return fn
 

@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from crapkit import covstream
+from crapkit import coverage_istanbul, coverage_py, covstream
 from crapkit.errors import ToolError
 
 
@@ -34,7 +34,7 @@ def test_python_reader_returns_functions_missing_lines_and_digest_in_one_walk(tm
         return walk(*args)
 
     monkeypatch.setattr(covstream, 'walk_report', counted)
-    functions, dead, digest = covstream.parse_coveragepy_both_file(
+    functions, dead, digest = coverage_py.parse_coveragepy_both_file(
         path, path_prefix='backend', chunk=chunk)
     assert walks == [1]
     assert functions == {'backend/src/f.py': [FnCoverage('f', 1, 3, True, 2, 1, 3, 2)],
@@ -47,10 +47,10 @@ def test_python_reader_returns_functions_missing_lines_and_digest_in_one_walk(tm
 def test_context_reader_projects_only_the_requested_repo_path(tmp_path, chunk):
     path = tmp_path / 'coverage.json'
     path.write_text(json.dumps(_report()), encoding='utf-8')
-    assert covstream.parse_coveragepy_contexts_file(
+    assert coverage_py.parse_coveragepy_contexts_file(
         path, path_prefix='backend/', source_path='backend/src/f.py', chunk=chunk
     ) == {2: ['test_f']}
-    assert covstream.parse_coveragepy_contexts_file(
+    assert coverage_py.parse_coveragepy_contexts_file(
         path, path_prefix='', source_path='absent.py', chunk=chunk
     ) == {}
 
@@ -59,7 +59,7 @@ def test_context_reader_validates_the_document_after_the_requested_file(tmp_path
     path = tmp_path / 'coverage.json'
     path.write_text(json.dumps(_report()) + 'garbage', encoding='utf-8')
     with pytest.raises(ToolError, match='unparseable coverage.py'):
-        covstream.parse_coveragepy_contexts_file(path, path_prefix='', source_path='src/f.py')
+        coverage_py.parse_coveragepy_contexts_file(path, path_prefix='', source_path='src/f.py')
 
 
 @pytest.mark.parametrize('chunk', [1, 4, 1024])
@@ -68,7 +68,7 @@ def test_istanbul_rejects_invalid_member_separators(tmp_path, chunk, text):
     path = tmp_path / 'coverage.json'
     path.write_text(text, encoding='utf-8')
     with pytest.raises(ToolError, match='unparseable istanbul'):
-        covstream.parse_istanbul_file(path, repo_root='', chunk=chunk)
+        coverage_istanbul.parse_istanbul_both_file(path, repo_root='', chunk=chunk)
 
 
 @pytest.mark.parametrize('text', ['\u00a0{"a":{}}', '{\v"a":{}}', '{"a":\f{}}', '{"a":{}}\u00a0'])
@@ -76,7 +76,7 @@ def test_istanbul_rejects_whitespace_outside_the_json_grammar(tmp_path, text):
     path = tmp_path / 'coverage.json'
     path.write_text(text, encoding='utf-8')
     with pytest.raises(ToolError, match='unparseable istanbul'):
-        covstream.parse_istanbul_file(path, repo_root='', chunk=1)
+        coverage_istanbul.parse_istanbul_both_file(path, repo_root='', chunk=1)
 
 
 @pytest.mark.parametrize('chunk', [1, 4, 1024])
@@ -85,4 +85,4 @@ def test_python_missing_lines_rejects_invalid_nested_separators(tmp_path, chunk,
     path = tmp_path / 'coverage.json'
     path.write_text('{"files":' + files + '}', encoding='utf-8')
     with pytest.raises(ToolError, match='unparseable coverage.py'):
-        covstream.parse_coveragepy_missing_file(path, path_prefix='', chunk=chunk)
+        coverage_py.parse_coveragepy_missing_file(path, path_prefix='', chunk=chunk)

@@ -79,24 +79,16 @@ def _absent_note(path: str, flag: str) -> str:
 
 
 def _parse_missing(lane, root: Path, artifact: Path) -> dict[str, set[int]]:
-    """One lane's missing lines, read off the file.
+    """One lane's missing lines, read off the file by the lane's format adapter.
 
     Off the file, not out of a string: every declared lane's artifact would
-    otherwise be decoded whole, one after another, on one heap.
-
-    An unrecognised parser raises, in the same words `lanes._read_and_parse`
-    uses. This dispatch used to fall through to the coverage.py reader, so the
-    day a third parser joins SUPPORTED_PARSERS its lane would land here and
-    blame a perfectly good artifact for being unparseable.
+    otherwise be decoded whole, one after another, on one heap. The adapter
+    lookup is the lane run's own, so an unknown parser is refused here in the
+    words the run uses, never read as the other format.
     """
-    from . import covstream
-    from .errors import ToolError
+    from .coverage_format import lane_format
 
-    if lane.parser == "istanbul":
-        return covstream.parse_istanbul_missing_file(artifact, repo_root=str(root))
-    if lane.parser == "coveragepy":
-        return covstream.parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix)
-    raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
+    return lane_format(lane).missing(lane, root, artifact)
 
 
 # --- the fold a lane's own walk can fill in --------------------------------

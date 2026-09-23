@@ -24,7 +24,7 @@ from typing import IO, NamedTuple
 
 from .config import Lane
 from .coverage_istanbul import FnCoverage
-from .covstream import lane_prefix, parse_coveragepy_both_file, parse_istanbul_both_file
+from .coverage_format import lane_format
 from .errors import GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
@@ -679,16 +679,11 @@ def _read_and_parse(lane: Lane, root: Path,
     Streaming holds one chunk and one file's coverage instead, and hashes the
     bytes on the way past, so the recorded digest costs no second read.
 
-    Both readers also yield uncovered lines. An optional collector combines
-    them for this command without keeping separate lane maps or global state.
+    The lane's format adapter reads it, and yields uncovered lines from the same
+    walk. An optional collector combines them for this command without keeping
+    separate lane maps or global state.
     """
-    if lane.parser == "istanbul":
-        per_file, dead, digest = parse_istanbul_both_file(artifact_path, repo_root=str(root))
-    elif lane.parser == "coveragepy":
-        per_file, dead, digest = parse_coveragepy_both_file(
-            artifact_path, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}")
-    else:
-        raise ToolError(f"lane {lane.name!r}: parser {lane.parser!r} not implemented yet")
+    per_file, dead, digest = lane_format(lane).read(lane, root, artifact_path)
     if dead_lines is not None:
         dead_lines.add(artifact_path, dead)
     return per_file, digest
@@ -741,18 +736,6 @@ def _lands_in_checkout(root: str, path: str) -> bool:
     return _is_absolute(path) and _under(root, _resolved(path))
 
 
-def _as_reported(lane: Lane, path: str) -> str:
-    """One coverage key with this lane's own `path_prefix` taken back off, which
-    is the path the runner actually wrote.
-
-    The coveragepy reader prepends the prefix to EVERY key, an absolute one
-    included, so `backend/` + `/other/checkout/a.py` starts with neither `/` nor
-    a drive letter. Asked of that key, `_escapes_repo` answers no on every lane
-    that declares the knob — the monorepo shape the check was written for."""
-    prefix = lane_prefix(lane.path_prefix)
-    return path[len(prefix):] if prefix and path.startswith(prefix) else path
-
-
 def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
@@ -773,8 +756,11 @@ def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str
 
 def _escaped_paths(lane: Lane, coverage: dict) -> list[str]:
     """The measured files the runner did not write relative to this checkout,
-    spelled the way the artifact spells them."""
-    reported = (_as_reported(lane, path) for path in coverage)
+    spelled the way the artifact spells them. The format's own inverse takes
+    back only what its reader added: path_prefix on a coveragepy key, nothing
+    on an istanbul one, which never reads the key."""
+    as_reported = lane_format(lane).as_reported
+    reported = (as_reported(lane, path) for path in coverage)
     return sorted(path for path in reported if _escapes_repo(path))
 
 
@@ -801,46 +787,6 @@ def _sample(paths) -> str:
     return f"{shown} and {rest} more" if rest > 0 else shown
 
 
-# What to do about it, which is not the same sentence for both readers. The
-# coveragepy reader takes path_prefix and takes no repo root, so its refusal is
-# about the environment the lane binds to and the prefix is a real knob. The
-# istanbul reader takes the root, rebases every path under it and never reads
-# path_prefix at all, so a path that stayed absolute came from another tree and
-# no key on the lane can rebase it.
-_COVERAGEPY_FIX = ("Point the lane at this checkout's own environment (a bare "
-                   "`python -m pytest` binds to whichever venv the shell has active — run "
-                   "it through the project's manager, `uv run python -m pytest ...`), or "
-                   "set path_prefix when the runner reports paths relative to a subdirectory")
-_ISTANBUL_FIX = ("The reader rebases every path under this checkout's root, so these were "
-                 "written against another one: rerun the suite here rather than reusing an "
-                 "artifact copied in or restored from a CI cache")
-
-_COVERAGEPY_MISS = "or the runner reports paths this lane needs path_prefix to rebase"
-_ISTANBUL_MISS = "or the suite measured a part of the tree these scopes do not name"
-
-# And the third case: this tree, spelled absolutely. Neither fix above applies —
-# the environment is right and path_prefix only ever PREPENDS — so the knob is
-# the runner's own, and each reader has a different one.
-_COVERAGEPY_ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
-                            "under `[tool.coverage.run]` in pyproject.toml, or "
-                            "`[run] relative_files = true` in .coveragerc, then rerun the lane")
-_ISTANBUL_ABSOLUTE_FIX = ("The reader strips this checkout's root off every measured path "
-                          "literally, so the reporter spelled that root some other way: point "
-                          "it at this checkout with its own cwd/root option, then rerun the lane")
-
-
-def _wrong_tree_fix(lane: Lane) -> str:
-    return _COVERAGEPY_FIX if lane.parser == "coveragepy" else _ISTANBUL_FIX
-
-
-def _absolute_fix(lane: Lane) -> str:
-    return _COVERAGEPY_ABSOLUTE_FIX if lane.parser == "coveragepy" else _ISTANBUL_ABSOLUTE_FIX
-
-
-def _unmeasured_reading(lane: Lane) -> str:
-    return _COVERAGEPY_MISS if lane.parser == "coveragepy" else _ISTANBUL_MISS
-
-
 def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
     """The finding both verdicts open on, written once: what the artifact
     measured, and that none of it is in scope. The two messages part company
@@ -853,7 +799,7 @@ def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(outside)} of them "
             f"outside this checkout entirely — {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
-            f"paths like {_sample(outside)}. {_wrong_tree_fix(lane)}")
+            f"paths like {_sample(outside)}. {lane_format(lane).WRONG_TREE_FIX}")
 
 
 def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -> str:
@@ -861,14 +807,14 @@ def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -
             f"as absolute paths that DO sit under this checkout — {lane.artifact} measured "
             f"this tree and spelled it absolutely, and the join is on root-relative paths, "
             f"so it still matches nothing and every function in those scopes would score "
-            f"untested; it reports paths like {_sample(inside)}. {_absolute_fix(lane)}")
+            f"untested; it reports paths like {_sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
 
 
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
-            f"{_unmeasured_reading(lane)}")
+            f"{lane_format(lane).UNMEASURED_READING}")
 
 
 def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,

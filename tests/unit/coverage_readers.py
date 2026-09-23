@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from crapkit import covstream
+from crapkit import coverage_istanbul, coverage_py, covstream
 
 
 def _read(text, reader, **kwargs):
@@ -15,27 +15,27 @@ def _read(text, reader, **kwargs):
 
 
 def parse_istanbul(text, **kwargs):
-    return _read(text, covstream.parse_istanbul_file, **kwargs)[0]
+    return _read(text, coverage_istanbul.parse_istanbul_both_file, **kwargs)[0]
 
 
 def parse_istanbul_missing(text, **kwargs):
-    return _read(text, covstream.parse_istanbul_missing_file, **kwargs)
+    return _read(text, coverage_istanbul.parse_istanbul_missing_file, **kwargs)
 
 
 def parse_coveragepy(text, **kwargs):
-    return _read(text, covstream.parse_coveragepy_file, **kwargs)[0]
+    return _read(text, coverage_py.parse_coveragepy_both_file, **kwargs)[0]
 
 
 def parse_coveragepy_missing(text, **kwargs):
-    return _read(text, covstream.parse_coveragepy_missing_file, **kwargs)
+    return _read(text, coverage_py.parse_coveragepy_missing_file, **kwargs)
 
 
 def parse_coveragepy_contexts(text, *, path_prefix):
-    prefix = covstream.lane_prefix(path_prefix)
+    prefix = coverage_py.lane_prefix(path_prefix)
     results = {}
     for raw in json.loads(text).get('files', {}):
-        source_path = prefix + raw.replace('\\', '/')
-        contexts = _read(text, covstream.parse_coveragepy_contexts_file,
+        source_path = coverage_py.measured_key(prefix, raw)
+        contexts = _read(text, coverage_py.parse_coveragepy_contexts_file,
                          path_prefix=path_prefix, source_path=source_path)
         if contexts:
             results[source_path] = contexts
