@@ -267,6 +267,7 @@ def overlay_stale_coverage(
     target: int = 6,
     scope_targets: dict[str, int] | None = None,
     cc_only_scopes: frozenset[str] = frozenset(),
+    baseline_run_id: int | None = None,
 ) -> list[ScoredRow]:
     """Rescore fresh complexity against a BASELINE run's coverage.
 
@@ -276,10 +277,11 @@ def overlay_stale_coverage(
     the preview. A function on a span another one shares, or a Python def on
     its own def line, scores as uncovered, as score_rows scores it, so the
     preview never passes what the next coverage run fails. Coverage values are
-    the baseline's; the caller labels them stale.
+    the baseline's; the caller labels them stale. A legacy-identity refusal
+    names BASELINE_RUN_ID, the run the baseline rows came from.
     """
     require_unambiguous(rows)
-    require_unambiguous(baseline_scored)
+    require_unambiguous(baseline_scored, run_id=baseline_run_id)
     positions = _overlay_positions(rows)
     by_key: dict[tuple[str, str], list[ScoredRow]] = {}
     for r in baseline_scored:

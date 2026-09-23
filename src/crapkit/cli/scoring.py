@@ -680,7 +680,8 @@ def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list,
     return overlay_stale_coverage(rows, _baseline_rows(store, latest["id"], flat),
                                   lane_scopes=lane_scopes, target=cfg.target,
                                   scope_targets=cfg.scope_targets,
-                                  cc_only_scopes=cfg.coverage_optional_scopes)
+                                  cc_only_scopes=cfg.coverage_optional_scopes,
+                                  baseline_run_id=latest["id"])
 
 
 def _rescore_json(overlay, latest: dict, gate: dict | None = None) -> None:
