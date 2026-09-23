@@ -73,14 +73,14 @@ def _merge_stamp(texts: list[str]) -> None:
     Reconciling marks across metrics means picking a minimum between numbers
     produced by different rules, which is not a comparison at all.
     """
-    from ..ratchet import read_stamp
+    from ..ratchet import coverage_then_seed, read_stamp
 
     ours, theirs = read_stamp(texts[1]), read_stamp(texts[2])
     if ours != theirs:
         raise ConfigError(
             f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
             f"[{theirs or 'unstamped'}] — marks from different metric versions cannot "
-            f"merge; re-baseline one side with `{_self()} ratchet seed`")
+            f"merge; {coverage_then_seed('re-baseline one side')}")
 
 
 def _ratchet_merge(files: list) -> int:

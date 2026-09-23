@@ -156,7 +156,17 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
         return None
     return (f"ratchet marks were recorded under [{recorded}] but this run measures "
             f"[{current}] — CRAP scores are not comparable across metric versions; "
-            f"re-baseline with `{_self()} ratchet seed`")
+            f"{coverage_then_seed()}")
+
+
+def coverage_then_seed(rebaseline: str = "re-baseline") -> str:
+    """The remedy every stamp refusal prints: a fresh run, then the seed.
+
+    Seed stamps the metric of the run it reads. Right after an upgrade the
+    newest run is the older crapkit's, so seed alone kept the old stamp and
+    verify refused again.
+    """
+    return f"run `{_self()} coverage`, then {rebaseline} with `{_self()} ratchet seed`"
 
 
 def _comment(line: str) -> bool:

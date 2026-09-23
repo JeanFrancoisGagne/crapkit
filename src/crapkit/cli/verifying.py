@@ -224,13 +224,13 @@ def _guard_ratchet_stamp(saved, name: str) -> None:
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
     """
-    from ..ratchet import metric_version
+    from ..ratchet import coverage_then_seed, metric_version
 
     if saved.text is None:
         return
     if not saved.metric_stamp:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
-              f"re-baseline with `{_self()} ratchet seed` to stamp it", file=sys.stderr)
+              f"{coverage_then_seed()} to stamp it", file=sys.stderr)
         return
     conflict = saved.stamp_conflict(metric_version())
     if conflict:

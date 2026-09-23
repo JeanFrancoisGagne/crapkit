@@ -255,13 +255,13 @@ Three cases:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
 EXIT=3
 ```
 
 ```
 $ crapkit verify
-warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) — re-baseline with `crapkit ratchet seed` to stamp it
+warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) — run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
 verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files)
 EXIT=0
 ```
