@@ -148,10 +148,11 @@ def _held_in(group: tuple[str, str], runs) -> str:
     return f"{path}: {name} in {label} {', '.join(str(run) for run in sorted(runs))}"
 
 
-def key_names(rows) -> dict[tuple[str, str, int, int], str]:
-    """Canonical ordinals ordered by source position, with scope copies shared."""
+def key_names(rows, *, run_id: int | None = None) -> dict[tuple[str, str, int, int], str]:
+    """Canonical ordinals ordered by source position, with scope copies shared.
+    RUN_ID names the run the rows came from in a legacy-identity refusal."""
     rows = list(rows)
-    require_unambiguous(rows)
+    require_unambiguous(rows, run_id=run_id)
     starts: dict[tuple[str, str], set[tuple[int, int]]] = {}
     for row in rows:
         starts.setdefault((row.path, row.long_name), set()).add(position(row))
@@ -260,15 +261,15 @@ def matching_names(names, name: str) -> list[str]:
     return exact_names(names, name) or [n for n in names if name in n]
 
 
-def anonymous_positions(rows) -> list[tuple]:
+def anonymous_positions(rows, *, run_id: int | None = None) -> list[tuple]:
     """Anonymous locations in source order, with scope copies shared."""
     rows = list(rows)
-    require_unambiguous(rows)
+    require_unambiguous(rows, run_id=run_id)
     return sorted({lookup(r) for r in rows if not bare_name(r.long_name)},
                   key=lambda place: (place[2], place[3], place[1]))
 
 
-def handles(rows) -> dict[tuple, str]:
+def handles(rows, *, run_id: int | None = None) -> dict[tuple, str]:
     """The handle for every row in one file, keyed by its full stored location.
 
     Named twins carry #N, including #1; overloads retain their full signature.
@@ -277,13 +278,13 @@ def handles(rows) -> dict[tuple, str]:
 
     """
     rows = list(rows)
-    require_unambiguous(rows)
+    require_unambiguous(rows, run_id=run_id)
     groups: dict[str, dict[str, set[tuple]]] = {}
     for row in rows:
         groups.setdefault(bare_name(row.long_name), {}).setdefault(row.long_name, set()).add(lookup(row))
     found = _named_handles(groups)
     found.update({place: f"{ANONYMOUS}#{n}"
-                  for n, place in enumerate(anonymous_positions(rows), 1)})
+                  for n, place in enumerate(anonymous_positions(rows, run_id=run_id), 1)})
     return found
 
 
@@ -327,7 +328,7 @@ def handle_ordinal(name: str) -> int | None:
 
 # --- the one resolver ---------------------------------------------------------
 
-def select(rows, name: str, names=None) -> list[tuple[str, str]]:
+def select(rows, name: str, names=None, *, run_id: int | None = None) -> list[tuple[str, str]]:
     """The functions NAME selects in one run's rows of one file, as
     (long name, key name) pairs.
 
@@ -344,15 +345,16 @@ def select(rows, name: str, names=None) -> list[tuple[str, str]]:
       for a bare NAME, which is the one the queue ranks. A long name no row
       holds keeps the key its ordinal spells.
 
-    Nothing selected is an empty list. Each command words its own miss.
+    Nothing selected is an empty list. Each command words its own miss. A
+    legacy-identity refusal names RUN_ID, the run the rows came from.
     """
     rows = list(rows)
     if name.isdigit():
-        return _at_line(rows, key_names(rows), name)
+        return _at_line(rows, key_names(rows, run_id=run_id), name)
     if handle_ordinal(name) is not None:
-        found = handles(rows)
-        return _pairs(key_names(rows), [r for r in rows if found[lookup(r)] == name])
-    return _by_name(rows, name, names)
+        found = handles(rows, run_id=run_id)
+        return _pairs(key_names(rows, run_id=run_id), [r for r in rows if found[lookup(r)] == name])
+    return _by_name(rows, name, names, run_id)
 
 
 def _pairs(keys: dict, rows) -> list[tuple[str, str]]:
@@ -373,15 +375,15 @@ def _ambiguous_line(rows: list, at: list, line: str) -> str:
     return f"line {line} in {at[0].path} is ambiguous; use a handle: {choices}"
 
 
-def _by_name(rows: list, name: str, names) -> list[tuple[str, str]]:
+def _by_name(rows: list, name: str, names, run_id: int | None = None) -> list[tuple[str, str]]:
     wanted, ordinal = split_ordinal(name)
     known = list(dict.fromkeys(r.long_name for r in rows)) if names is None else names
     picked = None if wanted == name else ordinal
-    return [(long_name, _twin_key(rows, long_name, picked))
+    return [(long_name, _twin_key(rows, long_name, picked, run_id))
             for long_name in matching_names(known, wanted)]
 
 
-def _twin_key(rows: list, long_name: str, ordinal: int | None) -> str:
+def _twin_key(rows: list, long_name: str, ordinal: int | None, run_id: int | None = None) -> str:
     """The key of the twin NAME picked: the Nth in file order, or the worst of
     them when NAME gave no ordinal.
 
@@ -391,7 +393,7 @@ def _twin_key(rows: list, long_name: str, ordinal: int | None) -> str:
     if ordinal is not None:
         return key_name(long_name, ordinal)
     twins = [r for r in rows if r.long_name == long_name]
-    return key_names(twins)[lookup(max(twins, key=_severity))] if twins else long_name
+    return key_names(twins, run_id=run_id)[lookup(max(twins, key=_severity))] if twins else long_name
 
 
 def _severity(row) -> tuple:

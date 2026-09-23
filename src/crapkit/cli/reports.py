@@ -325,7 +325,7 @@ def cmd_explain(args: argparse.Namespace) -> int:
     store = _open_store(root)
     args.path = _repo_relative(args.path, root, _stand(args.repo))  # from where the user stands
     runs = store.list_runs()
-    matches = _explain_selection(store, _selector_run(runs), args.path, args.name)
+    matches = _explain_selection(store, _selector_run(store, runs, args.path), args.path, args.name)
     if not matches:
         raise CrapkitError(f"no function matching {args.name!r} in {args.path} appears in any run")
     ctx = _explain_ctx(root, cfg, store, args, runs)
@@ -342,17 +342,27 @@ def _newest_id(runs: list[dict], *admits) -> int | None:
     return None
 
 
-def _selector_run(runs: list[dict]) -> int | None:
+def _selector_run(store: SnapshotStore, runs: list[dict], path: str) -> int | None:
     """The run a start line and an `(anonymous)#N` handle name a position in.
 
     The one `brief` reads, the newest trusted run, so one line names one
     function in both commands. A failed verify after it holds other positions
-    and is not that run. A store with no trusted run yet, where `brief` has
-    nothing to read, falls back to its newest run with rows.
+    and is not that run. When that run no longer holds PATH, the newest trusted
+    run that does, so a dropped file keeps its positions. A store with no
+    trusted run holding the file falls back to its newest run with rows for it.
     """
     from ..store import is_rowful, is_trusted
 
-    return _newest_id(runs, is_trusted, is_rowful)
+    for admit in (is_trusted, is_rowful):
+        found = _newest_holding(store, [r["id"] for r in runs if admit(r)], path)
+        if found is not None:
+            return found
+    return None
+
+
+def _newest_holding(store: SnapshotStore, ids: list[int], path: str) -> int | None:
+    """The newest of IDS whose run holds rows for PATH."""
+    return next((run_id for run_id in reversed(ids) if store.read_positions(run_id, path)), None)
 
 
 def _explain_selection(store: SnapshotStore, run_id: int | None, path: str,
@@ -364,7 +374,7 @@ def _explain_selection(store: SnapshotStore, run_id: int | None, path: str,
     from ..keys import select
 
     rows = store.read_positions(run_id, path) if run_id is not None else []
-    return select(rows, name, store.long_names(path))
+    return select(rows, name, store.long_names(path), run_id=run_id)
 
 
 def _explain_ctx(root: Path, cfg, store: SnapshotStore, args, runs: list[dict]) -> _ExplainCtx:
