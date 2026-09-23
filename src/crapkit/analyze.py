@@ -167,28 +167,55 @@ class _CreationOrder:
 # This check stays as the net under that reader. A def read to its body has a
 # `:` at bracket depth 0 with a token after it; one cut off in its signature has
 # not. A def the reader still cannot finish is refused, never scored at ccn 1.
-_OPENERS = frozenset("([{")
-_CLOSERS = frozenset(")]}")
+#
+# The net counts from the `def` keyword, a token no reader renames, and reads
+# nothing lizardpython decides. It has to hold under lizard's stock reader too,
+# which is what runs once that module retires: that reader names a PEP 695 def
+# after the `]` or `:` before its `(`, so a count started at the function's
+# first token began at depth -1 or on a colon.
+_DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
-def _step_body(fn, token: str) -> None:
-    """Advance one function's signature reading by one of its own tokens.
+class _DefSignatures:
+    """One file's walk from each `def` keyword to its body colon.
 
-    `crapkit_body` is False from the name token on and True from the first
-    token after the body colon. A function some other reader produced never
-    gets the attribute, which is what keeps `_unread_defs` to Python.
+    `depth` is None between signatures and counts the brackets open since the
+    `def` inside one. The function current at the depth-0 colon has reached
+    its body only if it also owns the next token: one the reader cut off has
+    ended by then, and the token belongs to its parent.
+
+    `crapkit_body` is False on every function current inside a signature
+    and True once its body is reached. A function some other reader produced
+    never gets the attribute, which is what keeps `_unread_defs` to Python.
     """
-    if getattr(fn, "crapkit_colon", False):
-        fn.crapkit_body = True
-        return
-    fn.crapkit_body = False
-    depth = getattr(fn, "crapkit_depth", 0)
-    if token in _OPENERS:
-        fn.crapkit_depth = depth + 1
-    elif token in _CLOSERS:
-        fn.crapkit_depth = depth - 1
-    elif token == ":" and depth == 0:
-        fn.crapkit_colon = True
+
+    def __init__(self, context):
+        self.context = context
+        self.depth = None
+        self.colon_owner = None
+
+    def step(self, token: str) -> None:
+        fn = self.context.current_function
+        if self.colon_owner is not None:
+            self._settle_colon(fn)
+        if self.depth is None:
+            self.depth = 0 if token == "def" else None
+        else:
+            self._signature(fn, token)
+
+    def _settle_colon(self, fn) -> None:
+        if fn is self.colon_owner:
+            fn.crapkit_body = True
+        self.colon_owner = None
+
+    def _signature(self, fn, token: str) -> None:
+        # A parent the stock reader hands the rest of a cut-off signature to
+        # was read to its body already, and keeps that.
+        fn.crapkit_body = getattr(fn, "crapkit_body", False)
+        if token == ":" and self.depth == 0:
+            self.colon_owner, self.depth = fn, None
+        else:
+            self.depth += _DEPTH_CHANGE.get(token, 0)
 
 
 class _PythonBodies:
@@ -205,12 +232,10 @@ class _PythonBodies:
         if not isinstance(reader, _PythonReader):
             yield from tokens
             return
-        context = reader.context
+        signatures = _DefSignatures(reader.context)
         for token in tokens:
             yield token
-            fn = context.current_function
-            if fn is not context.global_pseudo_function:
-                _step_body(fn, token)
+            signatures.step(token)
 
 
 def _chain(cognitive_index: int) -> list:
