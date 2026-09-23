@@ -751,11 +751,27 @@ def test_no_verdict_falls_back_to_the_job_log_when_coverage_printed_no_summary()
 
 def test_no_verdict_quotes_the_error_object_when_coverage_printed_one():
     """0.5.0's --json prints one error object when a crapkit error escapes."""
-    coverage = {"error": {"exit": 5, "kind": "tool", "message": "every lane failed (1 of 1); the errors are above\n"}, "schema": 1}
+    coverage = {"error": {"exit": 5, "kind": "tool", "message": "lizard is not importable\n"},
+                "schema": 1}
 
     line = _builder().no_verdict_line(coverage, 5)
 
-    assert "(every lane failed (1 of 1); the errors are above)" in line
+    assert "(lizard is not importable)" in line
+
+
+def test_every_lane_failing_points_at_the_job_log_not_above():
+    """The CLI's `the errors are above` means stderr; nothing sits above the line
+    in a pull request comment, and the lane errors are in the job log."""
+    coverage = {"error": {"exit": 5, "kind": "tool",
+                          "message": "every lane failed (1 of 1); the errors are above\n"},
+                "schema": 1}
+
+    line = _builder().no_verdict_line(coverage, 5)
+
+    assert "(every lane failed (1 of 1); the lane errors are in the job log)" in line, line
+    assert "above" not in line, line
+    assert f"`({_builder().coverage_failure(coverage)})`" in " ".join(_readme_section().split()), \
+        "the README quotes the line the builder prints"
 
 
 def test_the_body_renders_no_verdict_in_place_of_the_verify_line_when_coverage_failed():

@@ -100,20 +100,32 @@ def _first_line(text) -> str:
     return lines[0].strip() if lines else ""
 
 
+_ALL_FAILED = "every lane failed"
+
+
+def _error_line(error: dict) -> str:
+    """The error object's first line. When every lane failed, the CLI's `the
+    errors are above` means its stderr, which lands in the job log; nothing sits
+    above the line in a pull request comment."""
+    line = _first_line(error.get("message"))
+    if line.startswith(_ALL_FAILED):
+        return f"{line.split(';')[0]}; the lane errors are in the job log"
+    return line
+
+
 def coverage_failure(coverage: dict | None) -> str:
     """Why `crapkit coverage` failed, in one line.
 
     The first line of the first lane failure the summary carries; the error
     object's message when the command died before a summary (0.5.0 prints one
-    under --json); or a pointer at the job log when nothing was printed at all,
-    which is what every lane failing looks like: the lane errors went to
-    stderr and the redirect target is empty.
+    under --json, including when every lane failed); or a pointer at the job log
+    when nothing was printed at all.
     """
     if not coverage:
         return "no run summary was printed, so every lane failed; the lane errors are in the job log"
     error = coverage.get("error")
     if error:
-        return _first_line(error.get("message"))
+        return _error_line(error)
     for name, text in (coverage.get("lane_failures") or {}).items():
         return f"lane {name!r} failed: {_first_line(text)}"
     return "the summary names no failed lane; read the job log"

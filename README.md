@@ -737,8 +737,9 @@ comment then carries coverage's failure in place of the verdict:
 ```
 
 The parenthesis is the first line of the lane failure the summary carries. When every
-lane failed, `coverage` prints no summary at all and the lane errors are only in the job
-log, and the line says so. With `gate: "true"` the job exits with coverage's code.
+lane failed, `coverage` prints an error object instead of a summary and the lane errors
+are only in the job log, and the line says so: `(every lane failed (1 of 1); the lane
+errors are in the job log)`. With `gate: "true"` the job exits with coverage's code.
 
 The other gate that judges a delta is the portable baseline in [Route 4](#route-4-ci):
 commit `crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv

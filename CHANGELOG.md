@@ -423,6 +423,9 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   verify on a store whose only runs are partial names the lanes the newest one went
   without, where it said to run `crapkit coverage` while a failing lane kept every run
   partial.
+- The Action's comment, when every lane failed, says `(every lane failed (1 of 1); the
+  lane errors are in the job log)`. It quoted the CLI's `the errors are above`, and
+  nothing sits above that line in a pull request comment.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 
