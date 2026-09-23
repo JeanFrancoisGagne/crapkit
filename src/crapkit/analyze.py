@@ -58,7 +58,8 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 10  # Separate sibling JavaScript/TypeScript expression arrows.
+ANALYSIS_VERSION = 11  # A Python def with a PEP 695 type parameter list is named by its name token.
+# 10: separate sibling JavaScript/TypeScript expression arrows.
 # 9: a Python row's nesting is the depth the cognitive
 #                          pass measured, not lizard's ND count of structures,
 #                          so every cached .py record carries a count under the

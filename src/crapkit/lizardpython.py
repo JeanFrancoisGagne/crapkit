@@ -36,19 +36,36 @@ states are inside a signature, so the body's first line is the one that pushes
 the def. A body on the colon line (`) -> None: ...`) is the one exception,
 kept as lizard reads it: see `_SignatureIndents`.
 
-Every token still reaches the long name and the parameter list exactly as
-lizard routes it. lizard stops both at the signature's first `)` whatever its
-depth, and a def of that shape that lizard already read whole carries that
-spelling as its ratchet key, so this reader keeps it: `make( cls_name , * ,
-bases = ( )` above. The states also end where lizard ends for the same
-signature written on one line: `_state_first_line` after `):`, `_state_global`
-after a return annotation or after a signature lizard had closed early.
+From the def's `(` on, every token still reaches the long name and the
+parameter list exactly as lizard routes it. lizard stops both at the
+signature's first `)` whatever its depth, and a def of that shape that lizard
+already read whole carries that spelling as its ratchet key, so this reader
+keeps it: `make( cls_name , * , bases = ( )` above. The states also end where
+lizard ends for the same signature written on one line: `_state_first_line`
+after `):`, `_state_global` after a return annotation or after a signature
+lizard had closed early.
 
 What moves, only around a def lizard cut off: its end line, ccn, nloc, token
 count and cognitive score now cover its body, while its long name stays; an
 enclosing def gives back the conditions lizard had charged to it from the
 nested body; a def nested inside the cut-off def gains its parent's name as a
 prefix, as it has under a parent read whole.
+
+Type parameter lists (PEP 695)
+------------------------------
+lizard names a def after the last token before its `(`, and a generic def
+keeps its type parameter list there: `def f[T](a: int):` reads as
+`]( a : int )`, and `def f[T: (int, str)](a):` as `:( int , str )`. That name
+is no part of the def's own. It is the ratchet key; it collides with every
+other generic def in the file that takes the same parameters; the cognitive
+pass reads each `]` in the body as a call to the def; and a type parameter
+list over several lines starts the def on the list's last line.
+
+`_type_parameters` counts the list to its `]` with the same `depth` the
+parameter list uses and hands none of its tokens to lizard's naming. The def
+is named by its name token and its parameters read as lizard spells them:
+`f( a : int )`. This is the one spelling the reader changes, because `]` and
+`:` are not a prefix of the name the way `make( cls_name , * , bases = ( )` is.
 
 The class name
 --------------
@@ -67,9 +84,12 @@ too.
 
 Retirement
 ----------
-tests/unit/test_lizardpython.py::test_stock_reader_still_cuts_the_issue_def_off
-pins the stock reader's wrong answer. It fails on the lizard release that reads
-these signatures. Delete this module then, with the `register()` call.
+Two tests in tests/unit/test_lizardpython.py pin the stock reader's wrong
+answers: test_stock_reader_still_cuts_the_issue_def_off for #72, and
+test_stock_reader_still_names_a_generic_def_after_a_bracket for PEP 695. Each
+fails on the lizard release that fixes its half. Delete this module, with the
+`register()` call, once both fail; while one still passes, the override for
+that half stays.
 """
 from __future__ import annotations
 
@@ -87,7 +107,8 @@ _CLOSERS = frozenset(")]}")
 # The states between the `def` keyword and the body colon. `_state_colon` is
 # the one lizard enters after the parameter list's `)`.
 _SIGNATURE_STATES = frozenset({
-    "_function", "_dec", "_state_parameterized_type_annotation", "_state_colon", "_rest_of_signature",
+    "_function", "_type_parameters", "_dec", "_state_parameterized_type_annotation", "_state_colon",
+    "_rest_of_signature",
 })
 
 # Any filename picks the reader; the file is never opened.
@@ -110,7 +131,8 @@ def _depth_change(token: str) -> int:
 class PythonSignatureStates(PythonStates):
     """lizard's PythonStates, reading a signature to the colon at bracket depth 0.
 
-    `depth` counts the brackets open since the def's own `(`. The inherited
+    `depth` counts the brackets open since the def's own `(`, and before
+    that since the `[` of a type parameter list. The inherited
     states keep every decision about the long name and the parameter list;
     these overrides only choose where a state goes next.
     """
@@ -125,9 +147,19 @@ class PythonSignatureStates(PythonStates):
         return self._state.__name__ in _SIGNATURE_STATES
 
     def _function(self, token):
+        if token == "[":  # PEP 695: `def f[T: int](a):`, whose name came first
+            self.depth = 1
+            self._state = self._type_parameters
+            return
         if token == "(":
             self.depth = 1
         super()._function(token)
+
+    def _type_parameters(self, token):
+        """A def's type parameter list: counted to its `]`, never named."""
+        self.depth += _depth_change(token)
+        if self.depth == 0:
+            self._state = self._function
 
     def _dec(self, token):
         if token == ")" and self.depth > 1:
