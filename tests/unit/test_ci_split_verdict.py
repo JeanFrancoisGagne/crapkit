@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 from test_ci_baseline_admission import FAILURE, repository
 from test_ci_verdict import ROOT, driver, git, prepared
@@ -255,6 +256,35 @@ def test_the_join_refuses_a_hand_off_missing_its_proof_fields(tmp_path, monkeypa
     saved = json.loads((output / "verdict.json").read_text(encoding="utf-8"))
     assert code == 1
     assert "proof lacks suite_exit" in saved["error"]
+
+
+@pytest.mark.parametrize(("side", "suite_exit"), [("base", 0), ("candidate", 1)])
+def test_the_join_refuses_a_hand_off_that_holds_no_coverage_report(tmp_path, monkeypatch, capsys,
+                                                                    side, suite_exit):
+    """A measured suite whose coverage report stopped still hands off, without
+    py.json. The join names the side, the suite exit its proof recorded and the
+    job whose log holds the report's error, where verify said only that a lane
+    produced no artifact."""
+    ci = driver()
+    repo, base = repository(tmp_path)
+    measuring(ci, monkeypatch, failing={"candidate"})
+    measured, output = tmp_path / "measured", tmp_path / "verdict"
+    hand_offs(ci, repo, base, measured)
+    (measured / side / "cov/py.json").unlink()
+    calls = reinstalling(ci, monkeypatch)
+
+    code = ci.main(["--repo", str(repo), "--base", base, "--join",
+                    "--measured", str(measured), "--output", str(output)])
+
+    saved = json.loads((output / "verdict.json").read_text(encoding="utf-8"))
+    refusal = (f"{side} hand-off holds no cov/py.json; its suite exited {suite_exit}, "
+               f"and the log of CI job verdict-measure ({side}) says why")
+    assert code == 1
+    assert (saved["phase"], saved["error"]) == (side + "-install", refusal)
+    assert refusal in capsys.readouterr().err
+    assert ("install", side + "-install", WHEEL) not in calls
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+    assert "verdict-measure" in jobs, "the refusal names a job CI runs"
 
 
 def test_measure_and_join_are_separate_steps(capsys):

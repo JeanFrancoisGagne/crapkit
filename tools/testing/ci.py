@@ -22,6 +22,9 @@ SCHEDULE = Path(__file__).with_name("run.py")
 SIDES = ("base", "candidate")
 # What the join reads from each measurement job's hand-off before trusting it.
 PROOF_FIELDS = ("wheel", "wheel_sha256", "commit", "suite_exit")
+# The CI job that measures one side, in .github/workflows/ci.yml. Its log holds
+# the error of a hand-off that arrives without its coverage report.
+MEASURE_JOB = "verdict-measure"
 _OWNER = ContextVar("ci_command_owner", default=None)
 JUNIT_PROBE = (
     "from pathlib import Path\nimport json\n"
@@ -135,6 +138,7 @@ def reinstall_revision(root: Path, measured: Path, destination: Path) -> tuple[P
     join runs no suite, so the wheel goes in without the dev extra.
     """
     proof = _read_proof(measured)
+    _require_coverage_report(measured, proof)
     wheel = _measured_wheel(root, measured, proof)
     python, environment = _install_wheel(destination, str(wheel))
     proof["reinstalled"] = installed_source(root, python, environment)["package"]
@@ -148,6 +152,17 @@ def _read_proof(measured: Path) -> dict:
     if missing:
         raise ValueError(f"{measured.name} proof lacks {', '.join(missing)}")
     return proof
+
+
+def _require_coverage_report(measured: Path, proof: dict) -> None:
+    """Refuse a hand-off whose suite wrote no py.json, and say where its error is.
+
+    A measured suite hands off even when its coverage report stopped, and verify
+    then said only that lane 'py' produced no artifact."""
+    if not (measured / "cov/py.json").is_file():
+        raise ValueError(f"{measured.name} hand-off holds no cov/py.json; its suite exited "
+                         f"{proof['suite_exit']}, and the log of CI job {MEASURE_JOB} "
+                         f"({measured.name}) says why")
 
 
 def _measured_wheel(root: Path, measured: Path, proof: dict) -> Path:
