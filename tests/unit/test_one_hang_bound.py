@@ -12,8 +12,8 @@ from pathlib import Path
 import re
 
 TESTS = Path(__file__).resolve().parents[1]
-CLOCK_BOUND = re.compile(r"monotonic\(\)\s*\+\s*\d")
-WAIT_CALLS = {"wait", "result", "receive", "get"}
+CLOCK_BOUND = re.compile(r"(monotonic|time)\(\)\s*\+\s*\d")
+WAIT_CALLS = {"wait", "result", "receive", "get", "join"}
 
 WINDOWS = {
     "e2e/test_parallel_lanes_e2e.py": "a window: two lanes started together must meet inside it",
@@ -60,7 +60,10 @@ def _bound_candidates(call):
 
 
 def _spells_a_bound(node):
-    return isinstance(node, ast.Call) and any(map(_is_number, _bound_candidates(node)))
+    """cli_runner is left out: test_loaded_machine_waits refuses a CLI bound under
+    the hang bound, and a file may name a longer one for a run that does real work."""
+    return (isinstance(node, ast.Call) and getattr(node.func, "id", None) != "cli_runner"
+            and any(map(_is_number, _bound_candidates(node))))
 
 
 def _spelled_bounds(path):

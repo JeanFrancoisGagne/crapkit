@@ -11,7 +11,7 @@ import pytest
 
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
-from hang_guard import CHILD_HOLD, CHILD_WAIT, exited, wait_until
+from hang_guard import CHILD_HOLD, CHILD_WAIT, HANG_SECONDS, exited, wait_until
 
 
 def fixture(root):
@@ -92,7 +92,7 @@ class Client:
         if not self.process.stdin.closed:
             self.process.stdin.close()
         exited(self.process, log=self.root / 'server-errors')
-        self.reader.join(2)
+        self.reader.join(HANG_SECONDS)
         self.process.stdout.close()
         self.errors.close()
 

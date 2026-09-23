@@ -3,12 +3,12 @@ the digest alert path both ways, and verify's regression/override print lines.""
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
 from conftest import cli_runner
+from hang_guard import exited, wait_until
 
 TOML = (
     '[crapkit]\ntarget = 6\nalert_command = "python sink.py"\n\n'
@@ -68,17 +68,16 @@ def test_watch_rescores_a_changed_file_and_stops_cleanly(repo: Path):
         proc = subprocess.Popen([sys.executable, "-m", "crapkit", "watch", "--interval", "0.3"],
                                 cwd=repo, stdout=fh, stderr=subprocess.STDOUT, text=True)
     try:
-        deadline = time.time() + 20
-        while time.time() < deadline and "watching" not in log.read_text(encoding="utf-8"):
-            time.sleep(0.2)
+        wait_until(lambda: "watching" in log.read_text(encoding="utf-8"), proc, log=log,
+                   what="the watch banner")
         app = repo / "src" / "app.ts"
         app.write_text(app.read_text(encoding="utf-8") + "// touched\n", encoding="utf-8")
         # the rescore runs as a child process; wait for its table, not just the banner
-        while time.time() < deadline and "branchy" not in log.read_text(encoding="utf-8"):
-            time.sleep(0.2)
+        wait_until(lambda: "branchy" in log.read_text(encoding="utf-8"), proc, log=log,
+                   what="the rescore table for the touched file")
     finally:
         proc.terminate()
-        proc.wait(timeout=15)
+        exited(proc, log=log)
     text = log.read_text(encoding="utf-8")
     assert "watching" in text
     assert "changed: src/app.ts" in text, text
