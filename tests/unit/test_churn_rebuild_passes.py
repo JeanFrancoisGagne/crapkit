@@ -106,15 +106,16 @@ def test_a_line_without_its_ending_is_stored_as_one_line(tmp_path, git):
     assert stored_text(tmp_path) == "".join(LOG)
 
 
-def test_a_map_rebuild_reads_the_commit_date_off_each_header_itself(tmp_path, git, monkeypatch):
-    list(churn_log.log_lines(tmp_path, 12))  # a command that needs structure laid the log down
-    strips = []
-    shipped = churn_log._shipped
-    monkeypatch.setattr(churn_log, "_shipped", lambda line: strips.append(line) or shipped(line))
+def test_the_stored_log_reaches_every_reader_as_it_was_laid_down(tmp_path, git):
+    """No reader pays a pass that strips the commit date off each header: the
+    coupling reader only asks which lines open a commit, and the map parser
+    reads the date off the stored header itself."""
+    laid = list(churn_log.log_lines(tmp_path, 12))  # brief or batches lays the log down
+    served = list(churn_log.log_lines(tmp_path, 12))
 
     churn = churn_cache.load_churn(tmp_path, 12)
 
-    assert strips == [], "the map parser reads the stored header; no strip pass runs first"
+    assert laid == served == LOG
     # The newest commit weighs 0.5 and the oldest 1/(1+e^12), which rounds away.
     assert churn == {"src/a.py": FileChurn(2, 2, 0.5), "src/b.py": FileChurn(1, 1, 0.0)}
 

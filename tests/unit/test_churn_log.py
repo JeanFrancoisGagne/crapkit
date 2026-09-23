@@ -33,9 +33,9 @@ NEW = block("carol", 1000009000, 1000009000, "src/c.py")
 LOG = MID + OLD  # git log is newest first
 FLOOR = 999999999  # a window floor that keeps every commit above
 
-SHIPPED = ["\x01bob\x021000000500\n", "src/a.py\n",
-           "\x01alice\x021000000000\n", "src/a.py\n", "src/b.py\n"]
-SHIPPED_REFRESHED = ["\x01carol\x021000009000\n", "src/c.py\n"] + SHIPPED
+# Served as stored, every header with its commit date: coupling only asks which
+# lines open a commit, and the churn parser reads either header shape.
+REFRESHED = NEW + LOG
 
 
 class FakeGit:
@@ -91,11 +91,11 @@ def test_a_second_read_at_the_same_head_never_walks_the_window(tmp_path, git):
     assert cache(tmp_path).is_file()
 
 
-def test_the_served_lines_carry_no_commit_date(tmp_path, git):
-    """Consumers parse %an\\x02%at. The commit date is the cache's own bookkeeping
-    and must not reach them, or every churn key and every coupling pair shifts."""
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+def test_the_served_lines_keep_the_commit_date(tmp_path, git):
+    """Cold and warm alike, the lines go out as the log stores them. Stripping
+    the commit date cost a pass over every line for readers that never read it."""
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
 
 
 def test_the_cache_file_is_deflate_and_keeps_the_commit_date(tmp_path, git):
@@ -109,7 +109,7 @@ def test_a_torn_cache_reads_as_cold(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
     cache(tmp_path).write_bytes(cache(tmp_path).read_bytes()[:-4])
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert git.window_calls == 2, "a truncated log is a miss, never a crash"
 
 
@@ -120,7 +120,7 @@ def test_a_reader_that_stops_early_leaves_no_cache(tmp_path, git):
 
     assert not cache(tmp_path).exists(), "a half-written log must never look valid"
     assert list(p.name for p in (tmp_path / ".crapkit").glob("*.part")) == []
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
 
 
 def test_a_different_window_rebuilds(tmp_path, git):
@@ -137,7 +137,7 @@ def test_an_unreadable_head_still_answers_and_writes_nothing(tmp_path, git, monk
 
     monkeypatch.setattr(churn_log, "head_commit", no_head)
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert not cache(tmp_path).exists(), "nothing safe to key on means nothing to cache"
 
 
@@ -146,7 +146,7 @@ def test_a_moved_head_walks_only_the_new_commits(tmp_path, git):
     git.head = HEAD_B
     git.ranges[(HEAD_A, HEAD_B)] = list(NEW)
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED_REFRESHED
+    assert list(churn_log.log_lines(tmp_path, 12)) == REFRESHED
     assert git.window_calls == 1, "one commit must not cost twelve months of walking"
     assert git.range_calls == [(HEAD_A, HEAD_B)]
 
@@ -171,7 +171,7 @@ def test_the_refreshed_cache_is_served_at_the_new_head(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
     git.range_calls.clear()
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED_REFRESHED
+    assert list(churn_log.log_lines(tmp_path, 12)) == REFRESHED
     assert (git.window_calls, git.range_calls) == (1, []), "a refresh must land on disk"
 
 
@@ -182,7 +182,7 @@ def test_a_new_utc_day_costs_no_walk_at_all(tmp_path, git, monkeypatch):
     list(churn_log.log_lines(tmp_path, 12))
     monkeypatch.setattr(churn_log, "_utc_date", lambda: "2026-08-22")
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert (git.window_calls, git.range_calls) == (1, []), "same HEAD: no range to walk"
 
 
@@ -192,7 +192,7 @@ def test_commits_below_the_window_floor_drop_out_on_a_refresh(tmp_path, git, mon
     monkeypatch.setattr(churn_log, "_utc_date", lambda: "2026-08-22")
     git.floor = 1000000100  # alice's commit has aged out of the window
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED[:2]
+    assert list(churn_log.log_lines(tmp_path, 12)) == MID
     assert git.window_calls == 1
 
 
@@ -204,8 +204,7 @@ def test_a_head_the_cache_is_not_behind_rebuilds(tmp_path, git):
     git.ancestor = False
     git.log = list(NEW)
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == ["\x01carol\x021000009000\n",
-                                                       "src/c.py\n"]
+    assert list(churn_log.log_lines(tmp_path, 12)) == NEW
     assert git.window_calls == 2
     assert git.range_calls == []
 
@@ -220,7 +219,7 @@ def test_a_log_without_the_paths_marker_is_never_served_or_refreshed(tmp_path, g
     del doc["paths"]
     key_path.write_text(json.dumps(doc), encoding="utf-8")
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert git.window_calls == 2, "an old-format log is cold, at an unmoved HEAD too"
     assert git.range_calls == []
 
@@ -243,7 +242,7 @@ def test_a_warm_log_under_the_old_name_is_adopted_not_rewalked(tmp_path, git):
     every upgrade re-walk the window it already had on disk."""
     old = _old_log(tmp_path)
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == ["\x01carol\x021000009000\n", "src/c.py\n"]
+    assert list(churn_log.log_lines(tmp_path, 12)) == NEW
     assert git.window_calls == 0, "the log was on disk; the walk buys nothing"
     assert not old.exists() and not churn_log._key_path(old).exists()
     assert cache(tmp_path).is_file()
@@ -254,7 +253,7 @@ def test_the_old_pair_is_swept_once_a_v2_log_exists(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
     old = _old_log(tmp_path)
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == SHIPPED
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert git.window_calls == 1, "the v2 log still answers; only the litter goes"
     assert not old.exists() and not churn_log._key_path(old).exists()
 

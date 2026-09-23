@@ -12,9 +12,11 @@ the copy worth having. The whole compressed file is read before the first line
 goes out (its CRC is the only way to know a log is not half-written); the 23 MB
 of text it holds never is.
 
-Two things are stored that the served lines do not carry. The commit date (%ct)
-rides along on every header line, so an aged-out commit can be expired without
-asking git; and the key records the HEAD the log was built from, so a HEAD that
+Two things are stored beyond the author and author date a churn header needs.
+The commit date (%ct) rides along on every header line, so an aged-out commit
+can be expired without asking git, and the lines are served that way: coupling
+only asks which lines open a commit and the churn parser reads either header
+shape, so no reader pays a pass to strip it. And the key records the HEAD the log was built from, so a HEAD that
 grew from it costs `git log cached..HEAD` instead of the window — 0.77 s instead
 of 6.9 s at a day-old HEAD, for the same 628k lines. Commit date is not author
 date: `--since` filters on the committer's clock while the recency weight uses
@@ -74,20 +76,16 @@ class Window(NamedTuple):
 
 
 def log_lines(root: Path, months: int) -> Iterator[str]:
-    """The churn window's log, streamed, in the format every consumer parses.
-
-    Same lines as `gitio.churn_log_lines`, off disk whenever the key still holds.
-    """
-    return (_shipped(line) for line in _stored_window(root, months, None).lines)
+    """The churn window's log at HEAD, streamed as it is stored: each header is
+    %an, %at and %ct. The lines `git log` prints under LOG_FORMAT, off disk
+    whenever the key still holds."""
+    return _stored_window(root, months, None).lines
 
 
 def stored_window(root: Path, months: int, head: str | None) -> Window:
-    """The same log with each header's commit date still on it (%an, %at, %ct),
-    as of `head`: a caller that keys what it builds on a HEAD it read passes
-    that HEAD, so a commit landing meanwhile stays out of both. None reads HEAD.
-
-    For a reader that splits headers itself: it gets the commit date for free
-    and skips the per-line strip `log_lines` makes for everyone else."""
+    """The same log as of `head`, with the floor it was cut at: a caller that
+    keys what it builds on a HEAD it read passes that HEAD, so a commit landing
+    meanwhile stays out of both. None reads HEAD."""
     return _stored_window(root, months, head)
 
 
@@ -208,14 +206,6 @@ def _stored_window(root: Path, months: int, head: str | None) -> Window:
     if source is None:
         source = _window_log(root, months, key["head"], cutoff)
     return Window(_tee(source, path, {**key, "cutoff": cutoff}), cutoff)
-
-
-def _shipped(line: str) -> str:
-    """An enriched header down to the shipped `%an\\x02%at`; path lines pass through."""
-    if not line.startswith("\x01"):
-        return line
-    head, sep, _ = line.rstrip("\n").rpartition("\x02")
-    return head + "\n" if sep else line
 
 
 def _commit_time(line: str) -> int:
