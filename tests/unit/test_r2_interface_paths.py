@@ -61,8 +61,7 @@ def test_mcp_child_output_is_utf8_even_with_a_legacy_host_locale(tmp_path):
               {"jsonrpc": "2.0", "id": 2, "method": "ping"}]
     done = run_mcp([sys.executable, "-m", "crapkit", "mcp", "--repo", str(repo)],
                    cwd=repo, frames="".join(json.dumps(x) + "\n" for x in frames),
-                   env=dict(os.environ, PYTHONUTF8="0"), timeout=30,
-                   encoding="utf-8", errors="strict")
+                   env=dict(os.environ, PYTHONUTF8="0"), encoding="utf-8", errors="strict")
     answers = {answer["id"]: answer for answer in map(json.loads, done.stdout.splitlines())}
     assert done.returncode == 0, done.stderr
     assert set(answers) == {1, 2}
