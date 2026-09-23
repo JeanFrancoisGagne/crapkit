@@ -33,16 +33,25 @@ run you watched pass is refused later with a message about test evidence.
 Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
 already public, because nothing checked the machine first.
 
-`check VERSION` now refuses the first two rows below, and it is stage 1's first
-command, so the chain stops before it builds or pushes anything. Confirm the other
-two yourself. Each takes seconds; each cost a published half-release when skipped.
+`check VERSION` is stage 1's first command, so the chain stops before it builds or
+pushes anything. It reads the two rows marked `check` below and nothing else.
+Confirm the two rows marked `you` yourself: `check` never looks at PATH or at `gh`.
+Each takes seconds; each cost a published half-release when skipped.
 
-| Check | Command | Why it bites |
-| --- | --- | --- |
-| The release venv is ACTIVATED | `which python` names this repository's `.venv` | The py lane in `crapkit.toml` runs a bare `python`, taken from PATH, not the interpreter that launched this script. Launching by absolute path is not enough. |
-| The release interpreter imports build and twine | `python -c "import build, twine"` | Stage 2b runs `python -m build` and `python -m twine` through the interpreter that launched this script, and it builds before the push. |
-| PyPI credentials reach Twine | `TWINE_USERNAME` and `TWINE_PASSWORD` are set, or the token is in keyring | Twine 7 skips the named `.pypirc` entry whenever `--repository-url` is passed, and that flag is a fixed anti-redirect control. A `.pypirc` alone authenticates nothing. |
-| `gh` is authenticated | `gh auth status` | Publishing uses `gh`, and every readback now sends the same credential. GitHub's Pages API answers 404, not 403, to an anonymous reader. |
+| Check | Checked by | Command | Why it bites |
+| --- | --- | --- | --- |
+| The release venv is ACTIVATED | you | `which python` names this repository's `.venv` | The py lane in `crapkit.toml` runs a bare `python`, taken from PATH, not the interpreter that launched this script. Launching by absolute path is not enough. A PATH `python` without the dev extra fails the verify stage: nothing is pushed, and the release waits for a rerun. |
+| The release interpreter imports build and twine | `check` | `python -c "import build, twine"` | Stage 2b runs `python -m build` and `python -m twine` through the interpreter that launched this script, and it builds before the push. |
+| PyPI credentials reach Twine | `check` | `TWINE_USERNAME` and `TWINE_PASSWORD` are set, or the token is in keyring | Twine 7 skips the named `.pypirc` entry whenever `--repository-url` is passed, and that flag is a fixed anti-redirect control. A `.pypirc` alone authenticates nothing. |
+| `gh` is authenticated | you | `gh auth status` | Publishing uses `gh`, and every readback now sends the same credential. GitHub's Pages API answers 404, not 403, to an anonymous reader. |
+
+A failed `check` row prints its line and `check` exits 1. The first line names only
+the tools that are missing:
+
+```
+the release interpreter cannot import build, twine; stage 2b runs `python -m build` and `python -m twine` before the push, so install both into the environment that runs release.py
+no PyPI credential is reachable: twine ignores .pypirc when --repository-url is passed, so set TWINE_USERNAME and TWINE_PASSWORD, or store the token in keyring
+```
 
 Set up the release venv once. `.venv/` is ignored by this repository:
 
