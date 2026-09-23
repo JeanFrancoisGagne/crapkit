@@ -784,9 +784,11 @@ crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) —
 crapkit: a CI job or a launcher that exported it is not cleared by any command here — clear it where it was set.
 ```
 
-That first line is spelled for the shell you are in: `unset` is a POSIX builtin, so on
-Windows the receipt names `$env:CRAPKIT_OVERRIDE_REASON = $null` for PowerShell and
-`set CRAPKIT_OVERRIDE_REASON=` for cmd.exe instead.
+That first line is spelled for the platform you are on. On Windows the receipt names all
+three shells git runs from there: `unset CRAPKIT_OVERRIDE_REASON` for Git Bash,
+`$env:CRAPKIT_OVERRIDE_REASON = $null` for PowerShell and `set CRAPKIT_OVERRIDE_REASON=`
+for cmd.exe. The hook cannot tell which one you typed into: git for Windows sets `MSYSTEM`
+and `SHELL` for the hook whichever shell started the commit.
 
 The hook path never raises an existing mark. It has no coverage data, so it synthesizes a
 worst-case score, and letting that overwrite a real measurement would blind the ratchet to a

@@ -844,17 +844,19 @@ def test_the_posix_receipt_names_unset(capsys, monkeypatch):
     assert "$env:" not in out
 
 
-def test_the_windows_receipt_names_both_windows_shells(capsys, monkeypatch):
-    """SHELL_IS_CMD knows the platform, not which of the two shells the operator
-    typed into, so the receipt hands over both spellings."""
+def test_the_windows_receipt_names_each_shell_git_runs_from_there(capsys, monkeypatch):
+    """SHELL_IS_CMD knows the platform, not the shell the operator typed into,
+    and the hook cannot tell either: git for Windows sets MSYSTEM and SHELL for
+    it whether PowerShell or Git Bash started the commit. Git Bash, where most
+    Windows users run git, clears it with `unset`, which the receipt left out."""
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
 
     verifying._print_clear_the_reason()
 
     out = capsys.readouterr().out
-    assert "$env:CRAPKIT_OVERRIDE_REASON = $null" in out, out
-    assert "set CRAPKIT_OVERRIDE_REASON=" in out, out
-    assert "unset CRAPKIT_OVERRIDE_REASON" not in out, "the builtin neither shell has"
+    assert "`unset CRAPKIT_OVERRIDE_REASON` in Git Bash" in out, out
+    assert "`$env:CRAPKIT_OVERRIDE_REASON = $null` in PowerShell" in out, out
+    assert "`set CRAPKIT_OVERRIDE_REASON=` in cmd.exe" in out, out
 
 
 def test_the_receipt_says_an_exported_variable_is_cleared_where_it_was_set(capsys):

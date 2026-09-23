@@ -447,6 +447,10 @@ twelve MCP tools and JSON schema version 1 remain compatible with 0.7.x.
   ends with its `gate:` line, the `.crapkit/` listing names `measurement.lock`, and the
   undeclared-`decl` refusal names its artifact. The TypeScript quickstart says why the
   first `doctor` WARNs about `[crapkit.scoped_tests]`.
+- On Windows the hook override's receipt names `unset CRAPKIT_OVERRIDE_REASON` for Git
+  Bash beside the PowerShell and cmd.exe forms. Git Bash is where most Windows users run
+  git, and neither printed form works there. The hook cannot tell the shell apart: git for
+  Windows sets `MSYSTEM` and `SHELL` for it whichever shell started the commit.
 
 ### The advisory hook reads encoded marks, and report commands paste into cmd.exe
 

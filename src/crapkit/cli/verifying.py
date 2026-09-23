@@ -915,11 +915,14 @@ def _clearing_spellings() -> str:
     `unset` is a POSIX builtin, and the receipt prescribed it everywhere. On
     Windows the command errors, the variable stays set, and the next commit is
     granted a full override for a brand new violating function without anyone
-    typing a reason. Windows gets both spellings because `SHELL_IS_CMD` knows
-    the platform and not which of the two shells the operator typed into.
+    typing a reason. Windows gets all three spellings because `SHELL_IS_CMD`
+    knows the platform and not the shell the operator typed into, and the hook
+    cannot tell either: git for Windows sets MSYSTEM and SHELL for it whether
+    PowerShell or Git Bash started the commit.
     """
     if config.SHELL_IS_CMD:
-        return ("`$env:CRAPKIT_OVERRIDE_REASON = $null` in PowerShell, "
+        return ("`unset CRAPKIT_OVERRIDE_REASON` in Git Bash, "
+                "`$env:CRAPKIT_OVERRIDE_REASON = $null` in PowerShell, "
                 "`set CRAPKIT_OVERRIDE_REASON=` in cmd.exe")
     return "`unset CRAPKIT_OVERRIDE_REASON`"
 
