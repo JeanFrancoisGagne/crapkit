@@ -23,6 +23,7 @@ import argparse
 import datetime
 import hashlib
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -586,10 +587,14 @@ def _status_records(root: Path) -> list[str]:
 def _repo_state(root: Path) -> tuple[dict, int]:
     """Branch headers and the count of changed paths, from one git status. Every
     stage and every publish action checks this, and it used to cost three git
-    processes: branch, status and rev-parse."""
+    processes: branch, status and rev-parse.
+
+    Headers are the leading run only. Porcelain v2 prints every header before any
+    entry, and a rename entry carries its original path as a field of its own,
+    which can start with "# " too."""
     records = _status_records(root)
-    headers = [record[2:].split(" ", 1) for record in records if record.startswith("# ")]
-    return dict(headers), len(records) - len(headers)
+    headers = list(itertools.takewhile(lambda record: record.startswith("# "), records))
+    return dict(header[2:].split(" ", 1) for header in headers), len(records) - len(headers)
 
 
 def _clean_main(root: Path) -> str:

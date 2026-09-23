@@ -39,12 +39,19 @@ def _dirty(root, state):
         (root / "new file.txt").write_text("new", encoding="utf-8")
     elif state == "modified":
         (root / "README.md").write_text("changed", encoding="utf-8")
+    elif state == "renamed":
+        # A rename record carries its original path as its own NUL field, and
+        # this one starts with "# ", the way porcelain v2 headers do.
+        (root / "# notes").write_text("notes", encoding="utf-8")
+        git(root, "add", "# notes")
+        git(root, "commit", "-qm", "notes")
+        git(root, "mv", "# notes", "notes")
     else:
         (root / "README.md").write_text("staged", encoding="utf-8")
         git(root, "add", "README.md")
 
 
-@pytest.mark.parametrize("state", ["untracked", "modified", "staged"])
+@pytest.mark.parametrize("state", ["untracked", "modified", "staged", "renamed"])
 def test_a_dirty_tree_is_refused(tmp_path, state):
     root = repo(tmp_path)
     _dirty(root, state)
