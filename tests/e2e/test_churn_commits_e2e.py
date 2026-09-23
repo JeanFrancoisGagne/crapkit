@@ -79,7 +79,7 @@ def traced(repo: Path, tmp_path: Path, tag: str, *args: str):
 
 
 def window_walks(walks):
-    """Walks cut at the window floor: --max-age when crapkit read the floor
+    """Walks cut at the window cutoff: --max-age when crapkit read the cutoff
     first, --since when git named none."""
     return [argv for argv in walks if any(a.startswith(("--since", "--max-age")) for a in argv)]
 

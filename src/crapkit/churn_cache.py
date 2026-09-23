@@ -54,7 +54,7 @@ def _window_lines(root: Path, months: int, head: str | None) -> Window:
     per-commit structure (brief, batches, coupling) already do. Either way the
     headers keep their commit date, which the stored table needs to expire, and
     the log is the one at `head`, the HEAD the map and table are keyed on. The
-    floor comes with it: the table records the floor its lines were cut at."""
+    cutoff comes with it: the table records the cutoff its lines were cut at."""
     if has_cache(root):
         return stored_window(root, months, head)
     return walked_window(root, months, head)

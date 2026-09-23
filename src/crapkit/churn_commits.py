@@ -69,9 +69,9 @@ def carried_commits(root: Path, months: int, head: str | None) -> WindowCommits 
 def store_commits(root: Path, months: int, head: str | None, cutoff: int | None,
                   table: WindowCommits) -> None:
     """Keep a table parsed in full for the next miss to carry, stamped with the
-    floor its log was cut at. Only a dated one: a commit without its commit
-    date can never be expired. And only one cut at a known floor: stamped with
-    a floor read later, it could claim commits the walk left out."""
+    cutoff its log was cut at. Only a dated one: a commit without its commit
+    date can never be expired. And only one cut at a known cutoff: stamped
+    with a cutoff read later, it could claim commits the walk left out."""
     if head is None or cutoff is None or not table.dated or _shallow(root):
         return
     _write(root, months, head, cutoff, table)

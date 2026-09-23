@@ -77,7 +77,7 @@ class FakeGit:
         self.ancestry_calls = 0
         self.inflates = 0
         self.after_read = None  # a commit that lands right after the next HEAD read
-        self.floor_after_walk: int | None = None  # the clock crosses a month end mid-read
+        self.cutoff_after_walk: int | None = None  # the clock crosses a month end mid-read
 
     def read_head(self, root):
         head = self.head
@@ -91,8 +91,8 @@ class FakeGit:
         cut at the floor as git's --since would cut it."""
         self.window_calls += 1
         walked = since(self.logs.get(head, self.log), self.floor)
-        if self.floor_after_walk is not None:
-            self.floor, self.floor_after_walk = self.floor_after_walk, None
+        if self.cutoff_after_walk is not None:
+            self.floor, self.cutoff_after_walk = self.cutoff_after_walk, None
         return iter(walked)
 
     def range(self, root, base, head):
@@ -241,7 +241,7 @@ def test_a_commit_landing_mid_read_is_counted_once(tmp_path, git, laid):
 def test_a_carry_and_the_log_refresh_after_it_ask_git_once(tmp_path, git):
     """brief and worklist --batches read the map and then the coupling log at
     one HEAD. Both bring their copy forward over the same two commits, so the
-    ancestry answer, the window floor and the range walk are each asked of git
+    ancestry answer, the window cutoff and the range walk are each asked of git
     once, not once per copy."""
     list(churn_log.log_lines(tmp_path, 12))
     churn_cache.load_churn(tmp_path, 12)
@@ -303,7 +303,7 @@ def test_a_head_the_table_is_not_behind_rebuilds_in_full(tmp_path, git):
 
 
 def test_a_cutoff_behind_the_stored_one_rebuilds_in_full(tmp_path, git, monkeypatch):
-    """git's month arithmetic moves the floor back at a month end: 6 months
+    """git's month arithmetic moves the cutoff back at a month end: 6 months
     before Aug 31 reads Mar 3, before Sep 1 reads Mar 1. The window widens past
     commits the table dropped, so only a walk has them."""
     git.floor = 1000000100
@@ -317,7 +317,7 @@ def test_a_cutoff_behind_the_stored_one_rebuilds_in_full(tmp_path, git, monkeypa
 
 def test_a_cutoff_behind_the_stored_one_walks_past_a_laid_log(tmp_path, git, monkeypatch):
     """The same month end with a log on disk. The log was cut at the higher
-    floor too, so re-dating it at the lower one still lacks alice's commit:
+    cutoff too, so re-dating it at the earlier one still lacks alice's commit:
     the rebuild has to walk the window, not refresh the log."""
     git.floor = 1000000100
     list(churn_log.log_lines(tmp_path, 12))
@@ -329,13 +329,13 @@ def test_a_cutoff_behind_the_stored_one_walks_past_a_laid_log(tmp_path, git, mon
     assert git.window_calls == 2
 
 
-def test_the_table_records_the_floor_its_walk_was_cut_at(tmp_path, git, monkeypatch):
-    """The floor is read again after the walk and has moved back meanwhile, a
-    month end crossed mid-read. A table stamped with that later, lower floor
+def test_the_table_records_the_cutoff_its_walk_was_cut_at(tmp_path, git, monkeypatch):
+    """The cutoff is read again after the walk and has moved back meanwhile, a
+    month end crossed mid-read. A table stamped with that later, earlier cutoff
     claims alice's commit is in it when the walk cut it out, and the next
     carry would never bring it back."""
     git.floor = 1000000100
-    git.floor_after_walk = 1000000000
+    git.cutoff_after_walk = 1000000000
     churn_cache.load_churn(tmp_path, 12)
     new_day(monkeypatch, "2099-01-01")
 
