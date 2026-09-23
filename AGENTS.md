@@ -664,7 +664,8 @@ Shared rules belong to these modules:
 | `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins |
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
-| `procs.py` | who owns command descendants. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
+| `procs.py` | how an owned command starts, is waited on and is bounded. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
+| `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread |
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `retention.py` | which completed test runs are eligible for cleanup under their own leases |
