@@ -37,8 +37,10 @@ def record_override(
     """`metric` is the metric that scored the violations. A measured grant
     (verify's, which may raise a mark) is refused by marks another metric
     recorded, the refusal verify itself gives. The hook's grant
-    (`raise_marks=False`) synthesizes its numbers from ccn alone. Without a
-    metric nothing is stamped by omission: the recorded stamps stay."""
+    (`raise_marks=False`) synthesizes its numbers from ccn alone and compares
+    no mark, so it keeps the recorded stamps: a stale file stays stale and
+    verify keeps refusing it. `metric` then stamps only a file the grant
+    creates. Without a metric nothing is stamped by omission."""
     saved = ratchet_input or RatchetFile.read(root / ratchet_file)
     _check_saved_reader(saved)
     granted = _granted_marks(saved.entries, violations, raise_marks=raise_marks)
@@ -117,9 +119,7 @@ def _grant_text(saved: RatchetFile, granted: list[RatchetEntry], *, raise_marks:
     """The marks file after the grant, stamped by the rule its numbers fall under."""
     if metric and raise_marks:
         return saved.measured(granted, metric, keys=keys)
-    if metric:
-        return saved.reseeded(granted, metric, keys=keys)
-    return saved.kept(granted, keys=keys)
+    return saved.kept(granted, keys=keys, new_file_metric=metric or "")
 
 
 def _override_mark(prior: RatchetEntry | None, crap: float, *, raise_marks: bool) -> float:

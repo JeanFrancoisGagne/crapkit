@@ -13,8 +13,14 @@ from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
 
 
-@pytest.mark.parametrize('raise_marks', [True, False], ids=['verify', 'hook'])
-def test_mixed_legacy_override_refuses_before_alert_audit_or_ratchet_write(tmp_path, raise_marks):
+# The hook's grant keeps the recorded stamp, and this file records none, so the
+# anonymous key it would add has no reader proof: the reader check refuses first.
+@pytest.mark.parametrize('raise_marks, refusal', [
+    (True, 'legacy ratchet key identity is ambiguous'),
+    (False, 'expression reader 10 changed anonymous function ordinals in app.ts'),
+], ids=['verify', 'hook'])
+def test_mixed_legacy_override_refuses_before_alert_audit_or_ratchet_write(tmp_path, raise_marks,
+                                                                          refusal):
     source = 'const a = values.map((x) => x > 0 ? x : 0).filter((x) => x > 1);'
     rows = build_inventory_rows({'web': analyze_source('app.ts', source)})
     assert [(row.start, row.occurrence) for row in rows] == [(1, 1), (1, 2)]
@@ -30,7 +36,7 @@ def test_mixed_legacy_override_refuses_before_alert_audit_or_ratchet_write(tmp_p
         run = store.write_run(commit='fixture', tool_versions={}, rows=[])
         violation = GateViolation('app.ts', '(anonymous)', 1, 9, 0., 90., 'decompose',
                                   key_name='(anonymous)#2')
-        with pytest.raises(ConfigError, match='legacy ratchet key identity is ambiguous'):
+        with pytest.raises(ConfigError, match=refusal):
             record_override(store=store, run_id=run, root=tmp_path, ratchet_file='ratchet.tsv',
                             alert_command=f'"{sys.executable}" "{script}"',
                             violations=[violation], reason='local fixture',

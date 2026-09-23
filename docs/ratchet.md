@@ -689,6 +689,12 @@ worst-case score, and letting that overwrite a real measurement would blind the 
 later coverage collapse. A prior tighter mark stays, and the next `verify` still demands
 repayment.
 
+The hook path leaves the metric stamp alone too. Its score comes from ccn alone and it compares
+no mark, so a marks file stamped under an older metric keeps that stamp, and the next `verify`
+still refuses it until `crapkit ratchet seed` re-baselines the marks. A marks file the grant
+creates takes the stamp of the crapkit that ran it. A `verify --override` grant is measured, so
+marks another metric recorded refuse it the way they refuse `verify` itself.
+
 An empty reason is refused. Runs an override names are pinned in the store: `runs prune`
 never deletes them.
 
