@@ -668,14 +668,12 @@ run that scored it, and `ratchet_mark`: the committed mark's value, or `null` wh
 function carries no mark or the repo has no marks file. The mark is read under the
 function's own ratchet key, so twins sharing a long name report their own marks and not
 each other's. The four run fields are `null` on an inventory-only run, which scored no
-verdict. `remedy` is judged against the ceiling `crapkit.toml` holds now, as `next-item`
-judges it, so an uncommitted ceiling edit moves both lists before the next run lands.
-`worklist` still ranks on complexity times churn, never on `crap`: `next-item` is
+verdict. `worklist` still ranks on complexity times churn, never on `crap`: `next-item` is
 the queue ordered by score, and `brief` the whole packet.
 
-`floor` orders the list and withholds no debt. A function over today's ceiling is listed
-whatever its ccn. An inventory-only run has no verdict to read, and there the floor is the
-whole rule.
+`floor` orders the list and withholds no debt. A function the ranked run scored over its
+ceiling is listed whatever its ccn. An inventory-only run has no such verdict to read, and
+there the floor is the whole rule.
 
 **`worklist` and `next-item` are two views of one state, and they disagree on purpose.**
 Both read the newest **trusted** run, which since 0.4.5 is one rule with one answer: a

@@ -12,10 +12,9 @@ the answer outranks the floor: debt over its ceiling is admissible at any ccn.
 Shared admission, different views. This list ranks every candidate by risk,
 finished rows and no-lane rows included, so it never empties and never hides a
 hazard. next-item ranks by CRAP descending, drops what no lane measures, and
-reports empty once nothing it ranks has work left. Each entry carries its `flag`
-and the `remedy` next-item judges it by, so a row says which view it belongs to,
-and its `crap` and `cov`, because the ranking view of a CRAP scorer has to show
-the score.
+reports empty once nothing it ranks has work left. Each entry carries the run's
+`flag` and `remedy` so a row says which view it belongs to, and its `crap` and
+`cov`, because the ranking view of a CRAP scorer has to show the score.
 """
 from __future__ import annotations
 
@@ -130,8 +129,7 @@ _NO_SCORE = (None, None)
 
 
 class Marks(NamedTuple):
-    """The verdict half of a scored run. `SnapshotStore.read_marks` answers it as
-    the run stored it; the worklist command judges it against today's ceiling.
+    """The verdict half of a scored run, as `SnapshotStore.read_marks` answers it.
 
     Verdicts and scores use full stored locations, keeping twins separate.
     Older callers can supply name-wide verdicts; the row lookup falls back
@@ -255,9 +253,8 @@ def build_worklist(
 ) -> Worklist:
     """The risk map: every admitted function, ranked, whatever its score.
 
-    `marks` is the verdict per function and the score per row off the run
-    `rows` came from, each verdict judged against today's ceiling by the
-    worklist command. Inventory rows carry no coverage, so
+    `marks` is the verdict per function and the score per row the same run
+    scored — `SnapshotStore.read_marks`. Inventory rows carry no coverage, so
     the ceiling half of the admission cannot be decided from `rows` alone, and
     an inventory-only run passes nothing here. The marks ride onto the entries
     as well: this list ranks rows the burn-down queue declines, and a row that
