@@ -828,7 +828,7 @@ The coverage summary counts all four as `measured` / `untested` / `no_lane` / `c
 | Remedy | Condition | Action |
 |---|---|---|
 | `decompose` | `ccn > ceiling` | Split it. No amount of coverage clears this. |
-| `split-lines` | `ccn <= ceiling`, `crap > ceiling`, and another function shares its source lines | Put each definition on its own lines, then measure again. Coverage cannot tell functions on one line apart, so the score stays at uncovered whatever the tests do. |
+| `split-lines` | `ccn <= ceiling`, `crap > ceiling`, and another function shares its source lines, or a Python def sits on one line with its body | Put each definition on its own lines, then measure again. Coverage cannot tell functions on one line apart, so the score stays at uncovered whatever the tests do. A one-line Python def shares its line with its `def` statement, which runs at import, so coverage.py cannot show a call: move the body to the line after the `def`. |
 | `add-tests` | `ccn <= ceiling` and `crap > ceiling` | Cover the branches. |
 | `ok` | `crap <= ceiling` | Nothing. |
 
