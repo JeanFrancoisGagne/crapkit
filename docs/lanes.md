@@ -276,6 +276,7 @@ $ ls .crapkit .crapkit/cov
 artifacts.json
 cache.json
 churn-cache-v2.json
+churn-commits-v1.json
 churn-log-v2.json
 churn-log-v2.z
 coupling-cache-v1.json
@@ -298,7 +299,8 @@ py.json
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. | |
 | `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
-| `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. |
+| `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the --since cutoff its commits were cut at, plus the body's size and CRC. |
+| `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. The key also records the --since cutoff the log was cut at; a refresh below it walks the window again. |
 | `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
 | `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
 | `mutate-tmp/` | Recognized concurrent mutation runs, removed after completion or recovered under an exclusive lease. | |
