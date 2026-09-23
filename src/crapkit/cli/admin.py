@@ -9,7 +9,6 @@ import argparse
 import os
 import re
 import sys
-from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path, PurePath
 
@@ -1004,49 +1003,6 @@ def _newest_coverage_run(store: SnapshotStore) -> dict | None:
     return runs[-1] if runs else None
 
 
-@dataclass
-class _DirCount:
-    """One directory's share of a run: how many functions it holds, how many of
-    them carry a verdict other than untested, and the file stems and language
-    families to match on."""
-    functions: int = 0
-    others: int = 0
-    stems: set = field(default_factory=set)
-    families: set = field(default_factory=set)
-
-
-def _dirs_from_counts(counts: list[tuple]) -> dict[str, _DirCount]:
-    from ..doctor import _dir_of, _family_of, _stem_of
-
-    dirs: dict[str, _DirCount] = {}
-    for path, functions, others in counts:
-        entry = dirs.setdefault(_dir_of(path), _DirCount())
-        entry.functions += functions
-        entry.others += others
-        entry.stems.add(_stem_of(path))
-        entry.families.add(_family_of(path))
-    return dirs
-
-
-def _unmeasured_gaps(counts: list[tuple], tracked: list[str]) -> tuple:
-    """doctor.unmeasured_directories, fed per-path counts instead of per-row rows.
-
-    Same rule, same order, same findings: a directory qualifies when nothing in
-    it carries a verdict other than untested and a tracked test file names its
-    code. The matching itself stays doctor's, so the mirror rule has one copy.
-    """
-    from ..doctor import UnmeasuredDir, _matching_test, _tests_by_family
-
-    test_files = _tests_by_family(tracked)
-    found = []
-    for directory, stats in sorted(_dirs_from_counts(counts).items()):
-        example = _matching_test(directory, stats.stems, stats.families, test_files) \
-            if not stats.others else None
-        if example:
-            found.append(UnmeasuredDir(directory, stats.functions, example))
-    return tuple(found)
-
-
 def _doctor_unmeasured(root: Path, cfg, files: list[str]) -> list[Finding]:
     """WARN, never FAIL: a directory whose functions are all untested while its
     tests exist is a lane that runs without measuring the code it covers.
@@ -1055,6 +1011,8 @@ def _doctor_unmeasured(root: Path, cfg, files: list[str]) -> list[Finding]:
     sixteen-field rows to read three fields off each of them, then filter the
     coverage_optional scopes back out after reading them.
     """
+    from ..doctor import unmeasured_directories
+
     store = _store_if_any(root)
     run = _newest_coverage_run(store) if store else None
     if run is None:
@@ -1064,7 +1022,7 @@ def _doctor_unmeasured(root: Path, cfg, files: list[str]) -> list[Finding]:
     return [Finding("WARN", f"{g.directory}: {g.functions} function(s) all flagged untested "
                             f"while {g.example_test} exists — tests exist but no lane "
                             "measures them")
-            for g in _unmeasured_gaps(counts, files)]
+            for g in unmeasured_directories(counts, files)]
 
 
 def _hook_modes(root: Path) -> dict[str, str]:

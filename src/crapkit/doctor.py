@@ -239,8 +239,11 @@ class UnmeasuredDir(NamedTuple):
 
 @dataclass
 class _DirStats:
+    """One directory's share of a run: how many functions it holds, how many of
+    them carry a verdict other than untested, and the file stems and language
+    families to match a test on."""
     functions: int = 0
-    flags: set = field(default_factory=set)
+    others: int = 0
     stems: set = field(default_factory=set)
     families: set = field(default_factory=set)
 
@@ -350,33 +353,35 @@ def _matching_test(directory: str, stems: set, families: set,
     return next(filter(None, (tier() for tier in tiers)), None)
 
 
-def _group_dirs(rows, skip_scopes: frozenset[str]) -> dict[str, _DirStats]:
+def _group_dirs(counts) -> dict[str, _DirStats]:
     stats: dict[str, _DirStats] = {}
-    for row in rows:
-        if row.scope in skip_scopes:
-            continue
-        entry = stats.setdefault(_dir_of(row.path), _DirStats())
-        entry.functions += 1
-        entry.flags.add(row.flag)
-        entry.stems.add(_stem_of(row.path))
-        entry.families.add(_family_of(row.path))
+    for path, functions, others in counts:
+        entry = stats.setdefault(_dir_of(path), _DirStats())
+        entry.functions += functions
+        entry.others += others
+        entry.stems.add(_stem_of(path))
+        entry.families.add(_family_of(path))
     return stats
 
 
-def unmeasured_directories(rows, tracked: list[str], *,
-                           skip_scopes: frozenset[str] = frozenset()) -> tuple[UnmeasuredDir, ...]:
+def unmeasured_directories(counts, tracked: list[str]) -> tuple[UnmeasuredDir, ...]:
     """Directories where EVERY scored function is flag "untested" and a test file
     for that directory exists anyway.
 
     That combination is a tooling gap, not a testing gap: the lane runs, the
     tests pass, and the lane's own include list never looks at this code. One
     measured function anywhere in the directory clears it.
+
+    `counts` is the run grouped per path, the shape SnapshotStore.count_by_path
+    returns: (path, functions, functions flagged anything but untested). The
+    store groups a hundred thousand rows into a few thousand paths and leaves
+    the coverage_optional scopes out, so the rule never reads a scored row.
     """
     test_files = _tests_by_family(tracked)
     found = []
-    for directory, stats in sorted(_group_dirs(rows, skip_scopes).items()):
+    for directory, stats in sorted(_group_dirs(counts).items()):
         example = _matching_test(directory, stats.stems, stats.families, test_files) \
-            if stats.flags == {"untested"} else None
+            if not stats.others else None
         if example:
             found.append(UnmeasuredDir(directory, stats.functions, example))
     return tuple(found)

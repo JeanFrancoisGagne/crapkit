@@ -7,13 +7,20 @@ paired with a .ts test, and a docs directory with a Markdown file named
 _mermaid_test.md. The example is meant to be the test the reader opens next,
 so the nearest one wins, and a file no lizard reader parses is not a test.
 """
-from crapkit.doctor import unmeasured_directories
+from path_counts import path_counts
+
+from crapkit import doctor
 from crapkit.score import ScoredRow
 
 
 def _row(path: str, flag: str = "untested", scope: str = "src") -> ScoredRow:
     return ScoredRow(scope, path, "f( )", 1, 9, 3, 3, 3, 5, 1, 1,
                      0.0 if flag != "measured" else 1.0, flag, 3.0, "ok", 2)
+
+
+def unmeasured_directories(rows, tracked):
+    """The rule over these rows, grouped per path the way the store groups them."""
+    return doctor.unmeasured_directories(path_counts(rows), tracked)
 
 
 def _example(rows, tracked) -> str | None:

@@ -4,7 +4,9 @@ The measured failure: a unit lane's config excluded five core directories, so
 six giant functions scored cov 0 for weeks with 450 passing tests sitting next
 to them. Every score was honest and every one of them was about tooling.
 """
-from crapkit.doctor import unmeasured_directories
+from path_counts import path_counts
+
+from crapkit import doctor
 from crapkit.score import ScoredRow
 
 
@@ -14,6 +16,11 @@ def _row(path: str, flag: str, scope: str = "src") -> ScoredRow:
 
 
 TRACKED = ["src/measured.py", "src/quiet/mod.py", "src/quiet/other.py", "tests/test_mod.py"]
+
+
+def unmeasured_directories(rows, tracked):
+    """The rule over these rows, grouped per path the way the store groups them."""
+    return doctor.unmeasured_directories(path_counts(rows), tracked)
 
 
 def test_a_directory_of_untested_code_with_a_same_stem_test_is_reported():
@@ -60,15 +67,6 @@ def test_the_four_test_naming_conventions_all_count():
         rows = [_row(source, "untested")]
         assert unmeasured_directories(rows, [source, test_path])[0].example_test \
             == test_path
-
-
-def test_a_scope_now_marked_coverage_optional_is_skipped_even_in_older_rows():
-    """The store still holds the run that scored before coverage_optional was
-    set; those rows say untested, and the check must not re-open the question."""
-    rows = [_row("shims/mod.py", "untested", scope="shims")]
-    tracked = ["shims/mod.py", "tests/test_mod.py"]
-    assert unmeasured_directories(rows, tracked, skip_scopes=frozenset({"shims"})) == ()
-    assert unmeasured_directories(rows, tracked)[0].directory == "shims"
 
 
 def test_no_rows_is_not_a_finding():

@@ -6,8 +6,11 @@ in Python to answer a question about a few thousand directories. Both are the
 same waste, and both are fixed the same way: the projection and the grouping go
 into the query, and the answer above has to come out unchanged.
 """
+from path_counts import path_counts
+
 from crapkit.config import Config
 from crapkit.digest import build_digest
+from crapkit.doctor import UnmeasuredDir, unmeasured_directories
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -114,24 +117,14 @@ TRACKED = ["src/measured.py", "src/quiet/mod.py", "src/quiet/other.py",
            "shims/mod.py", "tests/test_mod.py", "tests/test_measured.py"]
 
 
-def group_in_python(rows: list, flag: str, skip: frozenset) -> list[tuple]:
-    """What count_by_path replaces: one pass over every scored row of the run."""
-    counts: dict[str, list] = {}
-    for r in rows:
-        if r.scope in skip:
-            continue
-        entry = counts.setdefault(r.path, [0, 0])
-        entry[0] += 1
-        entry[1] += r.flag != flag
-    return [(path, n, other) for path, (n, other) in sorted(counts.items())]
-
-
 def test_the_path_counts_match_grouping_the_rows_by_hand(tmp_path):
+    """The rule tests reach doctor.unmeasured_directories through path_counts,
+    so the store's grouping and that one have to agree row for row."""
     store, (run_id,) = seeded(tmp_path, GAPPY)
 
     counts = store.count_by_path(run_id, flag="untested")
 
-    assert counts == group_in_python(store.read_scored(run_id), "untested", frozenset())
+    assert counts == path_counts(store.read_scored(run_id))
 
 
 def test_the_skipped_scopes_never_reach_the_counts(tmp_path):
@@ -142,7 +135,7 @@ def test_the_skipped_scopes_never_reach_the_counts(tmp_path):
 
     counts = store.count_by_path(run_id, flag="untested", skip_scopes=skip)
 
-    assert counts == group_in_python(store.read_scored(run_id), "untested", skip)
+    assert counts == path_counts(store.read_scored(run_id), skip=skip)
     assert "shims/mod.py" not in [path for path, _n, _o in counts]
 
 
@@ -157,32 +150,33 @@ def test_the_doctor_read_asks_for_three_columns_and_groups_them(tmp_path):
     assert "GROUP BY i.path" in select, f"the run is still grouped in Python: {select}"
 
 
-def test_the_gaps_from_the_counts_are_the_gaps_from_the_rows(tmp_path):
-    """The differential that matters: the SQL grouping and the shipped Python
-    scan must name the same directories, with the same counts and the same
-    example test, in the same order."""
-    from crapkit.cli.admin import _unmeasured_gaps
-    from crapkit.doctor import unmeasured_directories
-
+def test_the_store_counts_name_the_unmeasured_directory(tmp_path):
+    """The path doctor runs: the SQL grouping, straight into the one rule. src/quiet
+    holds three untested functions and tests/test_mod.py names mod.py there; the
+    shims scope is coverage_optional and stays out."""
     store, (run_id,) = seeded(tmp_path, GAPPY)
-    skip = frozenset({"shims"})
 
-    from_sql = _unmeasured_gaps(store.count_by_path(run_id, flag="untested", skip_scopes=skip),
-                                TRACKED)
-    from_rows = unmeasured_directories(store.read_scored(run_id), TRACKED, skip_scopes=skip)
+    counts = store.count_by_path(run_id, flag="untested", skip_scopes=frozenset({"shims"}))
 
-    assert from_sql == from_rows
-    assert [g.directory for g in from_sql] == ["src/quiet"], "the fixture has to find one gap"
-    assert from_sql[0].functions == 3
+    assert unmeasured_directories(counts, TRACKED) == (
+        UnmeasuredDir("src/quiet", 3, "tests/test_mod.py"),)
 
 
 def test_a_measured_function_anywhere_clears_its_directory(tmp_path):
-    from crapkit.cli.admin import _unmeasured_gaps
-    from crapkit.doctor import unmeasured_directories
-
     rows = flagged("src/quiet/mod.py", "measured") + flagged("src/quiet/other.py", "untested")
     store, (run_id,) = seeded(tmp_path, rows)
 
-    counts = store.count_by_path(run_id, flag="untested")
-    assert _unmeasured_gaps(counts, TRACKED) == ()
-    assert unmeasured_directories(store.read_scored(run_id), TRACKED) == ()
+    assert unmeasured_directories(store.count_by_path(run_id, flag="untested"), TRACKED) == ()
+
+
+def test_a_scope_now_marked_coverage_optional_is_skipped_even_in_older_rows(tmp_path):
+    """The store still holds the run that scored before coverage_optional was
+    set; those rows say untested, and the check must not re-open the question."""
+    tracked = ["shims/mod.py", "tests/test_mod.py"]
+    store, (run_id,) = seeded(tmp_path, flagged("shims/mod.py", "untested", scope="shims"))
+
+    skipped = store.count_by_path(run_id, flag="untested", skip_scopes=frozenset({"shims"}))
+    kept = store.count_by_path(run_id, flag="untested")
+
+    assert unmeasured_directories(skipped, tracked) == ()
+    assert [g.directory for g in unmeasured_directories(kept, tracked)] == ["shims"]
