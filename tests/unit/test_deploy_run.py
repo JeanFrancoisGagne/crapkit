@@ -108,8 +108,15 @@ def test_a_push_run_on_core_selects_the_kit_and_the_push_cells_core_can_hold():
 def test_a_native_run_selects_by_os_alone():
     args = run.parse(["--native", "--os", "windows", "--cell", "win-pip-start", "-n", "2"])
 
-    assert run.pytest_args(args) == ["-m", "kit or (push and windows and not online)",
+    assert run.pytest_args(args) == ["-o", "junit_family=xunit1", "-m", "kit or (push and windows and not online)",
                                      "--deploy-cell=win-pip-start", "-n", "2"]
+
+
+def test_the_junit_family_is_one_that_carries_each_cells_properties():
+    """pytest's default xunit2 warns on every record_property, once per cell."""
+    args = run.parse(["--packet", "deploy-git"])
+
+    assert run.pytest_args(args)[:2] == ["-o", "junit_family=xunit1"]
 
 
 def test_the_release_cadence_runs_every_tier(monkeypatch):

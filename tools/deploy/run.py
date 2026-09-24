@@ -71,9 +71,14 @@ def marker_expression(cadence: str, os_name: str, image: str | None, online: boo
     return f"kit or ({' and '.join(parts)})"
 
 
+# xunit1 carries the <property> lines each cell records; pytest's default
+# xunit2 warns once per cell that it may not.
+JUNIT = ["-o", "junit_family=xunit1"]
+
+
 def pytest_args(args) -> list[str]:
-    selected = ["-m", marker_expression(args.cadence, args.os, None if args.native else args.image,
-                                        args.online)]
+    selected = JUNIT + ["-m", marker_expression(args.cadence, args.os, None if args.native else args.image,
+                                                args.online)]
     selected += [f"--deploy-cell={cell}" for cell in args.cell]
     selected += [f"--deploy-packet={args.packet}"] if args.packet else []
     return selected + (["-n", str(args.n)] if args.n else [])
