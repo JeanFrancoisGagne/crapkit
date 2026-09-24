@@ -1490,17 +1490,21 @@ declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_brief needs name (see inputSchema.required)`, an undeclared key answers
 `list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
 `top must be an integer (got "three")`. Arguments that are not an object, by-position ones
-included, answer `arguments must be an object (got 3)`, and `params` that are not an object
-answer `params must be an object naming the tool and its arguments (got 7)`: MCP takes both
-by name. The refusal names the MCP tool and the argument
+included, answer `arguments must be an object (got 3)`: MCP takes them by name. The refusal
+names the MCP tool and the argument
 as the schema spells them, never the CLI command behind the tool. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
 reserved for the protocol: an unknown method, or a `method` that is not a string, answers
 `-32601`, and an exception escaping the server answers `-32603` and the loop reads on, so no
-single call ends the session. `initialize` whose `params` are not an object offers no
-revision, and the server answers with its newest.
+single call ends the session. `params` that are not an object name no tool to answer for, so
+on `tools/call` and `initialize` they answer `-32602` with no result:
+`params must be an object naming the tool and its arguments (got an array)` and
+`params must be an object carrying protocolVersion (got a string)`; the session reads on.
+`params` sent as null or left out read as an empty object: `tools/call` answers
+`unknown tool ''` and `initialize` the newest revision the server speaks.
+`ping` and `tools/list` read no `params`, and answer whatever they are.
 `ping` answers an empty result, so a client's keepalive never reads as an error.
 
 ## Docker

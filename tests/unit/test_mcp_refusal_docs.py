@@ -4,7 +4,8 @@ An agent matches a refusal against the documented sentence. The pages quoted
 `brief needs name (see inputSchema.required)` and `worklist does not take
 'bogus'`, CLI command names the server never prints: it names the MCP tool,
 `get_function_brief` and `list_worklist`. Every quote below is compared with
-the text `tools/call` answers.
+the text `tools/call` answers, or with the -32602 message tools/call and
+initialize answer for params that are not an object.
 """
 import re
 from pathlib import Path
@@ -42,12 +43,20 @@ def _probes() -> list[tuple[str, dict]]:
                                 ("list_runs", 3)]
 
 
+def _invalid_params(root: Path, method: str, params) -> str:
+    reply = mcp_server._handle(root, {"jsonrpc": "2.0", "id": 1, "method": method,
+                                      "params": params})
+    assert reply["error"]["code"] == -32602, reply
+    return reply["error"]["message"]
+
+
 @pytest.fixture(scope="module")
 def spoken(tmp_path_factory) -> set[str]:
     """Every refusal sentence the pages could be quoting, as the server says it."""
     root = tmp_path_factory.mktemp("mcp")
-    unnamed_call = mcp_server._tools_call(root, 7)["content"][0]["text"]
-    return {_answer(root, tool, arguments) for tool, arguments in _probes()} | {unnamed_call}
+    invalid = {_invalid_params(root, method, params)
+               for method in ("tools/call", "initialize") for params in ([1], "x", 7, False)}
+    return {_answer(root, tool, arguments) for tool, arguments in _probes()} | invalid
 
 
 @pytest.mark.parametrize("page", sorted(PAGES))

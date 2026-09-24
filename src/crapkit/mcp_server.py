@@ -1687,11 +1687,10 @@ _INSTRUCTIONS = (
     "learn whether the file clears rescore --gate, which is stricter than the commit hook.")
 
 
-def _negotiated(params) -> str:
+def _negotiated(params: dict) -> str:
     """The client's revision when this server implements it, else the newest it
-    does; the spec leaves proceeding or disconnecting to the client from there.
-    params that are not an object offer no revision."""
-    offered = params.get("protocolVersion") if isinstance(params, dict) else None
+    does; the spec leaves proceeding or disconnecting to the client from there."""
+    offered = params.get("protocolVersion")
     return offered if offered in SUPPORTED_PROTOCOLS else SUPPORTED_PROTOCOLS[0]
 
 
@@ -1733,12 +1732,7 @@ _METHODS = {"initialize": _initialize_result,
             "ping": lambda params: {}}
 
 
-def _tools_call(root: Path, params, run_cli=None) -> dict:
-    """params that are not an object name no tool, so the refusal says what the
-    call must look like; by-position params are valid JSON-RPC and not MCP."""
-    if not isinstance(params, dict):
-        return _result("params must be an object naming the tool and its arguments "
-                       f"(got {json.dumps(params)})", is_error=True)
+def _tools_call(root: Path, params: dict, run_cli=None) -> dict:
     return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
 
 
@@ -1748,11 +1742,40 @@ def _method_handler(method):
     return _METHODS.get(method) if isinstance(method, str) else None
 
 
+# The methods that read params by name, and what the object must hold. ping and
+# tools/list read none, so they answer whatever params are.
+_PARAMS_HOLD = {"initialize": "carrying protocolVersion",
+                "tools/call": "naming the tool and its arguments"}
+# The JSON types json.loads hands over in place of an object; the rest are numbers.
+_JSON_TYPES = {list: "an array", str: "a string", bool: "a boolean"}
+
+
+def _params(msg: dict):
+    """The request's params, with null or absent read as the empty object."""
+    params = msg.get("params")
+    return {} if params is None else params
+
+
+def _invalid_params(method, params) -> dict | None:
+    """JSON-RPC -32602 for params that are not an object on a method that reads
+    them by name, or None. Arguments that are not an object belong to a named
+    tool and answer in its words (ADR 0001); such params name no tool, so the
+    protocol answers. By-position params are valid JSON-RPC and not MCP."""
+    holds = _PARAMS_HOLD.get(method) if isinstance(method, str) else None
+    if holds is None or isinstance(params, dict):
+        return None
+    got = _JSON_TYPES.get(type(params), "a number")
+    return {"code": -32602, "message": f"params must be an object {holds} (got {got})"}
+
+
 def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:
     if "id" not in msg:
         return None  # a notification (e.g. notifications/initialized) needs no reply
     method = msg.get("method", "")
-    params = msg.get("params") or {}
+    params = _params(msg)
+    invalid = _invalid_params(method, params)
+    if invalid:
+        return _respond(msg["id"], error=invalid)
     if method == "tools/call":
         return _respond(msg["id"], _tools_call(root, params, run_cli))
     handler = _method_handler(method)
