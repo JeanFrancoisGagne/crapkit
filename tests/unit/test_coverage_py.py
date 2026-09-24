@@ -160,3 +160,42 @@ def test_qualname_collapse_fails_conservative_never_confident():
     executed_twin = InventoryRow("py", "m.py", "make( x )", 9, 11, 3, 3, 3, 3, 1, 1)
     (scored,) = score_rows([executed_twin], per_file, lane_scopes={"py"})
     assert scored.cov == 0.0 and scored.flag == "untested"
+
+
+
+# --- a key the tree holds with a backslash in its name ---------------------------
+
+import os as _os
+from pathlib import Path as _Path
+
+from crapkit import coverage_py as _adapter
+from crapkit.config import Lane as _Lane
+
+
+def _read_keyed(root: _Path, key: str) -> list[str]:
+    artifact = root / "cov.json"
+    artifact.write_text(json.dumps({**REPORT, "files": {key: REPORT["files"]["pylib\\mod.py"]}}),
+                        encoding="utf-8")
+    lane = _Lane(name="py", command="x", artifact="cov.json", parser="coveragepy",
+                 scopes=("py",))
+    return list(_adapter.read(lane, root, artifact)[0])
+
+
+def test_a_backslash_key_names_a_directory_when_the_tree_holds_no_such_name(tmp_path):
+    """A report written on Windows keys `pylib\\mod.py`; read anywhere, that is
+    pylib/mod.py."""
+    (tmp_path / "pylib").mkdir()
+    (tmp_path / "pylib" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+
+    assert _read_keyed(tmp_path, "pylib\\mod.py") == ["pylib/mod.py"]
+
+
+@pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
+def test_posix_keeps_a_backslash_the_tree_holds_in_a_file_name(tmp_path):
+    """git on Linux tracks `pylib/we\\ird.py` as one file. The reader folded the
+    backslash on every OS, keyed the report pylib/we/ird.py, and the file
+    scored untested."""
+    (tmp_path / "pylib").mkdir()
+    (tmp_path / "pylib" / "we\\ird.py").write_text("x = 1\n", encoding="utf-8")
+
+    assert _read_keyed(tmp_path, "pylib/we\\ird.py") == ["pylib/we\\ird.py"]

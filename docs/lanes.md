@@ -1550,13 +1550,16 @@ $ crapkit coverage
 crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout — .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane
 ```
 
-For an istanbul lane the switch is the reporter's `cwd`/`root` option instead: that reader
-strips this checkout's root off every path literally, so a path arriving absolute was
-written against a root spelled some other way.
+An istanbul lane does not reach this refusal. Its reporter writes every path absolute, and
+its reader rebases each one that resolves under this checkout, whatever spelling it
+arrives in: a lower-case drive letter from a shell that stood in `c:\...`, another letter
+case, a junction or symlink to the checkout, or the `\\?\` prefix. Before 0.8.1 the reader
+stripped the root as literal text, so each of those failed the lane with advice to point
+the reporter at the checkout it had already measured.
 
-crapkit does not rebase these itself. The join contract stays root-relative, and a runner
-spelling every path absolutely is one setting to fix once, not a shape to re-derive on
-every run.
+For a coveragepy lane crapkit does not rebase these itself. The join contract stays
+root-relative, and a runner spelling every path absolutely is one setting to fix once, not
+a shape to re-derive on every run.
 
 Both sides of that comparison are resolved the same way, symlinks followed and the case
 folded where the filesystem folds it, so a checkout reached through a symlink or spelled

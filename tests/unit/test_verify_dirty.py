@@ -117,3 +117,65 @@ def test_the_split_line_does_not_call_the_dirty_set_tracked(capsys):
     assert line.startswith("findings: 0 committed / 1 dirty")
     assert "uncommitted tracked edits" not in line
     assert "untracked" in line, "the set includes files git has never seen"
+
+
+
+# --- a JUnit id whose file part is spelled another way ---------------------------
+#
+# A runner's classname or file attribute names the test file however the runner
+# was started: jest-junit's `{filepath}` is absolute, and a runner handed
+# `./web/...` keeps the dot. Matched as text against git's `web/src/app.test.ts`,
+# a failure in the file under edit read as committed: `findings: 1 committed /
+# 0 dirty`, and a pre-push check reading committed_findings blamed the tree.
+
+import os as _os
+
+import pytest as _pytest
+
+
+def _dirty_ids(root, classname: str) -> list[str]:
+    report = (f'<testsuite><testcase name="renders" classname="{classname}">'
+              '<failure/></testcase></testsuite>')
+    return evaluate(fresh=[scored(ccn=2)], changed_ranges={}, ratchet=[],
+                    baseline_failures=set(), fresh_failures=failed_test_ids(report), target=6,
+                    dirty_paths={"web/src/app.test.ts"}, root=root).dirty_failures
+
+
+def _test_file(tmp_path):
+    (tmp_path / "web" / "src").mkdir(parents=True)
+    (tmp_path / "web" / "src" / "app.test.ts").write_text("test('x', () => {});\n",
+                                                          encoding="utf-8")
+    return tmp_path.resolve()
+
+
+@_pytest.mark.parametrize("spell", [
+    lambda root: "web/src/app.test.ts",
+    lambda root: "./web/src/app.test.ts",
+    lambda root: str(root / "web" / "src" / "app.test.ts"),
+    lambda root: (root / "web" / "src" / "app.test.ts").as_posix(),
+], ids=["relative", "dot-slash", "absolute-native", "absolute-forward"])
+def test_a_junit_file_in_any_spelling_of_the_dirty_test_file_is_dirty(tmp_path, spell):
+    root = _test_file(tmp_path)
+    classname = spell(root)
+
+    assert _dirty_ids(root, classname) == [f"{classname}::renders"]
+
+
+@_pytest.mark.skipif(_os.name != "nt", reason="needs Windows path rules")
+@_pytest.mark.parametrize("spell", [
+    lambda root: "web\\src\\app.test.ts",
+    lambda root: str(root / "web" / "src" / "app.test.ts")[0].lower()
+    + str(root / "web" / "src" / "app.test.ts")[1:],
+], ids=["backslash", "absolute-lower-drive"])
+def test_windows_matches_a_junit_file_in_its_own_spellings(tmp_path, spell):
+    root = _test_file(tmp_path)
+    classname = spell(root)
+
+    assert _dirty_ids(root, classname) == [f"{classname}::renders"]
+
+
+def test_a_junit_file_elsewhere_stays_committed(tmp_path):
+    root = _test_file(tmp_path / "repo")
+    other = _test_file(tmp_path / "other")
+
+    assert _dirty_ids(root, str(other / "web" / "src" / "app.test.ts")) == []

@@ -706,7 +706,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
-                       target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty)
+                       target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty,
+                       root=root)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
     _warn_suite_shrink(baseline, provenance)
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever

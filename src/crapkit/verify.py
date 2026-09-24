@@ -12,12 +12,14 @@ Three independent checks, all must hold:
 """
 from __future__ import annotations
 
+import os
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from typing import NamedTuple
 
 from .keys import key_names, key_of
 from .ratchet import RatchetEntry
+from .repopath import file_separators, inside
 from .score import ScoredRow, parse_scored_tsv, scored_tsv_lines
 
 
@@ -160,19 +162,33 @@ def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
     return settle_verdict(verdict._replace(uncovered_violations=findings))
 
 
-def _id_forms(path: str) -> tuple[str, str, str]:
-    """The three shapes a junit id takes for one file: the repo-relative path
-    (vitest, and pytest's `file` fallback), the same path with backslashes (the
-    `file` bun writes on Windows under an empty classname) and pytest's dotted
-    module. `path` is git's, so `/` is its only separator."""
+def _id_forms(path: str) -> tuple[str, str]:
+    """The two shapes a junit id's file part takes for one file once it is read
+    as a path: the repo-relative path (vitest, and pytest's `file` fallback) and
+    pytest's dotted module. `path` is git's, so `/` is its only separator."""
     stem = path[:-3] if path.endswith(".py") else path
-    return path, path.replace("/", "\\"), stem.replace("/", ".")
+    return path, stem.replace("/", ".")
 
 
-def dirty_failure_ids(new_failures: list[str], dirty_paths: set[str]) -> list[str]:
-    """New failures whose test id names a file with uncommitted edits."""
+def _id_file(test_id: str, root: str | os.PathLike | None) -> str:
+    """The file part of a junit id, spelled the way git spells the file.
+
+    A runner names the test file however it was started: bun on Windows writes
+    `src\\deep\\keep.test.ts`, a runner handed `./web/...` keeps the dot, and
+    jest-junit's `{filepath}` is absolute. Compared as text with git's path,
+    each one read a failure in the file under edit as committed."""
+    file = file_separators(test_id.split("::")[0], root).removeprefix("./")
+    if root is None or not os.path.isabs(file):
+        return file
+    return inside(file, root) or file
+
+
+def dirty_failure_ids(new_failures: list[str], dirty_paths: set[str],
+                      root: str | os.PathLike | None = None) -> list[str]:
+    """New failures whose test id names a file with uncommitted edits. `root`
+    places an absolute file part; without it only relative ids can match."""
     forms = {form for path in dirty_paths for form in _id_forms(path)}
-    return [f for f in new_failures if f.split("::")[0] in forms]
+    return [f for f in new_failures if _id_file(f, root) in forms]
 
 
 def dirty_counts(verdict: Verdict) -> tuple[int, int]:
@@ -299,6 +315,7 @@ def evaluate(
     target: int,
     scope_targets: dict[str, int] | None = None,
     dirty_paths: set[str] | None = None,
+    root: str | os.PathLike | None = None,
 ) -> Verdict:
     dirty = dirty_paths or set()
     gate = _gate_violations(fresh, changed_ranges, target, scope_targets, dirty, ratchet)
@@ -310,6 +327,6 @@ def evaluate(
         gate_violations=gate,
         ratchet_regressions=regressions,
         new_failures=new_failures,
-        dirty_failures=dirty_failure_ids(new_failures, dirty),
+        dirty_failures=dirty_failure_ids(new_failures, dirty, root),
         forgiven_failures=tuple(sorted(fresh_failures & baseline_failures)),
     )

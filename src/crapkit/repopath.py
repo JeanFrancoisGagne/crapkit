@@ -153,8 +153,12 @@ def inside(path: str | os.PathLike, root: str | os.PathLike) -> str | None:
     Text says too little here. `c:\\repo`, `C:\\REPO`, a junction or symlink to
     the checkout and `\\\\localhost\\C$\\repo` all name one directory, so each
     side is resolved, and when the two still differ, each directory above
-    `path` is asked whether it is the root itself."""
-    resolved, top = Path(path).resolve(), Path(root).resolve()
+    `path` is asked whether it is the root itself. A name this platform cannot
+    express lands nowhere."""
+    try:
+        resolved, top = Path(path).resolve(), Path(root).resolve()
+    except (OSError, ValueError):
+        return None
     rel = _relative(resolved, top)
     if rel is None:
         rel = _relative_by_identity(resolved, top)

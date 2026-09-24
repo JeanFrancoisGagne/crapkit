@@ -84,3 +84,85 @@ def test_branches_attach_to_the_innermost_containing_function():
         "nested cb owns line-22 branches; invoked-fallback 1.0 hides its untaken arms"
     assert by_name["handler"].branches_total == 2 and by_name["handler"].coverage == 0.5, \
         "the handler keeps only its own branches, not the callback's"
+
+
+# --- a checkout root the reporter spelled another way ---------------------------
+#
+# The reader stripped the root off each key as literal text. A report made from
+# a shell standing in `c:\...`, reached through a junction or symlink, or keyed
+# with the `\\?\` prefix named this checkout in a spelling the text strip missed,
+# so every key stayed absolute and the lane FAILED, telling the user to point
+# the reporter at the checkout it already measured.
+
+import os as _os
+from pathlib import Path as _Path
+
+import pytest as _pytest
+
+from crapkit import coverage_istanbul as _adapter
+from crapkit.config import Lane as _Lane
+
+from path_spellings import link_directory as _link, lower_drive as _lower
+
+
+def _tree(root: _Path) -> _Path:
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "app.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    return root.resolve()
+
+
+def _read_keyed(root: _Path, key: str) -> list[str]:
+    body = dict(ARTIFACT["C:\\repo\\src\\app.ts"], path=key)
+    artifact = root / "coverage-final.json"
+    artifact.write_text(json.dumps({key: body}), encoding="utf-8")
+    lane = _Lane(name="unit", command="x", artifact="coverage-final.json", parser="istanbul",
+                 scopes=("src",))
+    return list(_adapter.read(lane, root, artifact)[0])
+
+
+def _extended(root: _Path) -> str:
+    return "\\\\?\\" + str(root / "src" / "app.ts")
+
+
+KEY_SPELLINGS = {
+    "native": ("", lambda root, tmp: str(root / "src" / "app.ts")),
+    "forward-slashes": ("", lambda root, tmp: (root / "src" / "app.ts").as_posix()),
+    "relative": ("", lambda root, tmp: "src/app.ts"),
+    "relative-backslash": ("", lambda root, tmp: "src\\app.ts"),
+    "dot-dot-sibling": ("", lambda root, tmp: str(root.parent / (root.name + "-build") / ".."
+                                                   / root.name / "src" / "app.ts")),
+    "linked-checkout": ("", lambda root, tmp: str(tmp / "alias" / "src" / "app.ts")),
+    "lower-drive": ("windows", lambda root, tmp: _lower(root / "src" / "app.ts")),
+    "lower-drive-forward": ("windows", lambda root, tmp: _lower(root / "src" / "app.ts")
+                            .replace("\\", "/")),
+    "upper-cased": ("windows", lambda root, tmp: str(root / "src" / "app.ts").upper()),
+    "extended-length": ("windows", lambda root, tmp: _extended(root)),
+}
+
+
+@_pytest.mark.parametrize("which", KEY_SPELLINGS)
+def test_every_spelling_of_this_checkout_keys_the_file_git_names(tmp_path, which):
+    need, spell = KEY_SPELLINGS[which]
+    if need == "windows" and _os.name != "nt":
+        _pytest.skip("needs Windows path rules")
+    root = _tree(tmp_path / "repo")
+    (tmp_path / "repo-build").mkdir()
+    _link(tmp_path / "alias", root)
+
+    assert _read_keyed(root, spell(root, tmp_path)) == ["src/app.ts"]
+
+
+def test_a_key_from_another_tree_stays_as_the_report_wrote_it(tmp_path):
+    root = _tree(tmp_path / "repo")
+    elsewhere = _tree(tmp_path / "other")
+
+    assert _read_keyed(root, str(elsewhere / "src" / "app.ts")) == \
+        [str(elsewhere / "src" / "app.ts").replace("\\", "/")]
+
+
+@_pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
+def test_posix_keeps_a_backslash_the_tree_holds_in_a_file_name(tmp_path):
+    root = _tree(tmp_path / "repo")
+    (root / "src" / "we\\ird.ts").write_text("export const b = 2;\n", encoding="utf-8")
+
+    assert _read_keyed(root, str(root / "src" / "we\\ird.ts")) == ["src/we\\ird.ts"]

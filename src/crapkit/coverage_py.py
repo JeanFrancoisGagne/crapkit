@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
+from .repopath import file_separators
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -137,12 +138,14 @@ def lane_prefix(path_prefix: str) -> str:
     return (path_prefix.rstrip("/") + "/") if path_prefix else ""
 
 
-def measured_key(prefix: str, raw_path: str) -> str:
+def measured_key(prefix: str, raw_path: str, root: Path | None = None) -> str:
     """The repository path one report file key names, under a lane_prefix.
 
     The one spelling of the forward rule. The reader prepends the prefix to
-    EVERY key, an absolute one included, which is why as_reported exists."""
-    return prefix + raw_path.replace("\\", "/")
+    EVERY key, an absolute one included, which is why as_reported exists. A
+    backslash separates directories (a report written on Windows) unless the
+    tree under `root` holds that literal name, which POSIX allows."""
+    return file_separators(prefix + raw_path, root)
 
 
 def as_reported(lane: Lane, key: str) -> str:
@@ -176,15 +179,16 @@ class _Files:
     yet, and the whole-document parser has always seen meta first.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, root: Path | None = None) -> None:
         self.per_file: dict[str, list[FnCoverage]] = {}
         self.dead: dict[str, set[int]] = {}
         self.regionless: list[str] = []
         self.total = 0
+        self.root = root
 
     def add(self, prefix: str, raw_path: str, data: dict) -> None:
         self.total += 1
-        path = measured_key(prefix, raw_path)
+        path = measured_key(prefix, raw_path, self.root)
         self.dead[path] = set(data.get("missing_lines", ()))
         if not has_regions(data):
             self.regionless.append(raw_path)
@@ -192,11 +196,11 @@ class _Files:
         self.per_file[path] = _file_functions(data)
 
 
-def _coveragepy_both(w, prefix: str, label: str) -> tuple[dict, dict]:
+def _coveragepy_both(w, prefix: str, label: str, root: Path | None = None) -> tuple[dict, dict]:
     """path -> function coverage, salvaging the same way the whole-document
     parser does: a statement-based downgrade with no branch data, and files with
     no regions skipped rather than fatal."""
-    files, branch = _Files(), False
+    files, branch = _Files(root), False
     for key, value, kind in covstream.walk_report(w, "files"):
         if kind == "member":
             branch = branch or _meta_has_branch(key, value)
@@ -210,47 +214,48 @@ def _coveragepy_both(w, prefix: str, label: str) -> tuple[dict, dict]:
 
 
 def parse_coveragepy_both_file(path: Path | str, *, path_prefix: str,
-                               chunk: int = covstream.CHUNK, label: str = ""
-                               ) -> tuple[dict, dict, str]:
+                               chunk: int = covstream.CHUNK, label: str = "",
+                               root: Path | None = None) -> tuple[dict, dict, str]:
     """Function coverage, missing lines, and byte digest from one report walk."""
     prefix = lane_prefix(path_prefix)
     (per_file, dead), digest = covstream.read_walk(
-        path, lambda w: _coveragepy_both(w, prefix, label), f"{_BAD_REPORT} {path}", chunk)
+        path, lambda w: _coveragepy_both(w, prefix, label, root), f"{_BAD_REPORT} {path}", chunk)
     return per_file, dead, digest
 
 
-def _coveragepy_missing(w, prefix: str) -> dict[str, set[int]]:
+def _coveragepy_missing(w, prefix: str, root: Path | None = None) -> dict[str, set[int]]:
     out: dict[str, set[int]] = {}
     for key, value, kind in covstream.walk_report(w, "files"):
         if kind == "sub":
-            out[measured_key(prefix, key)] = set(value.get("missing_lines", ()))
+            out[measured_key(prefix, key, root)] = set(value.get("missing_lines", ()))
     return out
 
 
 def parse_coveragepy_missing_file(path: Path | str, *, path_prefix: str,
-                                  chunk: int = covstream.CHUNK) -> dict[str, set[int]]:
+                                  chunk: int = covstream.CHUNK,
+                                  root: Path | None = None) -> dict[str, set[int]]:
     """Per measured file, the lines coverage.py reports as never run."""
     prefix = lane_prefix(path_prefix)
     missing, _ = covstream.read_walk(
-        path, lambda w: _coveragepy_missing(w, prefix), _BAD_REPORT, chunk)
+        path, lambda w: _coveragepy_missing(w, prefix, root), _BAD_REPORT, chunk)
     return missing
 
 
-def _coveragepy_contexts(w, prefix: str, source_path: str) -> dict:
+def _coveragepy_contexts(w, prefix: str, source_path: str, root: Path | None = None) -> dict:
     selected = {}
     for key, value, kind in covstream.walk_report(w, "files"):
-        if kind == "sub" and measured_key(prefix, key) == source_path:
+        if kind == "sub" and measured_key(prefix, key, root) == source_path:
             selected = _line_contexts(value.get("contexts", {}))
     return selected
 
 
 def parse_coveragepy_contexts_file(path: Path | str, *, path_prefix: str,
-                                   source_path: str, chunk: int = covstream.CHUNK
-                                   ) -> dict[int, list[str]]:
+                                   source_path: str, chunk: int = covstream.CHUNK,
+                                   root: Path | None = None) -> dict[int, list[str]]:
     """One repository path's line contexts, after validating the whole report."""
     prefix = lane_prefix(path_prefix)
     selected, _ = covstream.read_walk(
-        path, lambda w: _coveragepy_contexts(w, prefix, source_path), _BAD_REPORT, chunk)
+        path, lambda w: _coveragepy_contexts(w, prefix, source_path, root), _BAD_REPORT, chunk)
     return selected
 
 
@@ -273,15 +278,15 @@ UNMEASURED_READING = "or the runner reports paths this lane needs path_prefix to
 def read(lane: Lane, root: Path, artifact: Path) -> tuple[dict, dict, str]:
     """The lane's function coverage, dead lines and artifact digest, one walk."""
     return parse_coveragepy_both_file(artifact, path_prefix=lane.path_prefix,
-                                      label=f"lane {lane.name!r}")
+                                      label=f"lane {lane.name!r}", root=root)
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
     """The lines coverage.py reports as never run, per measured file."""
-    return parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix)
+    return parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix, root=root)
 
 
 def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
     """line -> test ids for one repository path."""
     return parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                          source_path=source_path)
+                                          source_path=source_path, root=root)

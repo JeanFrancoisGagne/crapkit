@@ -8,19 +8,22 @@ AST-remapped output of @vitest/coverage-v8 >= 3.2, which is istanbul-schema-iden
 
 This module is also the istanbul adapter (coverage_format looks it up from a
 lane's `parser`): it reads the artifact through covstream's framing, keys each
-file by stripping the checkout root, and owns the advice a wrong-tree refusal
+file by rebasing it under the checkout root, and owns the advice a wrong-tree refusal
 gives an istanbul lane. Attribution itself stays independent of file I/O and
 JSON framing.
 """
 from __future__ import annotations
 
 import heapq
+import os
+import posixpath
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
+from .repopath import disk_spelling, file_separators, inside
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -45,10 +48,41 @@ class FnCoverage(NamedTuple):
         return 1.0 if self.invoked else 0.0
 
 
+class _Keys:
+    """Each key of one artifact as the root-relative path git spells.
+
+    A key that starts with this checkout's root, spelled as crapkit spells it,
+    loses the root as text: the common case, and the cheap one. Any other
+    absolute key is placed by the file it names (repopath.inside), so a report
+    made from a shell standing in `c:\\...`, through a junction or a symlink,
+    or keyed `\\\\?\\C:\\...` is still this checkout. The literal strip alone
+    left each of those absolute, and the lane failed over its own checkout.
+    Folders are placed once each: a report from another tree names thousands
+    of files in a few hundred folders."""
+
+    def __init__(self, repo_root: str) -> None:
+        self._root = Path(repo_root)
+        self._prefix = repo_root.replace("\\", "/").rstrip("/") + "/"
+        self._folders: dict[str, str | None] = {}
+
+    def rel(self, key: str) -> str:
+        norm = file_separators(key, self._root)
+        if norm.startswith(self._prefix):
+            return norm[len(self._prefix):]
+        return self._placed(norm) if os.path.isabs(norm) else norm
+
+    def _placed(self, key: str) -> str:
+        folder, _, name = key.rpartition("/")
+        if folder not in self._folders:
+            self._folders[folder] = inside(folder + "/", self._root)
+        base = self._folders[folder]
+        if base is None:
+            return key
+        return posixpath.normpath(posixpath.join(base, disk_spelling(self._root / base, name)))
+
+
 def _rel_path(abs_path: str, repo_root: str) -> str:
-    norm = abs_path.replace("\\", "/")
-    root = repo_root.replace("\\", "/").rstrip("/") + "/"
-    return norm[len(root):] if norm.startswith(root) else norm
+    return _Keys(repo_root).rel(abs_path)
 
 
 # --- span attribution ------------------------------------------------------
@@ -218,14 +252,15 @@ _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
 def _istanbul_map(w, repo_root: str, per_file) -> dict:
-    return {_rel_path(abs_path, repo_root): per_file(cov)
-            for abs_path, cov in covstream.split_window(w)}
+    keys = _Keys(repo_root)
+    return {keys.rel(abs_path): per_file(cov) for abs_path, cov in covstream.split_window(w)}
 
 
 def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
+    keys = _Keys(repo_root)
     for abs_path, cov in covstream.split_window(w):
-        rel = _rel_path(abs_path, repo_root)
+        rel = keys.rel(abs_path)
         per_file[rel] = _file_coverage(cov)
         dead[rel] = _dead_lines(cov)
     return per_file, dead
@@ -299,16 +334,18 @@ def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
 
 # --- the adapter a lane reads through ------------------------------------------
 #
-# The reader takes the checkout root, rebases every path under it and never
-# reads path_prefix, so a path that stayed absolute came from another tree and
-# no key on the lane can rebase it.
+# The reader takes the checkout root, rebases every path that resolves under it
+# whatever its spelling, and never reads path_prefix, so a path that stayed
+# absolute came from another tree and no key on the lane can rebase it.
 
 WRONG_TREE_FIX = ("The reader rebases every path under this checkout's root, so these were "
                   "written against another one: rerun the suite here rather than reusing an "
                   "artifact copied in or restored from a CI cache")
-ABSOLUTE_FIX = ("The reader strips this checkout's root off every measured path "
-                "literally, so the reporter spelled that root some other way: point "
-                "it at this checkout with its own cwd/root option, then rerun the lane")
+# Reached only by a path this platform cannot open: _Keys rebases every other
+# spelling of this checkout before the wrong-tree check reads a key.
+ABSOLUTE_FIX = ("The reader rebases every measured path that resolves under this "
+                "checkout, and these could not be opened here: rerun the lane on this "
+                "machine rather than reusing a report written somewhere else")
 UNMEASURED_READING = "or the suite measured a part of the tree these scopes do not name"
 
 
