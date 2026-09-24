@@ -2,6 +2,21 @@
 
 ## 0.8.1 — unreleased
 
+### Upgrading from 0.8.0
+
+- The `py` and `dev` extras require coverage.py 7.13.1 or newer. Coverage 7.6 to 7.13.0
+  write a function's region with no `start_line`, and `crapkit coverage` now refuses
+  such an artifact at exit 5 (see the coverage readers below). Upgrade coverage where
+  each Python lane runs, with `pip install -U "coverage>=7.13.1"`, or with `pip install
+  -U "crapkit[py]"` where crapkit shares that environment, then rerun `crapkit
+  coverage`. An artifact that carries `start_line` scores as it did in 0.8.0 and the
+  analysis version stays 11, so no repo re-seeds.
+- Where marks were measured on coverage 7.6 to 7.13.0, 0.8.0 gave a nested function its
+  encloser's coverage. On the new coverage that function scores its own region, so its
+  CRAP can rise once, and `verify` reports the rise as a `RATCHET` line at exit 7 on a
+  function the diff never touched. The new number is the measured one: raise that mark
+  in `crapkit-ratchet.tsv` by hand and commit it where a reviewer sees it.
+
 ### The Action finds its own comment on every thread
 
 - The Action edits its pull request comment when another comment on the thread has no
@@ -15,8 +30,12 @@
   GitHub's error JSON for a comment id. It sent the edit to
   `issues/comments/{"message": ...}`, so no comment was written or updated and the
   pull request kept the previous push's verdict. It now edits the crapkit comment it
-  found before the error, or posts a fresh one when it found none, and the job log says
-  which.
+  found before the error, and the job log says so.
+- When the comment list fails before the step finds a crapkit comment, a 502 or a rate
+  limit on any page, the step lists the comments once more. The crapkit comment can sit
+  on the page that failed or on a later one, and posting at once would leave the thread
+  with two. When the second listing fails too, the step posts a fresh comment and the
+  job log says the listing failed twice.
 - A thread with a crapkit comment on two pages no longer logs `looking the existing
   comment up exited 141: posting a fresh one` before editing the first one. `head -n 1`
   closed the pipe while gh was still writing.
@@ -70,31 +89,31 @@
   object (got 3)`. It answered `-32603` carrying a Python `AttributeError`, and a string
   was read one character at a time, so the refusal named `'t'` as an undeclared key. An
   empty list still reads as no arguments.
-- `tools/call` whose `params` are a list, a string or a number answers `params must be an
-  object naming the tool and its arguments (got ...)` the same way.
-- `initialize` whose `params` are not an object answers with the newest revision the
-  server speaks, as for a revision it does not know, where it answered `-32603`. A
-  `method` that is not a string answers `-32601 unknown method`, where it answered
+- `tools/call` and `initialize` whose `params` are a list, a string or a number answer
+  JSON-RPC error `-32602`, with a message naming `params` and the type it got, and the
+  session answers the next request. Both answered `-32603` carrying a Python
+  `AttributeError`. Null or absent `params` answer as before.
+- A `method` that is not a string answers `-32601 unknown method`, where it answered
   `-32603`.
 
 ### The coverage readers stop reading an absent field as a value
 
-- A coverage.py report from 7.6 to 7.13.0, which writes no `start_line`, scores a nested
-  function by its own region. The reader took the body's first line as the start, which
-  is the line of the `def inner` statement in the encloser's region, so a nested function
-  that never ran scored as half covered. It now reads the `def` line as the last statement
-  line above the body, which is where 7.13.1 puts `start_line`. A null `start_line` reads
-  the same way. On those coverage versions a marked nested function can score above its
-  mark once, which `verify` reports at exit 7; the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
-  says how to take the measured number.
+- A coverage.py artifact with a function region whose `start_line` is absent or null
+  exits 5 with a line naming the artifact, the first such function, `start_line` and
+  `coverage>=7.13.1`. Coverage 7.6 to 7.13.0 write no `start_line`. The reader took the
+  body's first line as the start, which is the line of the `def inner` statement in the
+  encloser's region, so a nested function that never ran scored as half covered. The
+  `py` and `dev` extras now require `coverage>=7.13.1`, the first release that writes
+  `start_line`.
 - A coverage.py region without a `summary` object exits 5 naming the function, where it
   scored the function as never run. A null one exits 5 with the same line, where it
   printed a Python `AttributeError`.
 - An istanbul `fnMap` entry without `loc.end.line` exits 5 naming the entry. The span fell
   back to the declaration line, the body's branches attached to nothing, and a function
   that was called scored as covered. A `branchMap` entry without `loc` counts against the
-  function that holds its `line`, where it attached to none.
+  function that holds its `line`, where it attached to none. One with neither
+  `loc.start.line` nor `line` exits 5 naming the branch id, where its branches counted
+  against no function.
 
 ## 0.8.0 — 2026-09-23
 
