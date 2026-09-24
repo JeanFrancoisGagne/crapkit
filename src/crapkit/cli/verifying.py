@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
@@ -239,7 +239,14 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
         raise ConfigError(_stamp_refusal(conflict, named))
 
 
-def _judged_marks(root: Path, saved, baseline: dict, name: str):
+class _JudgedMarks(NamedTuple):
+    """The marks verify judges against, and the commit that held them: None when
+    they are the file on the tree."""
+    marks: object
+    commit: str | None
+
+
+def _judged_marks(root: Path, saved, baseline: dict, name: str) -> _JudgedMarks:
     """The marks verify judges against: the file on disk, or, when it is missing
     or blank, the newest marks the history from the baseline's commit to HEAD
     committed.
@@ -247,27 +254,18 @@ def _judged_marks(root: Path, saved, baseline: dict, name: str):
     A deleted or emptied marks file read as a repo that never marked any debt,
     so a marked function whose CRAP rose passed with exit 0. Marks are usually
     seeded after the baseline run, so the baseline's own commit is not enough.
-    The stand-in is only judged against; verify never writes it back.
+    The stand-in is only judged against; verify never writes it back. A history
+    the clone cannot read refuses with GitError, exit 4, since judging against
+    no marks would pass the rise the stand-in exists to catch.
     """
-    found = _newest_committed_marks(root, baseline["commit"], name) if saved.blank else None
+    from ..marks_history import newest_committed_marks
+
+    found = newest_committed_marks(root, baseline["commit"], name) if saved.blank else None
     if found is None:
-        return saved
+        return _JudgedMarks(saved, None)
     commit, committed = found
     _warn_marks_stand_in(saved, committed, commit[:11], name)
-    return committed
-
-
-def _newest_committed_marks(root: Path, base: str, name: str):
-    """(commit, marks) for the newest commit from `base` to HEAD whose `name`
-    holds more than blank lines, or None when none does."""
-    from ..gitio import blob_at, commits_touching
-    from ..ratchetfile import RatchetFile
-
-    for commit in (*commits_touching(root, f"{base}..HEAD", name), base):
-        data = blob_at(root, commit, name)
-        if data and data.strip():
-            return commit, RatchetFile.committed(root / name, data)
-    return None
+    return _JudgedMarks(committed, commit)
 
 
 def _warn_marks_stand_in(saved, committed, commit: str, name: str) -> None:
@@ -773,14 +771,20 @@ def _warn_diff_uncovered(uncovered: list) -> None:
         print(f"  uncovered {path}:{line}", file=sys.stderr)
 
 
-def _receipt(tool_versions: dict, ratchet_sha256: str | None,
+def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
              changes: RatchetDelta | None) -> dict:
     """What produced the verdict and what the run did to the marks file: the
-    tool versions, the marks as read (hashed before any tighten, so the receipt
-    names the input), and the tighten's counts, null when this run's tighten
-    wrote nothing (a failed run, --no-tighten, nothing to move). An override's
-    grant is its own write and is listed under `overridden`, not counted here."""
-    return {"tool_versions": tool_versions, "ratchet_sha256": ratchet_sha256,
+    tool versions, the marks file on the tree as read (hashed before any
+    tighten, so the receipt names the input; null when the tree has none), the
+    marks verify judged against (`ratchet_source` "tree", or "committed" with
+    the commit that held them and their digest), and the tighten's counts, null
+    when this run's tighten wrote nothing (a failed run, --no-tighten, nothing
+    to move). An override's grant is its own write and is listed under
+    `overridden`, not counted here."""
+    return {"tool_versions": tool_versions, "ratchet_sha256": saved.sha256,
+            "ratchet_source": "committed" if judged.commit else "tree",
+            "ratchet_source_commit": judged.commit,
+            "ratchet_source_sha256": judged.marks.sha256,
             "ratchet_changes": None if changes is None else changes._asdict()}
 
 
@@ -885,7 +889,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
-    _guard_ratchet_stamp(judged, cfg.ratchet_file, _seed_source(store, args, baseline))
+    _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, _seed_source(store, args, baseline))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
@@ -898,9 +902,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _refuse_unread_results(cfg.lanes, provenance)
 
     ranges = changed_ranges(diff_since(root, basis))
-    ratchet = judged.entries
-    key_version = _check_ratchet_identity(judged.text or "", root, cfg.ratchet_file, scored, store,
-                                          entries=ratchet)
+    ratchet = judged.marks.entries
+    key_version = _check_ratchet_identity(judged.marks.text or "", root, cfg.ratchet_file,
+                                          scored, store, entries=ratchet)
 
     behind = _RunsBehind(store, git, baseline)
     found = baseline_failures(baseline, provenance, behind)
@@ -935,7 +939,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, judged.sha256, changes),
+                    **_receipt(tool_versions, saved, judged, changes),
                     "lanes_without_results": without_results(provenance),
                     "lanes_without_baseline_results": unjudged},
                    verdict, cfg.ratchet_file)

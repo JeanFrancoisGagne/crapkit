@@ -670,10 +670,17 @@ class _BriefLoader:
                                     self.key(row))
 
     def _read_mark_events(self) -> list:
-        from ..gitio import file_log_patches
+        """The mark events off the marks file's history, read once per batch, and
+        the line ratchet report prints when that history starts at a rename:
+        the age counts from there too."""
+        from ..marks_history import marks_history, rename_warning
         from ..ratchet_report import mark_events
 
-        return mark_events(file_log_patches(self.root, self.cfg.ratchet_file))
+        history = marks_history(self.root, self.cfg.ratchet_file)
+        renamed = rename_warning(self.cfg.ratchet_file, history)
+        if renamed:
+            print(renamed, file=sys.stderr)
+        return mark_events(history.patches)
 
     def attempts(self, row) -> list:
         key = self.key(row)

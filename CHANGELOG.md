@@ -58,8 +58,12 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   the history since the baseline committed, and names that commit and the `git checkout`
   that restores them. A commit that deleted or emptied `crapkit-ratchet.tsv` let a marked
   function's CRAP rise with exit 0. verify never writes those marks back, and a pass no
-  longer restamps an emptied file into a header with no rows and asks for a `git add`. The
-  receipt's `ratchet_sha256` is the digest of the marks verify judged against.
+  longer restamps an emptied file into a header with no rows and asks for a `git add`.
+  `verify --json` keeps `ratchet_sha256` for the file on the tree and adds
+  `ratchet_source` (`"tree"` or `"committed"`), `ratchet_source_commit` and
+  `ratchet_source_sha256`, which name the marks it judged against. When the clone does not
+  hold that history, verify refuses with exit 4; the git reads under it answered as if no
+  commit had held marks.
 - The commit hook, `rescore --gate` (and so the MCP tool `check_gate`) and verify refuse a
   changed file no reader could read, exit 6, with an `UNREAD` line naming the file and the
   reader's reason. Such a file is scored as zero functions, and every gate read that as

@@ -717,8 +717,11 @@ EXIT=7
 
 verify never writes those marks back. A pass leaves a missing file missing and an emptied
 file empty; before this, an emptied file was restamped into a header with no rows, and the
-`git add` the OK line asked for committed the lost marks away. The JSON receipt's
-`ratchet_sha256` is the digest of the committed marks verify read.
+`git add` the OK line asked for committed the lost marks away. The JSON receipt keeps
+`ratchet_sha256` for the file on the tree (`null` when it is gone), and says
+`"ratchet_source": "committed"` with the commit in `ratchet_source_commit` and the committed
+marks' digest in `ratchet_source_sha256`. When the clone does not hold the history since the
+baseline, verify refuses with exit 4 rather than judge against no marks.
 
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged

@@ -330,6 +330,20 @@ def test_a_renamed_ratchet_file_names_the_commit_its_history_starts_at(renamed, 
         "crapkit-ratchet.tsv, so mark ages and repayments count from there"]
 
 
+def test_brief_prints_the_rename_line_ratchet_report_prints(renamed, capsys):
+    """brief's mark age counts from the rename as well, and said nothing: a
+    457-day mark read 0 days old with no line. Both commands read the history
+    through one reader and print its one line."""
+    _, _, report_err = report(renamed, capsys)
+
+    code, out, err = run(renamed, capsys, "brief", "src/a.py", "old_debt", "--json")
+
+    (line,) = [ln for ln in report_err.splitlines() if "renamed it from" in ln]
+    assert code == 0, err
+    assert json.loads(out)["gate_rule"]["mark_age_days"] == 0
+    assert err.splitlines().count(line) == 1, err
+
+
 def test_a_ratchet_file_that_was_never_renamed_names_no_rename(checkouts, capsys):
     set_policy(checkouts["full"], "none")
 

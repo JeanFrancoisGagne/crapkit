@@ -516,19 +516,35 @@ def test_the_newest_marks_since_the_baseline_are_the_ones_judged(committed_marks
     assert f"but commit {newer[:11]}, the newest" in err, err
 
 
-def test_the_receipt_digests_the_committed_marks_verify_judged_against(committed_marks, capsys):
-    """ratchet_sha256 proves which marks a verdict was measured against, so it
-    names the stand-in, not the file that is gone."""
+RECEIPT_KEYS = ("ratchet_sha256", "ratchet_source", "ratchet_source_commit",
+                "ratchet_source_sha256")
+
+
+@pytest.mark.parametrize("form", ["deleted", "emptied", "kept"])
+def test_the_receipt_keeps_the_trees_digest_and_names_the_marks_verify_judged(
+        committed_marks, capsys, form):
+    """ratchet_sha256 keeps its meaning under JSON schema 1: the digest of the
+    marks file on the tree, null when there is none. The stand-in verify judged
+    against is named beside it, in fields of its own: ratchet_source says
+    whether the marks came from the tree or from a commit, and
+    ratchet_source_commit and ratchet_source_sha256 say which."""
     import hashlib
 
-    repo, _ = committed_marks
-    committed = (repo / MARKS).read_bytes()
-    (repo / MARKS).unlink()
+    repo, marked = committed_marks
+    committed = hashlib.sha256((repo / MARKS).read_bytes()).hexdigest()
+    if form != "kept":
+        _lose_marks(repo, form)
+    on_tree = (hashlib.sha256((repo / MARKS).read_bytes()).hexdigest()
+               if (repo / MARKS).exists() else None)
 
     code, out, _ = run(["verify", "--reuse-artifacts", "--json"], repo, capsys)
 
+    receipt = json.loads(out)
+    expected = {"kept": (committed, "tree", None, committed),
+                "deleted": (None, "committed", marked, committed),
+                "emptied": (on_tree, "committed", marked, committed)}[form]
     assert code == 7
-    assert json.loads(out)["ratchet_sha256"] == hashlib.sha256(committed).hexdigest()
+    assert tuple(receipt[key] for key in RECEIPT_KEYS) == expected
 
 
 def test_an_emptied_marks_file_that_nothing_rose_against_passes_and_stays_empty(committed_marks,

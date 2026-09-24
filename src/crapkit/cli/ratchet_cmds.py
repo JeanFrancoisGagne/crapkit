@@ -317,31 +317,30 @@ def _refuse_a_cut_history(cfg, enforce: bool, shallow: bool) -> None:
                               f"the git history of {cfg.ratchet_file}")
 
 
-def _warn_history(root: Path, ratchet_file: str, first: str | None, shallow: bool) -> None:
+def _warn_history(ratchet_file: str, history, shallow: bool) -> None:
     """One line for each way the history the ages count is not the file's
     whole history: a shallow clone, and a history that starts at a rename."""
-    from ..gitio import renamed_into, shallow_warning
+    from ..gitio import shallow_warning
+    from ..marks_history import rename_warning
 
-    if shallow:
-        print(shallow_warning("mark ages and repayments"), file=sys.stderr)
-    renamed = first and renamed_into(root, ratchet_file, first)
-    if renamed:
-        print(f"warning: {ratchet_file}'s history starts at {first[:11]}, the commit that "
-              f"renamed it from {renamed}, so mark ages and repayments count from there",
-              file=sys.stderr)
+    for line in (shallow and shallow_warning("mark ages and repayments"),
+                 rename_warning(ratchet_file, history)):
+        if line:
+            print(line, file=sys.stderr)
 
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
-    from ..gitio import file_history, shallow_checkout
+    from ..gitio import shallow_checkout
+    from ..marks_history import marks_history
     from ..ratchet_report import mark_events, report_from_events
 
     shallow = shallow_checkout(root)
     _refuse_a_cut_history(cfg, enforce, shallow)
-    history = file_history(root, cfg.ratchet_file)
+    history = marks_history(root, cfg.ratchet_file)
     report = report_from_events(mark_events(history.patches),
                                 working=_working_marks(root, cfg.ratchet_file))
     violations = _policy_findings(cfg, report, enforce)
-    _warn_history(root, cfg.ratchet_file, history.first, shallow)
+    _warn_history(cfg.ratchet_file, history, shallow)
     if as_json:
         _print_json({**report, "policy_violations": violations, "shallow": shallow})
     else:

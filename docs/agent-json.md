@@ -795,6 +795,9 @@ $ crapkit verify --json
     }
   ],
   "ratchet_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
+  "ratchet_source": "tree",
+  "ratchet_source_commit": null,
+  "ratchet_source_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
   "retried_passes": [],
   "run_id": 9,
   "schema": 1,
@@ -896,7 +899,10 @@ reasonably look at `committed_findings` alone.
 | Key | Meaning |
 |---|---|
 | `tool_versions` | `{"crapkit": ..., "lizard": ...}`. The metric identity behind the numbers. |
-| `ratchet_sha256` | Digest of the ratchet file as read. **`null` when the repo has no ratchet file.** Pin it to prove which marks a verdict was measured against. When the file is missing or blank, verify judges against the newest marks committed since the baseline, and this is their digest. |
+| `ratchet_sha256` | Digest of the ratchet file on the tree as read. **`null` when the tree has no ratchet file.** |
+| `ratchet_source` | Which marks verify judged against: `"tree"`, the ratchet file as read, or `"committed"`, when that file is missing or blank and verify judged against the newest marks committed since the baseline. |
+| `ratchet_source_commit` | The commit whose marks verify judged against when `ratchet_source` is `"committed"`; `null` for `"tree"`. |
+| `ratchet_source_sha256` | Digest of the marks verify judged against: equal to `ratchet_sha256` for `"tree"`, the committed file's digest for `"committed"`, `null` when there were no marks at all. Pin it to prove which marks a verdict was measured against. |
 | `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is listed under `overridden`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
 
 ---

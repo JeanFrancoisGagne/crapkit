@@ -75,11 +75,21 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False) -> str:
     """`named` is what the error says ran — the injected flags are crapkit's
     business, not the caller's."""
-    res = _spawn(root, argv, binary=binary)
+    if binary:
+        return _run_bytes(root, argv, named).decode("utf-8")
+    res = _spawn(root, argv)
     if res.returncode != 0:
-        error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
-        raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
-    return res.stdout.decode("utf-8") if binary else res.stdout
+        raise GitError(f"git {' '.join(named)} failed in {root}: {res.stderr.strip()}")
+    return res.stdout
+
+
+def _run_bytes(root: Path, argv: tuple[str, ...], named: tuple[str, ...]) -> bytes:
+    """_run's stdout as git wrote it, for content that is not text."""
+    res = _spawn(root, argv, binary=True)
+    if res.returncode != 0:
+        error = res.stderr.decode("utf-8", "replace").strip()
+        raise GitError(f"git {' '.join(named)} failed in {root}: {error}")
+    return res.stdout
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
@@ -267,7 +277,7 @@ def merge_base(root: Path, ref: str) -> str:
     """
     res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
     if res.returncode != 0:
-        raise GitError(_merge_base_refusal(root, ref, res) + _shallow_fix(root))
+        raise GitError(_merge_base_refusal(root, ref, res) + shallow_fix(root))
     return res.stdout.strip()
 
 
@@ -278,7 +288,7 @@ def _merge_base_refusal(root: Path, ref: str, res: subprocess.CompletedProcess) 
     return f"git merge-base {ref} HEAD failed in {root}: {reason}"
 
 
-def _shallow_fix(root: Path) -> str:
+def shallow_fix(root: Path) -> str:
     """The fetch advice in a shallow clone; "" in a full one, and "" when git
     cannot say, so the merge-base reason is the one the refusal keeps."""
     try:
@@ -323,17 +333,21 @@ def shallow_checkout(root: Path) -> bool:
 
 
 def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
-    """The bytes `rel_path` (relative to `root`) held at `commit`; None when that
-    commit holds no such file or this clone does not hold the commit."""
-    res = _spawn(root, ("show", f"{commit}:./{rel_path}"), binary=True)
-    return res.stdout if res.returncode == 0 else None
+    """The bytes `rel_path` (relative to `root`) held at `commit`, or None when
+    that commit holds no such file. A commit this clone does not hold, or any
+    other git failure, raises GitError: it is not a commit without the file."""
+    listed = _git_paths(root, "--literal-pathspecs", "ls-tree", "-z", commit, "--", rel_path)
+    if not listed:
+        return None
+    blob = ("cat-file", "blob", listed[0].split(None, 3)[2])
+    return _run_bytes(root, blob, blob)
 
 
 def commits_touching(root: Path, rev_range: str, rel_path: str) -> list[str]:
-    """The commits in `rev_range` that changed `rel_path`, newest first; none
-    when this clone does not hold the range."""
-    res = _spawn(root, ("log", "--format=%H", rev_range, "--", rel_path))
-    return res.stdout.split() if res.returncode == 0 else []
+    """The commits in `rev_range` that changed `rel_path`, newest first. A range
+    this clone does not hold raises GitError: it is not a range with no commits."""
+    return _git(root, "--literal-pathspecs", "log", "--format=%H", rev_range, "--",
+                rel_path).split()
 
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
@@ -571,64 +585,56 @@ def staged_reads(root: Path, base: str | None = None):
         reads.close()
 
 
-class FileHistory(NamedTuple):
-    """One file's commits, oldest first, and the commit its history starts at:
-    None when no commit touched the file."""
-    patches: list[tuple[int, str]]
-    first: str | None
+class LogEntry(NamedTuple):
+    """One commit that touched a file: when, which, and its -U0 patch."""
+    timestamp: int
+    commit: str
+    patch: str
 
 
-def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
-    """(commit timestamp, unified patch) per commit touching one file, oldest first."""
-    return file_history(root, rel_path).patches
+def file_log(root: Path, rel_path: str) -> list[LogEntry]:
+    """Each commit touching one file, oldest first, with its patch.
 
-
-def file_history(root: Path, rel_path: str) -> FileHistory:
-    """(commit timestamp, unified patch) per commit touching one file, oldest
-    first, and the oldest of those commits, which `renamed_into` asks about.
-
-    -U0: the only reader is ratchet_report, which looks at +/- lines alone, so
-    context lines are pipe traffic that grows with the ratchet file.
+    -U0: the readers look at +/- lines alone, so context lines are pipe traffic
+    that grows with the file.
     No --follow: rename detection cost 0.6s of a 1.14s `ratchet report` on a
     72k-commit history and found nothing. The cost is real, since --follow also
     gives up the commit-graph path filtering the plain log gets (measured on a
     30k-commit synthetic: 0.436s vs 0.257s, same events either way). The price
-    is that renaming the ratchet file restarts its burn-down history at the
-    rename.
+    is that renaming the file restarts its history at the rename, which
+    `commit_renames` lets a reader name.
     """
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
     out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
                "-p", *_PATCH, "--text", "--", rel_path, binary=True)
-    first = _LOG_HEADER.search(out)
-    return FileHistory(_history_patches(out), first and first.group(2))
+    return _log_entries(out)
 
 
-def renamed_into(root: Path, rel_path: str, commit: str) -> str | None:
-    """The path `commit` renamed to `rel_path`, or None: it created the file,
-    or it has no parent to rename from (a shallow clone's boundary commit).
+def commit_renames(root: Path, commit: str) -> dict[str, str]:
+    """old path -> new path for each file one commit renamed, relative to root.
 
-    The file's own log walks no renames, so this is where a renamed file's
-    history starts. One commit's diff, with rename detection on for it alone.
+    One commit's diff, with rename detection on for it alone. A commit with no
+    parent (the first commit, or a shallow clone's boundary) renamed nothing.
     """
     fields = _git_paths(root, "diff-tree", "-r", "-M", "--relative", "--name-status",
                         "--no-commit-id", "-z", commit)
-    return next((old for old, new in _rename_pairs(fields).items() if new == rel_path), None)
+    return _rename_pairs(fields)
 
 
-def _history_patches(out: str) -> list[tuple[int, str]]:
-    patches = []
-    stamp, start = None, 0
+def _log_entries(out: str) -> list[LogEntry]:
+    entries = []
+    head, start = None, 0
     for header in _LOG_HEADER.finditer(out):
-        if stamp is not None:
-            patches.append((stamp, out[start:header.start()]))
-        stamp, start = int(header.group(1)), header.end()
-    if stamp is not None:
-        patches.append((stamp, out[start:]))
+        if head is not None:
+            entries.append(LogEntry(int(head.group(1)), head.group(2), out[start:header.start()]))
+        head, start = header, header.end()
+    if head is not None:
+        entries.append(LogEntry(int(head.group(1)), head.group(2), out[start:]))
     elif out:
         raise GitError("Git patch history has no timestamp header")
-    return patches
+    return entries
 
 
 # core.longpaths on the worktree calls, and on those alone. On a 31,459-file

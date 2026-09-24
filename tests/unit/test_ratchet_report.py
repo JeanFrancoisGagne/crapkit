@@ -138,7 +138,7 @@ def test_the_ratchet_log_asks_git_for_zero_context_and_no_rename_walk(monkeypatc
 
     seen = []
     monkeypatch.setattr(gitio, "_git", lambda root, *args, **kwargs: seen.append((args, kwargs)) or "")
-    gitio.file_log_patches(Path("."), "crapkit-ratchet.tsv")
+    gitio.file_log(Path("."), "crapkit-ratchet.tsv")
     ((args, kwargs),) = seen
     assert "-U0" in args
     assert "--follow" not in args
