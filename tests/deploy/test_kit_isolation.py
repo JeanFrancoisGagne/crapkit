@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kit import sandbox
+from kit import repos, sandbox
 
 pytestmark = pytest.mark.kit
 
@@ -262,14 +262,14 @@ def test_cloning_the_exported_bundle_raises_no_dubious_ownership(box):
     assert status.exit == 0
 
 
-def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain):
+def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain, templates):
     odd = sandbox.make(tmp_path / "odd", transcript, toolchain=toolchain, home_name="O'Brien Jérôme test")
-    repo = odd.root / "my repo é"
-    repo.mkdir()
-    (repo / "a.py").write_text("X = 1\n", encoding="utf-8")
-    odd.run(["git", "init", "-q", "-b", "main"], cwd=repo, expect=0)
+    repo = repos.checkout(odd, "py-pytest", cache=templates, repo_name="my repo é")
+    (repo / "b.py").write_text("Y = 2\n", encoding="utf-8")
     odd.run(["git", "add", "-A"], cwd=repo, expect=0)
-    odd.run(["git", "commit", "-q", "-m", "one"], cwd=repo, env=odd.commit_env(), expect=0)
+    odd.run(["git", "commit", "-q", "-m", "two"], cwd=repo, env=odd.commit_env(), expect=0)
+    home = odd.run([odd.toolchain.python("3.12"), "-c", "import pathlib; print(pathlib.Path.home().name)"],
+                   expect=0)
 
-    assert Path(odd.env["HOME"]).name == "O'Brien Jérôme test"
-    assert odd.run(["git", "log", "--format=%an"], cwd=repo, expect=0).stdout.strip() == sandbox.GIT_IDENTITY[0]
+    assert repo.name == "my repo é" and home.stdout.strip() == "O'Brien Jérôme test"
+    assert odd.run(["git", "log", "-1", "--format=%an"], cwd=repo, expect=0).stdout.strip() == sandbox.GIT_IDENTITY[0]

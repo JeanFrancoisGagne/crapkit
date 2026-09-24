@@ -316,9 +316,11 @@ def built(box, name: str, cache: Path) -> Path:
         return repo_templates.template(cache / name / "staging", name, lambda repo: TEMPLATES[name](box, repo))
 
 
-def checkout(box, name: str, *, cache: Path, dest: Path | None = None) -> Path:
-    """A private copy of template `name` for this cell, under the sandbox root."""
-    dest = dest or box.root / name
+def checkout(box, name: str, *, cache: Path, dest: Path | None = None, repo_name: str | None = None) -> Path:
+    """A private copy of template `name` for this cell, at `dest` or at
+    <sandbox root>/<repo_name> (the template's name when neither is given):
+    repo_name="my repo é" is the odd-path cells' checkout."""
+    dest = dest or box.root / (repo_name or name)
     if name in FRESH:
         dest.mkdir(parents=True)
         TEMPLATES[name](box, dest)
