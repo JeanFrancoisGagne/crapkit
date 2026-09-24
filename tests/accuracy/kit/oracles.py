@@ -171,4 +171,5 @@ def require(name: str, tier: str, pins: dict[str, Pin] | None = None) -> Found:
     message = drift(found, table[name])
     if message:
         _report(message, tier)
+    runlog.note("oracle", name=name, version=found.version)
     return found

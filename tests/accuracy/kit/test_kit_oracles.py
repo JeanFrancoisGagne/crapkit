@@ -8,7 +8,7 @@ import tomllib
 
 import pytest
 
-from accuracy.kit import oracles
+from accuracy.kit import oracles, runlog
 
 REPO = oracles.REPO
 ACCURACY_TOOLS = REPO / "tools" / "accuracy"
@@ -178,3 +178,13 @@ def test_a_missing_oracle_fails_the_test_and_notes_an_infra_miss(monkeypatch, tm
 
 def test_the_fixture_hands_back_a_checked_oracle(oracle):
     assert oracle("hypothesis").version == PINS["hypothesis"].version
+
+
+def test_a_found_oracle_notes_its_version_for_the_receipt(monkeypatch, tmp_path):
+    log = tmp_path / "log.jsonl"
+    monkeypatch.setenv("CRAPKIT_ACCURACY_LOG", str(log))
+
+    oracles.require("hypothesis", "push")
+
+    notes = runlog.read(log)
+    assert runlog.summarize(notes)["oracles"] == {"hypothesis": PINS["hypothesis"].version}

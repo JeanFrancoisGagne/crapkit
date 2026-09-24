@@ -163,3 +163,15 @@ faulthandler_timeout = 600
 # `parallel = true` follows automatically; .coverage* is already gitignored.
 [tool.coverage.run]
 patch = ["subprocess"]
+
+# mutmut 3.8.0 runs in the accuracy image (tools/accuracy/mutation.py). The
+# accuracy plan mutates every module a tests/accuracy/*/calcs.tsv row names;
+# kit-close regenerates paths_to_mutate from that union, and
+# tests/accuracy/kit/test_kit_contract.py fails from then on when the two
+# differ. Until then it holds score.py, home of the canary mutant every shard
+# must kill. also_copy carries the accuracy suite's data into mutmut's copy of
+# the tree: fixtures, probes, recordings, goldens, the pins and the node oracles.
+[tool.mutmut]
+paths_to_mutate = ["src/crapkit/score.py"]
+also_copy = ["tests/", "tools/accuracy/pins.toml", "tools/accuracy/node/",
+             "tools/accuracy/checks/"]

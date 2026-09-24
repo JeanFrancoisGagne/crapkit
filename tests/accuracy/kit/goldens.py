@@ -27,8 +27,9 @@ from collections.abc import Iterable, Mapping
 import hashlib
 import json
 from pathlib import Path
+import tempfile
 
-from . import surfaces
+from . import corpus_run, surfaces
 
 REPO = Path(__file__).resolve().parents[3]
 FIXTURES = REPO / "tests" / "accuracy" / "kit" / "fixtures"
@@ -42,6 +43,9 @@ CHANGE_COLUMNS = ("id", "date", "kind", "calcs", "analysis_version", "lizard_ver
 CHANGE_KINDS = ("fix", "definition", "feature", "none")
 FIX = ('declare it with `python tools/accuracy/change_control.py declare <id> --kind '
        '<fix|definition|feature|none> --calcs "<calc>,..."`, or undo the change')
+SEED_FIX = ('regenerate and declare the seed goldens with `python tools/accuracy/run.py '
+            'kit-goldens --declare <id> --kind <fix|definition|feature|none> --reason "<why>"`, '
+            'or undo the change')
 _JSON = (".json", ".sarif")
 
 
@@ -164,24 +168,25 @@ def scan(base: Path, patterns: Iterable[str]) -> dict[str, str]:
     return {path.relative_to(base).as_posix(): _sha256(path) for path in sorted(found)}
 
 
-def _lock_problem(path: str, locked, now, changes: Mapping) -> str | None:
+def _lock_problem(path: str, locked, now, changes: Mapping, fix: str) -> str | None:
     if locked is None:
-        return f"{path} is not in the lock: {FIX}"
+        return f"{path} is not in the lock: {fix}"
     if now is None:
-        return f"{path} is locked but gone: {FIX}"
+        return f"{path} is locked but gone: {fix}"
     if locked[0] != now:
         return (f"{path} changed with no declared change "
-                f"(lock {locked[0][:12]}, now {now[:12]}): {FIX}")
+                f"(lock {locked[0][:12]}, now {now[:12]}): {fix}")
     if locked[1] not in changes:
         return f"{path} names change {locked[1]}, which no CHANGES row declares"
     return None
 
 
 def check(lock_path: Path, base: Path, patterns: Iterable[str],
-          changes: Mapping[str, dict]) -> list[str]:
-    """Every locked or lockable file whose bytes, presence or change id breaks the lock."""
+          changes: Mapping[str, dict], fix: str = FIX) -> list[str]:
+    """Every locked or lockable file whose bytes, presence or change id breaks the
+    lock; each problem ends with `fix`, the command that declares the change."""
     lock, now = read_lock(lock_path), scan(base, patterns)
-    found = (_lock_problem(path, lock.get(path), now.get(path), changes)
+    found = (_lock_problem(path, lock.get(path), now.get(path), changes, fix)
              for path in sorted({*lock, *now}))
     return [problem for problem in found if problem]
 
@@ -223,6 +228,18 @@ def declare(lock_path: Path, base: Path, patterns: Iterable[str], change: Mappin
     _append_change(changes_path, changes, row)
     write_lock(lock_path, _relocked(lock, now, moved, row["id"]))
     return moved
+
+
+def regenerate_seed(base: Path, change: Mapping[str, str]) -> list[str]:
+    """Remeasure the kit's seed corpus, rewrite its goldens under `base` and
+    declare `change` over what moved. Returns the moved paths."""
+    with tempfile.TemporaryDirectory(prefix="crapkit-seed-goldens-",
+                                     ignore_cleanup_errors=True) as scratch:
+        run = corpus_run.measure(corpus_run.SEED, Path(scratch))
+        write(base / SEED_GOLDENS.relative_to(REPO), goldens_of(run))
+    fixtures = base / FIXTURES.relative_to(REPO)
+    return declare(fixtures / SEED_LOCK.name, base, SEED_PATTERNS, change,
+                   fixtures / SEED_CHANGES.name)
 
 
 def _base_problem(path: str, old, new, fresh: set) -> str | None:

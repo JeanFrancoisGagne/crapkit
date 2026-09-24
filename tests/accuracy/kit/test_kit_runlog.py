@@ -21,12 +21,28 @@ def test_notes_sum_per_oracle_and_per_event(monkeypatch, tmp_path):
     runlog.note("events", counts={"R28": 4})
     runlog.note("events", counts={"R28": 1, "R27": 2})
     runlog.note("infra", message="radon is not installed")
+    runlog.note("oracle", name="radon", version="6.0.1")
+    runlog.note("oracle", name="radon", version="6.0.1")
+    runlog.note("digest", name="small/scored.tsv", value="ab12")
 
     assert runlog.summarize(runlog.read(log)) == {
         "infra": ["radon is not installed"],
         "skipped_files": {"ast": 5},
         "events": {"R28": 5, "R27": 2},
+        "oracles": {"radon": "6.0.1"},
+        "exports": {"small/scored.tsv": "ab12"},
     }
+
+
+def test_a_note_names_the_test_that_wrote_it(monkeypatch, tmp_path):
+    log = tmp_path / "check.jsonl"
+    monkeypatch.setenv(runlog.LOG_ENV, str(log))
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "tests/accuracy/x/test_a.py::test_b[1] (call)")
+
+    runlog.note("infra", message="radon is not installed")
+
+    assert runlog.read(log)[0]["test"] == "tests/accuracy/x/test_a.py::test_b[1]"
+    assert runlog.infra_tests(runlog.read(log)) == {"tests/accuracy/x/test_a.py::test_b[1]"}
 
 
 def test_a_missing_log_reads_empty(tmp_path):

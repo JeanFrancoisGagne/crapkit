@@ -2,12 +2,15 @@
 changes only together with a declared change."""
 from pathlib import Path
 import shutil
+import sys
 
 import pytest
 
+import hang_guard
 from accuracy.kit import corpus_run, goldens
 
 KIT_RELATIVE = Path("tests") / "accuracy" / "kit" / "fixtures"
+RUN = goldens.REPO / "tools" / "accuracy" / "run.py"
 PATTERNS = goldens.SEED_PATTERNS
 
 
@@ -20,7 +23,9 @@ def seed_goldens(tmp_path_factory):
 @pytest.mark.process
 @pytest.mark.golden
 def test_the_seed_run_equals_its_committed_goldens(seed_goldens):
-    assert goldens.compare(goldens.SEED_GOLDENS, seed_goldens) == []
+    problems = goldens.compare(goldens.SEED_GOLDENS, seed_goldens)
+
+    assert problems == [], "\n".join([*problems, goldens.SEED_FIX])
 
 
 @pytest.mark.process
@@ -45,7 +50,8 @@ def test_goldens_hold_no_root_no_host_and_no_clock(seed_goldens, tmp_path_factor
 def test_the_committed_seed_goldens_match_their_lock():
     changes = goldens.read_changes(goldens.SEED_CHANGES)
 
-    assert goldens.check(goldens.SEED_LOCK, goldens.REPO, PATTERNS, changes) == []
+    assert goldens.check(goldens.SEED_LOCK, goldens.REPO, PATTERNS, changes,
+                         goldens.SEED_FIX) == []
 
 
 # --- the lock on a copy of the kit's tree -----------------------------------------
@@ -163,6 +169,42 @@ def test_declare_refuses_a_reused_id_an_unknown_kind_and_nothing_to_declare(tree
         _declare(tree, "K1")
     with pytest.raises(goldens.ChangeControlError, match="kind 'tweak'"):
         _declare(tree, "K2", "tweak")
+
+
+def _stale(base: Path) -> str:
+    """The tree an older crapkit left: one golden and its lock row agree on other bytes."""
+    path = _edit(base)
+    lock_path = _paths(base)[0]
+    rows = goldens.read_lock(lock_path)
+    rows[path] = (goldens.scan(base, PATTERNS)[path], rows[path][1])
+    goldens.write_lock(lock_path, rows)
+    return path
+
+
+@pytest.mark.process
+def test_kit_goldens_rewrites_a_moved_seed_golden_and_declares_it(tree):
+    path = _stale(tree)
+    assert _check(tree) == []
+
+    done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "K2", "--kind",
+                           "fix", "--reason", "the seed's output moved", "--base", str(tree)],
+                          cwd=goldens.REPO, text=True, encoding="utf-8", errors="replace")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == f"relocked {path} under K2"
+    assert _check(tree) == []
+    assert (tree / path).read_bytes() == (goldens.REPO / path).read_bytes()
+    assert goldens.read_lock(_paths(tree)[0])[path][1] == "K2"
+
+
+@pytest.mark.process
+def test_kit_goldens_refuses_when_nothing_moved(tree):
+    done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "K2", "--kind",
+                           "none", "--reason", "nothing", "--base", str(tree)],
+                          cwd=goldens.REPO, text=True, encoding="utf-8", errors="replace")
+
+    assert done.returncode == 1
+    assert "nothing moved since the lock" in done.stderr
 
 
 # --- the store --------------------------------------------------------------------
