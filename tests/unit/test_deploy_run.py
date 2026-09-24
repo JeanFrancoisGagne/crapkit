@@ -39,6 +39,50 @@ def test_the_builder_runs_the_pinned_buildkit_image():
     assert run.build_command(PINS, "core", "local", no_cache=True, builder="b")[3:5] == ["--builder", "b"]
 
 
+INSPECT = """Name:          desktop-linux
+Driver:        docker
+
+Nodes:
+Name:             desktop-linux
+Status:           running
+BuildKit version: {version}
+Labels:
+ org.mobyproject.buildkit.worker.executor:             containerd
+"""
+
+
+def _docker(monkeypatch, version: str, calls: list):
+    def fake(argv, **kwargs):
+        calls.append(argv)
+        out = "desktop-linux\n" if argv[:3] == ["docker", "context", "show"] else INSPECT.format(version=version)
+        return run.subprocess.CompletedProcess(argv, 0, out, "")
+    monkeypatch.setattr(run.subprocess, "run", fake)
+
+
+def test_the_daemons_builder_serves_when_its_buildkit_is_the_pinned_version(monkeypatch):
+    calls = []
+    _docker(monkeypatch, run.pinned_buildkit(PINS), calls)
+
+    assert run.pinned_buildkit(PINS) == "v0.33.0"
+    assert run.choose_builder(PINS, None, "local") == "desktop-linux"
+    assert not [argv for argv in calls if argv[:3] == ["docker", "buildx", "create"]]
+
+
+def test_any_other_buildkit_builds_on_the_pinned_container_builder(monkeypatch):
+    calls = []
+    _docker(monkeypatch, "v0.29.0", calls)
+
+    assert run.choose_builder(PINS, None, "local") == run.CONTAINER_BUILDER
+
+
+def test_the_gha_cache_and_a_named_builder_skip_the_daemons_builder(monkeypatch):
+    calls = []
+    _docker(monkeypatch, run.pinned_buildkit(PINS), calls)
+
+    assert run.choose_builder(PINS, None, "gha") == run.CONTAINER_BUILDER
+    assert run.choose_builder(PINS, "ci-builder", "local") == "ci-builder"
+
+
 def test_an_image_whose_tools_drifted_from_the_pins_is_named(monkeypatch, tmp_path):
     printed = "uv uv 0.12.17\nclaude 2.1.281 (Claude Code)\n"
     monkeypatch.setattr(run.subprocess, "run", lambda *a, **k: run.subprocess.CompletedProcess(a, 0, printed, ""))

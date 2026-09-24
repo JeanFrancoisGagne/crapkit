@@ -4,11 +4,17 @@ laptop and in CI.
     python tools/deploy/run.py [--cadence push|nightly|weekly|release|published]
         [--cell ID ...] [--packet KEY] [--os linux|windows|macos]
         [--image cells|core|full|ci|gui] [--native] [--build-only] [--bake]
-        [--online] [--repeat N] [--no-cache] [--cache local|gha] [-n N] [--out DIR]
+        [--online] [--repeat N] [--no-cache] [--cache local|gha] [--builder NAME]
+        [-n N] [--out DIR]
 
-Linux runs build the image (daemon build cache on a laptop, the GitHub Actions
-cache with `--cache gha`), export the tree under test with export.py into
-<out>/in, and run tests/deploy inside the image as uid 1000 with no network:
+Linux runs build the image, export the tree under test with export.py into
+<out>/in, and run tests/deploy inside the image as uid 1000 with no network.
+The build runs on the daemon's own builder when it runs the pinned BuildKit
+version, else on a docker-container builder running the pinned BuildKit image
+(always with `--cache gha`, which reads and writes the GitHub Actions cache).
+An image whose label says it was built from the same Dockerfile, context files
+and pins is not rebuilt; `--no-cache` rebuilds cold. The tree under test is
+never in an image, so a crapkit source change rebuilds nothing:
 
     docker run --rm --network none --user 1000:1000 -v <out>:/out -e CRAPKIT_DEPLOY=1 \\
         crapkit-deploy:<image> sh /out/in/entry.sh -m '<expr>' -n <N>
@@ -43,6 +49,7 @@ DOCKERFILE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile"
 ENTRY = ROOT / "tests" / "deploy" / "docker" / "entry.sh"
 DOCKERIGNORE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile.dockerignore"
 INPUTS_LABEL = "org.crapkit.deploy.inputs"
+CONTAINER_BUILDER = "crapkit-deploy"
 DEFAULT_OUT = ROOT / ".crapkit" / "deploy-out"
 CADENCES = {"push": "push", "nightly": "nightly", "weekly": "weekly", "published": "published",
             "release": "(push or nightly or weekly or online)"}
@@ -102,7 +109,37 @@ def ensure_builder(pins: dict, name: str) -> str:
     return name
 
 
-def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: str = "crapkit-deploy",
+def pinned_buildkit(pins: dict) -> str:
+    """moby/buildkit:v0.33.0@sha256:... -> v0.33.0"""
+    return pins["images"]["buildkit"].partition("@")[0].rsplit(":", 1)[1]
+
+
+def _fields(text: str) -> dict[str, str]:
+    pairs = (line.partition(":") for line in text.splitlines())
+    return {key.strip(): value.strip() for key, _, value in pairs}
+
+
+def daemon_builder(pins: dict) -> str | None:
+    """The daemon's own builder when it runs the pinned BuildKit version. It
+    writes the image straight into the daemon's store, where a docker-container
+    builder sends the whole image as a tarball on every build."""
+    context = subprocess.run(["docker", "context", "show"], capture_output=True, text=True).stdout.strip()
+    fields = _fields(subprocess.run(["docker", "buildx", "inspect", context], capture_output=True, text=True).stdout)
+    pinned = fields.get("Driver") == "docker" and fields.get("BuildKit version") == pinned_buildkit(pins)
+    return context if pinned else None
+
+
+def choose_builder(pins: dict, requested: str | None, cache: str) -> str:
+    """A named builder as asked; else the daemon's when it runs the pinned
+    BuildKit; else a docker-container builder running the pinned image. The
+    GitHub Actions cache always takes the container builder."""
+    if requested:
+        return ensure_builder(pins, requested)
+    daemon = daemon_builder(pins) if cache != "gha" else None
+    return daemon or ensure_builder(pins, CONTAINER_BUILDER)
+
+
+def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: str = CONTAINER_BUILDER,
                   inputs: str = "") -> list[str]:
     argv = ["docker", "buildx", "build", "--builder", builder, "--progress", "plain",
             "--platform", pins["images"]["platform"], "--target", image, "-f", str(DOCKERFILE),
@@ -187,16 +224,16 @@ def disk_usage() -> str:
     return subprocess.run(["docker", "system", "df"], capture_output=True, text=True).stdout
 
 
-def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, builder: str = "crapkit-deploy") -> dict:
-    """Build one target and record its time, its size and `docker system df`
-    before and after in <out>/build.json. An image already built from the same
-    inputs is kept, and the record says so."""
+def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, requested: str | None = None) -> dict:
+    """Build one target and record its time, its size, the builder and
+    `docker system df` before and after in <out>/build.json. An image already
+    built from the same inputs is kept, and the record says so."""
     started, tag = time.monotonic(), f"crapkit-deploy:{image}"
     inputs = inputs_fingerprint(pins, image)
     if unchanged(tag, inputs, no_cache):
         return _record(out, {"image": image, "skipped": "inputs unchanged", "size_bytes": image_size(tag),
                              "seconds": round(time.monotonic() - started, 1)})
-    ensure_builder(pins, builder)
+    builder = choose_builder(pins, requested, cache)
     before = disk_usage()
     with (out / f"build-{image}.log").open("w", encoding="utf-8") as stream:
         subprocess.run(build_command(pins, image, cache, no_cache, builder, inputs), check=True, stdout=stream,
@@ -350,8 +387,9 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--cache", default="local", choices=["local", "gha"])
-    parser.add_argument("--builder", default="crapkit-deploy",
-                        help="buildx builder; created with the pinned BuildKit image when absent")
+    parser.add_argument("--builder", default=None,
+                        help="buildx builder, created with the pinned BuildKit image when absent (default: the "
+                             "daemon's builder when it runs the pinned BuildKit, else " + CONTAINER_BUILDER + ")")
     parser.add_argument("-n", type=int, default=0)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
