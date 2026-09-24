@@ -250,11 +250,13 @@ def _group_exists(pid: int) -> bool:
 
 
 def _proc_group_member(path: Path, pid: str) -> bool:
+    """Read as bytes: the name in parentheses is whatever the process set,
+    cut at 15 bytes, and only the ASCII fields after it are read."""
     try:
-        fields = path.read_text().rsplit(")", 1)[1].split()
+        fields = path.read_bytes().rsplit(b")", 1)[1].split()
     except (OSError, IndexError):
         return False
-    return fields[2] == pid and fields[0] not in ("Z", "X")
+    return fields[2] == pid.encode() and fields[0] not in (b"Z", b"X")
 
 
 def _group_active(pid: int) -> bool:
