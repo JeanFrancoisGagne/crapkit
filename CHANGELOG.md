@@ -82,6 +82,30 @@
   brings it. It still exits 4, and the shallow-clone and rewrite sentences are as
   they were.
 
+### claude-hook remembers what it judged, and says what it could not judge
+
+- The `Bash` fallback records the bytes each judgement read, per Claude Code session and
+  per file, under `.git/crapkit/claude-hook/<session_id>/`, and skips a recent file whose
+  bytes match. A `touch`, a same-bytes rewrite, or a test run right after an `Edit` moved
+  an mtime into the 12-second window and repeated an advisory the session had already
+  read. The window and the 25-file cap are unchanged. A session idle for 7 days is pruned
+  when another one starts. Content that arrives with an old mtime (`mv`, `cp -p`, an
+  unpacked archive, or a file a long command wrote well before it returned) is still not
+  judged by the fallback; the commit gate judges it.
+- Before a repo's first commit the hook judges the edited file whole. `git diff HEAD`
+  fails there, the hook read the failure as an empty diff, and a staged breach drew
+  silence while the same file unstaged drew the advisory.
+- When git fails for another reason, such as a corrupt index, the advisory says `git could
+  not report what changed in PATH, so no function in it was judged`, quotes git's error
+  and lists no function. It read the failed `git ls-files` as "untracked" and listed
+  every legacy function in the file. `ls-files` now reads its path literally, so an
+  untracked `calc/[id].py` no longer matches a tracked `calc/i.py`.
+- An edited file no reader could parse draws exit 2, `could not read PATH, so no function
+  in it was judged`, with the reader's reason and what to change. It scored as zero
+  functions, and the hook read zero records as zero breaches, so a ccn-8 function beside
+  one refused construct passed in silence. A file the edit left as HEAD has it stays
+  silent.
+
 ### watch reads content, and the history caches know their depth
 
 - `watch` rescores a file when its bytes change, not when its mtime moves. A touch, or an

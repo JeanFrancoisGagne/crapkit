@@ -246,3 +246,77 @@ def test_the_changelog_and_the_help_agree_on_what_watch_rescores():
 
     assert "from start" not in help_line and "a touch does not" in help_line
     assert "`watch` rescores a file when its bytes change, not when its mtime moves" in section
+
+
+# -- S19, S20, signal-1: what claude-hook remembers and what it says it could not judge
+
+def _hook():
+    from crapkit.cli import claude_hook
+
+    return claude_hook
+
+
+def _hook_remembers() -> bool:
+    return hasattr(_hook(), "_Memory")
+
+
+HOOK_PAGES = ("README.md", "AGENTS.md", "plugin/skills/crapkit-onboard/SKILL.md",
+              "docs/handbook.html", "CHANGELOG.md")
+
+
+@pytest.mark.parametrize("page", HOOK_PAGES)
+@landed(_hook_remembers(), "claude-hook's session memory")
+def test_each_page_names_where_the_hook_keeps_its_session_memory(page):
+    where = ".git/" + "/".join(_hook()._MEMORY_DIR) + "/"
+
+    assert where in _page(page)
+
+
+@landed(_hook_remembers(), "claude-hook's session memory")
+def test_the_pages_state_how_long_an_idle_session_is_kept():
+    days = _hook()._MEMORY_DAYS
+
+    assert f"idle for {days} days" in _prose(_page("README.md"))
+    assert f"idle for {days} days" in _prose(_release())
+    assert days == 7 and "idle for a week" in _prose(_page("docs/handbook.html"))
+
+
+def test_no_page_says_the_hook_writes_nothing():
+    row = next(line for line in _page("README.md").splitlines()
+               if line.startswith("| `claude-hook "))
+
+    assert "writes nothing" not in row
+    assert "the one thing it writes is that session's record of judged bytes" in row
+    assert "writes nothing" not in _page("docs/handbook.html")
+    assert "nothing in your tree was written" in _prose(_page("AGENTS.md"))
+
+
+def _unjudged_head(what: str) -> str:
+    hook = _hook()
+    return hook._unjudged_lines(what, "the reason", hook._UNREAD_NEXT)[0]
+
+
+@landed(hasattr(_hook(), "_unjudged_lines"), "claude-hook's unjudged advisory")
+@pytest.mark.parametrize("what", ["could not read calc/grade.py",
+                                  "git could not report what changed in calc/grade.py"])
+def test_agents_quotes_the_head_line_of_an_edit_the_hook_could_not_judge(what):
+    assert f"`{_unjudged_head(what)}`" in _prose(_page("AGENTS.md"))
+
+
+@landed(hasattr(_hook(), "_unjudged_lines"), "claude-hook's unjudged advisory")
+@pytest.mark.parametrize("page", ["CHANGELOG.md", "plugin/skills/crapkit-onboard/SKILL.md"])
+def test_the_pages_name_both_unjudged_advisories_as_the_hook_words_them(page):
+    text = _prose(_page(page))
+    for what in ("could not read PATH", "git could not report what changed in PATH"):
+        head = _unjudged_head(what).removeprefix("crapkit advisory: ")
+        assert what in text, (page, what)
+        assert head.split(" (")[0].startswith(what)
+
+
+@landed(hasattr(_hook(), "_unjudged_lines"), "claude-hook's unjudged advisory")
+def test_the_unread_next_step_agents_gives_is_the_one_the_hook_prints():
+    """AGENTS.md tells an agent to fix what the reason names or exclude the
+    file; the hook's own closing line says the same two moves."""
+    closing = _hook()._UNREAD_NEXT
+
+    assert "[exclude] globs" in closing and "`[exclude] globs`" in _page("AGENTS.md")

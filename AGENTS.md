@@ -309,17 +309,32 @@ make and writes three lines to stderr when that edit pushed a function over its 
       ccn 9  calc/grade.py:67  curve( scores , mode , floor , ceiling , skip_none )
     the commit gate enforces this; decompose there or mark the debt
 
-Nothing was blocked and nothing was written. Read it as the earliest warning that step 3
-will fail, not as a rejected edit. A function the committed ratchet already marks never
-triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
+Nothing was blocked and nothing in your tree was written. Read it as the earliest warning
+that step 3 will fail, not as a rejected edit. A function the committed ratchet already
+marks never triggers it, and a repo with no `crapkit.toml` never hears from the hook at
+all. Before the repo's first commit there is no HEAD to diff against, so every function in
+the edited file counts as changed.
+
+The same exit 2 comes with a different head line when the hook could not judge the edit.
+`crapkit advisory: could not read calc/grade.py, so no function in it was judged (the edit
+landed; nothing was blocked)` means no reader could parse the file, and the next line
+quotes the reader's reason: fix what it names, or list the file under `[exclude] globs`.
+`crapkit advisory: git could not report what changed in calc/grade.py, so no function in it
+was judged (the edit landed; nothing was blocked)` quotes git's error instead, a corrupt
+index for one. Neither is a clean verdict, and no function was checked.
 
 An edit event names its file. A `Bash` event names none, so the hook reads the working
 tree instead: the dirty or untracked `*.py` files whose mtime falls inside a 12-second
 window, 25 at most, each judged exactly the way an edited file is. Write source through a
-heredoc and you still get the advice. Three things make it silent: a clean tree, a file
-that was already dirty before this command ran, and a shell whose cwd is outside any git
-repo. It judges `*.py` and nothing else; every other language stays the commit gate's
-business.
+heredoc and you still get the advice. The hook records the bytes each judgement read, per
+session, under `.git/crapkit/claude-hook/`, and skips a file whose bytes it already
+judged, so a `touch`, a same-bytes rewrite or a test run after an edit does not repeat an
+advisory. Four things make it silent: a clean tree, a file whose mtime is older than the
+window, a file this session already judged at these bytes, and a shell whose cwd is
+outside any git repo. A file moved or copied in with its old mtime (`mv`, `cp -p`, an
+unpacked archive) is never judged here, and neither is one a long command wrote well
+before it returned. It judges `*.py` and nothing else; every other language stays the
+commit gate's business.
 
 That fallback fires only where a `Bash` matcher is registered, which the shipped plugin
 does not do; [README.md](README.md#the-claude-code-plugin) has the snippet and the cost.
@@ -778,7 +793,9 @@ their owning modules; there is no second export registry to maintain.
 `claude_hook.py` carries two rules the other families do not, and both are load-bearing.
 Its module scope imports stdlib only, because every edit on the machine pays for it. And
 it never opens the snapshot store. Opening an older store can still migrate it, and
-a per-edit hook has no reason to read or change snapshot state.
+a per-edit hook has no reason to read or change snapshot state. The one thing it writes
+is its session memory under the git directory, so the working tree stays as the edit left
+it.
 
 Five reader modules sit beside the core, all registered in `analyze.py`'s
 `deferred_pygments()` block:

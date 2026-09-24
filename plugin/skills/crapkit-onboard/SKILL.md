@@ -45,6 +45,12 @@ a path that does not exist both get it.
 Install it after the repo scores, not before. Earlier, `crapkit-onboard` points at a config
 that does not exist yet and `crapkit` points at a store with no run in it.
 
+The hook already works in a repo with no commit yet: with no HEAD to diff against, it
+judges every function in the edited file, staged or not. When it cannot judge an edit it
+says so, still at exit 2: `could not read PATH` when no reader could parse the file, with
+the reader's reason, and `git could not report what changed in PATH` when git fails, with
+git's error.
+
 Fallback for a runtime with no plugin marketplace: copy `plugin/skills/*` from a clone into
 `~/.claude/skills`, or that runtime's equivalent. A copy gets the skills alone, never the
 hook or the MCP server, and carries no version to compare against the CLI.
@@ -65,7 +71,11 @@ command, matcher `Bash`:
 
 The hook then reads the working tree: the `*.py` files git reports dirty or untracked
 whose mtime lands inside a 12-second window, at most 25 of them, each judged the way an
-edited file is judged.
+edited file is judged. It records the bytes each judgement read, per session, under
+`.git/crapkit/claude-hook/`, and skips a file whose bytes that session already judged, so
+a `touch` or a test run after an edit does not repeat an advisory. A file moved or copied
+in with its old mtime (`mv`, `cp -p`, an unpacked archive) is not judged here; the commit
+gate still judges it.
 
 The cost is why it is the consumer's choice and not the plugin's. Every shell call inside
 a repo pays one `git rev-parse` plus one `git status`, whether or not it wrote anything,
