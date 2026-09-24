@@ -8,6 +8,17 @@ import venv
 
 import pytest
 
+DEPLOY = Path(__file__).resolve().parent / "deploy"
+
+
+def pytest_ignore_collect(collection_path, config):
+    """tests/deploy runs only under CRAPKIT_DEPLOY=1. Its cells need the pinned
+    toolchain that tools/deploy/run.py provides, so a bare `pytest` leaves the
+    tree uncollected rather than failing on a harness this machine lacks."""
+    if os.environ.get("CRAPKIT_DEPLOY") == "1":
+        return None
+    return True if DEPLOY in (Path(collection_path), *Path(collection_path).parents) else None
+
 
 def _key(path: str) -> str:
     return os.path.normcase(os.path.abspath(path))
