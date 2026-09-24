@@ -1,0 +1,180 @@
+"""pins.toml agrees with the locks it describes, and kit.oracles finds and checks tools."""
+import hashlib
+import json
+from pathlib import Path
+import re
+import sys
+import tomllib
+
+import pytest
+
+from accuracy.kit import oracles
+
+REPO = oracles.REPO
+ACCURACY_TOOLS = REPO / "tools" / "accuracy"
+PINS = oracles.load_pins()
+
+
+def _locked(tier):
+    text = (ACCURACY_TOOLS / f"requirements-{tier}.txt").read_text(encoding="utf-8")
+    return dict(re.findall(r"^([A-Za-z0-9_.\-]+)==([^\s;]+)", text, flags=re.M))
+
+
+def _node_manifest(tier):
+    text = (ACCURACY_TOOLS / "node" / tier / "package.json").read_text(encoding="utf-8")
+    return json.loads(text)["dependencies"]
+
+
+def test_every_pin_names_a_digest_a_source_and_what_its_version_says():
+    for pin in PINS.values():
+        assert pin.kind in oracles.KINDS, pin.name
+        assert pin.tier in ("push", "nightly"), pin.name
+        assert pin.url.startswith("https://"), pin.name
+        assert re.fullmatch(r"[0-9a-f]{64}", pin.sha256), pin.name
+        assert pin.version_line, pin.name
+
+
+def test_python_pins_equal_their_hashed_lock():
+    """A push oracle is in both locks; a nightly one in the nightly lock."""
+    push, nightly = _locked("push"), _locked("nightly")
+    for pin in (pin for pin in PINS.values() if pin.kind == "python"):
+        assert nightly.get(pin.package.lower()) == pin.version, pin.name
+        if pin.tier == "push":
+            assert push.get(pin.package.lower()) == pin.version, pin.name
+
+
+def test_node_pins_equal_their_package_manifest():
+    for pin in (pin for pin in PINS.values() if pin.kind == "node"):
+        assert _node_manifest(pin.tier).get(pin.package) == pin.version, pin.name
+
+
+def test_the_snapshot_pins_the_base_image_by_digest():
+    snapshot = tomllib.loads(oracles.PINS.read_text(encoding="utf-8"))["snapshot"]
+
+    assert re.fullmatch(r"\d{8}T\d{6}Z", snapshot["debian"])
+    assert re.fullmatch(r"debian:bookworm-slim@sha256:[0-9a-f]{64}", snapshot["base"])
+
+
+def _pin(**fields):
+    base = {"name": "tool", "kind": "python", "tier": "push", "version": "1.0",
+            "url": "https://example.invalid/tool", "sha256": "0" * 64, "version_line": "1.0"}
+    base.update(fields)
+    return oracles.Pin(**base)
+
+
+def test_an_installed_python_oracle_is_found_at_its_version():
+    found = oracles.locate("hypothesis", PINS)
+
+    assert found.version == PINS["hypothesis"].version
+
+
+def test_a_missing_python_oracle_names_the_install_command():
+    pins = {"tool": _pin(package="crapkit-no-such-dist")}
+
+    with pytest.raises(oracles.OracleMissing, match="requirements-push.txt"):
+        oracles.locate("tool", pins)
+
+
+def test_an_unpinned_name_is_refused():
+    with pytest.raises(oracles.OracleMissing, match="no pin named radon2"):
+        oracles.locate("radon2", PINS)
+
+
+def test_a_node_oracle_is_read_from_its_package_manifest(monkeypatch, tmp_path):
+    package = tmp_path / "push" / "node_modules" / "@scope" / "tool"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text('{"version": "4.2.1"}', encoding="utf-8")
+    monkeypatch.setenv(oracles.NODE_ROOT_ENV, str(tmp_path))
+    pins = {"tool": _pin(kind="node", package="@scope/tool", version="4.2.1",
+                         version_line="4.2.1")}
+
+    assert oracles.locate("tool", pins).version == "4.2.1"
+    monkeypatch.setenv(oracles.NODE_ROOT_ENV, str(tmp_path / "elsewhere"))
+    with pytest.raises(oracles.OracleMissing, match="npm ci --prefix tools/accuracy/node/push"):
+        oracles.locate("tool", pins)
+
+
+@pytest.mark.process
+def test_a_binary_answers_with_its_version_line():
+    line = f"Python {sys.version_info.major}.{sys.version_info.minor}"
+    pins = {"tool": _pin(kind="binary", command=(sys.executable, "--version"),
+                         version_line=line)}
+
+    found = oracles.locate("tool", pins)
+
+    assert found.version == line
+    assert Path(found.where).samefile(sys.executable)
+
+
+@pytest.mark.process
+def test_a_binary_that_says_something_else_reports_its_first_line():
+    pins = {"tool": _pin(kind="binary", command=(sys.executable, "--version"),
+                         version_line="Python 2.7.18")}
+
+    found = oracles.locate("tool", pins)
+
+    assert found.version.startswith("Python 3.")
+    assert oracles.drift(found, pins["tool"]) == (
+        f"oracle tool is {found.version}, pins.toml says Python 2.7.18")
+
+
+def test_a_binary_pinned_by_digest_hashes_its_file(tmp_path):
+    script = tmp_path / "tool.sh"
+    script.write_bytes(b"echo tool\n")
+    digest = hashlib.sha256(b"echo tool\n").hexdigest()
+    pin = _pin(kind="binary", command=(sys.executable,), check="sha256", path=str(script),
+               sha256=digest, version_line="tool")
+
+    assert oracles.locate("tool", {"tool": pin}).version == "tool"
+    script.write_bytes(b"echo other\n")
+    assert oracles.locate("tool", {"tool": pin}).version == "another build"
+
+
+def test_a_binary_off_the_path_names_the_image():
+    pins = {"tool": _pin(kind="binary", command=("crapkit-no-such-binary", "--version"))}
+
+    with pytest.raises(oracles.OracleMissing, match="accuracy image"):
+        oracles.locate("tool", pins)
+
+
+def test_a_producer_is_never_located():
+    with pytest.raises(oracles.OracleMissing, match="recorded producer"):
+        oracles.locate("coverage-7.10.6", PINS)
+
+
+def test_drift_names_both_versions():
+    pin = PINS["radon"]
+    found = oracles.Found("radon", "6.0.2", "radon")
+
+    assert oracles.drift(found, pin) == "oracle radon is 6.0.2, pins.toml says 6.0.1"
+    assert oracles.drift(oracles.Found("radon", "6.0.1", "radon"), pin) is None
+
+
+def _drifted():
+    return {"tool": _pin(package="hypothesis", version="0.0.1", version_line="0.0.1")}
+
+
+@pytest.mark.parametrize("tier", ["nightly", "release"])
+def test_drift_fails_a_nightly_or_release_test(tier):
+    with pytest.raises(pytest.fail.Exception, match="oracle tool is .*, pins.toml says 0.0.1"):
+        oracles.require("tool", tier, _drifted())
+
+
+def test_drift_warns_on_push():
+    with pytest.warns(oracles.OracleDriftWarning, match="pins.toml says 0.0.1"):
+        oracles.require("tool", "push", _drifted())
+
+
+def test_a_missing_oracle_fails_the_test_and_notes_an_infra_miss(monkeypatch, tmp_path):
+    log = tmp_path / "log.jsonl"
+    monkeypatch.setenv("CRAPKIT_ACCURACY_LOG", str(log))
+    pins = {"tool": _pin(package="crapkit-no-such-dist")}
+
+    with pytest.raises(pytest.fail.Exception, match="is not installed"):
+        oracles.require("tool", "push", pins)
+
+    assert '"kind": "infra"' in log.read_text(encoding="utf-8")
+
+
+def test_the_fixture_hands_back_a_checked_oracle(oracle):
+    assert oracle("hypothesis").version == PINS["hypothesis"].version

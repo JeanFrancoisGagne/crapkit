@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from accuracy.kit import tiers
+from accuracy.kit import oracles, tiers
 
 HERE = Path(__file__).resolve().parent
 
@@ -50,3 +50,11 @@ def pytest_runtest_protocol(item, nextitem):
         yield
     finally:
         tiers.leave()
+
+
+@pytest.fixture(scope="session")
+def oracle():
+    """oracle(name) is the installed, pin-checked tool a test reads its expected
+    value from. A missing one fails the test; see kit/oracles.py."""
+    tier = tiers.current_tier()
+    return lambda name: oracles.require(name, tier)
