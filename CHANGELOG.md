@@ -19,8 +19,7 @@
   and a shallow CI clone with `.crapkit/` restored used to withhold every dark line;
   they no longer do. An artifact measured on an uncommitted edit is fresh at once, and
   reverting that edit now withholds the lines, where git called the tree clean and the
-  old lines were served against the reverted file. A same-size edit whose old
-  modification time was put back is caught too.
+  old lines were served against the reverted file.
 - A stale file withholds its own dark lines and no others. One edit used to black out
   line-level coverage for every file in the repo. The note names the file and says to
   rerun `crapkit coverage`, since committing changes nothing.
@@ -31,11 +30,10 @@
   warning and the note say so and quote git's error. The note said "files in its scopes
   changed" for that case, for an artifact no stamp vouches for and for a stamp commit
   HEAD does not descend from, and the warning printed nothing at all.
-- Library API: `lanes.lane_sources_unchanged`, which returned a bool, is now
-  `lanes.lane_sources_moved`, which returns why the lane's line numbers are stale, or `""`
-  when every file under its scopes holds the bytes its run measured. `MissingLines`
-  takes an optional third field, `drift`, and `uncovered.lane_views` returns each lane's
-  note with `blackout`, whether it withholds every file's lines.
+- Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
+  answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
+  it. `MissingLines` takes an optional third field, `drift`, and `uncovered.lane_views`
+  returns each lane's note with `blackout`, whether it withholds every file's lines.
 
 ### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
 
@@ -49,9 +47,11 @@
   them under `byproducts`. With the `.gitignore` that `crapkit init` writes, which holds
   only `.crapkit/`, the first run's own output left its stamp without a proof, and the
   lane never reused.
-- Reuse checks the `sources` digests as well, so a same-size edit whose old
-  modification time was put back (`cp -p`, `tar -x`, `rsync -t`) reruns the lane. git's
-  index called the file unchanged, and the old coverage was published again.
+- A same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
+  `rsync -t`, `touch -r`) is still not seen, by reuse or by any other reader: git's
+  index answers "unchanged" from its stat data, and crapkit trusts that answer rather
+  than read every file on every run. The cost of hashing every source is measured for
+  0.9.0 before that changes.
 - An edit git's own diff skips is a change: a file flagged `--skip-worktree` or
   `--assume-unchanged` whose bytes differ from the index, and an edit inside a
   submodule whose `.gitmodules` entry says `ignore = dirty`. Lane reuse, verify's split
@@ -70,6 +70,17 @@
   tree is clean, and quotes git's error. It printed nothing, as for a clean tree.
 - Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
   where it returned `[]`.
+
+### A git question that fails is named, and a count names its files
+
+- `verify` tells a baseline commit this clone does not hold from one a rewrite left
+  behind. `git merge-base --is-ancestor` fails on a commit the clone lacks, and verify
+  blamed a rebase or an amend and asked for a fresh baseline. A store copied from
+  another clone, or a CI cache keyed on a branch, can name a commit this checkout never
+  fetched, and the refusal now says `baseline commit a74260f321f is not in this clone,
+  so git cannot say whether it is behind HEAD` and names the `git fetch origin` that
+  brings it. It still exits 4, and the shallow-clone and rewrite sentences are as
+  they were.
 
 ## 0.8.0 — 2026-09-23
 

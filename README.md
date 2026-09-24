@@ -496,10 +496,18 @@ crapkit: baseline commit a74260f321f is not an ancestor of HEAD in this shallow 
 ```
 
 That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at full depth.
-On a full clone the same exit blames what it used to, a rebase or an amend that rewrote
-history, and asks for a fresh baseline instead.
+On a full clone that holds the commit, the same exit blames a rebase or an amend that
+rewrote history, and asks for a fresh baseline instead. A clone that does not hold it at
+all, because `.crapkit/` came from another clone or from a CI cache keyed on a branch,
+says so and names the fetch:
+
+```
+$ crapkit verify
+crapkit: baseline commit a74260f321f is not in this clone, so git cannot say whether it is behind HEAD; fetch it with `git fetch origin a74260f321f4e0b9d2c61a8f3e57d0c1b2a9e8f7d6c5`, or run `crapkit coverage` here for a baseline this clone holds
+```
+
 `verify --base` and `hook-precommit --base` look up the fork point with `git merge-base`,
-and in the same clone they refuse with exit 4 and the same fix:
+and in the shallow clone above they refuse with exit 4 and the same fix:
 
 ```
 $ crapkit hook-precommit --base c47a37b1df69c434ba42eec5979ddad03d2bf1e4
