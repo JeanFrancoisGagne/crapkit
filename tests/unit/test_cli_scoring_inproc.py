@@ -212,24 +212,52 @@ def test_a_partial_run_counts_debt_over_the_measured_scopes_only(repo, capsys):
     assert "4 functions scored: 2 measured / 2 no-lane, 0 over ceiling 6" in text, text
 
 
-@pytest.mark.parametrize("how", ["full-run", "lane-subset", "lane-failed"])
+# how -> (the ui lane's artifact is seeded, the lanes flag, exit, the scopes measured)
+_LOAD_RUNS = {
+    "full-run": (True, [], 0, ["src", "web"]),
+    "lane-subset": (True, ["--lane", "unit"], 0, ["src"]),
+    "lane-failed": (False, [], 5, ["src"]),
+}
+
+
+def _measured_load(summary: dict) -> tuple[list[str], float]:
+    """The scopes the run measured, and the CRAP load their rollups sum to."""
+    measured = [s for s in summary["by_scope"] if s not in summary["unmeasured_scopes"]]
+    return measured, sum(summary["by_scope"][s]["crap_load"] for s in measured)
+
+
+def test_the_pages_define_the_crap_load_as_the_code_sums_it():
+    """The agent page said the load summed "the functions over_target counts",
+    which reads as the functions over the ceiling; the code sums every judged
+    function, over its ceiling or not."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    agent = " ".join((root / "docs" / "agent-json.md").read_text(encoding="utf-8").split())
+    readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+
+    assert ("| `crap_load` | Sum of the CRAP of every function in the scopes this run measured, "
+            "over or under its ceiling") in agent
+    assert "Both are taken over the scopes the run measured" in readme
+
+
+@pytest.mark.parametrize("how", list(_LOAD_RUNS))
 def test_the_crap_load_is_summed_over_the_scopes_the_run_measured(repo, capsys, how):
     """The run's CRAP load sat on the same line as its over-ceiling count and
     grade, which leave out the scopes no lane measured, yet summed web's
     knotty at the cov-0 stand-in: 0 over ceiling, grade A+, CRAP load 80."""
+    ui, subset, exit_code, scopes = _LOAD_RUNS[how]
     add_knotty(repo, "web/ui.ts")
     commit_all(repo, "knotty in web")
-    seed_artifacts(repo, ui=how != "lane-failed")
-    subset = ["--lane", "unit"] if how == "lane-subset" else []
+    seed_artifacts(repo, ui=ui)
 
     code, out, _ = run(["coverage", "--reuse-artifacts", "--json", *subset], repo, capsys)
     summary = json.loads(out)
 
-    measured = [s for s in summary["by_scope"] if s not in summary["unmeasured_scopes"]]
-    assert code == (5 if how == "lane-failed" else 0)
-    assert summary["crap_load"] == pytest.approx(
-        sum(summary["by_scope"][s]["crap_load"] for s in measured), abs=0.01), summary
-    assert measured == (["src", "web"] if how == "full-run" else ["src"])
+    measured, load = _measured_load(summary)
+    assert code == exit_code
+    assert summary["crap_load"] == pytest.approx(load, abs=0.01), summary
+    assert measured == scopes
 
 
 # --- a scope that scored no function -------------------------------------------

@@ -31,6 +31,7 @@ _SAMPLE = 3
 
 
 _PAIRS = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
+_REGENERATE = "regenerate the report with the coverage tool"
 
 
 def _admit_summary(name: str, summary: object) -> dict:
@@ -38,7 +39,18 @@ def _admit_summary(name: str, summary: object) -> dict:
     all. coverage.py writes both of every kind it measured, so a summary that is
     gone, a count without its partner, or no count of either kind is a report
     something else rewrote; each read as 0 of 0, and a function that ran scored
-    cov 0. A kind with neither count is one the report did not measure."""
+    cov 0. A kind with neither count is one the report did not measure.
+
+    `name` is `path: function`, so the refusal names the file as well: a report
+    holds many files, and one function name can sit in several of them. Every
+    refusal ends with the fix, as the istanbul reader's do."""
+    try:
+        return _summary_counts(name, summary)
+    except ValueError as exc:
+        raise ValueError(f"{exc}; {_REGENERATE}") from exc
+
+
+def _summary_counts(name: str, summary: object) -> dict:
     if not isinstance(summary, dict):
         raise ValueError(f"{name}: summary is missing, so crapkit cannot tell how much of it ran")
     counts = {}
@@ -70,8 +82,8 @@ def _require_partner(name: str, present: list[str], total: str, covered: str) ->
         raise ValueError(f"{name}: {present[0]} without {other}")
 
 
-def _fn_coverage(name: str, fn: dict) -> FnCoverage:
-    summary = _admit_summary(name, fn.get("summary"))
+def _fn_coverage(name: str, fn: dict, path: str = "") -> FnCoverage:
+    summary = _admit_summary(f"{path}: {name}" if path else name, fn.get("summary"))
     lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
     start = fn.get("start_line") or (min(lines) if lines else 0)
     end = max(lines) if lines else start
@@ -95,11 +107,13 @@ def has_regions(data: object) -> bool:
     return isinstance(data, dict) and data.get("functions") is not None
 
 
-def _file_functions(data: dict) -> list[FnCoverage]:
+def _file_functions(data: dict, path: str = "") -> list[FnCoverage]:
     """One file's functions, sorted by start line. Ask `has_regions` first: this
-    reads an absent "functions" key as an empty one."""
+    reads an absent "functions" key as an empty one. `path` names the file in a
+    refusal."""
     # the "" key is the "(no function)" module-level bucket
-    fns = [_fn_coverage(name, fn) for name, fn in (data.get("functions") or {}).items() if name]
+    fns = [_fn_coverage(name, fn, path) for name, fn in (data.get("functions") or {}).items()
+           if name]
     return sorted(fns, key=lambda f: f.start)
 
 
@@ -241,7 +255,7 @@ class _Files:
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
-        self.per_file[path] = _file_functions(data)
+        self.per_file[path] = _file_functions(data, path)
         branchless = _branchless(path, data)
         self.branchless += branchless
         self.branch_counted += len(self.per_file[path]) - len(branchless)

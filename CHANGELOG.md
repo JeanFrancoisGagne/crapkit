@@ -114,7 +114,8 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   either kind: a function that ran scored cov 0, or, in a report that measures branches, a
   function with no branch counts, which scored from its statements. A report with no `meta`
   is judged by the counts its functions carry, where it said its term was statement-based
-  while scoring on branches.
+  while scoring on branches. Each refusal names the source file and the function, and ends
+  with what to do: `regenerate the report with the coverage tool`.
 - `digest` lists an over-ceiling function in a scope the older run of its pair never
   scored as `newly scored over ceiling in scope NAME`. A scope added to `crapkit.toml`
   between two runs announced its old debt as `new over ceiling`, which now means only a

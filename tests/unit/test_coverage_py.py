@@ -191,26 +191,32 @@ def _drop(*keys):
 
 REFUSED = {
     "function-summary-missing": (lambda fn: fn.pop("summary"),
-                                 "guarded: summary is missing, so crapkit cannot tell how much "
-                                 "of it ran"),
-    "covered-lines-missing": (_drop("covered_lines"), "guarded: num_statements without covered_lines"),
+                                 "summary is missing, so crapkit cannot tell how much of it ran"),
+    "covered-lines-missing": (_drop("covered_lines"), "num_statements without covered_lines"),
     "covered-branches-missing": (_drop("covered_branches"),
-                                 "guarded: num_branches without covered_branches"),
-    "num-statements-missing": (_drop("num_statements"), "guarded: covered_lines without num_statements"),
+                                 "num_branches without covered_branches"),
+    "num-statements-missing": (_drop("num_statements"), "covered_lines without num_statements"),
     "summary-empty": (_drop("covered_lines", "num_statements", "num_branches", "covered_branches"),
-                      "guarded: summary holds neither statement nor branch counts"),
+                      "summary holds neither statement nor branch counts"),
+    "count-not-a-count": (lambda fn: fn["summary"].update(covered_lines=-1),
+                          "covered_lines must be a nonnegative integer count, got -1"),
 }
 
 
 @pytest.mark.parametrize("form", sorted(REFUSED))
-def test_a_summary_missing_a_count_refuses_the_report_and_names_the_function(form):
-    edit, named = REFUSED[form]
+def test_a_summary_missing_a_count_refuses_the_report_naming_the_file_and_the_fix(form):
+    """The refusal names the source file as well as the function, since one
+    report holds many files with a function of that name, and ends with what
+    to do, as the istanbul refusals do."""
+    edit, what = REFUSED[form]
 
     with pytest.raises(ToolError) as raised:
         parse_coveragepy(json.dumps(_edited(edit)), path_prefix="")
 
-    assert named in str(raised.value), raised.value
-    assert str(raised.value).startswith("unparseable coverage.py report"), raised.value
+    message = str(raised.value)
+    assert message.startswith("unparseable coverage.py report"), message
+    assert f"pylib/mod.py: guarded: {what}" in message, message
+    assert message.endswith("; regenerate the report with the coverage tool"), message
 
 
 def test_statement_counts_alone_missing_still_score_on_branches():
