@@ -30,6 +30,7 @@ from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
+from .plaintext import strip_escapes
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -69,9 +70,14 @@ _ATTEMPT_BANNER = re.compile(r"--- attempt \d+ ---")
 
 
 def _log_lines(log_path: Path) -> list[str]:
+    """The log as its readers quote it: escape codes removed. The lane child
+    inherits FORCE_COLOR and PY_COLORS, and pytest then puts a colour code in
+    front of `E   `, which hid the cause from `_DIAGNOSTIC` and carried raw
+    escape bytes into the refusal. The file itself keeps its colour."""
     if not log_path.is_file():
         return []
-    return log_path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    return strip_escapes(text).strip().splitlines()
 
 
 def _tail_lines(lines: list[str], budget: int) -> list[str]:
