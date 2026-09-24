@@ -203,14 +203,14 @@ def _absolute(repo: Path, which: str) -> str:
     src = (repo / "src").resolve().as_posix()
     tail = src[2:] if src[1:2] == ":" else src
     return {"posix": tail, "msys": f"/c{tail}", "wsl": f"/mnt/c{tail}",
-            "unc": "\\\\server\\share\\src"}[which]
+            "unc": "\\\\server\\share\\src", "unc-forward": "//server/share/src"}[which]
 
 
 def _respelled(repo: Path, **spelled: str) -> None:
     (repo / "crapkit.toml").write_text(_config(**{**CONTROL, **spelled}), encoding="utf-8")
 
 
-@pytest.mark.parametrize("which", ["posix", "msys", "wsl", "unc"])
+@pytest.mark.parametrize("which", ["posix", "msys", "wsl", "unc", "unc-forward"])
 def test_an_absolute_scope_path_is_refused_instead_of_scoring_nothing(tmp_path, which):
     """PC6: it loaded, scored the scope at 0 files and exited 0, and only doctor
     said anything. It is refused at load, naming the path as written."""
@@ -224,10 +224,11 @@ def test_an_absolute_scope_path_is_refused_instead_of_scoring_nothing(tmp_path, 
     assert f"scope 'src': path {written!r} names nothing under the root" in res.stderr, res.stderr
 
 
-@pytest.mark.parametrize("src_path", ["src/../src", "..\\repo\\src", "../repo/src"])
+@pytest.mark.parametrize("src_path", ["src/../src", "..\\repo\\src", "../repo/src",
+                                      "C:/repo/src", "c:\\repo\\src"])
 def test_a_scope_path_that_climbs_out_of_the_root_is_refused(tmp_path, src_path):
     """The green rows no test held: `..` is refused as a segment, whatever the
-    separator, rather than read into an empty scope."""
+    separator, and so is a drive letter, rather than read into an empty scope."""
     repo = _repo(tmp_path, "repo")
     _respelled(repo, src_path=src_path)
 
