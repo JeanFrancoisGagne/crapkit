@@ -208,9 +208,10 @@ token becomes.
 
 Two exit codes change for scripts that read them. A root on a Windows network share
 (`--repo \\server\share\repo`, or a working directory there) exits 3 before any lane
-starts, where 0.8.0 ran every lane in `C:\Windows`; map the share to a drive letter. A
-lane whose `cwd` names no directory fails at exit 5 with a line naming it, where 0.8.0
-ended in a Python traceback and exit 1.
+starts, where 0.8.0 ran every lane in `C:\Windows`; the refusal gives the `net use`
+line that maps the share to a drive letter. A lane whose `cwd` names no directory
+fails as a lane, `cwd <path> is not a directory, so the command never ran`, and a run
+with no lane left exits 5, where 0.8.0 ended in a Python traceback and exit 1.
 
 ## Plugin and MCP clients
 

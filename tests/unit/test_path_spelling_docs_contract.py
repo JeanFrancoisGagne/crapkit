@@ -5,11 +5,16 @@ spellings crapkit reads as git's: a crapkit.toml written on Windows and read on
 Linux, a Git Bash or WSL path typed on Windows, a runner's `./` or absolute test
 id, an `--exclude` fragment typed with a backslash. Each test reads the page,
 checks that it names the spelling, and runs the spelling through the reader the
-page describes, so a page cannot promise a reading the code no longer makes.
+page describes, so a page cannot promise a reading the code no longer makes. A
+line the pages quote (a doctor WARN, a lane failure, a refusal) is taken from the
+code that prints it.
 
-Three rows describe code another change of this release lands (the launcher
-token, and ratchet_file's fold). Until that code is in the tree, `landed` marks
-the row as an expected failure; once it is, the row runs like the others.
+Some rows describe code another change of this release lands: the launcher
+token, ratchet_file's fold, doctor's two path WARNs, the path_prefix warning,
+the missing-cwd lane failure and the network-share refusal. Until that code is
+in the tree, `landed` marks the row as an expected failure, and a strict one: a
+row that passes while its probe says the code is absent fails, so a probe that
+stops finding the code cannot hide the row.
 """
 from __future__ import annotations
 
@@ -19,7 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import config
+from crapkit import config, doctor, lanes, procs
+from crapkit.cli import _shared
 from crapkit.cli._shared import _repo_relative
 from crapkit.cli.queue import _path_fragment
 from crapkit.config import load_config_text
@@ -119,9 +125,9 @@ def _lane_prefix(prefix: str) -> str:
 @pytest.mark.parametrize("raw", PREFIX_SPELLINGS)
 def test_each_page_names_the_path_prefix_spellings_that_read_as_the_directory(raw):
     row = _row(_section("docs/configuration.md", "## `[[lane]]`"), "path_prefix")
-    lanes = _prose(_section("docs/lanes.md", "### Running from a subdirectory"))
+    subdirectory = _prose(_section("docs/lanes.md", "### Running from a subdirectory"))
     assert f"`{raw}`" in row, row
-    assert f"`{raw}`" in lanes
+    assert f"`{raw}`" in subdirectory
 
     assert _lane_prefix(raw) == _lane_prefix("api/")
 
@@ -283,3 +289,70 @@ def test_the_upgrade_page_tells_an_0_8_0_config_to_swap_its_launcher_for_the_tok
 
     assert "`{python:.venv}`" in section
     assert "re-seed" in section
+
+
+# -- lines the pages quote -------------------------------------------------------
+
+@landed(hasattr(doctor, "unmatched_globs"), "doctor's WARN on a glob that matches nothing")
+def test_the_exclude_section_quotes_doctor_s_warn_for_a_glob_that_matches_nothing():
+    section = _section("docs/configuration.md", "## `[exclude]`")
+
+    (finding,) = doctor.unmatched_globs((("./src/gen/**", "src/gen/**"),), ["src/app.py"])
+
+    assert f"{finding.level} {finding.text}" in section, finding
+
+
+@landed(hasattr(doctor, "backslash_names"), "doctor's WARN on a tracked name holding a backslash")
+def test_the_file_paths_section_quotes_doctor_s_warn_for_a_name_holding_a_backslash():
+    section = _section("docs/configuration.md", "## File paths and root discovery")
+
+    (finding,) = doctor.backslash_names(["src/app.py", "src/pkg/we\\ird.py"])
+
+    assert f"{finding.level} {finding.text}" in section, finding
+
+
+def _unmeasured_line(prefix: str) -> str:
+    text = (SCOPE + "[[lane]]\nname = 'py'\ncommand = 'python -m pytest --cov'\n"
+            "artifact = '.crapkit/cov/py.json'\nparser = 'coveragepy'\nscopes = ['api']\n"
+            f"path_prefix = '{prefix}'\n")
+    (lane,) = load_config_text(text).lanes
+    return lanes._unmeasured_message(lane, {"web/src/calc.py": []}, ["api"])
+
+
+@landed("which crapkit.toml sets" in _unmeasured_line("web"), "the path_prefix warning's value")
+def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_read():
+    section = _prose(_section("docs/lanes.md", "### Running from a subdirectory"))
+    line = _unmeasured_line("web")
+    tail = line[line.index("or path_prefix"):]
+
+    assert "crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare" \
+        in section
+    assert line.startswith("lane 'py' measured 1 file(s), none of them under the paths")
+    assert f"`{tail}`" in section, tail
+
+
+@landed(hasattr(procs, "_refuse_missing_cwd"), "the missing-cwd lane failure")
+def test_the_cwd_row_and_the_upgrade_page_quote_the_failure_of_a_cwd_that_names_nothing(tmp_path):
+    row = _row(_section("docs/configuration.md", "## `[[lane]]`"), "cwd")
+    upgrade = _prose(_section("docs/upgrading.md", "## Config paths that 0.8.1 reads on every OS"))
+    missing = tmp_path / "nope"
+
+    with pytest.raises(OSError) as failed:
+        procs.run_bounded("echo never", 30, cwd=missing)
+
+    quoted = str(failed.value).replace(str(missing), "<path>")
+    assert f"`lane 'py' FAILED: {quoted}`" in row, quoted
+    assert f"`{quoted}`" in upgrade, quoted
+
+
+@only_windows
+@landed(hasattr(_shared, "_refuse_a_share"), "the network-share refusal")
+def test_the_file_paths_table_quotes_the_end_of_the_network_share_refusal():
+    section = _prose(_section("docs/configuration.md", "## File paths and root discovery"))
+
+    with pytest.raises(_shared.ConfigError) as refused:
+        _shared._refuse_a_share(Path("\\\\server\\share\\repo"))
+
+    message = str(refused.value)
+    tail = message[message.index("Map the share"):]
+    assert f"`{tail}`" in section, tail

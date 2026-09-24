@@ -55,7 +55,7 @@ as that one before it compares the path with a scope, a mark or a stored row.
 | Letter case | On a disk that ignores case (Windows NTFS, macOS APFS by default), `SRC/App.py` names the file git lists as `src/app.py`, and crapkit uses git's spelling. On a case-sensitive disk (Linux ext4) the case has to match. |
 | Git Bash and WSL paths (Windows) | `/c/repo/src/a.py` from Git Bash or MSYS and `/mnt/c/repo/src/a.py` from WSL read as `C:\repo\src\a.py`, unless the current drive holds a literal `\c\repo`. This covers `--repo` too. |
 | Extended-length and admin-share paths (Windows) | `\\?\C:\repo`, `\\?\UNC\localhost\C$\repo` and this machine's own `\\localhost\C$\repo` read as `C:\repo`. |
-| Network share root (Windows) | A root on a network share, such as `\\server\share\repo` given to `--repo` or standing as the working directory, exits 3 before any lane starts. cmd.exe cannot start a command in a UNC directory and would run every lane in `C:\Windows`. Map the share to a drive letter and run from there: a root typed on a mapped drive keeps that letter. |
+| Network share root (Windows) | A root on a network share, such as `\\server\share\repo` given to `--repo` or standing as the working directory, exits 3 before any lane starts. cmd.exe cannot start a command in a UNC directory and would run every lane in `C:\Windows`. The refusal ends with the command that fixes it, `Map the share to a drive letter (net use Z: \\server\share) and run crapkit from Z:\repo`. A root typed on a mapped drive keeps that letter, for the CLI and for an MCP call's `repo` alike. |
 
 These rules apply to source arguments such as `brief`, `explain`, `rescore`,
 `test-scoped`, `ratchet move`, `mutate --files` and `claims release`, and to
@@ -71,7 +71,14 @@ crapkit reads out of a file follows one rule everywhere, because the file may co
 from the other OS: `crapkit.toml`, coverage reports and JUnit reports separate at `\`
 on every OS. So a tracked file whose name holds `\`, which Linux and macOS allow, is
 unsupported: a coverage report's key for it reads as a path with one more directory,
-and the file scores untested. `crapkit doctor` names each such file. Rename it.
+and the file scores untested. `crapkit doctor` names each such file in one WARN:
+
+```
+$ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
+...
+WARN 1 tracked file(s) hold \ in their name, which crapkit does not support: crapkit.toml, coverage reports and JUnit ids read \ as a directory separator, so such a file cannot be measured: src/pkg/we\ird.py; rename each without the \
+```
 
 `crapkit.toml` itself is committed and read on every OS, so each path it carries
 drops a leading `./` and reads `\` as `/`. Scope `paths`, `[exclude] globs` and
@@ -327,7 +334,7 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 | `artifact` | string | yes | | Repo-relative path to the coverage file the command writes. Its absence after the command (and its retries) is the failure. Two lanes may not share an artifact path. Point it under `.crapkit/cov/`, which `init` already gitignores; `doctor` warns about a lane writing at the repo root. `\` separates directories on every OS and a leading `./` is dropped, here and in `results_artifact`. See [Where artifacts live](lanes.md#where-artifacts-live). |
 | `parser` | `istanbul` \| `coveragepy` | yes | | How to read the artifact. |
 | `scopes` | array of string | yes | | Which scopes this lane's coverage speaks for. A scope in no lane's list can only score `no-lane`. |
-| `cwd` | string | no | repo root | Repo-relative working directory for the command. `\` separates directories on every OS and a leading `./` is dropped, so `backend\` written on Windows is `backend/` on Linux. `doctor` fails when it does not exist, and a lane whose `cwd` names no directory fails at exit 5 with a line naming the `cwd`. |
+| `cwd` | string | no | repo root | Repo-relative working directory for the command. `\` separates directories on every OS and a leading `./` is dropped, so `backend\` written on Windows is `backend/` on Linux. `doctor` fails when it does not exist. `coverage` fails such a lane without starting the command, `lane 'py' FAILED: cwd <path> is not a directory, so the command never ran`, and exits 5 when no lane is left. |
 | `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. Read like a scope path: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, `.` reads as no prefix, and on a disk that ignores case `API/` takes the case the directory lists. A coveragepy key: the istanbul reader never reads it. It only ever prepends, so it cannot rebase a path the runner wrote absolutely, which is the runner's own switch instead ([The same tree, spelled absolutely](lanes.md#the-same-tree-spelled-absolutely)). |
 | `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory, and to hand a junit reporter its output path when the reporter reads no path off the command line (`jest-junit` is one). Every lane gets it, so raising `max_parallel_lanes` without one lets N lanes each claim the whole box. A `PATH` here **replaces** the inherited one for that lane, and `doctor` looks for the lane's runner on it, so a lane that ships its own toolchain is checked the way it runs. |
 | `inputs` | array of string | no | `[]` | Root-relative paths the command reads: its source, tests, fixtures and runner config. With them, `--reuse-unchanged` reuses the lane while the commit its artifact was built at is still behind HEAD, no committed, staged, unstaged or untracked change touches these paths (a lane's declared `artifact` or `results_artifact` is not such a change), the artifact bytes still match, and this lane's own table, `env` included, is the one it was measured with. Other `crapkit.toml` settings and environment variables the lane does not set are outside that proof. Without `inputs` a lane is reused only at the same clean HEAD. Entries are literal paths, no globs: an entry holding `*` or `?`, or one that is absolute or climbs out of the root, is a config error. An entry that matches no tracked file, and no untracked file outside `.gitignore`, such as a misspelled directory, still loads, but reuse can see no change through it, so `doctor` fails on it. A file the command reads that the list leaves out is never checked, so an edit to it reuses a stale artifact. See [Reusing artifacts](lanes.md#reusing-artifacts). |
@@ -386,7 +393,16 @@ same files on both:
   `src/gen/**`.
 
 `crapkit doctor` WARNs on each glob that matches no tracked file and quotes it as
-written. Such a glob excludes nothing, so the files it was meant for stay scored.
+written, with the spelling the loader reads when that differs. Such a glob excludes
+nothing, so the files it was meant for stay scored. The globs `init` writes by default
+are left out, since they guard trees a repo may never track.
+
+```
+$ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
+...
+WARN [exclude] glob './src/gen/**' matches no tracked file (read as 'src/gen/**'), so it excludes nothing; fix the path or delete the glob
+```
 
 Test directories are excluded **unconditionally**, before `globs` is consulted: any path
 component matching `test`, `tests` or `__tests__`, case-insensitively. You do not need a

@@ -874,8 +874,11 @@ without path_prefix: 1 functions scored: 1 untested, ..., CRAP load 20.0
 The lane ran and passed both times. Without the prefix, no artifact path matched any scoped
 file, so every function fell to `untested` and scored as if nothing tested it. The run
 still exits 0. The one sign is a stderr line that opens
-`crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare`,
-and names the `path_prefix` the lane set, as read, when it set one.
+`crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare`.
+A lane with no prefix is told the runner may report paths it needs `path_prefix` to
+rebase. A lane whose prefix names the wrong directory is told which prefix crapkit read:
+`or path_prefix 'web', which crapkit.toml sets for this lane, does not rebase the
+runner's paths onto those scopes`.
 
 Any spelling of the right directory works, because `path_prefix` is read the way a scope
 path is: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, and on a disk that ignores
