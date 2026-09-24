@@ -64,7 +64,8 @@ def test_an_empty_queue_prints_its_reasons_and_starts_no_git_process(tmp_path, c
     assert code == 0, err
     assert json.loads(out) == {
         "commit": head, "empty": True, "run_id": 1, "schema": 1, "skipped_no_lane": 0,
-        "stale": False,
+        "stale": False, "scored_changes": None,
+        "commands": {"refresh": "crapkit coverage --reuse-unchanged"},
         "reasons": {"all_remaining_at_or_under_target": 1, "below_floor": 0,
                     "churn_window_months": 12, "excluded_by_flag": 0,
                     "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}}

@@ -56,9 +56,13 @@ ago, never the tree's standing debt.
 
 ## Two fields decide whether a number is worth reading
 
-Read `stale` and `uncovered_lines_note` first. `stale: true` means the run predates HEAD:
-run `commands.refresh` before anything else. `uncovered_lines: null` means no artifact named
-lines for this file, and `flag` says which case you are in:
+Read `scored_changes` and `uncovered_lines_note` first. `scored_changes` counts the files
+the run scored whose content changed since, your own uncommitted edits included. Anything
+but `0`, `null` included, means run `commands.refresh` before anything else. `stale: true`
+says only that HEAD moved past the run's commit, which an amend does with no byte moved.
+The loop is done when `crapkit next-item` says `empty: true` with `scored_changes: 0`,
+`skipped_claimed` absent and `reasons.no_lane_over_target` 0. `uncovered_lines: null`
+means no artifact named lines for this file, and `flag` says which case you are in:
 
 - `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
 - `measured`: the artifact no longer matches the tree. Commit or revert the edits, then `crapkit coverage`.

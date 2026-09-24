@@ -149,11 +149,12 @@ def _report_worklist(root: Path, cfg, store: SnapshotStore) -> dict:
     """
     from ..gitio import head_commit
     from ..report import report_top
-    from .queue import _worklist_for, _worklist_payload, _worklist_run
+    from .queue import _worklist_for, _worklist_payload, _worklist_run, run_freshness
 
     latest = _worklist_run(root, store)
     wl = _worklist_for(root, cfg, store, latest, top=report_top(cfg.worklist_top), scopes=[])
-    return _worklist_payload(wl, latest, cfg, latest["commit"] != head_commit(root), None)
+    fresh = run_freshness(root, store, latest, head_commit(root))
+    return _worklist_payload(wl, latest, cfg, fresh.stale, None, changed=fresh.changed)
 
 
 def _report_lanes(root: Path, cfg) -> list[dict]:

@@ -54,6 +54,30 @@ _SCOPE = {
     "items": {
         "type": "string"}}
 
+# Whether the ranked run still describes the files on disk, said once for every
+# payload that carries it. `stale` keeps its schema 1 meaning, the run's commit
+# against HEAD; `scored_changes` is the content answer beside it.
+_STALE = {
+    "type": "boolean",
+    "description": ("true when the run's commit is not HEAD. It judges the commit, not the "
+    "files: an amend or a commit that touched no scored file sets it, and an uncommitted "
+    "edit leaves it false; scored_changes counts the files whose content moved. "
+    "Schema 2 redefines it as that content difference")}
+_SCORED_CHANGES = {
+    "type": ("integer", "null"),
+    "description": ("how many files the run scored hold other content now than the run "
+    "recorded, deleted files included; 0 means the numbers describe the files on disk; "
+    "null when the run recorded no content (crapkit 0.8.0 or older wrote it), which "
+    "commands.refresh answers like any count above 0")}
+_REFRESH = {
+    "type": "string",
+    "description": ("crapkit coverage --reuse-unchanged: the cheapest run that brings "
+    "scored_changes to 0 and clears stale")}
+_REFRESH_COMMANDS = {
+    "type": "object",
+    "description": "the call that answers stale and scored_changes; run it as given",
+    "properties": {"refresh": _REFRESH}}
+
 _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
  'path': {'type': 'string', 'description': 'repo-relative source path, forward slashes'},
  'function': {'type': 'string',
@@ -188,11 +212,9 @@ TOOLS: tuple[dict, ...] = (
             "commit": {
                 "type": "string",
                 "description": "that run's commit, full sha"},
-            "stale": {
-                "type": "boolean",
-                "description": ("true when the run's commit is not HEAD, so cov, crap and "
-                "uncovered_lines describe an older tree; crapkit coverage "
-                "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "stale": _STALE,
+            "scored_changes": _SCORED_CHANGES,
+            "commands": _REFRESH_COMMANDS,
             "empty": {
                 "type": "boolean",
                 "description": ("true when the queue has nothing to hand out; then reasons is present "
@@ -221,7 +243,7 @@ TOOLS: tuple[dict, ...] = (
                 "type": "object",
                 "description": ("why the queue is empty, present only when empty is true; the stop "
                 "condition is empty true with skipped_claimed and no_lane_over_target "
-                "both 0 or absent"),
+                "both 0 or absent and scored_changes 0"),
                 "properties": {
                     "below_floor": {
                         "type": "integer",
@@ -279,11 +301,9 @@ TOOLS: tuple[dict, ...] = (
             "commit": {
                 "type": "string",
                 "description": "that run's commit, full sha"},
-            "stale": {
-                "type": "boolean",
-                "description": ("true when the run's commit is not HEAD, so cov, crap and "
-                "uncovered_lines describe an older tree; crapkit coverage "
-                "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "stale": _STALE,
+            "scored_changes": _SCORED_CHANGES,
+            "commands": _REFRESH_COMMANDS,
             "floor": {
                 "type": "integer",
                 "description": ("the effective worklist_floor: rows under this ccn are listed only "
@@ -475,10 +495,8 @@ TOOLS: tuple[dict, ...] = (
             "commit": {
                 "type": "string",
                 "description": "that run's commit, full sha"},
-            "stale": {
-                "type": "boolean",
-                "description": ("true when the run's commit is not HEAD, so every number here "
-                "describes an older tree; run commands.refresh first")},
+            "stale": _STALE,
+            "scored_changes": _SCORED_CHANGES,
             "path": {
                 "type": "string",
                 "description": "the resolved file, repo-relative"},
@@ -669,10 +687,7 @@ TOOLS: tuple[dict, ...] = (
                     "verify": {
                         "type": "string",
                         "description": "the crapkit verify call: the only authoritative verdict"},
-                    "refresh": {
-                        "type": "string",
-                        "description": ("crapkit coverage --reuse-unchanged: the cheapest run that "
-                        "clears stale")},
+                    "refresh": _REFRESH,
                     "refresh_writes_run": {
                         "type": "boolean",
                         "description": ("always true: refresh writes a coverage run to the store; "
