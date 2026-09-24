@@ -7,8 +7,10 @@ those is a value some caller already holds, so each is a field here instead of a
 round trip.
 
 The caller reads the store, git, configuration and file texts once per batch.
-This module formats those values; command quoting follows the host platform's
-shells. The packet keeps the existing `brief --json` field types.
+This module formats those values. A command reads the same in sh, bash,
+PowerShell and cmd.exe when its arguments allow it, and follows the host
+platform's shells when they do not. The packet keeps the existing `brief --json`
+field types.
 """
 from __future__ import annotations
 
@@ -134,34 +136,59 @@ def _windows_encoded(arguments: list[str]) -> str:
     return ENCODED_PREFIX + encoded
 
 
-# What cmd.exe or PowerShell rewrites even inside double quotes.
-_INTERPRETED = frozenset('"%!$`\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029')
+# What cmd.exe or PowerShell rewrites even inside double quotes. PowerShell
+# reads each of the three typographic double quotes as a double quote.
+_INTERPRETED = frozenset('"%!$`\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029\u201c\u201d\u201e')
+# Add what sh and bash rewrite there too: a backslash can escape.
+_NOT_PORTABLE = _INTERPRETED | {"\\"}
+_PORTABLE_BARE = r"[\w./:][-\w./:]*"
+_WINDOWS_BARE = r"[\w./:\\][-\w./:\\]*"
+
+
+def _double_quoted(argument: str, bare: str = _PORTABLE_BARE) -> str:
+    """A plain argument bare, any other inside double quotes."""
+    if argument in ("--", "--gate") or re.fullmatch(bare, argument, re.ASCII):
+        return argument
+    return '"' + argument + '"'
 
 
 def _windows_argument(argument: str) -> str:
-    if argument in ("--", "--gate") or re.fullmatch(r"[\w./:\\][-\w./:\\]*", argument, re.ASCII):
-        return argument
-    return '"' + argument + '"'
+    return _double_quoted(argument, _WINDOWS_BARE)
+
+
+def _portable(argument: str) -> bool:
+    """Read literally inside double quotes by sh, bash, PowerShell and cmd.exe."""
+    return bool(argument) and argument.isprintable() and not _NOT_PORTABLE.intersection(argument)
+
+
+def _line(words) -> str:
+    return "crapkit " + " ".join(words)
 
 
 def console_command(arguments: list[str]) -> str:
     """One crapkit command line that hands `arguments` over intact.
 
-    POSIX quotes for sh. On Windows the line pastes into cmd.exe and PowerShell
-    alike: a plain argument prints bare, and one holding a space or an operator
-    goes in double quotes, which both shells read. An argument that either
-    shell rewrites even inside double quotes (expansion text, a line break, a
-    double quote of its own) takes the encoded PowerShell form instead.
+    The line is often read on another OS than the one that wrote it: a report
+    made on a Linux CI runner opens on a Windows laptop. So when every argument
+    reads literally inside double quotes in sh, bash, PowerShell and cmd.exe,
+    the line takes that one form on every OS: a plain argument bare, any other
+    in double quotes. Single quotes, the POSIX form, reached a cmd.exe reader
+    as part of the argument. Only an argument one of those shells rewrites
+    inside double quotes (expansion text, a backslash, a line break, a quote of
+    its own) takes the writing OS's form: POSIX quotes for sh, and on Windows
+    double quotes or the encoded PowerShell form.
     """
+    if all(map(_portable, arguments)):
+        return _line(map(_double_quoted, arguments))
     if os.name != "nt":
-        return "crapkit " + " ".join(shlex.quote(arg) for arg in arguments)
+        return _line(map(shlex.quote, arguments))
     return _windows_command(arguments)
 
 
 def _windows_command(arguments: list[str]) -> str:
     if any(_INTERPRETED.intersection(arg) for arg in arguments):
         return _windows_encoded(arguments)
-    return "crapkit " + " ".join(_windows_argument(arg) for arg in arguments)
+    return _line(map(_windows_argument, arguments))
 
 
 def _file_command(command: str, path: str, flags=()) -> str:

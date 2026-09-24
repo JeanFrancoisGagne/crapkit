@@ -447,9 +447,14 @@ session need not read the config to learn which number it is aiming at.
 | `refresh_writes_run` | bool | Always `true`. `refresh` appends a scored coverage run to `.crapkit/crap.sqlite`. Other commands can write caches or test artifacts; this field does not promise filesystem read-only execution. |
 
 Each value is a whole command line. Run it as given to preserve filename quoting
-and the refresh reuse policy. Simple paths remain readable. POSIX commands use
-shell quoting; Windows commands support cmd.exe and PowerShell, using an encoded
-PowerShell command when a filename could trigger shell expansion.
+and the refresh reuse policy. Simple paths remain readable. When every argument
+reads literally inside double quotes in sh, bash, PowerShell and cmd.exe, the
+line takes that one form on every OS, so a command written on Linux runs as
+printed in cmd.exe. An argument one of those shells rewrites inside double
+quotes (`$`, `%`, `!`, a backtick, a backslash, a quote, a line break) takes the
+writing OS's form: POSIX shell quoting, or on Windows a form cmd.exe and
+PowerShell both read, using an encoded PowerShell command when a filename could
+trigger shell expansion.
 
 With a scoped template and without one:
 
