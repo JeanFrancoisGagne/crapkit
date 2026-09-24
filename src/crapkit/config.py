@@ -1,8 +1,11 @@
 """crapkit.toml parsing. Text in, Config out; every rejection is a ConfigError (exit 3).
 
-Pure, with one exception: given a `root`, the full-suite guard reads pytest's
-own configuration in a lane's working directory, and only when the lane's
-pytest command carries a positional to judge against `testpaths`."""
+Pure, with two exceptions, both only given a `root`. The full-suite guard reads
+pytest's own configuration in a lane's working directory, and only when the
+lane's pytest command carries a positional to judge against `testpaths`. And a
+path the file declares takes the letter case the directory lists where the
+filesystem opens it in another case (repopath.disk_spelling), because git and
+every reader after this compare the text."""
 from __future__ import annotations
 
 import os
@@ -15,6 +18,7 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 from .config_contract import admit, enum_values
+from .repopath import disk_spelling, file_separators, inside, is_unc, native
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
 # suffixes to a single CLikeReader, so a `c` label beside this one could never
@@ -640,7 +644,14 @@ def _unrooted(raw: str) -> str:
     return path.lstrip("/")
 
 
-def _scope_path(name, raw: str) -> str:
+def _on_disk(root: str | os.PathLike | None, path: str) -> str:
+    """A declared root-relative path in the letter case its directories list,
+    when there is a root to list. Without this, `paths = ["Src"]` on a
+    case-insensitive disk claimed nothing: git names the directory `src`."""
+    return disk_spelling(root, path) if root is not None and path else path
+
+
+def _scope_path(name, raw: str, root: str | os.PathLike | None = None) -> str:
     """A declared path a tracked file could actually match.
 
     `./src` claimed nothing: the scope scored zero files, every file under it
@@ -659,20 +670,44 @@ def _scope_path(name, raw: str) -> str:
         raise ConfigError(f"scope {name!r}: path {raw!r} can never match a tracked file — "
                           "scope paths are repo-relative, with no drive and no `..` "
                           "(docs/configuration.md)")
-    return path
+    _refuse_absolute(name, raw, path, root)
+    return _on_disk(root, path)
 
 
-def _parse_scope(row: dict) -> Scope:
+def _refuse_absolute(name, raw: str, path: str, root: str | os.PathLike | None) -> None:
+    """A path written from `/` reads two ways: `/web` is the root's web/, and
+    `/home/dev/repo/web` or `/c/repo/web` is a directory spelled absolutely.
+    Folded, the second named nothing under the root and the scope scored zero
+    files, reported later by doctor alone. When the root-relative reading names
+    nothing either, the path is refused, with the relative path it would be."""
+    rooted = raw.replace("\\", "/").startswith("/")
+    if root is None or not rooted or os.path.lexists(os.path.join(root, path)):
+        return
+    raise ConfigError(f"scope {name!r}: path {raw!r} names nothing under the root as {path!r}; "
+                      f"scope paths are repo-relative{_relative_hint(raw, root)} "
+                      "(docs/configuration.md)")
+
+
+def _relative_hint(raw: str, root: str | os.PathLike) -> str:
+    """`: write 'web'` when the absolute spelling lands in this checkout. A
+    network share is never asked: resolving one can wait on the network."""
+    absolute = native(raw)
+    rel = None if is_unc(absolute) else inside(absolute, root)
+    return f": write {rel!r}" if rel else ""
+
+
+def _parse_scope(row: dict, root: str | os.PathLike | None = None) -> Scope:
     languages = tuple(row.get("languages", ()))
     scope_target = row.get("target")
     return Scope(name=row["name"],
-                 paths=tuple(_scope_path(row.get("name"), p) for p in row["paths"]),
+                 paths=tuple(_scope_path(row.get("name"), p, root) for p in row["paths"]),
                  languages=languages,
                  target=scope_target,
                  coverage_optional=row.get("coverage_optional", False))
 
 
-def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
+def _parse_scopes(rows, root: str | os.PathLike | None = None
+                  ) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
     """Every [[scope]] row and its notes, off ONE walk of the rows.
 
     Notes hang on the same rows the scopes come from, so collecting them in a
@@ -682,7 +717,7 @@ def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
     scopes: dict[str, Scope] = {}
     notes: dict[str, tuple[str, ...]] = {}
     for row in rows:
-        scope = _parse_scope(row)
+        scope = _parse_scope(row, root)
         if scope.name in scopes:
             raise ConfigError(f"duplicate scope name {scope.name!r}; each scope needs its own name")
         scopes[scope.name] = scope
@@ -715,19 +750,41 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
     full_suite = row.get("full_suite", True)
+    cwd = _lane_path(row.get("cwd", ""), root)
     _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"],
-                           _lane_dir(root, row.get("cwd", "")))
-    return Lane(name=row["name"], command=row["command"], artifact=row["artifact"],
+                           _lane_dir(root, cwd))
+    return Lane(name=row["name"], command=row["command"],
+                artifact=_lane_path(row["artifact"], root),
                 parser=parser, scopes=lane_scopes,
-                cwd=row.get("cwd", ""), path_prefix=row.get("path_prefix", ""),
+                cwd=cwd, path_prefix=_path_prefix(row.get("path_prefix", ""), root),
                 env=tuple(sorted(row.get("env", {}).items())),
                 full_suite=full_suite, container_ok=row.get("container_ok", False),
-                results_artifact=row.get("results_artifact", ""),
+                results_artifact=_lane_path(row.get("results_artifact", ""), root),
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
                 retest_command=row.get("retest_command", ""),
-                inputs=_lane_inputs(row))
+                inputs=_lane_inputs(row, root))
+
+
+def _lane_path(raw: str, root: str | os.PathLike | None) -> str:
+    r"""A lane's cwd, artifact or results_artifact as the OS opens it: `/`
+    between directories, no leading `./`. A lane committed from Windows says
+    `cwd = 'api\'` or `artifact = '.crapkit\cov.json'`, and Linux read the
+    backslash as part of one name: the lane crashed with a traceback on a cwd
+    that did not exist, or failed over an artifact it had just written."""
+    path = file_separators(raw, root)
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def _path_prefix(raw: str, root: str | os.PathLike | None) -> str:
+    r"""The lane's path_prefix, spelled as a scope path is. It is glued onto
+    every key the runner wrote, so `api\`, `./api` and `/api` keyed each
+    measured file outside every scope and scored a tested function untested."""
+    prefix = _unrooted(raw)
+    return "" if prefix == "." else _on_disk(root, prefix)
 
 
 _DRIVE_PATH = re.compile(r"[A-Za-z]:")
@@ -743,11 +800,11 @@ def _outside_root(entry: str) -> bool:
     return not path or path.startswith("/") or bool(_DRIVE_PATH.match(path)) or ".." in path.split("/")
 
 
-def _lane_inputs(row: dict) -> tuple[str, ...]:
-    return tuple(_lane_input(row.get("name"), entry) for entry in row.get("inputs", ()))
+def _lane_inputs(row: dict, root: str | os.PathLike | None = None) -> tuple[str, ...]:
+    return tuple(_lane_input(row.get("name"), entry, root) for entry in row.get("inputs", ()))
 
 
-def _lane_input(name, entry: str) -> str:
+def _lane_input(name, entry: str, root: str | os.PathLike | None = None) -> str:
     r"""One input spelled the way `git ls-files` spells a root-relative path.
 
     git reads inputs with --literal-pathspecs, so `src/*.ts` would match no
@@ -760,7 +817,7 @@ def _lane_input(name, entry: str) -> str:
     if "*" in entry or "?" in entry:
         raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is a glob; inputs are literal "
                           "paths from the root, so list the directory or file itself")
-    return _unrooted(entry) or "."
+    return _on_disk(root, _unrooted(entry) or ".")
 
 
 def _reject_shared_artifacts(lanes: list, root=None) -> None:
@@ -785,8 +842,18 @@ def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
     return list(lanes.values())
 
 
+def _exclude_glob(raw: str) -> str:
+    r"""One [exclude] glob, spelled the way scope paths are, since it is matched
+    against the paths git spells: `web\dist\**`, `./web/dist/**` and
+    `/web/dist/**` all read `web/dist/**`. A trailing `/` names the directory's
+    contents, as in .gitignore: `web/dist/` reads `web/dist/**`. Each of these
+    excluded nothing before, silently, and the files stayed scored."""
+    glob = _unrooted(raw)
+    return f"{glob}/**" if glob and raw.replace("\\", "/").endswith("/") else glob
+
+
 def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
-    scopes, scope_notes = _parse_scopes(raw["scope"])
+    scopes, scope_notes = _parse_scopes(raw["scope"], root)
     scope_names = {s.name for s in scopes}
     main = raw.get("crapkit", {})
     lanes = [lane._replace(log_max_bytes=main.get("log_max_bytes", 16777216))
@@ -795,7 +862,7 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
     return Config(
         target=main.get("target", DEFAULT_TARGET),
         scopes=scopes,
-        exclude_globs=tuple(raw.get("exclude", {}).get("globs", ())),
+        exclude_globs=tuple(map(_exclude_glob, raw.get("exclude", {}).get("globs", ()))),
         max_file_bytes=raw.get("exclude", {}).get("max_file_bytes"),
         churn_window_months=main.get("churn_window_months", 12),
         worklist_floor=main.get("worklist_floor", 5),
