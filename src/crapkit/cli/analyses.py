@@ -107,6 +107,7 @@ def _file_mutants(root: Path, rel: str, lines) -> list:
     dropping it silently would leave a score built on fewer files than it says.
     """
     from ..mutate import file_mutants, mutation_language, refusal
+    from ..textcodec import source_text
 
     path = root / rel
     if not path.is_file():
@@ -116,7 +117,8 @@ def _file_mutants(root: Path, rel: str, lines) -> list:
     if reason:
         print(f"crapkit: not mutating {rel}: {reason}", file=sys.stderr)
         return []
-    text = path.read_text(encoding="utf-8", errors="replace")
+    # The text run_one applies the mutant to, lines ended the way read_text ends them.
+    text = source_text(path.read_bytes()).replace("\r\n", "\n").replace("\r", "\n")
     return [m._replace(path=rel) for m in file_mutants(text, lines, language)]
 
 

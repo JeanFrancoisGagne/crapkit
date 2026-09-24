@@ -70,8 +70,11 @@ an absolute output path explicitly selects a destination outside it.
 Parsed source diffs use Crapkit's own Git settings. Display preferences, external
 diff commands and textconv do not change attribution. A supported source file
 marked binary by Git attributes receives a text fallback; ordinary binary files
-remain outside source decoding. Source text is read as UTF-8, then cp1252 as a
-fallback. UTF-16 source is outside that reader policy.
+remain outside source decoding. Source text is read as UTF-16 when the file opens
+with a UTF-16 byte-order mark (what PowerShell 5.1's `Out-File` and the ISE write),
+else as UTF-8, else as cp1252. Inventory, the pre-commit gate, the advisory hook and
+`brief --json`'s `source` all read it that way. `mutate` writes a mutant back in the
+file's own encoding and changes no byte outside the mutated line.
 
 ## `[crapkit]`
 
