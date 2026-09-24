@@ -12,9 +12,7 @@ package.json follows one rule. A UTF-8 BOM is read past, as npm reads it. A
 root package.json in UTF-16 or holding a byte that is not UTF-8 is refused by
 name, because the js lane comes from it. Any other package.json that cannot be
 read is skipped with one warning naming it, because a fixture that init never
-needed must not stop init. The rows marked xfail are that rule where init does
-not follow it yet: they pass once it does, and strict=True then fails the run
-so the marker comes off.
+needed must not stop init.
 """
 from __future__ import annotations
 
@@ -41,12 +39,6 @@ from crapkit.store import SnapshotStore
 JS = b"export function f(x) {\n  if (x) { return 1; }\n  return 2;\n}\n"
 RUNNER = {"name": "demo", "scripts": {"test": "vitest run"}, "devDependencies": {"vitest": "^2.0.0"}}
 WORKSPACES = {"name": "mono", "scripts": {"test": "npm run --workspaces test"}}
-NOT_YET_READ_AS_RULED = pytest.mark.xfail(
-    strict=True, raises=AssertionError,
-    reason="init reads a package.json with a byte that is not UTF-8 as U+FFFD and names a "
-           "UTF-16 root file at exit 0; the rule in this module's docstring is not built yet")
-
-
 def _json(payload, encoding: str = "utf-8", prefix: bytes = b"") -> bytes:
     return prefix + json.dumps(payload, ensure_ascii=False).encode(encoding)
 
@@ -98,10 +90,9 @@ def test_init_writes_the_js_lane_a_readable_package_json_names(tmp_path, capsys,
 SKIPPED = [
     # the root package.json, the unreadable one's path and bytes
     pytest.param(_json(WORKSPACES), "web/package.json", UTF16_RUNNER, id="workspace-utf16"),
-    pytest.param(_json(WORKSPACES), "web/package.json", LATIN1_RUNNER, id="workspace-latin1",
-                 marks=NOT_YET_READ_AS_RULED),
+    pytest.param(_json(WORKSPACES), "web/package.json", LATIN1_RUNNER, id="workspace-latin1"),
     pytest.param(_json(RUNNER), "tests/fixtures/old/package.json", LATIN1_RUNNER,
-                 id="latin1-fixture-beside-a-good-root", marks=NOT_YET_READ_AS_RULED),
+                 id="latin1-fixture-beside-a-good-root"),
 ]
 
 
@@ -120,7 +111,6 @@ def test_init_skips_a_non_root_package_json_it_cannot_read_with_one_line_naming_
 
 # --- a root package.json init cannot read ----------------------------------------------
 
-@NOT_YET_READ_AS_RULED
 @pytest.mark.parametrize("body", [LATIN1_RUNNER, UTF16_RUNNER], ids=["root-latin1", "root-utf16"])
 def test_init_refuses_a_root_package_json_it_cannot_read_by_name(tmp_path, capsys, body):
     """The js lane comes from this file, so reading one é as U+FFFD writes a
@@ -144,9 +134,6 @@ def test_init_appends_to_a_gitignore_holding_byte_e9_and_keeps_every_byte(tmp_pa
     assert (root / ".gitignore").read_bytes() == GITIGNORE_E9 + b"\r\n# crapkit\r\n.crapkit/\r\n"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="a second init refuses 'crapkit.toml already exists' instead of "
-                          "finishing the steps the first one did not reach")
 def test_a_second_init_after_one_that_stopped_before_gitignore_finishes(tmp_path, capsys):
     """0.8.0 wrote crapkit.toml, then died reading a .gitignore holding 0xe9:
     the repo keeps a config and a .gitignore without .crapkit/, and every
