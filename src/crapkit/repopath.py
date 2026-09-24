@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 _WINDOWS = os.name == "nt"
@@ -95,7 +96,8 @@ def file_separators(raw: str) -> str:
     return raw.replace("\\", "/")
 
 
-def disk_spelling(root: str | os.PathLike, rel: str) -> str:
+def disk_spelling(root: str | os.PathLike, rel: str,
+                  listing: Callable[[Path], set[str]] | None = None) -> str:
     """`rel`, a `/`-separated path under `root`, in the letter case each
     directory lists its entries.
 
@@ -104,11 +106,13 @@ def disk_spelling(root: str | os.PathLike, rel: str) -> str:
     text. Each component the filesystem opened in another case takes the one
     listed spelling. A component that names nothing, or names something only
     in the case given, ends the walk and the rest stays as written, so on a
-    case-sensitive disk `Src` stays `Src`."""
+    case-sensitive disk `Src` stays `Src`. `listing` lists a folder; a reader
+    spelling every key of a report passes a cached `entries`, so it lists each
+    folder once."""
     parts = rel.split("/")
     folder = Path(root)
     for i, part in enumerate(parts):
-        listed = _listed(folder, part)
+        listed = _listed(folder, part, listing or entries)
         if listed is None:
             break
         parts[i] = listed
@@ -116,13 +120,13 @@ def disk_spelling(root: str | os.PathLike, rel: str) -> str:
     return "/".join(parts)
 
 
-def _listed(folder: Path, part: str) -> str | None:
+def _listed(folder: Path, part: str, listing: Callable[[Path], set[str]]) -> str | None:
     """The entry of `folder` that `part` opens, or None when there is none to
     name: `part` itself when listed so, else the one entry that differs only in
     case, when the filesystem opens `part` too."""
     if part in ("", ".", ".."):
         return None
-    names = _names(folder)
+    names = listing(folder)
     return part if part in names else _other_case(folder, part, names)
 
 
@@ -133,7 +137,8 @@ def _other_case(folder: Path, part: str, names: set[str]) -> str | None:
     return same[0]
 
 
-def _names(folder: Path) -> set[str]:
+def entries(folder: Path) -> set[str]:
+    """The names `folder` lists, or none when it cannot be listed."""
     try:
         return set(os.listdir(folder))
     except OSError:

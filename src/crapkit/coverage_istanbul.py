@@ -14,6 +14,7 @@ JSON framing.
 """
 from __future__ import annotations
 
+import functools
 import heapq
 import os
 import posixpath
@@ -23,7 +24,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
-from .repopath import disk_spelling, file_separators, inside
+from .repopath import disk_spelling, entries, file_separators, inside
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -58,18 +59,22 @@ class _Keys:
     or keyed `\\\\?\\C:\\...` is still this checkout. The literal strip alone
     left each of those absolute, and the lane failed over its own checkout.
     Folders are placed once each: a report from another tree names thousands
-    of files in a few hundred folders."""
+    of files in a few hundred folders. Every root-relative key then takes the
+    letter case its directories list (repopath.disk_spelling), since a runner
+    can name `SRC/app.ts` under the root as crapkit spells it; each folder is
+    listed once."""
 
     def __init__(self, repo_root: str) -> None:
         self._root = Path(repo_root)
-        self._prefix = repo_root.replace("\\", "/").rstrip("/") + "/"
+        self._prefix = file_separators(repo_root).rstrip("/") + "/"
         self._folders: dict[str, str | None] = {}
+        self._listing = functools.cache(entries)
 
     def rel(self, key: str) -> str:
         norm = file_separators(key)
         if norm.startswith(self._prefix):
-            return norm[len(self._prefix):]
-        return self._placed(norm) if os.path.isabs(norm) else norm
+            return self._spelled(norm[len(self._prefix):])
+        return self._placed(norm) if os.path.isabs(norm) else self._spelled(norm)
 
     def _placed(self, key: str) -> str:
         folder, _, name = key.rpartition("/")
@@ -78,7 +83,10 @@ class _Keys:
         base = self._folders[folder]
         if base is None:
             return key
-        return posixpath.normpath(posixpath.join(base, disk_spelling(self._root / base, name)))
+        return self._spelled(posixpath.normpath(posixpath.join(base, name)))
+
+    def _spelled(self, rel: str) -> str:
+        return disk_spelling(self._root, rel, self._listing)
 
 
 def _rel_path(abs_path: str, repo_root: str) -> str:

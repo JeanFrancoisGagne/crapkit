@@ -102,7 +102,8 @@ import pytest as _pytest
 from crapkit import coverage_istanbul as _adapter
 from crapkit.config import Lane as _Lane
 
-from path_spellings import link_directory as _link, lower_drive as _lower
+from path_spellings import (link_directory as _link, lower_drive as _lower,
+                            need_case_insensitive as _need_case_insensitive)
 
 
 def _tree(root: _Path) -> _Path:
@@ -137,14 +138,22 @@ KEY_SPELLINGS = {
                             .replace("\\", "/")),
     "upper-cased": ("windows", lambda root, tmp: str(root / "src" / "app.ts").upper()),
     "extended-length": ("windows", lambda root, tmp: _extended(root)),
+    "directory-case": ("case", lambda root, tmp: str(root / "SRC" / "app.ts")),
+    "directory-case-forward": ("case", lambda root, tmp: (root / "SRC" / "App.ts").as_posix()),
+    "relative-case": ("case", lambda root, tmp: "SRC/APP.ts"),
 }
 
 
 @_pytest.mark.parametrize("which", KEY_SPELLINGS)
 def test_every_spelling_of_this_checkout_keys_the_file_git_names(tmp_path, which):
+    """A key that keeps this checkout's root as crapkit spells it can still name
+    a directory or the file in another case, and a case-insensitive disk opens
+    it: the reader keys it in the case the directory lists, as git does."""
     need, spell = KEY_SPELLINGS[which]
     if need == "windows" and _os.name != "nt":
         _pytest.skip("needs Windows path rules")
+    if need == "case":
+        _need_case_insensitive(tmp_path)
     root = _tree(tmp_path / "repo")
     (tmp_path / "repo-build").mkdir()
     _link(tmp_path / "alias", root)
