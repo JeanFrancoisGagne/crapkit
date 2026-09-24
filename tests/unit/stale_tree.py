@@ -237,6 +237,14 @@ def _case_rename(root: Path) -> None:
     os.rename(root / "src/tmp_case.ts", root / "src/App.ts")
 
 
+def _renormalize(root: Path) -> None:
+    """The blob holds CRLF, and an uncommitted .gitattributes now says `text`.
+    Once git looks at the file again (the touch), it reads it as modified,
+    since its next `add` would store LF, and no byte on disk moved."""
+    write(root / ".gitattributes", "*.ts text\n")
+    touch(root / REL)
+
+
 def _symlink(root: Path) -> None:
     write(root / "src/other.ts", "export function other(): number { return 2; }\n")
     os.symlink("other.ts", root / "src/link.ts")
@@ -284,6 +292,8 @@ EVENTS = {event.name: event for event in (
     Event("mode-change-staged", lambda root: git(root, "update-index", "--chmod=+x", REL) and None),
     Event("detached-head", lambda root: git(root, "checkout", "-q", "--detach") and None),
     Event("case-only-rename", _case_rename),
+    Event("renormalize-crlf-blob", _renormalize, gitcfg={"core.autocrlf": "false"},
+          app=APP_TS.replace("\n", "\r\n")),
     Event("fresh-clone", lambda root: clone_with_state(root, root.parent / "clone")),
     Event("shallow-clone-scope-unchanged", lambda root: _shallow(root, scope_moves=False)),
     Event("amend-message-only",
@@ -304,6 +314,9 @@ EVENTS = {event.name: event for event in (
           lambda root: write(root / "src/added.ts", "export const added = 1;\n"),
           moved=("src/added.ts",)),
     Event("symlink-add", _symlink, moved=("src/link.ts", "src/other.ts")),
+    # git's index now names src/App.ts; the file on disk is the one measured.
+    Event("case-only-git-mv", lambda root: git(root, "mv", REL, "src/App.ts") and None,
+          moved=("src/App.ts",)),
     Event("shallow-clone-scope-changed", lambda root: _shallow(root, scope_moves=True),
           moved=(REL,)),
     Event("git-missing", _without_git, moved=(REL,)),

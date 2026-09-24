@@ -114,8 +114,9 @@ def _prepared(name: str, tmp_path: Path, monkeypatch) -> tuple[Path, tuple[str, 
 
 def _truth(name: str, root: Path, expected: tuple[str, ...]) -> tuple[str, ...]:
     """A case-only rename moves nothing where the filesystem folds case (NTFS,
-    APFS) and renames the file where it does not (ext4)."""
-    if name == "case-only-rename" and not (root / REL).exists():
+    APFS) and renames the file where it does not (ext4). Through `git mv` the
+    index names src/App.ts either way, a file the stamp never measured."""
+    if name.startswith("case-only-") and not (root / REL).exists():
         return ("src/App.ts", REL)
     return expected
 
