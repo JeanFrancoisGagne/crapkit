@@ -1,0 +1,26 @@
+{
+  "case": "unknown_flag",
+  "why": "A plugin newer than the installed CLI passes the hook a flag this build does not define. argparse used to answer exit 2 and a usage dump, which PostToolUse hands the model on every edit. Exit 0 keeps it out of the model's context, the one line names the argument and the next step, and the breach below goes unjudged because the new flag's meaning is unknown here.",
+  "fixture": "measured_breach",
+  "argv": ["claude-hook", "--protocol", "1", "--budget", "5"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": [
+      "crapkit claude-hook: this crapkit does not know `--budget 5`; the hook was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run `crapkit doctor --plugin-root`"
+    ]
+  }
+}

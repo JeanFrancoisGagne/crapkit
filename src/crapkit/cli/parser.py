@@ -14,9 +14,10 @@ from ..invocation import _self
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
 # ships machine-wide and can name a subcommand an older installed CLI does not
-# have; argparse answers that with exit 2 and a usage dump, which on PostToolUse
-# lands in the model's context on every edit. Silence is the only safe answer,
-# and it is what makes every future plugin-ahead-of-CLI drift harmless.
+# have, or a flag it does not define; argparse answers either with exit 2 and a
+# usage dump, which on PostToolUse lands in the model's context on every edit.
+# Exit 0 is the only safe answer: silent for a subcommand, one line naming the
+# flag for a flag. It is what makes every future plugin-ahead-of-CLI drift harmless.
 _CLAUDE_SUBCOMMANDS = frozenset({"claude-hook"})
 
 
@@ -555,14 +556,51 @@ def _refuse_path_argument(arg: str) -> int:
     return 2
 
 
-def main(argv: list[str] | None = None) -> int:
-    _reconfigure_streams()
+def _claude_command(argv: list[str] | None) -> bool:
+    """A `claude-*` subcommand this build defines: argv a program wrote, and a
+    program that can be newer than this build."""
+    args = sys.argv[1:] if argv is None else argv
+    return bool(args) and args[0] in _CLAUDE_SUBCOMMANDS
+
+
+def _claude_version_skew(command: str, unknown: list[str]) -> int:
+    """A claude-* argv holding arguments this build does not define.
+
+    A plugin's hooks.json can pass the hook a flag added after the installed
+    CLI was built. argparse answered that with exit 2 and its usage block, and
+    PostToolUse hands the model an exit 2's stderr on every edit. Exit 0, as
+    for an unknown subcommand, with one line for the person reading the hook
+    output. The edit is not judged: what the new flag asks for is unknown here."""
+    print(f"crapkit {command}: this crapkit does not know `{' '.join(unknown)}`; the hook "
+          "was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, "
+          "then run `crapkit doctor --plugin-root`", file=sys.stderr)
+    return 0
+
+
+def _parse(parser: argparse.ArgumentParser, argv: list[str] | None) -> argparse.Namespace | int:
+    """parse_args, except that a claude-* command reads the flags this build
+    knows, `--protocol` included, and answers anything left over in one line."""
+    if not _claude_command(argv):
+        return parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(argv)
+    return _claude_version_skew(args.command, unknown) if unknown else args
+
+
+def _arguments(argv: list[str] | None) -> argparse.Namespace | int:
+    """The parsed argv, or the exit code of an argv answered before any handler runs."""
     if _unknown_claude_command(argv):
         return 0
     named_path = _path_first_arg(argv)
     if named_path is not None:
         return _refuse_path_argument(named_path)
-    args = build_parser().parse_args(argv)
+    return _parse(build_parser(), argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    _reconfigure_streams()
+    args = _arguments(argv)
+    if isinstance(args, int):
+        return args
     try:
         return args.func(args)
     except CrapkitError as exc:
