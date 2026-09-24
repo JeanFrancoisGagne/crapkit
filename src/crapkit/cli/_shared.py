@@ -14,7 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
-from ..repopath import disk_spelling, inside, native
+from ..repopath import disk_spelling, inside, is_unc, native
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -81,8 +81,8 @@ def _command_root(repo: str | None) -> Path:
     `_load_repo_config` raises names where the user stands.
     """
     if repo is not None:
-        return Path(native(repo)).resolve()
-    cwd = _working_directory().resolve()
+        return _on_its_drive(Path(native(repo)))
+    cwd = _on_its_drive(_working_directory())
     found = find_root(cwd)
     if found is None:
         return cwd
@@ -104,6 +104,36 @@ def _working_directory() -> Path:
     entered through this machine's admin share (`\\localhost\C$\repo`) is its
     drive, because cmd.exe cannot start a command in a UNC directory."""
     return Path(native(os.getcwd()))
+
+
+def _on_its_drive(path: Path) -> Path:
+    r"""`path` resolved, unless resolving puts it on a network share.
+
+    On Windows resolve() answers a mapped drive with the share behind it:
+    `Z:\repo` becomes `\\server\share\repo`, where cmd.exe cannot start a lane
+    and runs it in C:\Windows instead. Such a root keeps the letter it was
+    typed with. A root typed as a share is only made absolute, never looked up
+    on the network: `_load_repo_config` refuses it."""
+    if _on_a_share(path):
+        return Path(os.path.abspath(path))
+    resolved = path.resolve()
+    return Path(os.path.abspath(path)) if _on_a_share(resolved) else resolved
+
+
+def _on_a_share(path: Path) -> bool:
+    """A UNC path, on the one OS whose shell cannot start a command in one."""
+    return os.name == "nt" and is_unc(path)
+
+
+def _refuse_a_share(root: Path) -> None:
+    r"""A root on a network share, typed so, stood in or reached any other way,
+    stops here, before crapkit reads a file there or starts a child: cmd.exe
+    would run every lane in C:\Windows."""
+    if _on_a_share(root):
+        raise ConfigError(
+            f"the root {root} is on a network share, where cmd.exe cannot start a lane "
+            r"(it runs it in C:\Windows instead). Map the share to a drive letter "
+            f"(net use Z: {root.drive}) and run crapkit from Z:\\{root.relative_to(root.anchor)}")
 
 
 def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:
@@ -219,6 +249,7 @@ def _analysis_tools():
 
 
 def _load_repo_config(root: Path):
+    _refuse_a_share(root)
     config_path = root / "crapkit.toml"
     if not config_path.is_file():
         raise ConfigError(f"no crapkit.toml at {root} - nothing to analyze")

@@ -11,6 +11,7 @@ from .procs import run_owned
 import sys
 from pathlib import Path
 
+from .cli._shared import _on_its_drive
 from .invocation import _self
 from .repopath import native
 from .rootfind import CONFIG_NAME, find_root
@@ -1638,8 +1639,9 @@ def _config_root(repo: str) -> Path | None:
     """The crapkit root at or above `repo`, a call's own argument, found the
     way every command finds it (ADR 0002). A `repo` naming no directory finds
     nothing: a typo must not be adopted by an ancestor's configuration and
-    read back as data."""
-    start = Path(native(repo)).resolve()
+    read back as data. A repo on a mapped drive keeps its letter, as `--repo`
+    does: the CLI refuses a root on a network share."""
+    start = _on_its_drive(Path(native(repo)))
     return find_root(start) if start.is_dir() else None
 
 
