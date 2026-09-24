@@ -1,0 +1,111 @@
+name: Artifact Purge
+
+# retention-days only flips an artifact to `expired`. GitHub keeps charging the
+# bytes until something calls the delete endpoint, and recalculates usage every
+# 6-12 hours. Nothing called it here, because this repo had no purge job at all.
+#
+# Measured 2026-09-24: 24 expired artifacts holding 558 MB, plus 140 live
+# holding 335 MB, against a 500 MB account quota shared by every repo this
+# account owns. openclaw's CI was red for 14 hours with "Artifact storage quota
+# has been hit" on every upload-artifact, having uploaded 9 MB of its own. The
+# consumer was this repo; openclaw's purge only ever swept openclaw.
+#
+# The three uploads in ci.yml now set retention-days, which bounds how long a
+# new artifact stays live. This job is the other half: it is what actually
+# stops the bytes being billed once they expire.
+
+on:
+  schedule:
+    # Before the weekly coverage lanes upload anything.
+    - cron: "10 2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be deleted without deleting it
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artifact-purge
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Delete expired artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          page=1
+          ids=""
+          expired_bytes=0
+          live_bytes=0
+          expired_count=0
+          live_count=0
+
+          while :; do
+            body="$(gh api "repos/${TARGET_REPO}/actions/artifacts?per_page=100&page=${page}")"
+            count="$(printf '%s' "$body" | jq '.artifacts | length')"
+            [ "$count" -eq 0 ] && break
+
+            ids="${ids}$(printf '%s' "$body" | jq -r '.artifacts[] | select(.expired == true) | .id')
+          "
+            expired_bytes=$((expired_bytes + $(printf '%s' "$body" | jq '[.artifacts[] | select(.expired == true) | .size_in_bytes] | add // 0')))
+            live_bytes=$((live_bytes + $(printf '%s' "$body" | jq '[.artifacts[] | select(.expired != true) | .size_in_bytes] | add // 0')))
+            expired_count=$((expired_count + $(printf '%s' "$body" | jq '[.artifacts[] | select(.expired == true)] | length')))
+            live_count=$((live_count + $(printf '%s' "$body" | jq '[.artifacts[] | select(.expired != true)] | length')))
+
+            page=$((page + 1))
+            # The REST API stops paginating artifacts past 100 pages.
+            [ "$page" -gt 100 ] && break
+          done
+
+          echo "expired: ${expired_count} artifacts, $((expired_bytes / 1000000)) MB"
+          echo "live:    ${live_count} artifacts, $((live_bytes / 1000000)) MB"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::dry run, deleting nothing"
+            exit 0
+          fi
+
+          deleted=0
+          failed=0
+          for id in $ids; do
+            [ -z "$id" ] && continue
+            if gh api -X DELETE "repos/${TARGET_REPO}/actions/artifacts/${id}" --silent; then
+              deleted=$((deleted + 1))
+            else
+              # GitHub's own collector can delete an artifact between the
+              # listing and this call. That is the end state we wanted, so
+              # tolerate a few, but refuse to report success on a broad failure.
+              failed=$((failed + 1))
+              echo "::warning::could not delete artifact ${id}"
+            fi
+          done
+
+          echo "deleted ${deleted}, failed ${failed}, freed about $((expired_bytes / 1000000)) MB"
+          echo "deleted ${deleted} expired artifacts, freed about $((expired_bytes / 1000000)) MB" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$failed" -gt "$deleted" ]; then
+            echo "::error::more deletions failed (${failed}) than succeeded (${deleted}); the purge did not free the quota"
+            exit 1
+          fi
+
+          # A repo whose live set alone is most of the account quota will hit it
+          # again the moment these expire, so say so while the number is visible.
+          if [ "$live_bytes" -gt 200000000 ]; then
+            echo "::warning::live artifacts hold $((live_bytes / 1000000)) MB against a 500 MB account quota shared with every other repo; shorten retention-days in ci.yml"
+          fi

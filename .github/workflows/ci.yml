@@ -85,6 +85,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: crapkit-measure-${{ matrix.side }}
+          # Handed to the verdict job inside this same run and read nowhere
+          # else, so one day outlives every consumer it has.
+          retention-days: 1
           path: .crapkit/ci-measure/${{ matrix.side }}
           include-hidden-files: true
           if-no-files-found: warn
@@ -122,6 +125,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: crapkit-verdict
+          retention-days: 7
           path: .crapkit/ci-verdict
           include-hidden-files: true
           if-no-files-found: warn
@@ -206,6 +210,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: crapkit-dogfood-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
           path: |
             .crapkit/cov/*.xml
             .crapkit/cov/**/*.log
