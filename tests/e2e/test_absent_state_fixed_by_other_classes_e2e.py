@@ -265,18 +265,29 @@ def brief_of(repo: Path, path: str, fn: str) -> subprocess.CompletedProcess:
     return res
 
 
+def brief_fields(repo: Path) -> dict:
+    body = json.loads(brief_of(repo, "src/a.py", "hot").stdout)
+    assert body["scored"]["flag"] == "no-lane"
+    return body
+
+
 @pytest.mark.parametrize("stale_lib", [lib_never_stamped, lib_edited_since_measured],
                          ids=["lib-never-stamped", "lib-edited-since-measured"])
-def test_a_path_no_lane_covers_never_reads_another_lanes_note(stale_lib, tmp_path: Path):
+@pytest.mark.parametrize("reader", [
+    pytest.param(brief_fields, id="brief"),
+    pytest.param(dark_lines, id="explain", marks=pytest.mark.xfail(
+        strict=True, reason="explain asks for the note without the row's flag and scope, so it "
+                            "cannot say no lane covers the path, and a lane's own note wins")),
+])
+def test_a_path_no_lane_covers_never_reads_another_lanes_note(reader, stale_lib, tmp_path: Path):
     """Lane 'lib' covers scope 'lib' only. Its note, stale or unstamped, used to
     reach src/a.py too, and rerunning lane 'lib' as it said changes nothing for a
     scope no lane measures."""
     repo = committed(tmp_path, NO_LANE_FILES)
     stale_lib(repo)
 
-    src = json.loads(brief_of(repo, "src/a.py", "hot").stdout)
+    src = reader(repo)
 
-    assert src["scored"]["flag"] == "no-lane"
     assert src["uncovered_lines"] is None
     assert src["uncovered_lines_note"] == (
         "no lane covers scope 'src', so no artifact can name uncovered lines for src/a.py; "
