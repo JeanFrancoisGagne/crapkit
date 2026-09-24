@@ -148,25 +148,62 @@ def test_the_tracked_name_finds_no_coverage_and_scores_untested(tree):
     assert scored.flag == "untested"
 
 
-def test_the_actions_changed_line_reads_the_name_with_a_slash(tmp_path):
-    """The legacy line-framed --changed list folds too, on every OS. A worklist
-    row keyed with git's backslash name drops out of the comment."""
-    changed = tmp_path / "changed.txt"
-    changed.write_text(TRACKED + "\n", encoding="utf-8")
-    rows = [{"path": path, "function": name, "ccn": 7, "risk": 7, "remedy": "decompose"}
-            for path, name in [(FOLDED, "folded( )"), (TRACKED, "as_git_names_it( )")]]
+def _comment(tmp_path: Path, flag: str, changed: bytes, rows: dict[str, str]) -> str:
+    """The Action's PR comment for a worklist of `rows` (path to function) and a
+    changed list framed the way `flag` reads it."""
+    listing = tmp_path / "changed"
+    listing.write_bytes(changed)
     worklist = tmp_path / "worklist.json"
-    worklist.write_text(json.dumps({"active": rows}), encoding="utf-8")
+    worklist.write_text(json.dumps({"active": [
+        {"path": path, "function": name, "ccn": 7, "risk": 7, "remedy": "decompose"}
+        for path, name in rows.items()]}), encoding="utf-8")
     out = tmp_path / "comment.md"
 
     done = subprocess.run([sys.executable, str(ROOT / "tools" / "action" / "comment.py"),
-                           "--changed", str(changed), "--worklist", str(worklist),
+                           flag, str(listing), "--worklist", str(worklist),
                            "--top", "10", "--out", str(out)],
                           capture_output=True, timeout=HANG_SECONDS)
 
     assert done.returncode == 0, done.stderr
-    text = out.read_text(encoding="utf-8")
+    return out.read_text(encoding="utf-8")
+
+
+def test_the_actions_changed_line_reads_the_name_with_a_slash(tmp_path):
+    """The legacy line-framed --changed list folds too, on every OS. A worklist
+    row keyed with git's backslash name drops out of the comment."""
+    text = _comment(tmp_path, "--changed", (TRACKED + "\n").encode("utf-8"),
+                    {FOLDED: "folded( )", TRACKED: "as_git_names_it( )"})
+
     assert "folded( )" in text and "as_git_names_it( )" not in text
+
+
+CHANGED_NAMES = {
+    "plain": "app/weird.py",
+    "space": "src/sp ace/mod.py",
+    "non-ascii": "src/\u00fcn\u00ef/mod.py",
+    "padded": "src/ pad /mod.py",
+}
+
+
+@pytest.mark.parametrize("flag, frame", [("--changed", "\n"), ("--changed-z", "\0")],
+                         ids=["line-framed", "nul-framed"])
+@pytest.mark.parametrize("which", CHANGED_NAMES)
+def test_the_actions_changed_list_selects_each_name_as_git_wrote_it(tmp_path, which, flag,
+                                                                    frame):
+    name = CHANGED_NAMES[which]
+    text = _comment(tmp_path, flag, (name + frame).encode("utf-8"),
+                    {name: "changed_row( )", "unrelated.py": "unrelated_row( )"})
+
+    assert "changed_row( )" in text and "unrelated_row( )" not in text
+
+
+def test_the_actions_nul_framed_list_keeps_a_backslash_name_exactly(tmp_path):
+    """The route the Action takes: git's -z record holds the name as git has it,
+    so a POSIX name holding a backslash still selects its row."""
+    text = _comment(tmp_path, "--changed-z", (TRACKED + "\0").encode("utf-8"),
+                    {TRACKED: "as_git_names_it( )", FOLDED: "folded( )"})
+
+    assert "as_git_names_it( )" in text and "folded( )" not in text
 
 
 def test_the_action_hands_the_comment_nul_framed_names():
