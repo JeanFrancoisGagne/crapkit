@@ -765,6 +765,94 @@ def test_the_base_reason_names_the_failed_lane_under_the_real_cli(tmp_path):
     assert "lane 'b-js' FAILED" in reason, reason
 
 
+_ONE_PY_LANE = """
+[[scope]]
+name = "py"
+paths = ["pylib"]
+languages = ["python"]
+
+[[lane]]
+name = "py"
+# `&&`: the report exists only when the noise ran and exited 0.
+command = "python noise.py && python report.py"
+artifact = "cov-py.json"
+parser = "coveragepy"
+scopes = ["py"]
+"""
+
+
+def _report_script(branch: bool) -> str:
+    """A lane that writes coverage.py's JSON for pylib/a.py, with branch data
+    or without it (the default CI lane has no --cov-branch)."""
+    counts = {"num_statements": 2, "covered_lines": 2, "num_branches": 0, "covered_branches": 0}
+    report = {"meta": {"branch_coverage": branch}, "files": {"pylib/a.py": {
+        "executed_lines": [1, 2], "missing_lines": [], "summary": counts,
+        "functions": {"f": {"executed_lines": [2], "missing_lines": [], "summary": counts,
+                            "start_line": 1}}}}}
+    return f"open('cov-py.json', 'w').write({json.dumps(json.dumps(report))})\n"
+
+
+# What the lane prints before it writes its report, and whether the report
+# carries branch data. None of it may reach a --json payload.
+_LANE_OUTPUT = {
+    "json-looking-and-5000-character-lines": (
+        "print('{\"ok\": false, \"run_id\": 99}')\nprint('[1, 2]')\nprint('x' * 5000)\n", True),
+    "non-utf8-bytes-on-stdout-and-stderr": (
+        "import sys\nsys.stdout.buffer.write(b'caf\\xe9 \\xff\\n')\n"
+        "sys.stderr.buffer.write(b'caf\\xe9 \\xff\\n')\n", True),
+    "a-report-without-branch-data": ("", False),
+}
+
+_THE_CHAIN = ("score the checkout", "the verdict", "the ranked worklist", "the changed files",
+              "build the comment")
+
+
+def _run_the_chain(tmp_path, files: dict) -> Path:
+    """The action's scoring steps and the builder, in order, under bash, on a
+    push event (no base run), with `crapkit` on PATH running this checkout.
+    Returns the state directory the steps wrote."""
+    _two_commit_repo(tmp_path / "repo", files)
+    state, shim = tmp_path / "state", tmp_path / "bin"
+    state.mkdir()
+    shim.mkdir()
+    python = Path(sys.executable)
+    (shim / "crapkit").write_text(f'#!/bin/sh\nexec "{python.as_posix()}" -m crapkit "$@"\n',
+                                  encoding="utf-8", newline="\n")
+    (shim / "crapkit").chmod(0o755)
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "CRAPKIT_STATE": state.as_posix(), "TOP": "5",
+           "BASE_SHA": "", "GITHUB_ACTION_PATH": ROOT.as_posix(),
+           "PATH": os.pathsep.join([str(shim), str(python.parent), os.environ["PATH"]])}
+    for name in _THE_CHAIN:
+        script = tmp_path / (name.replace(" ", "-") + ".sh")
+        script.write_text(_step_named(name)["run"], encoding="utf-8", newline="\n")
+        done = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                              cwd=tmp_path / "repo", env=env, capture_output=True, timeout=HANG_SECONDS)
+        assert done.returncode == 0, f"{name}: {done.stdout!r} {done.stderr!r}"
+    return state
+
+
+@pytest.mark.parametrize("name", list(_LANE_OUTPUT))
+def test_what_a_lane_prints_never_reaches_the_payloads_the_comment_reads(tmp_path, name):
+    """The comment reads crapkit's --json stdout from three files. A lane that
+    printed a JSON-looking line, a 5,000-character line or bytes that are not
+    UTF-8 into one of them would turn a passing run into `wrote no run
+    summary`, and a report without branch data only warns."""
+    noise, branch = _LANE_OUTPUT[name]
+    files = {"crapkit.toml": _ONE_PY_LANE, "pylib/a.py": "def f():\n    return 1\n",
+             "noise.py": noise, "report.py": _report_script(branch)}
+
+    state = _run_the_chain(tmp_path, files)
+
+    payloads = [json.loads((state / f"crapkit-{kind}.json").read_bytes())
+                for kind in ("coverage", "verify", "worklist")]
+    assert all(isinstance(payload, dict) for payload in payloads), payloads
+    assert (state / "crapkit-coverage.exit").read_text(encoding="utf-8").strip() == "0"
+    comment = (state / "crapkit-comment.md").read_text(encoding="utf-8")
+    assert comment.startswith(_builder().MARKER + "\n"), comment
+    assert "1 function in 1 file" in comment and "wrote no run summary" not in comment, comment
+    assert json.loads((state / "crapkit-comment.json").read_bytes())["body"] == comment
+
+
 def test_the_comment_step_hands_the_builder_the_base_files():
     """The renderer stays git-free: the sha and the reason reach it as files
     the base step wrote, the way the three payloads do."""
@@ -1271,21 +1359,24 @@ def test_the_readme_pins_uses_to_the_release_it_documents():
     assert pins == {__version__}, f"README pins {sorted(pins)}, this release is {__version__}"
 
 
-def _run_post_step(tmp_path, head_repo: str, gh_exit: int):
-    """The post step under bash, with a `gh` on PATH that prints an error and
-    exits `gh_exit`, the way a bad token or a missing permission answers."""
+def _run_post_step(tmp_path, head_repo: str, gh_exit: int, pr: str = "7"):
+    """The post step under bash, with a `gh` on PATH that appends its arguments
+    to gh-calls.txt, prints an error and exits `gh_exit`, the way a bad token or
+    a missing permission answers."""
     state = tmp_path / "state"
     state.mkdir(parents=True)
     (state / "crapkit-comment.json").write_text("{}", encoding="utf-8")
     shim = tmp_path / "bin"
     shim.mkdir()
-    (shim / "gh").write_text(f"#!/bin/sh\necho 'gh: Bad credentials (HTTP 401)' >&2\nexit {gh_exit}\n",
+    calls = (tmp_path / "gh-calls.txt").as_posix()
+    (shim / "gh").write_text(f"#!/bin/sh\necho \"$*\" >> '{calls}'\n"
+                             f"echo 'gh: Bad credentials (HTTP 401)' >&2\nexit {gh_exit}\n",
                              encoding="utf-8", newline="\n")
     (shim / "gh").chmod(0o755)
     script = tmp_path / "post-step.sh"
     script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
     env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}",
-           "CRAPKIT_STATE": state.as_posix(), "GH_TOKEN": "x", "PR": "7",
+           "CRAPKIT_STATE": state.as_posix(), "GH_TOKEN": "x", "PR": pr,
            "REPO": "owner/repo", "HEAD_REPO": head_repo}
     return subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
                           env=env, capture_output=True, text=True)
@@ -1302,6 +1393,30 @@ def test_a_failed_post_blames_the_fork_token_only_on_a_fork(tmp_path):
     assert "fork" not in same.stdout, same.stdout
     assert "posting the crapkit comment exited 1: gh's own error is above" in same.stdout, \
         same.stdout
+
+
+def test_a_pull_request_whose_fork_was_deleted_blames_the_fork_token(tmp_path):
+    """GitHub sends `head.repo: null` once the fork is deleted, and the
+    expression renders it as "". Only a fork pull request runs with that
+    read-only token, so the fork line is the right one."""
+    result = _run_post_step(tmp_path, "", 1)
+
+    assert "posting the crapkit comment exited 1: a fork pull request's token cannot write comments" \
+        in result.stdout, result.stdout
+    assert result.returncode == 0, result.stderr
+    calls = (tmp_path / "gh-calls.txt").read_text(encoding="utf-8").splitlines()
+    assert [("--paginate" in call, "--method POST" in call) for call in calls] == \
+        [(True, False), (True, False), (False, True)], calls
+
+
+def test_a_push_event_calls_no_gh_and_says_why(tmp_path):
+    """A push event carries no pull_request, so PR renders as "", and a
+    lookup under `issues//comments` would only put a 404 in the log."""
+    result = _run_post_step(tmp_path, "", 0, pr="")
+
+    assert result.stdout.strip() == "no pull request on this event: the comment above was not posted"
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "gh-calls.txt").exists()
 
 
 def test_the_post_step_reads_the_head_repository_off_the_event():
