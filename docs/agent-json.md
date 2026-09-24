@@ -854,7 +854,7 @@ A verdict measures the working tree, so a concurrent session's uncommitted edits
 | `dirty` (on each finding) | The finding's file has uncommitted tracked edits. |
 | `committed_findings` | Gate, ratchet, test-failure and breached diff-coverage findings whose file is clean. |
 | `dirty_findings` | Findings whose file is not. |
-| `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. The repo-path form, the same path with backslashes (bun's `file` on Windows) and pytest's dotted-module form are matched. |
+| `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. The id's file part is matched in each spelling a runner writes: the repo-path form, the same path with backslashes (`web\src\app.test.ts`, as bun's `file` and jest-junit's `{filepath}` write it on Windows), a leading `./` (`./web/src/app.test.ts`, from a runner handed that argument), an absolute path that resolves inside the checkout (jest-junit's `{filepath}` in its absolute form), and pytest's dotted-module form. The id itself keeps the runner's spelling. |
 
 CI should treat any non-zero finding count as a failure. A local pre-push check can
 reasonably look at `committed_findings` alone.
@@ -1454,8 +1454,8 @@ can serve several checkouts.
 | `list_claims` | | JSON text (`claims list --json`: the open claims) |
 | `get_function_history` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
 | `check_config` | | JSON text (the `doctor --json` report) |
-| `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `list_worklist`) | JSON text |
-| `check_gate` | `path` (repo-relative source file, or absolute inside the repo; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
+| `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`, so a path fragment reads in any spelling `next-item --exclude` reads: `./pkg/legacy` is `pkg/legacy`, `pkg\legacy` is `pkg/legacy` on a Windows server, and `PKG/Legacy` is `pkg/legacy` where the disk ignores case), `scope` (array of strings, as on `list_worklist`) | JSON text |
+| `check_gate` | `path` (repo-relative source file, or absolute inside the repo, in any spelling the [CLI path rules](configuration.md#file-paths-and-root-discovery) read; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed

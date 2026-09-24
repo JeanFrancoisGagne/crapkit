@@ -640,8 +640,8 @@ along with everything else:
 | `poetry.lock` | `poetry run python -m pytest …` |
 | `pdm.lock` | `pdm run python -m pytest …` |
 | `Pipfile.lock` | `pipenv run python -m pytest …` |
-| none, and a venv in the tree | `.venv/bin/python -m pytest …` (`.venv\\Scripts\\python.exe` on Windows) |
-| none at all | `python -m pytest …` (or `python3`, or `py` on Windows: the first that resolves) |
+| none, and a venv in the tree | `{python:.venv} -m pytest …`, which runs `.venv/bin/python` on Linux and macOS and `.venv\Scripts\python.exe` on Windows |
+| none at all | `{python} -m pytest …`, which runs `python3` on Linux and macOS and `python` on Windows; where that name does not resolve, the first of `python`, `python3` and `py` that does |
 
 The first match in that order wins, so a repo mid-migration between two managers gets the
 same config every time.
@@ -650,14 +650,20 @@ With no lockfile, `init` looks for the environment the repo carries: `.venv`, `v
 one `.venv` inside each scope it just sniffed. A directory counts only when it holds
 `pyvenv.cfg` and its interpreter imports `pytest`, so an empty environment, or a `venv/`
 package of somebody's sources, leaves the bare name alone. The path is repo-relative
-because an absolute one does not survive the repo reaching anyone else, and the Windows
-spelling is the file's, not the shell's: crapkit.toml is TOML, where `\` opens a string
-escape, so the committed line reads `command = ".venv\\Scripts\\python.exe -m pytest …"`
-and the loader hands the lane the single-backslash path. Forward slashes are not an
-option there: cmd.exe reads an unquoted `/` as the end of the command name and answers
-`'.venv' is not recognized`. That spelling is also the one gap in the row: a config
-written on Windows names `Scripts\python.exe`, which no Unix collaborator has, the same
-way `py` does not travel.
+because an absolute one does not survive the repo reaching anyone else.
+
+crapkit.toml is committed, so a Windows author's lane runs on a Linux collaborator's
+checkout and the other way round, each with a venv of its own. No one spelling of the
+launcher runs on both. cmd.exe reads an unquoted `/` as the end of the command name, so
+`.venv/bin/python` answers `'.venv' is not recognized`, and sh reads
+`.venv\Scripts\python.exe` as `.venvScriptspython.exe`. A bare `python` fails on an
+Ubuntu without python-is-python3. So `init` writes a
+[launcher token](configuration.md#the-launcher-token), and the loader replaces it with
+the launcher of the OS reading the file before anything reads the command. The one gap
+left is a machine where only another name resolves: `init` writes `py` on a Windows PATH
+that carries only the launcher, and a committed `py -m pytest` fails every Unix
+collaborator's doctor. Install a Python that puts `python` on that PATH, then write
+`{python}` in place of `py`.
 
 Every python line `init` writes carries the same prefix, and there are two in any one
 file: the `[crapkit.scoped_tests]` entry, plus either the live `[[lane]]` command or,
@@ -686,7 +692,10 @@ note: lane 'py' runs through `uv`, which this machine's PATH does not carry — 
 ```
 
 Writing the prefix by hand is the fix for a repo that adopted crapkit earlier, or one that
-pins its environment some other way: `command` is a shell string and takes anything.
+pins its environment some other way: `command` is a shell string and takes anything. A
+config `init` wrote before 0.8.1 names one OS's venv launcher: swap `.venv/bin/python`,
+or `.venv\\Scripts\\python.exe` as the TOML string spells it, for `{python:.venv}` so
+checkouts on the other OS run it too.
 
 ### A suite that spawns subprocesses
 
@@ -854,7 +863,7 @@ parser = "coveragepy"
 scopes = ["api"]
 ```
 
-Getting `path_prefix` wrong is silent and expensive. The same tree, same suite, only the key
+Getting `path_prefix` wrong is quiet and expensive. The same tree, same suite, only the key
 removed:
 
 ```
@@ -863,7 +872,16 @@ without path_prefix: 1 functions scored: 1 untested, ..., CRAP load 20.0
 ```
 
 The lane ran and passed both times. Without the prefix, no artifact path matched any scoped
-file, so every function fell to `untested` and scored as if nothing tested it.
+file, so every function fell to `untested` and scored as if nothing tested it. The run
+still exits 0. The one sign is a stderr line that opens
+`crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare`,
+and names the `path_prefix` the lane set, as read, when it set one.
+
+Any spelling of the right directory works, because `path_prefix` is read the way a scope
+path is: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, and on a disk that ignores
+case `API/` takes the case the directory lists. Before 0.8.1 each of those glued its own
+text onto every key, so a Windows-written `api\` scored the whole scope untested on every
+OS, with the same stderr line as the only sign.
 
 ---
 

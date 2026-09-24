@@ -97,11 +97,13 @@ Uncommenting it is therefore safe now: it used to hand back a bare `python`, whi
 to whichever venv the shell has active rather than the one the repo pins.
 
 With no lockfile, `init` looks for a venv the repo carries (`.venv`, `venv`, or one
-`.venv` per sniffed scope) and writes its interpreter as a repo-relative path, but only
-when that directory holds `pyvenv.cfg` and its python imports pytest. The committed line
-reads `.venv\\Scripts\\python.exe` on Windows because crapkit.toml is TOML; the loader
-hands the lane the single-backslash path. With no venv either, it falls back to `python`,
-`python3`, or `py`.
+`.venv` per sniffed scope) and writes its interpreter as a launcher token, but only when
+that directory holds `pyvenv.cfg` and its python imports pytest: `{python:.venv}`, which
+the loader reads as `.venv/bin/python` on Linux and macOS and `.venv\Scripts\python.exe`
+on Windows, so one committed line runs on every collaborator's OS. With no venv either,
+it writes `{python}`, read as `python3` on Linux and macOS and `python` on Windows. A
+machine where that name does not resolve gets the one that does, `py` included. When
+you edit a lane by hand, keep the token in front of `-m pytest`.
 
 Read init's notes before the first `crapkit coverage`. Two of them are about the
 interpreter, and they are different problems. One says the shell cannot run the word the
@@ -113,8 +115,10 @@ crapkit's own. Keep those double quotes: cmd.exe passes `'` through as an ordina
 character and pip then rejects the requirement.
 
 On a Windows PATH that carries only the `py` launcher, init writes `py` into the lane. It
-is last in the fallback chain because it exists nowhere else, so a committed `py -m pytest`
-fails every Unix collaborator's doctor.
+exists nowhere else, so a committed `py -m pytest` fails every Unix collaborator's doctor.
+The fix is a Python install that puts `python` on that PATH, then `{python}` in place of
+`py`. A config an older `init` wrote names one OS's venv launcher, `.venv/bin/python` or
+`.venv\\Scripts\\python.exe`; write `{python:.venv}` in its place.
 
 Read [docs: adoption](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md)
 before the first `crapkit init`. It carries the judgment the quickstarts leave out: how

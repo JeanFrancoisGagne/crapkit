@@ -158,6 +158,60 @@ paths still have to name the measured tree. Use the documented
 [portable record reader](portable-records.md) when automating around exports.
 JSON stays at `schema: 1`; consumers must accept added fields.
 
+## Config paths that 0.8.1 reads on every OS
+
+A committed `crapkit.toml` is read on every OS its collaborators use, and 0.8.0 read
+some of its paths as the text typed. 0.8.1 reads each one the way git spells a path
+([the rules](configuration.md#file-paths-and-root-discovery)). Three of those changes
+can move what an existing config scores. None of them re-seeds: the analysis version
+stays 11, so marks keep their stamp and verify keeps comparing against them. Before
+upgrading, save `crapkit doctor --show-files` and a `crapkit coverage --export`; after,
+run both again and compare the per-scope file counts and scores.
+
+**Scopes that scored 0 files.** On a disk that ignores case, `paths = ["Src"]` for a
+directory git lists as `src/` claimed nothing, and the scope scored 0 functions in 0
+files while `doctor` FAILed it. It now claims `src/`. A scope path spelled absolutely
+(`/home/dev/repo/web`, `/c/repo/web`, `/mnt/c/repo/web`, `\\server\share\web`) scored
+0 files the same way; the loader now refuses it with exit 3 and names the relative
+path to write when it lands in this checkout. Once the path names the directory, the
+scope's functions score, and each one over its ceiling fails the gate the next time its
+file changes.
+Run `crapkit ratchet seed` after the first `crapkit coverage` to mark that debt, as
+for any newly scored file.
+
+**`[exclude]` globs start excluding.** `src\gen\**`, `./src/gen/**`, `/src/gen/**` and
+`src/gen/` excluded nothing in 0.8.0, so generated files stayed scored. They now read
+`src/gen/**`, the files leave the corpus, and their rows leave the worklist. Ratchet
+marks on functions that leave the corpus are held, not dropped. `doctor` now WARNs on
+each glob that matches no tracked file, so a glob that still excludes nothing says so.
+
+**`path_prefix` starts measuring.** `api\`, `./api/`, `.\api\`, `/api/` and, where the
+disk ignores case, `API/` glued their own text onto every coverage key, so every
+function in the lane's scopes scored untested. They now read `api/`, the lane's
+coverage joins, and CRAP falls. Marks set while those functions scored untested sit
+above the new numbers, and `verify` tightens them as it tightens any mark that falls.
+On a commit 0.8.0 already measured, a drop past `tighten_max_jump` holds the mark with
+a `NO TIGHTEN` line ([damping](ratchet.md#damping-a-measurement-that-bounces)), and the
+next commit tightens it.
+
+**The venv launcher `init` wrote.** A config that `crapkit init` wrote under 0.8.0
+names the launcher of the OS it ran on: `.venv\\Scripts\\python.exe` on Windows (as the
+TOML string spells it) or `.venv/bin/python` elsewhere, and a bare `python` or
+`python3` where no venv carried pytest. Each can fail every lane elsewhere: a Windows
+venv path on Linux, a Linux one under cmd.exe, a bare `python` on an Ubuntu without
+python-is-python3. Swap
+the venv launcher for `{python:.venv}`, with the venv's own directory in place of
+`.venv`, and a bare name for `{python}`, in each lane `command`, `retest_command`,
+`[crapkit.scoped_tests]` template and `mutation_command`. Then run `crapkit doctor` on
+each OS. [The launcher token](configuration.md#the-launcher-token) lists what each
+token becomes.
+
+Two exit codes change for scripts that read them. A root on a Windows network share
+(`--repo \\server\share\repo`, or a working directory there) exits 3 before any lane
+starts, where 0.8.0 ran every lane in `C:\Windows`; map the share to a drive letter. A
+lane whose `cwd` names no directory fails at exit 5 with a line naming it, where 0.8.0
+ended in a Python traceback and exit 1.
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating

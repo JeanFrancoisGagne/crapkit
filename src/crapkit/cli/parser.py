@@ -170,8 +170,17 @@ def _help_topics(parser: argparse.ArgumentParser) -> dict:
 # working directory: without the flag the root is found by walking up from
 # there (ADR 0002), which is `cli._shared._command_root`'s business.
 # A path argument is rebased from the working directory only when the root came
-# from the walk (ADR 0002); under --repo it is root-relative as before.
-_WHERE = " (repo-relative; without --repo, read from the working directory)"
+# from the walk (ADR 0002); under --repo it is root-relative as before. Each
+# spelling named here reaches the scopes as git's path (cli._shared._repo_relative),
+# so a user who typed one of them learns it was read as the file they meant.
+_WHERE = (" (repo-relative or absolute; ./src/a.py, SRC/a.py where the disk ignores case,"
+          " and on Windows src\\a.py, /c/... and /mnt/c/... name src/a.py;"
+          " without --repo, read from the working directory)")
+# next-item --exclude compares a path fragment with git's path the way a file
+# argument is read (cli.queue._path_fragment); a function name keeps its case.
+_EXCLUDE_HELP = ("skip items whose path or function name contains this (repeatable); a path"
+                 " fragment reads as git spells it: ./pkg/legacy, PKG/Legacy where the disk"
+                 " ignores case, and pkg\\legacy on Windows all skip pkg/legacy")
 _REPO_FLAG = {"default": None,
               "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
 
@@ -212,8 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
                                            "descending: what a refactor session takes next")
     nxt.add_argument("--repo", **_REPO_FLAG)
     nxt.add_argument("--top", type=int, default=1, help="return the next N items instead of one")
-    nxt.add_argument("--exclude", action="append", default=[],
-                     help="skip items whose path or function name contains this (repeatable)")
+    nxt.add_argument("--exclude", action="append", default=[], help=_EXCLUDE_HELP)
     nxt.add_argument("--scope", action="append", default=[], metavar="NAME",
                      help="restrict to this configured scope (repeatable); exact, not substring")
     nxt.add_argument("--claim", action="store_true",
