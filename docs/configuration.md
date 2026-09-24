@@ -85,8 +85,9 @@ drops a leading `./` and reads `\` as `/`. Scope `paths`, `[exclude] globs` and
 `path_prefix` also drop a leading `/` and read from the root, and on a disk that
 ignores case, scope paths, `path_prefix` and `inputs` take the case their
 directories list. A scope path spelled absolutely (`/home/dev/repo/web`,
-`/c/repo/web`, `/mnt/c/repo/web`, `\\server\share\web`) is refused at load, with its
-relative spelling when it lands in this checkout.
+`/c/repo/web`, `/mnt/c/repo/web`, `\\server\share\web`, `//server/share/web`,
+`C:/repo/web`) is refused at load with exit 3, with its relative spelling when it lands
+in this checkout.
 
 Tracked Git paths preserve whitespace and Unicode separators. Their bytes must
 decode as UTF-8; invalid filename bytes are refused. Scope-prefix normalization

@@ -182,6 +182,40 @@ def test_the_file_paths_table_names_the_network_share_refusal_and_the_mapped_dri
     assert "Map the share to a drive letter" in section
 
 
+ABSOLUTE_SCOPES = ["/home/dev/repo/web", "/c/repo/web", "/mnt/c/repo/web",
+                   "\\\\server\\share\\web", "//server/share/web", "C:/repo/web"]
+
+
+def _scope_paths(raw: str, root: Path) -> tuple[str, ...]:
+    text = f"[[scope]]\nname = 'web'\npaths = ['{raw}']\nlanguages = ['python']\n"
+    return load_config_text(text, root=root).scopes[0].paths
+
+
+@pytest.mark.parametrize("raw", ABSOLUTE_SCOPES)
+def test_each_absolute_scope_path_the_pages_name_is_refused_at_load(tmp_path, raw):
+    """A drive-letter scope path was refused before 0.8.1 too, so the upgrade
+    page, which lists what scored 0 files, leaves it out."""
+    section = _section("docs/configuration.md", "## File paths and root discovery")
+    upgrade = _section("docs/upgrading.md", "## Config paths that 0.8.1 reads on every OS")
+    assert f"`{raw}`" in section, raw
+    assert (f"`{raw}`" in upgrade) is (":" not in raw), raw
+
+    with pytest.raises(config.ConfigError):
+        _scope_paths(raw, tmp_path)
+
+
+def test_an_absolute_scope_path_inside_the_checkout_is_refused_with_its_relative_spelling(tmp_path):
+    """On Windows the checkout's own drive spelling is refused for its drive, so
+    the path that gets the hint is the Git Bash one, `/c/...`."""
+    (tmp_path / "web").mkdir()
+    spelled = (tmp_path / "web").resolve().as_posix()
+    if spelled[1:2] == ":":
+        spelled = "/" + spelled[0].lower() + spelled[2:]
+
+    with pytest.raises(config.ConfigError, match="write 'web'"):
+        _scope_paths(spelled, tmp_path)
+
+
 def test_a_path_in_another_letter_case_reads_as_the_listed_case(tmp_path):
     section = _section("docs/configuration.md", "## File paths and root discovery")
     assert "`SRC/App.py`" in section and "`src/app.py`" in section

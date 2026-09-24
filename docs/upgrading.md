@@ -171,13 +171,13 @@ run both again and compare the per-scope file counts and scores.
 **Scopes that scored 0 files.** On a disk that ignores case, `paths = ["Src"]` for a
 directory git lists as `src/` claimed nothing, and the scope scored 0 functions in 0
 files while `doctor` FAILed it. It now claims `src/`. A scope path spelled absolutely
-(`/home/dev/repo/web`, `/c/repo/web`, `/mnt/c/repo/web`, `\\server\share\web`) scored
-0 files the same way; the loader now refuses it with exit 3 and names the relative
-path to write when it lands in this checkout. Once the path names the directory, the
-scope's functions score, and each one over its ceiling fails the gate the next time its
-file changes.
-Run `crapkit ratchet seed` after the first `crapkit coverage` to mark that debt, as
-for any newly scored file.
+(`/home/dev/repo/web`, `/c/repo/web`, `/mnt/c/repo/web`, `\\server\share\web`,
+`//server/share/web`) scored 0 files the same way; the loader now refuses it with exit
+3 and names the relative path to write when it lands in this checkout. Once the path
+names the directory, the scope's functions score, and each one over its ceiling fails
+the gate the next time a change touches it. To mark that debt as it stands, run
+`crapkit ratchet seed` after the first `crapkit coverage`, as for any newly scored file:
+seed adds marks for functions that have none and never raises a mark it finds.
 
 **`[exclude]` globs start excluding.** `src\gen\**`, `./src/gen/**`, `/src/gen/**` and
 `src/gen/` excluded nothing in 0.8.0, so generated files stayed scored. They now read
