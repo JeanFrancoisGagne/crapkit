@@ -18,6 +18,9 @@
   note said "files in its scopes changed" for that case, for an artifact no stamp
   vouches for and for a stamp commit HEAD does not descend from, and the warning printed
   nothing at all.
+- Library API: `lanes.lane_sources_unchanged`, which returned a bool, is now
+  `lanes.lane_sources_moved`, which returns why the lane's line numbers are stale, or `""`
+  when git proves nothing under its scopes moved.
 
 ## 0.8.0 — 2026-09-23
 
