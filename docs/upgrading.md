@@ -44,6 +44,16 @@ any mark changes.
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
 
+### 0.8.1 on coverage 7.6 to 7.13.0
+
+These coverage versions write no `start_line`, and before 0.8.1 a nested function they
+measured took its encloser's coverage. It now scores its own region, so its CRAP can rise
+once, and `verify` reports the rise as a `RATCHET` line at exit 7 on a function the diff
+never touched. The new number is the measured one. Compare the export above with the
+marks, then raise each such mark by hand to the new number and commit it where a reviewer
+sees it, as [the ratchet page](ratchet.md) says for any rise you accept. Upgrading coverage
+changes nothing here: 7.13.1 names the same line crapkit now reads.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

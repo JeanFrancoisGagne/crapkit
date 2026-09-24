@@ -84,7 +84,10 @@
   is the line of the `def inner` statement in the encloser's region, so a nested function
   that never ran scored as half covered. It now reads the `def` line as the last statement
   line above the body, which is where 7.13.1 puts `start_line`. A null `start_line` reads
-  the same way.
+  the same way. On those coverage versions a marked nested function can score above its
+  mark once, which `verify` reports at exit 7; the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
+  says how to take the measured number.
 - A coverage.py region without a `summary` object exits 5 naming the function, where it
   scored the function as never run. A null one exits 5 with the same line, where it
   printed a Python `AttributeError`.

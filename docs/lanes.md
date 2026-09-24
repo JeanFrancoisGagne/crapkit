@@ -611,6 +611,8 @@ coverage.py names each region's `def` line as `start_line` from 7.13.1. An older
 carries none, and crapkit reads the `def` line as the last statement line above the region's
 body, which is where coverage 7.13.1 puts it. Before 0.8.1 it took the body's first line, and
 a nested function that never ran joined its encloser's region and scored as half covered.
+A mark recorded from that number can be exceeded once after upgrading; the
+[upgrade guide](upgrading.md#081-on-coverage-76-to-7130) says what to do.
 
 Every region in the report needs its `summary` object; coverage.py writes one on each. A
 region without one exits 5, where it used to score the function as never run:
