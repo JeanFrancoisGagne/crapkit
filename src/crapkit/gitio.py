@@ -92,10 +92,16 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
 
     A failing command yields nothing and raises at the end of iteration, so the
     consumer never mistakes an empty stream for an empty history.
+
+    Undecodable bytes read as U+FFFD. git prints an author name as the commit
+    stored it unless the commit names its encoding, so one commit written in
+    Latin-1 inside the churn window stopped every command that reads churn with
+    a UnicodeDecodeError. The laid-down copy of the log decodes the same way, so
+    a walk and a read of the copy hand out the same lines.
     """
     try:
         proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, env=_environment(), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                                stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
