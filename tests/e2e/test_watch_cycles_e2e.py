@@ -151,7 +151,7 @@ def _delete(repo: Path) -> None:
     (_add_ignored, None, None),
     (_add_outside_scopes, None, None),
     (_delete, None, None),
-    # The Q38 limit: a poll takes an unmoved mtime as unchanged content.
+    # The named limit: a poll takes an unmoved mtime as unchanged content.
     (_restored_mtime, None, None),
 ], ids=["edit", "add-in-scope", "touch", "same-bytes-rewrite", "add-ignored",
         "add-outside-scopes", "delete", "same-size-restored-mtime-limit"])
