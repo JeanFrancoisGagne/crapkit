@@ -1045,6 +1045,47 @@ def test_a_file_baseline_is_named_by_its_commit_not_as_none():
     assert "Run 3 against the baseline file at abc1234def5, 1 changed file." in line, line
 
 
+
+# --- a payload the Action never got ---------------------------------------------
+
+def test_no_summary_at_all_blames_a_crash_and_not_every_lane():
+    """Since 0.5.0 a run whose every lane failed prints an error object, so an
+    empty payload means crapkit printed nothing: it crashed or was killed."""
+    line = _builder().no_verdict_line(None, 1)
+
+    assert "every lane failed" not in line, line
+    assert line == ("**no verdict: `crapkit coverage` exited 1 (it printed no run summary, so "
+                    "it crashed or was killed before scoring; its error is in the job log); "
+                    "verify did not run.**")
+
+
+def test_a_worklist_error_object_is_quoted_and_not_read_as_an_empty_ranking():
+    """`crapkit worklist --json` with no run to read prints an error object and
+    exits 1; the comment said no function in the changed files ranked."""
+    worklist = {"error": {"exit": 1, "kind": "state",
+                          "message": "no snapshot in /repo/.crapkit/crap.sqlite: run "
+                                     "`crapkit coverage` first\n"}}
+
+    text = _builder().body(None, None, 1, worklist, ["src/a.py"], 5)
+
+    assert "No ranked function" not in text, text
+    assert ("`crapkit worklist` exited 1: no snapshot in /repo/.crapkit/crap.sqlite: run "
+            "`crapkit coverage` first.") in text, text
+
+
+def test_a_worklist_that_printed_nothing_says_so_and_ranks_no_top_zero():
+    text = _builder().body(None, None, 1, None, [], 5)
+
+    assert "No ranked function" not in text and "top 0" not in text, text
+    assert "`crapkit worklist` printed no ranking; its error is in the job log." in text, text
+
+
+def test_a_worklist_that_ran_and_ranks_nothing_in_the_diff_still_says_so():
+    text = _builder().body(None, None, 1, _worklist(), ["docs/readme.md"], 5)
+
+    assert "No ranked function in these files." in text, text
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

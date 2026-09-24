@@ -672,7 +672,11 @@ weight, the number `crapkit worklist` ranks on, and `remedy` is the run's own ve
 that function: `decompose`, `split-lines`, `add-tests` or `ok`. `(accepted debt)` marks a function the
 committed ratchet carries a mark for, so an untouched `legacy_router` does not read like
 the pull request's own new function. A pull request that touches no ranked function gets
-the heading and no table.
+the heading and `No ranked function in these files.` When `crapkit worklist` wrote no
+ranking, the table's place says why rather than reading as an empty one: the error it
+printed (`` `crapkit worklist` exited 1: no snapshot in ...: run `crapkit coverage` first. ``),
+or, when it printed nothing, `` `crapkit worklist` printed no ranking; its error is in the
+job log. ``
 
 The two file counts describe the same diff, counted twice. `39 changed files` is
 `git diff --name-only base.sha...HEAD`, the branch's own commits, and it is what the
@@ -756,7 +760,10 @@ comment then carries coverage's failure in place of the verdict:
 The parenthesis is the first line of the lane failure the summary carries. When every
 lane failed, `coverage` prints an error object instead of a summary and the lane errors
 are only in the job log, and the line says so: `(every lane failed (1 of 1); the lane
-errors are in the job log)`. With `gate: "true"` the job exits with coverage's code.
+errors are in the job log)`. When `coverage` printed nothing at all, it crashed or was
+killed before it could: `(it printed no run summary, so it crashed or was killed before
+scoring; its error is in the job log)`. With `gate: "true"` the job exits with coverage's
+code.
 
 The other gate that judges a delta is the portable baseline in [Route 4](#route-4-ci):
 commit `crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv

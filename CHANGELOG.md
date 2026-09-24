@@ -35,6 +35,15 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   column, the same warning as any other. It ended `coverage --reuse-artifacts` with a
   traceback.
 
+### The Action's comment tells a missing payload from an empty one
+
+- When `crapkit worklist` wrote no ranking, the comment quotes its error, or says it
+  printed nothing, in place of `No ranked function in these files.`. With no run to read
+  it exits 1 with an error object, which the comment read as a ranking with no rows.
+- When `crapkit coverage` printed no summary at all, the no-verdict line says it crashed or
+  was killed before scoring. It said every lane failed, which since 0.5.0 prints an error
+  object of its own.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

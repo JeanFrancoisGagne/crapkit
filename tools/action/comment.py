@@ -119,10 +119,13 @@ def coverage_failure(coverage: dict | None) -> str:
     The first line of the first lane failure the summary carries; the error
     object's message when the command died before a summary (0.5.0 prints one
     under --json, including when every lane failed); or a pointer at the job log
-    when nothing was printed at all.
+    when nothing was printed at all. Since that error object, an empty payload
+    means crapkit itself stopped before printing: blaming every lane sent a
+    reader hunting lane logs for a crash or a kill.
     """
     if not coverage:
-        return "no run summary was printed, so every lane failed; the lane errors are in the job log"
+        return ("it printed no run summary, so it crashed or was killed before scoring; "
+                "its error is in the job log")
     error = coverage.get("error")
     if error:
         return _error_line(error)
@@ -367,6 +370,30 @@ def _scope_line(changed: list[str], entries: list[dict]) -> str:
     return f"### Worklist: the whole repository, top {len(entries)}"
 
 
+def worklist_gap(worklist: dict | None) -> str | None:
+    """Why there is no ranking to show, or None when `crapkit worklist` ran.
+
+    Its step keeps going when the command fails: with no run to read it prints
+    an error object and exits 1, and a crash leaves an empty file. Read as a
+    worklist with no rows, either one told the reviewer that no function in
+    their changed files ranked.
+    """
+    if worklist is None:
+        return "`crapkit worklist` printed no ranking; its error is in the job log."
+    error = worklist.get("error")
+    if error:
+        return f"`crapkit worklist` exited {error.get('exit')}: {_first_line(error.get('message'))}."
+    return None
+
+
+def _worklist_section(worklist, changed: list[str], entries: list[dict]) -> list[str]:
+    gap = worklist_gap(worklist)
+    if gap is not None:
+        heading = f"### Worklist: {_plural(len(changed), 'changed file')}" if changed else "### Worklist"
+        return [heading, "", gap]
+    return [_scope_line(changed, entries), "", table(entries)]
+
+
 def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,
          base_reason: str | None = None, coverage_exit: int = 0) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
@@ -377,8 +404,7 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
     return "\n".join([MARKER, "", "## crapkit", "",
                       scored_line(coverage), "",
                       verdict, "",
-                      _scope_line(changed, entries), "",
-                      table(entries), ""])
+                      *_worklist_section(worklist, changed, entries), ""])
 
 
 def _parse(argv: list[str] | None) -> argparse.Namespace:
