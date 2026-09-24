@@ -1662,6 +1662,13 @@ def test_a_listing_that_fails_twice_posts_a_fresh_comment_and_says_so(tmp_path, 
         result.stdout
 
 
+def test_the_readme_says_the_step_lists_once_more_before_it_posts_fresh():
+    section = " ".join(_readme_section().split())
+
+    assert "When it found none, it lists the comments once more before it posts fresh" in section
+    assert "the job log says the listing failed twice" in section
+
+
 def test_a_listing_that_fails_after_the_marked_comment_edits_it_without_listing_again(tmp_path):
     gets = []
 

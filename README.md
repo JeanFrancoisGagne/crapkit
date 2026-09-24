@@ -609,10 +609,12 @@ One comment per pull request, edited in place on every push. A hidden
 `<!-- crapkit-action -->` line opens it, and the next run edits the first comment that
 starts with that line, so a fifteen-push branch carries one comment and not fifteen. A
 reviewer's reply that quotes the comment does not start with it and is left alone. When
-the comment list cannot be read to the end (GitHub answers a page with an error), the step
-edits the crapkit comment it found before the error, or posts a fresh one when it found
-none, and the job log says which. On a `push` event there is no pull request to carry it,
-and the same text goes to the job log instead.
+GitHub answers a page of the comment list with an error, the step edits the crapkit
+comment it found before the error. When it found none, it lists the comments once more
+before it posts fresh; if that listing fails too, it posts a fresh comment, so the pull
+request still gets this push's verdict, and the job log says the listing failed twice.
+On a `push` event there is no pull request to carry it, and the same text goes to the job
+log instead.
 
 Rendered from three saved payloads: a pull request that adds an untested `route()` (ccn 8)
 beside a ratchet-marked `legacy_router()`, in a repository whose `diff_uncovered_max` is 3.
