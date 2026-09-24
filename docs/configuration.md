@@ -47,6 +47,7 @@ names the exact project root; the flag belongs after the subcommand.
 | Relative path with explicit `--repo` | Relative to the named project root. |
 | Absolute source path | Accepted when it resolves inside the project root. |
 | Windows backslash | A directory separator on Windows; a literal filename character on POSIX. |
+| Bytes that are not UTF-8 | Read with each such byte as U+FFFD, so the argument names no file crapkit reads and the command answers as it does for a missing file. |
 
 These rules apply to source arguments such as `brief`, `rescore`, `test-scoped`
 and `claims release`. The `claude-hook` exception gets its root from its input

@@ -31,6 +31,7 @@ from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
+from .textcodec import os_bytes
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
@@ -1370,8 +1371,10 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
 
 def _output_lock(path: Path) -> Path:
     """Coordinate local outputs outside directories their runners may replace."""
-    key = os.path.normcase(str(path.resolve())).encode("utf-8")
-    host = hashlib.sha256(socket.gethostname().encode("utf-8")).hexdigest()[:16]
+    # The bytes the OS names them by: a checkout under a Latin-1 directory, or a
+    # host named in one, has no UTF-8 spelling, and encoding one raised here.
+    key = os_bytes(os.path.normcase(str(path.resolve())))
+    host = hashlib.sha256(os_bytes(socket.gethostname())).hexdigest()[:16]
     directory = Path.home() / ".cache" / "crapkit" / "measurements" / host
     return directory / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
 

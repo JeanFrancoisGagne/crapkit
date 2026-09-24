@@ -17,6 +17,7 @@ from ..invocation import _self
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
+from ..textcodec import os_text
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
@@ -118,6 +119,7 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     At the root, from a directory outside it, or under `--repo`, the argument
     is root-relative as it always was.
     """
+    raw = os_text(raw)  # a byte argv held that is not UTF-8 names no file crapkit reads
     path = raw.replace("\\", "/") if os.name == "nt" else raw
     if _is_rooted(path):
         return _under_root(path, root)
