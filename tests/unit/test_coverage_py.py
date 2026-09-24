@@ -98,13 +98,17 @@ def test_a_report_with_neither_branch_nor_statement_data_is_still_refused():
         parse_coveragepy(json.dumps(hollow), path_prefix="")
 
 
-def test_one_file_without_function_regions_does_not_throw_the_report_away(capsys):
+@pytest.mark.parametrize("regionless", [{"summary": {"num_statements": 3}},
+                                        {"summary": {"num_statements": 3}, "functions": None}],
+                         ids=["functions-absent", "functions-null"])
+def test_one_file_without_function_regions_does_not_throw_the_report_away(capsys, regionless):
     """coverage.py writes "functions" once per code-region kind the file's
     reporter declares, so a file measured by a plugin reporter that declares
-    none loses the key while every .py file in the same report keeps it."""
+    none loses the key while every .py file in the same report keeps it. A
+    null "functions" reads the same way."""
     mixed = {"meta": {"branch_coverage": True},
              "files": {"pylib/mod.py": REPORT["files"]["pylib\\mod.py"],
-                       "tpl/page.html": {"summary": {"num_statements": 3}}}}
+                       "tpl/page.html": regionless}}
 
     per_file = parse_coveragepy(json.dumps(mixed), path_prefix="")
 
