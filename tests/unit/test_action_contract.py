@@ -16,6 +16,7 @@ import threading
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -1329,17 +1330,29 @@ def _edit(ident: int) -> list:
 _EDIT_IN_PLACE = _edit(2)
 
 
+class _FailsOnce(NamedTuple):
+    """A page that answers `status` to its first request and `comments` to
+    every request after it: a transient 502 or rate limit."""
+    status: int
+    comments: list
+
+
 class _CommentsApi(BaseHTTPRequestHandler):
     """The two endpoints the post step calls: the pull request's comment list,
-    served one page per request from `server.pages` (a list of comments, or the
-    HTTP status that page fails with) after `server.delay` seconds, and the
-    writes, recorded in `server.writes` as `METHOD path`."""
+    served one page per request from `server.pages` after `server.delay`
+    seconds, and the writes, recorded in `server.writes` as `METHOD path`. A
+    page is a list of comments, the HTTP status it fails with every time, or a
+    `_FailsOnce`. Each GET's page number goes to `server.gets`, so the page-1
+    count is the number of times the step listed the thread."""
 
     def do_GET(self):
         threading.Event().wait(self.server.delay)
         url = urlsplit(self.path)
         page = int(parse_qs(url.query).get("page", ["1"])[0])
+        self.server.gets.append(page)
         answer = self.server.pages[page - 1]
+        if isinstance(answer, _FailsOnce):
+            answer = answer.status if self.server.gets.count(page) == 1 else answer.comments
         if isinstance(answer, int):
             self._answer(answer, {"message": f"fake {answer}", "documentation_url": "https://docs.github.com/rest"})
             return
@@ -1387,13 +1400,14 @@ def _env_routing_gh_to(port: int) -> dict:
     return env
 
 
-def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0, request=None) -> tuple:
+def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0, request=None,
+                        gets=None) -> tuple:
     """The post step under bash with the `gh` on PATH, whose built-in jq runs the
     lookup, against a local API that lists `comments` on pull request 7 (or
     serves `pages` one per request, the way GitHub pages a long thread), and
     refuses a body over 65,536 characters with a 422 as GitHub does. The step
     sends `request`, or a marker-only body. Returns the step's result and the
-    writes the API accepted."""
+    writes the API accepted; `gets`, when given, receives each GET's page."""
     if shutil.which("gh") is None:
         pytest.skip("needs gh on PATH, which the ubuntu-latest and windows-latest runners carry")
     state = tmp_path / "state"
@@ -1404,6 +1418,7 @@ def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 
     script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
     server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)
     server.pages, server.writes, server.delay = pages or [comments], [], delay
+    server.gets = [] if gets is None else gets
     threading.Thread(target=server.serve_forever, daemon=True).start()
     env = {**_env_routing_gh_to(server.server_address[1]), "GH_CONFIG_DIR": str(tmp_path / "gh"),
            "CRAPKIT_STATE": state.as_posix(), "PR": "7", "REPO": "owner/repo", "HEAD_REPO": "owner/repo"}
@@ -1440,9 +1455,9 @@ def test_a_comment_with_no_body_does_not_hide_the_marked_one(tmp_path, comments)
 
 # Every shape a comment thread takes, one page per list: the body's state, the
 # list's state, where the marked comment sits and which page fails. The write
-# is the contract: PATCH the comment the marker opens, POST when there is none
-# or when the lookup failed before it saw one, and never a URL built from
-# anything but a comment id.
+# is the contract: PATCH the comment the marker opens, POST when there is none,
+# and never a URL built from anything but a comment id. A listing that fails
+# before it reaches the marked comment is _LISTING_FAILS below.
 _THREADS = {
     "body-number": ([[_c(1, 5), _MARKED]], _EDIT_IN_PLACE),
     "body-empty-string": ([[_c(1, ""), _MARKED]], _EDIT_IN_PLACE),
@@ -1459,13 +1474,23 @@ _THREADS = {
     "marker-on-page-1-null-body-on-page-2": ([[_MARKED, _c(3)], [_c(4, None)]], _EDIT_IN_PLACE),
     "a-quote-of-the-marker-before-the-marked-comment": ([[_c(1, "> " + _MARK + "\nwhy red?"), _MARKED]],
                                                         _EDIT_IN_PLACE),
-    "page-1-fails-502": ([502, [_MARKED]], _POST_FRESH),
-    "page-1-rate-limited-403": ([403, [_MARKED]], _POST_FRESH),
-    "the-only-page-403": ([403], _POST_FRESH),
-    "marker-on-page-2-and-page-2-fails": ([[_c(1)], 502], _POST_FRESH),
-    "page-2-fails-marker-on-page-3": ([[_c(1)], 502, [_c(30, _MARK)]], _POST_FRESH),
     "marker-on-page-1-and-page-2-fails": ([[_MARKED], 502], _EDIT_IN_PLACE),
 }
+
+# A listing that fails before it reaches the marked comment, one page per list,
+# the failing page as a _FailsOnce, and the write the step owes once a second
+# listing gets through.
+_LISTING_FAILS = {
+    "page-1-fails-502": ([_FailsOnce(502, [_c(1)]), [_MARKED]], _EDIT_IN_PLACE),
+    "page-1-rate-limited-403": ([_FailsOnce(403, [_c(1)]), [_MARKED]], _EDIT_IN_PLACE),
+    "the-only-page-403": ([_FailsOnce(403, [])], _POST_FRESH),
+    "marker-on-page-2-and-page-2-fails": ([[_c(1)], _FailsOnce(502, [_c(5, _MARK)])], _edit(5)),
+    "page-2-fails-marker-on-page-3": ([[_c(1)], _FailsOnce(502, [_c(3)]), [_c(30, _MARK)]], _edit(30)),
+}
+
+
+def _failing_every_time(pages: list) -> list:
+    return [page.status if isinstance(page, _FailsOnce) else page for page in pages]
 
 
 @pytest.mark.parametrize("name", list(_THREADS))
@@ -1491,6 +1516,45 @@ def test_the_log_never_says_posting_a_fresh_one_before_an_edit(tmp_path, name):
     result, _ = _post_under_real_gh(tmp_path, [], pages=pages)
 
     assert "posting a fresh one" not in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("name", list(_LISTING_FAILS))
+def test_a_listing_that_fails_once_is_listed_again_before_anything_is_posted(tmp_path, name):
+    """A lookup that failed before it saw the marked comment posted a fresh one
+    at once, so one transient 502 left the pull request with two crapkit
+    comments. The step now lists the thread a second time and edits the
+    comment that listing finds."""
+    pages, expected = _LISTING_FAILS[name]
+    gets = []
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=pages, gets=gets)
+
+    assert (gets.count(1), writes) == (2, expected), result.stdout + result.stderr
+    assert "failed twice" not in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("name", list(_LISTING_FAILS))
+def test_a_listing_that_fails_twice_posts_a_fresh_comment_and_says_so(tmp_path, name):
+    """A lasting error still puts this push's verdict on the pull request: a
+    stale verdict misleads a reviewer more than a second comment does."""
+    gets = []
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=_failing_every_time(_LISTING_FAILS[name][0]),
+                                         gets=gets)
+
+    assert (gets.count(1), writes) == (2, _POST_FRESH), result.stdout + result.stderr
+    assert "listing the comments failed twice before it found a crapkit comment" in result.stdout, \
+        result.stdout
+
+
+def test_a_listing_that_fails_after_the_marked_comment_edits_it_without_listing_again(tmp_path):
+    gets = []
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=_THREADS["marker-on-page-1-and-page-2-fails"][0],
+                                         gets=gets)
+
+    assert (gets.count(1), writes) == (1, _EDIT_IN_PLACE), result.stdout + result.stderr
+    assert "after it found comment 2: editing that one" in result.stdout, result.stdout
 
 
 def test_marked_comments_on_two_pages_edit_the_first_and_log_no_failure(tmp_path):

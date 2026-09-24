@@ -254,6 +254,12 @@ runs:
     # 1` closed the pipe on a thread with two marked comments, and gh's SIGPIPE
     # read as a failed lookup.
     #
+    # A listing that fails before it finds the comment runs once more: posting
+    # fresh at once turned one transient 502 into a second crapkit comment. A
+    # second failure posts fresh and says so, because a pull request that keeps
+    # the previous push's verdict misleads more than a duplicate comment does.
+    # A listing that failed after it found the comment edits that one.
+    #
     # A pull request from a fork carries a read-only token, so both writes come
     # back 403. That is the consumer's permissions, not a finding, and the
     # comment is only ever this action's output: the step records the status the
@@ -268,21 +274,27 @@ runs:
         HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       run: |
         code=0
-        lookup=0
         if [ -z "$PR" ]; then
           echo "no pull request on this event: the comment above was not posted"
           exit 0
         fi
-        found="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-                   --jq 'map(select(.body | type == "string" and startswith("<!-- crapkit-action -->"))) | .[0].id // empty')" || lookup=$?
-        id=""
-        while IFS= read -r line; do
-          case "$line" in ''|*[!0-9]*) ;; *) id="$line"; break ;; esac
-        done <<< "$found"
+        for listing in first second; do
+          lookup=0
+          found="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                     --jq 'map(select(.body | type == "string" and startswith("<!-- crapkit-action -->"))) | .[0].id // empty')" || lookup=$?
+          id=""
+          while IFS= read -r line; do
+            case "$line" in ''|*[!0-9]*) ;; *) id="$line"; break ;; esac
+          done <<< "$found"
+          if [ "$lookup" = 0 ] || [ -n "$id" ] || [ "$listing" = second ]; then
+            break
+          fi
+          echo "listing the comments exited $lookup before it found a crapkit comment: listing them once more"
+        done
         if [ "$lookup" != 0 ] && [ -n "$id" ]; then
           echo "looking the existing comment up exited $lookup after it found comment $id: editing that one"
         elif [ "$lookup" != 0 ]; then
-          echo "looking the existing comment up exited $lookup before it found a crapkit comment: posting a fresh one"
+          echo "listing the comments failed twice before it found a crapkit comment (gh exited $lookup): posting a fresh one"
         fi
         if [ -n "$id" ]; then
           gh api --silent --method PATCH "repos/$REPO/issues/comments/$id" \
