@@ -1339,7 +1339,7 @@ def _plugin_json(path: Path):
     import json
 
     try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
+        return json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
     except (OSError, ValueError):
         return None
 

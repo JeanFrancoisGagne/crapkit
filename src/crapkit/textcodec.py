@@ -33,7 +33,7 @@ _C1 = "crapkit-c1"
 
 def lenient(data: bytes) -> str:
     """UTF-8 with a leading BOM dropped and each undecodable byte as U+FFFD."""
-    return data.decode("utf-8-sig", "replace")
+    return data.removeprefix(codecs.BOM_UTF8).decode("utf-8", "replace")
 
 
 def utf16_marked(data: bytes) -> bool:
