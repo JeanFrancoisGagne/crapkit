@@ -1474,6 +1474,21 @@ each half came from. The banner counts only as a whole line, so log output quoti
 words mid-line starts no attempt, and attempt 1 writes no banner at all, which makes a
 bannerless log one attempt.
 
+### A Python child writes its log in UTF-8
+
+crapkit reads `.crapkit/lane-<name>.log` as UTF-8 and quotes its tail in the refusal. A
+Python child below 3.15 writes a pipe in the ANSI code page on Windows (cp1252) and in the
+locale's encoding on POSIX, and an inherited `PYTHONIOENCODING` overrides both. So crapkit
+sets `PYTHONIOENCODING=utf-8` for every lane child, its flake retest and every `mutate`
+suite run, unless the lane's `env` sets `PYTHONIOENCODING` itself: then the lane's value
+stands. Before 0.8.1 a refusal quoted `No module named 'caf�'` where the child printed
+`café`, a test that printed an emoji under `pytest -s` raised `UnicodeEncodeError`
+under crapkit alone while the lane still exited 0 and the CRAP load moved, and `mutate`
+refused the same suite as failing on the unmutated tree.
+
+The variable sets stdio only. A test that opens a file with no `encoding` still gets the
+locale's, and a child that is not Python ignores it.
+
 ### A killed run leaves its coverage shards behind
 
 `coverage run --parallel-mode`, which pytest-xdist turns on for you, writes one

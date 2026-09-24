@@ -96,8 +96,10 @@ def test_the_lanes_env_is_merged_over_the_process_environment(tmp_path, monkeypa
     assert (env["CRAPKIT_SPEC_SET"], env["CRAPKIT_SPEC_KEPT"]) == ("lane", "process")
 
 
-def test_a_lane_that_adds_nothing_lets_the_child_inherit(tmp_path):
-    assert launch_spec(tmp_path, _lane()).popen_kwargs() == {"cwd": tmp_path, "env": None}
+def test_a_lane_that_adds_nothing_inherits_all_but_its_stdio_encoding(tmp_path):
+    """test_lane_child_stdio.py says why a child's stdio is UTF-8."""
+    assert launch_spec(tmp_path, _lane()).popen_kwargs() == {
+        "cwd": tmp_path, "env": {**os.environ, "PYTHONIOENCODING": "utf-8"}}
 
 
 def test_what_a_caller_adds_goes_over_the_lanes_own(tmp_path):

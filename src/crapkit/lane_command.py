@@ -26,12 +26,34 @@ from .config import shell_segments, shell_words
 _WINDOWS = os.name == "nt"
 
 
-def _names_path(key: str, windows: bool) -> bool:
-    """Is this the env key the child reads its PATH from? The merge is a plain
+def _names(key: str, name: str, windows: bool) -> bool:
+    """Is `key` the variable the child reads as `name`? The merge is a plain
     dict update, so on POSIX a lane declaring `Path` adds a second variable and
     leaves `PATH` alone. Only on Windows, where the env block is one
     case-insensitive namespace, does `Path` carry the value the child reads."""
-    return key == "PATH" or (windows and key.upper() == "PATH")
+    return key == name or (windows and key.upper() == name)
+
+
+# A Python child below 3.15 writes a pipe or a file in the ANSI code page on
+# Windows and in the locale's encoding on POSIX, and crapkit reads a lane's log
+# and quotes it as UTF-8: an accented letter came back as U+FFFD, and a test
+# printing an emoji under `pytest -s` raised in the lane and nowhere else.
+_STDIO = "PYTHONIOENCODING"
+
+
+def child_environment(pairs: tuple[tuple[str, str], ...] = (), extra: dict[str, str] | None = None,
+                      windows: bool = _WINDOWS) -> dict[str, str]:
+    """The environment a lane or mutation child sees: the process environment,
+    then PYTHONIOENCODING=utf-8 unless `pairs` names that variable, then
+    `pairs`, then `extra`. An inherited PYTHONIOENCODING is replaced, so the
+    output crapkit reads back is UTF-8 whatever shell ran crapkit."""
+    return {**os.environ, **_stdio(pairs, windows), **dict(pairs), **(extra or {})}
+
+
+def _stdio(pairs: tuple[tuple[str, str], ...], windows: bool) -> dict[str, str]:
+    """UTF-8 stdio for a Python child, or nothing when the lane chose."""
+    chosen = any(_names(key, _STDIO, windows) for key, _ in pairs)
+    return {} if chosen else {_STDIO: "utf-8"}
 
 
 class LaunchSpec(NamedTuple):
@@ -44,12 +66,11 @@ class LaunchSpec(NamedTuple):
     cwd: Path
     env: tuple[tuple[str, str], ...] = ()
 
-    def child_env(self, extra: dict[str, str] | None = None) -> dict[str, str] | None:
-        """The environment the child sees: the process environment, the lane's
-        pairs over it, then `extra`. None when nothing is added, so the child
-        inherits the process environment unchanged."""
-        added = {**dict(self.env), **(extra or {})}
-        return {**os.environ, **added} if added else None
+    def child_env(self, extra: dict[str, str] | None = None,
+                  windows: bool = _WINDOWS) -> dict[str, str]:
+        """The environment this lane's child sees: `child_environment` over the
+        lane's `[lane.env]` pairs."""
+        return child_environment(self.env, extra, windows)
 
     def popen_kwargs(self, extra: dict[str, str] | None = None) -> dict:
         """The cwd and env to start the child with, as `procs.run_bounded` takes them."""
@@ -60,7 +81,7 @@ class LaunchSpec(NamedTuple):
         none and the process PATH is the whole answer. A lane that ships its
         own toolchain through `[lane.env] PATH` runs a runner this process
         cannot see on its own PATH."""
-        return next((value for key, value in self.env if _names_path(key, windows)), None)
+        return next((value for key, value in self.env if _names(key, "PATH", windows)), None)
 
     def resolve(self, word: str, windows: bool = _WINDOWS) -> str | None:
         r"""Where the child's shell finds this word, or None when it finds nothing.
@@ -85,7 +106,7 @@ class LaunchSpec(NamedTuple):
     def _cmd_env(self) -> dict[str, str]:
         """The child's environment as cmd.exe reads it: one case-insensitive
         namespace, where the lane's `Path` is the process's `PATH`."""
-        return {key.upper(): value for key, value in (self.child_env() or os.environ).items()}
+        return {key.upper(): value for key, value in self.child_env().items()}
 
     def _cmd_directories(self, env: dict[str, str]) -> list[Path]:
         """Where cmd.exe looks for a bare word, in order: the directory it

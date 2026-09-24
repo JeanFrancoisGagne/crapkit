@@ -36,14 +36,18 @@ from uuid import uuid4
 from .config import shell_words
 from .errors import GitError, ToolError
 from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
+from .lane_command import child_environment
 from .mutate import apply_mutant
 from .textcodec import source_bytes, source_text
 from .procs import own_processes, run_bounded
 
 def _suite_env() -> dict:
-    """Python validates .pyc files by source SIZE and whole-second mtime, so a
-    written cache would answer for the next mutant of the same size."""
-    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    """A lane child's environment, which holds PYTHONIOENCODING=utf-8: a suite
+    that printed non-ASCII into a cp1252 pipe raised, and the unmutated tree
+    read as failing. Plus no bytecode: Python validates .pyc files by source
+    SIZE and whole-second mtime, so a written cache would answer for the next
+    mutant of the same size."""
+    return child_environment(extra={"PYTHONDONTWRITEBYTECODE": "1"})
 
 
 def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
