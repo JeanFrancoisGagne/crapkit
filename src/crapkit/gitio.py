@@ -293,6 +293,20 @@ def is_shallow(root: Path) -> bool:
     return _git(root, "rev-parse", "--is-shallow-repository").strip() == "true"
 
 
+def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
+    """The bytes `rel_path` (relative to `root`) held at `commit`; None when that
+    commit holds no such file or this clone does not hold the commit."""
+    res = _spawn(root, ("show", f"{commit}:./{rel_path}"), binary=True)
+    return res.stdout if res.returncode == 0 else None
+
+
+def commits_touching(root: Path, rev_range: str, rel_path: str) -> list[str]:
+    """The commits in `rev_range` that changed `rel_path`, newest first; none
+    when this clone does not hold the range."""
+    res = _spawn(root, ("log", "--format=%H", rev_range, "--", rel_path))
+    return res.stdout.split() if res.returncode == 0 else []
+
+
 def _batch_stream(root: Path, requests: bytes) -> bytes:
     try:
         res = subprocess.run(["git", "cat-file", "--batch"], cwd=root,

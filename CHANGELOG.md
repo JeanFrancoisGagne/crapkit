@@ -44,6 +44,16 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   was killed before scoring. It said every lane failed, which since 0.5.0 prints an error
   object of its own.
 
+### A missing file, record or history is not an empty one
+
+- `verify` reads a marks file that is missing, or holds only blank lines, as a file it
+  cannot see, not as a repo that never marked any debt. It judges against the newest marks
+  the history since the baseline committed, and names that commit and the `git checkout`
+  that restores them. A commit that deleted or emptied `crapkit-ratchet.tsv` let a marked
+  function's CRAP rise with exit 0. verify never writes those marks back, and a pass no
+  longer restamps an emptied file into a header with no rows and asks for a `git add`. The
+  receipt's `ratchet_sha256` is the digest of the marks verify judged against.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

@@ -668,6 +668,25 @@ EXIT=7
 That run changed only a test file. The source function was untouched; deleting its coverage
 was enough.
 
+A marks file that is missing, or holds nothing but blank lines, is not a repo that never
+marked any debt. `verify` then reads the newest marks the history from the baseline's commit
+to HEAD committed, judges against those and says which commit held them, so deleting or
+emptying the file cannot let a rise through:
+
+```
+$ crapkit verify
+warning: crapkit-ratchet.tsv is missing, but commit 8c780bb18da, the newest since the baseline to hold it, has 1 mark(s); verify judged against those and left crapkit-ratchet.tsv as it is. Restore it with `git checkout 8c780bb18da -- crapkit-ratchet.tsv`, or drop the marks of code that is gone with `crapkit ratchet prune`
+verify FAILED @ 3a45b8a9b6c vs baseline 8c780bb18da (1 changed files)
+  RATCHET  app/m.py  pick( a , b , c ): 10.75 -> 20.0
+  findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
+EXIT=7
+```
+
+verify never writes those marks back. A pass leaves a missing file missing and an emptied
+file empty; before this, an emptied file was restamped into a header with no rows, and the
+`git add` the OK line asked for committed the lost marks away. The JSON receipt's
+`ratchet_sha256` is the digest of the committed marks verify read.
+
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
 tree against its own mark.

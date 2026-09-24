@@ -81,6 +81,17 @@ class RatchetFile:
         text = None if data is None else repo_bytes_text(data, path.name)
         return cls(path.resolve(), text, _digest(data))
 
+    @classmethod
+    def committed(cls, path: Path, data: bytes) -> RatchetFile:
+        """The marks one commit held, read for judging and never published."""
+        return cls(path.resolve(), repo_bytes_text(data, path.name), _digest(data))
+
+    @property
+    def blank(self) -> bool:
+        """True when there is no file, or it holds nothing but blank lines: no
+        marks, no stamp, no header. A file with a stamp and no rows is not blank."""
+        return not (self.text or "").strip()
+
     @property
     def entries(self) -> list:
         try:

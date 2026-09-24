@@ -87,6 +87,22 @@ def test_the_restamp_transcript_carries_the_tail_the_restamp_prints():
     assert ok.endswith(tail), ok
 
 
+def test_the_ratchet_page_quotes_the_stand_in_warning_a_missing_marks_file_draws(monkeypatch,
+                                                                                  capsys):
+    """The page quotes the line verify prints when it judges against the marks
+    the baseline's commit held, spelled as the console script the page runs."""
+    from types import SimpleNamespace
+
+    from crapkit.cli.verifying import _warn_marks_stand_in
+
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/crapkit", "verify"])
+    committed = SimpleNamespace(entries=[object()])
+    _warn_marks_stand_in(SimpleNamespace(text=None), committed, "8c780bb18da", MARKS)
+    [line] = capsys.readouterr().err.splitlines()
+
+    assert line in _page("docs/ratchet.md").splitlines()
+
+
 def test_the_typescript_rescore_gate_block_ends_with_the_gate_line():
     """A passing `rescore --gate` prints one stdout line after the table, so
     the exit code is not the only signal; the page stopped at the table."""

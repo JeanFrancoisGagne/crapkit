@@ -227,7 +227,7 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     """
     from ..ratchet import coverage_then_seed, metric_version
 
-    if saved.text is None:
+    if saved.blank:
         return
     if not saved.metric_stamp:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
@@ -236,6 +236,45 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     conflict = saved.stamp_conflict(metric_version())
     if conflict:
         raise ConfigError(_stamp_refusal(conflict, named))
+
+
+def _judged_marks(root: Path, saved, baseline: dict, name: str):
+    """The marks verify judges against: the file on disk, or, when it is missing
+    or blank, the newest marks the history from the baseline's commit to HEAD
+    committed.
+
+    A deleted or emptied marks file read as a repo that never marked any debt,
+    so a marked function whose CRAP rose passed with exit 0. Marks are usually
+    seeded after the baseline run, so the baseline's own commit is not enough.
+    The stand-in is only judged against; verify never writes it back.
+    """
+    found = _newest_committed_marks(root, baseline["commit"], name) if saved.blank else None
+    if found is None:
+        return saved
+    commit, committed = found
+    _warn_marks_stand_in(saved, committed, commit[:11], name)
+    return committed
+
+
+def _newest_committed_marks(root: Path, base: str, name: str):
+    """(commit, marks) for the newest commit from `base` to HEAD whose `name`
+    holds more than blank lines, or None when none does."""
+    from ..gitio import blob_at, commits_touching
+    from ..ratchetfile import RatchetFile
+
+    for commit in (*commits_touching(root, f"{base}..HEAD", name), base):
+        data = blob_at(root, commit, name)
+        if data and data.strip():
+            return commit, RatchetFile.committed(root / name, data)
+    return None
+
+
+def _warn_marks_stand_in(saved, committed, commit: str, name: str) -> None:
+    state = "missing" if saved.text is None else "empty"
+    print(f"warning: {name} is {state}, but commit {commit}, the newest since the baseline to "
+          f"hold it, has {len(committed.entries)} mark(s); verify judged against those and left "
+          f"{name} as it is. Restore it with `git checkout {commit} -- {name}`, or drop the "
+          f"marks of code that is gone with `{_self()} ratchet prune`", file=sys.stderr)
 
 
 def _stamp_refusal(conflict: str, named: dict | None) -> str:
@@ -413,11 +452,13 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry],
     file holding a stamp, a header and no rows, and a repo with marks got a
     byte-identical rewrite whose mtime alone made it look touched. The tighten
     can only drop or lower marks, so a marks file that does not exist has
-    nothing to write, and a text that matches the disk has nothing to say.
+    nothing to write, and a text that matches the disk has nothing to say. An
+    emptied file is left empty too: restamped into a header with no rows, it
+    asked for a `git add` that committed the lost marks as a valid empty file.
     """
     from ..ratchet import metric_version, ratchet_delta
 
-    if saved.text is None:
+    if saved.blank:
         return None
     if not saved.publish(saved.measured(updated, metric_version(), keys=key_version)):
         return None
@@ -781,7 +822,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     git = GitFacts(root)
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
-    _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline))
+    judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
+    _guard_ratchet_stamp(judged, cfg.ratchet_file, _seed_source(store, args, baseline))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
@@ -793,8 +835,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
 
     ranges = changed_ranges(diff_since(root, basis))
-    ratchet = saved.entries
-    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store,
+    ratchet = judged.entries
+    key_version = _check_ratchet_identity(judged.text or "", root, cfg.ratchet_file, scored, store,
                                           entries=ratchet)
 
     behind = _RunsBehind(store, git, baseline)
@@ -829,7 +871,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, saved.sha256, changes),
+                    **_receipt(tool_versions, judged.sha256, changes),
                     "lanes_without_results": without_results(provenance),
                     "lanes_without_baseline_results": unjudged},
                    verdict, cfg.ratchet_file)

@@ -21,6 +21,7 @@ from crapkit import config
 from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
+from crapkit.invocation import _self
 from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict
@@ -441,6 +442,123 @@ def test_no_tighten_passes_the_verdict_without_rewriting_the_marks(baselined, ca
 
     assert code == 0
     assert (baselined / MARKS).read_text(encoding="utf-8") == before
+
+
+def _commit_marks(repo, crap: float) -> str:
+    write_marks(repo, ("src/app.ts", "plain ( x )", crap))
+    commit_all(repo, f"a {crap} mark on plain")
+    return head(repo)
+
+
+@pytest.fixture(params=["seeded-before-the-baseline", "seeded-after-the-baseline"])
+def committed_marks(request, repo, capsys):
+    """A trusted coverage run and a committed 0.1 mark on plain, which scores 2.5,
+    so a verify that reads the mark exits 7. Seeding usually follows the run it
+    reads, so the marks commit often comes after the baseline's. Returns the
+    repo and the commit holding the marks."""
+    seed_artifacts(repo)
+    first = request.param == "seeded-before-the-baseline"
+    marked = _commit_marks(repo, 0.1) if first else None
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo, marked or _commit_marks(repo, 0.1)
+
+
+def _lose_marks(repo, form: str) -> None:
+    marks = repo / MARKS
+    if form.startswith("emptied"):
+        marks.write_bytes(b"")
+    elif form == "blank-lines":
+        marks.write_bytes(b"\n\r\n  \n")
+    else:
+        marks.unlink()
+    if form.endswith("-in-commit"):
+        commit_all(repo, "lose the marks file")
+
+
+@pytest.mark.parametrize("form", ["deleted", "deleted-in-commit", "emptied", "emptied-in-commit",
+                                  "blank-lines"])
+def test_a_marks_file_gone_from_the_tree_is_judged_by_its_newest_committed_marks(
+        committed_marks, capsys, form):
+    """A deleted or emptied marks file read as a repo that never marked any debt,
+    so a mark that rose passed with exit 0. The history since the baseline still
+    holds the marks; verify judges against the newest and says which commit."""
+    repo, marked = committed_marks
+    _lose_marks(repo, form)
+    before = (repo / MARKS).read_bytes() if (repo / MARKS).exists() else None
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 7, out + err
+    assert "RATCHET  src/app.ts  plain ( x ): 0.1 -> 2.5" in out, out
+    state = "missing" if before is None else "empty"
+    short = marked[:11]
+    assert (f"warning: {MARKS} is {state}, but commit {short}, the newest since the baseline to "
+            f"hold it, has 1 mark(s); verify judged against those and left {MARKS} as it is. "
+            f"Restore it with `git checkout {short} -- {MARKS}`, or drop the marks of code that "
+            f"is gone with `{_self()} ratchet prune`") in err, err
+    assert "written before stamping" not in err, err
+    after = (repo / MARKS).read_bytes() if (repo / MARKS).exists() else None
+    assert after == before, "verify must not write the marks back, or rewrite an empty file"
+
+
+def test_the_newest_marks_since_the_baseline_are_the_ones_judged(committed_marks, capsys):
+    """Two marks commits after the baseline: the newer 0.2 is what the file held
+    last, so it is the mark a deletion must not escape."""
+    repo, _ = committed_marks
+    newer = _commit_marks(repo, 0.2)
+    (repo / MARKS).unlink()
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 7, out + err
+    assert "RATCHET  src/app.ts  plain ( x ): 0.2 -> 2.5" in out, out
+    assert f"but commit {newer[:11]}, the newest" in err, err
+
+
+def test_the_receipt_digests_the_committed_marks_verify_judged_against(committed_marks, capsys):
+    """ratchet_sha256 proves which marks a verdict was measured against, so it
+    names the stand-in, not the file that is gone."""
+    import hashlib
+
+    repo, _ = committed_marks
+    committed = (repo / MARKS).read_bytes()
+    (repo / MARKS).unlink()
+
+    code, out, _ = run(["verify", "--reuse-artifacts", "--json"], repo, capsys)
+
+    assert code == 7
+    assert json.loads(out)["ratchet_sha256"] == hashlib.sha256(committed).hexdigest()
+
+
+def test_an_emptied_marks_file_that_nothing_rose_against_passes_and_stays_empty(committed_marks,
+                                                                                capsys):
+    """A pass used to restamp an emptied file into a header with no rows and ask
+    for a `git add`, which commits the lost marks as a valid empty file."""
+    repo, _ = committed_marks
+    looser = _commit_marks(repo, 9.0)
+    (repo / MARKS).write_bytes(b"")
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 0, out + err
+    assert f"{MARKS} is empty, but commit {looser[:11]}" in err, err
+    assert "git add" not in out, out
+    assert (repo / MARKS).read_bytes() == b""
+
+
+@pytest.mark.parametrize("form", ["deleted", "emptied"])
+def test_no_marks_at_the_baseline_and_none_now_says_nothing(baselined, capsys, form):
+    """With no marks file at the baseline either, there is nothing to stand in."""
+    if form == "emptied":
+        (baselined / MARKS).write_bytes(b"")
+
+    code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert code == 0, err
+    assert f"{MARKS} is" not in err, err
+    assert "written before stamping" not in err, err
+    assert (baselined / MARKS).exists() == (form == "emptied")
 
 
 def test_a_measurement_that_bounced_on_one_commit_holds_its_mark(baselined, capsys):
