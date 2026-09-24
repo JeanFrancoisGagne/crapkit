@@ -1,10 +1,11 @@
 """Protocol 1: one Claude Code PostToolUse payload on stdin, a ccn advisory out.
 
 Exit 2 with three lines of stderr is the only thing this ever says, and it says
-it about exactly one thing: a function the edit changed, in a scope crapkit
-measures, over its ceiling, carrying no ratchet mark. Everything else is exit 0
-and silence: the malformed payload, the unmeasured repo, the half-typed source
-and the internal exception included.
+it about exactly two things: a function the edit changed, in a scope crapkit
+measures, over its ceiling, carrying no ratchet mark; and a file the edit
+changed, in such a scope, that no reader could read, which the commit gate
+refuses once staged. Everything else is exit 0 and silence: the malformed
+payload, the unmeasured repo and the internal exception included.
 
 An Edit, Write or MultiEdit event names its file in `tool_input.file_path` and
 is judged as that one file. A Bash event carries `tool_input.command` instead —
@@ -270,6 +271,8 @@ def _judge(root: Path, rel: str) -> int:
         ranges = _changed(root, rel, _diff_text(diff))
     finally:
         diff.close()
+    if _unread_change(records, ranges):
+        return _say(_unread_advisory(rel, records.reason))
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
     return _report(root, cfg, rel, breaches, ceiling, records)
 
@@ -329,13 +332,23 @@ def _records(root: Path, rel: str) -> list:
     """The edited file's functions, off the working tree the edit just landed in.
 
     This import is what pulls lizard in, so it happens here, with the diff
-    subprocess already running. Source nobody can parse yields zero functions and
-    therefore zero breaches, which is the right failure direction for a hook that
-    fires while an agent is still typing.
+    subprocess already running. A file no reader could read comes back as an
+    empty UnanalyzableFile carrying the reader's reason, which _unread_change
+    tells apart from a file that holds no function.
     """
     from ..analyze import analyze_source, read_source
 
     return analyze_source(rel, read_source(str(root / rel)), note=False)
+
+
+def _unread_change(records: list, ranges) -> bool:
+    """Whether the edit changed a file no reader could read. Its zero records
+    are not zero functions over the ceiling, and the commit gate refuses it
+    once staged. A tracked file whose diff against HEAD is empty holds no
+    change, so it stays silent, as the commit gate passes it."""
+    from ..merge import UnanalyzableFile
+
+    return isinstance(records, UnanalyzableFile) and ranges != []
 
 
 def _changed(root: Path, rel: str, diff_text: str):
@@ -412,7 +425,12 @@ def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: li
     unmarked = [rec for rec in breaches if key_of(keys, rec)[1] not in marked]
     if not unmarked:
         return 0
-    for line in _advisory_lines(rel, unmarked, ceiling):
+    return _say(_advisory_lines(rel, unmarked, ceiling))
+
+
+def _say(lines: list[str]) -> int:
+    """An advisory block on stderr, and the exit 2 that shows it to the model."""
+    for line in lines:
         print(line, file=sys.stderr)
     return 2
 
@@ -491,3 +509,15 @@ def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:
     body = [f"  ccn {rec.ccn}  {rel}:{rec.start}  {rec.long_name}" for rec in breaches]
     return [head, *body,
             "the commit gate enforces this; decompose there or mark the debt"]
+
+
+def _unread_advisory(rel: str, reason: str) -> list[str]:
+    """The advisory for an edited file no reader could read, in the advisory's
+    own voice: the head line says nothing was blocked, and the last line says
+    what the commit gate will do and how to clear it."""
+    from ..merge import UNREAD_ADVICE
+
+    return [f"crapkit advisory: {rel} could not be read, so no function in it was judged "
+            "(the edit landed; nothing was blocked)",
+            f"  UNREAD  {rel}: {reason}",
+            f"the commit gate refuses this file once staged; {UNREAD_ADVICE}"]

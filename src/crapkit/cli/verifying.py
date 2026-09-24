@@ -345,11 +345,11 @@ def _never_granted() -> tuple:
     unread file holds no function to record as debt, and granting the functions
     beside it would sign debt while the gate still refuses the file.
     """
-    from ._shared import _UNREAD_ADVICE
+    from ..merge import UNREAD_ADVICE
 
     return (("ratchet_regressions", _regression_cause, "raise the mark by hand and commit it"),
             ("new_failures", _failure_cause, "fix the failing test first"),
-            ("unread_files", _unread_cause, _UNREAD_ADVICE))
+            ("unread_files", _unread_cause, UNREAD_ADVICE))
 
 
 def _refusal_parts(verdict) -> list[tuple[int, str, str]]:

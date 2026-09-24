@@ -17,6 +17,7 @@ session works in does not hold those pages.
 | Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered |
 | Which house rules bind here | `notes.repo` and `notes.scope` in the packet |
 | An advisory fired on the edit you just made | Decompose that function now, not at the commit wall. The edit landed and nothing was blocked, but the gate refuses the same function later |
+| An advisory says a file could not be read | No function in it was judged, and the commit gate refuses the file once staged. Change what the `UNREAD` line's reason names, or list the file under `[exclude]` |
 | An advisory fired after a Bash command, not an edit | The same verdict, read off the working tree. See [After a shell write](#after-a-shell-write) |
 | Before committing | `crapkit rescore FILE --gate` |
 | The gate says a staged function carries a ratchet mark | Nothing. The repo signed for that function, so the commit gate skips it. `crapkit verify` still fails a mark that rises |

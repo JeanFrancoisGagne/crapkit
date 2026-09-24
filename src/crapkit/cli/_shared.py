@@ -14,6 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..merge import UNREAD_ADVICE
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -263,8 +264,6 @@ def _gate_line(v) -> str:
             f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(v.dirty)}")
 
 
-_UNREAD_ADVICE = ("change what the reason names so a reader can parse the file, or list it "
-                  "under [exclude] globs in crapkit.toml to leave it ungated")
 
 
 def _unread_line(path: str, reason: str, dirty: bool = False) -> str:
@@ -282,7 +281,7 @@ def _print_unread(unread: dict[str, str], what: str, file=None) -> None:
           "them was judged:", file=file)
     for path, reason in sorted(unread.items()):
         print(_unread_line(path, reason), file=file)
-    print(_UNREAD_ADVICE, file=file)
+    print(UNREAD_ADVICE, file=file)
 
 
 def _latest_scored(store: SnapshotStore):

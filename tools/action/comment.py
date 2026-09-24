@@ -203,8 +203,17 @@ def _why_empty(files: int) -> str:
     return f"no reader could read its {_plural(files, 'file')}"
 
 
+def _gate_count(verify: dict) -> str:
+    """Functions over the ceiling plus changed files no reader could read:
+    both fail the gate, exit 6, so an unread file alone never reads as
+    `0 gate violations` under a failed gate."""
+    unread = len(verify.get("unread_files") or [])
+    count = _plural(len(verify.get("gate_violations", [])) + unread, "gate violation")
+    return f"{count} ({_plural(unread, 'unread file')})" if unread else count
+
+
 def _findings(verify: dict) -> str:
-    parts = [_plural(len(verify.get("gate_violations", [])), "gate violation"),
+    parts = [_gate_count(verify),
              _plural(len(verify.get("ratchet_regressions", [])), "ratchet regression"),
              _plural(len(verify.get("new_failures", [])), "new test failure"),
              _plural(verify.get("diff_uncovered_count", 0), "uncovered changed line")]

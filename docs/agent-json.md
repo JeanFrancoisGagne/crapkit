@@ -1319,7 +1319,7 @@ file. The plugin registers it async with a 20-second timeout, so no edit waits o
 | Exit | Means | Output |
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
-| `2` | a changed function is over its ceiling | three or more lines on stderr, which reach the model |
+| `2` | a changed function is over its ceiling, or the edit changed a file no reader could read | three or more lines on stderr, which reach the model |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1333,6 +1333,19 @@ the commit gate enforces this; decompose there or mark the debt
 already on disk and nothing can block it. `hook-precommit` stays the only enforcement point.
 The head line states that outright, because the reader is a model holding a nonzero exit
 code.
+
+A file no reader could read (a TypeScript arrow the reader refuses, a Python def cut off at
+its signature) scores as zero functions, and the commit gate refuses it once staged. The
+advisory names it instead of reading zero functions as zero breaches:
+
+```
+crapkit advisory: src/a.ts could not be read, so no function in it was judged (the edit landed; nothing was blocked)
+  UNREAD  src/a.ts: lizard failed on src/a.ts: src/a.ts:1: expression-arrow body has '<' before a comma; lizard cannot distinguish type arguments from an expression separator here; wrap that arrow body in parentheses or a block
+the commit gate refuses this file once staged; change what the reason names so a reader can parse the file, or list it under [exclude] globs in crapkit.toml to leave it ungated
+```
+
+A tracked file the edit left unchanged against `HEAD` stays silent, as the commit gate
+passes an unread file nobody staged.
 
 It judges the functions the edit touched, not the whole file. Judging the file would fire on
 every edit in a repo with seeded debt and say nothing new. An untracked file is the one
@@ -1389,7 +1402,7 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
-| verdict | no scope claims the file, the source parses to no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+| verdict | no scope claims the file, the file holds no function, no changed function is over the ceiling, or every one that is carries a ratchet mark |
 
 Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
 git call, so a payload for a protocol this CLI does not answer costs nothing but the read of

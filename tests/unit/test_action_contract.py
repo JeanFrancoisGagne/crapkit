@@ -896,6 +896,32 @@ def test_a_changed_file_no_reader_could_read_gets_its_own_bullet():
             "src/a.ts:12: arrow refused; wrap it") in line.splitlines(), line
 
 
+@pytest.mark.parametrize(("gate", "unread", "counted"), [
+    pytest.param(0, 1, "1 gate violation (1 unread file)", id="only-an-unread-file"),
+    pytest.param(1, 2, "3 gate violations (2 unread files)", id="unread-files-beside-a-violation"),
+    pytest.param(1, 0, "1 gate violation,", id="no-unread-file-reads-as-before"),
+])
+def test_the_counts_line_counts_an_unread_file_as_a_gate_violation(gate, unread, counted):
+    """An unread file fails the gate, exit 6, like a function over the ceiling.
+    The counts read `0 gate violations` under `verify failed, exit 6` for a
+    verify whose only finding was one."""
+    files = [{"path": f"src/{n}.ts", "reason": "arrow refused", "dirty": False} for n in range(unread)]
+    verify = _failing_verify(gate_violations=[_violation()] * gate, unread_files=files)
+
+    counts = _builder().verdict_line(verify, 6).splitlines()[-1]
+
+    assert f"1 changed file: {counted}" in counts, counts
+
+
+def test_the_readme_quotes_the_count_an_unread_file_gets():
+    files = [{"path": "src/a.ts", "reason": "arrow refused", "dirty": False}]
+    counts = _builder().verdict_line(_failing_verify(unread_files=files), 6).splitlines()[-1]
+    quoted = "1 gate violation (1 unread file)"
+
+    assert quoted in counts
+    assert f"`{quoted}`" in _readme_section()
+
+
 def test_a_marked_row_is_labelled_accepted_debt():
     marked = {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )",
               "ccn": 8, "risk": 4.0, "remedy": "decompose", "ratchet_mark": 72.0}

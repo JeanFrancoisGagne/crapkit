@@ -74,6 +74,13 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   granted` and exited 6 with no reason given. Both now refuse first, write nothing, and
   print `override refused: 1 unread file (PATH: REASON) never qualifies for an override`
   with what to do about the file.
+- The advisory hook (`crapkit claude-hook`) exits 2 when an edit leaves a file no reader
+  can read, with `crapkit advisory: PATH could not be read, so no function in it was
+  judged (the edit landed; nothing was blocked)`, an `UNREAD` line and the fix. It exited
+  0 in silence, so an agent learned of the file only when the commit gate refused it. A
+  tracked file the edit left unchanged against `HEAD` stays silent. The Action's comment
+  counts an unread file among the gate violations (`1 gate violation (1 unread file)`),
+  where its count line read `0 gate violations` under a failed gate.
 - `inventory`, `coverage` and `verify` name on stderr each declared scope that scored no
   function: one that claims no file (a renamed directory, a path typo, the wrong language)
   or one whose every file no reader could read. Such a run reported `0 over ceiling 6,

@@ -318,6 +318,12 @@ Nothing was blocked and nothing was written. Read it as the earliest warning tha
 will fail, not as a rejected edit. A function the committed ratchet already marks never
 triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
 
+An edit that leaves a file no reader can read (a TypeScript arrow body the reader refuses,
+a Python def cut off at its signature) gets the same three-line shape, opening
+`crapkit advisory: src/a.ts could not be read, so no function in it was judged`, then an
+`UNREAD` line with the reader's reason and the fix. The commit gate refuses that file once
+staged, so fix what the reason names before you commit.
+
 An edit event names its file. A `Bash` event names none, so the hook reads the working
 tree instead: the dirty or untracked `*.py` files whose mtime falls inside a 12-second
 window, 25 at most, each judged exactly the way an edited file is. Write source through a
