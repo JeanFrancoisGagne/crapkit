@@ -392,7 +392,7 @@ def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: st
                      key: str) -> dict:
     """One function's whole packet. The span is looked up once and passed down:
     dark lines, --history and --tests all want the same line range."""
-    span = _latest_span(store, ctx.run_id, ctx.path, key)
+    span = _latest_place(store, ctx.run_id, ctx.path, key)
     out = {"long_name": long_name,
            "history": store.function_history(ctx.path, key),
            **_mark_fields(ctx.ratchet, ctx.path, key),
@@ -418,13 +418,14 @@ def _print_explain(args, payloads: list[dict]) -> None:
         _explain_extras(p)
 
 
-def _latest_span(store: SnapshotStore, run_id: int | None, path: str, long_name: str):
-    """The newest non-hook run's (start, end) for one function, or None.
+def _latest_place(store: SnapshotStore, run_id: int | None, path: str, long_name: str):
+    """The newest non-hook run's FunctionPlace for one function, or None: its
+    (start, end), scope and flag.
 
     A targeted lookup off the (run_id, path) index; this used to materialize
     every row of that run to find one.
     """
-    return None if run_id is None else store.function_span(run_id, path, long_name)
+    return None if run_id is None else store.function_place(run_id, path, long_name)
 
 
 def _mark_fields(ratchet: list | None, path: str, long_name: str) -> dict:
@@ -445,11 +446,13 @@ def _dark_fields(uncovered: MissingLines, path: str, span) -> dict:
     """The dark lines inside one span, or null and the reason there are none.
 
     null when no artifact could answer, never []: [] is what a function every
-    artifact ran reports, and it would read as nothing left to test.
+    artifact ran reports, and it would read as nothing left to test. The note
+    reads the row's flag and scope, as brief's does: a function in a scope no
+    lane covers gets that note, never another lane's.
     """
     if span is None:
         return {"uncovered_lines": None, "uncovered_lines_note": _NO_SPAN}
-    note = uncovered.note_for(path)
+    note = uncovered.note_for(path, span.flag or "", span.scope)
     if note:
         return {"uncovered_lines": None, "uncovered_lines_note": note}
     return {"uncovered_lines": uncovered.in_span(path, span[0], span[1])}

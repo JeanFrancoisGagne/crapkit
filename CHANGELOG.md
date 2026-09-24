@@ -150,8 +150,8 @@ writes nothing.
   untested, and `brief` and `next-item` multiplied that stand-in into
   `est_uncovered_paths`. `cov`, `crap`, `flag`, `remedy` and `est_uncovered_paths` keep
   their values until JSON schema 2.
-- `brief`, `next-item` and the MCP tools `get_function_brief` and `get_next_item` give a
-  function in a scope no lane covers its own dark-line note: `no lane covers scope 'src',
+- `brief`, `next-item`, `explain` and the MCP tools `get_function_brief` and
+  `get_next_item` give a function in a scope no lane covers its own dark-line note: `no lane covers scope 'src',
   so no artifact can name uncovered lines for src/a.py; add 'src' to a [[lane]]'s scopes
   to measure it`. A lane whose artifact went stale, or was only ever reused and so never
   stamped, set its note for every path, so such a function read `lane 'lib': files in

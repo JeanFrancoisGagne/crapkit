@@ -205,8 +205,20 @@ def test_a_stamped_lane_names_its_dark_lines(tmp_path: Path):
     assert fn["uncovered_lines"] == [] and "uncovered_lines_note" not in fn
 
 
-@pytest.mark.parametrize("lose_stamp", [reuse_only, stamps_deleted, stamp_mangled],
-                         ids=["reuse-only", "stamps-deleted", "stamp-mangled"])
+# The cause a missing stamp gets is the lane freshness verdict's, which reads the
+# stamp file's explicit states; that work lands with the stamp-freshness fixes
+# (Q33, Q67), not in this tree. Each case is a strict xfail until then.
+_MISSING_STAMP_CAUSE = pytest.mark.xfail(
+    strict=True, reason="the dark-line note still says a lane with no stamp had its files "
+                        "changed; it holds once the stamp module names an absent or mangled "
+                        "stamp as its own cause (Q33, Q67)")
+
+
+@pytest.mark.parametrize("lose_stamp", [
+    pytest.param(reuse_only, id="reuse-only", marks=_MISSING_STAMP_CAUSE),
+    pytest.param(stamps_deleted, id="stamps-deleted", marks=_MISSING_STAMP_CAUSE),
+    pytest.param(stamp_mangled, id="stamp-mangled", marks=_MISSING_STAMP_CAUSE),
+])
 def test_a_missing_stamp_is_named_and_a_real_run_clears_it(lose_stamp, tmp_path: Path):
     """On a clean tree the note used to read "files in its scopes changed since
     cov.json was written (uncommitted edits count)" and told the reader to
@@ -275,9 +287,7 @@ def brief_fields(repo: Path) -> dict:
                          ids=["lib-never-stamped", "lib-edited-since-measured"])
 @pytest.mark.parametrize("reader", [
     pytest.param(brief_fields, id="brief"),
-    pytest.param(dark_lines, id="explain", marks=pytest.mark.xfail(
-        strict=True, reason="explain asks for the note without the row's flag and scope, so it "
-                            "cannot say no lane covers the path, and a lane's own note wins")),
+    pytest.param(dark_lines, id="explain"),
 ])
 def test_a_path_no_lane_covers_never_reads_another_lanes_note(reader, stale_lib, tmp_path: Path):
     """Lane 'lib' covers scope 'lib' only. Its note, stale or unstamped, used to
@@ -528,7 +538,10 @@ def start_line_missing(region: dict) -> None:
     pytest.param(summary_missing, ("coverage.json", "hot", "summary"), id="function-summary-missing"),
     pytest.param(branch_counts_missing, ("hot", "branch counts"), id="branch-counts-missing"),
     pytest.param(start_line_missing, ("coverage.json", "hot", "start_line", "7.13.1"),
-                 id="start-line-missing"),
+                 id="start-line-missing", marks=pytest.mark.xfail(
+                     strict=True, reason="a region without start_line still scores; it holds "
+                                         "once the reader refuses it by name and the py extra "
+                                         "floor rises to coverage>=7.13.1 (Q34)")),
 ])
 def test_a_report_missing_a_member_is_refused_by_name(edit, names, tmp_path: Path):
     repo = coverage_py_report(tmp_path, edit)

@@ -287,6 +287,15 @@ class CrapRow(NamedTuple):
     occurrence: int = 0
 
 
+class FunctionPlace(NamedTuple):
+    """Where one function sat in a run and how the run scored it: its span, its
+    scope, and its flag (None for a run with no verdicts, such as inventory)."""
+    start: int
+    end: int
+    scope: str
+    flag: str | None
+
+
 class _Codes(NamedTuple):
     """One lookup table, both ways: names on the way in, back out on the way out."""
     ids: dict
@@ -1214,14 +1223,22 @@ class SnapshotStore:
 
     def function_span(self, run_id: int, path: str, long_name: str) -> tuple | None:
         """One keyed function's span; duplicate scopes count as one twin."""
+        place = self.function_place(run_id, path, long_name)
+        return None if place is None else (place.start, place.end)
+
+    def function_place(self, run_id: int, path: str, long_name: str) -> FunctionPlace | None:
+        """One keyed function's span, with the scope and flag the run scored it
+        under: a reader that names why a function has no dark lines needs the
+        flag, since no lane covers a no-lane row whatever a lane's stamp says."""
         name, ordinal = split_ordinal(long_name)
         self._require_identity(run_id=run_id, path=path, name=name)
-        cur = self._conn.execute(
-            f"SELECT f.start, f.end {_BY_PATH} WHERE i.path = ? AND i.long_name = ? "
-            "AND f.run_id = ? GROUP BY f.start, f.occurrence "
+        row = self._conn.execute(
+            f"SELECT f.start, f.end, i.scope, f.flag {_BY_PATH} WHERE i.path = ? "
+            "AND i.long_name = ? AND f.run_id = ? GROUP BY f.start, f.occurrence "
             "ORDER BY f.start, f.occurrence LIMIT 1 OFFSET ?",
-            (path, name, run_id, ordinal - 1))
-        return cur.fetchone()
+            (path, name, run_id, ordinal - 1)).fetchone()
+        return None if row is None else FunctionPlace(
+            row[0], row[1], row[2], _name(self._codes["flags"].names, row[3]))
 
     def set_verdict_ok(self, run_id: int, ok: bool, *, findings: int = 0) -> None:
         """Stamp a verdict on a run, with how many findings it carried.
