@@ -174,12 +174,16 @@ scores on. A lane that declares no `results_artifact` still passes, with a stder
 and the lane under `lanes_without_results` in `verify --json`.
 
 **Shallow clones.** A depth-1 checkout holds one commit, so churn counts one commit per
-file and a ratchet mark's age reads as 0 days. `ratchet report --enforce` now refuses
-there with exit 4 and `set fetch-depth: 0 on the checkout or run git fetch --unshallow`.
-A CI job that ran it on a default `actions/checkout` passed its debt-age policy on those
-zeros; set `fetch-depth: 0` on the checkout. `worklist`, `next-item`, `brief` and
-`ratchet report` without `--enforce` still answer, print one line naming the shallow
-clone, and add `shallow: true` to their JSON (`false` in a full clone).
+file, every ratchet mark reads 0 days old and no repayment shows.
+`ratchet report --enforce` with `debt_max_age_months` or `repayment_min_per_30d` set now
+refuses there with exit 4, ending
+`set fetch-depth: 0 on the checkout or run git fetch --unshallow`. A CI job that ran it
+on a default `actions/checkout` judged its policy on those zeros: an age limit passed
+and a repayment quota failed. Set `fetch-depth: 0` on the checkout. `worklist`,
+`next-item`, `brief` and `ratchet report` without `--enforce` still answer, print one
+stderr line that names what they counted, such as
+`warning: churn counts read only the commits this clone holds` from `worklist`, and add
+`shallow: true` to their JSON (`false` in a full clone).
 
 **Mutants with no test verdict.** `mutate` counted a mutant whose suite exited 5, which
 means no test ran, as killed. It now gets no verdict: `--json` counts it under

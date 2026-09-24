@@ -119,6 +119,15 @@ def test_the_mutate_row_and_the_upgrade_note_name_the_same_two_counts():
         assert key in row and key in notes, key
 
 
+@pytest.mark.parametrize("page", [README, RECOVER])
+def test_the_shallow_warning_the_pages_quote_carries_the_whole_sentence_gitio_prints(page: str):
+    """A reader greps their log for the line the page shows; a clause the
+    page shortened is a line they never find."""
+    line = f"warning: churn counts read only the commits this clone holds; {_SHALLOW_FIX}"
+
+    assert line in _doc(page)
+
+
 def test_the_readme_names_every_command_that_marks_a_shallow_clone():
     """The Action section is where a CI owner reads why the ranking looks flat."""
     text = " ".join(_doc(README).split())

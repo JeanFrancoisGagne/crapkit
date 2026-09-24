@@ -517,8 +517,10 @@ crapkit: git merge-base c47a37b1df69c434ba42eec5979ddad03d2bf1e4 HEAD failed in 
 
 When the clone holds both commits but not the one they fork from, the line reads
 `no merge base between REF and HEAD in ROOT`, followed by the same fix.
-`ratchet report --enforce` refuses in any shallow clone, exit 4 with the same fix: a mark
-457 days old reads as 0 days there, so a debt-age policy a full clone fails would pass.
+`ratchet report --enforce` with `debt_max_age_months` or `repayment_min_per_30d` set
+refuses in a shallow clone, exit 4 with the same fix: every mark reads 0 days old there and
+no repayment shows, so an age limit a full clone fails would pass and a repayment quota a
+full clone passes would fail.
 Set `fetch-depth: 0` on the checkout step, which is what crapkit's own
 [.github/workflows/ci.yml](https://github.com/JeanFrancoisGagne/crapkit/blob/main/.github/workflows/ci.yml) does.
 
@@ -610,8 +612,15 @@ baseline's commit. With a shallow clone the file list comes back empty and the c
 ranks the whole repository instead of the diff. It also flattens every number counted
 from history: churn sees one commit per file, so the worklist ranks on ccn alone, and a
 ratchet mark's age reads as 0 days. `worklist`, `next-item`, `brief` and `ratchet report`
-print one line that says the clone is shallow and carry `shallow: true` in their JSON
-(`false` in a full clone), and the comment repeats that line above its table.
+print one line on stderr and carry `shallow: true` in their JSON (`false` in a full clone),
+and the comment repeats the worklist's line above its table:
+
+```
+warning: churn counts read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow
+```
+
+`brief` names churn counts and mark ages in that line, and `ratchet report` mark ages and
+repayments.
 
 The action installs crapkit from `$GITHUB_ACTION_PATH`, which is its own checkout of the
 ref you pinned in `uses:`. So a pin left at last month's tag scores your tree with last
@@ -825,7 +834,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. |
 | `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, `(anonymous)#N` for a function printed `(anonymous)` counting the file's anonymous functions from the top, or `NAME#2` for the second of several functions a file gives one name to. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store and one duplication pass over the snapshot for the whole batch (batch of 5: 11.8 s to 5.2 s, output byte-identical to five separate calls). |
 | `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. It also takes the function's start line, the form `brief` takes, which is how you open one printed `(anonymous)`. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
-| `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. A function on a line span another one shares, and a Python def whose body starts on the line its signature ends, scores untested, as the coverage run scores it. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions whose CRAP sits at or under their ratchet mark, and exits 6. A marked function past its mark is gated; the pre-commit hook exempts on the mark's existence instead, because a staged blob has no coverage to score. |
+| `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. A function on a line span another one shares, and a Python def whose body starts on the line its signature ends, scores untested, as the coverage run scores it. A function the run holds no row for (added or renamed since) or one in a scope no lane measures prints `-` for its cov and ends `(coverage not measured)`; `--json` marks it `unmeasured: true` and keeps its `cov`, `crap` and `remedy`. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions whose CRAP sits at or under their ratchet mark, and exits 6. A marked function past its mark is gated; the pre-commit hook exempts on the mark's existence instead, because a staged blob has no coverage to score. |
 | `ratchet seed \| prune \| merge \| move \| report [--baseline ID] [--enforce] [--json]` | The mark lifecycle: seed new debt, prune gone code (a mark whose file git renamed follows it), merge as a git driver, move re-paths marks, report reads burn-down from the file's own git history. `seed` and `prune` take `--baseline ID` to read a named run instead of verify's pick, refused for the reasons `verify --baseline` refuses one. See [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md). |
 | `runs [list \| prune [--keep N]] [--json]` | Run history, and retention. `list` marks the run `verify` compares against today `baseline`, and prints `verdict=-` for a run that produces no verdict rather than one that failed. See [The trusted baseline](#the-trusted-baseline). `--keep` (default 5) is a floor on the newest trusted runs, not a cap: the digest pair, every passing verify baseline, every run an override names, and the newest non-hook run are kept too. `prune` VACUUMs afterwards. |
 | `overrides [--json]` | The override audit trail: who granted what, when, and why. |
@@ -998,7 +1007,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 1 | **Overloaded.** Three unrelated things, listed below the table. |
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
-| 4 | Git error: not a repository, a baseline commit rewritten out of the history, a baseline commit or fork point a shallow clone does not hold, `ratchet report --enforce` in a shallow clone (mark ages and repayments need the whole history). The shallow refusals end with `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. |
+| 4 | Git error: not a repository, a baseline commit rewritten out of the history, a baseline commit or fork point a shallow clone does not hold, `ratchet report --enforce` with a debt key set in a shallow clone (mark ages and repayments need the whole history). The shallow refusals end with `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. |
 | 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, `verify --reuse-artifacts` over a lane whose declared `results_artifact` is missing or unreadable (it stores no run), an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. All three also refuse a changed file no reader could read (`UNREAD` lines), since they judged none of its functions. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
@@ -1013,7 +1022,7 @@ depends on the command:
 | Command | What exit 1 means |
 |---|---|
 | `doctor` | A **`FAIL` finding**. This is a verdict, not a crash. A `WARN` (an unmeasured directory, or a lane writing its artifact at the repo root) and a `note` (a file over `max_file_bytes`, or no lanes declared) both exit 0. |
-| `ratchet report --enforce` | The **debt policy was breached**. Also a verdict. In a shallow clone it judges nothing and exits 4. |
+| `ratchet report --enforce` | The **debt policy was breached**. Also a verdict. In a shallow clone, with a debt key set, it judges nothing and exits 4. |
 | anything else | An unexpected error: "no snapshot yet, run `crapkit coverage` first", a `brief` name that matches no function, a `test-scoped` runner that exited non-zero. |
 
 `verify` reports the **first** of 6, 7, 8, 9 that fires, in that order. A gate violation

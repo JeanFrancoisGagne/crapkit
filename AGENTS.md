@@ -415,7 +415,7 @@ Where a packet's `PATH` and `FUNCTION` come from when no orchestrator handed you
 `next-item` always prints one JSON object on stdout and has no `--json` flag. One real
 payload, one line, sorted keys:
 
-    {"commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84]}, "run_id": 5, "schema": 1, "skipped_no_lane": 0, "stale": false}
+    {"commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84], "unmeasured": false}, "run_id": 5, "schema": 1, "shallow": false, "skipped_no_lane": 0, "stale": false}
 
 Act on these fields:
 
@@ -430,6 +430,8 @@ Act on these fields:
 | `handle` | the shorter name form, and the one to use on a function printed as `(anonymous)`: `(anonymous)#2` names a position in the file, so it outlives your own edit |
 | `start` | the other name form `brief` takes; a line number, so an edit above it invalidates it |
 | `stale` | `true` means the run predates HEAD; rerun `crapkit coverage` before acting on `cov` |
+| `unmeasured` | `true` means no measurement stands behind `cov` (`flag` `cc-only`, or `no-lane` on a `brief`), so `cov` 0.0 and `est_uncovered_paths` are stand-ins, and `brief`'s text prints `not measured`. A test does not move them: a `no-lane` scope needs a lane, and a `cc-only` scope has none by design |
+| `shallow` | on the envelope: `true` means the checkout is a shallow clone, so `commits`, `authors` and churn count only the commits it holds (one per file at depth 1), and stderr names the fix, `set fetch-depth: 0 on the checkout or run git fetch --unshallow` |
 
 `uncovered_lines: null` with a sibling `uncovered_lines_note` means no artifact could name
 line numbers for that file. The note names which case, and `flag` is the same answer in one
@@ -463,7 +465,7 @@ before:**
     skipped_claimed              0, or absent
     reasons.no_lane_over_target  0, or absent
 
-    {"commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "skipped_no_lane": 0, "stale": false}
+    {"commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "shallow": false, "skipped_no_lane": 0, "stale": false}
 
 That payload is a finished burn-down. `empty: true` on its own is not: it says the queue
 has nothing to hand out, and two things stop it handing out work that still exists. A
