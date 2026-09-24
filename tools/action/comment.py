@@ -178,7 +178,20 @@ def scored_line(coverage: dict | None) -> str:
             f"{_plural(coverage.get('files', 0), 'file')}, "
             f"{coverage.get('over_target', 0)} {_over(coverage)}, "
             f"CRAP load {coverage.get('crap_load', 0)}, "
-            f"grade {coverage.get('grade', '?')}{_lane_failures(coverage)}.")
+            f"grade {coverage.get('grade', '?')}{_empty_scopes(coverage)}{_lane_failures(coverage)}.")
+
+
+def _empty_scopes(coverage: dict) -> str:
+    """One clause per scope that scored no function: nothing in it counts over
+    the ceiling, so without the clause the grade reads as a clean tree."""
+    return "".join(f"; scope `{_cell_text(name)}` scored no function: {_why_empty(files)}"
+                   for name, files in (coverage.get("empty_scopes") or {}).items())
+
+
+def _why_empty(files: int) -> str:
+    if not files:
+        return "it claims no file"
+    return f"no reader could read its {_plural(files, 'file')}"
 
 
 def _findings(verify: dict) -> str:

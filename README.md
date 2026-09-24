@@ -648,7 +648,8 @@ Run 3 against baseline 1, 1 changed file: 1 gate violation, 0 ratchet regression
 
 The first line is the run `crapkit coverage` wrote: functions and files, how many sit over
 the ceiling (`over ceiling 6`, or `over their ceilings (6; reports 12, util 4)` when scopes
-set their own), CRAP load and grade, with a failed lane's first error line appended as
+set their own), CRAP load and grade, then ``; scope `src` scored no function: it claims no
+file`` for each scope that scored nothing, and a failed lane's first error line appended as
 `; lane 'js' failed: ...`. When `coverage --json` died before a summary, the line quotes the
 error object it printed instead: `` `crapkit coverage` exited 5: lane 'py' cannot import
 pytest-cov; pip install pytest-cov. ``

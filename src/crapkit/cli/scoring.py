@@ -76,10 +76,36 @@ def _analyzed_corpus(root: Path, cache_path: Path, flat: list,
 
 class _Corpus(NamedTuple):
     """What the analyzed file list came to: files in, files the byte ceiling
-    cut, and {path: why} for the files no reader could read."""
+    cut, {path: why} for the files no reader could read, and {scope: files}
+    for the declared scopes that scored no function."""
     files: int
     skipped_max_bytes: int
     unread: dict = {}
+    empty_scopes: dict = {}
+
+
+def _empty_scopes(cfg, by_scope: dict, unread: dict) -> dict[str, int]:
+    """{scope: its file count} for every declared scope that claims no file, or
+    whose every file no reader could read: it scored no function, and a run
+    with nothing scored in it reads as 0 over the ceiling."""
+    return {s.name: len(by_scope.get(s.name, ())) for s in cfg.scopes
+            if set(by_scope.get(s.name, ())) <= unread.keys()}
+
+
+def _empty_scope_line(scope, files: int) -> str:
+    if files:
+        return (f"warning: scope {scope.name!r} scored no function: no reader could read any "
+                f"of its {files} file(s), named above")
+    return (f"warning: scope {scope.name!r} claims no file (paths: {', '.join(scope.paths)}; "
+            f"languages: {', '.join(scope.languages)}), so none of its code was scored; point "
+            f"its paths and languages at the code in crapkit.toml, and `{_self()} doctor` "
+            "lists the files each scope claims")
+
+
+def _warn_empty_scopes(cfg, empty: dict[str, int]) -> None:
+    for scope in cfg.scopes:
+        if scope.name in empty:
+            print(_empty_scope_line(scope, empty[scope.name]), file=sys.stderr)
 
 
 def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int, dict]:
@@ -94,7 +120,10 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
     tool_versions = {"crapkit": __version__, "lizard": lizard.version,
                      "analysis_version": str(ANALYSIS_VERSION)}
-    corpus = _Corpus(len(flat), len(universe.oversized), unread_reasons(records_by_path))
+    unread = unread_reasons(records_by_path)
+    empty = _empty_scopes(cfg, universe.by_scope, unread)
+    _warn_empty_scopes(cfg, empty)
+    corpus = _Corpus(len(flat), len(universe.oversized), unread, empty)
     return commit, rows, corpus, cache_hits, tool_versions
 
 
@@ -133,6 +162,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
         "functions": len(rows),
         "cache_hits": cache_hits,
         "skipped_max_bytes": corpus.skipped_max_bytes,
+        "empty_scopes": corpus.empty_scopes,
         "db": str(db_path),
     }
     if args.json:
@@ -492,10 +522,10 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
         "functions": len(run.scored), "cache_hits": run.cache_hits,
         "measured": flags["measured"], "untested": flags["untested"],
         "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
-        "skipped_max_bytes": run.corpus.skipped_max_bytes,
+        "skipped_max_bytes": run.corpus.skipped_max_bytes, "empty_scopes": run.corpus.empty_scopes,
         "over_target": over, "grade": grade(over, len(judged)),
         "by_scope": _by_scope(run.scored, cfg),
-        "crap_load": round(sum(r.crap for r in run.scored), 2), "lanes": run.provenance,
+        "crap_load": round(sum(r.crap for r in judged), 2), "lanes": run.provenance,
         "lane_failures": run.lane_errors, "db": str(db_path),
         "kind": shape.kind, "unmeasured_scopes": shape.unmeasured, "ceilings": cfg.ceilings,
     }

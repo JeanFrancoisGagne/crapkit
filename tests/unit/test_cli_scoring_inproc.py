@@ -212,6 +212,103 @@ def test_a_partial_run_counts_debt_over_the_measured_scopes_only(repo, capsys):
     assert "4 functions scored: 2 measured / 2 no-lane, 0 over ceiling 6" in text, text
 
 
+@pytest.mark.parametrize("how", ["full-run", "lane-subset", "lane-failed"])
+def test_the_crap_load_is_summed_over_the_scopes_the_run_measured(repo, capsys, how):
+    """The run's CRAP load sat on the same line as its over-ceiling count and
+    grade, which leave out the scopes no lane measured, yet summed web's
+    knotty at the cov-0 stand-in: 0 over ceiling, grade A+, CRAP load 80."""
+    add_knotty(repo, "web/ui.ts")
+    commit_all(repo, "knotty in web")
+    seed_artifacts(repo, ui=how != "lane-failed")
+    subset = ["--lane", "unit"] if how == "lane-subset" else []
+
+    code, out, _ = run(["coverage", "--reuse-artifacts", "--json", *subset], repo, capsys)
+    summary = json.loads(out)
+
+    measured = [s for s in summary["by_scope"] if s not in summary["unmeasured_scopes"]]
+    assert code == (5 if how == "lane-failed" else 0)
+    assert summary["crap_load"] == pytest.approx(
+        sum(summary["by_scope"][s]["crap_load"] for s in measured), abs=0.01), summary
+    assert measured == (["src", "web"] if how == "full-run" else ["src"])
+
+
+# --- a scope that scored no function -------------------------------------------
+#
+# A run whose scope claims no file, or none a reader could read, scores no
+# function in it and reported 0 over the ceiling, grade A+, at exit 0. Only
+# doctor said the scope claimed nothing, and coverage, verify and the Action never
+# run doctor.
+
+def _lose_scope_src(repo, form: str) -> None:
+    from cli_inproc_repo import git
+
+    toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    if form == "dir-renamed":
+        git(repo, "mv", "src", "lib")
+    elif form == "scope-path-typo":
+        toml = toml.replace('paths = ["src"]', 'paths = ["scr"]')
+    elif form == "language-mismatch":
+        toml = toml.replace('paths = ["src"]\nlanguages = ["typescript"]',
+                            'paths = ["src"]\nlanguages = ["python"]')
+    else:
+        with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
+            fh.write("\nexport const pick = (x: number) => convert<string, number>(x);\n")
+    (repo / "crapkit.toml").write_text(toml, encoding="utf-8", newline="\n")
+    commit_all(repo, form)
+
+
+EMPTY_SCOPE_FORMS = {"dir-renamed": 0, "scope-path-typo": 0, "language-mismatch": 0,
+                     "every-file-unreadable": 1}
+
+
+def _no_file_line(paths: str, languages: str) -> str:
+    return (f"warning: scope 'src' claims no file (paths: {paths}; languages: {languages}), so "
+            f"none of its code was scored; point its paths and languages at the code in "
+            f"crapkit.toml, and `{_self()} doctor` lists the files each scope claims")
+
+
+def _expected_empty_line(form: str) -> str:
+    if form == "every-file-unreadable":
+        return ("warning: scope 'src' scored no function: no reader could read any of its "
+                "1 file(s), named above")
+    paths = "scr" if form == "scope-path-typo" else "src"
+    return _no_file_line(paths, "python" if form == "language-mismatch" else "typescript")
+
+
+@pytest.mark.parametrize("form", sorted(EMPTY_SCOPE_FORMS))
+@pytest.mark.parametrize("command", ["inventory", "coverage"])
+def test_a_scope_that_scored_no_function_is_named(repo, capsys, form, command):
+    _lose_scope_src(repo, form)
+    seed_artifacts(repo)
+    argv = [command, "--json"] + (["--reuse-artifacts"] if command == "coverage" else [])
+
+    _, out, err = run(argv, repo, capsys)
+
+    assert _expected_empty_line(form) in err.splitlines(), err
+    assert json.loads(out)["empty_scopes"] == {"src": EMPTY_SCOPE_FORMS[form]}
+
+
+def test_verify_names_a_scope_the_change_emptied(repo, capsys):
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    _lose_scope_src(repo, "dir-renamed")
+
+    _, _, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert _expected_empty_line("dir-renamed") in err.splitlines(), err
+
+
+def test_a_run_whose_every_scope_scored_something_names_no_empty_scope(repo, capsys):
+    seed_artifacts(repo)
+
+    code, out, err = run(["coverage", "--reuse-artifacts", "--json"], repo, capsys)
+
+    assert code == 0
+    assert json.loads(out)["empty_scopes"] == {}
+    assert "scored no function" not in err and "claims no file" not in err, err
+
+
 def test_the_summary_labels_every_ceiling_in_force(repo, capsys):
     toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
     (repo / "crapkit.toml").write_text(

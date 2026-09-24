@@ -990,6 +990,19 @@ def test_the_scored_line_quotes_the_first_line_of_a_lane_failure():
     assert "full log" not in line
 
 
+@pytest.mark.parametrize("files, why", [(0, "it claims no file"),
+                                        (2, "no reader could read its 2 files")])
+def test_the_scored_line_names_a_scope_that_scored_no_function(files, why):
+    """A scope that scored nothing adds nothing over the ceiling, so the line's
+    grade reads as a clean tree unless the line says what went unscored."""
+    coverage = _coverage(functions=0, over_target=0, crap_load=0, grade="A+",
+                         empty_scopes={"src": files})
+
+    line = _builder().scored_line(coverage)
+
+    assert line.endswith(f"grade A+; scope `src` scored no function: {why}."), line
+
+
 def test_the_scored_line_quotes_the_error_message_when_coverage_died_under_json():
     """0.5.0's --json prints one error object on stdout when a crapkit error
     escapes, so the sentence that names the fix reaches the comment."""
