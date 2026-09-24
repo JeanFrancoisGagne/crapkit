@@ -9,7 +9,9 @@ scope. The reads now start together, and diff and ls-files take the scope paths
 of every lane as a pathspec: a lane with no artifact when the reads start can
 have one by the time it is judged.
 """
+import os
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -253,3 +255,32 @@ def test_the_reuse_warning_says_when_git_cannot_answer(repo, capsys):
     err = capsys.readouterr().err
     assert "git cannot say which files in its scopes changed" in err, err
     assert "stale" in err
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the index race needs Windows file sharing rules")
+def test_three_hundred_touches_raise_no_index_race(repo):
+    """boundary-29: after a same-bytes touch the worktree `git diff` writes the
+    refreshed index back, and on Windows a sibling read that opened .git/index
+    during that write failed with `index file open failed: Permission denied`
+    (9 of 300 touches), which read as a changed file. Slow on purpose: 300 is
+    the count the race showed at."""
+    from crapkit.errors import GitError
+    from crapkit.gitio import index_blobs, worktree_changes
+    from crapkit.lane_changes import ChangeReads
+
+    root, _ = repo
+    head = _git(root, "rev-parse", "HEAD").strip()
+    source = root / "src" / "a.ts"
+    failures, changes = [], []
+    for step in range(300):
+        later = source.stat().st_mtime + 200 + step
+        os.utime(source, (later, later))
+        try:
+            with ChangeReads(root, (head,), ("src",)) as reads:
+                changes.extend(reads.changed_since(head))
+            changes.extend(worktree_changes(root, ("src",)))
+            index_blobs(root, ("src",))
+        except GitError as exc:
+            failures.append(str(exc))
+
+    assert (failures[:3], changes[:3]) == ([], [])

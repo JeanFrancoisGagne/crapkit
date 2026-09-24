@@ -77,3 +77,71 @@ def test_an_edit_is_still_a_change(repo):
         scoped = reads.status_names()
     assert (status_names(repo), unstaged_paths(repo), scoped) == (
         ["src/a.ts"], {"src/a.ts"}, ("src/a.ts",))
+
+
+@pytest.fixture()
+def default_repo(tmp_path: Path) -> Path:
+    """One LF source file under git's default config, its index entry settled
+    well before the index was written, so only a later touch makes it stat-dirty."""
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "core.autocrlf", "false")
+    (tmp_path / "src").mkdir()
+    source = tmp_path / "src" / "a.ts"
+    source.write_bytes(b"export const a = 1;\n")
+    earlier = source.stat().st_mtime - 60
+    os.utime(source, (earlier, earlier))
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
+    return tmp_path
+
+
+def _reads_after_a_touch(repo: Path) -> None:
+    from crapkit.gitio import worktree_changes
+
+    _touch(repo / "src" / "a.ts")
+    with ChangeReads(repo, (), ("src",)) as reads:
+        reads.status_names()
+    status_names(repo)
+    worktree_changes(repo, ("src",))
+
+
+def _environments(monkeypatch) -> list[dict]:
+    """Every environment crapkit hands a git process from here on."""
+    import subprocess as sp
+
+    seen: list[dict] = []
+    real_run, real_popen = sp.run, sp.Popen
+
+    def run(argv, *args, **kwargs):
+        seen.append(kwargs.get("env") or {})
+        return real_run(argv, *args, **kwargs)
+
+    class Popen(real_popen):
+        def __init__(self, argv, *args, **kwargs):
+            seen.append(kwargs.get("env") or {})
+            super().__init__(argv, *args, **kwargs)
+
+    monkeypatch.setattr(sp, "run", run)
+    monkeypatch.setattr(sp, "Popen", Popen)
+    return seen
+
+
+def test_every_git_process_takes_no_optional_lock(default_repo, monkeypatch):
+    """GIT_OPTIONAL_LOCKS=0 is git's own spelling of --no-optional-locks: a
+    read never writes the index for its own convenience, and a write takes the
+    lock it needs anyway."""
+    from crapkit import gitio
+
+    seen = _environments(monkeypatch)
+    commit = gitio.head_commit(default_repo)
+    gitio.is_ancestor(default_repo, commit)
+    gitio.has_commit(default_repo, commit)
+    gitio.is_shallow(default_repo)
+    gitio.index_blobs(default_repo, ("src",))
+    gitio.worktree_blobs(default_repo, ["src/a.ts"])
+    gitio.staged_blobs(default_repo, ["src/a.ts"])
+    list(gitio._git_lines(default_repo, "log", "--format=%H"))
+    _reads_after_a_touch(default_repo)
+    gitio.stage_path(default_repo, "src/a.ts")
+
+    assert seen and all(env.get("GIT_OPTIONAL_LOCKS") == "0" for env in seen)

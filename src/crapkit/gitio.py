@@ -51,9 +51,23 @@ _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=
 
 
 def _environment() -> dict[str, str]:
-    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state."""
+    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state.
+
+    GIT_OPTIONAL_LOCKS=0 is git's own spelling of `--no-optional-locks`, set on
+    every process here because crapkit never wants an index write it did not
+    ask for: `git status` and the other commands that honor it compare a
+    stat-dirty file's content without writing the refreshed entry back to
+    .git/index. On Windows that write-back made a sibling read that opened the
+    index at the same moment fail with `index file open failed: Permission
+    denied`. `git diff` (2.43) writes it back whatever this says, which is why
+    lane_changes starts its index reads after the worktree diff and the content
+    record reads one after the other. A command that must lock the index
+    (`add`, a worktree checkout) takes that lock anyway. The environment rather
+    than the flag, so the subcommand stays the first word after the `-c` pairs.
+    """
     environment = dict(os.environ)
     environment.pop("GIT_DIFF_OPTS", None)
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
     return environment
 
 
@@ -268,15 +282,24 @@ def hidden_edits(root: Path, *paths: str) -> list[str]:
     flagged = _on_disk(root, _flagged(root, paths))
     if not flagged:
         return []
-    index = _index_blobs(root, flagged)
-    return [path for path, blob in zip(flagged, _worktree_blobs(root, flagged))
+    index = index_blobs(root, flagged)
+    return [path for path, blob in worktree_blobs(root, flagged).items()
             if blob != index.get(path)]
 
 
+def worktree_changes(root: Path, paths: tuple[str, ...] = ()) -> list[str]:
+    """Tracked files under `paths` (all when none) whose content on disk differs
+    from the index: git's worktree diff, which compares a stat-dirty file's
+    content through the repo's filters, plus the flagged files it never
+    compares (`hidden_edits`). A deleted file is in it, and so is a submodule
+    whose checkout moved or holds an edit."""
+    names = _git_paths(root, "--literal-pathspecs", *_NAME_DIFF, "--", *paths)
+    return sorted({*names, *hidden_edits(root, *paths)})
+
+
 def _on_disk(root: Path, paths: list[str]) -> list[str]:
-    """The files present in the checkout. A name holding a line break cannot
-    ride hash-object's line-framed stdin, and is left to the index."""
-    return [path for path in paths if not _line_paths([path]) and (root / path).is_file()]
+    """The files present in the checkout."""
+    return [path for path in paths if (root / path).is_file()]
 
 
 def _flagged(root: Path, paths: tuple[str, ...]) -> list[str]:
@@ -286,8 +309,10 @@ def _flagged(root: Path, paths: tuple[str, ...]) -> list[str]:
     return [record[2:] for record in records if record[:1] == "S" or record[:1].islower()]
 
 
-def _index_blobs(root: Path, paths: list[str]) -> dict[str, str]:
-    """path -> the blob id the index holds for it (`mode blob stage<TAB>path`)."""
+def index_blobs(root: Path, paths=()) -> dict[str, str]:
+    """path -> the object id the index holds for each tracked path under `paths`
+    (all when none), from `mode id stage<TAB>path` records: a blob id for a
+    file, the checked-out commit for a submodule."""
     blobs = {}
     for record in _git_paths(root, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *paths):
         meta, _, path = record.partition("\t")
@@ -295,11 +320,26 @@ def _index_blobs(root: Path, paths: list[str]) -> dict[str, str]:
     return blobs
 
 
-def _worktree_blobs(root: Path, paths: list[str]) -> list[str]:
-    """The blob id each file would get from `git add`, one process for all."""
-    read = _Started(root, ("hash-object", "--stdin-paths"), text=False, stdin=True)
+def worktree_blobs(root: Path, paths) -> dict[str, str]:
+    """path -> the blob id `git add` would give each file on disk, through the
+    repo's filters: one process for every name that can ride hash-object's
+    line-framed stdin, and one each for a name holding a line break."""
+    framed = [path for path in paths if not _line_paths([path])]
+    blobs = dict(zip(framed, _hashed(root, framed)))
+    return {**blobs, **{path: _hashed_alone(root, path) for path in paths if path not in blobs}}
+
+
+def _hashed(root: Path, paths: list[str]) -> list[str]:
+    if not paths:
+        return []
+    read = _Started(root, ("hash-object", "--stdin-paths"), stdin=True)
     out = read.result("".join(f"{path}\n" for path in paths).encode("utf-8"))
     return out.decode("utf-8").split()
+
+
+def _hashed_alone(root: Path, path: str) -> str:
+    """A name holding a line break, hashed as a file argument."""
+    return _Started(root, ("hash-object", "--", path), stdin=False).result().decode("utf-8").strip()
 
 
 def has_commit(root: Path, commit: str) -> bool:
@@ -349,7 +389,7 @@ def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
     ancestor, which is what "at or behind" needs."""
     try:
         res = subprocess.run(["git", "merge-base", "--is-ancestor", commit, other],
-                             cwd=root, capture_output=True)
+                             cwd=root, env=_environment(), capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     return res.returncode == 0
@@ -365,7 +405,7 @@ def is_shallow(root: Path) -> bool:
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
     try:
-        res = subprocess.run(["git", "cat-file", "--batch"], cwd=root,
+        res = subprocess.run(["git", "cat-file", "--batch"], cwd=root, env=_environment(),
                              input=requests, capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
@@ -419,7 +459,7 @@ def _line_paths(paths: list[str]) -> bool:
 
 def _individual_blobs(root: Path, paths: list[str]) -> dict[str, bytes]:
     """Line-bearing names cannot use line-framed requests on older Git versions."""
-    return {path: _Started(root, ("show", f":./{path}"), text=False, stdin=False).result()
+    return {path: _Started(root, ("show", f":./{path}"), stdin=False).result()
             for path in paths}
 
 
@@ -436,27 +476,25 @@ class _Started:
 
     communicate() writes the request and reads the answer in one call, so a
     request stream larger than a pipe buffer cannot deadlock against the child's
-    own output. text=True mirrors _git exactly, universal newlines included: a
-    caller that switched to this must not start seeing CR at the end of every
-    diff line.
+    own output. The answer is bytes: every caller reads a patch, a blob or NUL
+    records, and decides how those decode.
     """
 
-    def __init__(self, root: Path, args: tuple[str, ...], *, text: bool, stdin: bool) -> None:
-        self._args, self._root, self._text = args, root, text
+    def __init__(self, root: Path, args: tuple[str, ...], *, stdin: bool) -> None:
+        self._args, self._root = args, root
         try:
             self._proc = subprocess.Popen(
                 ["git", *_RELATIVE, *args], cwd=root, env=_environment(),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=text, encoding="utf-8" if text else None)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as exc:
             raise GitError("git executable not found") from exc
 
-    def result(self, payload=None):
+    def result(self, payload=None) -> bytes:
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
-            text = err if self._text else err.decode("utf-8", "replace")
-            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {text.strip()}")
+            reason = err.decode("utf-8", "replace").strip()
+            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {reason}")
         return out
 
     def close(self) -> None:
@@ -470,7 +508,7 @@ class _Started:
 def start_read(root: Path, *args: str) -> _Started:
     """One git read with no stdin, started now and collected later with
     `.result()`, which answers bytes or raises GitError."""
-    return _Started(root, args, text=False, stdin=False)
+    return _Started(root, args, stdin=False)
 
 
 def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
@@ -512,7 +550,7 @@ class SourcePatch:
 
     def __init__(self, root: Path, *basis: str, paths: tuple[str, ...] = ()) -> None:
         self._root, self._basis, self._paths = root, basis, paths
-        self._read = _Started(root, _source_diff_args(basis, paths), text=False, stdin=False)
+        self._read = _Started(root, _source_diff_args(basis, paths), stdin=False)
 
     def result(self) -> str:
         patch = self._read.result().decode("utf-8", "surrogateescape")
@@ -522,7 +560,7 @@ class SourcePatch:
         if not paths:
             return patch
         forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True),
-                          text=False, stdin=False)
+                          stdin=False)
         try:
             return patch + forced.result().decode("utf-8", "surrogateescape")
         finally:
@@ -565,7 +603,7 @@ class _StartedReads:
         self._root = root
         basis = (merge_base(root, base),) if base is not None else ()
         self._diff = SourcePatch(root, "--cached", *basis)
-        self._batch = _Started(root, ("cat-file", "--batch"), text=False, stdin=True)
+        self._batch = _Started(root, ("cat-file", "--batch"), stdin=True)
 
     def staged_diff(self) -> str:
         return self._diff.result()
