@@ -20,6 +20,7 @@ import pytest
 from cli_inproc_repo import (add_knotty, commit_all, repo,  # noqa: F401
                              seed_artifacts, template_repo)
 from crapkit.cli import main
+from crapkit.cli._shared import _command_root
 from crapkit.cli.analyses import _mutation_targets
 
 from path_spellings import (WINDOWS, admin_share, lower_drive, need_case_insensitive)
@@ -143,12 +144,53 @@ def test_ratchet_move_files_the_mark_under_the_moved_file_git_names(repo, capsys
     assert _marks(repo)[3:] == ["src/moved.ts\tdispatch( kind : string )\t40.0000"]
 
 
+@pytest.mark.parametrize("new", ["lib/", "./lib/", "LIB/", "Lib\\", "LIB\\"])
+def test_ratchet_move_files_a_directory_mark_under_the_directory_git_names(repo, capsys,  # noqa: F811
+                                                                           new):
+    """`ratchet move src/ LIB/` into an existing lib/ wrote `LIB/app.ts` into
+    the committed marks, a key no scored row carries."""
+    _need(("windows" if "\\" in new else "") + (" case" if new.lower() != new else ""), repo)
+    (repo / "crapkit-ratchet.tsv").write_text(MARKS, encoding="utf-8")
+    (repo / "lib").mkdir()
+
+    code, _, err = run(["ratchet", "move", "src/", new], repo, capsys)
+
+    assert code == 0, err
+    assert _marks(repo)[3:] == ["lib/app.ts\tdispatch( kind : string )\t40.0000"]
+
+
 @pytest.mark.parametrize("which", ["msys", "wsl", "absolute-lower-drive", "admin-share"])
 def test_a_repo_flag_in_any_windows_spelling_serves_the_checkout(scored, capsys, which):
     """`worklist --repo /c/...` was read as C:\\c\\..., which holds no crapkit.toml."""
     repo_spelling = _spelled(which, scored).rsplit("/src/", 1)[0].rsplit("\\src\\", 1)[0]
 
     assert main(["worklist", "--repo", repo_spelling]) == 0, capsys.readouterr().err
+
+
+ROOTS = {
+    "extended-length": lambda root: "\\\\?\\" + str(root.resolve()),
+    "extended-share": lambda root: "\\\\?\\UNC\\" + admin_share(root)[2:],
+    "admin-share": admin_share,
+}
+
+
+@pytest.mark.skipif(not WINDOWS, reason="needs Windows path rules")
+@pytest.mark.parametrize("which", ROOTS)
+def test_a_root_named_through_a_share_or_extended_path_is_its_drive(repo, which):  # noqa: F811
+    r"""cmd.exe cannot start a command in a UNC directory: it says so and runs
+    the lane in C:\Windows. `--repo \\?\C:\...`, `--repo \\?\UNC\localhost\C$\...`
+    and `--repo \\localhost\C$\...` rooted the run on such a path."""
+    assert _command_root(ROOTS[which](repo)) == repo.resolve()
+
+
+@pytest.mark.skipif(not WINDOWS, reason="needs Windows path rules")
+def test_a_checkout_entered_through_its_admin_share_is_rooted_on_its_drive(repo,  # noqa: F811
+                                                                           monkeypatch):
+    r"""With no --repo, a session standing in `\\localhost\C$\...` found its
+    crapkit.toml there, and every lane ran in C:\Windows."""
+    monkeypatch.chdir(admin_share(repo))
+
+    assert _command_root(None) == repo.resolve()
 
 
 # --- next-item --exclude ---------------------------------------------------------
