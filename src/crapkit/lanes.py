@@ -1225,6 +1225,20 @@ def suite_drops(previous: dict, current: dict, *,
     return notes
 
 
+def last_counts(runs: list[dict]) -> dict:
+    """Each lane's provenance from the newest of these runs that counted its tests.
+
+    `suite_drops` compares against this, not against the newest run alone. A run
+    that counted nothing for a lane (its junit was gone under
+    `--reuse-artifacts`) is still trusted, and as the only comparison point it
+    left the run after it free to lose any number of tests unreported.
+    """
+    counted = {}
+    for run in runs:
+        counted |= {name: prov for name, prov in run["lanes"].items() if prov.get("tests_total")}
+    return counted
+
+
 def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
     with measurement_owner(root, (lane,)) as owner:
         return _retest_owned(root, lane, tests, owner)

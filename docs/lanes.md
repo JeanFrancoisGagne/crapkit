@@ -1379,6 +1379,11 @@ verify OK @ 437a254ba09 vs baseline 437a254ba09 (2 changed files)
 Reading that absent count as zero is what used to turn such a run into a KeyError, after
 the lane had already run.
 
+`coverage` reads both absences the same way. A lane with no count this run compares
+nothing and adds no line of its own, since the reuse warning above already names the gap. A
+trusted run that counted nothing for a lane is passed over, so the count compared is the
+newest one a trusted run recorded.
+
 ---
 
 ## What a failed lane does to scoring

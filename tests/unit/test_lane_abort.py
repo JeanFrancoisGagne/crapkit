@@ -211,6 +211,46 @@ def test_coverage_warns_off_the_last_trusted_run_before_writing_this_one(tmp_pat
     assert "4626 fewer" in capsys.readouterr().err
 
 
+def _counted_runs(tmp_path, *lane_sets):
+    """A store holding one trusted coverage run per lane-provenance mapping, oldest first."""
+    from crapkit.snapshot import InventoryRow
+    from crapkit.store import SnapshotStore
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    rows = [InventoryRow("src", "src/a.py", "hot( n )", 1, 9, 7, 5, 5, 8, 1, 2)]
+    for lanes in lane_sets:
+        store.write_run(commit="a" * 40, tool_versions={}, rows=rows, kind="coverage",
+                        lanes=lanes)
+    return store
+
+
+def test_a_run_that_counted_no_tests_does_not_hide_the_next_runs_drop(tmp_path, capsys):
+    """A reused run whose junit was gone records no count and is still the
+    newest trusted run. Comparing against it alone compared nothing, so the run
+    after it could lose 8 of 20 tests without a word."""
+    from crapkit.cli.scoring import _warn_suite_drop
+
+    store = _counted_runs(tmp_path, {"py": {"tests_total": 20}}, {"py": {}})
+
+    _warn_suite_drop(store, {"py": {"tests_total": 12}})
+
+    assert "lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20" \
+        in capsys.readouterr().err
+
+
+def test_the_newest_count_is_the_one_compared(tmp_path, capsys):
+    """Skipping a run with no count must not reach past a newer one that has
+    it: 19 against the newest 20 is a deleted test, not a drop from 100."""
+    from crapkit.cli.scoring import _warn_suite_drop
+
+    store = _counted_runs(tmp_path, {"py": {"tests_total": 100}}, {"py": {"tests_total": 20}},
+                          {"py": {}})
+
+    _warn_suite_drop(store, {"py": {"tests_total": 19}})
+
+    assert capsys.readouterr().err == ""
+
+
 def test_a_crash_during_a_flake_retest_keeps_every_failure(tmp_path):
     """`retest_lane` only drops ids the rerun's own artifact says passed. A
     report that crashed proves nothing, so nothing drops."""
