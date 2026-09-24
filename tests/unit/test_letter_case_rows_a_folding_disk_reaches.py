@@ -32,7 +32,7 @@ def _other_case(root: Path) -> Path:
     return root.parent / root.name.swapcase()
 
 
-# --- CLI file arguments (PL1, PL5) ------------------------------------------------
+# --- CLI file arguments -----------------------------------------------------------
 
 ARGUMENTS = {
     "dot-slash-dir-case": lambda root: "./SRC/app.ts",
@@ -89,7 +89,7 @@ def test_a_working_directory_in_another_case_gates_the_breach(scored, monkeypatc
     assert "knotty" in err and "src/app.ts" in err, err
 
 
-# --- the advisory hook's payload (PL6) ----------------------------------------------
+# --- the advisory hook's payload --------------------------------------------------
 
 HOOK_PATHS = {
     "checkout-case": lambda root: str(_other_case(root) / "calc" / "mod.py"),
@@ -118,7 +118,7 @@ def test_the_hook_reads_a_session_cwd_in_another_case(breached, monkeypatch, cap
     assert "calc/mod.py" in err, err
 
 
-# --- istanbul keys (PL11) ---------------------------------------------------------
+# --- istanbul keys ----------------------------------------------------------------
 
 def _istanbul_keys(root: Path, key: str) -> list[str]:
     body = dict(next(iter(ARTIFACT.values())), path=key)
@@ -148,3 +148,21 @@ def test_an_istanbul_key_naming_the_checkout_in_another_case_keys_gits_file(meas
     need_case_insensitive(measured)
 
     assert _istanbul_keys(measured, KEYS[which](measured)) == ["src/app.ts"]
+
+
+# The root comes off a key that starts with it as text, and the rest is kept as
+# written, so only a key whose root differs reaches the listed case.
+KEYS_BELOW_THE_ROOT = {
+    "dir-case": lambda root: str(root / "SRC" / "app.ts"),
+    "file-case": lambda root: str(root / "src" / "App.ts"),
+    "relative-dir-case": lambda root: "SRC/app.ts",
+}
+
+
+@pytest.mark.xfail(strict=True, reason="coverage_istanbul._Keys.rel strips the root as text and "
+                   "keeps the letter case below it; the fix removes this marker")
+@pytest.mark.parametrize("which", KEYS_BELOW_THE_ROOT)
+def test_an_istanbul_key_in_another_case_below_the_root_keys_gits_file(measured, which):
+    need_case_insensitive(measured)
+
+    assert _istanbul_keys(measured, KEYS_BELOW_THE_ROOT[which](measured)) == ["src/app.ts"]
