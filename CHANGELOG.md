@@ -76,6 +76,15 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   leftover as a trusted run. The file is now written through a temporary file, so a crash
   cannot cut it short, and `doctor` WARNs about a file that does not parse, as it did for a
   mangled entry.
+- A coverage artifact that lacks a count is refused and names it, where the parser read
+  the absent count as a zero and the score moved with nothing said. In istanbul that is
+  a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s` or `b`: a
+  dropped branch counter flipped a function from `add-tests` to `ok`. In coverage.py it is
+  a function with no `summary`, one count of a pair without its partner, or no count of
+  either kind: a function that ran scored cov 0, or, in a report that measures branches, a
+  function with no branch counts, which scored from its statements. A report with no `meta`
+  is judged by the counts its functions carry, where it said its term was statement-based
+  while scoring on branches.
 
 ## 0.8.0 — 2026-09-23
 
