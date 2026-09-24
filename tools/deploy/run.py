@@ -290,8 +290,8 @@ def _unpack(out: Path, work: Path) -> Path:
     src.mkdir(parents=True)
     with tarfile.open(out / "in" / "tree.tar") as tar:
         tar.extractall(src, filter="tar")
-    subprocess.run(["git", "clone", "-q", "--mirror", str(out / "in" / "src.bundle"), str(work / "src.git")],
-                   check=True)
+    subprocess.run(["git", "-c", "init.defaultBranch=main", "clone", "-q", "--mirror",
+                    str(out / "in" / "src.bundle"), str(work / "src.git")], check=True)
     return src
 
 

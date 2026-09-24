@@ -71,7 +71,9 @@ run_cells() {
     in=${CRAPKIT_DEPLOY_IN:-/out/in}
     mkdir -p "$work/src" "$work/tmp" /out/transcripts
     tar -xf "$in/tree.tar" -C "$work/src"
-    git clone -q --mirror "$in/src.bundle" "$work/src.git"
+    # A detached worktree exports a detached HEAD; naming the default branch
+    # keeps git's "Using 'master'" hint out of every run's log.
+    git -c init.defaultBranch=main clone -q --mirror "$in/src.bundle" "$work/src.git"
     "$RUNNER" "$work/src/tools/deploy/candidate.py" --tree "$in/tree.tar" \
         --lock "$work/src/tools/deploy/wheelhouse.lock" --out "$work/candidate"
     export CRAPKIT_DEPLOY=1 PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 \
