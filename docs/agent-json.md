@@ -1368,6 +1368,19 @@ opened, so the hook holds no CRAP to compare. Same rule as the commit gate, desc
 An unknown `claude-*` subcommand exits 0 silently too, so a plugin newer than the installed
 CLI degrades to silence instead of an argparse usage dump on every edit.
 
+An argument `claude-hook` does not define, such as a flag a newer plugin passes, also exits
+0, with one line on stderr that names the arguments as typed. The edit is not judged,
+because this build cannot know what the new flag asks for:
+
+```
+$ crapkit claude-hook --protocol 1 --budget 5
+crapkit claude-hook: this crapkit does not know `--budget 5`; the hook was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run `crapkit doctor --plugin-root`
+```
+
+The flags this build knows, `--protocol` included, are still read. Only an exit 2 hands a
+PostToolUse hook's stderr to the model, so the line stays out of the model's context. Any
+other subcommand still answers an unknown flag with argparse's usage error.
+
 ---
 
 ## MCP server
@@ -1471,6 +1484,11 @@ the stderr line; `get_next_item`, which has no `--json` flag, answers the stderr
 true in the cases where no CLI call runs at all: the missing-config result above, an
 unknown tool name, and an argument the tool's own table refuses.
 
+Tool text is plain whatever colour variables the client sets. The CLI runs with the
+server's environment, so under `FORCE_COLOR` or `PYTHON_COLORS=1` a Python 3.13 or later
+traceback, or a 3.14 usage error, comes out of the CLI coloured; the server removes the
+escape codes from the stderr it relays, and the JSON a tool prints on stdout carries none.
+
 Arguments are checked against the served schema before anything is spawned. `tools/list`
 declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_history` require `path` and `name`). A missing positional answers
@@ -1484,6 +1502,12 @@ the precedent the missing-config answer set; the reason is recorded in
 reserved for the protocol: an unknown method answers `-32601`, and an exception escaping
 the server answers `-32603` and the loop reads on, so no single call ends the session.
 `ping` answers an empty result, so a client's keepalive never reads as an error.
+
+A string value reaches the command as a value, whatever its first character. The server
+passes each option as `--flag=value` and puts the positionals after `--`, so
+`get_function_brief` with `path` `-x.py` briefs the file named `-x.py`, a `path` of
+`--help` is a path that no run holds (an error object, `isError: true`), and an `exclude`
+fragment of `-legacy` excludes what contains `-legacy`.
 
 ## Docker
 

@@ -95,6 +95,18 @@ def test_the_line_is_ascii_so_every_console_prints_it(capsys, monkeypatch):
     assert _one_line(capsys.readouterr().err).isascii()
 
 
+def test_the_page_quotes_the_line_the_hook_prints(capsys, monkeypatch):
+    """docs/agent-json.md shows this exact argv and its line."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    page = (Path(__file__).resolve().parents[2] / "docs" / "agent-json.md").read_text(
+        encoding="utf-8").splitlines()
+
+    main(["claude-hook", "--protocol", "1", "--budget", "5"])
+
+    shown = page[page.index("$ crapkit claude-hook --protocol 1 --budget 5") + 1]
+    assert shown == _one_line(capsys.readouterr().err)
+
+
 def test_a_known_protocol_with_nothing_unknown_stays_silent(capsys, monkeypatch, tmp_path):
     """`--protocol 2` is the documented drift lever: read, and silent."""
     monkeypatch.setattr(sys, "stdin", io.StringIO(_payload(str(tmp_path / "a.py"))))
