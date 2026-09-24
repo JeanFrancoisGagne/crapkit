@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import re
+import sys
 from pathlib import Path
 
 # The line that makes the comment findable. The action greps for it to decide
@@ -35,6 +37,17 @@ _RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures"
 # those rows first, so the function the gate stopped is not below the fold.
 _FINDING_LISTS = ("gate_violations", "ratchet_regressions", "overridden")
 _CELL_BREAKS = str.maketrans({char: ascii(char)[1:-1] for char in "\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029"})
+
+# What a quoted line loses: every escape sequence (the same ECMA-48 shapes
+# crapkit.plaintext removes, with ESC written as an actual ESC or as the `#x1B`
+# text a junit report holds) and every other C0 control but tab, newline and
+# carriage return, which the line split reads. crapkit's own payloads arrive
+# plain; this covers a payload saved from a crapkit before 0.8.1, whose lane
+# failures carried a coloured test runner's escape codes. Written out here
+# because the Action runs this file by path, on the standard library alone.
+_ESC, _BEL = r"(?:\x1b|#x1B)", r"(?:\x07|#x07)"
+_CONTROLS = re.compile(rf"{_ESC}(?:\[[0-?]*[ -/]*[@-~]|\](?:(?!{_BEL}|{_ESC}).)*(?:{_BEL}|{_ESC}\\)?"
+                       r"|[ -/]*[0-~])?|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _read_text(path: str | None) -> str:
@@ -88,7 +101,7 @@ def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
     """
     if not sha_path or _read_text(sha_path).strip():
         return None
-    return _read_text(reason_path).strip() or "no base commit"
+    return _first_line(_read_text(reason_path)) or "no base commit"
 
 
 def _plural(count: int, noun: str) -> str:
@@ -96,7 +109,9 @@ def _plural(count: int, noun: str) -> str:
 
 
 def _first_line(text) -> str:
-    lines = str(text or "").strip().splitlines()
+    """The first line of crapkit's text as the comment quotes it: plain, with
+    no escape sequence or control character a reader would see as garbage."""
+    lines = _CONTROLS.sub("", str(text or "")).strip().splitlines()
     return lines[0].strip() if lines else ""
 
 
@@ -352,8 +367,16 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
                       table(entries), ""])
 
 
+def _plain_parser(version=sys.version_info) -> dict:
+    """argparse's keywords for plain text. From 3.14 argparse colours help and
+    usage errors in a pipe once the job sets FORCE_COLOR or PYTHON_COLORS, and
+    the Action runs this file on whatever `python-version` names; before 3.14
+    there is no `color` keyword to pass."""
+    return {"color": False} if version >= (3, 14) else {}
+
+
 def _parse(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], **_plain_parser())
     parser.add_argument("--coverage", help="crapkit coverage --json output")
     parser.add_argument("--coverage-exit", type=int, default=0,
                         help="coverage's exit code; non-zero means verify was not run")
