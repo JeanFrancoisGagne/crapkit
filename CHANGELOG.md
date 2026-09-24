@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.1 — unreleased
+
+### The Action finds its own comment on every thread
+
+- The Action edits its pull request comment when another comment on the thread has no
+  body, or a body that is not a string. The GitHub API does not require a comment's
+  body, and one such comment anywhere in the thread failed the lookup, so every push
+  posted a second crapkit comment while the job stayed green.
+- The lookup takes the first comment that starts with the `<!-- crapkit-action -->`
+  line. A reviewer's reply quoting the crapkit comment carried the line too, and the
+  step tried to edit that reply, which the job's token cannot do.
+- When GitHub answers a page of the comment list with an error, the step no longer takes
+  GitHub's error JSON for a comment id. It sent the edit to
+  `issues/comments/{"message": ...}`, so no comment was written or updated and the
+  pull request kept the previous push's verdict. It now edits the crapkit comment it
+  found before the error, or posts a fresh one when it found none, and the job log says
+  which.
+- A thread with a crapkit comment on two pages no longer logs `looking the existing
+  comment up exited 141: posting a fresh one` before editing the first one. `head -n 1`
+  closed the pipe while gh was still writing.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

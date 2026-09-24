@@ -15,7 +15,7 @@ import threading
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -1067,17 +1067,44 @@ def test_the_post_step_reads_the_head_repository_off_the_event():
 
 # --- the lookup, run under gh's own jq ----------------------------------------
 
-_MARKED = {"id": 2, "body": "<!-- crapkit-action -->\n## crapkit\nthe previous push"}
-_EDIT_IN_PLACE = ["PATCH /repos/owner/repo/issues/comments/2"]
+_MARK = "<!-- crapkit-action -->\n## crapkit\nthe previous push"
+
+
+def _c(ident: int, body="looks good") -> dict:
+    return {"id": ident, "user": {"login": "reviewer"}, "body": body}
+
+
+_MARKED = _c(2, _MARK)
+_POST_FRESH = ["POST /repos/owner/repo/issues/7/comments"]
+
+
+def _edit(ident: int) -> list:
+    return [f"PATCH /repos/owner/repo/issues/comments/{ident}"]
+
+
+_EDIT_IN_PLACE = _edit(2)
 
 
 class _CommentsApi(BaseHTTPRequestHandler):
     """The two endpoints the post step calls: the pull request's comment list,
-    answered from `server.comments`, and the writes, recorded in
-    `server.writes` as `METHOD path`."""
+    served one page per request from `server.pages` (a list of comments, or the
+    HTTP status that page fails with) after `server.delay` seconds, and the
+    writes, recorded in `server.writes` as `METHOD path`."""
 
     def do_GET(self):
-        self._answer(200, self.server.comments)
+        threading.Event().wait(self.server.delay)
+        url = urlsplit(self.path)
+        page = int(parse_qs(url.query).get("page", ["1"])[0])
+        answer = self.server.pages[page - 1]
+        if isinstance(answer, int):
+            self._answer(answer, {"message": f"fake {answer}", "documentation_url": "https://docs.github.com/rest"})
+            return
+        self._answer(200, answer, self._next(url.path, page))
+
+    def _next(self, path: str, page: int) -> dict:
+        if page >= len(self.server.pages):
+            return {}
+        return {"Link": f'<http://api.github.localhost{path}?page={page + 1}>; rel="next"'}
 
     def do_PATCH(self):
         self._write(200)
@@ -1090,11 +1117,13 @@ class _CommentsApi(BaseHTTPRequestHandler):
         self.server.writes.append(f"{self.command} {urlsplit(self.path).path}")
         self._answer(status, {"id": 99})
 
-    def _answer(self, status: int, payload):
+    def _answer(self, status: int, payload, headers=None):
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1111,25 +1140,27 @@ def _env_routing_gh_to(port: int) -> dict:
     return env
 
 
-def _post_under_real_gh(tmp_path, comments: list) -> tuple:
+def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0) -> tuple:
     """The post step under bash with the `gh` on PATH, whose built-in jq runs the
-    lookup, against a local API that lists `comments` on pull request 7.
+    lookup, against a local API that lists `comments` on pull request 7 (or
+    serves `pages` one per request, the way GitHub pages a long thread).
     Returns the step's result and the writes the API received."""
     if shutil.which("gh") is None:
-        pytest.skip("no gh on PATH to run the lookup under")
+        pytest.skip("needs gh on PATH, which the ubuntu-latest and windows-latest runners carry")
     state = tmp_path / "state"
     state.mkdir()
     (state / "crapkit-comment.json").write_text('{"body": "<!-- crapkit-action -->"}', encoding="utf-8")
     script = tmp_path / "post-step.sh"
     script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
     server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)
-    server.comments, server.writes = comments, []
+    server.pages, server.writes, server.delay = pages or [comments], [], delay
     threading.Thread(target=server.serve_forever, daemon=True).start()
     env = {**_env_routing_gh_to(server.server_address[1]), "GH_CONFIG_DIR": str(tmp_path / "gh"),
            "CRAPKIT_STATE": state.as_posix(), "PR": "7", "REPO": "owner/repo", "HEAD_REPO": "owner/repo"}
     try:
         result = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
-                                env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+                                env=env, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=HANG_SECONDS)
     finally:
         server.shutdown()
         server.server_close()
@@ -1155,3 +1186,105 @@ def test_a_comment_with_no_body_does_not_hide_the_marked_one(tmp_path, comments)
     result, writes = _post_under_real_gh(tmp_path, comments)
 
     assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr
+
+
+# Every shape a comment thread takes, one page per list: the body's state, the
+# list's state, where the marked comment sits and which page fails. The write
+# is the contract: PATCH the comment the marker opens, POST when there is none
+# or when the lookup failed before it saw one, and never a URL built from
+# anything but a comment id.
+_THREADS = {
+    "body-number": ([[_c(1, 5), _MARKED]], _EDIT_IN_PLACE),
+    "body-empty-string": ([[_c(1, ""), _MARKED]], _EDIT_IN_PLACE),
+    "body-non-ascii": ([[_c(1, "café 世界 \U0001f600"), _MARKED]], _EDIT_IN_PLACE),
+    "body-300-kB": ([[_c(1, "x" * 300_000), _MARKED]], _EDIT_IN_PLACE),
+    "no-comment": ([[]], _POST_FRESH),
+    "one-item-the-marked-one": ([[_MARKED]], _EDIT_IN_PLACE),
+    "one-item-another-comment": ([[_c(1)]], _POST_FRESH),
+    "no-marker-on-the-page": ([[_c(1), _c(3)]], _POST_FRESH),
+    "marker-on-page-2": ([[_c(1), _c(3)], [_c(4), _c(5, _MARK)]], _edit(5)),
+    "marker-on-page-3-of-3": ([[_c(1)], [_c(3)], [_c(9, _MARK)]], _edit(9)),
+    "null-body-on-page-1-marker-on-page-2": ([[_c(1, None), _c(3)], [_c(5, _MARK)]], _edit(5)),
+    "absent-body-on-page-1-marker-on-page-2": ([[{"id": 1}, _c(3)], [_c(5, _MARK)]], _edit(5)),
+    "marker-on-page-1-null-body-on-page-2": ([[_MARKED, _c(3)], [_c(4, None)]], _EDIT_IN_PLACE),
+    "a-quote-of-the-marker-before-the-marked-comment": ([[_c(1, "> " + _MARK + "\nwhy red?"), _MARKED]],
+                                                        _EDIT_IN_PLACE),
+    "page-1-fails-502": ([502, [_MARKED]], _POST_FRESH),
+    "page-1-rate-limited-403": ([403, [_MARKED]], _POST_FRESH),
+    "the-only-page-403": ([403], _POST_FRESH),
+    "marker-on-page-2-and-page-2-fails": ([[_c(1)], 502], _POST_FRESH),
+    "page-2-fails-marker-on-page-3": ([[_c(1)], 502, [_c(30, _MARK)]], _POST_FRESH),
+    "marker-on-page-1-and-page-2-fails": ([[_MARKED], 502], _EDIT_IN_PLACE),
+}
+
+
+@pytest.mark.parametrize("name", list(_THREADS))
+def test_every_thread_shape_gets_one_write_to_the_right_place(tmp_path, name):
+    """gh's jq errors on a string operation over a body that is not a string,
+    and on an error page gh prints GitHub's JSON on stdout and exits 1: the step
+    took that JSON as the comment id and PATCHed
+    `issues/comments/{"message": ...}`. A lookup that failed before it saw the
+    marked comment posts a fresh one, which is what its log line says."""
+    pages, expected = _THREADS[name]
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=pages)
+
+    assert writes == expected, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("name", [name for name, (_, writes) in _THREADS.items() if writes != _POST_FRESH])
+def test_the_log_never_says_posting_a_fresh_one_before_an_edit(tmp_path, name):
+    """A lookup that found the comment and then failed on a later page said
+    `posting a fresh one` and PATCHed: the log contradicted the write."""
+    pages, _ = _THREADS[name]
+
+    result, _ = _post_under_real_gh(tmp_path, [], pages=pages)
+
+    assert "posting a fresh one" not in result.stdout, result.stdout
+
+
+def test_marked_comments_on_two_pages_edit_the_first_and_log_no_failure(tmp_path):
+    """The reported bug left threads with a crapkit comment on two pages. `head
+    -n 1` closed the pipe after the first id, gh died writing the second (SIGPIPE
+    on Linux, a closed pipe on Windows), and the log said the lookup exited 141
+    and a fresh comment was coming before the step PATCHed. Each page answers
+    after a quarter second, the latency that made it fail every time."""
+    result, writes = _post_under_real_gh(tmp_path, [], pages=[[_MARKED], [_c(7, _MARK)]], delay=0.25)
+
+    assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr
+    assert "looking the existing comment up exited" not in result.stdout, result.stdout
+
+
+def _lookup_filter() -> str:
+    """The --jq program the post step hands gh, as the step spells it."""
+    found = re.search(r"--jq '([^']+)'", _step_named("post the comment")["run"])
+    assert found, "the post step no longer passes gh a --jq filter"
+    return found.group(1)
+
+
+_ENGINE_PAGES = {
+    "body-null": ([{"id": 1, "body": None}, _MARKED], "2"),
+    "body-absent": ([{"id": 1}, _MARKED], "2"),
+    "body-number": ([{"id": 1, "body": 5}, _MARKED], "2"),
+    "body-empty": ([{"id": 1, "body": ""}, _MARKED], "2"),
+    "list-empty": ([], ""),
+    "quoted-marker": ([{"id": 1, "body": "> " + _MARK}], ""),
+}
+
+
+@pytest.mark.parametrize("engine", ["jq", "gojq", "jq-1.6"])
+@pytest.mark.parametrize("page", list(_ENGINE_PAGES))
+def test_the_lookup_filter_holds_under_every_jq_engine(engine, page):
+    """gh runs the filter in its built-in gojq; jq 1.6 and 1.7.1 fail `contains`
+    on null the same way, so the filter is held to all three. Each engine runs
+    where it is on PATH: jq 1.7.1 on both CI runner images, gojq and jq 1.6
+    where a machine installed them."""
+    binary = shutil.which(engine)
+    if binary is None:
+        pytest.skip(f"needs {engine} on PATH; the CI runner images carry jq only")
+    comments, expected = _ENGINE_PAGES[page]
+
+    done = subprocess.run([binary, "-r", _lookup_filter()], input=json.dumps(comments),
+                          capture_output=True, text=True, timeout=HANG_SECONDS)
+
+    assert (done.returncode, done.stdout.strip()) == (0, expected), done.stderr

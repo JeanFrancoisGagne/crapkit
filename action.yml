@@ -229,14 +229,23 @@ runs:
           --json-out "$CRAPKIT_STATE/crapkit-comment.json"
         cat "$CRAPKIT_STATE/crapkit-comment.md"
 
-    # One comment, edited in place. The marker line the builder writes is what
-    # finds it, so a fifteen-push branch carries one comment and not fifteen.
-    # A push event has no pull request to carry one: the text is in the log
-    # above and nothing is posted.
+    # One comment, edited in place. The marker line the builder writes first is
+    # what finds it, so a fifteen-push branch carries one comment and not
+    # fifteen. A push event has no pull request to carry one: the text is in
+    # the log above and nothing is posted.
     #
-    # The API does not require a comment's body, and `contains` on null is an
-    # error in gh's jq, so one comment without a body failed the whole lookup
-    # and a second crapkit comment was posted. `// ""` reads it as empty.
+    # The API does not require a comment's body, and a string test on null is
+    # an error in gh's jq, so one comment without a body failed the whole
+    # lookup and a second crapkit comment was posted. Only a string body is
+    # tested, and only its start: a reviewer quoting the comment carries the
+    # marker too, and the token cannot edit their comment.
+    #
+    # --paginate runs the filter once per page, so each page prints at most one
+    # id and the first all-digit line wins. On an error page gh prints GitHub's
+    # JSON on stdout and exits 1, so a line that is not an id is never taken
+    # for one. The whole answer is read before the first id is taken: `head -n
+    # 1` closed the pipe on a thread with two marked comments, and gh's SIGPIPE
+    # read as a failed lookup.
     #
     # A pull request from a fork carries a read-only token, so both writes come
     # back 403. That is the consumer's permissions, not a finding, and the
@@ -257,11 +266,16 @@ runs:
           echo "no pull request on this event: the comment above was not posted"
           exit 0
         fi
-        id="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-                --jq 'map(select((.body // "") | contains("<!-- crapkit-action -->"))) | .[0].id // empty' \
-              | head -n 1)" || lookup=$?
-        if [ "$lookup" != 0 ]; then
-          echo "looking the existing comment up exited $lookup: posting a fresh one"
+        found="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                   --jq 'map(select(.body | type == "string" and startswith("<!-- crapkit-action -->"))) | .[0].id // empty')" || lookup=$?
+        id=""
+        while IFS= read -r line; do
+          case "$line" in ''|*[!0-9]*) ;; *) id="$line"; break ;; esac
+        done <<< "$found"
+        if [ "$lookup" != 0 ] && [ -n "$id" ]; then
+          echo "looking the existing comment up exited $lookup after it found comment $id: editing that one"
+        elif [ "$lookup" != 0 ]; then
+          echo "looking the existing comment up exited $lookup before it found a crapkit comment: posting a fresh one"
         fi
         if [ -n "$id" ]; then
           gh api --silent --method PATCH "repos/$REPO/issues/comments/$id" \
