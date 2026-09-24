@@ -288,8 +288,10 @@ lane subset, or a lane that failed).
 The lines verify prints, one per finding kind, collected here from separate runs:
 
     verify OK @ f6e9bde18a7 vs baseline f6e9bde18a7 (1 changed files)
+      changed files: calc/grade.py
     crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 4); lane log: /repo/.crapkit/lane-py.log; last output: ...
     verify FAILED @ 3a45b8a9b6c vs baseline 03d9cac1397 (1 changed files)
+      changed files: calc/report.py
       GATE  crap     42.0  ccn   6 cov 0%  calc/report.py:22  bucket( counts , low , high , invert , label )  -> add-tests  [dirty]
       RATCHET  calc/report.py  spread( counts , low , high , invert , label , pad ): 8.0 -> 72.0
       NEW FAILURE  tests.test_curve::test_normalized  [dirty]

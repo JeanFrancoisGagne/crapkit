@@ -112,6 +112,19 @@
   commit back, or `ratchet move` when no remote holds it.
 - The prune line names the renames it followed, up to three:
   `followed 1 rename(s) (calc/grade.py -> calc/grading.py)`.
+- `verify` names the files behind its count, on a line under the verdict: the first three,
+  then `and N more`, as in `changed files: app/m.py, app/n.py, tests/test_m.py`. `--json`
+  lists them all as `changed_paths` beside the `changed_files` count.
+- A source file inside a scope that nobody has `git add`ed is not judged, because verify's
+  diff and its corpus hold git-tracked files only, and it read as `(0 changed files)`.
+  verify now says so on stderr, ``warning: 1 untracked file(s) in a scope were not judged
+  (src/added.ts): verify scores git-tracked files only; `git add` them to have them
+  judged``, and `--json` carries the paths as `untracked_in_scope`.
+- The warning that counts functions over the ceiling with no ratchet mark names the first
+  three, each as its path and function.
+- `init` on a repo whose source nobody has added names up to three of the files: ``run `git
+  add` first (2 untracked source file(s) found: lib/util.py, src/app.ts)``. It gave the
+  count alone.
 - `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
   lane's artifact with, or `null`. A leftover a failed attempt left behind showed as
   `artifact_present: true` beside "no problems found". doctor now WARNs on it, and on a

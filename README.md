@@ -45,7 +45,7 @@ a wall of red. Next to crap4py, radon, xenon, wily and SonarQube:
 [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md).
 
 crapkit scores **git-tracked files only**. Source you have not `git add`ed is invisible to
-it.
+it; `init` and `verify` name the first three such files they find.
 
 | Start with | When |
 |---|---|
@@ -926,6 +926,7 @@ run   3 @ 803bdde8556 2026-08-23T09:28:02Z coverage  verdict=-      lanes=py
 $ crapkit verify
 warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since — measuring against run 1 @ 88012a148f6 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
 verify FAILED @ d89068de7f3 vs baseline 88012a148f6 (2 changed files)
+  changed files: calc/legacy.py, tests/test_legacy.py
   GATE  crap     72.0  ccn   8 cov 0%  calc/legacy.py:7  legacy_router( a , b , c , d , e )  -> decompose
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 ```
@@ -1160,6 +1161,7 @@ table of cases pushed into parametrized tests. Commit the fix, then:
 ```
 $ crapkit verify
 verify OK @ 8d10c13303d vs baseline fae4db93108 (5 changed files) ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv
+  changed files: .gitignore, calc/grade.py, crapkit-ratchet.tsv and 2 more
 
 $ crapkit coverage
 run 3 @ 8d10c13303d: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 19.0, grade A+
@@ -1343,6 +1345,7 @@ suite never called come back over the ceiling:
 ```
 $ crapkit verify
 verify FAILED @ 0296156ff21 vs baseline 0e646697946 (1 changed files)
+  changed files: src/grade.ts
   GATE  crap     17.8  ccn   5 cov 20%  src/grade.ts:38  demote ( letter , row Row )  -> add-tests
   GATE  crap     12.4  ccn   5 cov 33%  src/grade.ts:22  band ( score )  -> add-tests
   GATE  crap     10.8  ccn   4 cov 25%  src/grade.ts:8  penalty ( attempts , late )  -> add-tests
@@ -1353,6 +1356,7 @@ verify FAILED @ 0296156ff21 vs baseline 0e646697946 (1 changed files)
 ```
 $ crapkit verify
 verify OK @ 2af3433d979 vs baseline 8bfbe613fcd (3 changed files) ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv
+  changed files: crapkit-ratchet.tsv, src/grade.ts, test/grade.test.ts
 
 $ crapkit coverage
 run 3 @ 2af3433d979: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 22.0, grade A+
@@ -1366,8 +1370,8 @@ dropped it once `classify` scored under the ceiling, rewriting the tracked
 A verify may also print `warning: N changed line(s) have no coverage` above its verdict;
 that block is advisory unless `diff_uncovered_max` is set
 ([docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md)).
-It prints `warning: N function(s) over the ceiling carry no ratchet mark` when the tree
-holds debt `ratchet seed` never signed: the gate judges touched functions only and the
+It prints `warning: N function(s) over the ceiling carry no ratchet mark` and names the
+first three when the tree holds debt `ratchet seed` never signed: the gate judges touched functions only and the
 ratchet check compares marks only, so coverage loss on such a function would pass unseen.
 The count is `unmarked_over_target` in `--json`, fires no exit code, and is zero on a repo
 with no debt.

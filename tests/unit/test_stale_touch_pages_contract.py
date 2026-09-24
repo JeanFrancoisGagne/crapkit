@@ -482,3 +482,101 @@ def test_agents_brief_table_reads_scored_changes_before_stale():
     assert len(rows) == 4, "one pair in the brief table, one in the next-item table"
     assert all(rows[i].startswith("| `scored_changes`") for i in (0, 2))
     assert all("predates HEAD" not in row for row in rows)
+
+
+# -- S26, c26: counts that name their files ----------------------------------------
+
+_VERDICT = re.compile(r"^ *verify (OK|FAILED) @ .*\((\d+) changed files\)")
+
+
+def _verdicts(page: str) -> list[tuple[int, str, str]]:
+    """(count, the verdict line's indent, the line under it) for each verify
+    verdict a page prints, in a fenced or an indented block."""
+    lines = _page(page).splitlines()
+    return [(int(m.group(2)), line[:len(line) - len(line.lstrip())], lines[i + 1])
+            for i, line in enumerate(lines) if (m := _VERDICT.match(line))]
+
+
+def _names_shown(count: int) -> re.Pattern:
+    """The `changed files:` line verify prints under a verdict of COUNT files."""
+    rest = f" and {count - 3} more" if count > 3 else ""
+    return re.compile(rf"  changed files: [^,\s]+(, [^,\s]+){{{min(count, 3) - 1}}}{rest}")
+
+
+@landed(hasattr(verifying, "_print_changed_paths"), "verify's changed-files line")
+@pytest.mark.parametrize("page", ["README.md", "AGENTS.md"])
+def test_every_verdict_with_a_diff_names_its_files_on_the_next_line(page, capsys):
+    verifying._print_changed_paths(["a.py", "b.py", "c.py", "d.py"])
+    printed = capsys.readouterr().out.rstrip("\n")
+    verdicts = [v for v in _verdicts(page) if v[0]]
+
+    assert printed == "  changed files: a.py, b.py, c.py and 1 more"
+    assert verdicts, f"{page} prints no verdict with a changed file"
+    for count, indent, under in verdicts:
+        assert _names_shown(count).fullmatch(under.removeprefix(indent)), (page, count, under)
+
+
+@landed(hasattr(verifying, "_print_changed_paths"), "verify's changed-files line")
+def test_the_changelog_quotes_the_line_that_names_the_changed_files(capsys):
+    verifying._print_changed_paths(["app/m.py", "app/n.py", "tests/test_m.py"])
+    printed = capsys.readouterr().out.strip()
+
+    assert f"`{printed}`" in _prose(_release())
+    assert "`changed_paths` beside the `changed_files` count" in _prose(_release())
+
+
+@landed(hasattr(verifying, "_warn_untracked_in_scope"), "verify's untracked-in-scope warning")
+def test_the_changelog_quotes_the_warning_for_untracked_source_verify_did_not_judge(capsys):
+    verifying._warn_untracked_in_scope(["src/added.ts"])
+    line = capsys.readouterr().err.strip()
+
+    assert f"``{line}``" in _prose(_release())
+    assert "`untracked_in_scope`" in _prose(_release())
+
+
+def _unmarked(count: int) -> list:
+    from typing import NamedTuple
+
+    class Row(NamedTuple):
+        path: str
+        long_name: str
+
+    return [Row("calc/a.py", f"f{n}( x )") for n in range(count)]
+
+
+@landed(hasattr(verifying, "_warn_untracked_in_scope"), "the debt warning naming its functions")
+def test_the_readme_says_the_debt_warning_names_three_functions(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    verifying._warn_standing_debt(_unmarked(4))
+    line = capsys.readouterr().err
+
+    assert "(calc/a.py f0( x ), calc/a.py f1( x ), calc/a.py f2( x ) and 1 more)" in line
+    assert "carry no ratchet mark` and names the first three" in _prose(_page("README.md"))
+    assert "no ratchet mark names the first three" in _prose(_release())
+
+
+def _untracked_repo(root: Path, names: list[str]) -> str:
+    """What init says about a repo holding NAMES, none of them added."""
+    _git(root, "init", "-q")
+    for name in names:
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
+    return _admin()._no_scopes_reason(root)
+
+
+@landed(hasattr(_admin(), "_first_few"), "init naming the untracked source")
+@pytest.mark.parametrize("names, shown", [
+    (["src/app.ts", "lib/util.py"], "lib/util.py, src/app.ts"),
+    (["a/e.py", "a/b.py", "a/a.py", "a/d.py", "a/c.py"], "a/a.py, a/b.py, a/c.py and 2 more"),
+], ids=["two", "five"])
+def test_init_names_up_to_three_untracked_sources(tmp_path, names, shown):
+    reason = _untracked_repo(tmp_path, names)
+
+    assert reason.endswith(f"run `git add` first ({len(names)} untracked source file(s) found: {shown})")
+
+
+@landed(hasattr(_admin(), "_first_few"), "init naming the untracked source")
+def test_the_changelog_quotes_what_init_says_about_untracked_source(tmp_path):
+    reason = _untracked_repo(tmp_path, ["src/app.ts", "lib/util.py"])
+
+    assert f"``{reason[reason.index('run `git add` first'):]}``" in _prose(_release())
