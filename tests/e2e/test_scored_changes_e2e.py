@@ -549,3 +549,45 @@ def test_explain_history_text_prints_the_note_for_a_file_staged_before_its_first
     assert res.returncode == 0, res.stderr
     assert ("  commits: pkg/new.py:1-2 holds only uncommitted lines, so no commit has "
             "touched it yet\n") in res.stdout, res.stdout
+
+
+# --- the MCP tools hand out the CLI's own answer -----------------------------
+#
+# Each tool spawns the CLI command it maps to, so the rows compare the tool's
+# structuredContent with that command spawned the same way on the same tree.
+
+spawned = cli_runner(spawn=True, timeout=180, encoding="utf-8", errors="replace")
+
+MCP_ROWS = {
+    "get_next_item": ({}, ("next-item",)),
+    "get_function_brief": ({"path": "src/app.py", "name": "classify"},
+                           ("brief", "src/app.py", "classify", "--json")),
+    "list_worklist": ({}, ("worklist", "--json")),
+}
+
+
+def _tool(repo: Path, name: str, arguments: dict) -> dict:
+    frame = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments}})
+    res = spawned(repo, "mcp", "--repo", str(repo), stdin=frame + "\n")
+    assert res.returncode == 0, res.stderr
+    result = json.loads(res.stdout.strip().splitlines()[-1])["result"]
+    assert result["isError"] is False, result
+    return result["structuredContent"]
+
+
+@pytest.mark.parametrize("tool", sorted(MCP_ROWS))
+def test_each_mcp_tool_carries_the_count_and_the_refresh_the_cli_prints(tmp_path, tool):
+    arguments, argv = MCP_ROWS[tool]
+    repo = _py_repo(tmp_path)
+    _measure(repo)
+    _uncommitted_edit(repo)
+    res = spawned(repo, *argv)
+    assert res.returncode == 0, res.stderr
+    cli = json.loads(res.stdout)
+
+    out = _tool(repo, tool, arguments)
+
+    assert "scored_changes" in out, out
+    assert (out["stale"], out["scored_changes"]) == (cli["stale"], cli["scored_changes"])
+    assert out["commands"]["refresh"] == "crapkit coverage --reuse-unchanged"

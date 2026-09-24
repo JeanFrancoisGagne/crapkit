@@ -54,6 +54,16 @@ plugin registers `Edit|Write`. A clean tree, a file older than the window, or a 
 outside any repo all stay silent, so what an advisory names here is source written seconds
 ago, never the tree's standing debt.
 
+The hook remembers, per session, the bytes each advisory judged, so a touch, a same-bytes
+rewrite or a test run after your edit does not repeat an advisory you already heard. New
+bytes are judged again. Source that lands with an old mtime (a command that ran longer than
+the window, `cp -p`, `mv`, an unpacked archive) is never judged here; the commit gate
+catches it.
+
+An advisory that says `could not read <file>` or `git could not report what changed in
+<file>` judged nothing in that file. It is not a pass: fix what its second line quotes, the
+reader's reason or git's error, before you trust silence from the hook on that file.
+
 ## Two fields decide whether a number is worth reading
 
 Read `scored_changes` and `uncovered_lines_note` first. `scored_changes` counts the files

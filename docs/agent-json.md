@@ -1349,7 +1349,7 @@ file. The plugin registers it async with a 20-second timeout, so no edit waits o
 | Exit | Means | Output |
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
-| `2` | a changed function is over its ceiling | three or more lines on stderr, which reach the model |
+| `2` | a changed function is over its ceiling, or a changed file went unjudged | three or more lines on stderr, which reach the model |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1365,8 +1365,22 @@ The head line states that outright, because the reader is a model holding a nonz
 code.
 
 It judges the functions the edit touched, not the whole file. Judging the file would fire on
-every edit in a repo with seeded debt and say nothing new. An untracked file is the one
-exception: `git diff` can see none of it, so every function in it counts.
+every edit in a repo with seeded debt and say nothing new. An untracked file is one
+exception: `git diff` can see none of it, so every function in it counts. A file staged
+before the repo's first commit is the other: with no commit to diff against, every function
+in it is new.
+
+Since 0.8.1 an edit the hook could not judge exits 2 too, in the same three-line shape. A
+changed file no reader could read used to score as zero functions, and zero records read as
+zero breaches, so a ccn-8 function beside one construct the reader refused passed in
+silence. The head line now says `could not read calc/grade.py, so no function in it was
+judged`, the second line quotes the reader's reason, and the third says what to change. When
+HEAD resolves and git still fails, as with a corrupt index, the head line says `git could
+not report what changed in calc/grade.py`, the second line quotes git's own words (`git diff
+HEAD -- calc/grade.py: fatal: .git/index: index file smaller than expected`), and no function
+is listed: a failed read no longer passes for an untracked file. A file the edit left as
+HEAD has it stays silent, readable or not, as the commit gate never judges an untouched file.
+A machine with no git at all stays on the silence ladder.
 
 That diff runs root-relative since 0.4.5, the way every other git spawn crapkit makes does,
 so a `crapkit.toml` below the git top gets advisories on the paths the commit gate will
@@ -1382,6 +1396,16 @@ several; the exit is 2 when any of them breached. That is what catches source wr
 Each bound has its own reason. The window keeps a later `ls` from re-advising a file that was
 already dirty before this command ran. The cap is there because PostToolUse waits this
 process out, so a large dirty tree would be a stall rather than a reason to judge all of it.
+
+The window judges an mtime, and a touch, a same-bytes rewrite or a test run right after an
+Edit moves one with no new content. So since 0.8.1 the hook also remembers what it judged:
+each judgement records the sha256 of the bytes it read, per session and per file, under
+`<git dir>/crapkit/claude-hook/<session_id>/`, and a fresh file whose bytes match that record
+is skipped. An advisory is said once per content per session. A payload with no usable
+`session_id` gets no memory and judges as before; a session idle for seven days is pruned
+when another starts. The working tree stays byte-identical. Source that lands with an old
+mtime is never judged here: a command that ran longer than the window, `cp -p`, `mv`, an
+unpacked archive. That is the documented miss, and the commit gate catches it.
 And only Python is judged, because every other language stays the commit gate's business,
 which is what keeps the fallback cheap enough to pay per shell call. The status read is
 `git status --porcelain -z -uall`, so a heredoc that creates a whole new directory of source
@@ -1419,7 +1443,7 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
-| verdict | no scope claims the file, the source parses to no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+| verdict | no scope claims the file, a reader read it and found no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
 
 Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
 git call, so a payload for a protocol this CLI does not answer costs nothing but the read of
