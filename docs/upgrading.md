@@ -166,11 +166,12 @@ or a number a script reads.
 
 **verify over a junit it cannot read.** `verify --reuse-artifacts` over a lane that
 declares a `results_artifact` it finds missing or unreadable passed at exit 0 and stored
-a trusted run. It now exits 5 and stores no run, as a real run of that lane does. Rerun
-the lane, `crapkit verify` without `--reuse-artifacts` or `crapkit coverage --lane NAME`
-first, so the junit is there to read. `coverage --reuse-artifacts` over the same junit
-still warns and scores on. A lane that declares no `results_artifact` still passes, with
-a stderr line and the lane under `lanes_without_results` in `verify --json`.
+a trusted run. It now exits 5 and stores no run, as a real run of that lane does, and
+the refusal ends `run verify without --reuse-artifacts so the lane writes it again`. A
+CI job whose `verify --reuse-artifacts` found no readable junit for such a lane now
+fails where it passed. `coverage --reuse-artifacts` over the same junit still warns and
+scores on. A lane that declares no `results_artifact` still passes, with a stderr line
+and the lane under `lanes_without_results` in `verify --json`.
 
 **Shallow clones.** A depth-1 checkout holds one commit, so churn counts one commit per
 file and a ratchet mark's age reads as 0 days. `ratchet report --enforce` now refuses
