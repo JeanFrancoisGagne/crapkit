@@ -286,16 +286,26 @@ def remove(path: Path) -> None:
         shutil.rmtree(path, onerror=_writable_then_retry)
 
 
-def prepare_out(out: Path) -> Path:
-    """<out>/in holds the export and entry.sh. The directory is world-writable
-    because the container writes to it as uid 1000, whoever owns it here."""
+def reset_out(out: Path) -> Path:
+    """An empty <out>, world-writable because the container writes to it as
+    uid 1000, whoever owns it here."""
     remove(out)
-    (out / "in").mkdir(parents=True)
-    for path in (out, out / "in"):
-        os.chmod(path, 0o777)
+    out.mkdir(parents=True)
+    os.chmod(out, 0o777)
+    return out
+
+
+def export_into(out: Path) -> Path:
+    """<out>/in: the tree under test (export.py) and entry.sh."""
+    (out / "in").mkdir()
+    os.chmod(out / "in", 0o777)
     export.export(ROOT, out / "in")
     shutil.copyfile(ENTRY, out / "in" / "entry.sh")
     return out
+
+
+def prepare_out(out: Path) -> Path:
+    return export_into(reset_out(out))
 
 
 def image_digest(tag: str) -> str:
@@ -419,20 +429,29 @@ def _compare(out: Path, repeat: int) -> int:
     return 1 if changed else 0
 
 
-def _build(args, out: Path) -> bool:
-    """Build the image and hold its tools to the pins; True when the
-    invocation asked for nothing more."""
-    pins = pinsfile.load()
-    build(pins, args.image, args.cache, args.no_cache, out, args.builder)
-    problems = check_versions(pins, args.image, out)
+def hold_to_pins(pins: dict, image: str, out: Path) -> None:
+    """Refuse a freshly built image whose tools differ from pins.toml, and
+    untag it: its label would otherwise let the next run skip the build."""
+    problems = check_versions(pins, image, out)
     for problem in problems:
         print(f"run: {problem}", file=sys.stderr)
     if problems:
-        raise SystemExit(f"run: crapkit-deploy:{args.image} does not match pins.toml")
-    if args.build_only:
-        return True
-    args.tag = bake(args.image, out) if args.bake else f"crapkit-deploy:{args.image}"
-    return False
+        subprocess.run(["docker", "image", "rm", f"crapkit-deploy:{image}"], capture_output=True)
+        raise SystemExit(f"run: crapkit-deploy:{image} does not match pins.toml; the tag is removed")
+
+
+def _build(args, out: Path) -> bool:
+    """Build the image and hold a new one to the pins; True when the
+    invocation asked for nothing more."""
+    pins = pinsfile.load()
+    record = build(pins, args.image, args.cache, args.no_cache, out, args.builder)
+    if not record.get("skipped"):
+        hold_to_pins(pins, args.image, out)
+    return args.build_only
+
+
+def _image_tag(args, out: Path) -> str:
+    return bake(args.image, out) if args.bake else f"crapkit-deploy:{args.image}"
 
 
 def _verdict(out: Path, repeat: int, codes: list[int]) -> int:
@@ -443,10 +462,11 @@ def _verdict(out: Path, repeat: int, codes: list[int]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse(argv)
-    out = args.out.resolve()
-    prepare_out(out)
+    out = reset_out(args.out.resolve())
     if not args.native and _build(args, out):
         return 0
+    export_into(out)
+    args.tag = None if args.native else _image_tag(args, out)
     codes = [_run_once(args, out, index) for index in range(args.repeat)]
     return _verdict(out, args.repeat, codes)
 

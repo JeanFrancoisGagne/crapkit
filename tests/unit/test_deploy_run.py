@@ -135,6 +135,37 @@ def test_an_online_cell_keeps_the_network_and_a_baked_image_reads_its_own_copy(m
     assert "/opt/deploy/in/entry.sh" in argv
 
 
+def test_a_build_only_run_records_the_build_and_exports_nothing(tmp_path, monkeypatch):
+    def no_export(repo, out):
+        raise AssertionError("a build-only run exported the tree")
+    monkeypatch.setattr(run.export, "export", no_export)
+    monkeypatch.setattr(run, "build", lambda *a, **k: {})
+    monkeypatch.setattr(run, "check_versions", lambda pins, image, out: [])
+
+    assert run.main(["--build-only", "--out", str(tmp_path / "out")]) == 0
+    assert (tmp_path / "out").is_dir() and not (tmp_path / "out" / "in").exists()
+
+
+def test_a_skipped_build_is_not_checked_again(tmp_path, monkeypatch):
+    def no_check(pins, image, out):
+        raise AssertionError("an unchanged image was checked again")
+    monkeypatch.setattr(run, "build", lambda *a, **k: {"skipped": "inputs unchanged"})
+    monkeypatch.setattr(run, "check_versions", no_check)
+
+    assert run.main(["--build-only", "--out", str(tmp_path / "out")]) == 0
+
+
+def test_an_image_that_fails_its_pins_loses_its_tag(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(run, "build", lambda *a, **k: {})
+    monkeypatch.setattr(run, "check_versions", lambda pins, image, out: ["uv: pinned 1, image prints '2'"])
+    monkeypatch.setattr(run.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    with pytest.raises(SystemExit, match="does not match pins.toml"):
+        run.main(["--build-only", "--image", "full", "--out", str(tmp_path / "out")])
+    assert calls == [["docker", "image", "rm", "crapkit-deploy:full"]]
+
+
 def test_the_out_dir_holds_the_export_and_the_entry_point(tmp_path, monkeypatch):
     monkeypatch.setattr(run.export, "export", lambda repo, out: (out / "src.bundle", out / "tree.tar"))
     out = run.prepare_out(tmp_path / "out")
