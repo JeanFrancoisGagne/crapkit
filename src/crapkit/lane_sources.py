@@ -65,9 +65,17 @@ def settled(before: dict[str, str], after: dict[str, str]) -> dict[str, str]:
 
 def moved(root: Path, recorded: dict, listed=()) -> list[str]:
     """Recorded files whose bytes differ now, deleted ones included, and listed
-    files the record does not hold."""
+    files the record does not hold that have bytes now."""
     changed = {path for path, digest in recorded.items() if source_digest(root / path) != digest}
-    return sorted(changed | {path for path in listed if path not in recorded})
+    return sorted(changed | _added(root, recorded, listed))
+
+
+def _added(root: Path, recorded: dict, listed) -> set[str]:
+    """Listed files the record does not hold and that have bytes now. git also
+    lists paths no digest reads: a submodule, a directory here, and a tracked
+    file deleted before the run. The record never held them, and counting them
+    as new made every later read call the lane stale."""
+    return {path for path in listed if path not in recorded and source_digest(root / path)}
 
 
 def file_moved(root: Path, recorded: dict, path: str) -> bool:

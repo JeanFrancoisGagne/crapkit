@@ -64,6 +64,7 @@ def test_moved_names_changed_deleted_and_new_files(tmp_path):
 
     (tmp_path / "same.ts").write_bytes(b"same\n")
     (tmp_path / "edited.ts").write_bytes(b"new\n")
+    (tmp_path / "added.ts").write_bytes(b"added\n")
     recorded = {"same.ts": source_digest(tmp_path / "same.ts"),
                 "edited.ts": "old", "deleted.ts": "gone"}
 
@@ -72,6 +73,19 @@ def test_moved_names_changed_deleted_and_new_files(tmp_path):
     assert not file_moved(tmp_path, recorded, "same.ts")
     assert file_moved(tmp_path, recorded, "edited.ts")
     assert not file_moved(tmp_path, recorded, "never-measured.ts")
+
+
+def test_a_listed_path_with_no_bytes_is_not_a_new_file(tmp_path):
+    """git lists a submodule as one path, a directory here, and lists a tracked
+    file deleted before the run though nothing is on disk. Neither had bytes to
+    record, so neither is new on a later read until bytes appear."""
+    from crapkit.lane_sources import moved
+
+    (tmp_path / "vendor").mkdir()
+
+    assert moved(tmp_path, {}, ["vendor", "deleted.ts"]) == []
+    (tmp_path / "deleted.ts").write_bytes(b"back\n")
+    assert moved(tmp_path, {}, ["vendor", "deleted.ts"]) == ["deleted.ts"]
 
 
 # --- the stamp ------------------------------------------------------------------
@@ -97,6 +111,33 @@ def test_a_file_the_lane_itself_writes_under_its_scope_is_not_a_change(tmp_path)
 
     assert "src/__pycache__/app.cpython-311.pyc" in sources
     assert _lane_view(root)["note"] == ""
+
+
+def test_a_submodule_under_the_scope_is_not_a_change_on_its_own(tmp_path, capsys):
+    """git lists the submodule as one path, src/vendor, which is a directory
+    no digest reads. Counting it as a file the record lacks made every read
+    after the run say src/vendor changed, with nothing touched."""
+    library = tmp_path / "library"
+    library.mkdir()
+    stale_tree.git(library, "init", "-q", "-b", "main")
+    stale_tree.write(library / "lib.ts", "export const v = 1;\n")
+    stale_tree.git(library, "add", "-A")
+    stale_tree.git(library, "commit", "-q", "-m", "lib")
+    root = stale_tree.build(tmp_path / "repo")
+    stale_tree.git(root, "-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
+                   library.as_uri(), "src/vendor")
+    stale_tree.git(root, "commit", "-q", "-m", "vendor")
+    stale_tree.measure(root)
+
+    assert (_reuse_warning(root, capsys), _lane_view(root)["note"]) == ("", "")
+
+
+def test_a_tracked_file_deleted_before_the_run_is_not_a_change_after_it(tmp_path, capsys):
+    root = stale_tree.build(tmp_path / "repo", extra={"src/other.ts": "export const o = 1;\n"})
+    (root / "src/other.ts").unlink()
+    stale_tree.measure(root)
+
+    assert (_reuse_warning(root, capsys), _lane_view(root)["note"]) == ("", "")
 
 
 # --- the readers, one matrix row at a time -----------------------------------
