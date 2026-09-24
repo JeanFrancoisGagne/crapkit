@@ -39,6 +39,20 @@
   that fits, the marker first. A pull request with 1,500 new test failures made a
   152,245-character body, GitHub answered 422, and no comment was posted.
 
+### `doctor --plugin-root` reads every shape of the installer's files
+
+- With no PATH, doctor reads `installed_plugins.json` as an older Claude Code wrote it,
+  one object per plugin id, beside today's list of installs. That file, a `plugins` key
+  that is null or a list, an install list holding null, and an `installPath` that is not
+  a string all ended the command in a traceback. Such an entry now records nothing, and
+  the cache scan still finds the install. A UTF-8 BOM before either file reads past.
+- A `.claude-plugin/plugin.json` that is there but gives no version no longer reads as a
+  missing file. A file that does not parse to an object says `has a
+  .claude-plugin/plugin.json that is not a JSON object`, and an object whose `version` is
+  absent, null, a number or a list says `has a .claude-plugin/plugin.json with no version
+  string`; both end `reinstall the plugin or repair that file`. A number or a list there
+  also ended a search over several installs in a traceback.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

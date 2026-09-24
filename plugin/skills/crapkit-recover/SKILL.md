@@ -24,11 +24,14 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 | "crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches", from `crapkit coverage` | The lane scored on statements instead of branches, so CRAP is understated on branchy functions. A report carrying neither branches nor statements is still exit 5 | Add `--cov-branch` to the lane command, then rerun `crapkit coverage`: [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) — those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where NO file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
 
-Four more lines come out of `crapkit doctor --plugin-root`, same exit 1.
+Six more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
+a plugin root and holds no crapkit install below it. "has a .claude-plugin/plugin.json that
+is not a JSON object" and "has a .claude-plugin/plugin.json with no version string" mean the
+file is there but damaged: reinstall with `claude plugin install crapkit@crapkit`, or repair
+that file. "crapkit doctor: no installed crapkit
 plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
 with `claude plugin install crapkit@crapkit`, or pass a PATH.
 "crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name

@@ -1291,12 +1291,13 @@ def _plugin_json(path: Path):
 
     Missing, unreadable and half-written all read the same, because doctor's job
     here is to name the file rather than to raise inside it. A plugin cache is
-    written by an installer this process does not control.
+    written by an installer this process does not control. A leading BOM is
+    read past, as crapkit reads its own configuration.
     """
     import json
 
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
 
@@ -1339,7 +1340,19 @@ def _manifest_field(root: Path, field: str) -> str | None:
 
 
 def _manifest_version(root: Path) -> str | None:
-    return _manifest_field(root, "version")
+    """The manifest's version when it is a string, else None: a number or a
+    list there ranks no install and matches no CLI, and ranking by it raised."""
+    version = _manifest_field(root, "version")
+    return version if isinstance(version, str) and version else None
+
+
+def _manifest_fault(root: Path) -> str:
+    """Why the manifest gives no version, in doctor.plugin_handshake's words:
+    no file, a file that is not a JSON object, or an object with no version."""
+    path = root / ".claude-plugin" / "plugin.json"
+    if not path.is_file():
+        return "missing"
+    return "unversioned" if isinstance(_plugin_json(path), dict) else "not-an-object"
 
 
 # Claude Code keeps an install at <config>/plugins/cache/<marketplace>/<plugin>/
@@ -1392,11 +1405,33 @@ def _plugins_dir() -> Path:
     return (Path(base) if base else Path.home() / ".claude") / "plugins"
 
 
+def _plugin_entries(recorded) -> dict:
+    """installed_plugins.json's `plugins` object, or {} for any other shape."""
+    entries = recorded.get("plugins") if isinstance(recorded, dict) else None
+    return entries if isinstance(entries, dict) else {}
+
+
+def _install_path(entry) -> str:
+    path = entry.get("installPath") if isinstance(entry, dict) else None
+    return path if isinstance(path, str) else ""
+
+
+def _install_paths(installs) -> list[Path]:
+    """The install directories one plugin id records. Claude Code writes V2, a
+    list of installs; an older one wrote V1, one object, and a newer one
+    converts it only when it loads the file."""
+    listed = installs if isinstance(installs, list) else [installs]
+    return [Path(path) for path in map(_install_path, listed) if path]
+
+
 def _recorded_roots(recorded) -> list[Path]:
-    """Install directories installed_plugins.json records for crapkit."""
-    entries = recorded.get("plugins", {}) if isinstance(recorded, dict) else {}
-    return [Path(e["installPath"]) for key, installs in entries.items()
-            if key.startswith("crapkit@") for e in installs if e.get("installPath")]
+    """Install directories installed_plugins.json records for crapkit.
+
+    An entry of any shape but a string installPath records nothing, and the
+    cache scan beside this still finds the install: V1 and hand-edited files
+    ended the command meant to diagnose the plugin in a traceback."""
+    return [path for key, installs in _plugin_entries(recorded).items()
+            if key.startswith("crapkit@") for path in _install_paths(installs)]
 
 
 def _installed_crapkit_roots(plugins: Path) -> list[Path]:
@@ -1509,9 +1544,14 @@ def _doctor_plugin(plugin_root: str) -> int:
         print(f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
               "Repair this launcher or install crapkit on the PATH the plugin inherits.")
         return 1
-    lines = plugin_handshake(where=str(root), version=_manifest_version(root),
-                             cli_version=cli_version, cli_where=executable,
-                             protocols=_hook_protocols(root), supported=PROTOCOL)
+    return _report_lines(plugin_handshake(
+        where=str(root), version=_manifest_version(root), cli_version=cli_version,
+        cli_where=executable, protocols=_hook_protocols(root), supported=PROTOCOL,
+        manifest_fault=_manifest_fault(root)))
+
+
+def _report_lines(lines: list[str]) -> int:
+    """Print the handshake's lines; exit 1 when there was anything to say."""
     for line in lines:
         print(line)
     return 1 if lines else 0

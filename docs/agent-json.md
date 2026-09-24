@@ -1116,9 +1116,19 @@ crapkit doctor: no installed crapkit plugin under ...\.claude\plugins (install w
 (The absolute path is elided; the line prints it in full.)
 
 A plugin with no manifest gets one line saying so and no protocol check: there is no version
-to compare, and the protocol line underneath would bury the fact that explains both. A plugin
-shipping no `hooks/hooks.json` registers no advisory hook, and the output says that instead.
-It prints no JSON and ignores `--json`.
+to compare, and the protocol line underneath would bury the fact that explains both. A manifest
+that is there but gives no version gets its own line, so you repair the file rather than look
+for one:
+
+```
+crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json that is not a JSON object; reinstall the plugin or repair that file
+crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json with no version string; reinstall the plugin or repair that file
+```
+
+The first is a file that does not parse, or parses to a list or a string. The second is an
+object whose `version` is absent, null, a number or a list. A plugin shipping no
+`hooks/hooks.json` registers no advisory hook, and the output says that instead. It prints no
+JSON and ignores `--json`.
 
 `PATH` may be the plugin root itself or any directory above it: `~/.claude`, `~/.claude/plugins`,
 the cache root `~/.claude/plugins/cache`, or a marketplace or plugin directory inside it. Claude
@@ -1127,7 +1137,10 @@ beside the new one after an update, so among the manifests named `crapkit` under
 newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
 all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
 through `installed_plugins.json` and the cache, and names that directory when nothing is
-installed there.
+installed there. It reads `installed_plugins.json` as Claude Code writes it today, a list of
+installs per plugin id, and as an older Claude Code wrote it, one object per id. An entry of
+any other shape, or one with no string `installPath`, records nothing, and the cache scan
+still finds the install.
 
 ---
 

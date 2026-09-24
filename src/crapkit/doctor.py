@@ -523,17 +523,31 @@ def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str)
             f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit.")
 
 
+_MANIFEST_FAULTS = {
+    "missing": "has no .claude-plugin/plugin.json",
+    "not-an-object": ("has a .claude-plugin/plugin.json that is not a JSON object; reinstall the "
+                      "plugin or repair that file"),
+    "unversioned": ("has a .claude-plugin/plugin.json with no version string; reinstall the "
+                    "plugin or repair that file"),
+}
+
+
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
-                     protocols: tuple[str, ...] | None, supported: str) -> list[str]:
+                     protocols: tuple[str, ...] | None, supported: str,
+                     manifest_fault: str = "missing") -> list[str]:
     """Every disagreement between an installed plugin and this CLI, one per line.
 
     Empty is the answer that matters: the two agree, and a check that prints on
     success is a check people stop reading.
 
-    A missing manifest ends it. There is no version to compare, and a protocol
-    line printed underneath would bury the one fact that explains both.
+    A manifest with no version ends it. There is no version to compare, and a
+    protocol line printed underneath would bury the one fact that explains
+    both. `manifest_fault` says why there is none: the file is `missing`, is
+    `not-an-object`, or is `unversioned`. A file that parsed and named no
+    version string read as a missing file, which sent the reader looking for a
+    file that was there.
     """
     if version is None:
-        return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
+        return [f"crapkit doctor: the plugin at {where} {_MANIFEST_FAULTS[manifest_fault]}"]
     return [line for line in (_version_gap(where, version, cli_version, cli_where),
                               _protocol_gap(where, protocols, supported)) if line]

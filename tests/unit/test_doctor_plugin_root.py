@@ -153,26 +153,21 @@ def test_a_plugin_with_no_hooks_file_registers_no_advisory_and_says_so(tmp_path,
     assert len(lines) == 1 and "hooks/hooks.json" in lines[0], lines
 
 
-def test_an_unparseable_manifest_reads_as_a_missing_one(tmp_path, capsys):
-    """`doctor` reports; it does not raise. A half-written plugin.json in a
-    plugin cache must not end this command in a traceback."""
-    root = plugin(tmp_path / "p")
-    _write(root / ".claude-plugin" / "plugin.json", "{not json")
-
-    code, lines, _ = check(root, capsys)
-
-    assert code == 1
-    assert len(lines) == 1 and ".claude-plugin/plugin.json" in lines[0], lines
-
-
 @pytest.mark.parametrize("hooks", [
     {"hooks": []},
+    {"hooks": None},
     {"hooks": {"PostToolUse": 1}},
+    {"hooks": {"PostToolUse": None}},
     {"hooks": {"PostToolUse": [None]}},
+    {"hooks": {"PostToolUse": [{"hooks": None}]}},
     {"hooks": {"PostToolUse": [{"hooks": [None]}]}},
+    {"hooks": {"PostToolUse": [{"hooks": [{"args": None}]}]}},
     {"hooks": {"PostToolUse": [{"hooks": [{"args": "--protocol 1"}]}]}},
     {"hooks": {"PostToolUse": [{"hooks": [{"args": ["--protocol", []]}]}]}},
-])
+    [],
+], ids=["hooks-a-list", "hooks-null", "event-a-number", "event-null", "matcher-null",
+        "matcher-hooks-null", "handler-null", "args-null", "args-a-string",
+        "args-holding-a-list", "top-level-list"])
 def test_malformed_hook_shapes_report_the_file_without_crashing(tmp_path, capsys, hooks):
     root = plugin(tmp_path / "p")
     _write(root / "hooks" / "hooks.json", hooks)
@@ -475,3 +470,116 @@ def test_a_zero_exit_is_still_read_for_its_version(tmp_path):
     name = "crapkit.bat" if os.name == "nt" else "crapkit"
 
     assert admin._probed_cli_version(str(tmp_path / "ok" / name)) == "9.9.9"
+
+
+# --- installed_plugins.json in every shape it arrives in -----------------------
+#
+# Claude Code writes V2, a list of installs per plugin id. An older Claude Code
+# wrote V1, one object per id, and a newer one converts it only when it loads
+# the file, so a config directory it has not loaded since still holds V1. Only
+# the top level was type-checked, and V1 or a hand edit ended the command meant
+# to diagnose the plugin in a traceback. A record naming a string installPath
+# is honoured; any other entry records nothing and the cache scan decides.
+
+def _records(recorded: str) -> dict:
+    v2 = {"plugins": {"crapkit@crapkit": [{"installPath": recorded, "version": CLI}]}}
+    return {
+        "v2-list-of-installs": (v2, "recorded"),
+        "v1-object-per-plugin": ({"version": 1, "plugins": {"crapkit@crapkit": {
+            "installPath": recorded, "version": CLI}}}, "recorded"),
+        "v1-object-without-installPath": ({"version": 1, "plugins": {"crapkit@crapkit": {
+            "version": CLI}}}, "cache"),
+        "plugins-null": ({"plugins": None}, "cache"),
+        "plugins-a-list": ({"plugins": []}, "cache"),
+        "plugins-absent": ({}, "cache"),
+        "installs-null": ({"plugins": {"crapkit@crapkit": None}}, "cache"),
+        "installs-empty-list": ({"plugins": {"crapkit@crapkit": []}}, "cache"),
+        "install-entry-null": ({"plugins": {"crapkit@crapkit": [None]}}, "cache"),
+        "install-entry-a-string": ({"plugins": {"crapkit@crapkit": [recorded]}}, "cache"),
+        "installPath-null": ({"plugins": {"crapkit@crapkit": [{"installPath": None}]}}, "cache"),
+        "installPath-a-number": ({"plugins": {"crapkit@crapkit": [{"installPath": 5}]}}, "cache"),
+        "another-plugins-entry-malformed": ({"plugins": {"other@vendor": None, **v2["plugins"]}},
+                                            "recorded"),
+        "top-level-list": ([], "cache"),
+        "not-json": ("{not json", "cache"),
+        "empty-file": ("", "cache"),
+        "utf8-bom-before-v2": ("﻿" + json.dumps(v2), "recorded"),
+    }
+
+
+@pytest.mark.parametrize("shape", list(_records("")))
+def test_no_path_reads_every_shape_of_the_installer_s_record(tmp_path, capsys, monkeypatch, shape):
+    """The config directory and the recorded install both sit under non-ASCII
+    names, so every shape also runs the non-ASCII case. The recorded install is
+    this CLI's version and the cached one is older, so the first line says which
+    of the two the record led to."""
+    config = tmp_path / "config-é"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    recorded = plugin(tmp_path / "elsewhere-ü" / "crapkit-plugin")
+    cached = plugin(config / "plugins" / "cache" / "crapkit" / "crapkit" / "0.0.1", version="0.0.1")
+    payload, expected = _records(str(recorded))[shape]
+    _write(config / "plugins" / "installed_plugins.json", payload)
+
+    code = main(["doctor", "--plugin-root"])
+    out = capsys.readouterr()
+
+    checked = recorded if expected == "recorded" else cached
+    assert out.err == ""
+    assert out.out.splitlines()[0] == f"crapkit doctor: checking {checked}"
+    assert code == (0 if checked == recorded else 1)
+
+
+# --- a manifest that parses and names no usable version -------------------------
+#
+# A plugin.json whose version is null, absent, a number or a list read as a
+# missing plugin.json, or, where installs were ranked by version, ended the
+# command in a TypeError.
+
+@pytest.mark.parametrize("version", [None, 0.8, ["0", "8"], "absent"],
+                         ids=["version-null", "version-a-number", "version-a-list", "version-absent"])
+def test_a_manifest_with_no_version_string_says_so(tmp_path, capsys, version):
+    root = plugin(tmp_path / "p")
+    manifest = {"name": "crapkit"} if version == "absent" else {"name": "crapkit", "version": version}
+    _write(root / ".claude-plugin" / "plugin.json", manifest)
+
+    code, lines, err = check(root, capsys)
+
+    assert (code, err) == (1, "")
+    assert lines == [f"crapkit doctor: the plugin at {root} has a .claude-plugin/plugin.json with no "
+                     "version string; reinstall the plugin or repair that file"], lines
+
+
+@pytest.mark.parametrize("manifest", ["{not json", "[]", "\"crapkit\""],
+                         ids=["not-json", "top-level-list", "top-level-string"])
+def test_a_manifest_that_is_not_an_object_names_the_file_it_found(tmp_path, capsys, manifest):
+    """`doctor` reports; it does not raise. A half-written plugin.json in a
+    plugin cache must not end this command in a traceback, and must not read
+    as a missing file either, since the file is there to repair."""
+    root = plugin(tmp_path / "p")
+    _write(root / ".claude-plugin" / "plugin.json", manifest)
+
+    code, lines, err = check(root, capsys)
+
+    assert (code, err) == (1, "")
+    assert lines == [f"crapkit doctor: the plugin at {root} has a .claude-plugin/plugin.json that is "
+                     "not a JSON object; reinstall the plugin or repair that file"], lines
+
+
+def test_a_manifest_whose_name_is_null_is_still_checked_by_version(tmp_path, capsys):
+    root = plugin(tmp_path / "p")
+    _write(root / ".claude-plugin" / "plugin.json", {"name": None, "version": CLI})
+
+    assert check(root, capsys) == (0, [], "")
+
+
+@pytest.mark.parametrize("version", [0.9, ["0", "9"], None], ids=["a-number", "a-list", "null"])
+def test_ranking_installs_passes_over_a_version_that_is_not_a_string(tmp_path, capsys, version):
+    cache = tmp_path / "cache" / "crapkit" / "crapkit"
+    good = plugin(cache / CLI)
+    odd = plugin(cache / "odd")
+    _write(odd / ".claude-plugin" / "plugin.json", {"name": "crapkit", "version": version})
+
+    code, lines, err = check(tmp_path / "cache", capsys)
+
+    assert (code, err) == (0, "")
+    assert lines == [f"crapkit doctor: checking {good}"], lines
