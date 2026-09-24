@@ -39,6 +39,16 @@ def test_the_builder_runs_the_pinned_buildkit_image():
     assert run.build_command(PINS, "core", "local", no_cache=True, builder="b")[3:5] == ["--builder", "b"]
 
 
+def test_an_image_whose_tools_drifted_from_the_pins_is_named(monkeypatch, tmp_path):
+    printed = "uv uv 0.12.17\nclaude 2.1.281 (Claude Code)\n"
+    monkeypatch.setattr(run.subprocess, "run", lambda *a, **k: run.subprocess.CompletedProcess(a, 0, printed, ""))
+    problems = run.check_versions(PINS, "core", tmp_path)
+
+    assert "uv: pinned 0.12.18, image prints 'uv 0.12.17'" in problems
+    assert not [problem for problem in problems if problem.startswith("claude:")]
+    assert run.versions_command("core")[-2:] == ["crapkit-deploy:core", "versions"]
+
+
 def test_the_gha_cache_is_one_scope_per_image_that_never_fails_the_build():
     assert run.cache_flags("gha", "core") == [
         "--cache-from=type=gha,scope=crapkit-deploy-core",

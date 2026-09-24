@@ -135,6 +135,17 @@ def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, builder
     return record
 
 
+def versions_command(image: str) -> list[str]:
+    return ["docker", "run", "--rm", "--network", "none", f"crapkit-deploy:{image}", "versions"]
+
+
+def check_versions(pins: dict, image: str, out: Path) -> list[str]:
+    """What `versions` prints inside the image, held to pins.toml, offline."""
+    printed = subprocess.run(versions_command(image), capture_output=True, text=True, check=True).stdout
+    (out / f"versions-{image}.txt").write_text(printed, encoding="utf-8")
+    return pinsfile.version_problems(pinsfile.expected_versions(pins, image), printed)
+
+
 def _append_json(path: Path, record: dict) -> None:
     records = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
     path.write_text(json.dumps([*records, record], indent=2) + "\n", encoding="utf-8")
@@ -295,8 +306,15 @@ def _compare(out: Path, repeat: int) -> int:
 
 
 def _build(args, out: Path) -> bool:
-    """Build the image; True when the invocation asked for nothing more."""
-    build(pinsfile.load(), args.image, args.cache, args.no_cache, out, args.builder)
+    """Build the image and hold its tools to the pins; True when the
+    invocation asked for nothing more."""
+    pins = pinsfile.load()
+    build(pins, args.image, args.cache, args.no_cache, out, args.builder)
+    problems = check_versions(pins, args.image, out)
+    for problem in problems:
+        print(f"run: {problem}", file=sys.stderr)
+    if problems:
+        raise SystemExit(f"run: crapkit-deploy:{args.image} does not match pins.toml")
     if args.build_only:
         return True
     args.tag = bake(args.image, out) if args.bake else f"crapkit-deploy:{args.image}"
