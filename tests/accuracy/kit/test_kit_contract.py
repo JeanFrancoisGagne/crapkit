@@ -407,3 +407,17 @@ def test_declared_push_seconds_fit_the_budget():
     assert total <= PUSH_BUDGET_SECONDS, (
         f"push checks declare {total} serial seconds on ubuntu; the budget is "
         f"{PUSH_BUDGET_SECONDS}: " + ", ".join(f"{c.key}: {c.name} {c.seconds}" for c in push))
+
+
+def _named_by(path: Path, targets: list[Path]) -> bool:
+    return any(path == target or target in path.parents for target in targets)
+
+
+def test_every_accuracy_test_module_is_named_by_a_check():
+    """run.py runs only what a check names: a test module no check names never
+    runs in CI, and its failures go unseen."""
+    targets = [(REPO / target).resolve() for check in _run_tool().load_checks()
+               for target in check.pytest]
+    modules = [path for path in _python_files(ACCURACY) if path.name.startswith("test_")]
+
+    assert [_rel(path) for path in modules if not _named_by(path.resolve(), targets)] == []
