@@ -808,8 +808,13 @@ def _hash_paths(root: Path, rel_paths: list[str], stamps: dict) -> tuple[dict[st
     the difference between reading 14k files and stat-ing them.
 
     Its one blind spot: content rewritten to the same length under a deliberately
-    restored mtime. Any real write moves the mtime, and a write too close to the
-    last one is refused a stamp, so the next genuine change corrects it.
+    restored mtime (cp -p, rsync -t, tar -x, touch -r), or a symlink re-pointed
+    to a same-size target carrying the same mtime, since stat follows the link.
+    Any real write moves the mtime, and a write too close to the last one is
+    refused a stamp, so the next genuine change corrects it. `watch` has the
+    same limit. Closing it means hashing every file on every run; 0.9.0
+    measures that cost against this index before either changes, and
+    tests/unit/test_analyze_warm_path.py pins both cases as the limit until then.
     """
     now = time.time_ns()
     hashes: dict[str, str] = {}
