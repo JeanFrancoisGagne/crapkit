@@ -206,7 +206,7 @@ def _npm_test_script(scripts: dict) -> str | None:
     return named[0] if named else None
 
 
-def _js_runner_command(dev_dependencies: dict) -> str | None:
+def _js_runner_command(dev_dependencies: frozenset[str]) -> str | None:
     for runner in sorted(_JS_RUNNER_COMMAND):
         if runner in dev_dependencies:
             return _JS_RUNNER_COMMAND[runner]
@@ -221,7 +221,43 @@ def _load_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _js_runner(dev_dependencies: dict) -> str | None:
+class _NpmPackage(NamedTuple):
+    """The two package.json fields init reads, in the shapes npm reads them.
+
+    Parsed once here so no reader meets a raw value: `.get("scripts", {})`
+    covered an absent key only, and a key present as null, a number, a list or
+    a string reached `in` and ended init in a TypeError, or named a script npm
+    does not have.
+    """
+    scripts: dict[str, str]
+    dev_dependencies: frozenset[str]
+
+
+def _npm_package(text: str) -> _NpmPackage:
+    data = _load_json(text)
+    return _NpmPackage(_npm_scripts(data.get("scripts")),
+                       _dependency_names(data.get("devDependencies")))
+
+
+def _npm_scripts(value) -> dict[str, str]:
+    """An object's scripts whose command is a string, as npm keeps them; any
+    other value is no scripts at all."""
+    if not isinstance(value, dict):
+        return {}
+    return {name: command for name, command in value.items() if isinstance(command, str)}
+
+
+def _dependency_names(value) -> frozenset[str]:
+    """The packages a dependency field names: an object's keys, or the strings
+    in a list, which npm still reads as names; any other value names none."""
+    if isinstance(value, dict):
+        return frozenset(value)
+    if isinstance(value, list):
+        return frozenset(name for name in value if isinstance(name, str))
+    return frozenset()
+
+
+def _js_runner(dev_dependencies: frozenset[str]) -> str | None:
     """The runner whose flags this lane may carry, or None when package.json
     names neither runner or both.
 
@@ -235,7 +271,8 @@ def _js_runner(dev_dependencies: dict) -> str | None:
     return named[0] if len(named) == 1 else None
 
 
-def _js_junit(runner: str, dev_dependencies: dict, cov_dir: str) -> tuple[str, str, tuple]:
+def _js_junit(runner: str, dev_dependencies: frozenset[str],
+              cov_dir: str) -> tuple[str, str, tuple]:
     """Flags, results_artifact and env for this runner's junit report, or three
     empty values when the reporter it needs is not installed.
 
@@ -259,14 +296,14 @@ def _npm_test_command(scripts: dict) -> str | None:
     return f"npm run {script} -- --coverage" if script else None
 
 
-def _js_command(package: dict) -> str | None:
+def _js_command(package: _NpmPackage) -> str | None:
     """What npm would run tests with, or the runner's own command when the
     package declares no test script at all."""
-    return (_npm_test_command(package.get("scripts", {}))
-            or _js_runner_command(package.get("devDependencies", {})))
+    return (_npm_test_command(package.scripts)
+            or _js_runner_command(package.dev_dependencies))
 
 
-def _js_routed_lane(package: dict, command: str, runner: str, cwd: str) -> LaneSpec:
+def _js_routed_lane(package: _NpmPackage, command: str, runner: str, cwd: str) -> LaneSpec:
     """The lane with both of its reports routed under .crapkit/, run from `cwd`.
 
     Every path in the command is written from `cwd`, so a lane running in a
@@ -275,13 +312,13 @@ def _js_routed_lane(package: dict, command: str, runner: str, cwd: str) -> LaneS
     """
     up = "../" * (cwd.count("/") + 1) if cwd else ""
     cov_dir = up + _JS_COV_DIR
-    junit, results, env = _js_junit(runner, package.get("devDependencies", {}), cov_dir)
+    junit, results, env = _js_junit(runner, package.dev_dependencies, cov_dir)
     routing = f" {_JS_REPORTS_DIR_FLAG[runner]}{cov_dir}"
     return LaneSpec("js", command + routing + _JS_EXTRA_FLAGS.get(runner, "") + junit,
                     _JS_ARTIFACT, "istanbul", _JS_LANGUAGES, results, env, cwd)
 
 
-def _js_root_lane(package: dict) -> LaneSpec | None:
+def _js_root_lane(package: _NpmPackage) -> LaneSpec | None:
     """A test script, or vitest/jest in devDependencies: either says the repo
     already knows how to produce istanbul coverage.
 
@@ -293,7 +330,7 @@ def _js_root_lane(package: dict) -> LaneSpec | None:
     command = _js_command(package)
     if command is None:
         return None
-    runner = _js_runner(package.get("devDependencies", {}))
+    runner = _js_runner(package.dev_dependencies)
     if runner is None:
         return LaneSpec("js", command, _JS_DEFAULT_ARTIFACT, "istanbul", _JS_LANGUAGES)
     return _js_routed_lane(package, command, runner, "")
@@ -302,7 +339,7 @@ def _js_root_lane(package: dict) -> LaneSpec | None:
 def _runner_workspaces(packages: dict[str, str]) -> list[tuple[str, str]]:
     """The workspace directories whose own devDependencies name one runner,
     each paired with the runner it named, so no caller asks twice."""
-    named = ((directory, _js_runner(_load_json(text).get("devDependencies", {})))
+    named = ((directory, _js_runner(_npm_package(text).dev_dependencies))
              for directory, text in packages.items() if directory)
     return sorted((directory, runner) for directory, runner in named if runner)
 
@@ -324,8 +361,8 @@ def _js_workspace_lane(packages: dict[str, str]) -> LaneSpec | None:
     if len(named) != 1:
         return None
     directory, runner = named[0]
-    package = _load_json(packages[directory])
-    command = _npm_test_command(package.get("scripts", {})) or _JS_RUNNER_COMMAND[runner]
+    package = _npm_package(packages[directory])
+    command = _npm_test_command(package.scripts) or _JS_RUNNER_COMMAND[runner]
     return _js_routed_lane(package, command, runner, directory)
 
 
@@ -346,8 +383,8 @@ def _js_lane(package_json: str | dict[str, str]) -> LaneSpec | None:
     the lane it always got.
     """
     packages = _packages(package_json)
-    root = _load_json(packages.get("", ""))
-    if _js_runner(root.get("devDependencies", {})) is None:
+    root = _npm_package(packages.get("", ""))
+    if _js_runner(root.dev_dependencies) is None:
         workspace = _js_workspace_lane(packages)
         if workspace is not None:
             return workspace
@@ -647,7 +684,7 @@ def _python_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
 
 
 def _workspace_script(packages: dict[str, str], directory: str) -> str | None:
-    return _npm_test_script(_load_json(packages.get(directory, "")).get("scripts", {}))
+    return _npm_test_script(_npm_package(packages.get(directory, "")).scripts)
 
 
 def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
@@ -660,7 +697,7 @@ def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
         return ScopedEntry(_NPM_WORKSPACE.format(script=script, directory=name),
                            f"{name}/ is an npm workspace with its own {script} script, "
                            "run from the root with -w", True)
-    runner = _js_runner(_load_json(facts.packages.get("", "")).get("devDependencies", {}))
+    runner = _js_runner(_npm_package(facts.packages.get("", "")).dev_dependencies)
     if runner:
         return ScopedEntry(_JS_RELATED[runner], f"{runner}'s related-tests mode, keyed by "
                            "the runner package.json names", False)

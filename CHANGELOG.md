@@ -53,6 +53,16 @@
   string`; both end `reinstall the plugin or repair that file`. A number or a list there
   also ended a search over several installs in a traceback.
 
+### `init` reads a package.json whose fields are null or of another type
+
+- `init` no longer ends in a TypeError, before it writes `crapkit.toml`, on a
+  `package.json` whose `scripts` or `devDependencies` is null or a number, at the root or in
+  a workspace. It reads the file the way npm does: `scripts` that are not an object, and a
+  script whose command is not a string, are no scripts, and a `devDependencies` list names
+  the strings in it.
+- A `scripts` list such as `["test"]`, or a string such as `"vitest run"`, no longer writes
+  an `npm run test` lane: npm has no such script, and the lane failed on its first run.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

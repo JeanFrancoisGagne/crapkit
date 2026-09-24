@@ -6,6 +6,8 @@ package.json content only — nothing is executed, nothing is imported.
 """
 import json
 
+import pytest
+
 from crapkit.config import load_config_text
 from crapkit.scaffold import (DEFAULT_EXCLUDES, LaneSpec, detect_lanes, gitignore_entries,
                               gitignore_update, live_lanes, lockfile_runner, pytest_testpaths,
@@ -782,3 +784,74 @@ def test_the_commented_pytest_template_carries_the_same_flag():
     text = starter_toml({"pylib": ("python",)}, (), interpreter="python")
 
     assert "--continue-on-collection-errors" in text, text
+
+
+# --- package.json fields of the wrong type ------------------------------------
+#
+# init took `scripts` and `devDependencies` as objects because `.get(key, {})`
+# read that way, but the default only covers an absent key: a key present as
+# null, a number, a list or a string reached `in` and ended init in a TypeError
+# before crapkit.toml was written, or, for a list or a string of scripts, wrote
+# a lane that runs a script npm does not have. Each malformed file now detects
+# exactly what npm would read from it: scripts that are not an object, and a
+# script whose command is not a string, are no scripts; a list of
+# devDependencies names its packages, as npm reads it; anything else there
+# names none.
+
+_WORKSPACE_ROOT = _package(scripts={"test": "npm run --workspaces test"})
+_VITEST = {"vitest": "^2.0.0"}
+_READ_AS = {
+    "scripts-null-beside-a-runner": (_package(scripts=None, devDependencies=_VITEST),
+                                     _package(devDependencies=_VITEST)),
+    "scripts-a-number": (_package(scripts=5), _package()),
+    "scripts-a-list": (_package(scripts=["test"]), _package()),
+    "scripts-a-string": (_package(scripts="vitest run"), _package()),
+    "script-command-null": (_package(scripts={"test": None, "test:unit": "vitest"}),
+                            _package(scripts={"test:unit": "vitest"})),
+    "devDependencies-null": (_package(scripts={"test": "vitest run"}, devDependencies=None),
+                             _package(scripts={"test": "vitest run"})),
+    "devDependencies-a-number": (_package(scripts={"test": "x"}, devDependencies=3),
+                                 _package(scripts={"test": "x"})),
+    "devDependencies-a-string": (_package(scripts={"test": "x"}, devDependencies="vitest"),
+                                 _package(scripts={"test": "x"})),
+    "devDependencies-a-list": (_package(devDependencies=["vitest", 7]),
+                               _package(devDependencies={"vitest": ""})),
+    "top-level-list": ("[]", _package()),
+    "empty-file": ("", _package()),
+    "not-json": ("{ not json", _package()),
+    "workspace-devDependencies-null": (
+        {"": _WORKSPACE_ROOT, "web": _package(devDependencies=None)},
+        {"": _WORKSPACE_ROOT, "web": _package()}),
+    "workspace-scripts-null": (
+        {"": _WORKSPACE_ROOT, "web": _package(scripts=None, devDependencies=_VITEST)},
+        {"": _WORKSPACE_ROOT, "web": _package(devDependencies=_VITEST)}),
+}
+
+
+@pytest.mark.parametrize("shape", list(_READ_AS))
+def test_a_field_of_the_wrong_type_detects_what_npm_would_read(shape):
+    malformed, meant = _READ_AS[shape]
+    scopes = {"src": ("typescript",), "web": ("typescript",)}
+
+    lanes = detect_lanes(frozenset(), malformed)
+
+    assert lanes == detect_lanes(frozenset(), meant)
+    assert (starter_toml(scopes, lanes, package_json=malformed)
+            == starter_toml(scopes, lanes, package_json=meant))
+
+
+def test_scripts_absent_beside_a_runner_runs_the_runner():
+    (lane,) = detect_lanes(frozenset(), _package(devDependencies=_VITEST))
+
+    assert lane.command.startswith("npx vitest run --coverage "), lane.command
+
+
+def test_non_ascii_names_and_a_package_with_20000_scripts_still_pick_the_test_script():
+    many = {f"build:{n}": "tsc" for n in range(20000)}
+    accented = _package(name="café-世界", scripts={"tést": "x", "test": "vitest run"})
+
+    (lane,) = detect_lanes(frozenset(), accented)
+    (crowded,) = detect_lanes(frozenset(), _package(scripts={**many, "test:z": "vitest"}))
+
+    assert lane.command == "npm run test -- --coverage"
+    assert crowded.command == "npm run test:z -- --coverage"
