@@ -739,20 +739,37 @@ def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: s
     return sorted(f for f in changed if owning_scope(f, matchers))
 
 
-def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) -> None:
-    """On reuse: say when the artifact predates changes touching this lane's scopes.
-    Uncommitted working-tree edits count — that is the most common way to go stale."""
-    commit = _stamp_commit(stamp_for(read_stamps(git.root), lane.artifact))
-    if not commit or not scope_paths:
-        return
+def _scope_drift(git: GitFacts, lane: Lane, scope_paths: dict, commit: str) -> str:
+    """The files under this lane's scopes that moved since the commit, named, or
+    why git cannot say; "" when none did.
+
+    The reuse warning and the line-number note both print this. The warning
+    used to count the files without naming one and to print nothing when git
+    failed, the same silence as a scope that never moved.
+    """
     try:
         changed = _scope_changes(git, lane, scope_paths, commit)
-    except GitError:
-        return
-    if changed:
-        print(f"crapkit: lane {lane.name!r} artifact was built at {commit[:11]}; "
-              f"{len(changed)} file(s) in its scopes changed since (their coverage is stale)",
-              file=sys.stderr)
+    except GitError as exc:
+        return _git_unanswered(commit, exc)
+    if not changed:
+        return ""
+    return (f"{len(changed)} file(s) in its scopes changed since {commit[:11]} "
+            f"({_sample(changed)}), uncommitted edits included")
+
+
+def _git_unanswered(commit: str, exc: GitError) -> str:
+    return f"git cannot say which files in its scopes changed since {commit[:11]} ({exc})"
+
+
+def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) -> None:
+    """On reuse: say which files touching this lane's scopes moved since the
+    artifact was built, or that git could not say. Uncommitted working-tree edits
+    count — that is the most common way to go stale."""
+    commit = _stamp_commit(stamp_for(read_stamps(git.root), lane.artifact))
+    drift = _scope_drift(git, lane, scope_paths, commit) if commit and scope_paths else ""
+    if drift:
+        print(f"crapkit: lane {lane.name!r} reuses {lane.artifact}; {drift}, "
+              "so its coverage may be stale", file=sys.stderr)
 
 
 def _facts(root: Path, git: GitFacts | None) -> GitFacts:
@@ -769,22 +786,31 @@ def _artifact_commit(root: Path, lane: Lane) -> str:
     return _stamp_commit(stamp)
 
 
-def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict,
-                           git: GitFacts | None = None) -> bool:
-    """Whether source edits made this artifact's line locations stale.
+def lane_sources_moved(root: Path, lane: Lane, scope_paths: dict,
+                       git: GitFacts | None = None) -> str:
+    """Why this artifact's line locations may be stale, or "" when git proves
+    that no source under its scopes moved since its stamp's commit.
 
     Tests, runner settings and environment changes require a new measurement
     but leave source locations intact. This read-side check accepts legacy
     commit stamps and shares Git facts across lanes; it cannot authorize reuse.
+
+    Each answer names its cause: no stamp to vouch for the file, a stamp commit
+    HEAD does not descend from, the files that moved, or the git failure that
+    left the question open. The note once said "files in its scopes changed"
+    for all four, which sent a reader looking for edits that did not exist.
     """
     commit = _artifact_commit(root, lane)
     if not commit:
-        return False
+        return _no_commit(root, lane, stamp_for(read_stamps(root), lane.artifact))
     facts = _facts(root, git)
     try:
-        return facts.is_ancestor(commit) and not _scope_changes(facts, lane, scope_paths, commit)
-    except GitError:
-        return False
+        behind = facts.is_ancestor(commit)
+    except GitError as exc:
+        return _git_unanswered(commit, exc)
+    if not behind:
+        return f"its artifact was built at {commit[:11]}, which is not behind HEAD"
+    return _scope_drift(facts, lane, scope_paths, commit)
 
 
 def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):

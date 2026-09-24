@@ -155,7 +155,7 @@ runs:
 {
   "flag": "measured",
   "uncovered_lines": null,
-  "uncovered_lines_note": "lane 'py': files in its scopes changed since .crapkit/cov/py.json was written (uncommitted edits count), so its line numbers are stale — commit or revert them, then rerun `crapkit coverage`"
+  "uncovered_lines_note": "lane 'py': 1 file(s) in its scopes changed since 525a3276065 (calc/grade.py), uncommitted edits included, so the line numbers in .crapkit/cov/py.json are stale — commit or revert any edit under its scopes, then rerun `crapkit coverage`"
 }
 ```
 
@@ -180,12 +180,15 @@ which lines are dark`, and an artifact that will not parse answers `unreadable l
 artifact: ...`. The key is opt-in, so a repo whose artifacts answer never emits it at all.
 
 The move differs per flag. On `measured` a lane did speak about the file and its artifact
-has since gone stale: commit or revert the edits, then rerun `crapkit coverage`. Nothing
+has since gone stale. The note says why: the files under the lane's scopes that changed
+since the artifact's commit, a commit HEAD no longer descends from, or the git error that
+left the question open. Commit or revert the edits, then rerun `crapkit coverage`. Nothing
 rereads the artifact until a run does, so committing alone leaves the lines null. On
-`untested` no test imports the file, so no artifact was ever going to mention it: the whole
-span is dark and the first test is the move, not another `coverage` run. On `cc-only` the
-scope set `coverage_optional`, so no artifact can ever name lines for it and nothing to do
-will change that. A `no-lane` row is a wiring gap; `next-item` never hands one out.
+`untested` no test imports the file, so no artifact was ever going to mention it: the
+whole span is dark and the first test is the move, not another `coverage` run. On
+`cc-only` the scope set `coverage_optional`, so no artifact can ever name lines for it and
+nothing to do will change that. A `no-lane` row is a wiring gap; `next-item` never hands
+one out.
 
 ### `reasons`, and the stop condition
 

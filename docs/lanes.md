@@ -1049,7 +1049,7 @@ never prints. Live, on a tree with an edited source file:
 
 ```
 $ crapkit coverage --reuse-artifacts --reuse-unchanged
-crapkit: lane 'py' artifact was built at 525a3276065; 2 file(s) in its scopes changed since (their coverage is stale)
+crapkit: lane 'py' reuses .crapkit/cov/py.json; 2 file(s) in its scopes changed since 525a3276065 (calc/grade.py, calc/hot.py), uncommitted edits included, so its coverage may be stale
 run 9 @ 525a3276065: 5 functions scored: 4 measured / 1 untested, ...
 
 $ crapkit coverage --reuse-unchanged
@@ -1061,7 +1061,10 @@ only the second actually ran the suite.
 
 A stale artifact also silences the dark-line fields. `next-item` and `brief` then emit
 `uncovered_lines: null` with a note naming the lane to rerun, rather than an empty list a
-caller would read as "nothing left to cover".
+caller would read as "nothing left to cover". The note and the warning above name the
+files that moved. A `touch` that leaves a file's content as git reads it is not a move,
+whatever the repo sets `diff.autoRefreshIndex` to. When git cannot answer, both say so
+and give git's error rather than claim a file changed.
 
 ### The artifact a failed attempt left behind is refused
 

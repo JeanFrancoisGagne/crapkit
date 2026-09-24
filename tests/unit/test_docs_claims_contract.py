@@ -553,6 +553,48 @@ def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
     assert "will score untested" in err and "will score untested" in section,         "the warning's own words, so a reader can search for what they saw"
 
 
+def _stale_lane(root: Path, moved: tuple) -> tuple:
+    """(lane, scope paths, git) for the pages' `py` lane: its artifact was built
+    at 525a3276065, which HEAD descends from, and `moved` changed since."""
+    from types import SimpleNamespace
+
+    from crapkit.config import Lane
+    from crapkit.lanes import write_stamps
+
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("calc",))
+    (root / ".crapkit" / "cov").mkdir(parents=True)
+    (root / lane.artifact).write_text("{}", encoding="utf-8")
+    write_stamps(root, {lane.artifact: {"commit": "525a3276065" + "0" * 29, "lane": "py"}})
+    git = SimpleNamespace(root=root, is_ancestor=lambda commit: True,
+                          diff_names_since=lambda commit: moved, status_names=lambda: ())
+    return lane, {"calc": ("calc",)}, git
+
+
+def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsys):
+    """The `--reuse-artifacts` transcript is the lane's own warning. The page
+    quoted one that counted the changed files and named none of them."""
+    from crapkit.lanes import _warn_stale_artifact
+
+    lane, scopes, git = _stale_lane(tmp_path, ("calc/grade.py", "calc/hot.py"))
+    _warn_stale_artifact(git, lane, scopes)
+
+    warning = capsys.readouterr().err.strip()
+    assert warning and warning in _doc("docs/lanes.md")
+
+
+def test_the_agent_json_page_prints_the_stale_note_the_reader_writes(tmp_path, monkeypatch):
+    """The `measured` example of `uncovered_lines_note` is the note a stale lane
+    gets. It said "files in its scopes changed" whatever the cause and named none."""
+    from crapkit.uncovered import _artifact_state
+
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    lane, scopes, git = _stale_lane(tmp_path, ("calc/grade.py",))
+    note = _artifact_state(tmp_path, lane, scopes, git)
+
+    assert note and json.dumps(note, ensure_ascii=False) in _doc("docs/agent-json.md")
+
+
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
     from crapkit.lanes import SUITE_DROP_FRACTION, suite_drops
 

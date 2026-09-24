@@ -16,7 +16,8 @@ from types import SimpleNamespace
 import pytest
 
 from crapkit.config import Lane
-from crapkit.lanes import lane_sources_unchanged, staleness_reads, write_stamps
+from crapkit.gitio import GitFacts
+from crapkit.lanes import _warn_stale_artifact, lane_sources_moved, staleness_reads, write_stamps
 from crapkit.uncovered import lane_states
 from hang_guard import HANG_SECONDS
 
@@ -128,9 +129,9 @@ def test_a_lane_stamped_after_the_reads_started_is_judged_on_its_own_scope(repo)
     with staleness_reads(root, cfg.lanes, cfg.scope_paths) as facts:
         _write(root, lib.artifact, "{}")
         write_stamps(root, {lib.artifact: {"commit": head, "lane": lib.name, "seconds": 1.0}})
-        unchanged = lane_sources_unchanged(root, lib, cfg.scope_paths, facts)
+        moved = lane_sources_moved(root, lib, cfg.scope_paths, facts)
 
-    assert unchanged is False
+    assert "lib/c.ts" in moved
 
 
 def test_scoped_reads_still_judge_each_lane_by_its_own_scope(repo):
@@ -141,7 +142,7 @@ def test_scoped_reads_still_judge_each_lane_by_its_own_scope(repo):
     states = dict(lane_states(root, cfg))
 
     assert states["src"] == "", "an untracked file outside every scope leaves src fresh"
-    assert "files in its scopes changed" in states["web"]
+    assert "1 file(s) in its scopes changed" in states["web"] and "(web/new.ts)" in states["web"]
     assert "no artifact" in states["lib"]
 
 
@@ -152,7 +153,7 @@ def test_a_committed_change_under_a_scope_is_still_seen(repo):
 
     states = dict(lane_states(root, cfg))
 
-    assert "files in its scopes changed" in states["src"]
+    assert "1 file(s) in its scopes changed" in states["src"] and "(src/a.ts)" in states["src"]
     assert states["web"] == ""
 
 
@@ -171,17 +172,68 @@ def test_a_stamp_commit_outside_history_reads_stale_and_kills_no_git_read(repo, 
 
     states = dict(lane_states(root, cfg))
 
-    assert "files in its scopes changed" in states["src"]
-    assert "files in its scopes changed" in states["web"]
+    for name in ("src", "web"):
+        assert "which is not behind HEAD" in states[name], "an amend moved history, not files"
+        assert "file(s) in its scopes changed" not in states[name]
     assert not (root / ".git" / "index.lock").exists()
 
 
 def test_without_git_every_stamped_lane_reads_stale(repo, monkeypatch):
-    """No git executable at all: nothing can prove an artifact current."""
+    """No git executable at all: nothing can prove an artifact current, and the
+    note says git could not answer rather than that files changed."""
     root, cfg = repo
     monkeypatch.setenv("PATH", str(root))
 
     states = dict(lane_states(root, cfg))
 
-    assert "files in its scopes changed" in states["src"]
-    assert "files in its scopes changed" in states["web"]
+    for name in ("src", "web"):
+        assert "git cannot say" in states[name] and "git executable not found" in states[name]
+        assert "file(s) in its scopes changed" not in states[name]
+
+
+def test_the_note_names_each_file_that_changed(repo):
+    root, cfg = repo
+    _write(root, "src/a.ts", "edited\n")
+    _write(root, "src/new.ts")
+
+    states = dict(lane_states(root, cfg))
+
+    assert "2 file(s) in its scopes changed" in states["src"]
+    assert "src/a.ts, src/new.ts" in states["src"]
+
+
+def test_an_artifact_no_stamp_vouches_for_says_so(repo):
+    """An artifact copied in by hand has no commit to diff against. Nothing
+    under its scope changed, so the note must not say that anything did."""
+    root, cfg = repo
+    _write(root, cfg.lanes[2].artifact, "{}")
+
+    states = dict(lane_states(root, cfg))
+
+    assert "no stamp records the commit cov-lib.json was built at" in states["lib"]
+    assert "file(s) in its scopes changed" not in states["lib"]
+
+
+def test_the_reuse_warning_names_each_file_that_changed(repo, capsys):
+    root, cfg = repo
+    _write(root, "src/a.ts", "edited\n")
+
+    _warn_stale_artifact(GitFacts(root), cfg.lanes[0], cfg.scope_paths)
+
+    err = capsys.readouterr().err
+    assert "1 file(s) in its scopes changed" in err and "(src/a.ts)" in err, err
+
+
+def test_the_reuse_warning_says_when_git_cannot_answer(repo, capsys):
+    """A stamp naming a commit this clone does not hold, the way an artifact
+    cache restored into a fresh shallow checkout arrives: git refuses the diff,
+    and that refusal used to print nothing, the same as a scope that never moved."""
+    root, cfg = repo
+    src = cfg.lanes[0]
+    write_stamps(root, {src.artifact: {"commit": "f" * 40, "lane": src.name, "seconds": 1.0}})
+
+    _warn_stale_artifact(GitFacts(root), src, cfg.scope_paths)
+
+    err = capsys.readouterr().err
+    assert "git cannot say which files in its scopes changed" in err, err
+    assert "stale" in err

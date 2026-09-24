@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.1 — unreleased
+
+### A lane's staleness names the files that moved, and a `touch` is not one
+
+- A `touch` that leaves a file's bytes alone no longer makes a lane stale. In a repo that
+  sets `diff.autoRefreshIndex=false`, git named every file whose modification time moved,
+  so a reused lane printed "1 file(s) in its scopes changed", `next-item` and `brief`
+  withheld its dark lines, `--reuse-unchanged` reran it and `verify` counted the file
+  dirty. crapkit's git reads now set `diff.autoRefreshIndex=true`, so git compares the
+  content through the repo's filters, and a CRLF checkout under `core.autocrlf=true`
+  still matches its LF blob.
+- The `--reuse-artifacts` warning and the `uncovered_lines_note` of a stale lane name the
+  commit the artifact was built at and up to three of the files that changed since. The
+  warning counted the files and named none, and the note named neither.
+- When git cannot answer, the warning and the note say so and quote git's error. The
+  note said "files in its scopes changed" for that case, for an artifact no stamp
+  vouches for and for a stamp commit HEAD does not descend from, and the warning printed
+  nothing at all.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
