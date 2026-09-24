@@ -176,10 +176,33 @@ _REPO_FLAG = {"default": None,
               "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
 
 
+def _color_kwargs(version: tuple, streams: tuple) -> dict:
+    """The `color` keyword for the root parser: off unless both `streams` are
+    terminals, from Python 3.14 on.
+
+    3.14's argparse colours help and usage, and FORCE_COLOR turns that on before
+    it asks whether stdout is a terminal, so `crapkit help` printed escape codes
+    into a pipe that an agent reads as text. It takes that one decision from
+    stdout, yet prints usage errors to stderr, so both streams are asked here.
+    On a terminal argparse keeps its own decision, NO_COLOR included. Every
+    subcommand parser inherits the keyword from the root; before 3.14 there is
+    no keyword to pass."""
+    if version < (3, 14) or all(_on_a_terminal(stream) for stream in streams):
+        return {}
+    return {"color": False}
+
+
+def _on_a_terminal(stream) -> bool:
+    """`stream` is a terminal; a missing stream (pythonw hands out None) is not."""
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty and isatty())
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The whole CLI surface, assembled without parsing anything. README's
     Subcommands table is checked against this parser's own subcommand set."""
-    parser = argparse.ArgumentParser(prog="crapkit")
+    parser = argparse.ArgumentParser(
+        prog="crapkit", **_color_kwargs(sys.version_info, (sys.stdout, sys.stderr)))
     parser.add_argument("--version", action=_VersionAction, default=argparse.SUPPRESS,
                         help="print the program name and its version")
     sub = parser.add_subparsers(dest="command", required=True)
