@@ -17,8 +17,8 @@ Four rules, and every reader goes through them:
   (`\\localhost\C$\...`) path.
 - `file_separators`: a path a file carries (crapkit.toml, a coverage report, a
   JUnit report) with `/` between directories. Such a file travels between OSes,
-  so its backslash separates directories on every OS, except that on POSIX a
-  tree holding a file by that literal name keeps it.
+  so its backslash separates directories on every OS, and a tracked name that
+  holds a backslash is unsupported.
 - `disk_spelling`: a root-relative path in the letter case its directories list,
   where the filesystem opened it in another case.
 - `inside`: an absolute path relative to the root, decided by the file it names,
@@ -83,22 +83,16 @@ def _this_host() -> set[str]:
     return {"localhost", "127.0.0.1", "::1", socket.gethostname().lower()}
 
 
-def file_separators(raw: str, root: str | os.PathLike | None = None,
-                    windows: bool = _WINDOWS) -> str:
+def file_separators(raw: str) -> str:
     r"""A path read out of a file, with `/` between directories.
 
     crapkit.toml, a coverage report and a JUnit report are written on one OS
     and read on another: a lane committed from Windows says `.crapkit\cov.json`,
-    and a Linux CI job has to open `.crapkit/cov.json`. On POSIX a backslash is
-    also a legal filename character, so where `root` holds a file by the
-    literal name, the name is kept."""
-    if "\\" not in raw or _literal(raw, root, windows):
-        return raw
+    and a Linux CI job has to open `.crapkit/cov.json`. The text cannot tell a
+    Windows separator from a POSIX filename character, so a backslash separates
+    directories on every OS, and a tracked name that holds one is unsupported
+    (doctor names it)."""
     return raw.replace("\\", "/")
-
-
-def _literal(raw: str, root: str | os.PathLike | None, windows: bool) -> bool:
-    return not windows and root is not None and os.path.lexists(os.path.join(root, raw))
 
 
 def disk_spelling(root: str | os.PathLike, rel: str) -> str:

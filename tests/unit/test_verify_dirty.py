@@ -151,10 +151,13 @@ def _test_file(tmp_path):
 @_pytest.mark.parametrize("spell", [
     lambda root: "web/src/app.test.ts",
     lambda root: "./web/src/app.test.ts",
+    lambda root: "web\\src\\app.test.ts",
     lambda root: str(root / "web" / "src" / "app.test.ts"),
     lambda root: (root / "web" / "src" / "app.test.ts").as_posix(),
-], ids=["relative", "dot-slash", "absolute-native", "absolute-forward"])
+], ids=["relative", "dot-slash", "backslash", "absolute-native", "absolute-forward"])
 def test_a_junit_file_in_any_spelling_of_the_dirty_test_file_is_dirty(tmp_path, spell):
+    """A JUnit report written on Windows is read on Linux too, so its backslash
+    separates directories on every OS."""
     root = _test_file(tmp_path)
     classname = spell(root)
 
@@ -163,10 +166,9 @@ def test_a_junit_file_in_any_spelling_of_the_dirty_test_file_is_dirty(tmp_path, 
 
 @_pytest.mark.skipif(_os.name != "nt", reason="needs Windows path rules")
 @_pytest.mark.parametrize("spell", [
-    lambda root: "web\\src\\app.test.ts",
     lambda root: str(root / "web" / "src" / "app.test.ts")[0].lower()
     + str(root / "web" / "src" / "app.test.ts")[1:],
-], ids=["backslash", "absolute-lower-drive"])
+], ids=["absolute-lower-drive"])
 def test_windows_matches_a_junit_file_in_its_own_spellings(tmp_path, spell):
     root = _test_file(tmp_path)
     classname = spell(root)

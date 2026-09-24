@@ -66,7 +66,7 @@ class _Keys:
         self._folders: dict[str, str | None] = {}
 
     def rel(self, key: str) -> str:
-        norm = file_separators(key, self._root)
+        norm = file_separators(key)
         if norm.startswith(self._prefix):
             return norm[len(self._prefix):]
         return self._placed(norm) if os.path.isabs(norm) else norm

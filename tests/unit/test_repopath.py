@@ -47,24 +47,32 @@ def test_posix_reads_every_path_as_given(raw):
     assert native(raw, windows=False) == raw
 
 
-@pytest.mark.parametrize("raw, windows, expected", [
-    (".crapkit\\cov.json", True, ".crapkit/cov.json"),
-    (".crapkit\\cov.json", False, ".crapkit/cov.json"),
-    ("web\\src/app.ts", False, "web/src/app.ts"),
-    ("web/src/app.ts", False, "web/src/app.ts"),
+@pytest.mark.parametrize("raw, expected", [
+    (".crapkit\\cov.json", ".crapkit/cov.json"),
+    ("web\\src/app.ts", "web/src/app.ts"),
+    ("web/src/app.ts", "web/src/app.ts"),
+    ("src/pkg/we\\ird.py", "src/pkg/we/ird.py"),
 ])
-def test_a_path_a_file_carries_separates_on_every_os(raw, windows, expected):
-    """A crapkit.toml, a coverage report and a JUnit report travel between OSes."""
-    assert file_separators(raw, None, windows=windows) == expected
+def test_a_path_a_file_carries_separates_on_every_os(raw, expected):
+    """A crapkit.toml, a coverage report and a JUnit report travel between OSes,
+    so one text reads as one path on Windows, Linux and macOS."""
+    assert file_separators(raw) == expected
 
 
 @only_posix
-def test_a_posix_tree_holding_the_literal_name_keeps_the_backslash(tmp_path):
+def test_a_posix_tree_holding_a_backslash_name_still_reads_a_separator(tmp_path, monkeypatch):
+    r"""git on Linux can track `src/we\ird.py` as one file, and a report written
+    on Windows says `src\we\ird.py` for src/we/ird.py. The text cannot tell the
+    two apart, so a backslash separates directories on every OS whatever the
+    tree holds: such a tracked name is unsupported, and doctor names it. No
+    caller can hand in a tree to keep the literal name."""
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "we\\ird.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
 
-    assert file_separators("src/we\\ird.py", tmp_path) == "src/we\\ird.py"
-    assert file_separators("src\\other.py", tmp_path) == "src/other.py"
+    assert file_separators("src/we\\ird.py") == "src/we/ird.py"
+    with pytest.raises(TypeError):
+        file_separators("src/we\\ird.py", tmp_path)
 
 
 def _tree(root: Path) -> Path:

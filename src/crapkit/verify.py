@@ -177,7 +177,7 @@ def _id_file(test_id: str, root: str | os.PathLike | None) -> str:
     `src\\deep\\keep.test.ts`, a runner handed `./web/...` keeps the dot, and
     jest-junit's `{filepath}` is absolute. Compared as text with git's path,
     each one read a failure in the file under edit as committed."""
-    file = file_separators(test_id.split("::")[0], root).removeprefix("./")
+    file = file_separators(test_id.split("::")[0]).removeprefix("./")
     if root is None or not os.path.isabs(file):
         return file
     return inside(file, root) or file

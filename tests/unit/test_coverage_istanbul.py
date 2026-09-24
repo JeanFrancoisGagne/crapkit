@@ -161,8 +161,13 @@ def test_a_key_from_another_tree_stays_as_the_report_wrote_it(tmp_path):
 
 
 @_pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
-def test_posix_keeps_a_backslash_the_tree_holds_in_a_file_name(tmp_path):
+@_pytest.mark.parametrize("absolute", [True, False], ids=["absolute", "relative"])
+def test_posix_folds_a_backslash_the_tree_holds_in_a_file_name(tmp_path, absolute):
+    """A key cannot say whether its backslash is a Windows separator or a POSIX
+    name character, so it separates directories on every OS, and a tracked
+    name holding one is unsupported (doctor names it)."""
     root = _tree(tmp_path / "repo")
     (root / "src" / "we\\ird.ts").write_text("export const b = 2;\n", encoding="utf-8")
+    key = str(root / "src" / "we\\ird.ts") if absolute else "src/we\\ird.ts"
 
-    assert _read_keyed(root, str(root / "src" / "we\\ird.ts")) == ["src/we\\ird.ts"]
+    assert _read_keyed(root, key) == ["src/we/ird.ts"]
