@@ -127,23 +127,37 @@ def test_a_record_with_fields_before_its_path_names_only_the_path(capsys):
     assert NOTE in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("target, path", [
-    ("b/src/caf\udce9.py", "src/caf\udce9.py"),
-    ('"b/src/caf\\351.py"', "src/caf\udce9.py"),
-    ('"b/src/caf\udce9\\"q\\".py"', 'src/caf\udce9"q".py'),
-    ('"b/src/q\\"\\377.py"', 'src/q"\udcff.py'),
-    ("b/src/café.py", "src/café.py"),
-    ('"b/src/caf\\303\\251.py"', "src/café.py"),
-    ('"b/src/\\346\\227\\245\\360\\237\\232\\200.py"', "src/日\U0001f680.py"),
-    ('"b/src/q\\".py"', 'src/q".py'),
-    ('"b/src/a\\tb.py"', "src/a\tb.py"),
-    ('"b/src/a\\nb.py"', "src/a\nb.py"),
-], ids=["raw-byte", "octal-escape", "raw-byte-and-quote", "quote-and-octal-escape", "valid-accent",
-        "valid-accent-quoted", "cjk-emoji", "double-quote", "tab", "newline"])
+# A `+++ ` header's target, read with surrogateescape, and the path it keys.
+HEADERS = [
+    ("raw-byte", "b/src/caf\udce9.py", "src/caf\udce9.py"),
+    ("octal-escape", '"b/src/caf\\351.py"', "src/caf\udce9.py"),
+    ("raw-byte-and-quote", '"b/src/caf\udce9\\"q\\".py"', 'src/caf\udce9"q".py'),
+    ("quote-and-octal-escape", '"b/src/q\\"\\377.py"', 'src/q"\udcff.py'),
+    ("valid-accent", "b/src/café.py", "src/café.py"),
+    ("valid-accent-quoted", '"b/src/caf\\303\\251.py"', "src/café.py"),
+    ("cjk-emoji", '"b/src/\\346\\227\\245\\360\\237\\232\\200.py"', "src/日\U0001f680.py"),
+    ("double-quote", '"b/src/q\\".py"', 'src/q".py'),
+    ("tab", '"b/src/a\\tb.py"', "src/a\tb.py"),
+    ("newline", '"b/src/a\\nb.py"', "src/a\nb.py"),
+]
+
+
+@pytest.mark.parametrize("target, path", [row[1:] for row in HEADERS], ids=[row[0] for row in HEADERS])
 def test_a_diff_header_keys_its_ranges_under_the_bytes_git_named(target, path, capsys):
     """A name that is not UTF-8 keeps its bytes as surrogates, so the scope
     assignment can take it and refuse it; a UTF-8 name reads as itself."""
     assert changed_ranges(f"+++ {target}\n@@ -1 +1 @@\n-a\n+b\n") == {path: [(1, 1)]}
+    assert ("crapkit: left out src/" in capsys.readouterr().err) is not gitpaths.readable(path)
+
+
+@pytest.mark.parametrize("target, path", [row[1:] for row in HEADERS], ids=[row[0] for row in HEADERS])
+def test_a_history_line_spells_a_name_as_a_diff_header_does(target, path, capsys):
+    """unquote_path reads the names in churn and coupling history. It has the
+    header's one rule: a name that is not UTF-8 comes back spelled with
+    surrogates and is named on stderr, where it used to raise."""
+    line = target.replace("b/", "", 1)
+
+    assert gitpaths.unquote_path(line) == path
     assert ("crapkit: left out src/" in capsys.readouterr().err) is not gitpaths.readable(path)
 
 

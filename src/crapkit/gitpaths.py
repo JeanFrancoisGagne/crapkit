@@ -111,11 +111,15 @@ def split_record(record: bytes, fields: int) -> tuple[str, str | None]:
 
 def header_path(target: str) -> str:
     """The path a `+++ ` header names, `b/` prefix dropped, from a patch read
-    with surrogateescape. A name that is not UTF-8 is named on stderr as left
-    out and comes back spelled with surrogates, so the scope assignment can
-    refuse it when a scope takes it."""
+    with surrogateescape, by unquote_path's rule."""
     raw = _path_bytes(target)
-    raw = raw[2:] if raw.startswith(b"b/") else raw
+    return _named(raw[2:] if raw.startswith(b"b/") else raw)
+
+
+def _named(raw: bytes) -> str:
+    """A name as a path. One that is not UTF-8 is named on stderr as left out
+    and comes back spelled with surrogates, so the scope assignment can refuse
+    it when a scope takes it and no reader keys it."""
     path = repo_path(raw)
     return spelled(raw) if path is None else path
 
@@ -134,12 +138,10 @@ def _quoted(line: str) -> bool:
 
 
 def unquote_path(line: str) -> str:
-    """Decode C-quoted Git paths; Git already supplies directory slashes."""
-    if not _quoted(line):
-        # Source patch bodies can carry opaque bytes; a path cannot.
-        line.encode("utf-8")
-        return line
-    return _path_bytes(line).decode("utf-8")
+    """Decode a C-quoted or plain git path line; git already supplies directory
+    slashes. A name that is not UTF-8 follows header_path's one rule instead of
+    raising."""
+    return _named(_path_bytes(line))
 
 
 def _path_bytes(line: str) -> bytes:
