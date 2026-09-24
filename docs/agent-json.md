@@ -854,7 +854,7 @@ A verdict measures the working tree, so a concurrent session's uncommitted edits
 | `dirty` (on each finding) | The finding's file has uncommitted tracked edits. |
 | `committed_findings` | Gate, ratchet, test-failure and breached diff-coverage findings whose file is clean. |
 | `dirty_findings` | Findings whose file is not. |
-| `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. Both the repo-path form and pytest's dotted-module form are matched. |
+| `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. The repo-path form, the same path with backslashes (bun's `file` on Windows) and pytest's dotted-module form are matched. |
 
 CI should treat any non-zero finding count as a failure. A local pre-push check can
 reasonably look at `committed_findings` alone.

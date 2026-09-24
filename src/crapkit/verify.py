@@ -160,11 +160,13 @@ def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
     return settle_verdict(verdict._replace(uncovered_violations=findings))
 
 
-def _id_forms(path: str) -> tuple[str, str]:
-    """The two shapes a junit classname takes for one file: the repo-relative
-    path (vitest, and pytest's `file` fallback) and pytest's dotted module."""
+def _id_forms(path: str) -> tuple[str, str, str]:
+    """The three shapes a junit id takes for one file: the repo-relative path
+    (vitest, and pytest's `file` fallback), the same path with backslashes (the
+    `file` bun writes on Windows under an empty classname) and pytest's dotted
+    module. `path` is git's, so `/` is its only separator."""
     stem = path[:-3] if path.endswith(".py") else path
-    return path, stem.replace("/", ".")
+    return path, path.replace("/", "\\"), stem.replace("/", ".")
 
 
 def dirty_failure_ids(new_failures: list[str], dirty_paths: set[str]) -> list[str]:

@@ -5,6 +5,7 @@ lands its half-finished functions in this verdict. The finding still fires — e
 codes are unchanged — but it is tagged, and the summary splits the two counts, so
 nobody spends an afternoon on 377 regressions that belong to somebody else.
 """
+from crapkit.junitparse import failed_test_ids
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 from crapkit.verify import dirty_counts, dirty_failure_ids, evaluate
@@ -61,6 +62,22 @@ def test_a_junit_classname_matches_a_dirty_path_in_both_shapes():
 
     assert dirty_failure_ids(ids, {"pylib/test_new.py", "src/keep.test.ts"}) == \
         ["pylib.test_new::test_x", "src/keep.test.ts::renders"]
+
+
+def test_a_junit_file_in_windows_spelling_matches_its_dirty_test_file():
+    """bun on Windows writes classname="" and the file with backslashes, so the
+    id is `src\\deep\\keep.test.ts::renders` while git names the dirty file
+    `src/deep/keep.test.ts`. The failure read as committed: `findings: 1
+    committed / 0 dirty` for a test file with uncommitted edits."""
+    report = ('<testsuite><testcase name="renders" classname="" '
+              'file="src\\deep\\keep.test.ts"><failure/></testcase></testsuite>')
+
+    v = evaluate(fresh=[scored(ccn=2)], changed_ranges={}, ratchet=[],
+                 baseline_failures=set(), fresh_failures=failed_test_ids(report),
+                 target=6, dirty_paths={"src/deep/keep.test.ts"})
+
+    assert v.dirty_failures == ["src\\deep\\keep.test.ts::renders"]
+    assert dirty_counts(v) == (0, 1)
 
 
 def test_counts_add_up_across_all_three_finding_kinds():
