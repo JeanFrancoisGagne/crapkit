@@ -31,12 +31,19 @@ def _tracked_files(files_by_scope: dict) -> list[str]:
 
 
 def _present_on_disk(root: Path, tracked: list[str]) -> list[str]:
-    """Keep the tracked paths that exist, naming each dropped one on stderr."""
+    """Keep the tracked paths that exist, naming each dropped one on stderr in
+    `tracked`'s order. A set difference named them in hash order, which moves
+    with the per-process string hash seed, so one tree printed another order on
+    every run."""
     # git ls-files lists staged deletions too; a tracked-but-absent file has no
     # functions and must not crash the run
-    present = [f for f in tracked if (root / f).is_file()]
-    for gone in set(tracked) - set(present):
-        print(f"crapkit: tracked file missing from working tree, skipped: {gone}", file=sys.stderr)
+    present = []
+    for path in tracked:
+        if (root / path).is_file():
+            present.append(path)
+        else:
+            print(f"crapkit: tracked file missing from working tree, skipped: {path}",
+                  file=sys.stderr)
     return present
 
 
