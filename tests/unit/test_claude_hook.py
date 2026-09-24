@@ -66,7 +66,9 @@ def test_an_absolute_file_path_is_taken_as_given():
 # A Bash PostToolUse carries `tool_input.command` and never `file_path`, so the
 # single-file ladder has nothing to climb. The fallback judges the *.py files
 # the working tree changed, scoped by mtime to the ones this command plausibly
-# wrote, and capped so the hook's own timeout holds.
+# wrote, minus the ones whose bytes this session already judged, and capped so
+# the hook's own timeout holds. test_claude_hook_session_memory.py drives the
+# memory through real events.
 
 BASH_EVENT = {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": "/repo",
               "tool_input": {"command": "python - <<'PY'\nPY"}}
@@ -127,15 +129,33 @@ def test_a_just_written_file_is_fresh(tmp_path):
     assert _fresh(path, time.time() - 12) is True
 
 
-def test_a_file_dirty_since_before_the_command_is_not_fresh(tmp_path):
-    """The `ls` after an edit: the file is still dirty, but this command did not
-    write it, so re-advising it would repeat the advisory on every Bash call."""
-    path = tmp_path / "hot.py"
-    path.write_text("def f():\n    pass\n", encoding="utf-8")
-    stale = time.time() - 3600
-    os.utime(path, (stale, stale))
+def test_a_file_dirty_since_before_the_command_is_not_fresh(tmp_path, monkeypatch):
+    """Two filters, in order. The window: an mtime older than 12 s reads as
+    "this command did not write it", which keeps an `ls` after an edit quiet
+    and is also the documented miss (bytes moved in under an old mtime are
+    never judged here). The memory: a fresh file whose bytes this session
+    already judged is not judged again. Only a fresh file with unjudged bytes
+    is left to judge."""
+    stale, heard, new = (tmp_path / name for name in ("stale.py", "heard.py", "new.py"))
+    for path in (stale, heard, new):
+        path.write_text("def f():\n    pass\n", encoding="utf-8")
+    past = time.time() - 3600
+    os.utime(stale, (past, past))
+    monkeypatch.setattr(claude_hook, "_porcelain",
+                        lambda top: "?? stale.py\0?? heard.py\0?? new.py\0")
 
-    assert _fresh(path, time.time() - 12) is False
+    assert _fresh(stale, time.time() - 12) is False
+    assert _fresh_python(tmp_path, _HeardOnly(heard)) == [new]
+
+
+class _HeardOnly:
+    """A session memory that judged one file's bytes and nothing else."""
+
+    def __init__(self, heard: Path) -> None:
+        self.heard = heard
+
+    def judged(self, path: Path) -> bool:
+        return path == self.heard
 
 
 def test_a_path_status_names_but_disk_lacks_is_not_fresh(tmp_path):
@@ -147,7 +167,7 @@ def test_a_command_run_outside_any_git_repo_is_silent(tmp_path):
     the module's silence contract is built around."""
     payload = dict(BASH_EVENT, cwd=str(tmp_path))
 
-    assert claude_hook._advise_command(payload) == 0
+    assert claude_hook._advise_command(payload, claude_hook._Memory(None)) == 0
 
 
 def test_a_cwd_that_is_not_a_directory_names_no_top(tmp_path):
@@ -158,7 +178,7 @@ def test_a_cwd_that_is_not_a_directory_names_no_top(tmp_path):
 
 def test_a_non_command_event_takes_no_fallback_judgement():
     assert claude_hook._advise_command({"hook_event_name": "PostToolUse",
-                                        "tool_input": {}}) == 0
+                                        "tool_input": {}}, claude_hook._Memory(None)) == 0
 
 
 def test_the_fallback_caps_the_files_it_judges(monkeypatch, tmp_path):
@@ -168,7 +188,7 @@ def test_the_fallback_caps_the_files_it_judges(monkeypatch, tmp_path):
     monkeypatch.setattr(claude_hook, "_porcelain", lambda top: text)
     monkeypatch.setattr(claude_hook, "_fresh", lambda path, cutoff: True)
 
-    assert len(_fresh_python(tmp_path)) == 25
+    assert len(_fresh_python(tmp_path, claude_hook._Memory(None))) == 25
 
 
 # --- rungs 2 and 3: the root -------------------------------------------------

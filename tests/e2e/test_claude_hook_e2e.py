@@ -167,6 +167,14 @@ def fx_stale_breach(repo: Path) -> None:
     os.utime(repo / "calc" / "grade.py", (stale, stale))
 
 
+def fx_unborn_staged_breach(repo: Path) -> None:
+    """A new project after `git init` and `git add`: no commit yet."""
+    init(repo)
+    write(repo, "crapkit.toml", TOML)
+    write(repo, "calc/grade.py", BREACH)
+    git(repo, "add", "-A")
+
+
 FIXTURES = {
     "measured_breach": fx_measured_breach,
     "broken_syntax": fx_broken_syntax,
@@ -179,6 +187,7 @@ FIXTURES = {
     "marked_breach": fx_marked_breach,
     "measured_clean": fx_measured_clean,
     "stale_breach": fx_stale_breach,
+    "unborn_staged_breach": fx_unborn_staged_breach,
 }
 
 
@@ -321,6 +330,25 @@ def test_a_breach_run_leaves_the_repo_byte_identical(tmp_path):
     done = run_hook(golden, repo, tmp_path)
 
     assert done.returncode == 2, "the run has to have done its work"
+    assert _tree(repo) == before
+
+
+def test_a_touch_after_a_bash_advisory_repeats_nothing_in_the_next_process(tmp_path):
+    """The session memory outlives the process that wrote it, and lives under
+    the git directory: a second Bash event in the same session, after a touch
+    that moved no byte, is silent, and the working tree stays byte-identical."""
+    golden = _case("bash_written_breach")
+    repo = _built(golden, tmp_path)
+    before = _tree(repo)
+    first = run_hook(golden, repo, tmp_path)
+    grade = repo / "calc" / "grade.py"
+    stale = time.time() - 60
+    os.utime(grade, (stale, stale))
+    os.utime(grade, None)
+
+    again = run_hook(golden, repo, tmp_path)
+
+    assert (first.returncode, again.returncode, again.stderr) == (2, 0, "")
     assert _tree(repo) == before
 
 
