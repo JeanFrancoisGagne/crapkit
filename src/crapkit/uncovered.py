@@ -42,15 +42,18 @@ class MissingLines(NamedTuple):
         empty list with no note is exactly how that lie would read.
 
         Three causes read the same on the surface and want different moves, so
-        the note names which one it is. cc-only is decided first and outranks
-        everything: the scope asked for no coverage, so no artifact was ever
-        going to speak for it and no lane is worth naming. A stale or missing
-        artifact is `self.note`, and rerunning coverage on a settled tree clears
-        it. A file absent from every artifact is `flag: untested`: nothing
-        imports it, so coverage never emitted a record for it.
+        the note names which one it is. A scope no artifact speaks for is decided
+        first and outranks everything: cc-only asked for no coverage and no-lane
+        has no lane that measures it, so no lane is worth naming, and another
+        lane's stale or unstamped note sent readers to rerun a lane that measures
+        nothing there. A stale or missing artifact is `self.note`, and rerunning
+        coverage on a settled tree clears it. A file absent from every artifact
+        is `flag: untested`: nothing imports it, so coverage never emitted a
+        record for it.
         """
-        if flag == "cc-only":
-            return _cc_only_note(path, scope)
+        unjoined = _UNJOINED_NOTES.get(flag)
+        if unjoined:
+            return unjoined(path, scope)
         if self.note:
             return self.note
         if path in self.by_path:
@@ -67,6 +70,16 @@ def _cc_only_note(path: str, scope: str) -> str:
     """
     return (f"scope {scope!r} sets coverage_optional = true, so no artifact "
             f"can name uncovered lines for {path}")
+
+
+def _no_lane_note(path: str, scope: str) -> str:
+    """The note for a scope no lane lists: the move is a lane, not a rerun."""
+    return (f"no lane covers scope {scope!r}, so no artifact can name uncovered lines "
+            f"for {path}; add {scope!r} to a [[lane]]'s scopes to measure it")
+
+
+# The flags whose scope no artifact speaks for, each with the note that says why.
+_UNJOINED_NOTES = {"cc-only": _cc_only_note, "no-lane": _no_lane_note}
 
 
 def _absent_note(path: str, flag: str) -> str:
