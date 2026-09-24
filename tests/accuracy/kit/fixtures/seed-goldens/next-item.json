@@ -1,0 +1,17 @@
+{
+ "commit": "8c47c0b358caa30fc3820385c3c3f2565a201684",
+ "empty": true,
+ "reasons": {
+  "all_remaining_at_or_under_target": 1,
+  "below_floor": 8,
+  "churn_window_months": 12,
+  "excluded_by_flag": 0,
+  "no_churn_in_window": 0,
+  "no_lane": 0,
+  "no_lane_over_target": 0
+ },
+ "run_id": 2,
+ "schema": 1,
+ "skipped_no_lane": 0,
+ "stale": false
+}

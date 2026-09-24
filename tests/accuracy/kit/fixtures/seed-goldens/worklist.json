@@ -1,0 +1,34 @@
+{
+ "active": [
+  {
+   "authors": 1,
+   "ccn": 5,
+   "ccn_std": 5,
+   "commits": 1,
+   "cov": 0.8333333333333334,
+   "crap": 5.1157407407407405,
+   "end": 13,
+   "flag": "measured",
+   "function": "classify( score , late )",
+   "handle": "classify",
+   "nloc": 10,
+   "occurrence": 1,
+   "path": "src/py/calc.py",
+   "ratchet_mark": null,
+   "remedy": "ok",
+   "risk": 5.0,
+   "scope": "py",
+   "start": 4,
+   "weight": 1.0
+  }
+ ],
+ "active_total": 1,
+ "churn_window_months": 12,
+ "commit": "8c47c0b358caa30fc3820385c3c3f2565a201684",
+ "dormant_count": 0,
+ "dormant_top": [],
+ "floor": 5,
+ "run_id": 2,
+ "schema": 1,
+ "stale": false
+}

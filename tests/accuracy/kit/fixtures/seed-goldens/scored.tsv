@@ -1,0 +1,10 @@
+scope	path	long_name	start	end	ccn_std	ccn_mod	ccn	nloc	params	nesting	cov	flag	crap	remedy	cognitive	occurrence
+py	src/py/calc.py	classify( score , late )	4	13	5	5	5	10	2	1	0.8333333333333334	measured	5.1157407407407405	ok	5	1
+py	src/py/calc.py	total( values , cap )	16	22	3	3	3	7	2	2	1.0	measured	3.0	ok	3	1
+py	src/py/calc.py	valid( name )	25	26	3	3	3	2	1	0	1.0	measured	3.0	ok	1	1
+py	src/py/calc.py	twice( x )	29	29	1	1	1	1	1	0	0.0	untested	2.0	ok	0	1
+py	src/py/calc.py	unused( flag )	32	35	2	2	2	4	1	1	0.0	measured	6.0	ok	1	1
+ts	src/ts/grade.ts	band ( score )	2	13	3	2	2	11	1	1	0.6666666666666666	measured	2.1481481481481484	ok	1	1
+ts	src/ts/grade.ts	clamp ( value , low , high )	13	13	1	1	1	2	3	0	0.5	measured	1.125	ok	0	1
+ts	src/ts/grade.ts	label ( user name )	16	20	3	3	3	4	1	2	0.5	measured	4.125	ok	2	1
+ts	src/ts/grade.ts	never ( flag )	20	25	2	2	2	6	1	1	0.0	measured	6.0	ok	1	1

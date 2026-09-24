@@ -63,8 +63,22 @@ def test_normalize_replaces_times_roots_versions_and_volatile_keys(tmp_path):
 
     assert surfaces.normalize(payload, volatile) == {
         "generated_at": "<generated_at>", "lane_seconds": "<lane_seconds>",
-        "db": "<root>" + ("\\db" if sys.platform == "win32" else "/db"),
-        "note": "crapkit <crapkit> at <time>", "rows": [{"crap": 5.1}]}
+        "db": "<root>/db", "note": "crapkit <crapkit> at <time>", "rows": [{"crap": 5.1}]}
+
+
+def test_a_path_under_the_root_reads_with_forward_slashes_on_every_os():
+    volatile = surfaces.Volatile(roots=("C:\\t\\w",))
+
+    assert volatile.text("db C:\\t\\w\\repo\\.crapkit\\crap.sqlite, then") == (
+        "db <root>/repo/.crapkit/crap.sqlite, then")
+
+
+def test_durations_and_host_resources_are_volatile():
+    payload = {"lanes": [{"name": "py", "seconds": 0.2}],
+               "resources": {"available_cpus": 24, "budget_directory": "/home/u/.cache/x"}}
+
+    assert surfaces.normalize(payload, surfaces.Volatile()) == {
+        "lanes": [{"name": "py", "seconds": "<seconds>"}], "resources": "<resources>"}
 
 
 @pytest.fixture(scope="module")

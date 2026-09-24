@@ -36,8 +36,11 @@ Key = tuple[str, str]
 Surface = dict
 
 MARKER = "@crapkit-record-v1"
+# Times, durations, versions, and `resources`: doctor's description of the
+# host (cpus, cache directory, pool limits), which no calculation decides.
 VOLATILE_KEYS = frozenset({"generated_at", "created_at", "timestamp", "duration", "elapsed",
-                           "crapkit", "python", "crapkit_version", "python_version"})
+                           "seconds", "resources", "crapkit", "python", "crapkit_version",
+                           "python_version"})
 _TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?")
 _FINDING = re.compile(r"CRAP (?P<crap>[\d.]+)(?: over ceiling (?P<ceiling>\d+))? "
                       r"\(ccn (?P<ccn>\d+), cov (?P<cov>\d+)%\) -> (?P<remedy>[\w-]+)")
@@ -54,9 +57,19 @@ class Volatile:
     def text(self, value: str) -> str:
         for root in self.roots:
             value = value.replace(root, "<root>")
+        value = _ROOTED.sub(_forward, value)
         for name, version in self.versions.items():
             value = value.replace(version, f"<{name}>")
         return _TIME.sub("<time>", value)
+
+
+# A path under a replaced root, up to the first space, quote, comma or bracket:
+# its separators read `/` on every OS, so one golden serves Windows and Linux.
+_ROOTED = re.compile(r"<root>[^\s\"'<>,;()\[\]]*")
+
+
+def _forward(match: re.Match) -> str:
+    return re.sub(r"\\+", "/", match.group(0))
 
 
 def spellings(root: Path) -> tuple[str, ...]:

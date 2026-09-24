@@ -1,0 +1,29 @@
+{
+ "runs": [
+  {
+   "avg": 3.6127,
+   "by_scope": {
+    "py": {
+     "crap_load": 19.12,
+     "functions": 5,
+     "grade": "A+",
+     "over_target": 0
+    },
+    "ts": {
+     "crap_load": 13.4,
+     "functions": 4,
+     "grade": "A+",
+     "over_target": 0
+    }
+   },
+   "commit": "8c47c0b358caa30fc3820385c3c3f2565a201684",
+   "crap_load": 32.51,
+   "created_at": "<created_at>",
+   "functions": 9,
+   "over_target": 0,
+   "run_id": 2
+  }
+ ],
+ "schema": 1,
+ "target": 6
+}

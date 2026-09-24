@@ -1,0 +1,42 @@
+{
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "results": [],
+   "tool": {
+    "driver": {
+     "informationUri": "https://github.com/JeanFrancoisGagne/crapkit",
+     "name": "crapkit",
+     "rules": [
+      {
+       "id": "crapkit/over-target",
+       "shortDescription": {
+        "text": "CRAP score above the scope ceiling"
+       }
+      },
+      {
+       "id": "crapkit/gate",
+       "shortDescription": {
+        "text": "touched function over the complexity gate"
+       }
+      },
+      {
+       "id": "crapkit/ratchet-regression",
+       "shortDescription": {
+        "text": "a recorded CRAP mark got worse"
+       }
+      },
+      {
+       "id": "crapkit/diff-uncovered",
+       "shortDescription": {
+        "text": "a changed line no lane ever ran"
+       }
+      }
+     ],
+     "version": "<crapkit>"
+    }
+   }
+  }
+ ],
+ "version": "2.1.0"
+}
