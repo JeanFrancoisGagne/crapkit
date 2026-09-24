@@ -61,10 +61,6 @@ ALLOWED = {
         "base64 output, ASCII by construction",
     ("covstream.py", "__init__", "incremental decoder"):
         "a coverage report crapkit cannot decode is a lane refusal naming it (covstream._guarded)",
-    ("cli/admin.py", "_plugin_json", "read_text"):
-        "a plugin manifest; a byte that is not UTF-8 is a ValueError that names the file",
-    ("cli/admin.py", "_probed_cli_version", "text pipe"):
-        "a launcher's --version answer; it goes once doctor reads that answer as bytes",
 }
 
 # The utf8-author rows no input reaches, each held by the scan or named here:
@@ -201,6 +197,16 @@ def test_no_reader_in_src_decodes_outside_bytes_strictly():
         "a strict read of bytes crapkit may not have written; read it through textcodec, repotext or "
         "gitpaths, or add it to ALLOWED with the reason its bytes are crapkit's, git's or ASCII:\n"
         + "\n".join(f"  {site}" for site in unlisted))
+
+
+def test_each_allowed_read_is_one_src_still_makes():
+    """An entry left behind once its read turns lenient would excuse the next
+    strict read someone writes in that function."""
+    stale = sorted(set(ALLOWED) - set(strict_reads(SRC)))
+
+    assert not stale, (
+        "ALLOWED names a strict read src/ no longer makes; drop the entry:\n"
+        + "\n".join(f"  {site}" for site in stale))
 
 
 def test_each_rule_home_the_scan_skips_is_there():
