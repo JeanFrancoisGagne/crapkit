@@ -26,7 +26,7 @@ from crapkit.errors import ConfigError
 from crapkit.lane_command import launch_spec
 from crapkit.universe import scan_files
 
-from path_spellings import need_case_insensitive, only_windows
+from path_spellings import need_case_insensitive, only_posix, only_windows
 
 SCOPES = """
 [[scope]]
@@ -165,6 +165,61 @@ def test_a_lane_artifact_in_any_spelling_opens_the_file_the_lane_wrote(tmp_path,
 
     assert (root / lane.artifact).is_file(), lane.artifact
     assert (root / lane.results_artifact).is_file(), lane.results_artifact
+
+
+@only_posix
+def test_a_lane_cwd_folds_its_backslash_even_where_the_tree_holds_that_name(tmp_path):
+    r"""A path crapkit.toml carries separates on every OS (Q18). A POSIX tree
+    that happens to hold a directory named `backend\` does not turn the
+    committed `cwd = 'backend\'` back into that literal name: the lane starts in
+    backend/, as it does on the Windows machine that wrote the file."""
+    root = _tree(tmp_path)
+    (root / "backend\\").mkdir()
+
+    lane = _load(root, _lane(cwd="backend\\")).lanes[0]
+
+    assert lane.cwd == "backend/", lane.cwd
+
+
+# --- ratchet_file ---------------------------------------------------------------
+
+RATCHET_FILES = ["gates/ratchet.tsv", "gates\\ratchet.tsv", "./gates/ratchet.tsv",
+                 ".\\gates\\ratchet.tsv"]
+
+
+def _ratchet_repo(root: Path) -> Path:
+    """A repo whose marks file sits under gates/, committed once."""
+    import subprocess
+
+    (root / "gates").mkdir(parents=True)
+    (root / "gates" / "ratchet.tsv").write_text("pkg/mod.py\tf( )\t7.0000\n", encoding="utf-8")
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"],
+                 ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "marks"]):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+    return root
+
+
+@pytest.mark.parametrize("written", RATCHET_FILES)
+def test_a_ratchet_file_in_any_spelling_is_the_path_git_spells(tmp_path, written):
+    r"""`ratchet_file = 'gates\ratchet.tsv'`, committed from Windows, named a
+    file literally called `gates\ratchet.tsv` on Linux: verify and seed read no
+    marks, and `ratchet report` asked git for the history of a path git never
+    tracked."""
+    cfg = _load(tmp_path, f"[crapkit]\nratchet_file = '{written}'\n")
+
+    assert cfg.ratchet_file == "gates/ratchet.tsv"
+
+
+@pytest.mark.parametrize("written", RATCHET_FILES)
+def test_a_ratchet_file_in_any_spelling_opens_the_marks_and_their_history(tmp_path, written):
+    """The two readers: the file on disk, and git's log of it."""
+    from crapkit.gitio import file_log_patches
+
+    root = _ratchet_repo(tmp_path / "repo")
+    cfg = _load(root, f"[crapkit]\nratchet_file = '{written}'\n")
+
+    assert (root / cfg.ratchet_file).is_file()
+    assert len(file_log_patches(root, cfg.ratchet_file)) == 1
 
 
 @pytest.mark.parametrize("artifact", [*ARTIFACTS, "./backend/cov.json", ".\\backend\\cov.json"])

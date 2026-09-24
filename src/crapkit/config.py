@@ -753,16 +753,16 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
     full_suite = row.get("full_suite", True)
-    cwd = _lane_path(row.get("cwd", ""), root)
+    cwd = _file_path(row.get("cwd", ""))
     _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"],
                            _lane_dir(root, cwd))
     return Lane(name=row["name"], command=row["command"],
-                artifact=_lane_path(row["artifact"], root),
+                artifact=_file_path(row["artifact"]),
                 parser=parser, scopes=lane_scopes,
                 cwd=cwd, path_prefix=_path_prefix(row.get("path_prefix", ""), root),
                 env=tuple(sorted(row.get("env", {}).items())),
                 full_suite=full_suite, container_ok=row.get("container_ok", False),
-                results_artifact=_lane_path(row.get("results_artifact", ""), root),
+                results_artifact=_file_path(row.get("results_artifact", "")),
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
@@ -770,13 +770,16 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
                 inputs=_lane_inputs(row, root))
 
 
-def _lane_path(raw: str, root: str | os.PathLike | None) -> str:
-    r"""A lane's cwd, artifact or results_artifact as the OS opens it: `/`
-    between directories, no leading `./`. A lane committed from Windows says
-    `cwd = 'api\'` or `artifact = '.crapkit\cov.json'`, and Linux read the
-    backslash as part of one name: the lane crashed with a traceback on a cwd
-    that did not exist, or failed over an artifact it had just written."""
-    path = file_separators(raw, root)
+def _file_path(raw: str) -> str:
+    r"""A lane's cwd, artifact or results_artifact, or the ratchet_file, as the
+    OS opens it: `/` between directories, no leading `./`. A lane committed
+    from Windows says `cwd = 'api\'` or `artifact = '.crapkit\cov.json'`, and
+    Linux read the backslash as part of one name: the lane crashed with a
+    traceback on a cwd that did not exist, or failed over an artifact it had
+    just written. `ratchet_file = 'gates\ratchet.tsv'` read no marks there.
+    The file is read on every OS, so a tree that holds a literal backslash name
+    does not change the reading."""
+    path = file_separators(raw)
     while path.startswith("./"):
         path = path[2:]
     return path
@@ -871,7 +874,7 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
         worklist_floor=main.get("worklist_floor", 5),
         worklist_top=main.get("worklist_top", 50),
         lanes=tuple(lanes),
-        ratchet_file=main.get("ratchet_file", "crapkit-ratchet.tsv"),
+        ratchet_file=_file_path(main.get("ratchet_file", "crapkit-ratchet.tsv")),
         alert_command=main.get("alert_command", ""),
         scoped_tests=tuple(sorted(main.get("scoped_tests", {}).items())),
         mutation_command=main.get("mutation_command", ""),
