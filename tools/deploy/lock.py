@@ -4,7 +4,12 @@
     python tools/deploy/lock.py --check          the lock covers pins.toml; online, nothing newer on PyPI
     python tools/deploy/lock.py --check --offline   the coverage half only
     python tools/deploy/lock.py fetch --os linux --arch x86_64 --dest /opt/wheelhouse
-    python tools/deploy/lock.py manifest --image crapkit-deploy:full
+    python tools/deploy/lock.py manifest --image crapkit-deploy:core [--image ...]
+    python tools/deploy/lock.py manifest --check --image crapkit-deploy:core
+
+image-manifest.lock holds one block per image, headed `# image: <tag>`. A
+refresh replaces the blocks of the images it names and keeps the rest; a
+check prints the diff between an image and its block and writes nothing.
 
 Resolution runs `uv pip compile` once per requirement set and wheelhouse row,
 so environment markers are read for the target platform, not the host. Each
@@ -17,6 +22,7 @@ toolchain get the same wheelhouse. Resolving needs uv, network and the
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import shutil
@@ -233,6 +239,49 @@ def manifest(image: str) -> str:
     return subprocess.run(argv, capture_output=True, text=True, check=True).stdout
 
 
+MANIFEST_HEADER = "# image: "
+
+
+def manifest_blocks(text: str) -> dict[str, str]:
+    """image-manifest.lock as image tag -> the manifest recorded for it."""
+    blocks, name = {}, None
+    for line in text.splitlines(keepends=True):
+        if line.startswith(MANIFEST_HEADER):
+            name = line[len(MANIFEST_HEADER):].strip()
+            blocks[name] = ""
+        elif name is not None:
+            blocks[name] += line
+    return blocks
+
+
+def manifest_text(blocks: dict[str, str]) -> str:
+    return "".join(f"{MANIFEST_HEADER}{name}\n{body}" for name, body in sorted(blocks.items()))
+
+
+def manifest_diff(image: str, recorded: str, built: str) -> list[str]:
+    return list(difflib.unified_diff(recorded.splitlines(), built.splitlines(), f"image-manifest.lock [{image}]",
+                                     image, lineterm=""))
+
+
+def _recorded(path: Path) -> dict[str, str]:
+    return manifest_blocks(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def _check_manifest(recorded: dict[str, str], built: dict[str, str]) -> int:
+    diff = [line for image, text in built.items() for line in manifest_diff(image, recorded.get(image, ""), text)]
+    print("\n".join(diff), file=sys.stderr)
+    return 1 if diff else 0
+
+
+def _do_manifest(args) -> int:
+    recorded = _recorded(args.manifest)
+    built = {image: manifest(image) for image in args.image or ["crapkit-deploy:core"]}
+    if args.check:
+        return _check_manifest(recorded, built)
+    args.manifest.write_text(manifest_text({**recorded, **built}), encoding="utf-8", newline="\n")
+    return 0
+
+
 # --- command line ------------------------------------------------------------
 
 def _parser() -> argparse.ArgumentParser:
@@ -243,9 +292,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--os", dest="os_name", default="linux")
     parser.add_argument("--arch", default="x86_64")
     parser.add_argument("--dest", type=Path)
-    parser.add_argument("--image", default="crapkit-deploy:full")
+    parser.add_argument("--image", action="append", help="manifest: an image tag (repeatable; default core)")
     parser.add_argument("--pins", type=Path, default=pinsfile.PINS)
     parser.add_argument("--lock", type=Path, default=LOCK)
+    parser.add_argument("--manifest", type=Path, default=MANIFEST)
     return parser
 
 
@@ -275,8 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "fetch":
         return _do_fetch(args, pins)
     if args.action == "manifest":
-        MANIFEST.write_text(manifest(args.image), encoding="utf-8", newline="\n")
-        return 0
+        return _do_manifest(args)
     return _do_lock(args, pins)
 
 

@@ -229,6 +229,32 @@ def test_coverage_names_a_row_missing_a_release():
     assert lock.coverage_problems(pins, data) == ["r1: no crapkit==0.7.6"]
 
 
+# --- the image manifest ----------------------------------------------------------
+
+def test_a_manifest_refresh_replaces_one_image_and_keeps_the_others(tmp_path, monkeypatch):
+    path = tmp_path / "image-manifest.lock"
+    path.write_text(lock.manifest_text({"crapkit-deploy:core": "uv 1\n", "crapkit-deploy:full": "uv 1\ngemini 2\n"}),
+                    encoding="utf-8")
+    monkeypatch.setattr(lock, "manifest", lambda image: "uv 2\n")
+
+    assert lock.main(["manifest", "--image", "crapkit-deploy:core", "--manifest", str(path)]) == 0
+    assert lock.manifest_blocks(path.read_text(encoding="utf-8")) == {
+        "crapkit-deploy:core": "uv 2\n", "crapkit-deploy:full": "uv 1\ngemini 2\n"}
+
+
+def test_a_manifest_check_names_the_line_that_moved_and_writes_nothing(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "image-manifest.lock"
+    path.write_text(lock.manifest_text({"crapkit-deploy:core": "uv 1\nnode 22\n"}), encoding="utf-8")
+    monkeypatch.setattr(lock, "manifest", lambda image: "uv 2\nnode 22\n")
+
+    assert lock.main(["manifest", "--check", "--image", "crapkit-deploy:core", "--manifest", str(path)]) == 1
+    printed = capsys.readouterr().err
+    assert "-uv 1" in printed and "+uv 2" in printed
+    assert lock.manifest_blocks(path.read_text(encoding="utf-8"))["crapkit-deploy:core"] == "uv 1\nnode 22\n"
+    monkeypatch.setattr(lock, "manifest", lambda image: "uv 1\nnode 22\n")
+    assert lock.main(["manifest", "--check", "--image", "crapkit-deploy:core", "--manifest", str(path)]) == 0
+
+
 # --- pins.py ------------------------------------------------------------------
 
 def test_versions_name_a_tool_whose_output_lacks_its_pin():
