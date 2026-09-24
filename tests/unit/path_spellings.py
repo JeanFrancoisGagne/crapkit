@@ -61,6 +61,19 @@ def lower_drive(path: Path) -> str:
     return resolved[0].lower() + resolved[1:]
 
 
+def short_name(path: str | Path) -> str:
+    r"""`path`, which exists, in its 8.3 spelling (`C:\Users\RUNNER~1\...`), or
+    a skip where no directory on it has a short name: a volume stops making
+    them when `fsutil 8dot3name` turns them off, as this development host's
+    C: has, while a GitHub Windows runner's profile directory keeps one."""
+    import ctypes
+    buf = ctypes.create_unicode_buffer(32768)
+    size = ctypes.windll.kernel32.GetShortPathNameW(str(path), buf, len(buf))
+    if not size or buf.value == str(path):
+        pytest.skip("needs a directory with an 8.3 short name (fsutil 8dot3name)")
+    return buf.value
+
+
 # A share on another host. No host here serves one, so the name is one that
 # fails at once: `.invalid` never resolves (RFC 2606).
 REMOTE_SHARE = "\\\\fileserver.invalid\\share"
@@ -124,6 +137,7 @@ SPELLINGS = {
     "msys": ("windows", lambda root: "/c" + _drive_tail(root / "src" / "app.ts")),
     "wsl": ("windows", lambda root: "/mnt/c" + _drive_tail(root / "src" / "app.ts")),
     "admin-share": ("windows", lambda root: admin_share(root / "src" / "app.ts")),
+    "short-name": ("windows", lambda root: short_name((root / "src" / "app.ts").resolve())),
     "dir-case": ("case", lambda root: "SRC/app.ts"),
     "dir-case-backslash": ("windows case", lambda root: "SRC\\app.ts"),
     "file-case": ("case", lambda root: "src/App.ts"),

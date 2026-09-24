@@ -23,8 +23,8 @@ from crapkit.cli import main
 from crapkit.cli._shared import _command_root
 from crapkit.cli.analyses import _mutation_targets
 
-from path_spellings import (SPELLINGS, WINDOWS, admin_share, need, need_case_sensitive,
-                            only_posix)
+from path_spellings import (SPELLINGS, WINDOWS, admin_share, lower_drive, need,
+                            need_case_sensitive, only_posix, short_name)
 from path_spellings import spelled as _spelled
 
 _need = need
@@ -154,6 +154,48 @@ def test_a_checkout_entered_through_its_admin_share_is_rooted_on_its_drive(repo,
     monkeypatch.chdir(admin_share(repo))
 
     assert _command_root(None) == repo.resolve()
+
+
+# --- a report written from another spelling of the checkout ----------------------
+
+def _rekey(artifact: Path, spell) -> None:
+    """Rewrite each absolute istanbul key (and its `path`) in `spell`'s spelling,
+    the way a runner started from that spelling of the checkout writes it."""
+    report = json.loads(artifact.read_text(encoding="utf-8"))
+    rekeyed = {spell(key): {**entry, "path": spell(entry["path"])} for key, entry in report.items()}
+    artifact.write_text(json.dumps(rekeyed), encoding="utf-8")
+
+
+# id -> (need, the key spelling of an absolute path the checkout resolves to)
+REPORT_KEYS = {
+    "resolved": ("", lambda key: key),
+    "upper-cased": ("windows case", lambda key: key.upper()),
+    "lower-drive": ("windows", lambda key: key[0].lower() + key[1:]),
+    "short-name": ("windows", short_name),
+}
+
+
+@pytest.mark.parametrize("stand", ["repo-flag", "lower-drive-cwd"])
+@pytest.mark.parametrize("which", REPORT_KEYS)
+def test_a_reused_report_scores_whatever_spelling_the_runner_and_crapkit_started_from(
+        repo, monkeypatch, capsys, which, stand):  # noqa: F811
+    r"""vitest run by hand from `cd /d C:\...` or `cd /d c:\...` writes every key
+    in that spelling, and crapkit started from `c:\...` roots itself there too:
+    cmd.exe keeps a lower-case drive letter it was handed. Every pairing scores
+    the lane's three functions measured."""
+    spec, spell = REPORT_KEYS[which]
+    need(("windows " if stand == "lower-drive-cwd" else "") + spec, repo)
+    seed_artifacts(repo)
+    for artifact in ("coverage/unit.json", "coverage/ui.json"):
+        _rekey(repo / artifact, spell)
+    monkeypatch.chdir(lower_drive(repo) if stand == "lower-drive-cwd" else repo.parent)
+    argv = ["coverage", "--reuse-artifacts"] + (["--repo", str(repo)] if stand == "repo-flag" else [])
+
+    code = main(argv)
+
+    out = capsys.readouterr()
+    assert code == 0, out.err
+    assert "3 functions scored: 3 measured" in out.out, out.out
 
 
 # --- next-item --exclude ---------------------------------------------------------

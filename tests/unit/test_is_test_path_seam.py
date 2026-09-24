@@ -26,7 +26,7 @@ from cli_inproc_repo import git
 from crapkit.cli import main, verifying
 from crapkit.cli.verifying import _is_test_path
 
-from path_spellings import WINDOWS, need_case_insensitive, only_posix
+from path_spellings import WINDOWS, linked_checkout, need_case_insensitive, only_posix
 
 # Test files outside every scope whose names carry what cmd.exe and sh would
 # otherwise read: a space, non-ASCII, a quote, %x%, & ^ and !.
@@ -84,8 +84,10 @@ def _need(need: str, root: Path) -> None:
 
 
 # id -> (need, typed argument, directory typed from, path git spells). The first
-# seven are the report's loop (backslash-testpath/loop.py); the last three are
-# their POSIX twins.
+# seven are the report's loop (backslash-testpath/loop.py), the next three their
+# POSIX twins, and the last four the boundary hunt's rows: the file's own name
+# in another case, a `..` segment, and a checkout reached through a junction or
+# symlink.
 LOOP_SPELLINGS = {
     "forward": ("", lambda root: "tests/test_a.py", "", "tests/test_a.py"),
     "backslash": ("windows", lambda root: "tests\\test_a.py", "", "tests/test_a.py"),
@@ -98,6 +100,12 @@ LOOP_SPELLINGS = {
     "dot-slash": ("", lambda root: "./tests/test_a.py", "", "tests/test_a.py"),
     "up-from-src-forward": ("", lambda root: "../tests/test_a.py", "src", "tests/test_a.py"),
     "case-forward": ("case", lambda root: "TESTS/test_a.py", "", "tests/test_a.py"),
+    "file-case": ("windows case", lambda root: "TESTS\\TEST_A.PY", "", "tests/test_a.py"),
+    "dot-dot-backslash": ("windows", lambda root: "src\\..\\tests\\test_a.py", "",
+                          "tests/test_a.py"),
+    "dot-dot": ("", lambda root: "src/../tests/test_a.py", "", "tests/test_a.py"),
+    "linked-checkout": ("", lambda root: str(linked_checkout(root) / "tests" / "test_a.py"), "",
+                        "tests/test_a.py"),
 }
 
 
