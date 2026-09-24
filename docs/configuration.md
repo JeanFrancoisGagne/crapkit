@@ -63,15 +63,14 @@ and the answer decides what happens:
 
 | The name | What crapkit does |
 |---|---|
-| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `rescore`, `doctor` and `hook-precommit` exit 3 with one line naming the path and `git mv`. Left out, it would be a source file no reader read, and the gate would pass it. |
+| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 with one line naming the path and `git mv`, before any lane runs. Left out, it would be a source file no reader read, and the gate would pass it. |
 | No scope takes it, or it is untracked | Left out of every command. stderr names it once, and the command keeps its own exit code. |
 
     crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
     crapkit: left out docs/r\xe9sum\xe9.txt: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename it (git mv) to have it read
 
-On Linux, `git mv $'src/caf\xe9.py' src/café.py` renames such a file. A Windows command
-line cannot spell that byte, so there `git rm --cached "src/caf?.py"` drops it by a glob,
-and the file saved as `src/café.py` goes back in with `git add`.
+On Linux, `git mv $'src/caf\xe9.py' src/café.py` renames such a file. Git for Windows
+checks it out as `src/café.py` already, so there `git add -A` stages the rename.
 
 `init` has no scopes to assign with yet, so it prints the warning and writes the
 config; the first command that loads that config refuses a name a scope takes.
@@ -90,6 +89,11 @@ reads stdin, and every path it opens is spelled in UTF-8. It sets the flag and n
 `PYTHONUTF8`, so lane and mutation commands keep the environment you gave them.
 `-X utf8=0` turns the restart off. Windows and macOS always spell paths in UTF-8.
 
+Under such a locale a Python lane's child still spells paths in the locale's
+encoding, so its coverage.py names `pkg/café.py` as `pkg/cafÃ©.py`, and that file's
+functions read as untested rather than measured. Set `PYTHONUTF8 = "1"` in the
+lane's `env`, or run under a UTF-8 locale, to have them measured.
+
 A checkout under a directory whose name is not UTF-8, or on a host whose name is
 not, works for every crapkit command: both names are hashed as the bytes the OS
 holds. coverage.py does not: its combine step fails under such a directory or host
@@ -101,9 +105,11 @@ diff commands and textconv do not change attribution. A supported source file
 marked binary by Git attributes receives a text fallback; ordinary binary files
 remain outside source decoding. Source text is read as UTF-16 when the file opens
 with a UTF-16 byte-order mark (what PowerShell 5.1's `Out-File` and the ISE write),
-else as UTF-8, else as cp1252. The five bytes cp1252 leaves undefined (0x81, 0x8D,
-0x8F, 0x90, 0x9D) read as the control character of the same number, so an
-identifier that holds one stays whole and the file scores as its UTF-8 twin does.
+else as UTF-8, else as cp1252. Each of the five bytes cp1252 leaves undefined (0x81,
+0x8D, 0x8F, 0x90, 0x9D) reads as the letter U+01NN, NN the byte (0x81 reads as `Ɓ`),
+so an identifier that holds one stays one name and the file scores as its UTF-8 twin
+does. No cp1252 file can spell those five letters, so no name read this way collides
+with one a file wrote.
 Inventory, the pre-commit gate, the advisory hook and `brief --json`'s `source` all
 read it that way. `mutate` writes a mutant back in the file's own encoding and
 changes no byte outside the mutated line.
@@ -344,7 +350,7 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 | `scopes` | array of string | yes | | Which scopes this lane's coverage speaks for. A scope in no lane's list can only score `no-lane`. |
 | `cwd` | string | no | repo root | Repo-relative working directory for the command. `doctor` fails when it does not exist. |
 | `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. A coveragepy key: the istanbul reader never reads it. It only ever prepends, so it cannot rebase a path the runner wrote absolutely, which is the runner's own switch instead ([The same tree, spelled absolutely](lanes.md#the-same-tree-spelled-absolutely)). |
-| `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory, and to hand a junit reporter its output path when the reporter reads no path off the command line (`jest-junit` is one). Every lane gets it, so raising `max_parallel_lanes` without one lets N lanes each claim the whole box. A `PATH` here **replaces** the inherited one for that lane, and `doctor` looks for the lane's runner on it, so a lane that ships its own toolchain is checked the way it runs. |
+| `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory, and to hand a junit reporter its output path when the reporter reads no path off the command line (`jest-junit` is one). Every lane gets it, so raising `max_parallel_lanes` without one lets N lanes each claim the whole box. crapkit adds `PYTHONIOENCODING=utf-8` unless this table sets it ([why](lanes.md#a-python-child-writes-its-log-in-utf-8)). A `PATH` here **replaces** the inherited one for that lane, and `doctor` looks for the lane's runner on it, so a lane that ships its own toolchain is checked the way it runs. |
 | `inputs` | array of string | no | `[]` | Root-relative paths the command reads: its source, tests, fixtures and runner config. With them, `--reuse-unchanged` reuses the lane while the commit its artifact was built at is still behind HEAD, no committed, staged, unstaged or untracked change touches these paths (a lane's declared `artifact` or `results_artifact` is not such a change), the artifact bytes still match, and this lane's own table, `env` included, is the one it was measured with. Other `crapkit.toml` settings and environment variables the lane does not set are outside that proof. Without `inputs` a lane is reused only at the same clean HEAD. Entries are literal paths, no globs: an entry holding `*` or `?`, or one that is absolute or climbs out of the root, is a config error. An entry that matches no tracked file, and no untracked file outside `.gitignore`, such as a misspelled directory, still loads, but reuse can see no change through it, so `doctor` fails on it. A file the command reads that the list leaves out is never checked, so an edit to it reuses a stale artifact. See [Reusing artifacts](lanes.md#reusing-artifacts). |
 | `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass), and the command is read by the shell that will run it, one argv per `&&`, `\|\|`, `&` or `\|` segment, with every segment that runs pytest checked. On cmd.exe a `;` starts nothing, so `pytest --cov; echo done` hands pytest `echo` and is refused; write the second command after `&&`. Use double quotes for values, since cmd.exe does not treat `'` as a quote. Set it false deliberately for a genuinely scoped suite. |
 | `container_ok` | bool | no | `false` | Lets a `coveragepy` lane run inside a container. Without it such a lane refuses with exit 5 whenever `/.dockerenv` exists or `CRAPKIT_INSIDE_CONTAINER=1`. |

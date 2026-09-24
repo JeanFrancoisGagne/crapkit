@@ -160,16 +160,20 @@ JSON stays at `schema: 1`; consumers must accept added fields.
 
 ## Text that is not UTF-8
 
-After 0.8.0, a byte that is not UTF-8 in a commit, a file name, a report or an MCP frame
-reads as U+FFFD or is refused by name, where 0.8.0 ended the command with a traceback.
-Four answers change for automation that reads exit codes or lane output:
+In 0.8.1 a byte that is not UTF-8 in a commit, a file name, a report or an MCP frame
+reads as U+FFFD or is refused by name; 0.8.0 ended the command with a traceback. These
+answers change for automation that reads exit codes, lane output or the files crapkit
+writes:
 
-| What | 0.8.0 | Now | Action |
+| What | 0.8.0 | 0.8.1 | Action |
 |---|---|---|---|
-| A file a scope takes whose name git holds in bytes that are not UTF-8 | every command exited 1 with a traceback | `inventory`, `coverage`, `verify`, `rescore`, `doctor` and `hook-precommit` exit 3 naming the file and `git mv`; a name no scope takes is a warning | Rename the file to UTF-8 ([file paths](configuration.md#file-paths-and-root-discovery)) |
-| Lane and mutation children | wrote in their locale's encoding (cp1252 on most Windows machines), so a test printing an emoji failed under crapkit and passed in a terminal | get `PYTHONIOENCODING=utf-8` unless the lane's `env` sets it | A lane that needs another encoding sets `PYTHONIOENCODING` in its `env` ([lanes](lanes.md)) |
-| A marks file holding a cp1252 byte, or saved as UTF-16 | every reader exited 3 | read with that byte as U+FFFD, or as UTF-16; a write that would save U+FFFD in place of a name exits 3 naming the byte | Fix the byte in the mark's name ([ratchet](ratchet.md)) |
-| A root `package.json` in UTF-16 or holding a byte that is not UTF-8 | `init` exited 1 with a traceback | `init` exits 3 before it writes any file | Save it as UTF-8, then run `init` again |
+| A file a scope takes whose name git holds in bytes that are not UTF-8 | every command exited 1 with a traceback | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 naming the file and `git mv`; a name no scope takes is a warning | Rename the file to UTF-8 ([file paths](configuration.md#file-paths-and-root-discovery)) |
+| A POSIX locale that is not UTF-8 (`LANG=en_US.ISO-8859-1`) | a path with an accent named no file, so `coverage` skipped it as missing | `crapkit` restarts itself once as `python -X utf8`; lane and mutation children keep your locale and environment | Set `PYTHONUTF8 = "1"` in a Python lane's `env` to have its coverage.py name such a file ([file paths](configuration.md#file-paths-and-root-discovery)) |
+| Lane, flake-retest and mutation children | wrote in their locale's encoding (cp1252 on most Windows machines), so a test printing an emoji failed under crapkit and passed in a terminal | start with `PYTHONIOENCODING=utf-8` on every OS, over any value inherited from the shell | A child that must write another encoding sets it in the lane's `env` (`env = { PYTHONIOENCODING = "cp1252" }`), which crapkit leaves alone ([lanes](lanes.md#a-python-child-writes-its-log-in-utf-8)) |
+| The measurement owner's stderr | discarded | `.crapkit/owner.log`, empty after a run that ends normally; each exit-5 `measurement owner stopped` line names it | Read the file the line names ([lanes](lanes.md#when-the-measurement-owner-stops)) |
+| A marks file holding a cp1252 byte, or saved as UTF-16 | every reader exited 3 | read with that byte as U+FFFD, or as UTF-16; a write that would save U+FFFD in place of a name exits 3 naming the byte | Fix the byte in the mark's name ([ratchet](ratchet.md#how-the-file-is-read)) |
+| A root `package.json` in UTF-16 or holding a byte that is not UTF-8 | `init` exited 1 with a traceback, after it wrote `crapkit.toml` | `init` exits 3 before it writes any file | Save it as UTF-8, then run `init` again |
+| `init` over an existing `crapkit.toml` | always exited 3 | exits 0 when it had `.gitignore` entries to add, and leaves `crapkit.toml` as it was | A script that read exit 3 as "already set up" reads the file instead |
 
 ## Plugin and MCP clients
 

@@ -59,10 +59,14 @@ it. Exit 1 is three unrelated things at once:
 [README: exit 1 means one of three things](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-1-means-one-of-three-things)
 splits them by command.
 
-`measurement owner stopped before confirming ownership` (or `during command registration`,
-or `before publication`), exit 5, means the process crapkit starts to own a measurement's
-outputs died. Its stderr goes to `.crapkit/owner.log`, and the line names that file: read
-the traceback there before rerunning.
+`measurement owner stopped before confirming ownership; its error is at the end of
+/repo/.crapkit/owner.log` (or `during command registration`, or `before publication`), exit 5,
+means the helper that holds the lane locks and stops each command's process tree ended early.
+Read the last dated entry in the file the line names: `.crapkit/owner.log` for `coverage`,
+`verify` and `mutate`, `~/.cache/crapkit/owner.log` for `test-scoped` and the MCP server.
+`it wrote nothing to` in place of `its error is at the end of` means a signal ended it, often
+the OOM killer: rerun.
+[docs: when the measurement owner stops](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#when-the-measurement-owner-stops).
 
 ## Three exit-3 signatures worth naming
 
@@ -90,8 +94,8 @@ value in double quotes:
 it (git mv) to a UTF-8 name` means a scope takes a file whose name git holds in another
 encoding, a Latin-1 name made on Linux, so no row can be keyed on it and no gate may pass it
 unread. Rename it and commit: on Linux `git mv $'src/caf\xe9.py' src/café.py`; on Windows,
-where no argument can spell that byte, `git rm --cached "src/caf?.py"` by a glob, then save the
-file as `src/café.py` and `git add` it. `left out docs/r\xe9sum\xe9.txt: git names it in
+where Git for Windows checked the file out as `src/café.py`, `git add -A` stages that rename.
+`left out docs/r\xe9sum\xe9.txt: git names it in
 bytes that are not UTF-8` is a warning for a name no scope takes, and the command's own exit
 stands:
 [docs: file paths](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery).
