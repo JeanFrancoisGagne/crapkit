@@ -287,3 +287,11 @@ def test_each_harness_floor_is_held_to_its_pin():
 
     assert core["claude-2.1.139"] == "2.1.139" and core["claude-2.1.138"] == "2.1.138"
     assert core["codex-0.121.0"] == "0.121.0"
+
+
+def test_a_harness_whose_binary_prints_another_version_is_held_to_that_text():
+    full = pinsfile.expected_versions(PINS, "full")
+    junie = PINS["harness"]["junie"]
+
+    assert junie["version"] != junie["prints"] and full["junie"] == junie["prints"]
+    assert pinsfile.version_problems({"junie": full["junie"]}, f"junie Junie version: {junie['prints']}\n") == []

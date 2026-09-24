@@ -61,9 +61,12 @@ def _base_versions(pins: dict) -> dict[str, str]:
 
 
 def _harness_lines(spec: dict) -> dict[str, str]:
-    """A harness and each floor, which the image links as <command>-<floor>."""
+    """A harness and each floor, which the image links as <command>-<floor>.
+    `prints` is the version text a binary prints when it differs from the
+    package version (Junie's npm 1468.30.0 installs release 1468.30)."""
     command = spec["command"]
-    return {command: spec["version"], **{f"{command}-{floor}": floor for floor in spec.get("floors", [])}}
+    return {command: spec.get("prints", spec["version"]),
+            **{f"{command}-{floor}": floor for floor in spec.get("floors", [])}}
 
 
 def _harness_versions(pins: dict, image: str) -> dict[str, str]:

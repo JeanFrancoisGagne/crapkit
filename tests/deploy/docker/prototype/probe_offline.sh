@@ -10,7 +10,10 @@
 #   <probe>|<exit>|<ms>|<pass|FAIL>|<last line of output>
 set -u
 N1=$(ls /opt/wheelhouse | sed -n 's/^crapkit-\([0-9.]*\)-py3-none-any.whl$/\1/p' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
-export HOME="$(mktemp -d)" CODEX_HOME="$HOME/.codex" CLAUDE_CONFIG_DIR="$HOME/.claude" GEMINI_CLI_HOME="$HOME" \
+# Outside /tmp: Codex refuses a CODEX_HOME there. HOME is set on its own line
+# because one export expands every value before it assigns any.
+HOME=$(mktemp -d /work/.probe.XXXXXX)
+export HOME CODEX_HOME="$HOME/.codex" CLAUDE_CONFIG_DIR="$HOME/.claude" GEMINI_CLI_HOME="$HOME" \
     XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_CACHE_HOME="$HOME/.cache" \
     DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_TELEMETRY=1 COPILOT_OFFLINE=true \
     GEMINI_TELEMETRY_ENABLED=false GEMINI_CLI_TRUST_WORKSPACE=true \

@@ -316,6 +316,24 @@ def built(box, name: str, cache: Path) -> Path:
         return repo_templates.template(cache / name / "staging", name, lambda repo: TEMPLATES[name](box, repo))
 
 
+def _install_npm_fixtures(box, project: Path) -> None:
+    for name in ("package.json", "package-lock.json"):
+        shutil.copyfile(Path(box.toolchain["npm_fixtures"]) / name, project / name)
+    box.run(["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=project, expect=0)
+
+
+def npm_fixtures(box, cache: Path) -> Path:
+    """The npm-fixtures project installed offline once per session: each MCP
+    SDK minor under its alias (sdk-1-12 ... sdk-1-29), vitest and jest. Cells
+    read it and never write to it; mcp_node_client.mjs takes it as --fixtures.
+    One install serves every TS-SDK profile: a per-cell `npm ci` of its 420
+    packages ran past the hang bound on a busy Windows machine."""
+    (cache / "npm-fixtures").mkdir(parents=True, exist_ok=True)
+    with file_lock(cache / "npm-fixtures.lock"):
+        return repo_templates.template(cache / "npm-fixtures" / "staging", "npm-fixtures",
+                                       lambda project: _install_npm_fixtures(box, project))
+
+
 def checkout(box, name: str, *, cache: Path, dest: Path | None = None, repo_name: str | None = None) -> Path:
     """A private copy of template `name` for this cell, at `dest` or at
     <sandbox root>/<repo_name> (the template's name when neither is given):

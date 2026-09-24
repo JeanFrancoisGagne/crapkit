@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import threading
 import urllib.request
 from pathlib import Path
@@ -157,20 +156,21 @@ def test_the_python_client_reaches_every_tool(box, candidate):
     assert answer["isError"] and "crapkit" in answer["content"][0]["text"]
 
 
-def node_fixtures(box) -> Path:
-    """The npm-fixtures install, offline, holding each MCP SDK minor."""
-    project = box.root / "node-fixtures"
-    project.mkdir()
-    for name in ("package.json", "package-lock.json"):
-        shutil.copyfile(Path(box.toolchain["npm_fixtures"]) / name, project / name)
-    box.run(["npm", "ci", "--offline", "--ignore-scripts"], cwd=project, expect=0)
-    return project
+def test_the_npm_fixtures_install_once_per_session(tmp_path, toolchain, templates):
+    first = sandbox.make(tmp_path / "a", Transcript("a"), toolchain=toolchain)
+    second = sandbox.make(tmp_path / "b", Transcript("b"), toolchain=toolchain)
+    installed = repos.npm_fixtures(first, templates)
+
+    assert repos.npm_fixtures(second, templates) == installed
+    assert (installed / "node_modules" / "sdk-1-12" / "package.json").exists()
+    assert [step.argv[1] for step in first.transcript.steps] in ([], ["ci"])
+    assert second.transcript.steps == []
 
 
 @pytest.mark.parametrize("sdk", ["sdk-1-12", "sdk-1-29"])
-def test_the_node_client_reaches_every_tool_through_the_sdk_a_harness_ships(box, candidate, sdk):
+def test_the_node_client_reaches_every_tool_through_the_sdk_a_harness_ships(box, candidate, templates, sdk):
     launcher = venv_crapkit(box)
-    fixtures = node_fixtures(box)
+    fixtures = repos.npm_fixtures(box, templates)
     step = box.run(["node", str(NODE_CLIENT), "--fixtures", str(fixtures), "--sdk", sdk, "--command", str(launcher),
                     "--arg", "mcp", "--cwd", str(box.root), "--env", "inherit"], expect=0)
     out = json.loads(step.stdout)

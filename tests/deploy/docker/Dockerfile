@@ -169,10 +169,19 @@ RUN version=$(node -p "require('/opt/harness-full/package-lock.json').packages['
 RUN fetch "$BUN_LINUX_X64_URL" "$BUN_LINUX_X64_SHA256" /tmp/bun.zip; \
     unzip -q /tmp/bun.zip -d /tmp/bun; install -D -m 755 /tmp/bun/*/bun /opt/bun/bin/bun; rm -rf /tmp/bun*; \
     ln -s bun /opt/bun/bin/bunx
+# Other postinstalls also write under that HOME (bun, node-gyp and opencode
+# caches); only Junie's files stay.
 RUN cd /opt/harness-full; export PATH=/opt/bun/bin:$PATH; \
     HOME=/opt/junie-home npm ci --no-audit --no-fund --cache /tmp/npm-cache; rm -rf /tmp/npm-cache; \
-    mkdir bin; for tool in gemini opencode copilot cline cn crush amp omp; do ln -s "../node_modules/.bin/$tool" bin/; done; \
-    ln -s /opt/junie-home/.local/bin/junie bin/junie; ln -s /opt/bun/bin/bun bin/bun
+    cd /opt/junie-home; rm -rf .bun .cache .config .local/state .local/share/opencode
+# npm links no .bin/cline: cline and its platform package both claim the name.
+# Junie's shim reads its versions from $JUNIE_DATA, else from $HOME, which a
+# sandbox replaces, so the wrapper names the pinned install.
+RUN cd /opt/harness-full; mkdir bin; \
+    for tool in gemini opencode copilot cn crush amp omp; do ln -s "../node_modules/.bin/$tool" bin/; done; \
+    ln -s ../node_modules/cline/bin/cline bin/cline; ln -s /opt/bun/bin/bun bin/bun; \
+    printf '#!/bin/sh\nexport JUNIE_DATA="${JUNIE_DATA:-/opt/junie-home/.local/share/junie}"\nexec /opt/junie-home/.local/bin/junie "$@"\n' \
+      > bin/junie; chmod 755 bin/junie
 RUN fetch "$GOOSE_LINUX_X64_URL" "$GOOSE_LINUX_X64_SHA256" /tmp/goose.tar.bz2; \
     mkdir -p /opt/goose; tar -xjf /tmp/goose.tar.bz2 -C /opt/goose; rm /tmp/goose.tar.bz2; \
     ln -s "$(find /opt/goose -type f -name goose | head -1)" /opt/harness-full/bin/goose

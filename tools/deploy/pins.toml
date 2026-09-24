@@ -214,6 +214,8 @@ command = "amp"
 [harness.junie]
 npm = "@jetbrains/junie-cli"
 version = "1468.30.0"
+# The release the npm package installs, as `junie --version` prints it.
+prints = "1468.30"
 binary = "junie"
 image = "full"
 command = "junie"
