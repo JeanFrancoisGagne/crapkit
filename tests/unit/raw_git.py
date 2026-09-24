@@ -64,3 +64,10 @@ def commit(root: Path, *, author: bytes = b"a", committer: bytes = b"c",
 def checkout(root: Path) -> None:
     """The index and the working tree at HEAD, the way a clone leaves them."""
     git(root, "reset", "-q", "--hard")
+
+
+def stage(root: Path, path: bytes, body: bytes) -> None:
+    """`body` staged under `path`, bytes as given, the working tree untouched.
+    A Windows argv cannot carry a name that is not UTF-8; stdin can."""
+    blob = git(root, "hash-object", "-w", "--stdin", stdin=body).strip()
+    git(root, "update-index", "--add", "--index-info", stdin=b"100644 " + blob + b"\t" + path + b"\n")

@@ -147,10 +147,16 @@ def test_codec_produced_nul_name_is_not_a_git_history_record(source_repo):
 
 
 @pytest.mark.parametrize("path", ["bad\udcff.py", '"bad\\377.py"'])
-def test_opaque_patch_bodies_do_not_relax_path_identity(path):
-    with pytest.raises(UnicodeError):
-        changed_ranges(f"+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n" if not path.startswith('"')
-                       else f"+++ {path}\n@@ -1 +1 @@\n-old\n+new\n")
+def test_opaque_patch_bodies_do_not_relax_path_identity(path, capsys, monkeypatch):
+    """A header naming a file in bytes that are not UTF-8 never becomes a
+    path: the file is left out of the ranges and named on stderr, where it
+    used to end the gate with a traceback."""
+    monkeypatch.setattr("crapkit.gitpaths._left_out", set(), raising=False)
+    ranges = changed_ranges(f"+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n" if not path.startswith('"')
+                            else f"+++ {path}\n@@ -1 +1 @@\n-old\n+new\n")
+
+    assert ranges == {}
+    assert "crapkit: left out bad" in capsys.readouterr().err
 
 
 def test_opaque_source_body_cannot_introduce_a_header(source_repo):
