@@ -42,8 +42,9 @@ def run_record(monkeypatch):
     """
     if hasattr(SnapshotStore, "run_sources"):
         return
-    from crapkit.lane_sources import digests
+    from crapkit import lane_sources
 
+    digests = getattr(lane_sources, "record", None) or lane_sources.digests
     kept: dict = {}
     real = SnapshotStore.write_run
 

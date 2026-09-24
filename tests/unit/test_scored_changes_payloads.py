@@ -14,9 +14,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from crapkit import lane_sources
 from crapkit.cli import queue
 from crapkit.cli.queue import RunFreshness, _freshness_warnings, _sample, run_freshness
-from crapkit.lane_sources import digests
+from crapkit.errors import GitError
 from hand_scored_repo import make_repo, run, scored, write_run
 
 REFRESH = {"refresh": "crapkit coverage --reuse-unchanged"}
@@ -28,11 +29,15 @@ def _store(record: dict | None) -> SimpleNamespace:
 
 
 def _tree(tmp_path: Path, files: dict[str, str]) -> Path:
-    for rel, text in files.items():
-        path = tmp_path / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8", newline="\n")
-    return tmp_path
+    """A committed repo holding FILES."""
+    return make_repo(tmp_path / "repo", files=files)
+
+
+def digests(root: Path, paths: list[str]) -> dict:
+    """The content record as the store keeps it: `lane_sources.record` where
+    the content-record module has it, `digests` in a tree from before it."""
+    take = getattr(lane_sources, "record", None) or lane_sources.digests
+    return take(root, paths)
 
 
 # --- the verdict ---------------------------------------------------------------
@@ -74,6 +79,22 @@ def test_a_store_that_keeps_no_record_reads_null(tmp_path):
     assert run_freshness(tmp_path, SimpleNamespace(), LATEST, LATEST["commit"]).changed is None
 
 
+def test_a_git_failure_reads_null_and_carries_git_s_error(tmp_path, monkeypatch):
+    """A failed read is neither "changed" nor "unchanged": the count is null,
+    as for a run that recorded nothing, and the error rides with it."""
+    root = _tree(tmp_path, {"src/a.py": "a = 1\n"})
+    record = digests(root, ["src/a.py"])
+
+    def refuse(*args, **kwargs):
+        raise GitError("git diff failed: fatal: index file corrupt")
+
+    monkeypatch.setattr(lane_sources, "moved", refuse)
+    fresh = run_freshness(root, _store(record), LATEST, LATEST["commit"])
+
+    assert fresh.fields() == {"stale": False, "scored_changes": None}
+    assert fresh.unread == "git diff failed: fatal: index file corrupt"
+
+
 def test_the_envelope_adds_the_refresh_the_packet_spells():
     from crapkit.packet import commands
 
@@ -100,6 +121,14 @@ def test_each_way_the_run_went_stale_gets_its_own_line(fresh, expected):
 
     assert [line.split(" — ")[0] for line in lines] == expected
     assert all(line.endswith("coverage`") for line in lines), lines
+
+
+def test_a_git_failure_gets_a_line_quoting_git_instead_of_silence():
+    fresh = RunFreshness(False, None, "git diff failed: fatal: index file corrupt")
+
+    assert _freshness_warnings(fresh, LATEST) == [
+        "warning: cannot tell which files changed since run 4 scored them, because git "
+        "failed: git diff failed: fatal: index file corrupt"]
 
 
 @pytest.mark.parametrize("paths,expected", [

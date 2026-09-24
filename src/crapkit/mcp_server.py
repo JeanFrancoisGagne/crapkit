@@ -67,8 +67,9 @@ _SCORED_CHANGES = {
     "type": ("integer", "null"),
     "description": ("how many files the run scored hold other content now than the run "
     "recorded, deleted files included; 0 means the numbers describe the files on disk; "
-    "null when the run recorded no content (crapkit 0.8.0 or older wrote it), which "
-    "commands.refresh answers like any count above 0")}
+    "null when crapkit cannot compare: the run recorded no content (crapkit 0.8.0 or "
+    "older wrote it) or git failed reading the tree; treat null like any count above 0 "
+    "and run commands.refresh")}
 _REFRESH = {
     "type": "string",
     "description": ("crapkit coverage --reuse-unchanged: the cheapest run that brings "

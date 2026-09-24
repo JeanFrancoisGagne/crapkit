@@ -154,11 +154,14 @@ class RunFreshness(NamedTuple):
     It says nothing about content, so an amend that moves no byte sets it and
     an uncommitted rewrite of a scored function leaves it false. `changed`
     names the files the run scored that hold other content now than the run
-    recorded, or is None for a run that recorded none (every run 0.8.0 wrote).
-    0.9.0's schema 2 redefines `stale` from `changed`, here and nowhere else.
+    recorded, or is None for a run that recorded none (every run 0.8.0 wrote)
+    and when git could not read the tree to compare, whose error `unread`
+    carries. 0.9.0's schema 2 redefines `stale` from `changed`, here and
+    nowhere else.
     """
     stale: bool
     changed: list[str] | None
+    unread: str = ""
 
     @property
     def scored_changes(self) -> int | None:
@@ -177,8 +180,8 @@ class RunFreshness(NamedTuple):
 def run_freshness(root: Path, store, latest: dict, head: str) -> RunFreshness:
     """`stale` and the scored files that moved since the run, for every payload
     that carries them, so no two payloads can disagree about one run."""
-    return RunFreshness(latest["commit"] != head,
-                        _moved_since(root, _run_record(store, latest["id"])))
+    changed, unread = _moved_since(root, _run_record(store, latest["id"]))
+    return RunFreshness(latest["commit"] != head, changed, unread)
 
 
 def _run_record(store, run_id: int) -> dict | None:
@@ -189,13 +192,19 @@ def _run_record(store, run_id: int) -> dict | None:
     return None if read is None else read(run_id)
 
 
-def _moved_since(root: Path, recorded: dict | None) -> list[str] | None:
-    """The recorded files whose content differs now, deleted ones included."""
-    if recorded is None:
-        return None
+def _moved_since(root: Path, recorded: dict | None) -> tuple[list[str] | None, str]:
+    """The recorded files whose content differs now, deleted ones included,
+    and "". None and git's error when git cannot read the tree: a failed read
+    is neither "changed" nor "unchanged"."""
+    from ..errors import GitError
     from ..lane_sources import moved
 
-    return moved(root, recorded)
+    if recorded is None:
+        return None, ""
+    try:
+        return moved(root, recorded), ""
+    except GitError as exc:
+        return None, str(exc)
 
 
 def _next_head(latest: dict, skipped_no_lane: int, skipped_claimed: int,
@@ -966,6 +975,9 @@ def _freshness_warnings(fresh: RunFreshness, latest: dict) -> list[str]:
     if fresh.changed:
         lines.append(f"warning: {len(fresh.changed)} file(s) changed since run {latest['id']} "
                      f"scored them: {_sample(fresh.changed)} — rerun `{_self()} coverage`")
+    if fresh.unread:
+        lines.append(f"warning: cannot tell which files changed since run {latest['id']} "
+                     f"scored them, because git failed: {fresh.unread}")
     return lines
 
 

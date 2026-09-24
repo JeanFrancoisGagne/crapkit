@@ -107,7 +107,7 @@ $ crapkit next-item
 | `empty` | bool | yes | Whether there is work to hand out. |
 | `skipped_no_lane` | int | yes | Rows above the floor that no lane covers. They are excluded from ranking because their `cov = 0` is a tooling gap, not a testing gap. |
 | `stale` | bool | yes | `true` when the ranked run's commit is not HEAD. It judges the commit, not the files: see [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). Same field, same rule as [`worklist`](#worklist). |
-| `scored_changes` | int or **null** | yes | How many files the ranked run scored hold other content now than the run recorded. `0` means the numbers describe the files on disk. `null` means the run recorded no content. |
+| `scored_changes` | int or **null** | yes | How many files the ranked run scored hold other content now than the run recorded. `0` means the numbers describe the files on disk. `null` means crapkit cannot compare: the run recorded no content, or git failed reading the tree. |
 | `commands` | object | yes | `{refresh}`: the call that answers `stale` and `scored_changes`, the same string a [`brief` packet's](#commands-steps-3-to-5-already-written) `commands.refresh` holds. |
 | `item` | object | when `empty` is false and `--top` is absent or 1 | The one item. |
 | `items` | array | when `empty` is false and `--top` > 1 | Up to N items, same object shape. |
@@ -217,10 +217,11 @@ it scored, and `scored_changes` counts the files whose content differs now, dele
 included. A touch, a same-bytes rewrite and a commit that moves no scored byte leave it at
 `0`; an edit to a scored file raises it, committed or not, and so does reverting an edit
 the run measured. It compares content through the same record lane stamps use, so the
-limits [docs/lanes.md](lanes.md) names for lane freshness apply here too. `null` means the
-run recorded no content: crapkit 0.8.0 and older wrote no record, so their runs read
-`null` until the next `crapkit coverage` writes one. Treat `null` as "unknown" and run
-`commands.refresh`.
+limits [docs/lanes.md](lanes.md) names for lane freshness apply here too. `null` means
+crapkit cannot compare: the run recorded no content, or git failed while reading the tree.
+crapkit 0.8.0 and older wrote no record, so their runs read `null` until the next
+`crapkit coverage` writes one. A git failure is never counted as `0` or as a change; the
+plain `worklist` quotes git's error. Treat `null` as "unknown" and run `commands.refresh`.
 
 | Change after the run | `stale` | `scored_changes` |
 |---|---|---|
@@ -228,12 +229,13 @@ run recorded no content: crapkit 0.8.0 and older wrote no record, so their runs 
 | uncommitted edit to a scored file | `false` | `1` or more |
 | coverage measured on an uncommitted edit, then the edit reverted | `false` | `1` or more |
 | `commit --amend -m`, `commit --allow-empty`, a commit outside every scope | `true` | `0` |
-| the run recorded no content | either | `null` |
+| the run recorded no content, or git failed reading the tree | either | `null` |
 
 The plain `worklist` prints each case on stderr, and names up to three changed files:
 
 ```
 warning: 2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py — rerun `crapkit coverage`
+warning: cannot tell which files changed since run 4 scored them, because git failed: <git's error>
 ```
 
 `commands.refresh` answers both. Schema 2, planned for crapkit 0.9.0, redefines `stale`
@@ -458,7 +460,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. |
 | `target` | int | no | The scope's effective ceiling. |
 | `stale` | bool | no | `true` when `commit` is not HEAD. It judges the commit, not the files; see [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). |
-| `scored_changes` | int | **yes** | How many files the run scored hold other content now than the run recorded, as on `next-item`. Not `0` (or `null`, when the run recorded no content): run `commands.refresh` before trusting any number here. |
+| `scored_changes` | int | **yes** | How many files the run scored hold other content now than the run recorded, as on `next-item`. Not `0` (or `null`, when crapkit cannot compare): run `commands.refresh` before trusting any number here. |
 | `file_functions` | array | no | Every scored function in the same file: `function`, `start`, `end`, `occurrence`, `ccn`, `crap`, `remedy`. What an extracted helper lands beside, and what names are already taken. |
 | `file_totals` | object | no | That file rolled up: `functions`, `over_target`, `crap_load`. |
 | `gate_rule` | object | no | What the gate will judge this edit by. Below. |
@@ -724,7 +726,7 @@ $ crapkit worklist --json
 |---|---|---|
 | `run_id`, `commit` | int, string | The run ranked, and its commit. |
 | `stale` | bool | `true` when the run's commit is not HEAD. In plain output this also prints a stderr warning; in JSON it is only this field. |
-| `scored_changes` | int or null | How many files the run scored hold other content now than the run recorded; `null` when the run recorded none. In plain output a count above `0` prints a stderr warning naming up to three of the files. See [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). |
+| `scored_changes` | int or null | How many files the run scored hold other content now than the run recorded; `null` when the run recorded none or git failed reading the tree. In plain output a count above `0` prints a stderr warning naming up to three of the files. See [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). |
 | `commands` | object | `{refresh}`, as on `next-item`. |
 | `floor` | int | The effective `worklist_floor`, echoed so a caller need not read the config. |
 | `churn_window_months` | int | Same. |
