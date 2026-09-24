@@ -901,3 +901,41 @@ def test_init_ends_in_a_sentence_never_a_traceback(tmp_path: Path, name, body, e
     assert "Traceback" not in res.stderr and "\x1b[" not in res.stderr, res.stderr
     assert (res.stderr.splitlines() or [""])[-1] == last
     assert (repo / "crapkit.toml").is_file() is (code == 0)
+
+
+# init on a package.json whose fields are null: npm reads such a file, and init
+# ended in a TypeError before it wrote crapkit.toml.
+
+_NULL_FIELDS = {
+    "scripts-null": ({"package.json": {"scripts": None, "devDependencies": {"vitest": "^2"}}},
+                     "npx vitest run --coverage ", ""),
+    "devDependencies-null": ({"package.json": {"scripts": {"test": "vitest run"},
+                                               "devDependencies": None}},
+                             "npm run test -- --coverage", ""),
+    "workspace-devDependencies-null": (
+        {"package.json": {"scripts": {"test": "npm run --workspaces test"}},
+         "web/package.json": {"devDependencies": None}},
+        "npm run test -- --coverage", ""),
+}
+
+
+@pytest.mark.parametrize("shape", list(_NULL_FIELDS))
+def test_init_reads_a_package_json_whose_fields_are_null(tmp_path: Path, shape: str):
+    from crapkit.config import load_config_text
+
+    files, command, cwd = _NULL_FIELDS[shape]
+    repo = _bare_git_repo(tmp_path, "nulls")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.ts").write_text("export function f(a: number) { return a ? 1 : 2; }\n",
+                                         encoding="utf-8")
+    for name, payload in files.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(json.dumps(payload), encoding="utf-8")
+    _git_commit_all(repo, "init")
+
+    res = run_cli(repo, "init")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    (lane,) = load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8")).lanes
+    assert lane.command.startswith(command), lane.command
+    assert lane.cwd == cwd

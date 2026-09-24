@@ -211,6 +211,12 @@ did, so breaking an existing gate over tree hygiene would cost more than the lit
 that writes inside a scope's own tree (`web/coverage/` beside the `web/src` it measures) is
 that package's business and is not warned about.
 
+`init` reads those two fields the way npm reads them. A `scripts` value that is not an object,
+null included, is no scripts, and so is a script whose command is not a string. A
+`devDependencies` list names the strings in it; null or any other value that is not an object
+names no package. A `package.json` that does not parse, or parses to something other than an
+object, detects no lane.
+
 ### What the istanbul parser reads
 
 Your runner writes `coverage-final.json` and you never open it. Read this section only if
