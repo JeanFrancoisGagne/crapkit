@@ -528,10 +528,7 @@ def start_line_missing(region: dict) -> None:
     pytest.param(summary_missing, ("coverage.json", "hot", "summary"), id="function-summary-missing"),
     pytest.param(branch_counts_missing, ("hot", "branch counts"), id="branch-counts-missing"),
     pytest.param(start_line_missing, ("coverage.json", "hot", "start_line", "7.13.1"),
-                 id="start-line-missing", marks=pytest.mark.xfail(
-                     strict=True, reason="a report without start_line is scored from a start "
-                                         "crapkit works out itself; it holds once such a "
-                                         "report is refused, naming coverage 7.13.1")),
+                 id="start-line-missing"),
 ])
 def test_a_report_missing_a_member_is_refused_by_name(edit, names, tmp_path: Path):
     repo = coverage_py_report(tmp_path, edit)
