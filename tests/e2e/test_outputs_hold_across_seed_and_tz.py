@@ -8,9 +8,15 @@ over 46 outputs found two such leaks: the missing-file lines printed in hash
 order, and the churn window's cutoff moved with the local calendar. This test
 keeps the outputs agents read honest from here on. It builds the same repo and
 runs coverage, worklist --json, brief --json, explain --history --json,
-inventory --export and runs --json under five seeds and five zones, and wants
-identical bytes once the run stamps crapkit takes from the clock are masked.
-Those stamps must still be UTC and read the real clock.
+inventory --export, runs --json and report under five seeds and five zones,
+and wants identical bytes once the stamps crapkit takes from the clock are
+masked. Those stamps must still be UTC and read the real clock.
+
+The inventory rows themselves come from lizard's tokenizers and crapkit's own
+readers, which could move with the interpreter or its locale. The last test
+pins them for a tree of syntax whose tokenizing changed between CPython
+releases, so every Python the CI matrix runs, and every hash seed and locale
+here, has to print the same rows.
 
 The window's clock is pinned (GIT_TEST_DATE_NOW) to 2028-03-01T03:00Z, where a
 12-month window starts 2027-03-01T03:00Z on the UTC calendar. One commit sits
@@ -31,6 +37,8 @@ import stat
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 from conftest import cli_runner
 
@@ -176,7 +184,8 @@ def _outputs(repo: Path, seed: str, zone: str | None) -> tuple[dict[str, str], l
              "brief": ["brief", "src/app.ts", "route", "--json"],
              "explain": ["explain", "src/app.ts", "route", "--history", "--json"],
              "inventory": ["inventory", "--export", ".crapkit/inventory.tsv"],
-             "runs": ["runs", "--json"]}
+             "runs": ["runs", "--json"],
+             "report": ["report"]}
     printed, stamps = {}, []
     for name, argv in calls.items():
         done = run_cli(repo, *argv, env_extra=env)
@@ -185,6 +194,9 @@ def _outputs(repo: Path, seed: str, zone: str | None) -> tuple[dict[str, str], l
         printed[name] = STAMP.sub("<stamp>", done.stdout)
         printed[f"{name} stderr"] = STAMP.sub("<stamp>", done.stderr)
     printed["inventory.tsv"] = (repo / ".crapkit" / "inventory.tsv").read_text(encoding="utf-8")
+    page = (repo / ".crapkit" / "report.html").read_text(encoding="utf-8")
+    stamps += STAMP.findall(page)
+    printed["report.html"] = STAMP.sub("<stamp>", page)
     return printed, stamps
 
 
@@ -230,7 +242,8 @@ def test_the_compared_bytes_hold_the_churn_history_and_skipped_files(tmp_path):
     printed, stamps = _outputs(repo, "0", "UTC0")
 
     assert printed["runs"].count('"created_at": "<stamp>Z"') == 2, printed["runs"]
-    assert len(stamps) >= 3, "the two runs, and the run explain's history lists"
+    assert "generated <stamp>Z" in printed["report.html"]
+    assert len(stamps) >= 4, "the two runs, the run explain's history lists, the report"
 
     churn = json.loads(printed["brief"])["churn"]
     assert (churn["commits"], churn["authors"]) == (3, 3), "the edge commit is in the window"
@@ -242,3 +255,124 @@ def test_the_compared_bytes_hold_the_churn_history_and_skipped_files(tmp_path):
     skipped = [line.rpartition(" ")[2] for line in printed["inventory stderr"].splitlines()
                if "missing from working tree" in line]
     assert skipped == sorted(GONE)
+
+
+# --- inventory rows: the same on every interpreter, hash seed and locale -------
+
+# Syntax whose tokenizing moved between CPython releases: nested f-strings with
+# a backslash inside (PEP 701, 3.12), type parameters (PEP 695, 3.12), match,
+# the walrus, an async comprehension over a backslash continuation, a lambda
+# under a decorator, a non-ASCII name, a tab-indented body and CRLF line ends.
+PY_SOURCES = {
+    "pkg/fstr.py": r"""def fmt(items, width):
+    out = []
+    for i in items:
+        if i:
+            out.append(f"{f'{i!r:>{width}}'}-{'x' if i > 2 else 'y'}")
+        elif i is None:
+            out.append(f"{'\n'.join(str(j) for j in items)}")
+    return out
+""",
+    "pkg/generic.py": """def first[T](xs: list[T], d: T) -> T:
+    for x in xs:
+        if x:
+            return x
+    return d
+
+
+class Box[T]:
+    def get(self, k: T) -> T | None:
+        if k:
+            return k
+        return None
+""",
+    "pkg/matcher.py": """def route(cmd):
+    match cmd:
+        case ["go", d] if d in "nsew":
+            return d
+        case {"x": x, **rest} if (n := len(rest)) > 1:
+            return n
+        case str() | bytes():
+            return 0
+        case _:
+            return None
+""",
+    "pkg/asyncs.py": r"""import functools
+
+
+@functools.cache
+def deco(f):
+    return lambda *a: f(*a) if a else (lambda: None)
+
+
+async def gather(src):
+    total = [x async for x in src if x] \
+        or [y for y in range(3) if y % 2]
+    if not total:
+        return 0
+    return sum(total)
+""",
+    "pkg/unicode_ident.py": "def caf\u00e9(\u00e9t\u00e9, n):\n    if \u00e9t\u00e9 and n:\n"
+                            "        return \"\u00e9\"\n    elif n:\n        return \"e\"\n"
+                            "    return \"\"\n",
+    "pkg/tabs.py": "def tabbed(a, b):\n\tif a:\n\t\treturn b\n\telif b:\n\t\treturn a\n\treturn None\n",
+    "pkg/crlf.py": "def crlf(a):\r\n    if a > 1:\r\n        return 1\r\n    elif a < 0:\r\n"
+                   "        return -1\r\n    return 0\r\n",
+}
+PY_TOML = """[crapkit]
+target = 6
+
+[[scope]]
+name = "pkg"
+paths = ["pkg"]
+languages = ["python"]
+"""
+ROWS = [
+    ("scope", "path", "long_name", "start", "end", "ccn_std", "ccn_mod", "ccn", "nloc", "params",
+     "nesting", "cognitive", "occurrence"),
+    ("pkg", "pkg/asyncs.py", "deco( f )", 5, 6, 2, 2, 2, 2, 1, 0, 1, 1),
+    ("pkg", "pkg/asyncs.py", "gather( src )", 9, 14, 7, 7, 7, 6, 1, 2, 10, 1),
+    ("pkg", "pkg/crlf.py", "crlf( a )", 1, 6, 3, 3, 3, 6, 1, 1, 2, 1),
+    ("pkg", "pkg/fstr.py", "fmt( items , width )", 1, 8, 6, 6, 6, 8, 2, 3, 10, 1),
+    ("pkg", "pkg/generic.py", "first( xs : list [ T ] , d : T )", 1, 5, 3, 3, 3, 5, 2, 2, 3, 1),
+    ("pkg", "pkg/generic.py", "get( self , k : T )", 9, 12, 2, 2, 2, 4, 2, 1, 1, 1),
+    ("pkg", "pkg/matcher.py", "route( cmd )", 1, 10, 7, 4, 4, 10, 1, 0, 2, 1),
+    ("pkg", "pkg/tabs.py", "tabbed( a , b )", 1, 6, 3, 3, 3, 6, 2, 1, 2, 1),
+    ("pkg", "pkg/unicode_ident.py", "caf\u00e9( \u00e9t\u00e9 , n )", 1, 6, 4, 4, 4, 6, 2, 1, 3, 1),
+]
+# LANG and PYTHONUTF8 bite on Linux, where the locale sets the interpreter's
+# text encoding; on Windows they reach the child and change nothing.
+ENVIRONMENTS = {"inherited": {}, "PYTHONHASHSEED=77": {"PYTHONHASHSEED": "77"},
+                "LANG=C": {"LANG": "C", "LC_ALL": "C"},
+                "LANG=en_US.ISO-8859-1": {"LANG": "en_US.ISO-8859-1",
+                                          "LC_ALL": "en_US.ISO-8859-1"},
+                "PYTHONUTF8=0": {"PYTHONUTF8": "0"}, "PYTHONUTF8=1": {"PYTHONUTF8": "1"}}
+
+
+@pytest.fixture(scope="module")
+def python_tree(tmp_path_factory) -> Path:
+    """The tree above, committed, never measured: each test copies it, so no
+    analysis cache carries one run's rows into the next."""
+    repo = tmp_path_factory.mktemp("rows") / "repo"
+    _write(repo / "crapkit.toml", PY_TOML)
+    for rel, text in PY_SOURCES.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_bytes(text.encode("utf-8"))
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
+@pytest.mark.parametrize("env", ENVIRONMENTS.values(), ids=ENVIRONMENTS.keys())
+def test_inventory_rows_hold_on_every_interpreter_and_locale(python_tree, tmp_path, env):
+    """The rows are pinned, not compared between runs, so each Python in the CI
+    matrix is held to the same bytes."""
+    repo = tmp_path / "repo"
+    shutil.copytree(python_tree, repo)
+
+    done = run_cli(repo, "inventory", "--export", "inventory.tsv", env_extra=env)
+
+    assert done.returncode == 0, done.stderr
+    rows = (repo / "inventory.tsv").read_text(encoding="utf-8").splitlines()
+    assert rows == ["\t".join(map(str, row)) for row in ROWS]

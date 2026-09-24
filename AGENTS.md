@@ -697,7 +697,7 @@ clears tempfile's cached directory for the call. These files do:
 | `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
 | `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
 | `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
-| `test_outputs_hold_across_seed_and_tz.py` | PYTHONHASHSEED, which salts string hashing only as the interpreter starts |
+| `test_outputs_hold_across_seed_and_tz.py` | PYTHONHASHSEED, PYTHONUTF8 and LANG, which the interpreter reads only as it starts |
 
 Every test-side wait on a child goes through `tests/hang_guard.py`, whose one bound,
 `HANG_SECONDS` (120), replaces a guess per call site: verify run 103 failed six tests on a
