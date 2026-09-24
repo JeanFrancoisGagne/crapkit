@@ -388,3 +388,17 @@ def test_a_rename_away_from_a_latin1_name_on_windows_is_gated_under_the_new_name
     gate = run_cli(repo, "hook-precommit")
     assert gate.returncode == 6, gate.stderr
     assert "src/café.py" in gate.stdout and REFUSAL not in gate.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="needs NTFS, which holds a name with a lone UTF-16 surrogate")
+@pytest.mark.parametrize("command", ["inventory", "coverage", "verify"])
+def test_an_untracked_name_with_a_lone_surrogate_on_windows_reads_as_git_spells_it(tmp_path, command):
+    """Git for Windows lists such a name with U+FFFD, which is UTF-8, so
+    nothing is left out or refused."""
+    repo = _repo(tmp_path, WHOLE_TREE_LANE_CONFIG)
+    assert run_cli(repo, "coverage").returncode == 0
+    (repo / "src" / "bad\udcff.py").write_bytes(SOURCE)
+
+    result = run_cli(repo, command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert LEFT_OUT not in result.stderr and REFUSAL not in result.stderr and "Traceback" not in result.stderr

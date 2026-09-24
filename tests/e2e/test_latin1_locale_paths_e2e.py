@@ -21,6 +21,7 @@ in UTF-8 whatever the locale, so the rows run on Linux.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -154,11 +155,13 @@ def _in_force(locpath: Path, locale: dict, expected: str) -> dict:
     return env
 
 
-def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
+def _repo(tmp_path: Path, files: dict[str, str], named: dict[bytes, str] | None = None) -> Path:
+    """The files, and `named` under names given as raw bytes."""
     repo = tmp_path / "repo"
     for rel, text in {"pkg/__init__.py": "", "pkg/calc.py": CALC, "tests/test_calc.py": TEST_CALC,
                       "tests/conftest.py": PROBE, "crapkit.toml": TOML,
-                      ".gitignore": ".crapkit/\nchild-env.json\n", **files}.items():
+                      ".gitignore": ".crapkit/\nchild-env.json\n", **files,
+                      **{os.fsdecode(name): text for name, text in (named or {}).items()}}.items():
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         (repo / rel).write_bytes(text.encode("utf-8"))
     for args in (["init", "-q", "-b", "main"], ["config", "core.autocrlf", "false"], ["add", "-A"],
@@ -259,6 +262,19 @@ def test_pythonutf8_in_the_lanes_env_has_the_accented_file_measured(tmp_path, lo
                 for name, env, toml in (("utf8", _env(locpath, UTF8), TOML), ("latin1", latin1, utf8_lane))}
 
     assert measured["latin1"] == measured["utf8"]
+
+
+@pytest.mark.parametrize("locale", ["utf8", "latin1"])
+def test_a_scoped_name_that_is_not_utf8_is_refused_in_either_locale(tmp_path, locpath, locale):
+    """b"pkg/caf\\xe9.py" reads as café.py to a Latin-1 locale, and it is still
+    a name crapkit cannot key: coverage refuses it the same way under both."""
+    env = _in_force(locpath, LATIN1, "iso8859-1") if locale == "latin1" else _env(locpath, UTF8)
+    repo = _repo(tmp_path, {}, named={b"pkg/caf\xe9.py": CALC})
+
+    result = run_cli(repo, "coverage", env_extra=env)
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert ("crapkit: pkg/caf\\xe9.py is in scope 'pkg', but git names it in bytes that are not UTF-8"
+            in result.stderr), result.stderr
 
 
 def test_a_path_argument_with_an_accent_reaches_its_file(tmp_path, locpath):
