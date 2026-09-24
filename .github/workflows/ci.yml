@@ -32,11 +32,11 @@ jobs:
             suite: e2e
           - os: windows-latest
             suite: unit e2e
-          # macOS is here for the letter-case rows: APFS opens src/a.py as
-          # SRC/a.py under POSIX path rules, a pairing no other job has. The
-          # rows read paths, not the interpreter, so one Python and one job
-          # holding both suites run them all. A Python added above needs its
-          # own macOS exclude here.
+          # macOS is here for the letter-case rows: APFS opens SRC/a.py for a
+          # tracked src/a.py under POSIX path rules, a pairing no other job
+          # has. The rows read paths, not the interpreter, so one Python and
+          # one job holding both suites run them all. A Python added above
+          # needs its own macOS exclude here.
           - os: macos-latest
             python: "3.11"
           - os: macos-latest
