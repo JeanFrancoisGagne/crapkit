@@ -245,3 +245,10 @@ def test_each_image_expects_the_tools_of_the_images_under_it():
     assert core["claude"] == PINS["harness"]["claude-code"]["version"]
     assert "gemini" not in core and full["gemini"] == PINS["harness"]["gemini-cli"]["version"]
     assert full["python3.14"] == "3.14.7"
+
+
+def test_each_harness_floor_is_held_to_its_pin():
+    core = pinsfile.expected_versions(PINS, "core")
+
+    assert core["claude-2.1.139"] == "2.1.139" and core["claude-2.1.138"] == "2.1.138"
+    assert core["codex-0.121.0"] == "0.121.0"

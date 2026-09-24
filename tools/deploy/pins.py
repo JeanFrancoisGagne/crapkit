@@ -60,9 +60,18 @@ def _base_versions(pins: dict) -> dict[str, str]:
     return expected
 
 
+def _harness_lines(spec: dict) -> dict[str, str]:
+    """A harness and each floor, which the image links as <command>-<floor>."""
+    command = spec["command"]
+    return {command: spec["version"], **{f"{command}-{floor}": floor for floor in spec.get("floors", [])}}
+
+
 def _harness_versions(pins: dict, image: str) -> dict[str, str]:
-    return {spec["command"]: spec["version"] for spec in pins["harness"].values()
-            if spec["image"] == image and "command" in spec}
+    expected = {}
+    for spec in pins["harness"].values():
+        if spec["image"] == image and "command" in spec:
+            expected.update(_harness_lines(spec))
+    return expected
 
 
 def _binary_versions(pins: dict, image: str) -> dict[str, str]:

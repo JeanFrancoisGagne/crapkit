@@ -22,6 +22,7 @@ verdict differs between runs. Output: <out>/junit*.xml, <out>/transcripts/,
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -40,6 +41,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 DOCKERFILE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile"
 ENTRY = ROOT / "tests" / "deploy" / "docker" / "entry.sh"
+DOCKERIGNORE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile.dockerignore"
+INPUTS_LABEL = "org.crapkit.deploy.inputs"
 DEFAULT_OUT = ROOT / ".crapkit" / "deploy-out"
 CADENCES = {"push": "push", "nightly": "nightly", "weekly": "weekly", "published": "published",
             "release": "(push or nightly or weekly or online)"}
@@ -99,13 +102,79 @@ def ensure_builder(pins: dict, name: str) -> str:
     return name
 
 
-def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: str = "crapkit-deploy") -> list[str]:
+def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: str = "crapkit-deploy",
+                  inputs: str = "") -> list[str]:
     argv = ["docker", "buildx", "build", "--builder", builder, "--progress", "plain",
             "--platform", pins["images"]["platform"], "--target", image, "-f", str(DOCKERFILE),
             "-t", f"crapkit-deploy:{image}", "--load"]
     argv += [f"--build-arg={key}={value}" for key, value in build_args(pins).items()]
+    argv += [f"--label={INPUTS_LABEL}={inputs}"] if inputs else []
     argv += cache_flags(cache, image) + (["--no-cache"] if no_cache else [])
     return argv + [str(ROOT)]
+
+
+# --- a no-change rebuild ----------------------------------------------------------
+# A docker-container builder hands every build to the daemon as one tarball, so
+# even a build that hits the cache on every layer spends minutes on --load. The
+# image carries a hash of what its build reads; when the hash is unchanged the
+# image is already what a build would produce and run.py skips the build.
+
+def context_rules(text: str) -> list[tuple[bool, str]]:
+    """Dockerfile.dockerignore as (included, path) lines in file order. The
+    reader knows `*` and literal paths, the only forms the file uses."""
+    lines = (raw.strip() for raw in text.splitlines())
+    return [(line.startswith("!"), line.lstrip("!").rstrip("/")) for line in lines
+            if line and not line.startswith("#")]
+
+
+def in_context(relative: str, rules: list[tuple[bool, str]]) -> bool:
+    """Docker's rule: the last line that matches the path decides."""
+    verdict = True
+    for included, pattern in rules:
+        if pattern == "*" or relative == pattern or relative.startswith(pattern + "/"):
+            verdict = included
+    return verdict
+
+
+def _files_under(path: Path) -> list[Path]:
+    return [path] if path.is_file() else [child for child in path.rglob("*") if child.is_file()]
+
+
+def _reincluded(rules: list[tuple[bool, str]]) -> list[str]:
+    return [pattern for included, pattern in rules if included and pattern != "*"]
+
+
+def _candidates(root: Path, rules: list[tuple[bool, str]]) -> list[Path]:
+    """Every file under a path some line lets back in."""
+    return sorted({path for pattern in _reincluded(rules) for path in _files_under(root / pattern)})
+
+
+def context_files(root: Path = ROOT) -> list[Path]:
+    """The files BuildKit reads from the build context."""
+    rules = context_rules((root / DOCKERIGNORE.relative_to(ROOT)).read_text(encoding="utf-8"))
+    return [path for path in _candidates(root, rules) if in_context(path.relative_to(root).as_posix(), rules)]
+
+
+def inputs_fingerprint(pins: dict, image: str, root: Path = ROOT) -> str:
+    """What a build of `image` reads: the target, every build arg, the pinned
+    BuildKit and platform, and the bytes of each file in the build context."""
+    files = [[path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()]
+             for path in context_files(root)]
+    inputs = {"image": image, "args": build_args(pins), "buildkit": pins["images"]["buildkit"],
+              "platform": pins["images"]["platform"], "files": files}
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def image_label(tag: str) -> str | None:
+    template = '{{index .Config.Labels "' + INPUTS_LABEL + '"}}'
+    done = subprocess.run(["docker", "image", "inspect", "-f", template, tag], capture_output=True, text=True)
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def unchanged(tag: str, inputs: str, no_cache: bool) -> bool:
+    """The image at `tag` was built from exactly these inputs, and the run did
+    not ask for a cold build."""
+    return not no_cache and image_label(tag) == inputs
 
 
 def image_size(tag: str) -> int | None:
@@ -120,17 +189,24 @@ def disk_usage() -> str:
 
 def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, builder: str = "crapkit-deploy") -> dict:
     """Build one target and record its time, its size and `docker system df`
-    before and after in <out>/build.json."""
+    before and after in <out>/build.json. An image already built from the same
+    inputs is kept, and the record says so."""
+    started, tag = time.monotonic(), f"crapkit-deploy:{image}"
+    inputs = inputs_fingerprint(pins, image)
+    if unchanged(tag, inputs, no_cache):
+        return _record(out, {"image": image, "skipped": "inputs unchanged", "size_bytes": image_size(tag),
+                             "seconds": round(time.monotonic() - started, 1)})
     ensure_builder(pins, builder)
     before = disk_usage()
-    started = time.monotonic()
-    log = out / f"build-{image}.log"
-    with log.open("w", encoding="utf-8") as stream:
-        subprocess.run(build_command(pins, image, cache, no_cache, builder), check=True, stdout=stream,
+    with (out / f"build-{image}.log").open("w", encoding="utf-8") as stream:
+        subprocess.run(build_command(pins, image, cache, no_cache, builder, inputs), check=True, stdout=stream,
                        stderr=subprocess.STDOUT)
-    record = {"image": image, "builder": builder, "seconds": round(time.monotonic() - started, 1),
-              "size_bytes": image_size(f"crapkit-deploy:{image}"), "no_cache": no_cache,
-              "df_before": before, "df_after": disk_usage()}
+    return _record(out, {"image": image, "builder": builder, "seconds": round(time.monotonic() - started, 1),
+                         "size_bytes": image_size(tag), "no_cache": no_cache, "df_before": before,
+                         "df_after": disk_usage()})
+
+
+def _record(out: Path, record: dict) -> dict:
     _append_json(out / "build.json", record)
     return record
 

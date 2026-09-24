@@ -128,3 +128,70 @@ def test_a_native_run_defaults_to_this_machines_os(monkeypatch, platform, expect
 
     assert run.host_os(native=True) == expected
     assert run.host_os(native=False) == "linux"
+
+
+# --- a no-change rebuild ---------------------------------------------------------
+
+def test_a_later_dockerignore_rule_wins():
+    rules = run.context_rules("# note\n*\n!a/\na/b/\n!a/b/keep.txt\n")
+
+    assert run.in_context("a/x.txt", rules) and run.in_context("a/b/keep.txt", rules)
+    assert not run.in_context("a/b/y.txt", rules) and not run.in_context("c.txt", rules)
+
+
+def test_the_real_dockerignore_uses_only_rules_the_reader_understands():
+    for _included, pattern in run.context_rules(run.DOCKERIGNORE.read_text(encoding="utf-8")):
+        assert pattern == "*" or not set(pattern) & set("*?[]\\"), pattern
+
+
+def test_the_build_context_is_what_the_dockerignore_lets_in():
+    files = {path.relative_to(ROOT).as_posix() for path in run.context_files()}
+
+    assert {"tests/deploy/docker/entry.sh", "tests/deploy/docker/Dockerfile", "tools/deploy/pins.toml"} <= files
+    assert not [name for name in files if name.startswith("tests/deploy/docker/prototype/")]
+    assert "tools/deploy/run.py" not in files
+
+
+def _fake_root(tmp_path):
+    ignore = tmp_path / "tests" / "deploy" / "docker" / "Dockerfile.dockerignore"
+    ignore.parent.mkdir(parents=True)
+    ignore.write_text("*\n!tests/deploy/docker/\n", encoding="utf-8")
+    (tmp_path / "outside.py").write_text("x = 1\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_the_inputs_fingerprint_moves_with_the_context_the_pins_and_the_target(tmp_path):
+    root = _fake_root(tmp_path)
+    first = run.inputs_fingerprint(PINS, "core", root)
+    (root / "outside.py").write_text("x = 2\n", encoding="utf-8")
+
+    assert run.inputs_fingerprint(PINS, "core", root) == first
+    assert run.inputs_fingerprint(PINS, "full", root) != first
+    assert run.inputs_fingerprint({**PINS, "images": {**PINS["images"], "snapshot": "x"}}, "core", root) != first
+    (root / "tests" / "deploy" / "docker" / "Dockerfile.dockerignore").write_text("*\n", encoding="utf-8")
+    assert run.inputs_fingerprint(PINS, "core", root) != first
+
+
+def test_a_build_labels_the_image_with_its_inputs():
+    argv = run.build_command(PINS, "core", "local", no_cache=False, inputs="abc")
+
+    assert f"--label={run.INPUTS_LABEL}=abc" in argv
+
+
+def test_an_image_built_from_the_same_inputs_is_not_rebuilt(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(run, "image_label", lambda tag: run.inputs_fingerprint(PINS, "core"))
+    monkeypatch.setattr(run, "image_size", lambda tag: 7)
+    monkeypatch.setattr(run.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    record = run.build(PINS, "core", "local", False, tmp_path)
+
+    assert record["skipped"] == "inputs unchanged" and record["size_bytes"] == 7 and calls == []
+    assert run.json.loads((tmp_path / "build.json").read_text(encoding="utf-8"))[-1]["skipped"]
+
+
+def test_no_cache_rebuilds_whatever_the_label_says(monkeypatch):
+    monkeypatch.setattr(run, "image_label", lambda tag: "abc")
+
+    assert not run.unchanged("crapkit-deploy:core", "abc", no_cache=True)
+    assert run.unchanged("crapkit-deploy:core", "abc", no_cache=False)
+    assert not run.unchanged("crapkit-deploy:core", "abd", no_cache=False)
