@@ -372,8 +372,8 @@ _NO_RESULT = {
     "kill": ((2, 2, 0, 0, 0), "] killed"),
     "live": ((2, 0, 2, 0, 0), "] SURVIVED"),
     "timeout": ((2, 2, 0, 2, 0), "] timed out, counted killed"),
-    "nocollect": ((2, 0, 0, 0, 2), "] no verdict: the suite ran no test (exit 5)"),
-    "mixed": ((2, 1, 0, 0, 1), "] "),
+    "nocollect": ((2, 2, 0, 0, 2), "] no verdict: the suite ran no test (exit 5), counted killed"),
+    "mixed": ((2, 2, 0, 0, 1), "] "),
 }
 
 
@@ -411,13 +411,13 @@ def test_a_mutant_whose_suite_gave_no_result_is_counted_apart(tmp_path: Path, mo
     assert (repo / "hot.py").read_text(encoding="utf-8") == HOT
 
 
-def test_the_printed_rate_leaves_a_no_verdict_mutant_out(tmp_path: Path):
+def test_the_printed_rate_counts_a_no_verdict_mutant_killed_and_names_it(tmp_path: Path):
     repo = _no_result_repo(tmp_path, "mixed")
 
     res = run_cli(repo, "mutate", "--files", "hot.py")
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert res.stdout.splitlines() == [
-        "mutation: 1/1 killed (100%)",
-        "  no verdict: 1 mutant(s) whose suite ran no test (exit 5), left out of the score; "
+        "mutation: 2/2 killed (100%)",
+        "  no verdict: 1 of the 2 killed ran no test (exit 5), so no test caught them; "
         "check that mutation_command collects a test for them"]

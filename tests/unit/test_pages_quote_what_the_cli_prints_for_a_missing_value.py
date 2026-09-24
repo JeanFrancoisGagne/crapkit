@@ -86,11 +86,12 @@ def test_the_mutate_pages_quote_the_no_verdict_line_and_name_the_payload_keys():
     from crapkit.cli.analyses import _mutation_payload, _unjudged_lines
     from crapkit.mutate_pool import MutantVerdict
 
-    (line,) = _unjudged_lines({"timed_out": 0, "killed": 0, "survived": 0, "no_verdict": 3})
-    quoted = line.strip().split(";", 1)[0].replace("3 mutant(s)", "N mutant(s)")
+    (line,) = _unjudged_lines({"timed_out": 0, "killed": 7, "survived": 0, "no_verdict": 3})
+    quoted = line.strip().split(";", 1)[0].replace("3 of the 7", "N of the K")
     payload = _mutation_payload([], [MutantVerdict.NO_VERDICT], [])
 
-    assert quoted == "no verdict: N mutant(s) whose suite ran no test (exit 5), left out of the score"
+    assert quoted == "no verdict: N of the K killed ran no test (exit 5), so no test caught them"
+    assert payload["killed"] == 1, "a no-verdict mutant stays inside killed under schema 1"
     assert {"timed_out", "no_verdict"} <= set(payload)
     for page in (README, UPGRADING):
         assert f"`{quoted}`" in _flat(page), page

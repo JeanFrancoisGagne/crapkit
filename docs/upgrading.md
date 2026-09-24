@@ -161,8 +161,8 @@ JSON stays at `schema: 1`; consumers must accept added fields.
 ## Missing values that 0.8.1 names
 
 Before 0.8.1 some commands read a value nobody measured as zero, empty or passing.
-0.8.1 names each one instead, and four of those changes can move a CI job's exit code
-or a number a script reads.
+0.8.1 names each one instead, and three of those changes can move a CI job's exit code.
+The mutate counts below keep their meaning and gain two fields.
 
 **Files no reader could read.** A file crapkit's readers refuse, such as a TypeScript
 expression-arrow body with `<` before a comma, still scores as zero functions in a run.
@@ -198,15 +198,14 @@ stderr line that names what they counted, such as
 `shallow: true` to their JSON (`false` in a full clone).
 
 **Mutants with no test verdict.** `mutate` counted a mutant whose suite exited 5, which
-means no test ran, as killed. It now gets no verdict: `--json` counts it under
-`no_verdict`, outside both `killed` and `survived`, and the text summary leaves it out
-of the rate and prints
-`no verdict: N mutant(s) whose suite ran no test (exit 5), left out of the score`. So
-`killed` can read lower on the same tree, and a script that divides `killed` by
-`mutants` now counts those mutants as survivors; divide by `killed + survived` instead.
-A mutant whose suite timed out still counts as killed, and `--json` also counts it under
-`timed_out`, a count inside `killed`. `mutants` keeps its meaning, the number of mutants
-run.
+means no test ran, as killed, and printed nothing else. It still counts as killed, so
+`killed`, `survived`, `mutants` and the rate read as they did in 0.8.0. The progress
+line now says `no verdict: the suite ran no test (exit 5), counted killed`, the text
+summary adds `no verdict: N of the K killed ran no test (exit 5), so no test caught
+them`, and `--json` adds `no_verdict`, a count inside `killed`. A mutant whose suite
+timed out is counted the same way under `timed_out`. A script that wants the rate over
+the mutants a test judged divides `killed - no_verdict` by `mutants - no_verdict`. JSON
+schema 2, in a later release, takes no-verdict mutants out of `killed` itself.
 
 **Artifact stamps from 0.4.15 or older.** The record that stops `--reuse-artifacts` from
 scoring the artifact a failed lane left behind lives in `.crapkit/artifacts.json`, and

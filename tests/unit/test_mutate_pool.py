@@ -337,7 +337,7 @@ def test_the_progress_line_names_each_verdict():
         "  mutant 1/4 a.py:2 [> -> >=] killed",
         "  mutant 2/4 a.py:2 [> -> >=] timed out, counted killed",
         "  mutant 3/4 a.py:2 [> -> >=] SURVIVED",
-        "  mutant 4/4 a.py:2 [> -> >=] no verdict: the suite ran no test (exit 5)"]
+        "  mutant 4/4 a.py:2 [> -> >=] no verdict: the suite ran no test (exit 5), counted killed"]
 
 
 def test_a_baseline_that_runs_no_test_says_no_mutant_would_get_a_verdict(tmp_path):

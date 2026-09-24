@@ -132,14 +132,16 @@ def _collect_mutants(root: Path, targets: dict, max_mutants: int) -> list:
 
 
 def _mutation_counts(verdicts: list) -> dict:
-    """`timed_out` is a count inside `killed`. A no-verdict mutant is in neither
-    `killed` nor `survived`: no test judged it, so it never moves the rate."""
+    """`killed` keeps its meaning, every mutant that did not survive, so killed +
+    survived is still mutants. `timed_out` and `no_verdict` are counts inside it:
+    kills no failing test decided. A no-verdict mutant leaves the score only
+    with JSON schema 2, which changes the meaning of `killed`."""
     from collections import Counter
 
     from ..mutate_pool import MutantVerdict as V
 
     count = Counter(verdicts)
-    return {"killed": count[V.KILLED] + count[V.TIMED_OUT], "survived": count[V.SURVIVED],
+    return {"killed": len(verdicts) - count[V.SURVIVED], "survived": count[V.SURVIVED],
             "timed_out": count[V.TIMED_OUT], "no_verdict": count[V.NO_VERDICT]}
 
 
@@ -156,16 +158,16 @@ def _mutation_payload(mutants: list, verdicts: list, outside: list[str]) -> dict
 
 
 def _unjudged_lines(counts: dict) -> list[str]:
-    """The mutants the rate cannot show as plain kills: timeouts inside it and
-    no-verdict mutants outside it, each with where to look."""
+    """The kills the rate cannot show as plain ones: timeouts and no-verdict
+    mutants, both counted inside `killed`, each with where to look."""
     lines = []
     if counts["timed_out"]:
         lines.append(f"  {counts['timed_out']} of the {counts['killed']} killed timed out past "
                      "mutation_timeout_seconds; a timeout counts as killed")
     if counts["no_verdict"]:
-        lines.append(f"  no verdict: {counts['no_verdict']} mutant(s) whose suite ran no test "
-                     "(exit 5), left out of the score; check that mutation_command collects "
-                     "a test for them")
+        lines.append(f"  no verdict: {counts['no_verdict']} of the {counts['killed']} killed ran "
+                     "no test (exit 5), so no test caught them; check that mutation_command "
+                     "collects a test for them")
     return lines
 
 

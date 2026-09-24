@@ -122,8 +122,8 @@ the report gone or unreadable. Every reader of those fields took that absence fo
 
 ### A value nobody measured is named, not printed as a fact
 
-The shallow-clone refusal and the mutate counts below, and the `verify --reuse-artifacts`
-refusal above, can change a CI job's exit code or a number a script reads; the [upgrade
+The shallow-clone refusal below, and the `verify --reuse-artifacts` refusal and the
+gates' refusal of an unread file above, can change a CI job's exit code; the [upgrade
 guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
 says what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
 without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores
@@ -153,13 +153,14 @@ writes nothing.
   stamped, set its note for every path, so such a function read `lane 'lib': files in
   its scopes changed since cov.json was written`, and rerunning that lane measured nothing
   there.
-- `mutate` reports a mutant whose suite ran past `mutation_timeout_seconds` apart from a
-  kill: its progress line says `timed out, counted killed`, the summary says how many of
-  the killed timed out, and `--json` adds `timed_out`, a count inside `killed`. A mutant
-  whose suite exits 5, pytest's code for a run that collected no test, gets no verdict: it
-  counts in neither `killed` nor `survived`, the printed rate leaves it out, and `--json`
-  adds `no_verdict`. Both printed `mutation: 2/2 killed (100%)`, the output of real kills.
-  A script that divides `killed` by `mutants` now counts a no-verdict mutant as a survivor.
+- `mutate` reports two kinds of kill no failing test decided apart from the rest. A
+  mutant whose suite ran past `mutation_timeout_seconds` prints `timed out, counted
+  killed`, and one whose suite exits 5, pytest's code for a run that collected no test,
+  prints `no verdict: the suite ran no test (exit 5), counted killed`. The summary says how
+  many of the killed were each, and `--json` adds `timed_out` and `no_verdict`, both
+  counts inside `killed`. Both printed `mutation: 2/2 killed (100%)`, the output of real
+  kills, with nothing else. `killed`, `survived` and the rate keep their meaning; JSON
+  schema 2 takes no-verdict mutants out of `killed`.
 - The commit hook's audited override marks the CRAP a function's scope scores. In a
   `coverage_optional` scope, where CRAP is ccn because no coverage exists there, it wrote
   ccn^2 + ccn, the CRAP of a function measured at 0%: 72 for a ccn-8 function. verify then

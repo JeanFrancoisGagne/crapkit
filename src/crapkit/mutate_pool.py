@@ -43,12 +43,13 @@ from .procs import own_processes, run_bounded
 
 class MutantVerdict(Enum):
     """What one mutant's suite run said, worded the way its progress line
-    prints it. A timeout is a kill counted apart; a suite that ran no test
-    judged nothing, so that mutant stays out of the score."""
+    prints it. A timeout is a kill counted apart. A suite that ran no test
+    judged nothing; JSON schema 1 still counts that mutant killed, as 0.8.0 did,
+    and reports it apart until schema 2 leaves it out of the score."""
     KILLED = "killed"
     TIMED_OUT = "timed out, counted killed"
     SURVIVED = "SURVIVED"
-    NO_VERDICT = "no verdict: the suite ran no test (exit 5)"
+    NO_VERDICT = "no verdict: the suite ran no test (exit 5), counted killed"
 
 
 _NO_TESTS_RAN = 5  # pytest's exit code when it collected no test
