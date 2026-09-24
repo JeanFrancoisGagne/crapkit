@@ -52,6 +52,25 @@ jobs:
       # all four with no test failure, so this line is the test.
       - name: the console script resolves
         run: crapkit --version
+      # The Action's comment lookup is a jq filter that gh runs in its own gojq.
+      # test_the_lookup_filter_holds_under_every_jq_engine also holds it to
+      # jq 1.6 and a standalone gojq, beside the runner's jq 1.7.1, and skips
+      # an engine that is not on PATH; these two put both on it here.
+      - name: jq 1.6 and gojq for the lookup filter's engine test
+        if: runner.os == 'Linux'
+        run: |
+          engines="$RUNNER_TEMP/jq-engines"
+          mkdir -p "$engines"
+          curl -fsSL -o "$engines/jq-1.6" https://github.com/jqlang/jq/releases/download/jq-1.6/jq-linux64
+          curl -fsSL -o "$engines/gojq.tar.gz" https://github.com/itchyny/gojq/releases/download/v0.12.17/gojq_v0.12.17_linux_amd64.tar.gz
+          (cd "$engines" && sha256sum -c - <<'SUMS'
+          af986793a515d500ab2d35f8d2aecd656e764504b789b66d7e1a0b727a124c44  jq-1.6
+          cd876631b9b3368dd98ad1ccb361474387de03e0925ea26d73539dd054aa39cb  gojq.tar.gz
+          SUMS
+          )
+          tar -xzf "$engines/gojq.tar.gz" -C "$engines" --strip-components=1 gojq_v0.12.17_linux_amd64/gojq
+          chmod +x "$engines/jq-1.6" "$engines/gojq"
+          echo "$engines" >> "$GITHUB_PATH"
       - run: python tools/testing/run.py --suite ${{ matrix.suite }}
 
   # The verdict compares installed base and candidate wheels. Each side builds,
