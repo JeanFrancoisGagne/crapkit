@@ -84,11 +84,16 @@ def child_env(extra: dict | None = None, python: str = sys.executable) -> dict:
 
 
 class Driver:
+    """`launch` is what a spawned call puts between the interpreter and `crapkit`:
+    ("-m",) runs it plainly; ("-m", "coverage", "run", "--rcfile=RC", "-m") runs
+    it under coverage.py (kit/reach.py), and implies spawn."""
+
     def __init__(self, root: Path, *, date_now: int | None = None, spawn: bool = False,
-                 env: dict | None = None):
+                 env: dict | None = None, launch: tuple[str, ...] = ("-m",)):
         self.root = Path(root)
         self.python = os.environ.get(PYTHON_ENV) or sys.executable
-        self.spawn = spawn or bool(os.environ.get(PYTHON_ENV))
+        self.launch = tuple(launch)
+        self.spawn = spawn or _must_spawn(self.launch)
         extra = dict(env or {})
         if date_now is not None:
             extra["GIT_TEST_DATE_NOW"] = str(date_now)
@@ -97,7 +102,7 @@ class Driver:
     def _call(self, args: tuple[str, ...], stdin: str | None):
         tiers.require_process("the crapkit CLI")
         if self.spawn:
-            argv = [self.python, "-m", "crapkit", *args]
+            argv = [self.python, *self.launch, "crapkit", *args]
             return hang_guard.run(argv, cwd=self.root, env=self.env, input=stdin, text=True,
                                   encoding="utf-8", errors="replace")
         return _in_process_runner().run(self.root, args, env=self.env, stdin=stdin,
@@ -137,6 +142,11 @@ class Driver:
             return [dict(row) for row in connection.execute(sql, params)]
         finally:
             connection.close()
+
+
+def _must_spawn(launch: tuple) -> bool:
+    """Another interpreter, or crapkit under a wrapper, needs a real child."""
+    return bool(os.environ.get(PYTHON_ENV)) or launch != ("-m",)
 
 
 def _frame(number: int, method: str, params: dict) -> str:

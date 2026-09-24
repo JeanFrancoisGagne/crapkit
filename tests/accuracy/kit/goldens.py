@@ -123,7 +123,8 @@ def compare(directory: Path, goldens: Mapping[str, str]) -> list[str]:
 def _rows(path: Path, columns: tuple[str, ...]) -> list[dict]:
     if not path.is_file():
         return []
-    lines = [line for line in path.read_bytes().decode("utf-8").split("\n") if line]
+    text = path.read_bytes().decode("utf-8")
+    lines = [line.removesuffix("\r") for line in text.split("\n") if line.strip()]
     return [dict(zip(columns, line.split("\t"))) for line in lines[1:]]
 
 

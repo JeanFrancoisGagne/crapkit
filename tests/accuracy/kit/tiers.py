@@ -21,6 +21,11 @@ import sys
 
 TIERS = ("push", "nightly", "weekly", "release")
 TIER_ENV = "CRAPKIT_ACCURACY_TIER"
+# Set by the contract's collect-only run: every test of every tier and
+# platform is collected, so a node id a table names can be checked to exist.
+COLLECT_ALL_ENV = "CRAPKIT_ACCURACY_COLLECT_ALL"
+# Set by test_kit_guards: the guard probes, deselected otherwise, run.
+GUARD_PROBES_ENV = "CRAPKIT_ACCURACY_GUARD_PROBES"
 RUNS = {
     "push": frozenset({"push"}),
     "nightly": frozenset({"push", "nightly"}),
@@ -37,6 +42,7 @@ MARKERS = {
     "change_control": "judges a diff against the change-control rules; not an independent method",
     "cross_surface": "compares two crapkit surfaces; not an independent method",
     "platform(name)": "runs only where sys.platform starts with name (win32, linux, darwin)",
+    "guard_probe": "breaks a session guard on purpose; runs only under test_kit_guards",
 }
 
 
@@ -63,10 +69,14 @@ def runs_on_platform(platforms: Iterable[str], platform: str = sys.platform) -> 
 
 
 def selected(marker_names: Iterable[str], tier: str, platforms: Iterable[str] = (),
-             platform: str = sys.platform) -> bool:
+             platform: str = sys.platform, environ: Mapping[str, str] = os.environ) -> bool:
     """Whether a test with these markers runs in this tier on this platform."""
-    in_tier = bool(tiers_of(marker_names) & RUNS[tier])
-    return in_tier and runs_on_platform(platforms, platform)
+    names = frozenset(marker_names)
+    if environ.get(COLLECT_ALL_ENV):
+        return True
+    if "guard_probe" in names and not environ.get(GUARD_PROBES_ENV):
+        return False
+    return bool(tiers_of(names) & RUNS[tier]) and runs_on_platform(platforms, platform)
 
 
 _RUNNING: dict[str, frozenset[str] | None] = {"markers": None}

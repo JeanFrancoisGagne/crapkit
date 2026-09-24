@@ -1,7 +1,9 @@
-"""Tier selection, the process-marker guard and the oracle fixture.
+"""Tier selection, the session guards, and the fixtures every packet shares.
 
 The hooks act on tests under tests/accuracy only: a session that also collects
-tests/unit leaves those items as it found them.
+tests/unit leaves those items as it found them. The guards (kit/guards.py) fail
+a test that skips or xfails outside a rulings row, and fail the session when a
+test wrote under tests/accuracy.
 """
 import itertools
 import os
@@ -10,9 +12,10 @@ import sys
 
 import pytest
 
-from accuracy.kit import corpus_run, oracles, repos, runlog, tiers
+from accuracy.kit import corpus_run, guards, oracles, repos, runlog, tiers
 
 HERE = Path(__file__).resolve().parent
+_SNAPSHOT = pytest.StashKey[dict]()
 # Corpus files, probes and recordings are data: a test_*.py among them is a
 # fixture's own test, never one of ours.
 collect_ignore_glob = ["*/fixtures/*", "*/small/*", "*/recorded/*", "*/probes/*"]
@@ -58,6 +61,34 @@ def pytest_runtest_protocol(item, nextitem):
         tiers.leave()
 
 
+def _report_problem(item, report) -> str | None:
+    if not _ours(item):
+        return None
+    if hasattr(report, "wasxfail"):
+        return guards.xfail_problem(item.iter_markers("xfail"))
+    return guards.skip_problem(report.skipped, wasxfail=False)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    problem = _report_problem(item, report)
+    if problem:
+        report.outcome, report.longrepr = "failed", problem
+        report.__dict__.pop("wasxfail", None)
+
+
+def _controller(config) -> bool:
+    return not hasattr(config, "workerinput")
+
+
+def pytest_sessionstart(session):
+    if _controller(session.config):
+        session.config.stash[_SNAPSHOT] = guards.snapshot(HERE)
+
+
+
 @pytest.fixture(scope="session")
 def oracle():
     """oracle(name) is the installed, pin-checked tool a test reads its expected
@@ -79,10 +110,18 @@ def make_repo(repo_templates, tmp_path):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Hand run.py the shape events the strategies emitted this session."""
+    """Hand run.py the shape events the strategies emitted this session, and
+    fail the session when a test wrote under tests/accuracy."""
     drawn = sys.modules.get("accuracy.kit.strategies")
     if drawn is not None and drawn.EVENTS:
         runlog.note("events", counts=dict(drawn.EVENTS))
+    before = session.config.stash.get(_SNAPSHOT, None)
+    written = guards.changed(before, guards.snapshot(HERE)) if before is not None else []
+    if written:
+        session.config.get_terminal_writer().line(
+            f"tests/accuracy changed during the session: {', '.join(written)}; a test writes "
+            "under tmp_path, never under tests/accuracy", red=True)
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 def _shared_base(tmp_path_factory) -> Path:

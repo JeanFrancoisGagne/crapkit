@@ -103,11 +103,11 @@ def _writes(driver: drive.Driver, outputs: Path) -> dict:
     return codes
 
 
-def _measure_once(corpus: Path, work: Path, now: int) -> dict:
+def _measure_once(corpus: Path, work: Path, now: int, launch: tuple) -> dict:
     built = repos.build(repos.tree_spec(corpus), work / "repo")
     outputs = work / "outputs"
     outputs.mkdir()
-    driver = drive.Driver(built.root, date_now=now, spawn=True)
+    driver = drive.Driver(built.root, date_now=now, spawn=True, launch=launch)
     codes = _writes(driver, outputs)
     codes.update({name: _record(driver, outputs, name, argv) for name, argv in SURFACES})
     manifest = {"root": str(built.root), "outputs": str(outputs), "date_now": now,
@@ -116,20 +116,29 @@ def _measure_once(corpus: Path, work: Path, now: int) -> dict:
     return manifest
 
 
-def _load(work: Path, corpus: Path, now: int) -> dict:
+def _load(work: Path, corpus: Path, now: int, launch: tuple) -> dict:
     manifest_path = work / MANIFEST
     if manifest_path.is_file():
         return json.loads(manifest_path.read_text(encoding="utf-8"))
     shutil.rmtree(work, ignore_errors=True)
-    return _measure_once(corpus, work, now)
+    return _measure_once(corpus, work, now, launch)
 
 
-def measure(corpus: Path, base: Path, now: int | None = None) -> CorpusRun:
-    """The session's one measured copy of `corpus`, built under `base` once."""
+def _launch_tag(launch: tuple) -> str:
+    if tuple(launch) == ("-m",):
+        return ""
+    return "-" + hashlib.sha256("\0".join(launch).encode("utf-8")).hexdigest()[:8]
+
+
+def measure(corpus: Path, base: Path, now: int | None = None,
+            launch: tuple[str, ...] = ("-m",)) -> CorpusRun:
+    """The session's one measured copy of `corpus`, built under `base` once.
+    `launch` runs every command another way (kit.drive.Driver), in a
+    workspace of its own."""
     clock = DEFAULT_NOW if now is None else now
-    work = base / f"corpus-{digest(corpus)}-{clock}"
+    work = base / f"corpus-{digest(corpus)}-{clock}{_launch_tag(launch)}"
     work.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(work) + ".lock"):
-        manifest = _load(work, corpus, clock)
+        manifest = _load(work, corpus, clock, tuple(launch))
     return CorpusRun(Path(manifest["root"]), Path(manifest["outputs"]), manifest["date_now"],
                      manifest["codes"])
