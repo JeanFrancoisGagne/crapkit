@@ -801,9 +801,9 @@ $ crapkit overrides
 run  10 @ 8c780bb18da 2026-08-23T01:36:42Z  crap 56.0  app/m.py  route( a , b , c , d )  (shipping the hotfix, ticket 412)
 ```
 
-An override grants gate violations and nothing else. A ratchet regression or a new test
-failure in the same run refuses it, and the refusal is one stderr line naming the cause and
-the escape; the exit code stays the verdict's:
+An override grants gate violations and nothing else. A ratchet regression, a new test
+failure or an unread file in the same run refuses it, and the refusal is one stderr line
+naming the cause and the escape; the exit code stays the verdict's:
 
 ```
 $ crapkit verify --override "hotfix INV-412 ships tonight; decompose next sprint"
@@ -821,7 +821,11 @@ pushed past its mark carries a gate violation and a regression in one payload
 way to accept that debt is to raise the mark in `crapkit-ratchet.tsv` by hand and commit the
 change where a reviewer sees it. A new test failure is refused from the other side: the
 override records debt in the marks file, and a failing test is not debt a mark can carry;
-fix the test first. A run holding both causes is refused once, both on the line. A refused
+fix the test first. An unread file, a changed file no reader could read, is refused from a
+third side: no function in it was judged, so there is no debt to sign, and granting the
+functions beside it would sign debt while the gate still refuses the file. Its escape is the
+one the `UNREAD` line gives: change what the reason names, or list the file under
+`[exclude]`. A run holding several causes is refused once, every cause on the line. A refused
 override writes no alert line, no store row and no mark. Under `--json` the line is on
 stderr and stdout stays one object.
 
@@ -845,7 +849,14 @@ and `SHELL` for the hook whichever shell started the commit.
 The hook path never raises an existing mark. It has no coverage data, so it synthesizes a
 worst-case score, and letting that overwrite a real measurement would blind the ratchet to a
 later coverage collapse. A prior tighter mark stays, and the next `verify` still demands
-repayment.
+repayment. The worst case is the CRAP the function's scope scores with no coverage: ccn^2 +
+ccn where a lane measures the scope, and ccn in a `coverage_optional` scope, which scores
+CRAP = ccn. Before 0.8.1 the hook wrote ccn^2 + ccn there too, 72 for a ccn-8 function, and
+verify let the function grow to ccn 72 before its mark failed.
+
+The hook refuses the override before it writes anything when a staged file went unread,
+with the same `override refused` line verify prints; the commit fails on the file either
+way, so a grant there would only sign debt for a commit that never lands.
 
 The hook path leaves the metric stamp alone too. Its score comes from ccn alone and it compares
 no mark, so a marks file stamped under an older metric keeps that stamp, and the next `verify`

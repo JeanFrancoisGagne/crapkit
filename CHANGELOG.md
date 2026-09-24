@@ -67,6 +67,13 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   reader refuses passed all four. `rescore --gate --json` lists them under `gate.unread`,
   `verify --json` under `unread_files`, SARIF as `crapkit/unread`, and the Action's comment
   gives each a bullet. An unread file the change never touched still passes.
+- An override never grants past an unread file. With `CRAPKIT_OVERRIDE_REASON` set, the
+  commit hook signed the debt beside a staged file no reader could read: it wrote and
+  staged `crapkit-ratchet.tsv`, raised the alert and stored a hook run, then refused the
+  commit over the file anyway. `verify --override` wrote the mark, printed `1 mark
+  granted` and exited 6 with no reason given. Both now refuse first, write nothing, and
+  print `override refused: 1 unread file (PATH: REASON) never qualifies for an override`
+  with what to do about the file.
 - `inventory`, `coverage` and `verify` name on stderr each declared scope that scored no
   function: one that claims no file (a renamed directory, a path typo, the wrong language)
   or one whose every file no reader could read. Such a run reported `0 over ceiling 6,
@@ -141,6 +148,11 @@ writes nothing.
   counts in neither `killed` nor `survived`, the printed rate leaves it out, and `--json`
   adds `no_verdict`. Both printed `mutation: 2/2 killed (100%)`, the output of real kills.
   A script that divides `killed` by `mutants` now counts a no-verdict mutant as a survivor.
+- The commit hook's audited override marks the CRAP a function's scope scores. In a
+  `coverage_optional` scope, where CRAP is ccn because no coverage exists there, it wrote
+  ccn^2 + ccn, the CRAP of a function measured at 0%: 72 for a ccn-8 function. verify then
+  let that function grow to ccn 72 before its mark failed. A scope a lane measures still
+  marks the untested CRAP, since a staged blob carries no coverage.
 - `doctor --tune` sums only the lanes that recorded a duration and names the others
   (`130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; cost unknown for
   'b'`). A lane with no duration was dropped from the sum, and one whose junit carries no

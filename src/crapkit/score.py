@@ -24,6 +24,13 @@ def crap(ccn: int, cov: float) -> float:
     return ccn * ccn * (1.0 - cov) ** 3 + ccn
 
 
+def flagged_crap(ccn: int, cov: float, flag: str) -> float:
+    """The CRAP a row scores under its flag. cc-only is the pre-commit hook's
+    rule: crap IS ccn, since no coverage number can exist in that scope, and
+    feeding it cov=0 through the formula would read the absent number as 0."""
+    return float(ccn) if flag == "cc-only" else crap(ccn, cov)
+
+
 _GRADES = ((0.02, "A"), (0.05, "B"), (0.10, "C"), (0.20, "D"))
 
 
@@ -148,10 +155,10 @@ def remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> s
 
 def _finish(row, cov: float, flag: str, *, target: int, scope_targets,
             shared_span: bool = False) -> ScoredRow:
-    # cc-only is the pre-commit hook's rule: crap IS ccn, so remedy can only
-    # answer ok or decompose. Feeding it cov=0 through the formula would say
-    # add-tests about code no test can reach.
-    score = float(row.ccn) if flag == "cc-only" else crap(row.ccn, cov)
+    # cc-only scores crap = ccn, so remedy can only answer ok or decompose.
+    # Feeding it cov=0 through the formula would say add-tests about code no
+    # test can reach.
+    score = flagged_crap(row.ccn, cov, flag)
     ceiling = scope_targets.get(row.scope, target) if scope_targets else target
     # Positional, and NOT *row: cognitive and occurrence trail both tuples with four
     # fields between, so splicing the row in whole lands it in cov. Building

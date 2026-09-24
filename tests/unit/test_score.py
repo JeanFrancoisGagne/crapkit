@@ -2,7 +2,7 @@
 import pytest
 
 from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import crap, score_rows
+from crapkit.score import crap, flagged_crap, score_rows
 from crapkit.snapshot import InventoryRow
 
 
@@ -16,6 +16,18 @@ def test_crap_formula_exact_values():
     assert crap(1, 0.0) == 2
     assert round(crap(6, 1.0), 6) == 6
     assert crap(7, 1.0) == 7, "cc 7 at full coverage still exceeds a target of 6"
+
+
+@pytest.mark.parametrize(("flag", "cov", "expected"), [
+    ("cc-only", 0.0, 8.0),
+    ("untested", 0.0, 72.0),
+    ("no-lane", 0.0, 72.0),
+    ("measured", 1.0, 8.0),
+])
+def test_a_cc_only_row_scores_its_ccn_and_every_other_flag_the_formula(flag, cov, expected):
+    """cc-only has no coverage number at all, so its CRAP is ccn. The override
+    grant reads this same rule, where it once wrote 72 for a cc-only ccn 8."""
+    assert flagged_crap(8, cov, flag) == expected
 
 
 def test_join_by_span_overlap_flags_measured():

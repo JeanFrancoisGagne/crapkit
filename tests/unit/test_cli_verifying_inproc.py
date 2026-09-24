@@ -982,6 +982,42 @@ def test_the_env_override_grants_the_commit_through_a_full_audit(repo, capsys, m
     assert [r["kind"] for r in store_of(repo).list_runs()] == ["hook"]
 
 
+CC_ONLY_SCOPE = """
+[[scope]]
+name = "cc"
+paths = ["cc"]
+languages = ["typescript"]
+coverage_optional = true
+"""
+
+
+@pytest.mark.parametrize(("source", "mark"), [
+    pytest.param("cc/rules.ts", 8.0, id="cc-only-scope-marks-ccn"),
+    pytest.param("src/app.ts", 72.0, id="lane-scope-marks-crap-at-cov-0"),
+])
+def test_the_env_override_marks_the_crap_the_scope_scores(repo, capsys, monkeypatch, source, mark):
+    """A cc-only scope scores CRAP = ccn, so its grant marks ccn. Marking
+    ccn^2 + ccn there (72 at ccn 8) read the coverage no lane can measure as 0,
+    and verify then pardoned the function until ccn 72. A scope a lane measures
+    still marks the CRAP of an untested function: the hook reads a blob, and a
+    blob carries no coverage."""
+    from crapkit.ratchet import load_ratchet
+
+    with open(repo / "crapkit.toml", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(CC_ONLY_SCOPE)
+    (repo / "cc").mkdir(exist_ok=True)
+    (repo / "cc" / "rules.ts").touch()
+    add_knotty(repo, source)
+    stage(repo, "crapkit.toml", source)
+    monkeypatch.setenv("CRAPKIT_OVERRIDE_REASON", "hotfix, ticket 42")
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert code == 0, out + err
+    marks = load_ratchet((repo / MARKS).read_text(encoding="utf-8"))
+    assert [(e.path, e.long_name, e.crap) for e in marks] == [(source, "knotty ( n )", mark)]
+
+
 # --- the receipt is spelled for the shell that ran the hook --------------------
 #
 # `unset` is a POSIX builtin. Printed on Windows it errors, the variable stays

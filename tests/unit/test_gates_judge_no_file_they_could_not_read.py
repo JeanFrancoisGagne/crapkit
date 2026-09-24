@@ -26,6 +26,7 @@ from crapkit.cli import main
 ARROW = "\nexport const pick = (x: number) => convert<string, number>(x);\n"
 REASON = "expression-arrow body has '<' before a comma"
 ADVICE = "change what the reason names so a reader can parse the file"
+MARKS = "crapkit-ratchet.tsv"
 
 
 def run(argv: list[str], repo, capsys) -> tuple[int, str, str]:
@@ -83,6 +84,56 @@ def test_the_env_override_grants_no_file_it_could_not_read(repo, capsys, monkeyp
 
     assert code == 6, out
     assert "UNREAD  src/app.ts" in out, out
+    assert "override refused: 1 unread file (src/app.ts: " in out, out
+
+
+def unread_beside_knotty(repo) -> None:
+    """src/a.ts holds only an arrow no reader parses; src/app.ts gains knotty,
+    a function the override could grant if nothing else stood in its way."""
+    (repo / "src" / "a.ts").write_text(ARROW, encoding="utf-8", newline="\n")
+    add_knotty(repo)
+
+
+def test_the_env_override_refuses_before_any_side_effect_when_a_staged_file_went_unread(
+        repo, capsys, monkeypatch):
+    """The grant wrote and staged the marks file, raised the alert and stored a
+    hook run, then the hook exited 6 over the unread file anyway: the commit was
+    refused and the debt was signed. The refusal now comes first."""
+    monkeypatch.setenv("CRAPKIT_OVERRIDE_REASON", "shipping it")
+    unread_beside_knotty(repo)
+    git(repo, "add", "src/a.ts", "src/app.ts")
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert code == 6, out + err
+    assert "override granted" not in out, out
+    assert "override refused: 1 unread file (src/a.ts: " in out and REASON in out, out
+    assert ADVICE in out, out
+    assert not (repo / MARKS).exists()
+    assert git(repo, "diff", "--cached", "--name-only").split() == ["src/a.ts", "src/app.ts"]
+    assert not (repo / "alerts.log").exists()
+    assert not (repo / ".crapkit" / "crap.sqlite").exists()
+
+
+def test_verify_override_refuses_before_it_grants_when_a_changed_file_went_unread(scored, capsys):
+    """`verify --override` granted the gate violation beside the unread file,
+    wrote its mark and printed `1 mark granted`, then exited 6 with no reason
+    given. An unread file never qualifies, so nothing is granted and the
+    refusal names it."""
+    unread_beside_knotty(scored)
+    commit_all(scored, "an unread file beside a knotty function")
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--override", "shipping it", "--json"],
+                         scored, capsys)
+
+    payload = json.loads(out)
+    assert code == 6, out + err
+    assert payload["overridden"] == []
+    assert [g["long_name"] for g in payload["gate_violations"]] == ["knotty ( n )"]
+    assert "override refused: 1 unread file (src/a.ts: " in err and REASON in err, err
+    assert ADVICE in err, err
+    assert not (scored / MARKS).exists()
+    assert not (scored / "alerts.log").exists()
 
 
 @pytest.mark.parametrize("where", ["tracked", "untracked"])
@@ -162,3 +213,20 @@ def test_verify_passes_an_unread_file_outside_the_change(scored, capsys):
 
     assert code == 0, out + err
     assert json.loads(out)["unread_files"] == []
+
+
+def test_the_pages_quote_the_override_refusal_an_unread_file_prints():
+    """The CHANGELOG quotes the refusal with PATH and REASON for the file and its
+    reason; the line the code builds for those two words must match it, and the
+    ratchet page must name an unread file among the causes no override grants."""
+    from pathlib import Path
+
+    from crapkit.cli.verifying import _hook_override_refusal
+
+    line = _hook_override_refusal({"PATH": "REASON"})
+    quoted = line.split(";")[0]
+    root = Path(__file__).resolve().parents[2]
+    assert quoted == "override refused: 1 unread file (PATH: REASON) never qualifies for an override"
+    assert f"`{quoted}`" in " ".join((root / "CHANGELOG.md").read_text(encoding="utf-8").split())
+    ratchet = " ".join((root / "docs" / "ratchet.md").read_text(encoding="utf-8").split())
+    assert "a new test failure or an unread file in the same run refuses it" in ratchet

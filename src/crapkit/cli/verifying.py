@@ -311,9 +311,9 @@ def _named_seed(named: dict) -> str:
 
 def _override_applies(verdict, reason: str | None) -> bool:
     """--override grants pure gate violations: a reason, a failed verdict, gate
-    violations, and neither of the two findings that never qualify."""
-    return bool(reason) and not verdict.ok and bool(verdict.gate_violations) \
-        and not (verdict.ratchet_regressions or verdict.new_failures)
+    violations, and none of the findings that never qualify."""
+    return (bool(reason) and not verdict.ok and bool(verdict.gate_violations)
+            and not _refusal_parts(verdict))
 
 
 def _refused_cause(count: int, noun: str, first: str) -> str:
@@ -322,29 +322,53 @@ def _refused_cause(count: int, noun: str, first: str) -> str:
     return f"{count} {noun}{'' if count == 1 else 's'} ({first})"
 
 
+def _regression_cause(regressions) -> str:
+    r = regressions[0]
+    return _refused_cause(len(regressions), "ratchet regression",
+                          f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}")
+
+
+def _failure_cause(failures) -> str:
+    return _refused_cause(len(failures), "new test failure", failures[0])
+
+
+def _unread_cause(unread) -> str:
+    return _refused_cause(len(unread), "unread file", f"{unread[0].path}: {unread[0].reason}")
+
+
+def _never_granted() -> tuple:
+    """Each finding kind an override never grants, how to name it, and its escape.
+
+    The escape for a regression is the only one there is; verify never raises a
+    mark, and the override path cannot reach a marked function without also
+    seeing its regression (docs/ratchet.md, Overrides and the audit trail). An
+    unread file holds no function to record as debt, and granting the functions
+    beside it would sign debt while the gate still refuses the file.
+    """
+    from ._shared import _UNREAD_ADVICE
+
+    return (("ratchet_regressions", _regression_cause, "raise the mark by hand and commit it"),
+            ("new_failures", _failure_cause, "fix the failing test first"),
+            ("unread_files", _unread_cause, _UNREAD_ADVICE))
+
+
+def _refusal_parts(verdict) -> list[tuple[int, str, str]]:
+    """(count, cause, escape) for each finding kind present that no override grants."""
+    return [(len(getattr(verdict, kind)), cause(getattr(verdict, kind)), escape)
+            for kind, cause, escape in _never_granted() if getattr(verdict, kind)]
+
+
 def _override_refusal(verdict) -> str | None:
     """Why a refused --override did not apply, or None when nothing disqualified it.
 
-    Both causes on one line, each with its own escape: a run holding a
-    regression and a new failure is refused once, not twice. The escape for a
-    regression is the only one there is; verify never raises a mark, and the
-    override path cannot reach a marked function without also seeing its
-    regression (docs/ratchet.md, Overrides and the audit trail).
+    Every cause on one line, each with its own escape: a run holding a
+    regression and a new failure is refused once, not twice.
     """
-    causes, escapes = [], []
-    if verdict.ratchet_regressions:
-        r = verdict.ratchet_regressions[0]
-        causes.append(_refused_cause(len(verdict.ratchet_regressions), "ratchet regression",
-                                     f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}"))
-        escapes.append("raise the mark by hand and commit it")
-    if verdict.new_failures:
-        causes.append(_refused_cause(len(verdict.new_failures), "new test failure",
-                                     verdict.new_failures[0]))
-        escapes.append("fix the failing test first")
-    if not causes:
+    parts = _refusal_parts(verdict)
+    if not parts:
         return None
-    count = len(verdict.ratchet_regressions) + len(verdict.new_failures)
-    verb = "qualifies" if count == 1 else "qualify"
+    counts, causes, escapes = zip(*parts)
+    verb = "qualifies" if sum(counts) == 1 else "qualify"
     return (f"override refused: {' and '.join(causes)} never {verb} for an override; "
             f"{'; '.join(escapes)}")
 
@@ -1136,6 +1160,18 @@ def _print_clear_the_reason() -> None:
           "here — clear it where it was set.")
 
 
+def _granted_crap(cfg, violation) -> float:
+    """The mark the hook's grant writes: the CRAP the function's scope scores
+    with no coverage behind it. A staged blob carries no coverage, so a scope a
+    lane measures marks the untested CRAP, and a cc-only scope marks ccn, as
+    `score` scores it there."""
+    from ..score import flagged_crap
+
+    scope = owning_scope(violation.path, path_matchers({s.name: s.paths for s in cfg.scopes}))
+    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
+    return flagged_crap(violation.ccn, 0.0, flag)
+
+
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing."""
@@ -1154,7 +1190,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
     gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
-                          float(v.ccn * v.ccn + v.ccn), "decompose", False, v.key_name)
+                          _granted_crap(cfg, v), "decompose", False, v.key_name)
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
@@ -1257,23 +1293,49 @@ def cmd_hook_precommit(args: argparse.Namespace) -> int:
     return 6 if gate.unread else code
 
 
-def _judge_staged(root: Path, cfg, gate) -> int:
+def _env_override_reason() -> str:
     import os
 
+    return os.environ.get("CRAPKIT_OVERRIDE_REASON", "").strip()
+
+
+def _hook_override_refusal(unread: dict) -> str | None:
+    """The line verify --override prints for the same unread files, or None
+    when every staged file was read."""
+    from ..verify import Verdict, with_unread
+
+    return _override_refusal(with_unread(Verdict(False, [], [], [], []), unread, set(unread), set()))
+
+
+def _judge_staged(root: Path, cfg, gate) -> int:
     violations = _gated_violations(root, cfg, gate.violations, gate.records)
-    if not violations:
-        return 0
+    reason = _env_override_reason()
+    refusal = _hook_override_refusal(gate.unread) if reason else None
+    if violations:
+        _print_staged_violations(root, cfg, violations)
+    if refusal:
+        # Before any side effect: the grant writes and stages the marks file,
+        # raises the alert and stores a run, and the unread file refuses the
+        # commit whatever the grant signed.
+        print(f"crapkit: {refusal}")
+        return 6
+    return _grant_or_refuse(root, cfg, violations, reason, gate.records)
+
+
+def _print_staged_violations(root: Path, cfg, violations: list) -> None:
     print(f"crapkit gate: {len(violations)} staged function(s) exceed the complexity ceiling of {cfg.target}:")
     for v in violations:
         print(f"  ccn {v.ccn:>3}  {v.path}:{v.start}  {v.long_name}")
     _note_stale_staged(root, {v.path for v in violations})
 
-    # CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
-    # three-record audit and the gate holds unless all three land.
-    reason = os.environ.get("CRAPKIT_OVERRIDE_REASON", "").strip()
-    if reason:
-        _grant_env_override(root, cfg, violations, reason, gate.records)
-        return 0
 
+def _grant_or_refuse(root: Path, cfg, violations: list, reason: str, records) -> int:
+    """CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
+    three-record audit and the gate holds unless all three land."""
+    if not violations:
+        return 0
+    if reason:
+        _grant_env_override(root, cfg, violations, reason, records)
+        return 0
     print("decompose before committing (coverage cannot save a function above the target).")
     return 6
