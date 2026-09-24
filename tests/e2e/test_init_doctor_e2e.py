@@ -402,6 +402,59 @@ def test_doctor_flags_a_lane_whose_cwd_is_missing(bare_repo: Path):
     assert "nowhere" in res.stdout
 
 
+def _add_globs(repo: Path, *globs: str) -> None:
+    """Append globs to the [exclude] list init wrote, in TOML literal strings,
+    so a backslash reaches the loader as typed."""
+    path = repo / "crapkit.toml"
+    added = "".join(f"  '{glob}',\n" for glob in globs)
+    path.write_text(path.read_text(encoding="utf-8").replace("globs = [\n", f"globs = [\n{added}", 1),
+                    encoding="utf-8")
+
+
+def test_doctor_warns_on_an_exclude_glob_that_matches_no_tracked_file(bare_repo: Path):
+    """A typo in a glob excluded nothing, silently: the generated files stayed
+    scored and doctor printed `no problems found`. The glob is quoted as the
+    file holds it; a backslash glob that matches is read as git's spelling and
+    says nothing, and neither do init's own defaults."""
+    (bare_repo / "src" / "gen").mkdir()
+    (bare_repo / "src" / "gen" / "client.ts").write_text("export const c = 1;\n", encoding="utf-8")
+    _git_commit_all(bare_repo, "generated client")
+    assert run_cli(bare_repo, "init").returncode == 0
+    _add_globs(bare_repo, "src\\gen\\**", "src/gne/**", "pylib\\gen\\")
+
+    res = run_cli(bare_repo, "doctor")
+    report = json.loads(run_cli(bare_repo, "doctor", "--json").stdout)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    warned = _starting(res.stdout.splitlines(), "WARN [exclude] glob")
+    assert warned == [
+        "WARN [exclude] glob 'src/gne/**' matches no tracked file, so it excludes nothing; "
+        "fix the path or delete the glob",
+        "WARN [exclude] glob 'pylib\\\\gen\\\\' matches no tracked file (read as 'pylib/gen/**'), "
+        "so it excludes nothing; fix the path or delete the glob"], res.stdout
+    assert "doctor: no problems found" in res.stdout, "a WARN never fails doctor"
+    assert _starting(report["warnings"], "[exclude]") == [line[5:] for line in warned]
+
+
+def _starting(lines: list[str], prefix: str) -> list[str]:
+    return [line for line in lines if line.startswith(prefix)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a Windows checkout cannot hold a name with \\")
+def test_doctor_names_a_tracked_file_whose_name_holds_a_backslash(bare_repo: Path):
+    """Legal on POSIX, and read as a directory separator by every file crapkit
+    reads a path out of, so the file cannot be measured."""
+    (bare_repo / "pylib" / "we\\ird.py").write_text("def w():\n    return 1\n", encoding="utf-8")
+    _git_commit_all(bare_repo, "a backslash name")
+    assert run_cli(bare_repo, "init").returncode == 0
+
+    res = run_cli(bare_repo, "doctor")
+
+    (line,) = [ln for ln in res.stdout.splitlines() if "hold \\ in their name" in ln]
+    assert line.startswith("WARN 1 tracked file(s) hold \\ in their name"), line
+    assert line.endswith(": pylib/we\\ird.py; rename each without the \\"), line
+
+
 def test_doctor_show_files_lists_scope_members(bare_repo: Path):
     assert run_cli(bare_repo, "init").returncode == 0
     res = run_cli(bare_repo, "doctor", "--show-files")

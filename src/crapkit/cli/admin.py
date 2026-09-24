@@ -1115,6 +1115,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
+            + _doctor_path_names(cfg, raw, files)
             + _doctor_lanes(root, cfg)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
@@ -1126,6 +1127,25 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))
+
+
+def _written_globs(raw: dict, cfg) -> tuple[tuple[str, str], ...]:
+    """Each [exclude] glob as crapkit.toml holds it, paired with the glob the
+    loader reads, leaving out init's default set: those guard trees a repo may
+    never track, and matching nothing is them doing their job."""
+    from ..scaffold import DEFAULT_EXCLUDES
+
+    written = raw.get("exclude", {}).get("globs", ())
+    return tuple((glob, read) for glob, read in zip(written, cfg.exclude_globs)
+                 if read not in DEFAULT_EXCLUDES)
+
+
+def _doctor_path_names(cfg, raw: dict, files: list[str]) -> list[Finding]:
+    """An [exclude] glob that matches no tracked file, and a tracked name
+    holding `\\` (both WARN)."""
+    from ..doctor import backslash_names, unmatched_globs
+
+    return [*unmatched_globs(_written_globs(raw, cfg), files), *backslash_names(files)]
 
 
 def _doctor_inputs(root: Path, lanes) -> list[Finding]:

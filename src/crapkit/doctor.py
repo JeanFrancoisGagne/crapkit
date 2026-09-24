@@ -6,7 +6,7 @@ import os
 import re
 from typing import NamedTuple
 
-from .universe import LANGUAGE_EXTENSIONS, scopes_with_tests
+from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
 
 from .config_contract import known_keys
 
@@ -304,6 +304,49 @@ def unmatched_inputs(lanes, visible: tuple[str, ...]) -> tuple[Finding, ...]:
     return tuple(Finding("FAIL", _UNMATCHED_INPUT.format(lane=lane.name, entry=entry))
                  for lane in lanes for entry in lane.inputs
                  if _matches_nothing(entry, visible))
+
+
+_UNMATCHED_GLOB = (
+    "[exclude] glob {written!r} matches no tracked file{read_as}, so it excludes nothing; "
+    "fix the path or delete the glob"
+)
+
+
+def _glob_matches_any(glob: str, lowered: list[str]) -> bool:
+    match = exclude_matcher((glob,))
+    return any(match(path) for path in lowered)
+
+
+def _read_as(written: str, read: str) -> str:
+    return "" if written == read else f" (read as {read!r})"
+
+
+def unmatched_globs(globs: tuple[tuple[str, str], ...], tracked: list[str]) -> tuple[Finding, ...]:
+    """Each [exclude] glob that matches no tracked file, quoted as written. WARN.
+
+    `globs` pairs each glob as crapkit.toml holds it with the glob the loader
+    reads. A glob that matches nothing excludes nothing, silently: generated
+    files stay scored and doctor said `no problems found`. The tracked list is
+    the whole of it, before any exclusion, so a glob under a test directory
+    that already leaves the corpus still counts as matching."""
+    lowered = [path.lower() for path in tracked]
+    return tuple(Finding("WARN", _UNMATCHED_GLOB.format(written=written,
+                                                        read_as=_read_as(written, read)))
+                 for written, read in globs if not _glob_matches_any(read, lowered))
+
+
+def backslash_names(tracked: list[str]) -> tuple[Finding, ...]:
+    """Tracked files whose name holds `\\`, which a POSIX tree may carry. WARN.
+    crapkit.toml, coverage reports and JUnit ids read `\\` as a directory
+    separator on every OS, so such a file cannot be measured, and nothing else
+    says why it scores untested."""
+    named = [path for path in tracked if "\\" in path]
+    if not named:
+        return ()
+    return (Finding("WARN", f"{len(named)} tracked file(s) hold \\ in their name, which crapkit "
+                            "does not support: crapkit.toml, coverage reports and JUnit ids read "
+                            "\\ as a directory separator, so such a file cannot be measured: "
+                            f"{', '.join(named)}; rename each without the \\"),)
 
 
 _PLAIN_FILE_MODE = "100644"  # git's non-executable file; 100755 is the armed one
