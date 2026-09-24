@@ -66,7 +66,7 @@ def test_prune_keeps_the_digest_pair_so_the_digest_is_unchanged(tmp_path):
 def test_a_run_row_that_outlives_its_rows_is_the_false_alarm_prune_avoids(tmp_path):
     """Why prune deletes whole runs. Deleting the function rows alone leaves a
     run that reads as a real measurement of nothing, and the digest then reports
-    every over-target function in the repo as new."""
+    every over-target function in the repo as newly scored."""
     store = store_with_history(tmp_path)
     quiet = digest_lines(store)
     older = store.list_runs()[0]["id"]
@@ -78,8 +78,8 @@ def test_a_run_row_that_outlives_its_rows_is_the_false_alarm_prune_avoids(tmp_pa
 
     loud = digest_lines(SnapshotStore(tmp_path / "crap.sqlite"))
     assert "functions 0 -> 3" in loud[0], loud
-    assert sum(1 for line in loud if line.startswith("new over ceiling")) == 3
-    assert not any(line.startswith("new over ceiling") for line in quiet), \
+    assert sum(1 for line in loud if line.startswith("newly scored over ceiling")) == 3
+    assert not any("over ceiling:" in line for line in quiet), \
         "before the damage those three functions were known, not new"
 
 

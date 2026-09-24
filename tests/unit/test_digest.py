@@ -1,4 +1,10 @@
-"""Digest seam: two scored row sets in, totals + delta out; silence when unchanged. Pure."""
+"""Digest seam: two scored row sets in, totals + delta out; silence when unchanged. Pure.
+
+The tests at the end drive `crapkit digest` in-process over two coverage runs."""
+import pytest
+
+from cli_inproc_repo import repo, template_repo  # noqa: F401
+
 from crapkit.digest import build_digest, totals
 from crapkit.config import Config, load_config_text
 from crapkit.score import ScoredRow
@@ -140,8 +146,11 @@ def test_the_digest_counts_over_ceiling_per_scope_like_trend_does():
         "a function under its own scope's ceiling is not new debt"
 
 
+REPORTS_BEFORE = [*BASE, scored("reports/q.ts", "q( )", 2, 1.0, scope="reports")]
+
+
 def test_without_scope_ceilings_the_same_function_is_new_debt():
-    d = build_digest(BASE, BASE + [reports_row(0.7)], ceiling_of=FLAT)
+    d = build_digest(REPORTS_BEFORE, REPORTS_BEFORE + [reports_row(0.7)], ceiling_of=FLAT)
 
     assert "over ceiling 1 -> 2" in d.lines[0], d.lines
     assert any(line.startswith("new over ceiling: reports/r.ts r( )") for line in d.lines), d.lines
@@ -174,3 +183,104 @@ def test_the_digest_reads_the_ceiling_through_the_config_accessor():
     assert d.lines[0].endswith("over ceiling 1 -> 1; functions 2 -> 3"), d.lines
     assert not any("r( )" in line for line in d.lines), \
         "a function under its own scope's ceiling is not new debt"
+
+
+# --- a scope the previous run never scored --------------------------------------
+#
+# The older run of the pair holds no row for a function either because the
+# function did not exist or because that run never measured its scope (the
+# scope was added to crapkit.toml since, with the lane set unchanged). Reading
+# the second as the first announced old debt as "new over ceiling".
+
+def test_a_function_in_a_scope_the_previous_run_did_not_score_is_newly_scored():
+    d = build_digest(BASE, BASE + [reports_row(0.0)], ceiling_of=FLAT)
+
+    assert any(line.startswith("newly scored over ceiling in scope reports: reports/r.ts r( )")
+               for line in d.lines), d.lines
+    assert not any(line.startswith("new over ceiling") for line in d.lines), d.lines
+
+
+def test_a_newly_scored_function_under_its_ceiling_is_not_listed():
+    d = build_digest(BASE, BASE + [reports_row(0.7)], ceiling_of=SCOPED)
+
+    assert d.lines[0].endswith("functions 2 -> 3"), d.lines
+    assert len(d.lines) == 1, d.lines
+
+
+def test_new_code_in_a_scope_both_runs_scored_is_still_new():
+    d = build_digest(REPORTS_BEFORE, REPORTS_BEFORE + [reports_row(0.0)], ceiling_of=FLAT)
+
+    assert any(line.startswith("new over ceiling: reports/r.ts r( )") for line in d.lines), d.lines
+    assert not any(line.startswith("newly scored") for line in d.lines), d.lines
+
+
+def test_the_newly_scored_list_keeps_to_top_worst_first():
+    rows = [scored(f"reports/r{i}.ts", f"r{i}( )", 7 + i, 0.0, scope="reports") for i in range(3)]
+
+    d = build_digest(BASE, BASE + rows, ceiling_of=FLAT, top=2)
+
+    listed = [line for line in d.lines if line.startswith("newly scored")]
+    assert [line.split(": ")[1].split(" (")[0] for line in listed] == [
+        "reports/r2.ts r2( )", "reports/r1.ts r1( )"], listed
+
+
+LEGACY_SCOPE = """
+[[scope]]
+name = "legacy"
+paths = ["legacy"]
+languages = ["typescript"]
+coverage_optional = true
+"""
+
+
+def _digest_after(repo, capsys, change) -> str:
+    """Two coverage runs with the same lane set around `change`, then the digest."""
+    from cli_inproc_repo import KNOTTY, commit_all, seed_artifacts
+
+    from crapkit.cli import main
+
+    seed_artifacts(repo)
+    (repo / "legacy").mkdir()
+    (repo / "legacy" / "old.ts").write_text(KNOTTY.lstrip(), encoding="utf-8")
+    commit_all(repo, "legacy code no scope measures yet")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    change(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    assert main(["digest", "--repo", str(repo)]) == 0
+    return capsys.readouterr().out
+
+
+def _add_legacy_scope(repo) -> None:
+    from cli_inproc_repo import commit_all
+
+    with open(repo / "crapkit.toml", "a", encoding="utf-8") as fh:
+        fh.write(LEGACY_SCOPE)
+    commit_all(repo, "measure legacy/ too")
+
+
+def _new_function_in_a_scored_scope(repo) -> None:
+    from cli_inproc_repo import KNOTTY, commit_all
+
+    from crapkit.cli import main
+
+    _add_legacy_scope(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    (repo / "legacy" / "new.ts").write_text(KNOTTY.lstrip().replace("knotty", "fresh"),
+                                            encoding="utf-8")
+    commit_all(repo, "a new function")
+
+
+@pytest.mark.parametrize(("change", "said", "unsaid"), [
+    pytest.param(_add_legacy_scope,
+                 "newly scored over ceiling in scope legacy: legacy/old.ts knotty ( n )",
+                 "new over ceiling", id="scope-added-since-previous-run"),
+    pytest.param(_new_function_in_a_scored_scope,
+                 "new over ceiling: legacy/new.ts fresh ( n )",
+                 "newly scored", id="control-function-really-new"),
+])
+def test_the_digest_command_tells_newly_scored_code_from_new_code(repo, capsys, change, said, unsaid):
+    out = _digest_after(repo, capsys, change)
+
+    assert said in out, out
+    assert unsaid not in out, out
