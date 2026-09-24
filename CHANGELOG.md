@@ -1,5 +1,112 @@
 # Changelog
 
+## 0.8.1 — unreleased
+
+### Upgrading from 0.8.0
+
+- `crapkit.toml` reads every path it carries the same way on every OS, and three of those
+  readings can change what an existing config scores, with no re-seed: the analysis
+  version stays 11. A scope path in another letter case on a case-insensitive disk
+  (`paths = ["Src"]` for `src/`) claimed no file and now claims its directory, so its
+  functions score and meet the gate; a scope path spelled absolutely is refused at load
+  with exit 3 and the relative path to write. `[exclude]` globs written `src\gen\**`,
+  `./src/gen/**`, `/src/gen/**` or `src/gen/` excluded nothing and now exclude. A
+  `path_prefix` written `api\`, `./api/`, `.\api\`, `/api/` or, on a case-insensitive
+  disk, `API/` scored every function in its scopes untested and now joins the lane's
+  coverage. Run `crapkit doctor` and `crapkit coverage` and compare the per-scope file
+  counts. See the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#config-paths-that-081-reads-on-every-os).
+- A config `crapkit init` wrote under 0.8.0 names the python of the OS it ran on:
+  `.venv\\Scripts\\python.exe` (as the TOML string spells it) or `.venv/bin/python`, which
+  fail every lane on the other OS, or a bare `python`, which fails on an Ubuntu without
+  python-is-python3. Swap the venv launcher for `{python:.venv}` and a bare name for
+  `{python}`.
+- Two exit codes change. On Windows a root on a network share exits 3 before any lane
+  starts, where every lane ran in `C:\Windows`. A lane whose `cwd` names no directory
+  fails as that lane, and a run with no lane left exits 5, where `crapkit coverage` ended
+  in a Python traceback at exit 1.
+
+### A path reads as the file git names, in any spelling that names it
+
+- `init` writes a lane's python as a launcher token, `{python:.venv}` for the repo's venv
+  and `{python}` for a bare name, and the loader reads it for the OS reading the file:
+  `.venv\Scripts\python.exe` or `.venv/bin/python`, and `python` on Windows or `python3`
+  elsewhere. A Windows author's `.venv\Scripts\python.exe` failed every lane of a Linux
+  checkout with its own venv (exit 5, doctor FAIL), the Linux spelling failed the same way
+  under cmd.exe, and a bare `python` failed on an Ubuntu without python-is-python3. The
+  token works in lane and retest commands, `[crapkit.scoped_tests]` and
+  `mutation_command`, and the full-suite guard and `doctor` read the expanded command. A
+  machine where only another name resolves, such as `py` on Windows, keeps that name.
+- `crapkit.toml` reads every path it carries on every OS the way it reads scope paths.
+  `[exclude] globs`, `path_prefix`, lane `cwd`, `artifact` and `results_artifact`, and
+  `ratchet_file` take `\` as a separator and drop a leading `./`; a trailing `/` on a glob
+  names the directory's contents, as in .gitignore; and on a case-insensitive disk scope
+  `paths` and lane `inputs` take the case the directory lists. Before, a glob in any other
+  spelling excluded nothing, a `path_prefix` like `api\` scored a tested function
+  untested, a Windows-written `cwd = 'api\'` crashed on Linux with a traceback,
+  `artifact = '.crapkit\cov.json'` failed a lane that had written it, and
+  `ratchet_file = 'gates\ratchet.tsv'` read no marks. An absolute scope path
+  (`/home/dev/repo/web`, `/c/...`, `/mnt/c/...`, `\\server\share\...`,
+  `//server/share/...`) is refused at load with its relative spelling, where it scored 0
+  files. `doctor` no longer tells a `./.crapkit/cov.json` artifact to move.
+- `doctor` WARNs on each `[exclude]` glob that matches no tracked file, quoting it as
+  written and with the spelling the loader reads, and names each tracked file whose name
+  holds `\` as unsupported. Such a glob excluded nothing while doctor said `no problems
+  found`, and such a file scored untested with nothing saying why. init's default globs
+  are left out.
+- The unmeasured-scope warning quotes the `path_prefix` a lane sets when that prefix keys
+  every measured file outside its scopes. It told the user to set `path_prefix`, which
+  was already set.
+- A lane whose `cwd` names no directory fails as that lane, with `cwd <path> is not a
+  directory, so the command never ran`, and a run with no lane left exits 5. `crapkit
+  coverage` ended in a Python traceback and exit 1.
+- A file argument in any case or shell spelling names the file git names: `SRC\app.ts` on
+  a case-insensitive disk, and on Windows `/c/...` from Git Bash, `/mnt/c/...` from WSL,
+  and `\\localhost\C$\...`, `\\?\C:\...` and `\\?\UNC\localhost\C$\...` as their drive.
+  Before, `rescore --gate` judged 0 functions and passed a file that fails in git's
+  spelling, and MCP `check_gate` answered `gate.ok` true the same way; `test-scoped`
+  refused a file its scope declares; `brief` and `explain` found nothing; `ratchet move`
+  filed a mark under a key no row carries; `mutate --files` called an in-scope file
+  outside the corpus; `--repo` and an MCP call's `repo` in Git Bash or WSL spelling found
+  no crapkit.toml; and `next-item --exclude` and MCP `get_next_item` handed out the
+  directory they were told to skip as `pkg\legacy`, `./pkg/legacy` or `PKG/Legacy`.
+  `--help` for each file argument and for `--exclude` names the spellings it reads.
+- On Windows a root on a network share exits 3 before crapkit starts any child: `--repo
+  \\server\share\repo`, a session standing in a share, and a `\\wsl.localhost\...`
+  checkout. The line says to map the share to a drive letter (`net use Z: \\server\share`)
+  and run crapkit from `Z:\repo`. cmd.exe cannot start a command in a UNC directory and
+  ran every lane in `C:\Windows` instead: a real pytest lane collected `C:\Windows` for
+  42 s of CPU before it was killed. A root on a mapped drive keeps its letter, for
+  `--repo`, the working directory and an MCP call's `repo`: `resolve()` turned `Z:\repo`
+  into the share behind it, so its lanes started in `C:\Windows` too.
+- The advisory hook reads a payload's `file_path` and `cwd` the way the edited file's disk
+  does: `C:\`, `c:\`, `C:/` and `/c/` paths, another letter case on a case-insensitive
+  disk, and a Bash event's `/c/...` cwd. On Windows an Edit breach and every
+  heredoc-written breach went unadvised, and an edit spelled `...\calc\Mod.py` advised
+  committed debt the edit never touched. A new file whose name holds `[ab]` or `*` is no
+  longer read as tracked with no changed lines, so a breach in it is advised.
+- The istanbul reader rebases a key that names this checkout in another spelling: a
+  lower-case drive, another letter case, a junction or symlink to the checkout, a `\\?\`
+  prefix, or an 8.3 name such as `C:\Users\RUNNER~1\...` on GitHub's Windows runners. The
+  lane FAILED with advice to point the reporter at the checkout it had measured. On a
+  case-insensitive disk a key whose directories below the checkout, or a relative key,
+  are in another letter case (`SRC/app.ts` for git's `src/app.ts`) now keys git's file,
+  where that file scored untested.
+- `verify` tags a new failure dirty when bun on Windows names its test file with
+  backslashes; it read as committed before. The same holds for a JUnit id whose file part
+  starts with `./` or is an absolute path inside the checkout, as jest-junit's
+  `{filepath}` writes it, on every OS, and on a case-insensitive disk for a relative id in
+  another letter case, as a runner started from `Web\` writes `WEB/src/app.test.ts`.
+- The full-suite guard reads a testpath positional in the case its directory lists, so on
+  a case-insensitive disk `python -m pytest Tests --cov=app` under `testpaths = ["tests"]`
+  is the whole suite. It was refused at exit 3 as narrowing, which sent the user to
+  `full_suite = false`.
+
+### CI, tests and release tooling
+
+- CI runs the unit and e2e suites on macOS with Python 3.13, so the letter-case rows run
+  on APFS, which ignores case by default. Until now they ran on Windows NTFS alone.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
