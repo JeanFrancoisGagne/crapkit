@@ -187,19 +187,24 @@ def _package_files(root: Path) -> list[str]:
 
 
 def _package_text(root: Path, rel: str) -> str | None:
-    """A package.json read the way npm reads it: a UTF-8 BOM dropped, and a
-    stray cp1252 byte in a description read as U+FFFD. A BOM used to cost the
-    js lane in silence, and one é ended init. UTF-16, which npm cannot read
-    either, is named on stderr and gives no lane."""
-    from ..textcodec import lenient, utf16_marked
+    """A package.json read by the JSON rule: UTF-8, a byte-order mark read past
+    as npm reads past it. A BOM used to cost the js lane in silence, and one é
+    ended init with a traceback after crapkit.toml was written.
 
-    raw = (root / rel).read_bytes()
-    if not utf16_marked(raw):
-        return lenient(raw)
-    print(f"crapkit: init read no test runner from {rel}: it is UTF-16 (first bytes "
-          f"{raw[:2].hex(' ')}), which npm cannot read either; save it as UTF-8 and "
-          "declare its lane in crapkit.toml", file=sys.stderr)
-    return None
+    A root package.json in UTF-16 or holding a byte that is not UTF-8 stops init
+    before it writes anything: the lane comes from that file, and a lane read
+    off a guess is worse than none. A nested one, a test fixture say, is
+    skipped with one line naming it."""
+    if "/" not in rel:
+        try:
+            return repo_text(root / rel, rel)
+        except ConfigError as exc:
+            raise ConfigError(f"init wrote no file: {exc}") from None
+    try:
+        return repo_text(root / rel, "it")
+    except ConfigError as exc:
+        print(f"crapkit: init skipped {rel}: {exc}", file=sys.stderr)
+        return None
 
 def _next_step(scopes: dict, lanes: tuple) -> str:
     """What to run next, which is not the same sentence in all three cases.
@@ -498,11 +503,12 @@ def _ignores_store(gitignore: Path) -> bool:
     return bool(lines & {".crapkit/", ".crapkit"})
 
 
-def _extend_gitignore(root: Path, lanes: tuple) -> None:
+def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
     untracked coverage output nobody asked for. A nested configuration under a
     root whose .gitignore already ignores the store writes nothing (ADR 0002).
+    The entries it added come back, for the caller to print.
 
     git reads .gitignore as bytes, and so does this: every byte already there
     stays, a cp1252 comment included, and the entries take the file's own line
@@ -510,14 +516,20 @@ def _extend_gitignore(root: Path, lanes: tuple) -> None:
     from ..textcodec import utf16_marked
 
     if _store_ignored_above(root):
-        return
+        return []
     path = root / ".gitignore"
     raw = path.read_bytes() if path.is_file() else b""
     if utf16_marked(raw):
-        return _name_unreadable_gitignore(raw, lanes)
+        _name_unreadable_gitignore(raw, lanes)
+        return []
     extended, added = _extended_gitignore(raw, lanes)
     if added:
         path.write_bytes(extended)
+    return added
+
+
+def _print_gitignore_added(added: list[str]) -> None:
+    if added:
         print(f"added to .gitignore: {', '.join(added)}")
 
 
@@ -557,14 +569,33 @@ def _refuse_claimed_by_ancestor(root: Path) -> None:
                           f"(scope {scope!r}); edit that configuration instead")
 
 
+def _finish_init(root: Path) -> int:
+    """A second init over a crapkit.toml an earlier run wrote. Before 0.8.1 init
+    wrote crapkit.toml first, so a run that died on the .gitignore step left a
+    config the next init refused to touch, and .crapkit/ was never ignored.
+    The missing .gitignore entries come from the lanes crapkit.toml declares
+    now; crapkit.toml itself is left byte for byte. With nothing missing, this
+    is the refusal it always was."""
+    added = _extend_gitignore(root, _load_repo_config(root).lanes)
+    if not added:
+        raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
+    print("crapkit.toml was already there and init left it as it was; it finished the step "
+          "an earlier run left undone")
+    _print_gitignore_added(added)
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
+    """Every read comes first, so a file init cannot read stops it before it
+    writes anything. Then .gitignore, then crapkit.toml: a run stopped between
+    the two leaves no config, and the next init starts over."""
     from ..scaffold import (detect_lanes, live_lanes, pytest_testpaths, sniff_scopes,
                             starter_toml)
 
     root = Path(args.repo or ".").resolve()  # init writes where the user stands; it adopts nothing
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
-        raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
+        return _finish_init(root)
     _refuse_claimed_by_ancestor(root)
     files = ls_files(root)
     scopes = sniff_scopes(files)
@@ -583,10 +614,11 @@ def cmd_init(args: argparse.Namespace) -> int:
                         testpaths=pytest_testpaths(_marker_texts(root)),
                         tracked=files, package_json=packages)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
+    added = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
     _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
-    _extend_gitignore(root, live_lanes(lanes, scopes))
+    _print_gitignore_added(added)
     return 0
 
 
