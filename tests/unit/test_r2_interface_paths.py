@@ -1,7 +1,11 @@
-"""Paths keep their identity at public command and serialization boundaries."""
+"""Paths keep their identity at public command and serialization boundaries, and
+the bytes crapkit reads back from outside programs read as those programs wrote
+them."""
+import codecs
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from urllib.parse import unquote, urlsplit
@@ -112,6 +116,50 @@ def test_mcp_brief_carries_a_cp1252_function_name_and_its_source_whole(tmp_path)
     assert done.returncode == 0, done.stderr
     assert brief["function"] == "café( x )"
     assert "# été" in brief["source"]
+
+
+def _latin1_description(manifest: bytes) -> bytes:
+    return manifest.replace(b'"description": "', b'"description": "caf\xe9 ', 1)
+
+
+MANIFESTS = [
+    # id, plugin.json bytes from crapkit's own, whether Claude Code loads it
+    ("plain", lambda manifest: manifest, True),
+    ("latin1-byte-in-description", _latin1_description, True),
+    ("utf8-bom", lambda manifest: codecs.BOM_UTF8 + manifest, False),
+    ("utf16", lambda manifest: manifest.decode("utf-8").encode("utf-16"), False),
+]
+CLAUDE = shutil.which("claude")
+
+
+def _plugin_copy(tmp_path: Path, edit) -> Path:
+    root = tmp_path / "plugin"
+    shutil.copytree(ROOT / "plugin", root)
+    manifest = root / ".claude-plugin" / "plugin.json"
+    manifest.write_bytes(edit(manifest.read_bytes()))
+    return root
+
+
+@pytest.mark.parametrize("edit, loads", [row[1:] for row in MANIFESTS], ids=[row[0] for row in MANIFESTS])
+def test_doctor_reads_a_plugin_manifest_the_way_claude_code_does(tmp_path, edit, loads):
+    """Claude Code is the reader doctor --plugin-root answers for. Checked with
+    `claude plugin validate` 2.1.238: it reads a byte that is not UTF-8 as
+    U+FFFD and refuses a byte-order mark. doctor read the first as no manifest
+    at all, and reading past the second would pass a plugin that never loads."""
+    from crapkit.cli import admin
+
+    root = _plugin_copy(tmp_path, edit)
+
+    assert (admin._manifest_version(root) == _plugin_version()) is loads
+
+
+@pytest.mark.skipif(CLAUDE is None, reason="Claude Code is not on PATH (the CI plugin job has it)")
+@pytest.mark.parametrize("edit, loads", [row[1:] for row in MANIFESTS], ids=[row[0] for row in MANIFESTS])
+def test_claude_code_loads_the_manifests_doctor_reads(tmp_path, edit, loads):
+    done = subprocess.run([CLAUDE, "plugin", "validate", str(_plugin_copy(tmp_path, edit))],
+                          capture_output=True, timeout=HANG_SECONDS)
+
+    assert (done.returncode == 0) is loads, done.stdout
 
 
 def _launcher(directory: Path, answer: bytes) -> Path:

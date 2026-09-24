@@ -1366,11 +1366,16 @@ def _plugin_json(path: Path):
     Missing, unreadable and half-written all read the same, because doctor's job
     here is to name the file rather than to raise inside it. A plugin cache is
     written by an installer this process does not control.
+
+    Read the way Claude Code reads it, since that is the reader this check
+    answers for: a byte that is not UTF-8 as U+FFFD, and a byte-order mark as
+    the JSON error it is to Node (`claude plugin validate` refuses one). A
+    strict read called a manifest Claude Code loads missing.
     """
     import json
 
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_bytes().decode("utf-8", "replace"))
     except (OSError, ValueError):
         return None
 
