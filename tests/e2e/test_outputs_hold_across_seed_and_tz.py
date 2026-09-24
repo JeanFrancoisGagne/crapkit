@@ -8,14 +8,15 @@ over 46 outputs found two such leaks: the missing-file lines printed in hash
 order, and the churn window's cutoff moved with the local calendar. This test
 keeps the outputs agents read honest from here on. It builds the same repo and
 runs coverage, worklist --json, brief --json, explain --history --json,
-inventory --export and runs --json under four seeds and four zones, and wants
+inventory --export and runs --json under five seeds and five zones, and wants
 identical bytes once the run stamps crapkit takes from the clock are masked.
+Those stamps must still be UTC and read the real clock.
 
-The clock is pinned (GIT_TEST_DATE_NOW) to 2028-03-01T03:00Z, where a
+The window's clock is pinned (GIT_TEST_DATE_NOW) to 2028-03-01T03:00Z, where a
 12-month window starts 2027-03-01T03:00Z on the UTC calendar. One commit sits
 at 2027-03-01T12:00Z: inside that window, and outside the one git counted on
-UTC-12's calendar. The rest of the history is dated at 23:30Z, so a date
-printed in local time would land on another day in UTC+14 or UTC-12. Four
+UTC-12's calendar. The rest of the history is dated at 23:30Z or 00:30Z, so a
+date printed in local time would land on another day in UTC+14 or UTC-12. Four
 tracked files are deleted from the working tree, so coverage and inventory name
 them. PYTHONHASHSEED is read only as the interpreter starts, so every call
 spawns.
@@ -28,6 +29,7 @@ import re
 import shutil
 import stat
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from conftest import cli_runner
@@ -35,8 +37,11 @@ from conftest import cli_runner
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace", spawn=True)
 
 NOW = "1835492400"  # 2028-03-01T03:00:00Z
-# (PYTHONHASHSEED, TZ); None leaves TZ unset, the machine's own zone.
-VARIATIONS = [("0", "UTC0"), ("1", "ABC-14"), ("2", "XYZ+12"), ("3", None)]
+# (PYTHONHASHSEED, TZ); None leaves TZ unset, the machine's own zone. The POSIX
+# spellings reach git and the C runtime on every OS; Git for Windows reads the
+# IANA name as UTC, so that row bites on Linux.
+VARIATIONS = [("0", "UTC0"), ("1", "ABC-14"), ("2", "XYZ+12"), ("3", None),
+              ("4", "America/Adak")]
 
 TOML = """[crapkit]
 target = 6
@@ -86,14 +91,14 @@ GONE = ["src/gone_delta.ts", "src/gone_alpha.ts", "src/gone_charlie.ts", "src/go
 HISTORY = [
     ("alice", "2027-03-01T12:00:00+00:00", {"src/app.ts": ("return 0;", "return 1;"),
                                            "src/util.ts": ('return "F";', 'return "E";')}),
-    ("bob", "2027-06-15T23:30:00+00:00", {"src/app.ts": ("return 1;", "return 2;")}),
+    ("bob", "2027-06-15T00:30:00+00:00", {"src/app.ts": ("return 1;", "return 2;")}),
     ("carol", "2027-12-20T23:30:00+00:00", {"src/app.ts": ("return 2;", "return 3;"),
                                            "src/util.ts": ('return "E";', 'return "G";')}),
     ("alice", "2028-02-20T23:30:00+00:00", {"src/util.ts": ('return "G";', 'return "H";')}),
 ]
 
-# What crapkit stamps from the clock: run and report times.
-STAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+# What crapkit stamps from the clock: run times. The zone suffix stays unmasked.
+STAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?")
 
 
 def _git(repo: Path, *args: str, date: str = "2026-11-30T23:30:00+00:00",
@@ -162,8 +167,9 @@ def _remove(path: Path) -> None:
         shutil.rmtree(path, onerror=writable)
 
 
-def _outputs(repo: Path, seed: str, zone: str | None) -> dict[str, str]:
-    """Every read an agent makes of this repo, as printed, under one seed and zone."""
+def _outputs(repo: Path, seed: str, zone: str | None) -> tuple[dict[str, str], list[str]]:
+    """Every read an agent makes of this repo, as printed with its run stamps
+    masked, under one seed and zone; and the stamps themselves."""
     env = {"PYTHONHASHSEED": seed, "TZ": zone, "GIT_TEST_DATE_NOW": NOW}
     calls = {"coverage": ["coverage", "--reuse-artifacts"],
              "worklist": ["worklist", "--json"],
@@ -171,29 +177,42 @@ def _outputs(repo: Path, seed: str, zone: str | None) -> dict[str, str]:
              "explain": ["explain", "src/app.ts", "route", "--history", "--json"],
              "inventory": ["inventory", "--export", ".crapkit/inventory.tsv"],
              "runs": ["runs", "--json"]}
-    printed = {}
+    printed, stamps = {}, []
     for name, argv in calls.items():
         done = run_cli(repo, *argv, env_extra=env)
         assert done.returncode == 0, (name, done.stdout, done.stderr)
+        stamps += STAMP.findall(done.stdout + done.stderr)
         printed[name] = STAMP.sub("<stamp>", done.stdout)
         printed[f"{name} stderr"] = STAMP.sub("<stamp>", done.stderr)
     printed["inventory.tsv"] = (repo / ".crapkit" / "inventory.tsv").read_text(encoding="utf-8")
-    return printed
+    return printed, stamps
+
+
+def _off_the_utc_clock(stamps: list[str]) -> list[str]:
+    """The stamps more than 15 minutes from UTC now. The masked bytes keep each
+    stamp's zone suffix; this catches a local time written without one, which
+    sits hours away in UTC+14 or UTC-12."""
+    now = datetime.now(timezone.utc)
+    return [stamp for stamp in stamps
+            if abs(datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc) - now)
+            > timedelta(minutes=15)]
 
 
 def test_every_read_prints_the_same_bytes_under_any_seed_and_zone(tmp_path):
     repo = tmp_path / "repo"
-    seen = {}
+    seen, off_clock = {}, {}
     for seed, zone in VARIATIONS:
         _remove(repo)
         _build(repo)
-        seen[(seed, zone)] = _outputs(repo, seed, zone)
+        seen[(seed, zone)], stamps = _outputs(repo, seed, zone)
+        off_clock[f"PYTHONHASHSEED={seed} TZ={zone}"] = _off_the_utc_clock(stamps)
 
     first, *others = VARIATIONS
     differing = {f"PYTHONHASHSEED={seed} TZ={zone}": [name for name, text in seen[first].items()
                                                       if seen[(seed, zone)][name] != text]
                  for seed, zone in others}
     assert differing == {variation: [] for variation in differing}
+    assert off_clock == {variation: [] for variation in off_clock}
 
 
 def test_the_compared_bytes_hold_the_churn_history_and_skipped_files(tmp_path):
@@ -201,7 +220,10 @@ def test_the_compared_bytes_hold_the_churn_history_and_skipped_files(tmp_path):
     pass on anything."""
     repo = tmp_path / "repo"
     _build(repo)
-    printed = _outputs(repo, "0", "UTC0")
+    printed, stamps = _outputs(repo, "0", "UTC0")
+
+    assert printed["runs"].count('"created_at": "<stamp>Z"') == 2, printed["runs"]
+    assert len(stamps) >= 3, "the two runs, and the run explain's history lists"
 
     churn = json.loads(printed["brief"])["churn"]
     assert (churn["commits"], churn["authors"]) == (3, 3), "the edge commit is in the window"

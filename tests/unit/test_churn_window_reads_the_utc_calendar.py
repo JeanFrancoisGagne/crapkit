@@ -33,7 +33,7 @@ from crapkit.cli import main
 # Every spelling the hunt varied. None leaves TZ unset: the machine's own zone.
 # POSIX spellings reach git on every OS; Git for Windows reads an IANA name as
 # UTC, so those two rows prove the fix only on Linux.
-ZONES = [None, "UTC0", "ABC-14", "XYZ+12", "EST5EDT", "PST8PDT", "America/Los_Angeles",
+ZONES = [None, "UTC0", "UTC", "ABC-14", "XYZ+12", "EST5EDT", "PST8PDT", "America/Los_Angeles",
          "Asia/Tokyo", "Europe/London"]
 
 
