@@ -250,6 +250,17 @@ def test_the_accented_file_reads_measured_under_latin1_as_under_utf8(tmp_path, l
     assert measured["latin1"] == measured["utf8"]
 
 
+def test_pythonutf8_in_the_lanes_env_has_the_accented_file_measured(tmp_path, locpath):
+    """The fix docs/configuration.md gives for the xfail above: the lane's own
+    `env` puts its coverage.py in UTF-8 mode, under the same Latin-1 locale."""
+    latin1 = _in_force(locpath, LATIN1, "iso8859-1")
+    utf8_lane = TOML.replace('COV_CORE_DATAFILE = "" }', 'COV_CORE_DATAFILE = "", PYTHONUTF8 = "1" }')
+    measured = {name: _coverage(_repo(tmp_path / name, {**MORE, "crapkit.toml": toml}), env)["measured"]
+                for name, env, toml in (("utf8", _env(locpath, UTF8), TOML), ("latin1", latin1, utf8_lane))}
+
+    assert measured["latin1"] == measured["utf8"]
+
+
 def test_a_path_argument_with_an_accent_reaches_its_file(tmp_path, locpath):
     """The shell passes `pkg/café.py` as UTF-8 bytes; the restart hands the
     same bytes on, so rescore reads the file instead of calling it missing."""
