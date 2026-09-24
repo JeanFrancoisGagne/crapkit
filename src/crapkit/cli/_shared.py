@@ -78,12 +78,14 @@ def _command_root(repo: str | None) -> Path:
     is not the working directory itself, so `cd web && crapkit worklist` reads
     the root configuration that claims web/ and says which file it read. When
     the walk finds nothing the working directory is the root, so the refusal
-    `_load_repo_config` raises names where the user stands.
+    `_load_repo_config` raises names where the user stands. A working directory
+    on a network share walks nowhere: every root above it is on the share and
+    refused, and a stat there can fail with the share's own error.
     """
     if repo is not None:
         return _on_its_drive(Path(native(repo)))
     cwd = _on_its_drive(_working_directory())
-    found = find_root(cwd)
+    found = None if _on_a_share(cwd) else find_root(cwd)
     if found is None:
         return cwd
     if found != cwd:

@@ -98,6 +98,30 @@ def test_a_session_standing_in_a_network_share_is_refused_before_any_child(no_ch
     assert "Z:\\repo" in err, err
 
 
+def _share_dropped(stat):
+    """os.stat as a share answers once its connection drops: WinError 64, which
+    pathlib's is_file does not read as a missing file."""
+    def dropped(path, *args, **kwargs):
+        if str(path).startswith("\\\\"):
+            raise OSError(0, "The specified network name is no longer available", str(path), 64)
+        return stat(path, *args, **kwargs)
+
+    return dropped
+
+
+@pytest.mark.parametrize("command", COMMANDS)
+def test_a_session_in_a_share_whose_stat_fails_is_refused_before_any_read(no_child, monkeypatch,
+                                                                         capsys, command):
+    """The walk up to the nearest crapkit.toml would read the share, and every
+    root it could find there is refused, so it never starts."""
+    monkeypatch.setattr(os, "getcwd", lambda: REMOTE_ROOT)
+    monkeypatch.setattr(os, "stat", _share_dropped(os.stat))
+
+    err = _refused(capsys, COMMANDS[command])
+
+    _says_map_the_share(err, REMOTE_SHARE)
+
+
 @pytest.mark.parametrize("tail, drive_path", [("\\team\\app", "Z:\\team\\app"),
                                               ("", "Z:\\"), ("\\", "Z:\\")],
                          ids=["nested", "share-root", "share-root-trailing"])
