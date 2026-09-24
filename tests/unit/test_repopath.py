@@ -125,3 +125,12 @@ def test_windows_places_the_checkout_reached_through_its_admin_share(tmp_path):
 
     assert inside(alias + "\\src\\pkg\\mod.py", root) == "src/pkg/mod.py"
     assert is_unc(alias) and not is_unc(root)
+
+
+def test_folds_case_says_what_the_disk_under_the_root_does(tmp_path):
+    from path_spellings import case_insensitive
+    from crapkit.repopath import folds_case
+
+    root = _tree(tmp_path / "Repo")
+
+    assert folds_case(root) is case_insensitive(root)

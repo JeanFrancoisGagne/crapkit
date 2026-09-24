@@ -441,3 +441,18 @@ def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing
     assert call["isError"] is True, call
     assert call["content"][0]["text"].startswith(
         f"no crapkit.toml in {missing} - nothing measured here."), call
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="needs Windows path rules")
+@pytest.mark.parametrize("prefix", ["/c", "/mnt/c"])
+def test_a_repo_in_a_git_bash_or_wsl_spelling_serves_the_checkout_it_names(monkeypatch, tmp_path,
+                                                                            prefix):
+    r"""A model on Windows writes `/c/Users/...`, the shell spelling it sees in
+    its own transcript. Read as `C:\c\Users\...`, the call named no
+    directory and got the no-config answer for a measured checkout."""
+    calls = _cli_answers(monkeypatch, 0, json.dumps({"runs": [], "schema": 1}))
+    spelled = prefix + tmp_path.resolve().as_posix()[2:]
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "list_runs", {"repo": spelled})])
+
+    assert replies[1]["result"]["isError"] is False, replies[1]
+    assert calls[0][-2:] == ["--repo", str(tmp_path.resolve())], calls

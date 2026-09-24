@@ -1,0 +1,196 @@
+r"""Every spelling of one file argument names the file git names.
+
+`_repo_relative` read `./`, backslashes and absolute paths, but kept the letter
+case the user typed and took `/c/...`, `/mnt/c/...` and `\\localhost\C$\...` as
+paths somewhere else. On a case-insensitive disk the file still opened, so the
+wrong-case key went on: `rescore --gate SRC\app.ts` judged 0 functions and
+passed a file that fails spelled `src/app.ts`, `test-scoped` refused a file its
+scope declares, `brief` and `explain` found nothing, `ratchet move` filed a mark
+under a key no row carries, and `mutate --files` called an in-scope file outside
+the corpus. Every command here reads its path through the same door, so each
+spelling is fed through the commands that act on it.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from cli_inproc_repo import (add_knotty, commit_all, repo,  # noqa: F401
+                             seed_artifacts, template_repo)
+from crapkit.cli import main
+from crapkit.cli.analyses import _mutation_targets
+
+from path_spellings import (WINDOWS, admin_share, lower_drive, need_case_insensitive)
+
+
+def run(argv: list[str], root: Path, capsys) -> tuple[int, str, str]:
+    code = main([*argv, "--repo", str(root)])
+    out = capsys.readouterr()
+    return code, out.out, out.err
+
+
+@pytest.fixture()
+def scored(repo, capsys):  # noqa: F811
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo
+
+
+def _drive_tail(root: Path) -> str:
+    return (root / "src" / "app.ts").resolve().as_posix()[2:]
+
+
+# id -> (what the OS needs, the spelling of src/app.ts under `root`)
+SPELLINGS = {
+    "forward": ("", lambda root: "src/app.ts"),
+    "dot-slash": ("", lambda root: "./src/app.ts"),
+    "absolute": ("", lambda root: str((root / "src" / "app.ts").resolve())),
+    "backslash": ("windows", lambda root: "src\\app.ts"),
+    "dot-backslash": ("windows", lambda root: ".\\src\\app.ts"),
+    "mixed": ("windows", lambda root: ".\\src/app.ts"),
+    "absolute-forward": ("windows", lambda root: (root / "src" / "app.ts").resolve().as_posix()),
+    "absolute-lower-drive": ("windows", lambda root: lower_drive(root / "src" / "app.ts")),
+    "msys": ("windows", lambda root: "/c" + _drive_tail(root)),
+    "wsl": ("windows", lambda root: "/mnt/c" + _drive_tail(root)),
+    "admin-share": ("windows", lambda root: admin_share(root / "src" / "app.ts")),
+    "dir-case": ("case", lambda root: "SRC/app.ts"),
+    "dir-case-backslash": ("windows case", lambda root: "SRC\\app.ts"),
+    "file-case": ("case", lambda root: "src/App.ts"),
+    "extension-case": ("case", lambda root: "src/app.TS"),
+    "dot-backslash-case": ("windows case", lambda root: ".\\Src\\app.ts"),
+    "absolute-dir-case": ("case", lambda root: str(root.resolve() / "SRC" / "app.ts")),
+    "absolute-upper": ("windows case", lambda root: str((root / "src" / "app.ts").resolve()).upper()),
+}
+
+
+def _need(need: str, root: Path) -> None:
+    """Skip, naming the need, where this OS or disk has no such spelling."""
+    if "windows" in need and not WINDOWS:
+        pytest.skip("needs Windows path rules")
+    if "case" in need:
+        need_case_insensitive(root)
+
+
+def _spelled(which: str, root: Path) -> str:
+    need, spell = SPELLINGS[which]
+    _need(need, root)
+    return spell(root)
+
+
+@pytest.mark.parametrize("which", SPELLINGS)
+def test_the_gate_fails_the_breach_whatever_the_spelling(scored, capsys, which):
+    add_knotty(scored)
+
+    code, _, err = run(["rescore", _spelled(which, scored), "--gate"], scored, capsys)
+
+    assert code == 6, err
+    assert "knotty" in err and "src/app.ts" in err, err
+
+
+@pytest.mark.parametrize("which", SPELLINGS)
+def test_test_scoped_routes_every_spelling_to_its_scope(scored, capsys, which):
+    code, _, err = run(["test-scoped", _spelled(which, scored)], scored, capsys)
+
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("which", SPELLINGS)
+def test_brief_opens_the_packet_whatever_the_spelling(scored, capsys, which):
+    code, out, err = run(["brief", _spelled(which, scored), "dispatch", "--json"], scored, capsys)
+
+    assert code == 0, err
+    assert json.loads(out)["path"] == "src/app.ts"
+
+
+@pytest.mark.parametrize("which", SPELLINGS)
+def test_explain_finds_the_function_whatever_the_spelling(scored, capsys, which):
+    code, out, err = run(["explain", _spelled(which, scored), "dispatch", "--json"], scored,
+                         capsys)
+
+    assert code == 0, err
+    assert "src/app.ts" in out
+
+
+@pytest.mark.parametrize("which", SPELLINGS)
+def test_mutate_files_names_the_corpus_path_whatever_the_spelling(scored, which):
+    assert list(_mutation_targets(scored, [_spelled(which, scored)])) == ["src/app.ts"]
+
+
+def _marks(root: Path) -> list[str]:
+    return (root / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()
+
+
+MARKS = ("# crapkit-analysis=11 lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+         "src/app.ts\tdispatch( kind : string )\t40.0000\n")
+
+
+@pytest.mark.parametrize("new", ["src/moved.ts", "./src/moved.ts", "SRC/moved.ts", "src/Moved.ts",
+                                 "SRC\\moved.ts", "src\\MOVED.ts"])
+def test_ratchet_move_files_the_mark_under_the_moved_file_git_names(repo, capsys, new):  # noqa: F811
+    """After `git mv src/app.ts src/moved.ts`, NEW in another case opened the
+    moved file and wrote `SRC/moved.ts` into the committed marks: no row
+    carries that key, so the function ran unmarked from then on."""
+    _need(("windows" if "\\" in new else "") + (" case" if new.lower() != new else ""), repo)
+    (repo / "crapkit-ratchet.tsv").write_text(MARKS, encoding="utf-8")
+    (repo / "src" / "app.ts").rename(repo / "src" / "moved.ts")
+
+    code, _, err = run(["ratchet", "move", "src/app.ts", new], repo, capsys)
+
+    assert code == 0, err
+    assert _marks(repo)[3:] == ["src/moved.ts\tdispatch( kind : string )\t40.0000"]
+
+
+@pytest.mark.parametrize("which", ["msys", "wsl", "absolute-lower-drive", "admin-share"])
+def test_a_repo_flag_in_any_windows_spelling_serves_the_checkout(scored, capsys, which):
+    """`worklist --repo /c/...` was read as C:\\c\\..., which holds no crapkit.toml."""
+    repo_spelling = _spelled(which, scored).rsplit("/src/", 1)[0].rsplit("\\src\\", 1)[0]
+
+    assert main(["worklist", "--repo", repo_spelling]) == 0, capsys.readouterr().err
+
+
+# --- next-item --exclude ---------------------------------------------------------
+
+@pytest.fixture()
+def queued(repo, capsys):  # noqa: F811
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo
+
+
+def _handed_out(root: Path, capsys, pattern: str) -> list[dict]:
+    code, out, err = run(["next-item", "--top", "5", "--exclude", pattern], root, capsys)
+    assert code == 0, err
+    return json.loads(out).get("items", [])
+
+
+@pytest.mark.parametrize("pattern, need", [("src/app", ""), ("./src/app", ""),
+                                           ("src\\app", "windows"), ("src\\", "windows"),
+                                           ("SRC/App", "case")])
+def test_next_item_skips_what_the_exclude_names_in_any_spelling(queued, capsys, pattern, need):
+    """`--exclude pkg\\legacy` and `--exclude PKG/Legacy` were matched as text
+    against git's `pkg/legacy/...`, and the excluded directory was handed out
+    as the next item anyway."""
+    _need(need, queued)
+
+    items = _handed_out(queued, capsys, pattern)
+
+    assert [i["path"] for i in items if i["path"] == "src/app.ts"] == [], items
+
+
+def test_next_item_still_skips_a_function_name_fragment(queued, capsys):
+    items = _handed_out(queued, capsys, "knotty")
+
+    assert [i["function"] for i in items if "knotty" in i["function"]] == [], items
+
+
+def test_next_item_reads_a_function_name_in_its_own_case(queued, capsys):
+    """Only the path side folds case: `Knotty` is another function name."""
+    items = _handed_out(queued, capsys, "Knotty")
+
+    assert [i["function"] for i in items if "knotty" in i["function"]], items

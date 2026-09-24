@@ -6,14 +6,17 @@ them) and `worklist` (the ranked risk queue and its batch split)."""
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import keys, packet
 from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit, ls_files
 from ..invocation import _self
+from ..repopath import folds_case
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
 from ..score import SCORED_COLUMNS
 from ..store import SnapshotStore
@@ -77,7 +80,7 @@ def cmd_next_item(args: argparse.Namespace) -> int:
                            cfg, _file_reader(store, latest["id"]))
     adm = admission(load_churn(root, cfg.churn_window_months), cfg.worklist_floor)
     ranked, skipped_no_lane = _next_ranked(scored, adm)
-    excludes = args.exclude or []
+    excludes = _excludes(args.exclude or [], root)
     ranked = [r for r in ranked if not _excluded_item(r, excludes)]
     handles = _Handles(store, latest["id"])
     ranked, skipped_claimed = _unclaimed(store, ranked, handles)
@@ -239,8 +242,36 @@ def _handle(handles, row) -> str | None:
     return None if handles is None else handles.of(row)
 
 
-def _excluded_item(r, excludes: list) -> bool:
-    return any(pat in r.path or pat in r.long_name for pat in excludes)
+class _Exclude(NamedTuple):
+    r"""One `--exclude`: a fragment of a row's path or of its function name.
+
+    The path side is read the way the filesystem reads a path. On Windows
+    `pkg\legacy` is `pkg/legacy`, a leading `./` names nothing a path holds,
+    and where the disk folds case `PKG/Legacy` is `pkg/legacy`: each of those
+    was compared as text with git's spelling, and the directory the caller
+    excluded came back as the next item. A function name keeps its case."""
+    text: str
+    path_text: str
+    folds: bool
+
+    def hides(self, r) -> bool:
+        path = r.path.casefold() if self.folds else r.path
+        return self.path_text in path or self.text in r.long_name
+
+
+def _excludes(raw: list[str], root: Path) -> list[_Exclude]:
+    folds = folds_case(root) if raw else False
+    return [_Exclude(pat, _path_fragment(pat, folds), folds) for pat in raw]
+
+
+def _path_fragment(pat: str, folds: bool) -> str:
+    text = pat.replace("\\", "/") if os.name == "nt" else pat
+    text = text.removeprefix("./")
+    return text.casefold() if folds else text
+
+
+def _excluded_item(r, excludes: list[_Exclude]) -> bool:
+    return any(exclude.hides(r) for exclude in excludes)
 
 
 def _skip_reason(r, adm, excludes: list) -> str | None:

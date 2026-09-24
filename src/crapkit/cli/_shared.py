@@ -14,6 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..repopath import disk_spelling, inside, native
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -80,8 +81,8 @@ def _command_root(repo: str | None) -> Path:
     `_load_repo_config` raises names where the user stands.
     """
     if repo is not None:
-        return Path(repo).resolve()
-    cwd = Path.cwd().resolve()
+        return Path(native(repo)).resolve()
+    cwd = _working_directory().resolve()
     found = find_root(cwd)
     if found is None:
         return cwd
@@ -95,7 +96,14 @@ def _stand(repo: str | None) -> Path | None:
     the root came from the walk, nothing when `--repo` named the root. The
     rebase belongs to discovery (ADR 0002), not to the flag: `--repo ..` from
     web/ reads `web/src/grade.py` against the root it named, as on 0.4.15."""
-    return None if repo is not None else Path.cwd()
+    return None if repo is not None else _working_directory()
+
+
+def _working_directory() -> Path:
+    r"""Where the user stands, spelled so a lane can start there: a checkout
+    entered through this machine's admin share (`\\localhost\C$\repo`) is its
+    drive, because cmd.exe cannot start a command in a UNC directory."""
+    return Path(native(os.getcwd()))
 
 
 def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:
@@ -117,13 +125,26 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     one climbing out of the root is refused like an absolute path outside it.
     At the root, from a directory outside it, or under `--repo`, the argument
     is root-relative as it always was.
+
+    What comes back is spelled the way git spells it (repopath). On Windows
+    `/c/repo/src/a.py` from Git Bash, `/mnt/c/...` from WSL and the admin share
+    `\\localhost\C$\...` name the drive, and on a case-insensitive disk
+    `SRC\a.py` is `src/a.py`: the file opened in any case, and the typed case
+    matched no scope, no ratchet key and no stored row, so `rescore --gate`
+    judged nothing and passed.
     """
-    path = raw.replace("\\", "/") if os.name == "nt" else raw
+    path = _typed(raw)
     if _is_rooted(path):
         return _under_root(path, root)
     if _below(cwd, root):
         return _under_root(str(cwd / path), root)
-    return posixpath.normpath(path)
+    return disk_spelling(root, posixpath.normpath(path))
+
+
+def _typed(raw: str) -> str:
+    """A path argument with `/` between directories, read by this OS's rules:
+    on POSIX a backslash is a literal filename character."""
+    return native(raw).replace("\\", "/") if os.name == "nt" else raw
 
 
 def _below(cwd: Path | None, root: Path) -> bool:
@@ -142,11 +163,13 @@ def _is_rooted(path: str) -> bool:
 def _under_root(path: str, root: Path) -> str:
     """An absolute argument, said the way the scopes are declared. One that
     lands outside the repo is refused rather than matched against nothing:
-    scoring no functions is not an answer to a path crapkit cannot place."""
-    try:
-        return Path(path).resolve().relative_to(root.resolve()).as_posix()
-    except ValueError:
-        raise ConfigError(f"{path} is outside the repo at {root}") from None
+    scoring no functions is not an answer to a path crapkit cannot place.
+    A junction, a lower-case drive or the admin share naming this checkout
+    lands inside it (repopath.inside)."""
+    rel = inside(path, root)
+    if rel is None:
+        raise ConfigError(f"{path} is outside the repo at {root}")
+    return rel
 
 
 def _repo_out_path(root: Path, out: str) -> Path:

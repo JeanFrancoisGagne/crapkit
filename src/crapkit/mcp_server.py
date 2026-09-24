@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .invocation import _self
+from .repopath import native
 from .rootfind import CONFIG_NAME, find_root
 
 # Newest first. Everything this server does — tools, annotations, structured
@@ -1638,7 +1639,7 @@ def _config_root(repo: str) -> Path | None:
     way every command finds it (ADR 0002). A `repo` naming no directory finds
     nothing: a typo must not be adopted by an ancestor's configuration and
     read back as data."""
-    start = Path(repo).resolve()
+    start = Path(native(repo)).resolve()
     return find_root(start) if start.is_dir() else None
 
 

@@ -182,6 +182,14 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
+def folds_case(root: str | os.PathLike) -> bool:
+    """Does the filesystem at `root` open a name in another letter case? Asked
+    of the root's own name, the one entry sure to exist."""
+    path = Path(root).resolve()
+    other = path.with_name(path.name.swapcase())
+    return other.name != path.name and _same_file(other, path)
+
+
 def is_unc(path: str | os.PathLike) -> bool:
     r"""Is this a network path (`\\host\share\...`)? cmd.exe refuses to stand in
     one and starts the command in C:\Windows instead."""
