@@ -23,7 +23,11 @@ from crapkit.cli import main
 from crapkit.cli._shared import _command_root
 from crapkit.cli.analyses import _mutation_targets
 
-from path_spellings import (WINDOWS, admin_share, lower_drive, need_case_insensitive)
+from path_spellings import (SPELLINGS, WINDOWS, admin_share, need, need_case_sensitive,
+                            only_posix)
+from path_spellings import spelled as _spelled
+
+_need = need
 
 
 def run(argv: list[str], root: Path, capsys) -> tuple[int, str, str]:
@@ -38,47 +42,6 @@ def scored(repo, capsys):  # noqa: F811
     assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
     capsys.readouterr()
     return repo
-
-
-def _drive_tail(root: Path) -> str:
-    return (root / "src" / "app.ts").resolve().as_posix()[2:]
-
-
-# id -> (what the OS needs, the spelling of src/app.ts under `root`)
-SPELLINGS = {
-    "forward": ("", lambda root: "src/app.ts"),
-    "dot-slash": ("", lambda root: "./src/app.ts"),
-    "absolute": ("", lambda root: str((root / "src" / "app.ts").resolve())),
-    "backslash": ("windows", lambda root: "src\\app.ts"),
-    "dot-backslash": ("windows", lambda root: ".\\src\\app.ts"),
-    "mixed": ("windows", lambda root: ".\\src/app.ts"),
-    "absolute-forward": ("windows", lambda root: (root / "src" / "app.ts").resolve().as_posix()),
-    "absolute-lower-drive": ("windows", lambda root: lower_drive(root / "src" / "app.ts")),
-    "msys": ("windows", lambda root: "/c" + _drive_tail(root)),
-    "wsl": ("windows", lambda root: "/mnt/c" + _drive_tail(root)),
-    "admin-share": ("windows", lambda root: admin_share(root / "src" / "app.ts")),
-    "dir-case": ("case", lambda root: "SRC/app.ts"),
-    "dir-case-backslash": ("windows case", lambda root: "SRC\\app.ts"),
-    "file-case": ("case", lambda root: "src/App.ts"),
-    "extension-case": ("case", lambda root: "src/app.TS"),
-    "dot-backslash-case": ("windows case", lambda root: ".\\Src\\app.ts"),
-    "absolute-dir-case": ("case", lambda root: str(root.resolve() / "SRC" / "app.ts")),
-    "absolute-upper": ("windows case", lambda root: str((root / "src" / "app.ts").resolve()).upper()),
-}
-
-
-def _need(need: str, root: Path) -> None:
-    """Skip, naming the need, where this OS or disk has no such spelling."""
-    if "windows" in need and not WINDOWS:
-        pytest.skip("needs Windows path rules")
-    if "case" in need:
-        need_case_insensitive(root)
-
-
-def _spelled(which: str, root: Path) -> str:
-    need, spell = SPELLINGS[which]
-    _need(need, root)
-    return spell(root)
 
 
 @pytest.mark.parametrize("which", SPELLINGS)
@@ -223,6 +186,25 @@ def test_next_item_skips_what_the_exclude_names_in_any_spelling(queued, capsys, 
     items = _handed_out(queued, capsys, pattern)
 
     assert [i["path"] for i in items if i["path"] == "src/app.ts"] == [], items
+
+
+@only_posix
+@pytest.mark.parametrize("pattern", ["src\\app", "src\\app\\", "src\\"])
+def test_posix_reads_a_backslash_in_an_exclude_as_part_of_a_name(queued, capsys, pattern):
+    """A backslash is a filename character on POSIX, so `src\\app` names no
+    directory there and git's src/app.ts is still handed out."""
+    items = _handed_out(queued, capsys, pattern)
+
+    assert [i["path"] for i in items if i["path"] == "src/app.ts"], items
+
+
+def test_an_exclude_in_another_case_names_another_directory_on_a_case_sensitive_disk(queued,
+                                                                                     capsys):
+    need_case_sensitive(queued)
+
+    items = _handed_out(queued, capsys, "SRC/App")
+
+    assert [i["path"] for i in items if i["path"] == "src/app.ts"], items
 
 
 def test_next_item_still_skips_a_function_name_fragment(queued, capsys):
