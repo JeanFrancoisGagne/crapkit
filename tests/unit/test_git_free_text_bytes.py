@@ -161,24 +161,35 @@ def test_a_span_history_reads_subject_body_and_patch_as_stored(tmp_path, given, 
 MARKS = "crapkit-ratchet.tsv"
 STAMPED = b"# crapkit-analysis=11 lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
 MARK = b"src/app.py\tf( x )\t9.0\n"
+
+
+def _utf16(utf8: bytes, codec: str = "utf-16-le") -> bytes:
+    """What a bare `Out-File` in PowerShell 5.1 saves: UTF-16 behind its mark."""
+    mark = codecs.BOM_UTF16_LE if codec == "utf-16-le" else codecs.BOM_UTF16_BE
+    return mark + utf8.decode("utf-8").encode(codec)
+
+
 PAST = [
-    # id, the bytes one past revision of the marks file held
-    ("history-cp1252-byte", STAMPED + b"# caf\xe9\n" + MARK),
-    ("history-cp1252-fn-name", STAMPED + b"src/app.py\tcaf\xe9( n )\t9.0\n"),
-    ("history-utf16-powershell-out-file",
-     codecs.BOM_UTF16_LE + (STAMPED + MARK).decode().encode("utf-16-le")),
-    ("history-utf8-bom", codecs.BOM_UTF8 + STAMPED + MARK),
-    ("history-valid-accent-name", STAMPED + "src/app.py\tcafé( n )\t9.0\n".encode()),
-    ("history-cjk-emoji-name", STAMPED + "src/日本.py\tf\U0001f680( n )\t9.0\n".encode()),
-    ("history-crlf", (STAMPED + MARK).replace(b"\n", b"\r\n")),
-    ("history-nul-byte", STAMPED + b"# \x00\n" + MARK),
+    # id, the bytes one past revision of the marks file held, f( x )'s age in days
+    ("history-cp1252-byte", STAMPED + b"# caf\xe9\n" + MARK, 2),
+    ("history-cp1252-fn-name", STAMPED + b"src/app.py\tcaf\xe9( n )\t9.0\n", 0),
+    ("history-utf16-powershell-out-file", _utf16(STAMPED + MARK), 2),
+    ("history-utf16-crlf", _utf16((STAMPED + MARK).replace(b"\n", b"\r\n")), 2),
+    ("history-utf16-be", _utf16(STAMPED + MARK, "utf-16-be"), 2),
+    ("history-utf8-bom", codecs.BOM_UTF8 + STAMPED + MARK, 2),
+    ("history-valid-accent-name", STAMPED + "src/app.py\tcafé( n )\t9.0\n".encode(), 0),
+    ("history-cjk-emoji-name", STAMPED + "src/日本.py\tf\U0001f680( n )\t9.0\n".encode(), 0),
+    ("history-crlf", (STAMPED + MARK).replace(b"\n", b"\r\n"), 2),
+    ("history-nul-byte", STAMPED + b"# \x00\n" + MARK, 2),
 ]
 
 
-@pytest.mark.parametrize("past", [row[1] for row in PAST], ids=[row[0] for row in PAST])
-def test_every_past_revision_of_the_marks_file_reads_into_the_burn_down(tmp_path, past):
+@pytest.mark.parametrize("past, age", [row[1:] for row in PAST], ids=[row[0] for row in PAST])
+def test_every_past_revision_of_the_marks_file_reads_into_the_burn_down(tmp_path, past, age):
     """One revision saved by PowerShell 5.1 or a cp1252 editor stays in history
-    after the file is fixed, and its patch lines are not UTF-8."""
+    after the file is fixed, and its patch lines are not UTF-8. A UTF-16
+    revision read as nothing, so its marks looked repaid and then added again,
+    and a mark's age counted from the first UTF-8 revision after it."""
     root = repository(tmp_path)
     commit(root, files={MARKS.encode(): past}, age_days=2)
     commit(root, files={MARKS.encode(): STAMPED + MARK})
@@ -186,7 +197,64 @@ def test_every_past_revision_of_the_marks_file_reads_into_the_burn_down(tmp_path
     report = report_from_events(mark_events(file_log_patches(root, MARKS)))
 
     assert report["open"] == 1
-    assert [row["long_name"] for row in report["oldest"]] == ["f( x )"]
+    assert report["oldest"] == [{"path": "src/app.py", "long_name": "f( x )", "age_days": age}]
+
+
+G5 = "src/app.py\tgĊ( )\t5.0\n".encode()  # U+010A is 0A 01 in UTF-16 LE: git splits there
+HISTORIES = [
+    # id, revisions oldest first as (days ago, bytes), {mark: age in days}, marks repaid
+    ("utf8-utf16-utf8", [(4, STAMPED + MARK), (2, _utf16(STAMPED + MARK)), (0, STAMPED + MARK)],
+     {"f( x )": 4}, 0),
+    ("utf16-tightened-in-utf16",
+     [(4, _utf16(STAMPED + MARK + G5)), (2, _utf16(STAMPED + MARK.replace(b"9.0", b"8.0"))),
+      (0, STAMPED + MARK.replace(b"9.0", b"8.0"))], {"f( x )": 4}, 1),
+    ("utf16-name-holding-a-0a-byte", [(4, _utf16(STAMPED + MARK + G5)), (0, STAMPED + MARK + G5)],
+     {"f( x )": 4, "gĊ( )": 4}, 0),
+    ("utf16-le-to-be", [(4, _utf16(STAMPED + MARK)), (2, _utf16(STAMPED + MARK, "utf-16-be")),
+                        (0, STAMPED + MARK)], {"f( x )": 4}, 0),
+    ("utf16-file-deleted-and-restored", [(4, _utf16(STAMPED + MARK)), (2, None), (0, STAMPED + MARK)],
+     {"f( x )": 0}, 1),
+]
+
+
+@pytest.mark.parametrize("revisions, ages, repaid", [row[1:] for row in HISTORIES],
+                         ids=[row[0] for row in HISTORIES])
+def test_a_utf16_revision_keeps_each_marks_entry_date(tmp_path, revisions, ages, repaid):
+    """A resave in UTF-16 changes no mark, a tighten saved in UTF-16 is a
+    tighten, and a mark repaid in UTF-16 is repaid on the day it left."""
+    root = repository(tmp_path)
+    for days, data in revisions:
+        if data is None:
+            commit(root, files={}, deletes=(MARKS.encode(),), age_days=days)
+        else:
+            commit(root, files={MARKS.encode(): data}, age_days=days)
+
+    report = report_from_events(mark_events(file_log_patches(root, MARKS)))
+
+    assert {row["long_name"]: row["age_days"] for row in report["oldest"]} == ages
+    assert report["dropped_total"] == repaid
+
+
+@pytest.mark.parametrize("revisions, reads", [
+    ([STAMPED + MARK, STAMPED + b"# caf\xe9\n" + MARK, (STAMPED + MARK).replace(b"\n", b"\r\n")], 0),
+    ([_utf16(STAMPED + MARK), _utf16(STAMPED + MARK.replace(b"9.0", b"8.0")), STAMPED + MARK], 1),
+], ids=["utf8-and-cp1252-history", "utf16-history"])
+def test_only_a_patch_holding_a_nul_costs_a_whole_revision_read(tmp_path, monkeypatch, revisions,
+                                                                reads):
+    """The -U0 stream stays the whole read for a history with no NUL in it,
+    and every whole revision a UTF-16 history needs comes from one process."""
+    from crapkit import gitio
+
+    root = repository(tmp_path)
+    for data in revisions:
+        commit(root, files={MARKS.encode(): data})
+    calls = []
+    real = gitio._batch_stream
+    monkeypatch.setattr(gitio, "_batch_stream", lambda *args: calls.append(args) or real(*args))
+
+    file_log_patches(root, MARKS)
+
+    assert len(calls) == reads
 
 
 CONFIG = b'[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'

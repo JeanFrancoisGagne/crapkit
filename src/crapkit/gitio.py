@@ -9,15 +9,19 @@ import subprocess
 import threading
 import time
 from collections.abc import Iterator
+from itertools import chain
 from contextlib import contextmanager
 from pathlib import Path
 
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, nul_records, split_record
-from .textcodec import lenient
+from .records import record_lines
+from .textcodec import lenient, marks_text
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-_LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
+_LOG_HEADER = re.compile(rb"^\0(-?\d+)\n", re.MULTILINE)
+_INDEX_LINE = re.compile(rb"^index ([0-9a-f]+)\.\.([0-9a-f]+)", re.MULTILINE)
+_NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted the file
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -583,16 +587,56 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
     30k-commit synthetic: 0.436s vs 0.257s, same events either way). The price
     is that renaming the ratchet file restarts its burn-down history at the
     rename.
+
+    A patch reads as text, each byte that is not UTF-8 as U+FFFD, unless it
+    holds a NUL. That one may come from a UTF-16 revision, which PowerShell
+    5.1's bare Out-File saves: git splits its lines at every 0A byte, one byte
+    into the next line's first character, and only the first line carries the
+    byte-order mark. Such a commit reads from its two whole revisions instead,
+    each through textcodec.marks_text, the rule every reader of the marks file
+    uses, as the lines one revision holds and the other does not.
     """
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
-    out = _git_text(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
-                    "-p", *_PATCH, "--text", "--", rel_path)
-    return _history_patches(out)
+    out = _git_bytes(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
+                     "-p", *_PATCH, "--full-index", "--text", "--", rel_path)
+    patches = _history_patches(out)
+    revisions = _revisions(root, [patch for _, patch in patches if b"\0" in patch])
+    return [(stamp, _patch_text(patch, revisions)) for stamp, patch in patches]
 
 
-def _history_patches(out: str) -> list[tuple[int, str]]:
+def _patch_sides(patch: bytes) -> tuple[str, ...]:
+    """The object ids of the file before and after one commit, from the
+    `index` line `--full-index` writes (an absent side is all zeros); () when
+    the patch has no such line."""
+    found = _INDEX_LINE.search(patch)
+    return (found[1].decode(), found[2].decode()) if found else ()
+
+
+def _revisions(root: Path, patches: list[bytes]) -> dict[str, bytes]:
+    """Each side those patches name, read whole from one `cat-file --batch`."""
+    ids = sorted(set(chain.from_iterable(map(_patch_sides, patches))) - _NO_FILE)
+    if not ids:
+        return {}
+    return _framed_blobs(_batch_stream(root, "".join(f"{oid}\n" for oid in ids).encode()), ids)
+
+
+def _patch_text(patch: bytes, revisions: dict[str, bytes]) -> str:
+    """One commit's patch as the +/- lines ratchet_report reads."""
+    sides = _patch_sides(patch) if b"\0" in patch else ()
+    if not sides:
+        return lenient(patch)
+    before, after = (list(record_lines(marks_text(revisions.get(side, b"")))) for side in sides)
+    return "\n".join(_only_in(before, after, "-") + _only_in(after, before, "+"))
+
+
+def _only_in(lines: list[str], other: list[str], sign: str) -> list[str]:
+    held = set(other)
+    return [sign + line for line in lines if line not in held]
+
+
+def _history_patches(out: bytes) -> list[tuple[int, bytes]]:
     patches = []
     stamp, start = None, 0
     for header in _LOG_HEADER.finditer(out):

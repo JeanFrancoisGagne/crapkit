@@ -372,6 +372,71 @@ def test_the_advisory_reads_its_marks_by_the_marks_rule(tmp_path: Path, shape):
     assert ("sprawl( n )" in res.stderr) == (shape == "none"), res.stderr
 
 
+# --- the marks file's history reads by the same rule (Q20) ------------------------------
+
+DAY = 86400
+
+
+def _commit_marks(repo: Path, data: bytes, days_ago: int) -> None:
+    """The marks file committed as these exact bytes, dated `days_ago`: ages
+    count from the author date of the commit that brought a mark in."""
+    import os
+    import time
+
+    (repo / MARKS).write_bytes(data)
+    stamp = f"@{int(time.time()) - days_ago * DAY} +0000"
+    env = {**os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
+    for args in (("add", MARKS), ("commit", "-q", "-m", f"marks {days_ago}d")):
+        subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "user.email=t@t", "-c",
+                        "user.name=t", *args], cwd=repo, env=env, check=True, capture_output=True)
+
+
+PAST_MARKS = {
+    # id: one revision two days old, built from what seed wrote
+    "cp1252-comment": lambda seeded: seeded + b"# caf\xe9\n",
+    "cp1252-fn-name": _with_cp1252_mark,
+    "utf16-out-file": _utf16_crlf,
+    "utf8-bom": lambda seeded: b"\xef\xbb\xbf" + seeded,
+    "crlf": lambda seeded: seeded.replace(b"\n", b"\r\n"),
+    "nul": lambda seeded: seeded + b"# \x00\n",
+}
+
+
+def _mcp_report(repo: Path) -> dict:
+    frames = "\n".join([
+        _rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}}),
+        _rpc(2, "tools/call", {"name": "get_ratchet_report", "arguments": {}})]) + "\n"
+    res = _run(repo, "mcp", "--repo", str(repo), stdin=frames)
+    assert res.returncode == 0, res.stderr
+    call = {m["id"]: m for m in map(json.loads, res.stdout.strip().splitlines())}[2]["result"]
+    assert call["isError"] is False, call
+    return call["structuredContent"]
+
+
+@pytest.mark.parametrize("shape", PAST_MARKS)
+def test_every_reader_of_the_marks_history_ages_a_mark_from_the_revision_that_brought_it(
+        scored_repo: Path, shape):
+    """A UTF-16 revision read as no marks, so every mark in it looked repaid
+    and then added again by the next UTF-8 save, and its age restarted there.
+    A cp1252 revision stopped these readers with a traceback before that."""
+    assert _run(scored_repo, "ratchet", "seed").returncode == 0
+    seeded = (scored_repo / MARKS).read_bytes()
+    _commit_marks(scored_repo, PAST_MARKS[shape](seeded), days_ago=2)
+    _commit_marks(scored_repo, seeded, days_ago=0)
+
+    text = _run(scored_repo, "ratchet", "report")
+    as_json = _run(scored_repo, "ratchet", "report", "--json")
+    brief = _run(scored_repo, "brief", "src/tangled.ts", "tangled", "--json")
+
+    assert text.returncode == 0, text.stdout + text.stderr
+    assert "    2d  src/tangled.ts  tangled (" in text.stdout, text.stdout
+    for report in (json.loads(as_json.stdout), _mcp_report(scored_repo)):
+        ages = {row["path"]: row["age_days"] for row in report["oldest"]}
+        assert ages == {"src/tangled.ts": 2}, report
+    assert brief.returncode == 0, brief.stdout + brief.stderr
+    assert json.loads(brief.stdout)["gate_rule"]["mark_age_days"] == 2
+
+
 # --- doctor names a hook file git cannot spawn ---------------------------------------
 
 HOOK = b"#!/bin/sh\nexec python -m crapkit hook-precommit\n"
