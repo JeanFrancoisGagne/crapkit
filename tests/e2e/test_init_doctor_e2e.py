@@ -795,6 +795,10 @@ _NULL_FIELDS = {
         {"package.json": {"scripts": {"test": "npm run --workspaces test"}},
          "web/package.json": {"devDependencies": None}},
         "npm run test -- --coverage", ""),
+    # Not a null: the control that a UTF-8 file with non-ASCII text reads as it did.
+    "utf8-non-ascii-description": ({"package.json": {"description": "café 世界",
+                                                     "scripts": {"test": "vitest run"}}},
+                                   "npm run test -- --coverage", ""),
 }
 
 
@@ -809,7 +813,7 @@ def test_init_reads_a_package_json_whose_fields_are_null(tmp_path: Path, shape: 
                                          encoding="utf-8")
     for name, payload in files.items():
         (repo / name).parent.mkdir(parents=True, exist_ok=True)
-        (repo / name).write_text(json.dumps(payload), encoding="utf-8")
+        (repo / name).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     _git_commit_all(repo, "init")
 
     res = run_cli(repo, "init")

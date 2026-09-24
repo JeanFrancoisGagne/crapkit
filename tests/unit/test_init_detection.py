@@ -855,3 +855,8 @@ def test_non_ascii_names_and_a_package_with_20000_scripts_still_pick_the_test_sc
 
     assert lane.command == "npm run test -- --coverage"
     assert crowded.command == "npm run test:z -- --coverage"
+
+
+@pytest.mark.parametrize("text", ["{}", "", "[]"], ids=["empty-object", "empty-file", "top-level-list"])
+def test_a_package_json_that_names_nothing_detects_no_lane(text):
+    assert detect_lanes(frozenset(), text) == ()
