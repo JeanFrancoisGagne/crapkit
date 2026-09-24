@@ -1474,6 +1474,17 @@ each half came from. The banner counts only as a whole line, so log output quoti
 words mid-line starts no attempt, and attempt 1 writes no banner at all, which makes a
 bannerless log one attempt.
 
+The refusal quotes the log with its escape codes removed, and the log file keeps them. A
+lane runs with crapkit's environment, so a job that sets `FORCE_COLOR` (any value, `0`
+included) or `PY_COLORS=1` gets a coloured pytest log, and on Python 3.14 `PYTHON_COLORS=1`
+colours pytest's usage error as well. The cause lines are found and pulled up front
+whatever colour pytest wrote, the pytest-cov hint still fires, and the refusal on stderr,
+`lane_failures` under `--json`, the Action's pull-request comment and its base-run reason
+carry no escape byte. A junit report's error text gets the same treatment: pytest writes
+ESC there as the text `#x1B`, and a collection refusal from an xdist lane quotes it
+without. Tail the file, or open it in a CI viewer that renders colour, to see the
+original.
+
 ### A killed run leaves its coverage shards behind
 
 `coverage run --parallel-mode`, which pytest-xdist turns on for you, writes one
