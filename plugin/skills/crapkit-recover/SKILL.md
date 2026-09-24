@@ -1,6 +1,6 @@
 ---
 name: crapkit-recover
-description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the seven causes behind a lane that wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/5/6/7/8/9, a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, seed or prune refuses an \"ambiguous legacy function identity\", git conflicts crapkit-ratchet.tsv, `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
+description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the seven causes behind a lane that wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/5/6/7/8/9, a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, seed or prune refuses an \"ambiguous legacy function identity\", git conflicts crapkit-ratchet.tsv, a command names a file git holds \"in bytes that are not UTF-8\", the \"measurement owner stopped\", `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
 ---
 
 # Recovering a refused run
@@ -46,9 +46,9 @@ in this version.
 
 | Exit | What refused | Owner | First command |
 |---|---|---|---|
-| 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
+| 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope, a scoped file whose name is not UTF-8 | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
-| 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
+| 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, timed out past its retries, or refused a container; or the measurement owner stopped | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
@@ -59,7 +59,12 @@ it. Exit 1 is three unrelated things at once:
 [README: exit 1 means one of three things](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-1-means-one-of-three-things)
 splits them by command.
 
-## Two exit-3 signatures worth naming
+`measurement owner stopped before confirming ownership` (or `during command registration`,
+or `before publication`), exit 5, means the process crapkit starts to own a measurement's
+outputs died. Its stderr goes to `.crapkit/owner.log`, and the line names that file: read
+the traceback there before rerunning.
+
+## Three exit-3 signatures worth naming
 
 Exit 3 fires before any lane runs, so nothing was measured and nothing was written.
 
@@ -80,6 +85,16 @@ the command the way the shell will. On Windows a single-quoted value reaches the
 one word per space, so the guard sees a positional that would narrow the run. Rewrite the
 value in double quotes:
 [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start).
+
+`src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 ... rename
+it (git mv) to a UTF-8 name` means a scope takes a file whose name git holds in another
+encoding, a Latin-1 name made on Linux, so no row can be keyed on it and no gate may pass it
+unread. Rename it and commit: on Linux `git mv $'src/caf\xe9.py' src/café.py`; on Windows,
+where no argument can spell that byte, `git rm --cached "src/caf?.py"` by a glob, then save the
+file as `src/café.py` and `git add` it. `left out docs/r\xe9sum\xe9.txt: git names it in
+bytes that are not UTF-8` is a warning for a name no scope takes, and the command's own exit
+stands:
+[docs: file paths](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery).
 
 ## a lane that wrote no artifact: seven causes
 

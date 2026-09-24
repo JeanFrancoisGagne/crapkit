@@ -1,5 +1,89 @@
 # Changelog
 
+## Unreleased
+
+### Text that is not UTF-8
+
+A commit, file name, report or MCP frame that is not UTF-8 no longer ends a command with a traceback.
+
+- An author name, subject, body or patch line a commit stored in bytes that are not UTF-8
+  reads as U+FFFD: in the churn window (`worklist`, `next-item`, `brief`, `coupling` and
+  the MCP tools) and in `explain --history` and `get_function_history`. One such commit
+  inside the 12-month window stopped every churn reader with a UnicodeDecodeError, and on
+  Windows `explain --history` died with an AttributeError after the decode failed in
+  subprocess's reader thread. Every git crapkit starts passes
+  `-c i18n.logOutputEncoding=UTF-8`, so in a repo that sets `i18n.commitEncoding` or
+  `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored, where `José` and
+  `Josè` had counted as one author. A CR inside an author name no longer cuts the commit
+  off its dates and doubles its churn weight. A `core.hooksPath` holding a Latin-1 byte no
+  longer ends `doctor`, and `verify --base` on such a ref gets its exit-4 sentence.
+- `mutate` builds and resets its worktree pool at a HEAD whose subject is not UTF-8.
+  `git worktree add` and a kept tree's `checkout --force` print that subject, and the
+  strict read stopped the run before any mutant, with one worker or several; on Linux a
+  leftover file named in Latin-1 did the same through `clean`.
+- A file git names in bytes that are not UTF-8 (a Latin-1 name made on Linux, kept as it
+  was in a Windows clone's index) no longer ends every command with a traceback. When a
+  scope takes it, `inventory`, `coverage`, `verify`, `rescore`, `doctor` and
+  `hook-precommit` exit 3 with one line naming the file and `git mv`, so no gate passes a
+  source file no reader read. Any other such name, an untracked one included, is left out
+  and named once on stderr. Under a POSIX locale that is not UTF-8, `crapkit` restarts
+  itself once with `-X utf8`, so `pkg/café.py` opens as the file git names instead of
+  `pkg/caf\xe9.py`, which does not exist.
+- A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
+  a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
+  with a UnicodeEncodeError. `explain` and `brief` answer with their sentence for a
+  missing file; an override sends its alert and stores all three audit records, where the
+  store write failed after the alert had gone out; a lane run on such a host or under such
+  a directory takes its output lock.
+- A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in
+  `coverage`, `verify`, `verify --reuse-artifacts`, the flake retest and `doctor --tune`.
+  Each ended with a UnicodeDecodeError.
+- The MCP server reads on past a stdin frame holding a byte that is not UTF-8, which ended
+  the session with exit 0 and nothing on stderr, and answers an `initialize` sent behind a
+  UTF-8 byte-order mark.
+- The Action builds and posts its comment on a pull request that adds, touches or deletes
+  a file whose name is not UTF-8. `comment.py` exited 1 there and failed the job.
+- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
+  and the ISE save it, scores its functions. inventory read it as empty, the pre-commit
+  gate passed a ccn-8 function in it, and the advisory hook said nothing. An identifier
+  holding one of the five bytes cp1252 leaves undefined stays whole. `mutate` writes a
+  mutant back in the file's own encoding: in a cp1252 or Latin-1 file every accented byte
+  outside the mutated line became EF BF BD, and 2 of 2 mutants read killed where the UTF-8
+  twin kills 0. `brief --json`'s `source` reads the file the way the scorer does. The
+  analysis cache version moves, so the first run reads every file again; the analysis
+  version stays, and no mark moves.
+- Every reader of the marks file (`verify`, `ratchet report`, `brief`, the advisory hook,
+  the override grant and the merge driver) reads it by one rule: UTF-16 by its byte-order
+  mark, else UTF-8 with each other byte as U+FFFD. A cp1252 byte in one mark's name, or a
+  file saved by a bare PowerShell 5.1 `Out-File`, stopped each of them at exit 3. A write
+  that would save U+FFFD in place of a name (`ratchet seed`, `prune`, `move`, verify's
+  tighten, the merge driver) refuses at exit 3 naming the byte, and a UTF-16 file is
+  written back as UTF-16 in its own line endings. A past revision in cp1252 or UTF-16 no
+  longer stops `ratchet report`, and a UTF-16 one keeps each mark's entry date.
+- `init` reads a root `package.json` past a UTF-8 byte-order mark, and stops at exit 3
+  before it writes any file on one in UTF-16 or holding a byte that is not UTF-8, naming
+  the byte and the fix; a nested one is skipped with a warning. It writes `.gitignore`
+  before `crapkit.toml` and appends in the file's own line ending, keeping every byte
+  already there, where a CRLF `.gitignore` came back all LF. A second `init` finishes what
+  a first one left undone, and a UTF-16 `.gitignore` is named with the fix and left as it
+  was.
+- Lane and mutation children get `PYTHONIOENCODING=utf-8` unless the lane's `env` sets
+  it, so a lane refusal quotes `No module named 'café'` as the child wrote it and a test
+  that prints an emoji passes under crapkit as it does in a terminal.
+- The Linux measurement owner reads every `/proc/<pid>/stat` as bytes, so a process
+  anywhere on the host named in Latin-1, or a UTF-8 name the kernel cut mid-character, no
+  longer stops `coverage`, `verify`, `test-scoped`, `mutate` and the MCP tools with
+  `measurement owner stopped`. The owner's stderr goes to `.crapkit/owner.log`, and each
+  `measurement owner stopped` line names that file.
+- `doctor --plugin-root` reads a launcher's `--version` answer as bytes and a plugin
+  manifest the way Claude Code reads it: a byte that is not UTF-8 prints the FAIL line
+  instead of a reader-thread traceback, and one in a manifest's description no longer
+  reads as a missing plugin.json. `doctor` notes a UTF-16 source, which git diffs as
+  binary, and an `i18n.commitEncoding` that is not UTF-8, with its exit code unchanged.
+
+The four exit codes and the lane environment that change on upgrade are in the [upgrade
+guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#text-that-is-not-utf-8).
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

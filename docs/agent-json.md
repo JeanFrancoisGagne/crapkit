@@ -1260,6 +1260,14 @@ are unchanged. Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --ga
 print their own payloads, with the verdict inside. Without `--json`, stdout stays empty
 on an error.
 
+Text copied out of git's history is never an error. `explain --history --json` and the
+`get_function_history` tool list each commit that touched the function as `commits[]`,
+with `sha`, `date`, `subject` and `body`. A subject or body a commit stored in bytes that
+are not UTF-8 (a Latin-1 message with no encoding header) arrives with each such byte as
+U+FFFD, so compare a subject by equality only when you know its commit was written in
+UTF-8. One stored as UTF-8 arrives as stored, whatever the repo's `i18n.commitEncoding`
+or `i18n.logOutputEncoding` says. Churn's author count reads names the same way.
+
 ---
 
 ## `claude-hook`

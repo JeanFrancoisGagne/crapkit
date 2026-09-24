@@ -408,6 +408,21 @@ Set-Content -Path .git/hooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bi
 
 `crapkit doctor` warns when the hook file git would spawn starts with a byte-order mark.
 
+PowerShell 5.1's `>` writes UTF-16 behind the same mark wherever it saves a file, and crapkit
+reads each such file as far as the program that owns it can:
+
+- A source file saved that way scores its functions as its UTF-8 twin does. git diffs it as
+  binary, so `crapkit doctor` names it in a note.
+- A `.gitignore` in UTF-16 is one git cannot read. `init` names it on stderr with the fix and
+  leaves it as it was.
+- The marks file (`crapkit-ratchet.tsv`) saved that way reads as its rows, and a write puts
+  it back in UTF-16 behind its mark and in its own line endings. A mark whose name
+  holds a cp1252 byte reads with that byte as U+FFFD, and `ratchet seed`, `prune`, `move`,
+  `verify`'s tighten and the merge driver refuse at exit 3, naming the byte, rather than save
+  U+FFFD in place of the name.
+
+`Set-Content -Encoding utf8` saves any of them as UTF-8.
+
 ### Route 2: a committed hooks directory
 
 The whole route, from a repo that has no `githooks/` yet:
@@ -1005,11 +1020,19 @@ carry the same launcher, so uncommenting one cannot hand the bare `python` back.
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live).
 
-`init` reads `package.json` the way npm does, a UTF-8 byte-order mark dropped and a stray
-cp1252 byte read as U+FFFD, and appends to `.gitignore` in that file's own line ending without
-touching a byte already there. A UTF-16 `package.json` or `.gitignore` (what PowerShell 5.1's
-`Out-File` writes), which npm and git cannot read either, is named on stderr with the fix and
-left as it was.
+`init` reads a root `package.json` past a UTF-8 byte-order mark, as npm does. A root
+`package.json` in UTF-16 (what PowerShell 5.1's `Out-File` writes) or holding a byte that is
+not UTF-8 stops `init` at exit 3 before it writes any file, since a lane read off a file it
+could not read would be a guess: `init wrote no file: package.json is not UTF-8 (byte e9 at
+offset 36); save it as UTF-8`. A nested one, a test fixture say, is skipped with one warning
+line naming it.
+
+`init` writes `.gitignore` before `crapkit.toml`, and appends in that file's own line ending
+without touching a byte already there. A UTF-16 `.gitignore`, which git cannot read either, is
+named on stderr with the fix and left as it was. Run `init` again over an existing
+`crapkit.toml` and it adds the `.gitignore` entries its lanes need, says what it finished,
+exits 0 and leaves `crapkit.toml` byte for byte; with nothing missing it refuses with
+`already exists`.
 
 ```toml
 [crapkit]

@@ -57,25 +57,56 @@ their CLI calls run at the server's selected root.
 Tracked Git paths preserve whitespace and Unicode separators. crapkit reads every
 path as UTF-8, because rows, marks and caches are keyed on it. A file whose name
 Git reports in other bytes (a Latin-1 name made on Linux, which Git for Windows
-keeps in the index as it was) is left out of every command, and stderr names it
-once, with the fix:
+keeps in the index as it was) has no key, so crapkit runs the scope assignment
+itself (each scope's paths, its languages' extensions, its excludes) on the name,
+and the answer decides what happens:
 
+| The name | What crapkit does |
+|---|---|
+| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `rescore`, `doctor` and `hook-precommit` exit 3 with one line naming the path and `git mv`. Left out, it would be a source file no reader read, and the gate would pass it. |
+| No scope takes it, or it is untracked | Left out of every command. stderr names it once, and the command keeps its own exit code. |
+
+    crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
     crapkit: left out docs/r\xe9sum\xe9.txt: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename it (git mv) to have it read
 
-The pre-commit gate leaves such a staged file out the same way, so rename it
-before relying on the gate for it. Scope-prefix normalization below applies to
-configuration strings, not to the filenames Git reports.
+On Linux, `git mv $'src/caf\xe9.py' src/café.py` renames such a file. A Windows command
+line cannot spell that byte, so there `git rm --cached "src/caf?.py"` drops it by a glob,
+and the file saved as `src/café.py` goes back in with `git add`.
+
+`init` has no scopes to assign with yet, so it prints the warning and writes the
+config; the first command that loads that config refuses a name a scope takes.
+
+Scope-prefix normalization below applies to configuration strings, not to the
+filenames Git reports.
 Output flags such as `--export`, `--sarif` and `--emit-baseline` are project-relative;
 an absolute output path explicitly selects a destination outside it.
+
+On Linux and other POSIX systems Python hands a path to the OS in the locale's
+encoding. Under a locale that is not UTF-8 (`LANG=en_US.ISO-8859-1`), `pkg/café.py`
+would go out as `pkg/caf\xe9.py`, a file that does not exist. So `crapkit` (the
+console script and `python -m crapkit`) starts itself again once with `python -X
+utf8` when the filesystem encoding is not UTF-8 and UTF-8 mode is off, before it
+reads stdin, and every path it opens is spelled in UTF-8. It sets the flag and not
+`PYTHONUTF8`, so lane and mutation commands keep the environment you gave them.
+`-X utf8=0` turns the restart off. Windows and macOS always spell paths in UTF-8.
+
+A checkout under a directory whose name is not UTF-8, or on a host whose name is
+not, works for every crapkit command: both names are hashed as the bytes the OS
+holds. coverage.py does not: its combine step fails under such a directory or host
+name, so a pytest-cov lane there fails and crapkit reports it as that lane's
+failure, exit 5. Rename the directory or the host to UTF-8.
 
 Parsed source diffs use Crapkit's own Git settings. Display preferences, external
 diff commands and textconv do not change attribution. A supported source file
 marked binary by Git attributes receives a text fallback; ordinary binary files
 remain outside source decoding. Source text is read as UTF-16 when the file opens
 with a UTF-16 byte-order mark (what PowerShell 5.1's `Out-File` and the ISE write),
-else as UTF-8, else as cp1252. Inventory, the pre-commit gate, the advisory hook and
-`brief --json`'s `source` all read it that way. `mutate` writes a mutant back in the
-file's own encoding and changes no byte outside the mutated line.
+else as UTF-8, else as cp1252. The five bytes cp1252 leaves undefined (0x81, 0x8D,
+0x8F, 0x90, 0x9D) read as the control character of the same number, so an
+identifier that holds one stays whole and the file scores as its UTF-8 twin does.
+Inventory, the pre-commit gate, the advisory hook and `brief --json`'s `source` all
+read it that way. `mutate` writes a mutant back in the file's own encoding and
+changes no byte outside the mutated line.
 
 ## `[crapkit]`
 

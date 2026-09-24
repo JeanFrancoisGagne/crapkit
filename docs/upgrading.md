@@ -158,6 +158,19 @@ paths still have to name the measured tree. Use the documented
 [portable record reader](portable-records.md) when automating around exports.
 JSON stays at `schema: 1`; consumers must accept added fields.
 
+## Text that is not UTF-8
+
+After 0.8.0, a byte that is not UTF-8 in a commit, a file name, a report or an MCP frame
+reads as U+FFFD or is refused by name, where 0.8.0 ended the command with a traceback.
+Four answers change for automation that reads exit codes or lane output:
+
+| What | 0.8.0 | Now | Action |
+|---|---|---|---|
+| A file a scope takes whose name git holds in bytes that are not UTF-8 | every command exited 1 with a traceback | `inventory`, `coverage`, `verify`, `rescore`, `doctor` and `hook-precommit` exit 3 naming the file and `git mv`; a name no scope takes is a warning | Rename the file to UTF-8 ([file paths](configuration.md#file-paths-and-root-discovery)) |
+| Lane and mutation children | wrote in their locale's encoding (cp1252 on most Windows machines), so a test printing an emoji failed under crapkit and passed in a terminal | get `PYTHONIOENCODING=utf-8` unless the lane's `env` sets it | A lane that needs another encoding sets `PYTHONIOENCODING` in its `env` ([lanes](lanes.md)) |
+| A marks file holding a cp1252 byte, or saved as UTF-16 | every reader exited 3 | read with that byte as U+FFFD, or as UTF-16; a write that would save U+FFFD in place of a name exits 3 naming the byte | Fix the byte in the mark's name ([ratchet](ratchet.md)) |
+| A root `package.json` in UTF-16 or holding a byte that is not UTF-8 | `init` exited 1 with a traceback | `init` exits 3 before it writes any file | Save it as UTF-8, then run `init` again |
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating
