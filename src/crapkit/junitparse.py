@@ -6,6 +6,12 @@ stdlib ElementTree is deliberate: the XML comes from the repo's own test
 runner, the same trust class as the lane commands themselves. That trust runs
 one way: the runner is believed about what it ran, including when it says it
 stopped.
+
+Every reader takes the report's bytes, so the XML declaration and a byte-order
+mark decide how it decodes, the way XML says they do. A report declared
+ISO-8859-1, or written as UTF-16, is a report; decoded as UTF-8 first, it ended
+coverage, verify and doctor --tune with a traceback. A str is still read as
+already decoded.
 """
 from __future__ import annotations
 
@@ -29,9 +35,9 @@ def _case_id(case: ET.Element) -> str:
     return f"{classname}::{case.get('name', '?')}"
 
 
-def _root(xml_text: str) -> ET.Element:
+def _root(report: str | bytes) -> ET.Element:
     try:
-        return ET.fromstring(xml_text)
+        return ET.fromstring(report)
     except ET.ParseError as exc:
         raise ToolError(f"unparseable junit report: {exc}") from exc
 
@@ -93,7 +99,7 @@ def _refuse_unfinished(root: ET.Element) -> None:
     _refuse_partial(root)
 
 
-def suite_summary(xml_text: str) -> tuple[set[str], dict]:
+def suite_summary(report: str | bytes) -> tuple[set[str], dict]:
     """(failed ids, {tests, skipped}) from ONE DOM and ONE walk.
 
     A lane needs both, and the two helpers below each parsed the same text, so
@@ -105,7 +111,7 @@ def suite_summary(xml_text: str) -> tuple[set[str], dict]:
     testcases at all: both describe a suite that never ran, and a caller reading
     either as an answer records an untrustworthy lane as a measured one.
     """
-    root = _root(xml_text)
+    root = _root(report)
     _refuse_unfinished(root)
     failed, counts = _walk(root)
     if counts["tests"] == 0:
@@ -113,20 +119,20 @@ def suite_summary(xml_text: str) -> tuple[set[str], dict]:
     return failed, counts
 
 
-def suite_counts(xml_text: str) -> dict:
+def suite_counts(report: str | bytes) -> dict:
     """Total and skipped testcase counts — suite decay (fewer tests, more skips)
     is invisible to a pass/fail check. Counts a zero-testcase report rather than
     rejecting it; the failed-id readers are the ones that must refuse it."""
-    return _walk(_root(xml_text))[1]
+    return _walk(_root(report))[1]
 
 
-def failed_test_ids(xml_text: str) -> set[str]:
-    return suite_summary(xml_text)[0]
+def failed_test_ids(report: str | bytes) -> set[str]:
+    return suite_summary(report)[0]
 
 
-def passed_test_ids(xml_text: str) -> set[str]:
+def passed_test_ids(report: str | bytes) -> set[str]:
     """Completed passing cases; any failure or skip of the same ID wins."""
-    root = _root(xml_text)
+    root = _root(report)
     _refuse_unfinished(root)
     passed, blocked = set(), set()
     for case in root.iter("testcase"):
@@ -204,11 +210,11 @@ def _sum_times(elements) -> float:
     return sum(_seconds(e.get("time")) for e in elements)
 
 
-def suite_seconds(xml_text: str) -> float:
+def suite_seconds(report: str | bytes) -> float:
     """Wall seconds the report claims, for costing a lane that did not run here.
 
     Suite totals first; a runner that times only its cases is summed case by
     case. Zero means the report carries no timing at all.
     """
-    root = _root(xml_text)
+    root = _root(report)
     return _sum_times(root.iter("testsuite")) or _sum_times(root.iter("testcase"))

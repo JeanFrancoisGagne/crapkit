@@ -1158,7 +1158,7 @@ def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict, str]:
     if not results_path.is_file():
         raise ToolError(f"results_artifact {lane.results_artifact} is missing")
     raw = results_path.read_bytes()
-    failed, counts = suite_summary(raw.decode("utf-8"))
+    failed, counts = suite_summary(raw)
     return failed, counts, hashlib.sha256(raw).hexdigest()
 
 
@@ -1268,7 +1268,7 @@ def _retested_passes(root: Path, lane: Lane, before: int | None) -> set[str]:
     if _mtime_ns(path) == before:
         return set()
     try:
-        return passed_test_ids(path.read_text(encoding="utf-8"))
+        return passed_test_ids(path.read_bytes())
     except (OSError, ToolError):
         return set()
 
@@ -1281,7 +1281,7 @@ def _still_failed(root: Path, lane: Lane) -> set[str] | None:
     if not results_path.is_file():
         return None
     try:
-        return failed_test_ids(results_path.read_text(encoding="utf-8"))
+        return failed_test_ids(results_path.read_bytes())
     except ToolError:
         return None
 
