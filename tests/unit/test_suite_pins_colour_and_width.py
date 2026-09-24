@@ -74,7 +74,7 @@ def test_a_test_starts_with_no_colour_variable_and_eighty_columns():
     assert os.environ["COLUMNS"] == "80"
 
 
-# --- a narrow terminal, COLUMNS unset, `pytest -s` ---------------------------
+# --- a terminal of some width, COLUMNS unset, `pytest -s` or default capture --
 #
 # With `-s` pytest leaves stdout on the terminal, so argparse sizes help from
 # the terminal itself. Default capture points fd 1 at a file, and help gets the
@@ -116,8 +116,10 @@ def run_in_a_terminal(argv: list[str], columns: int, env: dict, stderr=None) -> 
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="needs a POSIX pty, which Windows lacks")
-@pytest.mark.parametrize("columns", [40, 60])
-def test_the_help_tests_pass_with_capture_off_in_a_narrow_terminal(columns):
-    code, shown = run_in_a_terminal([*PYTEST, "-s"], columns, _shell({}))
+@pytest.mark.parametrize("capture", ["-s", "--capture=fd"])
+@pytest.mark.parametrize("columns", [40, 60, 120])
+def test_the_help_tests_pass_in_a_terminal_of_any_width_with_capture_off_or_on(columns, capture):
+    """40 and 60 with `-s` went red before the fixture; the other rows were green."""
+    code, shown = run_in_a_terminal([*PYTEST, capture], columns, _shell({}))
 
     assert code == 0, shown[-4000:]
