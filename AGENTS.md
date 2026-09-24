@@ -188,7 +188,7 @@ Three rules decide what it judges:
 | Exit | Meaning | Next action |
 |---|---|---|
 | 0 | every changed function is at or under its ceiling | go to step 4 |
-| 6 | the listed functions are over | decompose them, rerun |
+| 6 | the listed functions are over, or an `UNREAD` line names a changed file no reader could read | decompose them, or change what the unread file's reason names; rerun |
 
 Exit 0 is not a verify. `rescore` overlays fresh complexity on the last run's stale
 coverage and writes no run, so a new function at exactly the ceiling with no tests
@@ -263,7 +263,7 @@ This is the slow step and the only authoritative one.
 |---|---|---|
 | 0 | pass | baseline advanced, ratchet tightened, finished claims released. Commit |
 | 5 | a lane produced no artifact, one that measured a different tree, or one that measured this tree and reported it in absolute paths | tooling, not your code. For the first two, read the lane log the message names and fix the lane command in crapkit.toml. The third names the runner's own switch instead, `relative_files = true` under `[tool.coverage.run]` for coverage.py or the reporter's `cwd`/`root` option for istanbul, because the lane command is fine and only the spelling of the paths is not |
-| 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries | decompose it, or cover it |
+| 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries, or a changed file no reader could read (`UNREAD`) | decompose it, or cover it; for `UNREAD`, change what the reason names |
 | 7 | ratchet: a recorded score got worse | restore that function below its mark |
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | cover the changed lines |
@@ -600,7 +600,7 @@ Twelve tools, every one the CLI command's `--json` form:
 | `list_duplicate_functions` | `similarity` | JSON |
 | `get_ratchet_report` | none | JSON |
 | `list_claims` | none | JSON (`claims list --json`) |
-| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach (exit 6), answered as a result, not a tool error |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach or on a changed file no reader could read (`gate.unread`), exit 6, answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared

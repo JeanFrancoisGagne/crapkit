@@ -18,6 +18,8 @@ _RULES = (
      "shortDescription": {"text": "a recorded CRAP mark got worse"}},
     {"id": "crapkit/diff-uncovered",
      "shortDescription": {"text": "a changed line no lane ever ran"}},
+    {"id": "crapkit/unread",
+     "shortDescription": {"text": "a changed file no reader could read, so the gate judged none of it"}},
 )
 
 
@@ -49,6 +51,14 @@ def gate_results(violations) -> list[dict]:
     return [_result("crapkit/gate", "error", v.path, v.start,
                     f"{v.long_name}: CRAP {v.crap:.1f} (ccn {v.ccn}, cov {v.cov:.0%}) -> {v.remedy}")
             for v in violations]
+
+
+def unread_results(unread_files) -> list[dict]:
+    # no function was read, so line 1 anchors the file-level finding
+    return [_result("crapkit/unread", "error", u.path, 1,
+                    f"no reader could read this file, so the gate judged none of its "
+                    f"functions: {u.reason}")
+            for u in unread_files]
 
 
 def regression_results(regressions) -> list[dict]:

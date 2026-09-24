@@ -146,6 +146,14 @@ class UncoveredViolation(NamedTuple):
     dirty: bool = False
 
 
+class UnreadFile(NamedTuple):
+    """A changed file no reader could read. The run scores it as zero
+    functions; the gate judged none of them, so it refuses the file."""
+    path: str
+    reason: str
+    dirty: bool = False
+
+
 class Verdict(NamedTuple):
     ok: bool
     gate_violations: list[GateViolation]
@@ -159,10 +167,11 @@ class Verdict(NamedTuple):
     forgiven_failures: tuple[str, ...] = ()
     retried_passes: tuple[str, ...] = ()
     overridden: tuple[GateViolation, ...] = ()
+    unread_files: tuple[UnreadFile, ...] = ()
 
 
 def _any_finding(verdict: Verdict) -> bool:
-    return bool(verdict.gate_violations or verdict.ratchet_regressions
+    return bool(verdict.gate_violations or verdict.unread_files or verdict.ratchet_regressions
                 or verdict.new_failures or verdict.uncovered_violations)
 
 
@@ -192,6 +201,16 @@ def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
     return settle_verdict(verdict._replace(uncovered_violations=findings))
 
 
+def with_unread(verdict: Verdict, unread: dict[str, str], changed: set[str],
+                dirty_paths: set[str]) -> Verdict:
+    """Fail the gate on every changed file no reader could read: its zero
+    records are not zero functions over the ceiling. An unread file the
+    change never touched holds no changed function, so it is left alone."""
+    found = tuple(UnreadFile(path, why, path in dirty_paths)
+                  for path, why in sorted(unread.items()) if path in changed)
+    return settle_verdict(verdict._replace(unread_files=found)) if found else verdict
+
+
 def _id_forms(path: str) -> tuple[str, str]:
     """The two shapes a junit classname takes for one file: the repo-relative
     path (vitest, and pytest's `file` fallback) and pytest's dotted module."""
@@ -205,14 +224,17 @@ def dirty_failure_ids(new_failures: list[str], dirty_paths: set[str]) -> list[st
     return [f for f in new_failures if f.split("::")[0] in forms]
 
 
+# The finding kinds that carry their own `dirty` flag; new_failures carries ids.
+_FLAGGED_FINDINGS = ("gate_violations", "unread_files", "ratchet_regressions",
+                     "uncovered_violations")
+
+
 def dirty_counts(verdict: Verdict) -> tuple[int, int]:
     """(committed, dirty) over every finding kind, so one line says how much of
     a verdict belongs to the tree as committed and how much to somebody's edits."""
     dirty_ids = set(verdict.dirty_failures)
-    flags = ([v.dirty for v in verdict.gate_violations]
-             + [r.dirty for r in verdict.ratchet_regressions]
-             + [f in dirty_ids for f in verdict.new_failures]
-             + [v.dirty for v in verdict.uncovered_violations])
+    flags = ([f.dirty for kind in _FLAGGED_FINDINGS for f in getattr(verdict, kind)]
+             + [f in dirty_ids for f in verdict.new_failures])
     dirty = sum(flags)
     return len(flags) - dirty, dirty
 

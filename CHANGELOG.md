@@ -53,6 +53,13 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   function's CRAP rise with exit 0. verify never writes those marks back, and a pass no
   longer restamps an emptied file into a header with no rows and asks for a `git add`. The
   receipt's `ratchet_sha256` is the digest of the marks verify judged against.
+- The commit hook, `rescore --gate` (and so the MCP tool `check_gate`) and verify refuse a
+  changed file no reader could read, exit 6, with an `UNREAD` line naming the file and the
+  reader's reason. Such a file is scored as zero functions, and every gate read that as
+  nothing over the ceiling: a ccn-8 function in the same file as one TypeScript arrow the
+  reader refuses passed all four. `rescore --gate --json` lists them under `gate.unread`,
+  `verify --json` under `unread_files`, SARIF as `crapkit/unread`, and the Action's comment
+  gives each a bullet. An unread file the change never touched still passes.
 
 ## 0.8.0 — 2026-09-23
 

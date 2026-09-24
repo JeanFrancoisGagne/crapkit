@@ -780,7 +780,8 @@ $ crapkit verify --json
   "run_id": 9,
   "schema": 1,
   "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
-  "unmarked_over_target": 0
+  "unmarked_over_target": 0,
+  "unread_files": []
 }
 ```
 
@@ -799,6 +800,7 @@ $ crapkit verify --json
 | Key | Shape | Fires exit |
 |---|---|---|
 | `gate_violations` | `{path, long_name, start, ccn, cov, crap, remedy, dirty, key_name}` | 6 |
+| `unread_files` | `{path, reason, dirty}`: a changed file no reader could read, so the gate judged none of its functions. `reason` is the reader's refusal, naming the line and what to change | 6 |
 | `ratchet_regressions` | `{path, long_name, recorded, fresh_crap, dirty}` | 7 |
 | `new_failures` | array of `classname::name` test ids | 8 |
 | `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
@@ -1182,7 +1184,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `runs prune --json` | `{"pruned_runs": 6, "kept_runs": 4, "freed_bytes": 0}`. |
 | `trend --json` | `{"runs": [{run_id, commit, created_at, functions, over_target, crap_load, avg, by_scope}], "target": 6}`, trusted runs only. Reads and fills the `run_rollup` cache; see below. |
 | `overrides --json` | `{"overrides": [{run_id, commit, created_at, path, function, crap, reason}]}`. |
-| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `ok` is `breaches == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
+| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path], "unread": [{path, reason}]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `unread` the changed files no reader could read, whose functions were never judged, `ok` is `breaches == [] and unread == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
 | `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. A pair whose two spans nest in one file is dropped, not ranked: a factory and the closure defined inside it score 1.0 by construction and cannot be deduplicated. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
 | `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
 | `mutate --json` | `{"mutants", "killed", "survived", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. Every worker uses a kept worktree, including one; see [mutation worktrees](configuration.md#mutation-worktrees). |
@@ -1466,7 +1468,7 @@ can serve several checkouts.
 | `get_function_history` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
 | `check_config` | | JSON text (the `doctor --json` report) |
 | `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `list_worklist`) | JSON text |
-| `check_gate` | `path` (repo-relative source file, or absolute inside the repo; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
+| `check_gate` | `path` (repo-relative source file, or absolute inside the repo; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`, `unread`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed

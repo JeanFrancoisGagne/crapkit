@@ -461,7 +461,7 @@ def test_a_passing_gate_json_says_ok_and_what_it_judged(scored, capsys):
 
     assert (code, err) == (0, "")
     assert json.loads(out)["gate"] == {"ok": True, "judged": 1, "ceilings": {"src/app.ts": 6},
-                                       "breaches": [], "untracked": []}
+                                       "breaches": [], "untracked": [], "unread": []}
 
 
 def test_the_text_form_prints_the_gate_line_when_it_passes(scored, capsys):

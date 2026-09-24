@@ -1376,8 +1376,8 @@ TOOLS: tuple[dict, ...] = (
                 "properties": {
                     "ok": {
                         "type": "boolean",
-                        "description": ("true when breaches is empty; false is the verdict (CLI exit "
-                        "6), delivered as a normal result")},
+                        "description": ("true when breaches and unread are empty; false is the "
+                        "verdict (CLI exit 6), delivered as a normal result")},
                     "judged": {
                         "type": "integer",
                         "description": ("functions the working tree changed since HEAD, an untracked "
@@ -1425,7 +1425,22 @@ TOOLS: tuple[dict, ...] = (
                         "type": "array",
                         "description": "rescored paths git tracks nothing of, judged in full",
                         "items": {
-                            "type": "string"}}}}},
+                            "type": "string"}},
+                    "unread": {
+                        "type": "array",
+                        "description": ("changed files no reader could read, so none of their "
+                        "functions was judged; any entry makes ok false"),
+                        "items": {
+                            "type": "object",
+                            "description": "one changed file the gate refused unread",
+                            "properties": {
+                                "path": {
+                                    "type": "string",
+                                    "description": "repo-relative path"},
+                                "reason": {
+                                    "type": "string",
+                                    "description": ("the reader's refusal, naming the line and "
+                                    "what to change")}}}}}}},
     },
     {
         "name": "list_claims",

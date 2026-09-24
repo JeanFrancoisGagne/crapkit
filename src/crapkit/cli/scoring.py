@@ -21,7 +21,7 @@ from ..universe import assign_files, scan_files
 from ..uncovered import DeadLineFold
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _load_sources, _print_json,
-                      _ratchet_entries, _repo_out_path, _repo_relative, _stand,
+                      _print_unread, _ratchet_entries, _repo_out_path, _repo_relative, _stand,
                       _write_tsv)
 
 
@@ -75,15 +75,17 @@ def _analyzed_corpus(root: Path, cache_path: Path, flat: list,
 
 
 class _Corpus(NamedTuple):
-    """What the analyzed file list came to: files in, files the byte ceiling cut."""
+    """What the analyzed file list came to: files in, files the byte ceiling
+    cut, and {path: why} for the files no reader could read."""
     files: int
     skipped_max_bytes: int
+    unread: dict = {}
 
 
 def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int, dict]:
     """Shared by inventory/coverage: returns (commit, rows, corpus, cache_hits, tool_versions)."""
     lizard, *_ = _analysis_tools()
-    from ..analyze import ANALYSIS_VERSION
+    from ..analyze import ANALYSIS_VERSION, unread_reasons
     commit = (git or GitFacts(root)).head_commit()
     universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
@@ -92,7 +94,8 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
     tool_versions = {"crapkit": __version__, "lizard": lizard.version,
                      "analysis_version": str(ANALYSIS_VERSION)}
-    return commit, rows, _Corpus(len(flat), len(universe.oversized)), cache_hits, tool_versions
+    corpus = _Corpus(len(flat), len(universe.oversized), unread_reasons(records_by_path))
+    return commit, rows, corpus, cache_hits, tool_versions
 
 
 def _record_twin_index(root: Path, store: SnapshotStore, run_id: int) -> None:
@@ -690,10 +693,13 @@ def _refuse_missing(root: Path, rel_paths: list) -> None:
         raise ConfigError(f"{', '.join(missing)} does not exist under {root}")
 
 
-def _rescore_analyze(root: Path, cfg, files, cwd: Path | None = None) -> tuple[list, list, dict]:
+def _rescore_analyze(root: Path, cfg, files,
+                     cwd: Path | None = None) -> tuple[list, list, dict, dict]:
     """Fresh complexity for the named files, said from `cwd` where the user
-    stands. A commit's worth of files leaves the shared cache alone; more are
-    merged into it, never truncated."""
+    stands, and {path: why} for the ones no reader could read. A commit's
+    worth of files leaves the shared cache alone; more are merged into it,
+    never truncated."""
+    from ..analyze import unread_reasons
     from ..hook import file_ceilings
 
     rel_paths = sorted({_repo_relative(p, root, cwd) for p in files})
@@ -703,7 +709,7 @@ def _rescore_analyze(root: Path, cfg, files, cwd: Path | None = None) -> tuple[l
     records_by_path = _rescored_records(root, root / ".crapkit" / "cache.json", flat,
                                         _analysis_workers(cfg), cfg.analysis_worker_budget)
     rows = build_inventory_rows(_records_by_scope(files_by_scope, records_by_path))
-    return rows, flat, file_ceilings(cfg, files_by_scope, flat)
+    return rows, flat, file_ceilings(cfg, files_by_scope, flat), unread_reasons(records_by_path)
 
 
 def _baseline_rows(store: SnapshotStore, run_id: int, flat: list) -> list:
@@ -776,18 +782,25 @@ def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) 
     return breaches
 
 
-def _gate_candidates(root: Path, rows: list) -> list:
-    """The functions this commit could be about: spans the working tree changed
-    against HEAD, index included, which is the set the pre-commit hook will see.
+def _changed_since_head(root: Path) -> dict:
+    """The spans the working tree changed against HEAD, index included, which is
+    the set the pre-commit hook will see."""
+    from ..diffparse import changed_ranges
+    from ..gitio import diff_since
+
+    return changed_ranges(diff_since(root, "HEAD"))
+
+
+def _gate_candidates(rows: list, ranges: dict, untracked: set[str]) -> list:
+    """The functions this commit could be about: the rows `ranges` touch, and
+    every row of an untracked file, which git diff cannot scope.
 
     Judging the whole file instead would flag every legacy function in it, so on
     any repo with seeded debt the flag is red forever and says nothing.
     """
-    from ..diffparse import changed_ranges
-    from ..gitio import diff_since
     from ..verify import touched_rows
 
-    return touched_rows(rows, changed_ranges(diff_since(root, "HEAD")))
+    return touched_rows(rows, ranges) + [r for r in rows if r.path in untracked]
 
 
 def _unmarked_breaches(breaches: list, entries: list) -> list:
@@ -808,12 +821,11 @@ def _unmarked_breaches(breaches: list, entries: list) -> list:
     return kept
 
 
-def _untracked_of(root: Path, overlay) -> set[str]:
+def _untracked_of(root: Path, paths: set[str]) -> set[str]:
     """Rescored paths git tracks nothing of. Invisible to git diff, so without
     special handling their violations print and then exit 0 — the one state
     where the gate lies."""
-    tracked = set(ls_files(root))
-    return {r.path for r in overlay} - tracked
+    return paths - set(ls_files(root))
 
 
 def _warn_untracked(untracked: set[str]) -> None:
@@ -825,15 +837,18 @@ def _warn_untracked(untracked: set[str]) -> None:
 
 class _GateVerdict(NamedTuple):
     """The commit's verdict, hours before the commit: what was judged, against
-    which ceiling per file, and the breaches no ratchet mark covers."""
+    which ceiling per file, the breaches no ratchet mark covers, and the changed
+    files no reader could read, which it refuses because it judged nothing in
+    them."""
     judged: int
     ceilings: dict[str, int]
     breaches: list
     untracked: list[str]
+    unread: dict[str, str] = {}
 
     @property
     def ok(self) -> bool:
-        return not self.breaches
+        return not (self.breaches or self.unread)
 
 
 def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
@@ -850,14 +865,17 @@ def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
     return _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
 
 
-def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int]) -> _GateVerdict:
+def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
+                  unread: dict[str, str]) -> _GateVerdict:
     from ..keys import key_names
 
-    untracked = _untracked_of(root, overlay)
-    candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
+    untracked = _untracked_of(root, {r.path for r in overlay} | set(unread))
+    ranges = _changed_since_head(root)
+    candidates = _gate_candidates(overlay, ranges, untracked)
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
     breaches = _unpardoned_breaches(root, cfg, overlay, touched)
-    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked))
+    changed = {path: unread[path] for path in unread if path in ranges or path in untracked}
+    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked), changed)
 
 
 def _breach_json(v, ceilings: dict[str, int]) -> dict:
@@ -871,7 +889,8 @@ def _gate_json(verdict: _GateVerdict) -> dict:
     to say which function, which rule, and whether the tree clears the gate."""
     return {"ok": verdict.ok, "judged": verdict.judged, "ceilings": verdict.ceilings,
             "breaches": [_breach_json(v, verdict.ceilings) for v in verdict.breaches],
-            "untracked": verdict.untracked}
+            "untracked": verdict.untracked,
+            "unread": [{"path": path, "reason": why} for path, why in sorted(verdict.unread.items())]}
 
 
 def _gate_ceiling_label(ceilings: dict[str, int]) -> str:
@@ -891,11 +910,17 @@ def _report_gate(verdict: _GateVerdict, as_json: bool) -> int:
             print(f"gate: {verdict.judged} changed function(s) judged, "
                   f"0 over {_gate_ceiling_label(verdict.ceilings)}")
         return 0
-    print(f"crapkit gate: {len(verdict.breaches)} rescored function(s) over their scope ceiling:",
-          file=sys.stderr)
-    for v in verdict.breaches:
-        print(_gate_line(v), file=sys.stderr)
+    _print_unread(verdict.unread, "changed", file=sys.stderr)
+    _print_breaches(verdict.breaches)
     return 6
+
+
+def _print_breaches(breaches: list) -> None:
+    if breaches:
+        print(f"crapkit gate: {len(breaches)} rescored function(s) over their scope ceiling:",
+              file=sys.stderr)
+    for v in breaches:
+        print(_gate_line(v), file=sys.stderr)
 
 
 def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
@@ -916,9 +941,9 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     cfg = _load_repo_config(root)
     store, latest = _rescore_baseline(root)
 
-    rows, flat, ceilings = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
+    rows, flat, ceilings, unread = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
     overlay = _rescore_overlay(store, latest, rows, flat, cfg)
-    verdict = _gate_verdict(root, cfg, overlay, ceilings) if args.gate else None
+    verdict = _gate_verdict(root, cfg, overlay, ceilings, unread) if args.gate else None
     if args.json:
         _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict))
     else:

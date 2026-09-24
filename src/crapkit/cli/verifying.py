@@ -27,10 +27,11 @@ if TYPE_CHECKING:
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
     if not (args.sarif or args.github):
         return
-    from ..sarif import diff_uncovered_results, gate_results, regression_results
+    from ..sarif import diff_uncovered_results, gate_results, regression_results, unread_results
 
     _emit_findings(root, args.sarif, args.github,
                    gate_results(verdict.gate_violations)
+                   + unread_results(verdict.unread_files)
                    + regression_results(verdict.ratchet_regressions)
                    + diff_uncovered_results(uncovered))
 
@@ -500,10 +501,18 @@ def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
                                        scope_targets=cfg.scope_targets, stale_commits=stale))
 
 
-def _print_verify_findings(verdict) -> None:
-    dirty_ids = set(verdict.dirty_failures)
+def _print_gate_findings(verdict) -> None:
+    from ._shared import _unread_line
+
     for v in verdict.gate_violations:
         print(_gate_line(v))
+    for u in verdict.unread_files:
+        print(_unread_line(u.path, u.reason, u.dirty))
+
+
+def _print_verify_findings(verdict) -> None:
+    dirty_ids = set(verdict.dirty_failures)
+    _print_gate_findings(verdict)
     for r in verdict.ratchet_regressions:
         print(f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(r.dirty)}")
     for f in verdict.new_failures:
@@ -528,14 +537,13 @@ def _print_finding_split(verdict) -> None:
               "(uncommitted edits and untracked files)")
 
 
+# One exit code per finding kind, in the order the first one present decides.
+_EXIT_ORDER = (("gate_violations", 6), ("unread_files", 6), ("ratchet_regressions", 7),
+               ("new_failures", 8), ("uncovered_violations", 9))
+
+
 def _verify_exit_code(verdict) -> int:
-    if verdict.gate_violations:
-        return 6
-    if verdict.ratchet_regressions:
-        return 7
-    if verdict.new_failures:
-        return 8
-    return 9 if verdict.uncovered_violations else 0
+    return next((code for kind, code in _EXIT_ORDER if getattr(verdict, kind)), 0)
 
 
 def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
@@ -658,6 +666,14 @@ def _verify_attribution(verdict) -> dict:
             "dirty_failures": list(verdict.dirty_failures)}
 
 
+_RECORD_FINDINGS = ("gate_violations", "unread_files", "ratchet_regressions", "overridden")
+
+
+def _finding_lists(verdict) -> dict:
+    """The finding kinds whose entries are records, each as a list of objects."""
+    return {kind: [f._asdict() for f in getattr(verdict, kind)] for kind in _RECORD_FINDINGS}
+
+
 def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
                    uncovered: list, diff_uncovered_max: int | None,
                    unmarked_over_target: int) -> dict:
@@ -673,12 +689,10 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "baseline_commit": baseline["commit"],
         "commit": commit,
         "changed_files": len(ranges),
-        "gate_violations": [v._asdict() for v in verdict.gate_violations],
-        "ratchet_regressions": [r._asdict() for r in verdict.ratchet_regressions],
+        **_finding_lists(verdict),
         "new_failures": verdict.new_failures,
         "forgiven_failures": list(verdict.forgiven_failures),
         "retried_passes": list(verdict.retried_passes),
-        "overridden": [v._asdict() for v in verdict.overridden],
         "diff_uncovered_count": len(uncovered),
         "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
         "diff_uncovered_max": diff_uncovered_max,
@@ -804,7 +818,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import changed_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
-    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
+    from ..verify import (diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage,
+                          with_unread)
     from ..lane_results import baseline_failures, without_results
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
@@ -857,6 +872,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
+    verdict = with_unread(verdict, run.corpus.unread, set(ranges) | dirty, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
@@ -1202,12 +1218,24 @@ def _staged_gate(root: Path, cfg, base: str | None = None):
 
 
 def cmd_hook_precommit(args: argparse.Namespace) -> int:
-    import os
+    """Exit 6 when a staged function is over its ceiling, or when a staged file
+    could not be read at all: zero records from a file nothing read are not
+    zero functions over the ceiling, and the override has no function to
+    record as debt for it."""
+    from ._shared import _print_unread
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     gate = _staged_gate(root, cfg, getattr(args, "base", None))
     _warn_unscoped_staged(gate.unscoped)
+    _print_unread(gate.unread, "staged")
+    code = _judge_staged(root, cfg, gate)
+    return 6 if gate.unread else code
+
+
+def _judge_staged(root: Path, cfg, gate) -> int:
+    import os
+
     violations = _gated_violations(root, cfg, gate.violations, gate.records)
     if not violations:
         return 0

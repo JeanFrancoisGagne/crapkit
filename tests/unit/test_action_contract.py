@@ -885,6 +885,17 @@ def test_a_gate_violation_with_no_coverage_prints_a_dash():
     assert "cov -," in line
 
 
+def test_a_changed_file_no_reader_could_read_gets_its_own_bullet():
+    """Exit 6 with no gate violation to name: the bullet says which file and
+    what to change, where the counts alone read 0 gate violations."""
+    unread = {"path": "src/a.ts", "reason": "src/a.ts:12: arrow refused; wrap it", "dirty": False}
+
+    line = _builder().verdict_line(_failing_verify(unread_files=[unread]), 6)
+
+    assert ("- unread: `src/a.ts`, so the gate judged none of its functions: "
+            "src/a.ts:12: arrow refused; wrap it") in line.splitlines(), line
+
+
 def test_a_marked_row_is_labelled_accepted_debt():
     marked = {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )",
               "ccn": 8, "risk": 4.0, "remedy": "decompose", "ratchet_mark": 72.0}

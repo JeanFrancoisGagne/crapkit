@@ -243,6 +243,14 @@ def _gate_bullets(verify: dict) -> list[str]:
             for v in verify.get("gate_violations", [])]
 
 
+def _unread_bullets(verify: dict) -> list[str]:
+    """A changed file no reader could read fails the gate with no function to
+    name; the reason says what to change."""
+    return [f"- unread: `{u.get('path')}`, so the gate judged none of its functions: "
+            f"{_cell_text(u.get('reason'))}"
+            for u in verify.get("unread_files") or []]
+
+
 def _ratchet_bullets(verify: dict) -> list[str]:
     return [f"- ratchet: `{r.get('path')}` `{r.get('long_name')}` "
             f"{r.get('recorded')} -> {r.get('fresh_crap')} (recorded -> fresh)"
@@ -276,8 +284,8 @@ def _failed(verify: dict, exit_code: int) -> str:
     it always read."""
     head = f"**verify failed, {_exit_phrase(verify, exit_code)}.**"
     counts = f"{_against(verify)}: {_findings(verify)}.{_unchecked(verify)}"
-    bullets = (_gate_bullets(verify) + _ratchet_bullets(verify) + _failure_bullets(verify)
-               + _uncovered_bullets(verify))
+    bullets = (_gate_bullets(verify) + _unread_bullets(verify) + _ratchet_bullets(verify)
+               + _failure_bullets(verify) + _uncovered_bullets(verify))
     if not bullets:
         return f"{head} {counts}"
     return "\n".join([head, "", *bullets, "", counts])

@@ -68,15 +68,18 @@ def test_rescore_reads_the_issue_def_over_its_whole_span(tmp_path):
         ("decide( value : int )", 1, 10, 4)]
 
 
-def test_a_signature_cut_off_at_end_of_file_is_named_and_not_scored(tmp_path):
-    """An unfinished def takes the road of any unreadable file: named on stderr,
-    scored as zero functions, and the run goes on (0.7.1 ended runs over one file)."""
+def test_a_signature_cut_off_at_end_of_file_is_named_and_refused_by_the_gate(tmp_path):
+    """An unfinished def takes the road of any unreadable file: named on stderr
+    and scored as zero functions, so a run goes on (0.7.1 ended runs over one
+    file). The gate judged none of its functions, so it refuses the file rather
+    than report 0 changed functions judged."""
     repo = _scored_repo(tmp_path)
     (repo / "src" / "logic.py").write_text("def outer(a):\n    def inner(a, b=(),\n", encoding="utf-8")
 
     result = run_cli(repo, "rescore", "src/logic.py", "--gate")
 
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 6, result.stdout + result.stderr
     assert "could not be tokenized" in result.stderr, result.stderr
     assert "src/logic.py:2 outer.inner( a , b = ( )" in result.stderr, result.stderr
-    assert "0 changed function(s) judged" in result.stdout, result.stdout
+    assert "  UNREAD  src/logic.py: " in result.stderr, result.stderr
+    assert "0 changed function(s) judged" not in result.stdout, result.stdout

@@ -52,7 +52,7 @@ _Avoid_: report (a report is crapkit's own HTML page)
 A glob that removes files from the corpus before inventory.
 
 **Unanalyzable file**:
-A source file the analysis names on stderr and scores as zero functions, because lizard failed on it or a Python def in it was read no further than its signature. Every run tries it again.
+A source file the analysis names on stderr and scores as zero functions, because lizard failed on it or a Python def in it was read no further than its signature. Every run tries it again. A gate refuses a changed one, because it judged none of its functions.
 _Avoid_: skipped file (nothing about it is silent)
 
 ### Runs

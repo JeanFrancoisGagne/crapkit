@@ -22,7 +22,7 @@ from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
-from .analyze import analyze_jobs, analyze_source, decode_source
+from .analyze import analyze_jobs, analyze_source, decode_source, unread_reasons
 from .config import Config
 from .diffparse import changed_ranges
 from .gitio import GitReads
@@ -56,6 +56,7 @@ class StagedGate(NamedTuple):
     violations: list[Violation]
     unscoped: list[str] = []  # staged source files no scope claims: ungated, but never silently
     records: tuple = ()  # full staged identities, including siblings below the ceiling
+    unread: dict = {}  # staged path -> why no reader could read it: judged nothing, so refused
 
 
 def _touches(record: FunctionRecord, ranges: list[tuple[int, int]]) -> bool:
@@ -148,6 +149,11 @@ def _unscoped_sources(staged: list[str], checked: set[str], cfg: Config) -> list
     return sorted(f for f in staged if _gate_blind_to(f, checked, exts, match))
 
 
+def _claimed_files(in_scope: dict) -> list[str]:
+    """Every file some scope claims, once, sorted."""
+    return sorted({f for files in in_scope.values() for f in files})
+
+
 def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     """`reads` is where the staged bytes come from: git processes the caller
     already started, or a spawn-on-demand pair when nobody did. The verdict is
@@ -157,7 +163,7 @@ def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     if not ranges_by_path:
         return StagedGate([])
     in_scope = assign_files(sorted(ranges_by_path), cfg)
-    checked_files = sorted({f for files in in_scope.values() for f in files})
+    checked_files = _claimed_files(in_scope)
     unscoped = _unscoped_sources(sorted(ranges_by_path), set(checked_files), cfg)
     if not checked_files:
         return StagedGate([], unscoped)
@@ -165,5 +171,6 @@ def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
                                      worker_budget=cfg.analysis_worker_budget)
     return StagedGate(
         _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
-        unscoped, tuple(chain.from_iterable(records_by_path.values()))
+        unscoped, tuple(chain.from_iterable(records_by_path.values())),
+        unread_reasons(records_by_path)
     )
