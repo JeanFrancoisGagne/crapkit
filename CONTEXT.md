@@ -77,7 +77,7 @@ _Avoid_: forced baseline, override baseline
 The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline.
 
 **Forgiven failure**:
-A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it.
+A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it. When the baseline recorded no failure list for a lane, the newest trusted run at or behind it that did stands in for that lane.
 _Avoid_: known failure, ignored failure
 
 **Flake retry**:

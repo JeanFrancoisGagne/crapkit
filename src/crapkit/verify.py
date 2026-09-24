@@ -62,18 +62,49 @@ class PortableBaseline(NamedTuple):
     commit: str
     kind: str
     rows: list[ScoredRow]
+    # Each lane's test results, as the run recorded them; {} for a file written
+    # before the stamp carried them, which forgives no failure.
+    lanes: dict = {}
 
 
-def baseline_tsv_lines(commit: str, kind: str, rows: list[ScoredRow]) -> Iterator[str]:
+# JSON punctuation stays readable on the stamp line; a space, `=`, `%` or any
+# other character a test id can hold is percent-encoded, so the stamp stays one
+# line of space-separated fields an older reader still splits correctly.
+_RESULTS_SAFE = '":,{}[]/'
+
+
+def baseline_tsv_lines(commit: str, kind: str, rows: list[ScoredRow],
+                       results: dict | None = None) -> Iterator[str]:
     """A baseline run as a file the repo can carry: a commit stamp, then the
     run's scored export. The store lives in a gitignored .crapkit/, so a fresh
-    clone has nothing else to name what it is being measured against."""
-    yield f"# commit={commit} run_kind={kind}\n"
+    clone has nothing else to name what it is being measured against.
+
+    `results` is each lane's test results. They ride on the stamp line because
+    a reader older than the field reads the stamp's fields by name and ignores
+    the rest, where a line of its own would read as a malformed row."""
+    yield f"# commit={commit} run_kind={kind}{_results_field(results)}\n"
     yield from scored_tsv_lines(rows)
+
+
+def _results_field(results: dict | None) -> str:
+    from urllib.parse import quote
+    import json
+
+    if not results:
+        return ""
+    text = json.dumps(results, sort_keys=True, separators=(",", ":"))
+    return f" results={quote(text, safe=_RESULTS_SAFE)}"
 
 
 def _stamp_fields(stamp: str) -> dict[str, str]:
     return dict(part.split("=", 1) for part in stamp.removeprefix("# ").split() if "=" in part)
+
+
+def _results_of(fields: dict[str, str]) -> dict:
+    from urllib.parse import unquote
+    import json
+
+    return json.loads(unquote(fields["results"])) if "results" in fields else {}
 
 
 def parse_baseline_tsv(text: str) -> PortableBaseline:
@@ -82,7 +113,8 @@ def parse_baseline_tsv(text: str) -> PortableBaseline:
     if "commit" not in fields or "run_kind" not in fields:
         raise ValueError(
             f"a baseline file starts with `# commit=<sha> run_kind=<kind>`, got {stamp!r}")
-    return PortableBaseline(fields["commit"], fields["run_kind"], parse_scored_tsv(body))
+    return PortableBaseline(fields["commit"], fields["run_kind"], parse_scored_tsv(body),
+                            _results_of(fields))
 
 
 class GateViolation(NamedTuple):

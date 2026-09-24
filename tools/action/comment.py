@@ -187,8 +187,31 @@ def _findings(verify: dict) -> str:
 
 
 def _against(verify: dict) -> str:
-    return (f"Run {verify.get('run_id')} against baseline {verify.get('baseline_run')}, "
+    return (f"Run {verify.get('run_id')} against {_baseline_name(verify)}, "
             f"{_plural(verify.get('changed_files', 0), 'changed file')}")
+
+
+def _baseline_name(verify: dict) -> str:
+    """`baseline 4`, or the commit a `--baseline-tsv` file names: that
+    baseline is no stored run, and its id is null."""
+    if verify.get("baseline_run") is not None:
+        return f"baseline {verify['baseline_run']}"
+    return f"the baseline file at {str(verify.get('baseline_commit') or '?')[:11]}"
+
+
+def _unchecked(verify: dict) -> str:
+    """A sentence naming the lanes whose new failures nothing checked, because
+    they recorded no test results; "" when every lane was checked."""
+    lanes = verify.get("lanes_without_results") or []
+    if not lanes:
+        return ""
+    subject, pronoun = ("lane", "it") if len(lanes) == 1 else ("lanes", "they")
+    return (f" New test failures went unchecked in {subject} {_code_list(lanes)}: {pronoun} "
+            "recorded no test results.")
+
+
+def _code_list(names: list[str]) -> str:
+    return ", ".join(f"`{_cell_text(name)}`" for name in names)
 
 
 def _exit_phrase(verify: dict, exit_code: int) -> str:
@@ -224,7 +247,13 @@ def _ratchet_bullets(verify: dict) -> list[str]:
 
 
 def _failure_bullets(verify: dict) -> list[str]:
-    return [f"- new test failure: `{test}`" for test in verify.get("new_failures", [])]
+    """One bullet per new failure, then one per lane whose baseline recorded no
+    failure list: verify counts those failures as new because nothing says
+    otherwise, and the reviewer should not read them as the change's doing."""
+    unjudged = [f"- lane `{_cell_text(name)}`: the baseline recorded no failure list, so its "
+                "new failures may predate this change"
+                for name in verify.get("lanes_without_baseline_results") or []]
+    return [f"- new test failure: `{test}`" for test in verify.get("new_failures", [])] + unjudged
 
 
 def _uncovered_bullets(verify: dict) -> list[str]:
@@ -243,7 +272,7 @@ def _failed(verify: dict, exit_code: int) -> str:
     """The exit phrase, one bullet per finding, and the counts line last, as
     it always read."""
     head = f"**verify failed, {_exit_phrase(verify, exit_code)}.**"
-    counts = f"{_against(verify)}: {_findings(verify)}."
+    counts = f"{_against(verify)}: {_findings(verify)}.{_unchecked(verify)}"
     bullets = (_gate_bullets(verify) + _ratchet_bullets(verify) + _failure_bullets(verify)
                + _uncovered_bullets(verify))
     if not bullets:
@@ -271,7 +300,7 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
     if base_reason is not None:
         return (f"**verify judged no changed function:** the base run was not made "
                 f"({base_reason}). {_against(verify)}.")
-    return f"**verify passed.** {_against(verify)}."
+    return f"**verify passed.** {_against(verify)}.{_unchecked(verify)}"
 
 
 def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:

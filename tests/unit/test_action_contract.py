@@ -1003,6 +1003,48 @@ def test_a_verify_error_object_is_quoted_and_never_counted():
     assert line == f"**`crapkit verify` exited 4 and wrote no verdict: {message}.**"
 
 
+
+# --- test results a verdict could not judge -------------------------------------
+
+def test_a_pass_names_the_lanes_whose_failures_went_unchecked():
+    """`verify passed` beside a lane that recorded no test results read as a
+    suite that failed nothing, when nothing checked it."""
+    verify = {**_failing_verify(), "ok": True, "lanes_without_results": ["py"]}
+
+    line = _builder().verdict_line(verify, 0)
+
+    assert line == ("**verify passed.** Run 3 against baseline 1, 1 changed file. New test "
+                    "failures went unchecked in lane `py`: it recorded no test results.")
+
+
+def test_a_pass_with_every_lane_checked_reads_as_before():
+    verify = {**_failing_verify(), "ok": True, "lanes_without_results": []}
+
+    assert _builder().verdict_line(verify, 0) ==         "**verify passed.** Run 3 against baseline 1, 1 changed file."
+
+
+def test_a_failure_the_baseline_could_not_judge_says_it_may_predate_the_change():
+    """The fork point's lane declared no results_artifact, so a test that
+    failed there too counts as new; the comment must not pin it on the PR."""
+    verify = _failing_verify(new_failures=["t::c0"], lanes_without_baseline_results=["py"])
+
+    line = _builder().verdict_line(verify, 8)
+
+    assert "- new test failure: `t::c0`" in line
+    assert ("- lane `py`: the baseline recorded no failure list, so its new failures may "
+            "predate this change") in line, line
+
+
+def test_a_file_baseline_is_named_by_its_commit_not_as_none():
+    verify = {**_failing_verify(), "ok": True, "baseline_run": None,
+              "baseline_commit": "abc1234def5678"}
+
+    line = _builder().verdict_line(verify, 0)
+
+    assert "None" not in line, line
+    assert "Run 3 against the baseline file at abc1234def5, 1 changed file." in line, line
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

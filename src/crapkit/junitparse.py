@@ -29,7 +29,10 @@ def _case_id(case: ET.Element) -> str:
     return f"{classname}::{case.get('name', '?')}"
 
 
-def _root(xml_text: str) -> ET.Element:
+def _root(xml_text: str | bytes) -> ET.Element:
+    """The report's root element. Bytes are parsed as the file holds them, so the
+    XML declaration picks the encoding and a byte the encoding cannot read is a
+    parse error naming its line and column, not a crash."""
     try:
         return ET.fromstring(xml_text)
     except ET.ParseError as exc:
@@ -93,7 +96,7 @@ def _refuse_unfinished(root: ET.Element) -> None:
     _refuse_partial(root)
 
 
-def suite_summary(xml_text: str) -> tuple[set[str], dict]:
+def suite_summary(xml_text: str | bytes) -> tuple[set[str], dict]:
     """(failed ids, {tests, skipped}) from ONE DOM and ONE walk.
 
     A lane needs both, and the two helpers below each parsed the same text, so

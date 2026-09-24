@@ -484,6 +484,15 @@ crapkit verify --baseline-tsv crapkit-baseline.tsv --github
 writes SARIF 2.1.0 for code-scanning upload. Refresh the committed baseline whenever the
 default branch's verify passes.
 
+The file carries each lane's test count and failure list on its first line, so the PR job
+forgives a test that already failed on the default branch and warns when a lane runs fewer
+tests. A file written by crapkit 0.8.0 or older carries neither: against it every failing
+test is a new failure, exit 8, and verify says so and names the line that rewrites it:
+
+```
+warning: the baseline file crapkit-baseline.tsv holds no test results, so every test failure counts as new and no suite size is compared; write it again with `crapkit verify --emit-baseline crapkit-baseline.tsv` to carry them
+```
+
 Two things the job has to do before those lines run. **Install crapkit**, `pip install
 crapkit`, and pin the version the way Route 3 pins `rev`: an unpinned install moves your
 gate on whatever day a release lands. **Fetch the whole history.** `actions/checkout`
@@ -650,7 +659,12 @@ finding: each gate violation with its function, ccn, coverage, CRAP and remedy; 
 ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
 uncovered changed lines, one bullet per file, with a count of the rest. The counts line
 closes it. A verify that passed is one line: `**verify passed.** Run 2 against baseline 1,
-7 changed files.`
+7 changed files.` A lane that recorded no test results (it declares no `results_artifact`)
+adds ``New test failures went unchecked in lane `py`: it recorded no test results.`` to
+that line, and a new failure in a lane whose baseline recorded no failure list gets a
+bullet of its own, ``- lane `py`: the baseline recorded no failure list, so its new failures
+may predate this change``: the fork point's lane declared no `results_artifact`, so nothing
+can tell the pull request's failures from older ones, and verify still counts them.
 
 The rows are the ranked worklist for the files the pull request changed, worst first,
 `top` of them, with the rows a finding names listed first. `risk` is ccn times churn
@@ -916,6 +930,21 @@ verify FAILED @ d89068de7f3 vs baseline 88012a148f6 (2 changed files)
 Run 3 is a `coverage` run somebody took on the tree run 2 refused, and it scores the same
 ccn-8 function. Without the rule it would have become the baseline, `legacy_router` would
 have stopped being a touched function, and that gate line would never print again.
+
+**A baseline with no test results for a lane.** A trusted run can hold a lane with no
+test count and no failure list: the lane declared no `results_artifact` then, or
+`--reuse-artifacts` found its junit gone or unreadable. verify does not read that as a
+suite of zero tests that failed nothing. It compares that lane with the newest trusted run
+at or behind the baseline's commit that recorded it, and the line names that run:
+
+```
+warning: lane 'py': baseline run 2 recorded no test results, so its failures are compared with run 1's
+warning: lane 'py' runs 8 fewer tests than run 1 (baseline run 2 recorded no test count for it)
+```
+
+When no run recorded a failure list for the lane, each of its failures still counts as
+new, exit 8, and a line says it may predate the change; `verify --json` lists the lane
+under `lanes_without_baseline_results`.
 
 **The escape, twice.** Fix the findings and let a `verify` pass, which clears the taint
 for good. Or accept the newer run on purpose with `verify --baseline 3`: an explicit id

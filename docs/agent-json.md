@@ -760,6 +760,8 @@ $ crapkit verify --json
   "dirty_findings": 0,
   "forgiven_failures": [],
   "gate_violations": [],
+  "lanes_without_baseline_results": [],
+  "lanes_without_results": [],
   "new_failures": [],
   "ok": false,
   "overridden": [],
@@ -804,6 +806,8 @@ $ crapkit verify --json
 | `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
+| `lanes_without_results` | array of lane names that recorded no test results this run: the lane declares no `results_artifact`, or `--reuse-artifacts` could not read its junit. Nothing checked their tests for new failures | none; stderr names a reused junit it could not read, and a lane with no `results_artifact` whose command exited nonzero (`warning: lane 'x' exited 1 and declares no results_artifact ...`) |
+| `lanes_without_baseline_results` | array of lane names holding a new failure that no trusted run at or behind the baseline recorded a failure list for, so the failure may predate the change | none itself; those failures are in `new_failures` and still fire exit 8, and stderr names each lane |
 | `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
@@ -844,6 +848,13 @@ partial run (a lane subset, or a lane that failed), an inventory run.
 A lane that wrote no test counts this run gets one line naming the gap rather than a
 KeyError (#30), and `inventory` no longer dies when a tracked file is missing from the
 working tree.
+
+A baseline lane with no test count or no failure list is compared through the newest
+trusted run at or behind the baseline's commit that recorded one, and a stderr line names
+that run. A verify run stored by crapkit 0.7.x kept a failure that passed its flake retry
+among its `failures`, so its lists are read the same way. A `--baseline-tsv` file carries
+the baseline's test results on its stamp line; one written by 0.8.0 or older carries none
+and forgives no failure, and verify says so.
 
 ### Dirty attribution
 

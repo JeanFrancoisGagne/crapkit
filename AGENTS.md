@@ -268,6 +268,11 @@ This is the slow step and the only authoritative one.
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | cover the changed lines |
 
+Exit 8 with `warning: lane 'py': no trusted run at or behind the baseline recorded which
+of its tests failed` means the baseline cannot tell your failure from an old one: the lane
+declared no `results_artifact` when the baseline ran. verify counts it as new anyway. Check
+whether the test fails at the baseline commit before you change code for it.
+
 One verdict per run, in that order: 6 beats 7 beats 8, and 9 fires only when nothing
 else did. A run that exits non-zero never becomes a baseline and never tightens the
 ratchet, exit 9 included, and neither does any run taken after it until some verify
@@ -741,6 +746,7 @@ Shared rules belong to these modules:
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
+| `lane_results.py` | which run's record of a lane's test results a comparison reads. A lane with no junit this run records no count and no failure list, which is never 0 tests or no failures; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |

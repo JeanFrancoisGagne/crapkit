@@ -1236,6 +1236,12 @@ Rules that keep this from hiding real failures:
 - A test that passed its rerun is stored under the lane's `retried_passes`, and the lane's
   `failures` keeps the first attempt. A later verify that measures against this run never
   forgives that test.
+- A verify run stored by crapkit 0.7.x has no `retried_passes`: a test that passed its
+  rerun sits in its `failures` beside the real ones. A later verify reads that run's
+  failures from the newest trusted run behind it that a baseline can forgive from, and says
+  so (`baseline run 4 was written by crapkit 0.7.6, which kept a failure that passed its
+  flake retry in its failure list`). Reading that list as it stood forgave a real failure of
+  the test that once passed its rerun.
 
 ---
 
@@ -1384,6 +1390,36 @@ nothing and prints no drop: a lane with no `results_artifact` has nothing to cou
 under `--reuse-artifacts` the reuse warning above already names the missing junit. A
 trusted run that counted nothing for a lane is passed over, so a drop is measured from the
 newest count a trusted run recorded, even when an older run holds it.
+
+`verify` reaches past its baseline the same way, for the count and for the failure list.
+When the baseline recorded neither for a lane, it compares with the newest trusted run at
+or behind the baseline's commit that did, and says which:
+
+```
+$ crapkit verify
+warning: lane 'py': baseline run 2 recorded no test results, so its failures are compared with run 1's
+warning: lane 'py' runs 8 fewer tests than run 1 (baseline run 2 recorded no test count for it)
+verify OK @ 0e8073a7421 vs baseline 0e8073a7421 (0 changed files) (1 unchanged failure forgiven, first t::c0)
+```
+
+Before, that run compared nothing: a suite that fell from 20 tests to 2 passed without a
+word, and a test failing at the baseline's own commit came back as a `NEW FAILURE`, exit 8.
+When no run recorded a failure list for the lane, its failures still count as new, since a
+gate fails closed, and the line says they may predate the change:
+
+```
+warning: lane 'py': no trusted run at or behind the baseline recorded which of its tests failed, so its 1 new failure may predate this change; a baseline measured with results_artifact declared tells them apart
+```
+
+That is the pull request that adds `results_artifact` to a lane whose suite already fails a
+test. `verify --json` lists such lanes under `lanes_without_baseline_results`, and every
+lane that recorded no test results this run under `lanes_without_results`. A lane with no
+`results_artifact` whose command exited nonzero gets its own line, since its exit code is
+recorded and not enforced and nothing else says a test failed:
+
+```
+warning: lane 'py' exited 1 and declares no results_artifact, so verify cannot see which of its tests failed; declare results_artifact (the lane's junit report) to check them
+```
 
 ---
 

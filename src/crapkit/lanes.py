@@ -1158,7 +1158,7 @@ def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict, str]:
     if not results_path.is_file():
         raise ToolError(f"results_artifact {lane.results_artifact} is missing")
     raw = results_path.read_bytes()
-    failed, counts = suite_summary(raw.decode("utf-8"))
+    failed, counts = suite_summary(raw)
     return failed, counts, hashlib.sha256(raw).hexdigest()
 
 

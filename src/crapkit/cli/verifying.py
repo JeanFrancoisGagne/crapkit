@@ -130,8 +130,10 @@ def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
 
 def _tsv_baseline(root: Path, rel: str) -> dict:
     """A baseline read from a file the repo carries, for a clone whose .crapkit/
-    is gitignored. It holds no lane provenance, so it can neither report a
-    shrinking suite nor forgive a failure the baseline run already had."""
+    is gitignored. Its lanes are the test results the file carries: a file
+    written before it carried them holds none, so it can neither report a
+    shrinking suite nor forgive a failure the baseline run already had, and
+    verify says so."""
     from ..verify import parse_baseline_tsv
 
     path = root / rel
@@ -139,10 +141,10 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
         raise CrapkitError(f"no baseline file at {path} — write one with `verify --emit-baseline`")
     try:
         parsed = parse_baseline_tsv(repo_text(path, rel))
-    except ValueError as exc:
+    except (ValueError, UnicodeError) as exc:
         raise ConfigError(f"unreadable baseline file {rel}: {exc}") from exc
     return {"id": None, "commit": parsed.commit, "kind": parsed.kind,
-            "lanes": {}, "rows": parsed.rows}
+            "lanes": parsed.lanes, "rows": parsed.rows, "file": rel}
 
 
 def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, git) -> dict:
@@ -194,11 +196,14 @@ def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | 
 
     if not rel:
         return
+    from ..lane_results import portable_results
+
     rows = baseline.get("rows")
     if rows is None:
         rows = store.read_scored(baseline["id"])
     _write_tsv(_repo_out_path(root, rel),
-               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows))
+               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows,
+                                  portable_results(baseline)))
 
 
 def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
@@ -498,12 +503,99 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
               f"over the ceiling {maximum}", file=sys.stderr)
 
 
-def _baseline_failures(baseline: dict) -> set:
-    """The failures a baseline carries. One that passed its flake retry in a
-    verify run is also named under `retried_passes` and is not carried: that
-    run never counted it, so a later verify must not forgive it."""
-    return {f for prov in baseline["lanes"].values() for f in prov.get("failures", ())
-            if f not in prov.get("retried_passes", ())}
+class _RunsBehind:
+    """Trusted runs older than the baseline and at or behind its commit, newest
+    first: where a lane the baseline recorded no test results for is looked up.
+
+    Read the first time a lane asks, so a baseline that recorded every lane
+    costs no store read and no git call. A baseline file has no run behind it.
+    """
+
+    def __init__(self, store: SnapshotStore, git, baseline: dict):
+        self._store, self._git, self._baseline = store, git, baseline
+        self._older: list[dict] | None = None
+
+    def __call__(self):
+        commit = self._baseline["commit"]
+        return (run for run in self._runs() if self._git.is_ancestor(run["commit"], commit))
+
+    def _runs(self) -> list[dict]:
+        if self._older is None:
+            self._older = self._read()
+        return self._older
+
+    def _read(self) -> list[dict]:
+        from ..store import trusted_runs
+
+        if self._baseline["id"] is None:
+            return []
+        newest_first = reversed(trusted_runs(self._store))
+        return [run for run in newest_first if run["id"] < self._baseline["id"]]
+
+
+def _warn_baseline_gaps(found, baseline: dict, provenance: dict, new_failures) -> list[str]:
+    """Say where a lane's baseline failures came from when the baseline held no
+    list for it, and which lanes' new failures nothing recorded could judge.
+    Returns those lanes.
+
+    A failure the baseline cannot vouch for still counts as new, because a gate
+    fails closed; the line is what keeps that from reading as this change's doing.
+    """
+    from ..lane_results import unjudged_lanes
+
+    unjudged = unjudged_lanes(found, provenance, new_failures)
+    if _warn_baseline_file(baseline, provenance):
+        return unjudged
+    for name, run in found.borrowed.items():
+        print(f"warning: lane {name!r}: baseline run {baseline['id']} "
+              f"{_why_unread(baseline, name)}, so its failures are compared with run "
+              f"{run['id']}'s", file=sys.stderr)
+    for name in unjudged:
+        print(_unjudged_line(name, baseline, provenance, new_failures), file=sys.stderr)
+    return unjudged
+
+
+def _why_unread(baseline: dict, name: str) -> str:
+    """Why the baseline's own failure list for a lane was passed over."""
+    from ..lane_results import retries_unrecorded
+
+    if retries_unrecorded(baseline) and "failures" in baseline["lanes"].get(name, {}):
+        return (f"was written by crapkit {baseline['tool_versions']['crapkit']}, which kept a "
+                "failure that passed its flake retry in its failure list")
+    return "recorded no test results"
+
+
+def _unjudged_line(name: str, baseline: dict, provenance: dict, new_failures) -> str:
+    count = len(set(new_failures) & set(provenance[name]["failures"]))
+    where = (f"the baseline file {baseline['file']} holds no record of" if baseline.get("file")
+             else "no trusted run at or behind the baseline recorded")
+    return (f"warning: lane {name!r}: {where} which of its tests failed, so its {count} new "
+            f"failure{'' if count == 1 else 's'} may predate this change; a baseline measured "
+            "with results_artifact declared tells them apart")
+
+
+def _warn_baseline_file(baseline: dict, provenance: dict) -> bool:
+    """A baseline file written before files carried test results: said once,
+    when a lane this run recorded results the file cannot be compared with."""
+    stale = bool(baseline.get("file")) and not baseline["lanes"] \
+        and any("failures" in prov for prov in provenance.values())
+    if stale:
+        print(f"warning: the baseline file {baseline['file']} holds no test results, so every "
+              "test failure counts as new and no suite size is compared; write it again with "
+              f"`{_self()} verify --emit-baseline {baseline['file']}` to carry them",
+              file=sys.stderr)
+    return stale
+
+
+def _warn_unseen_failures(lanes, provenance: dict) -> None:
+    """A lane with no results_artifact that exited nonzero: its exit code is
+    recorded, not enforced, and it is the only sign a test failed."""
+    for lane in lanes:
+        code = provenance.get(lane.name, {}).get("exit_code")
+        if code and not lane.results_artifact:
+            print(f"warning: lane {lane.name!r} exited {code} and declares no results_artifact, "
+                  "so verify cannot see which of its tests failed; declare results_artifact "
+                  "(the lane's junit report) to check them", file=sys.stderr)
 
 
 def _stored_lanes(provenance: dict, retried: tuple[str, ...]) -> dict:
@@ -672,6 +764,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
     from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
+    from ..lane_results import baseline_failures, without_results
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -704,11 +797,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store,
                                           entries=ratchet)
 
+    behind = _RunsBehind(store, git, baseline)
+    found = baseline_failures(baseline, provenance, behind)
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
-                       baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
+                       baseline_failures=set(found.carried), fresh_failures=fresh_failures,
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
-    _warn_suite_shrink(baseline, provenance)
+    unjudged = _warn_baseline_gaps(found, baseline, provenance, verdict.new_failures)
+    _warn_suite_shrink(baseline, provenance, behind)
+    _warn_unseen_failures(cfg.lanes, provenance)
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever
     # the artifacts say — and reading every lane's artifact to spell that [] is
     # the whole cost of the post-commit verify on an unchanged tree.
@@ -732,7 +829,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, saved.sha256, changes)},
+                    **_receipt(tool_versions, saved.sha256, changes),
+                    "lanes_without_results": without_results(provenance),
+                    "lanes_without_baseline_results": unjudged},
                    verdict, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
@@ -775,46 +874,64 @@ def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
     return settle_flake_retry(verdict, survivors)
 
 
-def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
-    """Suite decay passes a pass/fail check silently; say it out loud."""
+def _warn_suite_shrink(baseline: dict, provenance: dict, behind=tuple) -> None:
+    """Suite decay passes a pass/fail check silently; say it out loud.
+
+    A lane the baseline counted no tests for is compared with the newest run
+    `behind` it that counted them, and the line names that run. A trusted run
+    with no count (its junit was gone under `--reuse-artifacts`, or the lane
+    declared no `results_artifact` then) once left the next verify comparing
+    nothing, so a suite that fell from 20 tests to 2 passed without a word.
+    """
+    from ..lane_results import counted, record_of
+
     for name, prov in provenance.items():
-        base = baseline.get("lanes", {}).get(name, {})
-        for line in _suite_size_lines(name, base, prov):
+        source = record_of(baseline, behind, name, counted)
+        for line in _suite_size_lines(name, source, baseline, prov):
             print(f"warning: {line}", file=sys.stderr)
 
 
-def _suite_size_lines(name: str, base: dict, prov: dict) -> list[str]:
-    """How the suite's size moved since the baseline, or why that cannot be said.
+def _suite_size_lines(name: str, source: dict | None, baseline: dict, prov: dict) -> list[str]:
+    """How the suite's size moved since the run that last counted it, or why
+    that cannot be said.
 
-    Both counts are optional. A baseline recorded before the lane declared a
-    `results_artifact` carries none and compares nothing. A lane that wrote no
-    junit THIS run (the lane declares no `results_artifact` at the commit under
-    test, or `--reuse-artifacts` read one it could not check; a declared file
-    missing after a real run is a lane failure and never reaches here) has
-    nothing to compare either; reading its absent count as
-    zero once turned every such run into a KeyError after the lane had run.
+    No run counted the lane: nothing to compare. This run wrote no junit (the
+    lane declares no `results_artifact` at the commit under test, or
+    `--reuse-artifacts` read one it could not check; a declared file missing
+    after a real run is a lane failure and never reaches here): one line naming
+    the gap. Reading that absent count as zero once turned every such run into
+    a KeyError after the lane had run.
     """
-    b_total = base.get("tests_total")
-    if b_total and prov.get("tests_total") is None:
-        return [f"lane {name!r} wrote no test counts this run (no results_artifact was "
-                f"parsed), so the baseline's {b_total} tests cannot be compared"]
-    lines = (_fewer_tests_line(name, b_total, prov.get("tests_total")),
+    if source is None:
+        return []
+    base, (noun, note) = source["lanes"][name], _count_source(source, baseline)
+    if prov.get("tests_total") is None:
+        return [f"lane {name!r} wrote no test counts this run (no results_artifact was parsed), "
+                f"so {noun}'s {base['tests_total']} tests cannot be compared{note}"]
+    lines = (_fewer_tests_line(name, base["tests_total"], prov["tests_total"]),
              _more_skips_line(name, base.get("tests_skipped"), prov.get("tests_skipped")))
-    return [line for line in lines if line]
+    return [f"{line} than {noun}{note}" for line in lines if line]
 
 
-def _fewer_tests_line(name: str, base_n: int | None, fresh_n: int | None) -> str | None:
-    if base_n and fresh_n is not None and fresh_n < base_n:
-        return f"lane {name!r} runs {base_n - fresh_n} fewer tests than the baseline"
+def _count_source(source: dict, baseline: dict) -> tuple[str, str]:
+    """What a suite-size line compares with: the baseline, or the older run
+    that counted the lane when the baseline did not."""
+    if source is baseline:
+        return "the baseline", ""
+    return (f"run {source['id']}",
+            f" (baseline run {baseline['id']} recorded no test count for it)")
+
+
+def _fewer_tests_line(name: str, base_n: int, fresh_n: int) -> str | None:
+    if fresh_n < base_n:
+        return f"lane {name!r} runs {base_n - fresh_n} fewer tests"
     return None
 
 
 def _more_skips_line(name: str, base_n: int | None, fresh_n: int | None) -> str | None:
     if base_n is not None and fresh_n is not None and fresh_n > base_n:
-        return f"lane {name!r} skips {fresh_n - base_n} more tests than the baseline"
+        return f"lane {name!r} skips {fresh_n - base_n} more tests"
     return None
-
-
 
 
 def _owning_scope(path: str, scope_paths: dict[str, tuple[str, ...]]) -> str | None:

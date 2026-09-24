@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### A lane with no test results is not a lane that ran 0 tests or failed none
+
+A lane records a test count and a failure list only when it parsed a junit report. It
+records neither when it declares no `results_artifact`, or when `--reuse-artifacts` finds
+the report gone or unreadable. Every reader of those fields took that absence for a value.
+
+- `coverage` no longer reports a lane that wrote no test counts as having run 0 tests, and
+  a run that counted nothing no longer hides the next run's suite drop.
+- `verify` compares a lane's suite size and failures with the newest trusted run at or
+  behind the baseline's commit that recorded them, when the baseline recorded neither, and
+  a line names that run. A suite that fell from 20 tests to 2 passed without a word, and a
+  test failing at the baseline's own commit came back as a `NEW FAILURE`, exit 8.
+- When no run recorded a failure list for the lane, each of its failures still counts as
+  new, exit 8, and verify now says they may predate the change. This is the pull request
+  that adds `results_artifact` to a lane whose suite already fails a test. `verify --json`
+  lists such lanes under `lanes_without_baseline_results`, and the Action's comment gives
+  each one a bullet.
+- `verify --json` lists under `lanes_without_results` every lane that recorded no test
+  results this run, and the Action's comment says their new failures went unchecked. A
+  lane with no `results_artifact` whose command exited nonzero gets a stderr line naming
+  the exit code, which was the only sign a test failed.
+- A verify run that crapkit 0.7.x stored kept a failure that passed its flake retry in its
+  failure list. Read as a baseline, it forgave a later real failure of that test. verify
+  now reads such a run's failures from the newest trusted run behind it, and says so.
+- `verify --emit-baseline` writes each lane's test count and failure list on the file's
+  stamp line, so `--baseline-tsv` forgives a failure the baseline had and warns about a
+  shrinking suite. A file written by 0.8.0 or older carries neither; verify says so once
+  and names the command that rewrites it. The Action's comment names a file baseline by its
+  commit, where it printed `baseline None`.
+- A reused junit that is not valid UTF-8 is an unreadable report that names its line and
+  column, the same warning as any other. It ended `coverage --reuse-artifacts` with a
+  traceback.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
