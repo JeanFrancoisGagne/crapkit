@@ -1021,6 +1021,12 @@ carry the same launcher, so uncommenting one cannot hand the bare `python` back.
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live).
 
+`init` reads `package.json` the way npm does, a UTF-8 byte-order mark dropped and a stray
+cp1252 byte read as U+FFFD, and appends to `.gitignore` in that file's own line ending without
+touching a byte already there. A UTF-16 `package.json` or `.gitignore` (what PowerShell 5.1's
+`Out-File` writes), which npm and git cannot read either, is named on stderr with the fix and
+left as it was.
+
 ```toml
 [crapkit]
 target = 6
