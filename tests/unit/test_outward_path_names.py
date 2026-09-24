@@ -214,10 +214,14 @@ def marked(tmp_path_factory) -> tuple[Path, dict]:
         (root / rel).write_text(tangled(fn).replace("    return n\n", "    n = n\n    return n\n"),
                                 encoding="utf-8")
     git(root, "add", "-A")
-    sarif = json.loads((root / "out.sarif").read_text(encoding="utf-8"))
-    uris = [unquote(result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"])
+    return root, {"uris": _sarif_uris(root / "out.sarif")}
+
+
+def _sarif_uris(path: Path) -> list[str]:
+    """The file each result of the SARIF log at `path` names, decoded."""
+    sarif = json.loads(path.read_text(encoding="utf-8"))
+    return [unquote(result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"])
             for run in sarif["runs"] for result in run["results"]]
-    return root, {"uris": uris}
 
 
 @pytest.mark.parametrize("which", NAMES)

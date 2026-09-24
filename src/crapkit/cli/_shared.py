@@ -130,10 +130,11 @@ def _refuse_a_share(root: Path) -> None:
     stops here, before crapkit reads a file there or starts a child: cmd.exe
     would run every lane in C:\Windows."""
     if _on_a_share(root):
+        on_the_drive = Path("Z:\\") / root.relative_to(root.anchor)
         raise ConfigError(
             f"the root {root} is on a network share, where cmd.exe cannot start a lane "
             r"(it runs it in C:\Windows instead). Map the share to a drive letter "
-            f"(net use Z: {root.drive}) and run crapkit from Z:\\{root.relative_to(root.anchor)}")
+            f"(net use Z: {root.drive}) and run crapkit from {on_the_drive}")
 
 
 def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:

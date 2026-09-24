@@ -98,11 +98,14 @@ def test_a_session_standing_in_a_network_share_is_refused_before_any_child(no_ch
     assert "Z:\\repo" in err, err
 
 
-def test_the_refusal_names_the_drive_path_to_run_from(no_child, capsys):
-    err = _refused(capsys, ["coverage", "--repo", REMOTE_SHARE + "\\team\\app"])
+@pytest.mark.parametrize("tail, drive_path", [("\\team\\app", "Z:\\team\\app"),
+                                              ("", "Z:\\"), ("\\", "Z:\\")],
+                         ids=["nested", "share-root", "share-root-trailing"])
+def test_the_refusal_names_the_drive_path_to_run_from(no_child, capsys, tail, drive_path):
+    err = _refused(capsys, ["coverage", "--repo", REMOTE_SHARE + tail])
 
-    assert f"{REMOTE_SHARE}\\team\\app" in err, err
-    assert "Z:\\team\\app" in err, err
+    assert f"{REMOTE_SHARE}{tail}" in err, err
+    assert err.rstrip().endswith(f"run crapkit from {drive_path}"), err
 
 
 @pytest.mark.parametrize("origin", ["repo-flag", "working-directory"])

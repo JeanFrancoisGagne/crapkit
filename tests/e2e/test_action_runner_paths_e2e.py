@@ -42,12 +42,17 @@ def _bash() -> str:
     Git Bash, never the WSL launcher in System32."""
     bash = shutil.which("bash")
     if os.name == "nt" and (bash is None or "system32" in bash.lower()):
-        git = shutil.which("git")
-        candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else Path()
-        bash = str(candidate) if candidate.is_file() else None
+        bash = _git_bash()
     if bash is None:
         pytest.skip("no bash to run the steps under")
     return bash
+
+
+def _git_bash() -> str | None:
+    """bin/bash.exe of the Git for Windows install whose git is on PATH."""
+    git = shutil.which("git")
+    candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else Path()
+    return str(candidate) if candidate.is_file() else None
 
 
 def _search_path() -> str:
