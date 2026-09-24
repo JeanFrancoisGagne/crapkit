@@ -68,7 +68,7 @@ class Finding(NamedTuple):
 
 
 _NO_TEMPLATE = (
-    "scope {name!r} has a lane but no [crapkit.scoped_tests] template — "
+    "scope {name!r} has a lane but no [crapkit.scoped_tests] template - "
     "`crapkit test-scoped` exits 3 on its files, so whoever edits them is handed "
     'no command to run their tests; add {name} = "<test command>" under '
     "[crapkit.scoped_tests]"
@@ -208,7 +208,7 @@ def parallel_seconds(durations: tuple[float, ...], slots: int) -> float:
 
 def _cost_line(slots: int, durations: tuple[float, ...]) -> str:
     if not durations:
-        return "# lane cost: no durations recorded yet — suggested from the cpu count alone"
+        return "# lane cost: no durations recorded yet - suggested from the cpu count alone"
     return (f"# lane cost: {sum(durations):.1f}s serial -> "
             f"~{parallel_seconds(durations, slots):.1f}s across {slots} lane slot(s)")
 

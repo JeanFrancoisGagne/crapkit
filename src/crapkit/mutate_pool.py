@@ -64,7 +64,7 @@ def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
         return
     raise ToolError(f"mutation_command {_runner_word(cfg.mutation_command)!r} "
                     f"{_baseline_verdict(code)} on the UNMUTATED tree, so every mutant "
-                    "would read as killed and the score would be 100% — run "
+                    "would read as killed and the score would be 100% - run "
                     f"`{cfg.mutation_command}` in {tree} and fix it before scoring")
 
 

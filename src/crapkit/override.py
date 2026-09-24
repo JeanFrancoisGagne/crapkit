@@ -100,7 +100,7 @@ def _require_auditable_override(reason: str, alert_command: str) -> None:
         raise ConfigError("an override requires a non-empty reason")
     if not alert_command.strip():
         raise ConfigError(
-            "no alert_command configured — the override requires a visible alert line; "
+            "no alert_command configured - the override requires a visible alert line; "
             "set [crapkit] alert_command in crapkit.toml")
 
 
@@ -115,7 +115,7 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     if code != 0:
         raise ToolError(
             f"override alert command failed (exit {code}): "
-            f"{printed.strip()[-300:]} — no alert, no override")
+            f"{printed.strip()[-300:]} - no alert, no override")
 
 
 def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:

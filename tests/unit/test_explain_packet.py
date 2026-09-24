@@ -58,7 +58,7 @@ def guarded_twin(a, b):
 
 NO_LANE = "none (no [[lane]] declared, so no artifact can say which lines are dark)"
 
-NO_CONTEXT = ("  tests: no context data — run the py lane with dynamic_context = "
+NO_CONTEXT = ("  tests: no context data - run the py lane with dynamic_context = "
               "test_function and a --show-contexts JSON report\n")
 
 # The four lines explain printed for each match before --json existed, captured

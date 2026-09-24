@@ -443,7 +443,7 @@ def _refuse_empty_lane_run(cfg, requested) -> None:
         raise ConfigError(f"no lane named {requested!r}")
     if cfg.lane_less_scopes:
         raise ConfigError(
-            f"no [[lane]] to run for scope(s) {', '.join(cfg.lane_less_scopes)} — declare a "
+            f"no [[lane]] to run for scope(s) {', '.join(cfg.lane_less_scopes)} - declare a "
             "[[lane]] measuring them in crapkit.toml, or set coverage_optional = true on a "
             "scope no coverage parser can read")
 
@@ -829,7 +829,7 @@ def _untracked_of(root: Path, overlay) -> set[str]:
 def _warn_untracked(untracked: set[str]) -> None:
     if untracked:
         print(f"crapkit: {len(untracked)} untracked file(s) gated in full "
-              f"({', '.join(sorted(untracked))}) — git add to gate only future edits",
+              f"({', '.join(sorted(untracked))}) - git add to gate only future edits",
               file=sys.stderr)
 
 
@@ -913,11 +913,11 @@ def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
     refusal naming the command that makes one."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no snapshot in {root} - run `{_self()} coverage` first")
     store = SnapshotStore(db_path)
     latest = _latest_scored(store)
     if latest is None:
-        raise CrapkitError(f"no scored run in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no scored run in {root} - run `{_self()} coverage` first")
     return store, latest
 
 

@@ -569,7 +569,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <h3>0.4.5 is one of those bumps</h3>
 <p>Shell cognitive complexity now nests: <code>fi</code>, <code>done</code> and <code>esac</code> close the level <code>if</code>, a loop keyword or <code>case</code> opened, so a 4-deep shell <code>if</code> reads 10 like every other language instead of 4. That is analysis version 8, so the first command you run after the upgrade refuses the marks the old version signed:</p>
 <pre><code>$ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`</code></pre>
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`</code></pre>
 <p>Do what it says: a fresh coverage run, then the seed. Re-seeding brings the same marks back: only shell's cognitive column moved, ccn is untouched in every language, and no mark, gate or CRAP score reads the cognitive column at all (<a href="#score">§02</a>).</p>
 
 <p><strong>Tightening is damped, because a tighten claims the code improved and one commit measured twice cannot have.</strong> Some suites measure the same bytes two ways: a coverage attribution that races a subprocess reported one function at CRAP 20.0 on one run of a commit and 72.0 on the next. Tighten on the lucky half of that and the unlucky half fails the mark, so the gate becomes a coin flip on an unchanged tree and the marks file churns 20 to 72 and back in commits. So <code>verify</code> compares each marked function against the same commit's previous <em>trusted</em> run — the same word <code>ratchet seed</code> uses, so a failed verify and a partial run are invisible to both — and holds any mark whose score moved by more than <code>tighten_max_jump</code> (default 2x), naming the function and both values on stderr. Real work moves a score by less than a measurement race does, so a stable improvement still tightens in full; <code>verify --no-tighten</code> holds the whole file when you want the verdict without the rewrite.</p>
@@ -643,7 +643,7 @@ scopes           = ["src"]</code></pre>
   <tr><td>in-tree relative paths that miss every scope</td><td>a suite that imports none of the scoped source yet, which <em>should</em> score untested</td><td>warning, scores on</td></tr>
 </table></div>
 <p>The middle row is the one 0.4.7 added, and it gets its own fix, because the advice for the first row is wrong for it: the environment is right, and <code>path_prefix</code> only ever prepends. A coveragepy lane is told to set <code>relative_files</code>; an istanbul lane is told to point its reporter's own cwd or root option at this checkout.</p>
-<pre><code>crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout — .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane</code></pre>
+<pre><code>crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout - .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane</code></pre>
 <p>Nothing is rebased and no path is guessed at. A <code>../</code> climb is always another tree, because the runner's working directory is recorded nowhere in the artifact, and a mixed artifact is another tree as well: a path from somewhere else can only have come from somewhere else. A failed lane makes coverage exit 5. Results from lanes that succeeded remain available as a <code>partial</code> run.</p>
 
 <h3>How the guard reads your command</h3>
@@ -934,8 +934,8 @@ added to .gitignore: .crapkit/, .coverage, __pycache__/
 
 $ crapkit doctor
 ok   every tracked source file belongs to a scope
-FAIL scope 'infra' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)
-FAIL scope 'ops' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)
+FAIL scope 'infra' is in no lane's scopes list - its functions can only score no-lane (declare a lane, or coverage_optional = true)
+FAIL scope 'ops' is in no lane's scopes list - its functions can only score no-lane (declare a lane, or coverage_optional = true)
 doctor: 2 problem(s)
 
 $ crapkit inventory                    # complexity alone, no lanes needed

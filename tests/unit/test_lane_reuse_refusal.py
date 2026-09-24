@@ -213,8 +213,10 @@ def test_the_lanes_page_and_the_changelog_quote_the_refusal_reuse_prints(tmp_pat
 
     assert printed.startswith("lane 'py' wrote no artifact on its last attempt")
     assert printed in lanes_page, "the reuse transcript on the lanes page went stale"
-    # the changelog wraps its lines, so the quote is compared one space per gap
-    unwrapped = " ".join(changelog.split())
+    # the changelog wraps its lines, so the quote is compared one space per gap;
+    # its entry records the line as that release printed it, with an em dash
+    # crapkit has since spelled ` - `
+    unwrapped = " ".join(changelog.split()).replace(" — ", " - ")
     assert printed.split("lane 'py' ", 1)[1] in unwrapped, "the changelog quotes something else"
     for page in (lanes_page, changelog):
         assert "`--reuse-artifacts` is untouched" not in page, "a promise 0.5.0 broke is still made"

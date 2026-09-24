@@ -657,7 +657,7 @@ def _scope_path(name, raw: str) -> str:
     """
     path = _unrooted(raw)
     if path == "" or ".." in path.split("/") or ":" in path:
-        raise ConfigError(f"scope {name!r}: path {typed_path(raw)} can never match a tracked file — "
+        raise ConfigError(f"scope {name!r}: path {typed_path(raw)} can never match a tracked file - "
                           "scope paths are repo-relative, with no drive and no `..` "
                           "(docs/configuration.md)")
     return path

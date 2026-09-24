@@ -240,8 +240,8 @@ def _no_scopes_reason(root: Path) -> str:
 
     untracked = source_candidates(untracked_files(root))
     if not untracked:
-        return "no source files found to scope — is this the repo root?"
-    return ("no tracked source files to scope — crapkit scores git-tracked files only; "
+        return "no source files found to scope - is this the repo root?"
+    return ("no tracked source files to scope - crapkit scores git-tracked files only; "
             f"run `git add` first ({len(untracked)} untracked source file(s) found)")
 
 
@@ -358,7 +358,7 @@ def _dead_interpreter_note(name: str, word: str, code: int) -> str:
            if config.SHELL_IS_CMD else "install it, or point the lane at an "
            "interpreter this machine has")
     return (f"note: lane {name!r} names `{word}`, and {_shell_label()} cannot run it "
-            f"(exit {code}) — {fix}, then `{_self()} coverage`")
+            f"(exit {code}) - {fix}, then `{_self()} coverage`")
 
 
 def _missing_pytest_cov_note(name: str, word: str, spec: LaunchSpec) -> str:
@@ -404,7 +404,7 @@ def _absent_manager(spec: LaunchSpec, command: str) -> str | None:
 
 def _missing_manager_note(name: str, manager: str) -> str:
     return (f"note: lane {name!r} runs through `{manager}`, which this machine's PATH does "
-            f"not carry — install {manager}, or point the lane's command in crapkit.toml at "
+            f"not carry - install {manager}, or point the lane's command in crapkit.toml at "
             f"an interpreter that resolves here, then `{_self()} coverage`")
 
 
@@ -522,7 +522,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     root = Path(args.repo or ".").resolve()  # init writes where the user stands; it adopts nothing
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
-        raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
+        raise ConfigError(f"crapkit.toml already exists in {root} - edit it instead")
     _refuse_claimed_by_ancestor(root)
     files = ls_files(root)
     scopes = sniff_scopes(files)
@@ -554,7 +554,7 @@ def _unknown_key_text(unknown) -> str:
     from ..doctor import table_label, valid_keys
 
     noun = "keys" if unknown.table else "tables"
-    return (f"unknown key {unknown.path} — crapkit ignores it (typo?); "
+    return (f"unknown key {unknown.path} - crapkit ignores it (typo?); "
             f"{table_label(unknown.table)} accepts these {noun}: "
             f"{', '.join(valid_keys(unknown.table))}")
 
@@ -604,7 +604,7 @@ def _doctor_unclaimed(unclaimed: tuple[str, ...]) -> list[Finding]:
     if not unclaimed:
         return [Finding("ok", "every tracked source file belongs to a scope")]
     return [Finding("FAIL", f"{len(unclaimed)} tracked file(s) match a scope language but "
-                            f"no scope path: {', '.join(unclaimed)} — add a [[scope]] "
+                            f"no scope path: {', '.join(unclaimed)} - add a [[scope]] "
                             "claiming them, or an [exclude] glob (docs/configuration.md)")]
 
 
@@ -622,7 +622,7 @@ def _uncovered_scopes(cfg) -> list[str]:
 
 
 def _doctor_uncovered(cfg) -> list[Finding]:
-    return [Finding("FAIL", f"scope {name!r} is in no lane's scopes list — its functions "
+    return [Finding("FAIL", f"scope {name!r} is in no lane's scopes list - its functions "
                             "can only score no-lane (declare a lane, or "
                             "coverage_optional = true)")
             for name in _uncovered_scopes(cfg)]
@@ -698,7 +698,7 @@ def _lane_start_problem(root: Path, lane) -> str | None:
     if not dead:
         return None
     word, code = dead
-    return (f"lane {lane.name!r}: {_shell_label()} cannot run {typed_path(word)} (exit {code}) — "
+    return (f"lane {lane.name!r}: {_shell_label()} cannot run {typed_path(word)} (exit {code}) - "
             "the lane cannot start, so its scopes can only ever score no-lane")
 
 
@@ -708,7 +708,7 @@ def _doctor_lane_summary(cfg) -> Finding:
     if cfg.lanes:
         return Finding("ok", f"{len(cfg.lanes)} lane(s) declared")
     if cfg.lane_less_scopes:
-        return Finding("note", "no [[lane]] declared — inventory works; coverage needs one")
+        return Finding("note", "no [[lane]] declared - inventory works; coverage needs one")
     return Finding("ok", "no [[lane]] declared: every scope is cc-only, so none is needed")
 
 
@@ -870,7 +870,7 @@ def _doctor_artifact_litter(cfg) -> list[Finding]:
     before its lanes wrote under .crapkit/, over tree hygiene."""
     from ..doctor import artifact_litter, scope_top_dirs
 
-    return [Finding("WARN", f"lane {item.lane!r} writes {item.path} at the repo root — "
+    return [Finding("WARN", f"lane {item.lane!r} writes {item.path} at the repo root - "
                             f"point it under .crapkit/ (for example .crapkit/cov/{item.lane}/) "
                             "to keep the tree clean")
             for item in artifact_litter(cfg.lanes, scope_top_dirs(cfg.scopes))]
@@ -901,7 +901,7 @@ def _lizard_version() -> str | None:
 def _doctor_tools() -> list[Finding]:
     version = _lizard_version()
     if version is None:
-        return [Finding("FAIL", "lizard is not importable — pip install lizard")]
+        return [Finding("FAIL", "lizard is not importable - pip install lizard")]
     return [Finding("ok", f"lizard {version}")]
 
 
@@ -938,7 +938,7 @@ def _doctor_unmeasured(root: Path, cfg, files: list[str]) -> list[Finding]:
     counts = store.count_by_path(run["id"], flag="untested",
                                  skip_scopes=cfg.coverage_optional_scopes)
     return [Finding("WARN", f"{g.directory}: {g.functions} function(s) all flagged untested "
-                            f"while {g.example_test} exists — tests exist but no lane "
+                            f"while {g.example_test} exists - tests exist but no lane "
                             "measures them")
             for g in unmeasured_directories(counts, files)]
 
@@ -970,7 +970,7 @@ def _doctor_hook_modes(root: Path) -> list[Finding]:
     contributor gate armed nothing."""
     from ..doctor import non_executable_hooks
 
-    return [Finding("WARN", f"{path} is not executable in the index — core.hooksPath "
+    return [Finding("WARN", f"{path} is not executable in the index - core.hooksPath "
                             "is set, so Unix clones silently skip it; fix with "
                             f"`git update-index --chmod=+x {path}` and commit")
             for path in non_executable_hooks(_hook_modes(root))]
@@ -1092,7 +1092,7 @@ def _doctor_commit_graph(root: Path) -> list[Finding]:
         return []
     return [Finding("WARN", "the commit-graph carries no changed-path Bloom filters, so every "
                             "per-file history walk (churn, brief, explain --history) opens "
-                            "every tree it passes — fix with `git commit-graph write "
+                            "every tree it passes - fix with `git commit-graph write "
                             "--reachable --changed-paths`")]
 
 
@@ -1462,7 +1462,7 @@ def _no_crapkit_on_path() -> str:
     """The FAIL for a machine where nothing the plugin declares can start. It
     names both files that spawn the bare name, because the reader is about to
     look for a plugin problem and the problem is an install location."""
-    return ("crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and "
+    return ("crapkit doctor: FAIL no `crapkit` on PATH - the plugin's hooks/hooks.json and "
             ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
             "that cannot start and the MCP server never comes up. Install it where the "
             "PATH the hook inherits can see it (`pipx install crapkit`), or point the "

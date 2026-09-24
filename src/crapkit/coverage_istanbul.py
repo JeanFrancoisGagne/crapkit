@@ -268,7 +268,7 @@ def _require_files(per_file: dict) -> None:
     """A zero-file artifact scores as full coverage if it is let through."""
     if not per_file:
         raise ToolError(
-            "istanbul artifact is empty (zero files) — the coverage run measured nothing")
+            "istanbul artifact is empty (zero files) - the coverage run measured nothing")
 
 
 def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK

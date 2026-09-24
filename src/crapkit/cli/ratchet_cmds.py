@@ -31,7 +31,7 @@ def _skipped_failed_verifies(runs: list[dict], chosen_id: int) -> list[dict]:
 
 
 def _no_trusted_run() -> str:
-    return (f"no trusted full run to work from — run `{_self()} coverage` first "
+    return (f"no trusted full run to work from - run `{_self()} coverage` first "
             "(failed verifies and hook runs never serve as baselines)")
 
 
@@ -49,7 +49,7 @@ def _no_full_run(pick, runs: list[dict]) -> str:
         return _no_trusted_run()
     return (f"no run to work from: verify run {blocker['id']} FAILED with "
             f"{blocker['findings']} finding(s), nothing older is left to work from, "
-            f"and a fresh `{_self()} coverage` would only be refused the same way — "
+            f"and a fresh `{_self()} coverage` would only be refused the same way - "
             "fix the findings and let a verify pass")
 
 
@@ -158,7 +158,7 @@ def _merge_stamp(texts: list[str]) -> None:
     if ours != theirs:
         raise ConfigError(
             f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
-            f"[{theirs or 'unstamped'}] — marks from different metric versions cannot "
+            f"[{theirs or 'unstamped'}] - marks from different metric versions cannot "
             f"merge; {coverage_then_seed('re-baseline one side')}")
 
 

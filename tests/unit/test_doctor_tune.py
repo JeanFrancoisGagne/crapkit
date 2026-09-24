@@ -54,7 +54,7 @@ def test_the_cost_line_quotes_both_ends_of_the_trade():
 
 def test_without_a_cost_signal_the_suggestion_says_so():
     lines = tune_lines(cpus=8, knobs=suggest_knobs(cpus=8, lanes=2), durations=())
-    assert lines[-1] == ("# lane cost: no durations recorded yet — "
+    assert lines[-1] == ("# lane cost: no durations recorded yet - "
                          "suggested from the cpu count alone")
 
 

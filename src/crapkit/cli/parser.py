@@ -266,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "the keep-set, then VACUUM")
     runs_p.add_argument("--keep", type=int, default=5,
                         help="prune: newest trusted runs to keep (default 5). A floor, not "
-                             "a cap — the digest pair, passing verify baselines, runs an "
+                             "a cap - the digest pair, passing verify baselines, runs an "
                              "override names and the newest non-hook run are kept too")
     runs_p.add_argument("--repo", **_REPO_FLAG)
     runs_p.add_argument("--json", action="store_true", help="machine output")

@@ -150,4 +150,4 @@ def test_brief_lists_the_lines_that_do_open_a_function_when_a_line_opens_none():
         _pick_function("calc/grade.py", rows, "12")
 
     assert str(err.value) == ("no function starts at line 12 in calc/grade.py in the latest "
-                              "scored run — it starts functions at: 1, 24")
+                              "scored run - it starts functions at: 1, 24")

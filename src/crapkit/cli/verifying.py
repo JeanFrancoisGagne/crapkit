@@ -41,7 +41,7 @@ def _no_baseline(root: Path, runs: list[dict] = ()) -> str:
     every `coverage` comes back partial, and "run coverage first" loops."""
     partial = next((r for r in reversed(runs) if r["kind"] == "partial"), None)
     if partial is None:
-        return (f"no trusted scored baseline in {root} — run `{_self()} coverage` first "
+        return (f"no trusted scored baseline in {root} - run `{_self()} coverage` first "
                 "(failed verifies and hook runs never serve as baselines)")
     return (f"no trusted scored baseline in {root}: run {partial['id']} is partial, measured "
             f"without {_missing_lanes(root, partial)} (a lane that failed, or one `--lane` "
@@ -66,7 +66,7 @@ def _taint_note(pick) -> str:
                 f"measuring against run {pick.run['id']} @ {pick.run['commit'][:11]} instead")
     return (f"run {pick.skipped['id']} is not the baseline: verify run {pick.blocker['id']} "
             f"FAILED with {pick.blocker['findings']} finding(s) and no passing verify has "
-            f"cleared it since — {fallback}, so those findings stay visible. Fix them, or "
+            f"cleared it since - {fallback}, so those findings stay visible. Fix them, or "
             f"pass `--baseline {pick.skipped['id']}` to accept the newer run deliberately.")
 
 
@@ -123,7 +123,7 @@ def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
     behind = [r for r in trusted_runs(store) if git.is_ancestor(r["commit"], basis)]
     if not behind:
         raise CrapkitError(
-            f"no trusted scored run at or behind {basis[:11]} — run `{_self()} coverage` "
+            f"no trusted scored run at or behind {basis[:11]} - run `{_self()} coverage` "
             "on the base commit before verifying against it")
     return behind[-1]
 
@@ -136,7 +136,7 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
 
     path = root / rel
     if not path.is_file():
-        raise CrapkitError(f"no baseline file at {path} — write one with `verify --emit-baseline`")
+        raise CrapkitError(f"no baseline file at {path} - write one with `verify --emit-baseline`")
     try:
         parsed = parse_baseline_tsv(repo_text(path, rel))
     except ValueError as exc:
@@ -206,7 +206,7 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     is created here, since this run is the first thing that will ever write it."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not (db_path.is_file() or tsv_baseline):
-        raise CrapkitError(f"no baseline snapshot in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no baseline snapshot in {root} - run `{_self()} coverage` first")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return SnapshotStore(db_path)
 
@@ -225,7 +225,7 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     if saved.text is None:
         return
     if not saved.metric_stamp:
-        print(f"warning: {name} carries no metric stamp (written before stamping) — "
+        print(f"warning: {name} carries no metric stamp (written before stamping) - "
               f"{coverage_then_seed()} to stamp it", file=sys.stderr)
         return
     conflict = saved.stamp_conflict(metric_version())
@@ -663,7 +663,7 @@ def _refuse_lane_less_verify(cfg) -> None:
     """
     if cfg.lane_less_scopes:
         raise ConfigError(f"verify needs a [[lane]] for scope(s) {', '.join(cfg.lane_less_scopes)}"
-                          " — coverage is half the verdict; a scope no coverage parser can read "
+                          " - coverage is half the verdict; a scope no coverage parser can read "
                           "declares coverage_optional = true instead")
 
 
@@ -905,7 +905,7 @@ def _note_stale_staged(root: Path, flagged_paths: set) -> None:
     from ..gitio import unstaged_paths
 
     for path in sorted(flagged_paths & unstaged_paths(root)):
-        print(f"  note: {path} differs from the working tree — the STAGED blob is "
+        print(f"  note: {path} differs from the working tree - the STAGED blob is "
               "what commits; re-stage with `git add` if you already fixed it.")
 
 
@@ -931,10 +931,10 @@ def _print_clear_the_reason() -> None:
     """The second half is not decoration: a variable a CI job or a launcher
     exported is still set for the next commit however this shell clears it, and
     that is the case where the grant repeats invisibly."""
-    print(f"crapkit: clear CRAPKIT_OVERRIDE_REASON now ({_clearing_spellings()}) — "
+    print(f"crapkit: clear CRAPKIT_OVERRIDE_REASON now ({_clearing_spellings()}) - "
           "while set it grants again on every commit.")
     print("crapkit: a CI job or a launcher that exported it is not cleared by any command "
-          "here — clear it where it was set.")
+          "here - clear it where it was set.")
 
 
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
@@ -972,7 +972,7 @@ def _warn_unscoped_staged(unscoped: list) -> None:
     a file outside the root is outside the universe crapkit can score."""
     if unscoped:
         print(f"crapkit gate: {len(unscoped)} staged file(s) belong to no scope and were "
-              f"not gated: {', '.join(unscoped)} — add a [[scope]] claiming them "
+              f"not gated: {', '.join(unscoped)} - add a [[scope]] claiming them "
               "(see docs/configuration.md)", file=sys.stderr)
 
 
@@ -1003,7 +1003,7 @@ def _note_marked_staged(exempt: list) -> None:
     reprint debt the repo reads through `crapkit ratchet report`."""
     if exempt:
         print(f"crapkit gate: {len(exempt)} staged function(s) carry a ratchet mark and "
-              "were not gated — `crapkit verify` fails a mark that rises", file=sys.stderr)
+              "were not gated - `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
 def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:

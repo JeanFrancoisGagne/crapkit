@@ -79,7 +79,7 @@ def parse_istanbul(text: str, *, repo_root: str) -> dict[str, list[FnCoverage]]:
         for rel_path, cov in _iter_files(text, repo_root):
             per_file[rel_path] = _file_coverage(cov)
         if not per_file:
-            raise ToolError("istanbul artifact is empty (zero files) — the coverage run measured nothing")
+            raise ToolError("istanbul artifact is empty (zero files) - the coverage run measured nothing")
         return per_file
     except ToolError:
         raise

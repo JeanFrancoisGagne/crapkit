@@ -140,7 +140,7 @@ resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit
 ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
-FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) — the lane cannot start, so its scopes can only ever score no-lane
+FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) - the lane cannot start, so its scopes can only ever score no-lane
 ok   lizard 1.24.0
 doctor: 1 problem(s)
 ```
@@ -203,7 +203,7 @@ argument error. A repo naming neither or both keeps its runner's default directo
 `doctor` says so:
 
 ```
-WARN lane 'js' writes coverage/coverage-final.json at the repo root — point it under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean
+WARN lane 'js' writes coverage/coverage-final.json at the repo root - point it under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean
 ```
 
 That warning is never a `FAIL`. A lane writing at the root measures exactly what it always
@@ -553,7 +553,7 @@ that scores from statements with the downgrade said out loud rather than failing
 
 ```
 $ crapkit coverage
-crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches
+crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact - add --cov-branch to the lane command to measure branches
 ```
 
 Every function in the model already falls back to statement coverage when it holds no
@@ -567,7 +567,7 @@ would come out fully covered:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' FAILED: coverage.py report lacks branch data — run the lane with branch coverage on
+crapkit: lane 'py' FAILED: coverage.py report lacks branch data - run the lane with branch coverage on
 crapkit: every lane failed (1 of 1); the errors are above
 ```
 
@@ -582,12 +582,12 @@ one entry used to fail the lane and throw away every other file in the report, i
 the ones that were fine. Those files are now skipped and named, and the rest is scored:
 
 ```
-crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) — those files are skipped and the rest of the report is scored
+crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) - those files are skipped and the rest of the report is scored
 ```
 
 A report where NO file carries regions is still exit 5, which is the "coverage is too old"
 case the message was written for: `coverage.py report has no function regions for any of
-its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
+its 40 file(s) - needs coverage >= 7.6`. That verdict is read before the branch-data one, so
 a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
 which a coverage that old would not fix.
 ### `--continue-on-collection-errors`
@@ -682,7 +682,7 @@ right command for the repo and cannot start on this checkout, so `init` says so 
 than pointing at a `crapkit coverage` that exits 5:
 
 ```
-note: lane 'py' runs through `uv`, which this machine's PATH does not carry — install uv, or point the lane's command in crapkit.toml at an interpreter that resolves here, then `crapkit coverage`
+note: lane 'py' runs through `uv`, which this machine's PATH does not carry - install uv, or point the lane's command in crapkit.toml at an interpreter that resolves here, then `crapkit coverage`
 ```
 
 Writing the prefix by hand is the fix for a repo that adopted crapkit earlier, or one that
@@ -812,7 +812,7 @@ lane without a positional reads none of those files.
 contexts. Without them it says so rather than guessing:
 
 ```
-tests: no context data — run the py lane with dynamic_context = test_function and a --show-contexts JSON report
+tests: no context data - run the py lane with dynamic_context = test_function and a --show-contexts JSON report
 ```
 
 Two pieces. Add `--cov-context=test` to the lane command, and turn contexts on in
@@ -1074,7 +1074,7 @@ time in the stamp, and reuse refuses the file while that time still matches:
 
 ```
 $ crapkit coverage --reuse-artifacts
-crapkit: lane 'py' FAILED: lane 'py' wrote no artifact on its last attempt — the .crapkit/cov/py.json on disk predates it and is the previous run's, which --reuse-artifacts will not score; lane log: /repo/.crapkit/lane-py.log; last output: ...
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact on its last attempt - the .crapkit/cov/py.json on disk predates it and is the previous run's, which --reuse-artifacts will not score; lane log: /repo/.crapkit/lane-py.log; last output: ...
 crapkit: every lane failed (1 of 1); the errors are above
 EXIT=5
 ```
@@ -1340,7 +1340,7 @@ salvage is newer than that file by construction.)
 
 ```
 $ crapkit coverage --reuse-artifacts
-crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: junit report contains zero testcases — the suite crashed before collecting, not a pass; the crashed-worker and no-new-failures checks cannot run for this lane
+crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: junit report contains zero testcases - the suite crashed before collecting, not a pass; the crashed-worker and no-new-failures checks cannot run for this lane
 run 11 @ 525a3276065: 5 functions scored: 5 measured, ...
 ```
 
@@ -1357,7 +1357,7 @@ against the last trusted run's and warns past a **10%** drop:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 — check the runner's log for a worker that died without reporting it
+crapkit: lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 - check the runner's log for a worker that died without reporting it
 run 2 @ df858be0149: 1 functions scored: 1 measured, 0 over ceiling 6, CRAP load 2.0, grade A+
 -> next: crapkit worklist
 ```
@@ -1433,7 +1433,7 @@ The lane below declares its junit file too, as every lane `init` writes does, so
 names both files the run left:
 
 ```
-crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run — the .crapkit/cov/py.json and .crapkit/cov/junit-py.xml on disk predate it and are the previous run's (command exit 2); lane log: /repo/.crapkit/lane-py.log; last output: ...
+crapkit: lane 'py' FAILED: lane 'py' wrote no artifact this run - the .crapkit/cov/py.json and .crapkit/cov/junit-py.xml on disk predate it and are the previous run's (command exit 2); lane log: /repo/.crapkit/lane-py.log; last output: ...
 ```
 
 When the artifact is not on disk at all and the leftover is some other declared file, the
@@ -1528,7 +1528,7 @@ lane:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src), and 3 of them outside this checkout entirely — .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active — run it through the project's manager, `uv run python -m pytest ...`), or set path_prefix when the runner reports paths relative to a subdirectory
+crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src), and 3 of them outside this checkout entirely - .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active - run it through the project's manager, `uv run python -m pytest ...`), or set path_prefix when the runner reports paths relative to a subdirectory
 ```
 
 Coverage joins on path and nothing else, so such an artifact contributes exactly nothing
@@ -1558,7 +1558,7 @@ own switch instead:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout — .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane
+crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout - .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane
 ```
 
 For an istanbul lane the switch is the reporter's `cwd`/`root` option instead: that reader
@@ -1585,7 +1585,7 @@ Relative paths that reach none of the declared scopes warn instead, and the run
 scores on:
 
 ```
-crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare (src), so every function in those scopes will score untested; it measured tests/test_core.py — either nothing in them is exercised yet, or the runner reports paths this lane needs path_prefix to rebase
+crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare (src), so every function in those scopes will score untested; it measured tests/test_core.py - either nothing in them is exercised yet, or the runner reports paths this lane needs path_prefix to rebase
 ```
 
 That is the greenfield shape as well: a suite importing none of the scoped source yet,

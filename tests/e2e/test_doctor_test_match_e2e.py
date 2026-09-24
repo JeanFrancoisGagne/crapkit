@@ -74,8 +74,8 @@ def test_doctor_names_the_test_beside_the_code_and_no_test_in_another_language(t
 
     assert warns == [
         "WARN extensions/rpc: 1 function(s) all flagged untested while "
-        "extensions/rpc/handler.test.ts exists — tests exist but no lane measures them",
+        "extensions/rpc/handler.test.ts exists - tests exist but no lane measures them",
         "WARN src/hooks/boot: 1 function(s) all flagged untested while "
-        "src/hooks/boot/handler.test.ts exists — tests exist but no lane measures them",
+        "src/hooks/boot/handler.test.ts exists - tests exist but no lane measures them",
     ], res.stdout + res.stderr
     assert res.returncode == 0, res.stdout + res.stderr

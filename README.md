@@ -214,7 +214,7 @@ today:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
 ```
 
 That transition changed cognitive complexity, not `ccn` or the CRAP formula.
@@ -819,6 +819,12 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 
 ## Reading the output
 
+Every line crapkit writes from its own words is ASCII, so `$x = crapkit doctor` or
+`$x = crapkit worklist 2>&1` in Windows PowerShell 5.1 captures it intact under any
+console code page. A path or function name crapkit quotes keeps its own characters and
+goes out as UTF-8; to capture one of those, set
+`[Console]::OutputEncoding = [Text.Encoding]::UTF8` first.
+
 ### Flags: why a coverage number is missing
 
 | Flag | Meaning | Scored |
@@ -910,7 +916,7 @@ run   2 @ 803bdde8556 2026-08-23T09:27:53Z verify    verdict=FAILED lanes=py
 run   3 @ 803bdde8556 2026-08-23T09:28:02Z coverage  verdict=-      lanes=py
 
 $ crapkit verify
-warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since — measuring against run 1 @ 88012a148f6 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
+warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since - measuring against run 1 @ 88012a148f6 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
 verify FAILED @ d89068de7f3 vs baseline 88012a148f6 (2 changed files)
   GATE  crap     72.0  ccn   8 cov 0%  calc/legacy.py:7  legacy_router( a , b , c , d , e )  -> decompose
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)

@@ -113,7 +113,7 @@ def suite_summary(xml_text: str) -> tuple[set[str], dict]:
     _refuse_unfinished(root)
     failed, counts = _walk(root)
     if counts["tests"] == 0:
-        raise ToolError("junit report contains zero testcases — the suite crashed before collecting, not a pass")
+        raise ToolError("junit report contains zero testcases - the suite crashed before collecting, not a pass")
     return failed, counts
 
 

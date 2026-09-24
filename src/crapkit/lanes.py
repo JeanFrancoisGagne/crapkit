@@ -238,7 +238,7 @@ def _missing_plugin_hint(tail: str, lane: Lane) -> str:
     """
     if "unrecognized arguments" not in tail or "--cov" not in tail:
         return ""
-    return (f" — the --cov flags come from the pytest-cov package, which has to be "
+    return (f" - the --cov flags come from the pytest-cov package, which has to be "
             f"installed in {_pytest_cov_home(lane)}, not in the shell's active venv")
 
 
@@ -301,10 +301,10 @@ def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = Fa
         return f"produced no artifact at {lane.artifact}"
     leftover, predates, is_ = _leftover_words(stale)
     if reuse:
-        return (f"wrote no artifact on its last attempt — {leftover} {predates} it and {is_} "
+        return (f"wrote no artifact on its last attempt - {leftover} {predates} it and {is_} "
                 "the previous run's, which --reuse-artifacts will not score")
     if (root / lane.artifact).is_file():
-        return f"wrote no artifact this run — {leftover} {predates} it and {is_} the previous run's"
+        return f"wrote no artifact this run - {leftover} {predates} it and {is_} the previous run's"
     return f"produced no artifact at {lane.artifact}, and {leftover} {is_} the previous run's"
 
 
@@ -1095,14 +1095,14 @@ def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
 
 def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(outside)} of them "
-            f"outside this checkout entirely — {lane.artifact} describes a different tree, "
+            f"outside this checkout entirely - {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
             f"paths like {_sample(outside)}. {lane_format(lane).WRONG_TREE_FIX}")
 
 
 def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -> str:
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(inside)} of them written "
-            f"as absolute paths that DO sit under this checkout — {lane.artifact} measured "
+            f"as absolute paths that DO sit under this checkout - {lane.artifact} measured "
             f"this tree and spelled it absolutely, and the join is on root-relative paths, "
             f"so it still matches nothing and every function in those scopes would score "
             f"untested; it reports paths like {_sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
@@ -1111,7 +1111,7 @@ def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
-            f"scopes will score untested{reports} — either nothing in them is exercised yet, "
+            f"scopes will score untested{reports} - either nothing in them is exercised yet, "
             f"{lane_format(lane).UNMEASURED_READING}")
 
 
@@ -1225,7 +1225,7 @@ def suite_drops(previous: dict, current: dict, *,
         before, now = _tests_total(previous.get(name, {})), _tests_total(prov)
         if before and now < before * (1 - fraction):
             notes.append(f"lane {name!r} ran {now} tests, {before - now} fewer than the "
-                         f"last trusted run's {before} — check the runner's log for a "
+                         f"last trusted run's {before} - check the runner's log for a "
                          "worker that died without reporting it")
     return notes
 

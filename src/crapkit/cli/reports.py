@@ -44,7 +44,7 @@ def _warn_skipped_runs(scored_runs: list[dict], pair) -> None:
     if not skipped:
         return
     print(f"warning: digest compared runs {pair[0]['id']} -> {pair[1]['id']}, "
-          f"skipping run(s) {', '.join(str(r['id']) for r in skipped)} — "
+          f"skipping run(s) {', '.join(str(r['id']) for r in skipped)} - "
           "a run only pairs with one whose lane set is identical", file=sys.stderr)
 
 
@@ -60,15 +60,20 @@ def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str])
         raise ToolError(f"digest alert command failed (exit {code})")
 
 
+def _digest_store(root: Path) -> SnapshotStore:
+    """The repo's snapshot store; a repo never measured is told to run coverage."""
+    db_path = root / ".crapkit" / "crap.sqlite"
+    if not db_path.is_file():
+        raise CrapkitError(f"no snapshot in {root} - run `{_self()} coverage` first")
+    return SnapshotStore(db_path)
+
+
 def cmd_digest(args: argparse.Namespace) -> int:
     from ..digest import build_digest
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
-    db_path = root / ".crapkit" / "crap.sqlite"
-    if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
-    store = SnapshotStore(db_path)
+    store = _digest_store(root)
     pair = _digest_pair(store)
     if pair is None:
         return 0
@@ -288,7 +293,7 @@ def cmd_overrides(args: argparse.Namespace) -> int:
 
 _NO_SPAN = "function not in the latest run"
 
-_NO_CONTEXT = ("no context data — run the py lane with dynamic_context = "
+_NO_CONTEXT = ("no context data - run the py lane with dynamic_context = "
                "test_function and a --show-contexts JSON report")
 
 # %x01 opens a commit record and %x02 closes it, so a body of any shape stays

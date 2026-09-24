@@ -125,7 +125,7 @@ def test_the_exemption_says_how_many_marks_it_honoured(seeded: Path):
 
     lines = [ln for ln in res.stderr.splitlines() if EXEMPT in ln]
     assert lines == ["crapkit gate: 1 staged function(s) carry a ratchet mark and were not "
-                     "gated — `crapkit verify` fails a mark that rises"], res.stderr
+                     "gated - `crapkit verify` fails a mark that rises"], res.stderr
 
 
 def test_two_marked_functions_are_one_line_not_two(tmp_path: Path):
@@ -139,7 +139,7 @@ def test_two_marked_functions_are_one_line_not_two(tmp_path: Path):
     assert res.returncode == 0, res.stdout + res.stderr
     assert [ln for ln in res.stderr.splitlines() if EXEMPT in ln] == [
         "crapkit gate: 2 staged function(s) carry a ratchet mark and were not "
-        "gated — `crapkit verify` fails a mark that rises"], res.stderr
+        "gated - `crapkit verify` fails a mark that rises"], res.stderr
 
 
 # --- what the exemption does not reach ---------------------------------------

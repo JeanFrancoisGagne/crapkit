@@ -155,7 +155,7 @@ runs:
 {
   "flag": "measured",
   "uncovered_lines": null,
-  "uncovered_lines_note": "lane 'py': files in its scopes changed since .crapkit/cov/py.json was written (uncommitted edits count), so its line numbers are stale — commit or revert them, then rerun `crapkit coverage`"
+  "uncovered_lines_note": "lane 'py': files in its scopes changed since .crapkit/cov/py.json was written (uncommitted edits count), so its line numbers are stale - commit or revert them, then rerun `crapkit coverage`"
 }
 ```
 
@@ -296,7 +296,7 @@ $ crapkit claims release --all --json
 A release naming a claim that is not open is exit 1, and the message lists what is:
 
 ```
-crapkit: no open claim on 'classify' in calc/grade.py — open: calc/grade.py audit( rows , strict , cap , floor , verbose )
+crapkit: no open claim on 'classify' in calc/grade.py - open: calc/grade.py audit( rows , strict , cap , floor , verbose )
 ```
 
 ---
@@ -539,7 +539,7 @@ of several ways its lookup comes back empty:
 
 ```
 $ crapkit brief calc/grade.py 12
-crapkit: no function starts at line 12 in calc/grade.py in the latest scored run — it starts functions at: 1, 24
+crapkit: no function starts at line 12 in calc/grade.py in the latest scored run - it starts functions at: 1, 24
 
 $ crapkit explain calc/grade.py 12
 crapkit: no function matching '12' in calc/grade.py appears in any run
@@ -552,7 +552,7 @@ it and not the start line. An ordinal past the end is exit 1 listing the handles
 does hold:
 
 ```
-crapkit: no (anonymous)#5 in app/parse_csv.py in the latest scored run — it holds: (anonymous)#1, (anonymous)#2
+crapkit: no (anonymous)#5 in app/parse_csv.py in the latest scored run - it holds: (anonymous)#1, (anonymous)#2
 ```
 
 `explain` resolves the handle the same way, against the run `brief` reads.
@@ -565,7 +565,7 @@ wins, the same rule the queue ranks on. Anything genuinely ambiguous or absent i
 with the candidates listed:
 
 ```
-crapkit: no function named 'nope' in calc/grade.py in the latest scored run — it holds: _adjusted, _band, classify, extra, summarize
+crapkit: no function named 'nope' in calc/grade.py in the latest scored run - it holds: _adjusted, _band, classify, extra, summarize
 ```
 
 The twin selector picks one of them instead. `NAME#2` is the second function of that name
@@ -574,7 +574,7 @@ in file order, `NAME#3` the third — the same ordinals the ratchet keys their m
 the last twin is exit 1:
 
 ```
-crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run — it holds 2 function(s) named '__post_init__'
+crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run - it holds 2 function(s) named '__post_init__'
 ```
 
 Only a whole-number tail selects: a long name that merely contains a `#`, such as an
@@ -1016,7 +1016,7 @@ loses rather than the key alone. A repo whose one lane declares neither the arti
 
 ```json
 ["lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = \".crapkit/cov/junit-py.xml\" to the lane",
- "scope 'calc' has a lane but no [crapkit.scoped_tests] template — `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add calc = \"<test command>\" under [crapkit.scoped_tests]"]
+ "scope 'calc' has a lane but no [crapkit.scoped_tests] template - `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add calc = \"<test command>\" under [crapkit.scoped_tests]"]
 ```
 
 `crapkit init` writes `--junitxml` and `results_artifact` on the lanes it detects, so this
@@ -1090,7 +1090,7 @@ carries no `crapkit` at all, there is nothing to compare and nothing that can st
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
+crapkit doctor: FAIL no `crapkit` on PATH - the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
 ```
 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
