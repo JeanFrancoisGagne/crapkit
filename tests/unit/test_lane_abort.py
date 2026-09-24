@@ -193,10 +193,10 @@ def test_coverage_warns_off_the_last_trusted_run_before_writing_this_one(tmp_pat
 def test_a_crash_during_a_flake_retest_keeps_every_failure(tmp_path):
     """`retest_lane` only drops ids the rerun's own artifact says passed. A
     report that crashed proves nothing, so nothing drops."""
-    from crapkit.lanes import _still_failed
+    from crapkit.lanes import _retested_passes
 
     (tmp_path / "junit.xml").write_text(CRASHED, encoding="utf-8")
     lane = Lane(name="py", command="never runs", artifact="cov.json", parser="istanbul",
                 scopes=("src",), results_artifact="junit.xml")
 
-    assert _still_failed(tmp_path, lane) is None
+    assert _retested_passes(tmp_path, lane, before=None) == set()

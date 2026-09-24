@@ -16,7 +16,7 @@ from crapkit.cli.admin import _junit_seconds
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.junitparse import failed_test_ids, passed_test_ids, suite_seconds, suite_summary
-from crapkit.lanes import _results_provenance, _results_summary, _retested_passes, _still_failed
+from crapkit.lanes import _results_provenance, _results_summary, _retested_passes
 
 BODY = ('<testsuites><testsuite name="py" tests="2" failures="1" time="1.5">'
         '<testcase classname="t" name="test_café" time="1.0"/>'
@@ -72,7 +72,6 @@ def test_the_flake_retest_reads_the_rerun_report_in_any_declared_encoding(tmp_pa
     (tmp_path / "junit.xml").write_bytes(raw)
 
     assert _retested_passes(tmp_path, LANE, before=None) == PASSED
-    assert _still_failed(tmp_path, LANE) == FAILED
 
 
 @pytest.mark.parametrize("raw", RAW, ids=IDS)

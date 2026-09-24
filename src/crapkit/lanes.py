@@ -1274,19 +1274,6 @@ def _retested_passes(root: Path, lane: Lane, before: int | None) -> set[str]:
         return set()
 
 
-def _still_failed(root: Path, lane: Lane) -> set[str] | None:
-    """The failing ids in the lane's results artifact; None means unreadable."""
-    from .junitparse import failed_test_ids
-
-    results_path = root / lane.results_artifact
-    if not results_path.is_file():
-        return None
-    try:
-        return failed_test_ids(results_path.read_bytes())
-    except ToolError:
-        return None
-
-
 class LaneOutcome(NamedTuple):
     """One lane's result. `stamp` is what the caller must persist (empty when the
     lane reused an artifact, or when there is no git repo to stamp against)."""
