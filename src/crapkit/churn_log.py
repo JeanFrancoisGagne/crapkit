@@ -26,6 +26,12 @@ at, because that cutoff can move back: git's month arithmetic puts 6 months
 before Aug 31 on Mar 3 and before Sep 1 on Mar 1, and a log cut at the later
 cutoff cannot be re-dated to the earlier one.
 
+The key holds the clone's history depth too (`history_depth`). A sha pins
+which history HEAD reaches, not how much of it the clone holds: `git fetch
+--unshallow` or `--deepen` adds commits under an unmoved HEAD, and a log cut
+from the shallow history would otherwise be served, or carried forward, until
+the UTC date rolled. churn_cache and coupling_cache key on the same depth.
+
 A cache is disposable. An unreadable, torn or unkeyable log reads as cold, never
 as a crash, and a HEAD the cached log is not an ancestor of (a rewind, a rebase,
 a force-push) rebuilds rather than prepends.
@@ -38,6 +44,7 @@ import zlib
 from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from functools import lru_cache
+from hashlib import blake2b
 from itertools import chain
 from operator import methodcaller
 from pathlib import Path
@@ -45,7 +52,7 @@ from tempfile import NamedTemporaryFile
 from typing import BinaryIO, NamedTuple
 
 from .errors import GitError
-from .gitio import _git_lines, head_commit, is_ancestor
+from .gitio import _common_dir, _git_dir, _git_lines, head_commit, is_ancestor
 
 # Versioned like churn_cache's map, and for the same reason: a version that
 # writes another key shape writes another file, so two installs on one tree
@@ -67,6 +74,10 @@ _TRIM = methodcaller("rstrip", "\n")
 # repo top. A key without it names a top-relative log, and that one is cold —
 # served OR refreshed, it would feed every consumer paths that match nothing.
 RELATIVE_PATHS = "root-relative"
+# The depth of a clone that holds every commit its HEAD reaches. Keys written
+# before depth joined them carry none and read as this: a full clone laid down
+# nearly every one of them, and a shallow clone keeps no commit table either.
+FULL_HISTORY = "full"
 
 
 class Window(NamedTuple):
@@ -220,15 +231,67 @@ def _utc_date() -> str:
 
 
 def _cache_key(root: Path, months: int, head: str | None = None) -> dict | None:
-    """Keyed on `head` when the caller read one, else on HEAD now. None when
-    HEAD is unreadable — then there is nothing safe to key on."""
+    """Keyed on `head` when the caller read one, else on HEAD now, and on the
+    clone's history depth. None when HEAD or the depth is unreadable: then
+    there is nothing safe to key on."""
     if head is None:
         try:
             head = head_commit(root)
         except GitError:
             return None
+    depth = history_depth(root)
+    if depth is None:
+        return None
     return {"head": head, "months": months, "date": _utc_date(),
-            "paths": RELATIVE_PATHS}
+            "paths": RELATIVE_PATHS, "depth": depth}
+
+
+def history_depth(root: Path) -> str | None:
+    """How much of HEAD's history this clone holds: FULL_HISTORY, or a digest
+    of git's shallow boundary, or None when the boundary file is there and
+    cannot be read.
+
+    git lists a shallow clone's boundary commits in `shallow` in the common
+    git directory. `git fetch --deepen` rewrites that file and `--unshallow`
+    deletes it, while HEAD stays where it was. Read off disk the way
+    gitio.head_from_refs reads HEAD, since every churn and coupling read keys
+    on it. A root git places nowhere has no boundary to read, and head_commit
+    refuses that root on its own."""
+    common = _common_git_dir(root)
+    return FULL_HISTORY if common is None else _boundary_digest(common / "shallow")
+
+
+def _common_git_dir(root: Path) -> Path | None:
+    """The common git directory, found as HEAD's fast path finds its own, or
+    asked of git when that walk finds none (GIT_DIR set outside the tree)."""
+    gitdir = _git_dir(root)
+    return _common_dir(gitdir) if gitdir is not None else _asked_common_dir(root)
+
+
+@lru_cache(maxsize=16)
+def _asked_common_dir(root: Path) -> Path | None:
+    """git's answer, once per root in a process: where a repository keeps its
+    git directory does not move while a command runs."""
+    try:
+        named = "".join(_git_lines(root, "rev-parse", "--git-common-dir")).strip()
+    except GitError:
+        return None
+    return root / named if named else None
+
+
+def _boundary_digest(path: Path) -> str | None:
+    """FULL_HISTORY when the clone lists no boundary, else a short digest of
+    the list; None when the file is there and cannot be read, which no key
+    may read as either answer."""
+    try:
+        boundary = path.read_bytes()
+    except FileNotFoundError:
+        return FULL_HISTORY
+    except OSError:
+        return None
+    if not boundary.strip():
+        return FULL_HISTORY
+    return "shallow-" + blake2b(boundary, digest_size=8).hexdigest()
 
 
 def _key_path(path: Path) -> Path:
@@ -244,7 +307,14 @@ def _read_key(path: Path) -> dict | None:
 
 
 def _key_fields(doc: dict) -> dict:
-    return {field: doc.get(field) for field in ("head", "months", "date", "paths")}
+    fields = {field: doc.get(field) for field in ("head", "months", "date", "paths")}
+    return {**fields, "depth": _stored_depth(doc)}
+
+
+def _stored_depth(doc: dict):
+    """The depth a laid-down log was cut at; FULL_HISTORY for a key written
+    before depth joined it."""
+    return doc.get("depth", FULL_HISTORY)
 
 
 def _answers(stored: dict | None, key: dict | None) -> bool:
@@ -316,9 +386,11 @@ def _refreshable(root: Path, stored: dict | None, key: dict, cutoff: int | None)
 
 
 def _same_window(stored: dict, key: dict) -> bool:
-    """Same months, and root-relative paths: prepending to a top-relative log
-    would stack fresh commits on wrong paths."""
-    return stored.get("months") == key["months"] and stored.get("paths") == key["paths"]
+    """Same months, root-relative paths and the same history depth: prepending
+    to a top-relative log would stack fresh commits on wrong paths, and a log
+    cut from a shallower history lacks commits no range walk brings back."""
+    return (stored.get("months") == key["months"] and stored.get("paths") == key["paths"]
+            and _stored_depth(stored) == key["depth"])
 
 
 def _cutoff_holds(stored: dict, cutoff: int | None) -> bool:
