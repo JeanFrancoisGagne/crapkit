@@ -163,13 +163,16 @@ def test_qualname_collapse_fails_conservative_never_confident():
 
 
 
-# --- a key with a backslash in it ------------------------------------------------
+# --- the file a report key names, in each spelling a runner writes ---------------
 
 import os as _os
 from pathlib import Path as _Path
 
 from crapkit import coverage_py as _adapter
 from crapkit.config import Lane as _Lane
+from crapkit.lanes import _judge_artifact_scope
+
+from path_spellings import lower_drive as _lower
 
 
 def _read_keyed(root: _Path, key: str) -> list[str]:
@@ -191,6 +194,32 @@ def test_a_relative_key_reads_as_one_path_in_any_separator(tmp_path, key):
     (tmp_path / "pylib" / "sub" / "mod.py").write_text("x = 1\n", encoding="utf-8")
 
     assert _read_keyed(tmp_path, key) == ["pylib/sub/mod.py"]
+
+
+ABSOLUTE_KEYS = {
+    "native": lambda root: str(root / "pylib" / "mod.py"),
+    "forward-slashes": lambda root: (root / "pylib" / "mod.py").as_posix(),
+    "lower-drive": lambda root: _lower(root / "pylib" / "mod.py"),
+}
+
+
+@pytest.mark.parametrize("which", ABSOLUTE_KEYS)
+def test_an_absolute_key_under_this_checkout_fails_the_lane_naming_relative_files(tmp_path,
+                                                                                  which):
+    """relative_files off keys this checkout's own files absolutely, and a shell
+    standing in `c:\\...` lowers the drive letter. The join is root-relative, so
+    each spelling fails the lane and names coverage.py's switch."""
+    if which == "lower-drive" and _os.name != "nt":
+        pytest.skip("needs Windows path rules")
+    root = tmp_path.resolve()
+    (root / "pylib").mkdir()
+    (root / "pylib" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    lane = _Lane(name="py", command="x", artifact="cov.json", parser="coveragepy",
+                 scopes=("py",))
+    measured = dict.fromkeys(_read_keyed(root, ABSOLUTE_KEYS[which](root)), [])
+
+    with pytest.raises(ToolError, match="relative_files = true"):
+        _judge_artifact_scope(lane, measured, {"py": ("pylib",)}, root)
 
 
 @pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
