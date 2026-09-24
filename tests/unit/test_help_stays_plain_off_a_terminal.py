@@ -12,12 +12,15 @@ On 3.11 to 3.13 the end-to-end tests below pass either way: there is no colour
 to strip.
 """
 import io
+import os
+import subprocess
 import sys
 
 import pytest
 
 from crapkit.cli import main
 from crapkit.cli import parser
+from hang_guard import HANG_SECONDS
 
 
 class _Terminal(io.StringIO):
@@ -25,22 +28,44 @@ class _Terminal(io.StringIO):
         return True
 
 
-# Each environment that turns 3.14's colour on in a pipe.
+# Each export a shell uses to ask for colour. 3.14's argparse obeys all of them
+# but CLICOLOR_FORCE, which other tools read. FORCE_COLOR counts when it is set
+# to anything, "0" included.
 _COLOUR_ON = {
     "FORCE_COLOR": {"FORCE_COLOR": "1"},
+    "FORCE_COLOR=0": {"FORCE_COLOR": "0"},
     "PYTHON_COLORS": {"PYTHON_COLORS": "1"},
     "TERM-dumb-FORCE_COLOR": {"TERM": "dumb", "FORCE_COLOR": "1"},
+    "CLICOLOR_FORCE": {"CLICOLOR_FORCE": "1"},
 }
+# Exports under which argparse itself stays plain: NO_COLOR and PYTHON_COLORS=0
+# outrank FORCE_COLOR. The fix must leave these plain too.
+_COLOUR_OFF = {
+    "NO_COLOR-FORCE_COLOR": {"NO_COLOR": "1", "FORCE_COLOR": "1"},
+    "PYTHON_COLORS=0-FORCE_COLOR": {"PYTHON_COLORS": "0", "FORCE_COLOR": "1"},
+}
+_ASKED = ("FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS", "TERM", "CLICOLOR_FORCE")
+
+
+def _export(monkeypatch, variables: dict) -> None:
+    """`variables`, and no other variable a colour decision reads."""
+    for name in _ASKED:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
 
 
 @pytest.fixture(params=sorted(_COLOUR_ON))
 def forced_color(request, monkeypatch):
-    """An environment that turned the colour on, and nothing argparse asks
-    before it that would turn it back off."""
-    for name in ("FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS", "TERM"):
-        monkeypatch.delenv(name, raising=False)
-    for name, value in _COLOUR_ON[request.param].items():
-        monkeypatch.setenv(name, value)
+    """An environment that asked for colour, and nothing argparse asks before
+    it that would turn it back off."""
+    _export(monkeypatch, _COLOUR_ON[request.param])
+
+
+@pytest.fixture(params=sorted(_COLOUR_ON) + sorted(_COLOUR_OFF))
+def colour_env(request, monkeypatch):
+    """Every row above: the exports that ask for colour, then the controls."""
+    _export(monkeypatch, {**_COLOUR_ON, **_COLOUR_OFF}[request.param])
 
 
 def _exit_code(argv: list[str]) -> int:
@@ -58,7 +83,7 @@ def _exit_code(argv: list[str]) -> int:
     ["coverage", "--help"],
     ["ratchet", "seed", "--help"],
 ], ids=" ".join)
-def test_help_in_a_pipe_is_plain_when_colour_is_forced(argv, forced_color, capsys):
+def test_help_in_a_pipe_is_plain_whatever_the_colour_variables_say(argv, colour_env, capsys):
     code = _exit_code(argv)
     out = capsys.readouterr().out
 
@@ -86,8 +111,8 @@ def test_every_subcommands_help_in_a_pipe_is_plain_when_colour_is_forced(
     (["coverage", "--repo"], "expected one argument"),
     (["next-item", "--top", "five"], "invalid int value: 'five'"),
 ], ids=["unknown-flag", "unknown-subcommand", "missing-value", "wrong-type"])
-def test_a_usage_error_in_a_pipe_is_plain_when_colour_is_forced(
-        argv, error, forced_color, capsys):
+def test_a_usage_error_in_a_pipe_is_plain_whatever_the_colour_variables_say(
+        argv, error, colour_env, capsys):
     code = _exit_code(argv)
     err = capsys.readouterr().err
 
@@ -119,6 +144,56 @@ def test_a_claude_hook_flag_this_build_lacks_reaches_the_model_without_escape_co
     err = capsys.readouterr().err
 
     assert "\x1b" not in err, err
+
+
+@pytest.mark.parametrize("columns", ["40", "250"])
+@pytest.mark.parametrize("argv", [["--help"], ["coverage", "--help"]], ids=" ".join)
+def test_help_in_a_pipe_is_plain_at_any_width(argv, columns, forced_color, capsys, monkeypatch):
+    """COLUMNS moves where help wraps, never whether it is coloured."""
+    monkeypatch.setenv("COLUMNS", columns)
+    code = _exit_code(argv)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert "usage: crapkit" in out, out
+    assert "\x1b" not in out, out
+
+
+@pytest.mark.parametrize("argv, stream", [
+    (["--help"], "stdout"),
+    (["coverage", "--no-such-flag"], "stderr"),
+], ids=["help", "usage-error"])
+def test_a_crapkit_process_writes_plain_text_into_a_pipe_when_colour_is_forced(
+        argv, stream, forced_color):
+    """The same through a real process, whose stdout and stderr are OS pipes."""
+    done = subprocess.run([sys.executable, "-m", "crapkit", *argv], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=HANG_SECONDS)
+
+    assert "usage: crapkit" in getattr(done, stream), done.stdout + done.stderr
+    assert "\x1b" not in done.stdout + done.stderr, done.stdout + done.stderr
+
+
+def _launcher(directory) -> str:
+    """A `crapkit` that runs this checkout's CLI with this interpreter, spelled
+    the way this platform's shell starts one."""
+    if os.name == "nt":
+        launcher = directory / "crapkit.bat"
+        launcher.write_text(f'@"{sys.executable}" -m crapkit %*\n', encoding="utf-8")
+        return str(launcher)
+    launcher = directory / "crapkit"
+    launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m crapkit "$@"\n', encoding="utf-8")
+    launcher.chmod(0o755)
+    return str(launcher)
+
+
+def test_doctors_version_probe_reads_the_version_when_colour_is_forced(forced_color, tmp_path):
+    """`doctor --plugin-root` runs `crapkit --version` and reads "crapkit X" from
+    it. argparse never colours that line, and this pins it."""
+    from crapkit.cli import admin
+
+    version = parser._version_line().split()[1]
+
+    assert admin._probed_cli_version(_launcher(tmp_path)) == version
 
 
 # --- the keyword the root parser is built with ---------------------------------
