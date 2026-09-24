@@ -90,6 +90,10 @@ _Avoid_: flaky failure, forgiven failure
 **Gate**:
 The rule that a new or changed function may not exceed its ceiling; enforced by the pre-commit hook, `verify` and the Action.
 
+**Advisory**:
+What `claude-hook` prints after an agent's edit lands: exit 2 and stderr naming each changed function over its ceiling, or naming a changed file it could not judge because no reader could read it or git could not report the change. It blocks nothing. After a `Bash` event it judges each file's bytes once per session.
+_Avoid_: gate, block (the edit is already on disk)
+
 ### Debt
 
 **Ratchet mark**:
