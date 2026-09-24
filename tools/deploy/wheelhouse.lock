@@ -257,7 +257,7 @@ project = "colorama"
 version = "0.4.6"
 url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl"
 sha256 = "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
-rows = ["windows-amd64-cp312", "windows-amd64-cp313"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-aarch64-cp312", "windows-amd64-cp312", "windows-amd64-cp313", "macos-arm64-cp312"]
 
 [[file]]
 name = "coverage-7.16.1-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl"
@@ -1332,11 +1332,11 @@ sha256 = "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3"
 rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-aarch64-cp312", "windows-amd64-cp312", "windows-amd64-cp313", "macos-arm64-cp312"]
 
 [[file]]
-name = "virtualenv-21.12.0-py3-none-any.whl"
+name = "virtualenv-21.12.1-py3-none-any.whl"
 project = "virtualenv"
-version = "21.12.0"
-url = "https://files.pythonhosted.org/packages/99/1f/f05fdfddce78d80a9269db1d4b63a4666f102f4e5302b54a7e3a8d4ac75b/virtualenv-21.12.0-py3-none-any.whl"
-sha256 = "7c48862b3f355c3f5f08d0e21af8a9ea601e0c56385f8e189c7117809ef0b4db"
+version = "21.12.1"
+url = "https://files.pythonhosted.org/packages/f5/8c/692cf235722ee45c612630d2b49b3d1765892f7e440055365ea1b59c659e/virtualenv-21.12.1-py3-none-any.whl"
+sha256 = "878db9e963d0ef0b38561a344a4f9b12dc5c7741b6245d7ed10e9291cfea28bc"
 rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-aarch64-cp312", "windows-amd64-cp312", "windows-amd64-cp313", "macos-arm64-cp312"]
 
 [[file]]

@@ -225,8 +225,13 @@ def fetch_one(entry: dict, dest: Path, opener=urllib.request.urlopen) -> Path:
 
 
 def fetch(lock: dict, rows: set[str], dest: Path, opener=urllib.request.urlopen) -> list[Path]:
+    """dest holds exactly the rows' files: a wheel an older lock named is
+    removed, or pip would still find it."""
     dest.mkdir(parents=True, exist_ok=True)
-    return [fetch_one(entry, dest, opener) for entry in select(lock, rows)]
+    kept = [fetch_one(entry, dest, opener) for entry in select(lock, rows)]
+    for stale in set(dest.iterdir()) - set(kept):
+        stale.unlink()
+    return kept
 
 
 # --- the image manifest -------------------------------------------------------

@@ -212,6 +212,15 @@ def test_fetch_keeps_a_file_that_already_holds_the_pinned_bytes(tmp_path):
     assert lock.fetch_one(entry, tmp_path, opener=None) == tmp_path / "a.whl"
 
 
+def test_fetch_removes_a_file_the_lock_no_longer_names(tmp_path):
+    (tmp_path / "old-1-py3-none-any.whl").write_bytes(b"superseded")
+    (tmp_path / "a.whl").write_bytes(b"pinned")
+    data = {"file": [{"name": "a.whl", "url": "https://x/a", "sha256": lock.sha256(tmp_path / "a.whl"), "rows": ["r"]}]}
+
+    assert lock.fetch(data, {"r"}, tmp_path, opener=None) == [tmp_path / "a.whl"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["a.whl"]
+
+
 def test_drift_names_a_newer_release_on_pypi():
     data = {"newest": {"crapkit": "0.8.0", "lizard": "1.24.0"}}
     newer = {"crapkit": "0.8.1", "lizard": "1.24.0"}
