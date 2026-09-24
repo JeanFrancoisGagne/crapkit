@@ -612,8 +612,9 @@ your test command needs. Without it the lane writes no artifact and the comment 
 
 `fetch-depth: 0` is the other one. `actions/checkout` clones a single commit; the action
 reads the pull request's changed files out of git and `verify` reads the diff against the
-baseline's commit. With a shallow clone the file list comes back empty and the comment
-ranks the whole repository instead of the diff.
+baseline's commit. A shallow clone lacks the base commit, so git refuses the diff: the step
+logs git's error, and the comment ranks the whole repository and says why under its
+heading, quoting git's first line and naming `fetch-depth: 0`.
 
 The action installs crapkit from `$GITHUB_ACTION_PATH`, which is its own checkout of the
 ref you pinned in `uses:`. So a pin left at last month's tag scores your tree with last
@@ -667,7 +668,8 @@ finding: each gate violation with its function, ccn, coverage, CRAP and remedy; 
 ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
 uncovered changed lines, one bullet per file, with a count of the rest. The counts line
 closes it. A verify that passed is one line: `**verify passed.** Run 2 against baseline 1,
-7 changed files.`
+7 changed files.` From a 0.8.1 verify, which lists its `changed_paths`, the count names up
+to three of the files it judged and counts the rest: ``1 changed file (`app/calc.py`)``.
 
 The rows are the ranked worklist for the files the pull request changed, worst first,
 `top` of them, with the rows a finding names listed first. `risk` is ccn times churn
@@ -679,7 +681,7 @@ the heading and no table.
 
 The two file counts describe the same diff, counted twice. `39 changed files` is
 `git diff --name-only base.sha...HEAD`, the branch's own commits, and it is what the
-table is filtered to. The count on the verdict line is what `verify` measured from the
+table is filtered to; the step's log names up to three of them. The count on the verdict line is what `verify` measured from the
 same fork point. With `delta: "false"` the second one is 0, because there is nothing
 behind the checkout to measure from.
 

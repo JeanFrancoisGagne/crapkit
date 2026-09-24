@@ -125,6 +125,14 @@
 - `init` on a repo whose source nobody has added names up to three of the files: ``run `git
   add` first (2 untracked source file(s) found: lib/util.py, src/app.ts)``. It gave the
   count alone.
+- The GitHub Action names a base diff git refused. On the `actions/checkout` default, a
+  depth-1 clone without the base commit, `git diff base.sha...HEAD` failed, the step read
+  the failure as an empty list and logged `0 changed file(s)`, and the comment ranked the
+  whole repository with no reason. The step now logs git's first line, and the comment
+  says under its worklist heading that the base diff failed, quotes git, and names
+  `fetch-depth: 0`. A push logs `no base commit on this event: the comment ranks the whole
+  repository`. The step's count names up to three files, and so does the comment's verdict
+  line, from verify's `changed_paths`: ``1 changed file (`app/calc.py`)``.
 - `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
   lane's artifact with, or `null`. A leftover a failed attempt left behind showed as
   `artifact_present: true` beside "no problems found". doctor now WARNs on it, and on a

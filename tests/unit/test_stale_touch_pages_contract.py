@@ -580,3 +580,53 @@ def test_the_changelog_quotes_what_init_says_about_untracked_source(tmp_path):
     reason = _untracked_repo(tmp_path, ["src/app.ts", "lib/util.py"])
 
     assert f"``{reason[reason.index('run `git add` first'):]}``" in _prose(_release())
+
+
+# -- S26, shape-22: the Action names a base diff git refused ------------------------
+
+def _comment_builder():
+    """tools/action/comment.py, loaded by path the way the action runs it."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("crapkit_action_comment",
+                                                  ROOT / "tools" / "action" / "comment.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_ACTION_NAMES_ITS_DIFF = hasattr(_comment_builder(), "_scope_lines")
+
+
+@landed(_ACTION_NAMES_ITS_DIFF, "the Action naming a failed base diff")
+def test_the_readme_says_what_the_comment_prints_when_the_base_diff_fails():
+    builder = _comment_builder()
+    worklist = {"active": [], "dormant_top": []}
+    text = builder.body(None, None, 0, worklist, [], 5,
+                        changed_error="fatal: Invalid symmetric difference expression\n")
+    readme = _prose(_page("README.md"))
+
+    assert "`fatal: Invalid symmetric difference expression`" in text
+    assert "`fetch-depth: 0`" in text
+    assert "quoting git's first line and naming `fetch-depth: 0`" in readme
+
+
+@landed(_ACTION_NAMES_ITS_DIFF, "the Action naming a failed base diff")
+def test_the_changelog_quotes_the_action_log_line_for_a_push():
+    step = _page("action.yml")
+    said = "no base commit on this event: the comment ranks the whole repository"
+
+    assert f'echo "{said}"' in step
+    assert f"`{said}`" in _prose(_release())
+
+
+@landed(_ACTION_NAMES_ITS_DIFF, "the Action naming verify's changed files")
+def test_the_pages_quote_the_names_the_comment_gives_verify_s_count():
+    verify = {"run_id": 3, "baseline_run": 1, "changed_files": 1,
+              "changed_paths": ["app/calc.py"]}
+    against = _comment_builder()._against(verify)
+    named = against.split(", ", 1)[1]
+
+    assert named == "1 changed file (`app/calc.py`)"
+    assert f"``{named}``" in _prose(_release())
+    assert f"``{named}``" in _prose(_page("README.md"))
