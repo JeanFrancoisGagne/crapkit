@@ -3,7 +3,8 @@
 An agent matches a refusal against the documented sentence. The pages quoted
 `brief needs name (see inputSchema.required)` and `worklist does not take
 'bogus'`, CLI command names the server never prints: it names the MCP tool,
-`get_function_brief` and `list_worklist`. Every quote below is compared with
+`get_function_brief` and `list_worklist`. ADR 0001 quoted the same CLI name.
+Every quote below is compared with
 the text `tools/call` answers, or with the -32602 message tools/call and
 initialize answer for params that are not an object.
 """
@@ -15,7 +16,9 @@ import pytest
 from crapkit import mcp_server
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-PAGES = {"AGENTS.md": "## The MCP server", "docs/agent-json.md": "## MCP server"}
+PAGES = {"AGENTS.md": "## The MCP server", "docs/agent-json.md": "## MCP server",
+         "docs/adr/0001-mcp-invalid-arguments-are-tool-results.md":
+             "# Invalid MCP tool arguments answer as a tool result, not a protocol error"}
 _REFUSAL = re.compile(r"`([^`]*(?:\(see inputSchema\.required\)|does not take '[^`]*|"
                       r"must be an? [^`]*\(got [^`]*\)))`")
 _REQUIRES = re.compile(r"\(((?:`[a-z_]+`(?:,| and)? ?)+) require `path` and `name`\)")
@@ -40,7 +43,7 @@ def _probes() -> list[tuple[str, dict]]:
                if "name" in tool["positional"]]
     return missing + unnamed + [("list_worklist", {"bogus": 1}),
                                 ("list_worklist", {"top": "three"}),
-                                ("list_runs", 3)]
+                                ("list_runs", 3), ("list_runs", [1])]
 
 
 def _invalid_params(root: Path, method: str, params) -> str:
