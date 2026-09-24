@@ -153,9 +153,14 @@ def test_doctor_reads_a_plugin_manifest_the_way_claude_code_does(tmp_path, edit,
     assert (admin._manifest_version(root) == _plugin_version()) is loads
 
 
-@pytest.mark.skipif(CLAUDE is None, reason="Claude Code is not on PATH (the CI plugin job has it)")
+@pytest.mark.skipif(CLAUDE is None, reason="Claude Code is not on PATH; MANIFESTS' loads column "
+                                          "is what `claude plugin validate` 2.1.238 answered")
 @pytest.mark.parametrize("edit, loads", [row[1:] for row in MANIFESTS], ids=[row[0] for row in MANIFESTS])
 def test_claude_code_loads_the_manifests_doctor_reads(tmp_path, edit, loads):
+    """The oracle for MANIFESTS' loads column. No CI job runs pytest beside
+    Claude Code, so this runs where a developer has it installed, and
+    test_doctor_reads_a_plugin_manifest_the_way_claude_code_does holds the
+    recorded answers everywhere."""
     done = subprocess.run([CLAUDE, "plugin", "validate", str(_plugin_copy(tmp_path, edit))],
                           capture_output=True, timeout=HANG_SECONDS)
 
