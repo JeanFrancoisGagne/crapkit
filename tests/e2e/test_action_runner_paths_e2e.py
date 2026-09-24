@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 import pytest
@@ -49,12 +50,14 @@ def _bash() -> str:
     return bash
 
 
-def _scripts_dir() -> str:
-    """Where pip put the `crapkit` console script and `python` the steps call."""
-    scripts = str(Path(sys.executable).parent)
+def _search_path() -> str:
+    """PATH with the `python` and the `crapkit` console script the steps call
+    first. In a venv the two sit side by side; a Windows install with no venv,
+    as setup-python's is on a CI runner, keeps the script in Scripts."""
+    scripts = sysconfig.get_path("scripts")
     if shutil.which("crapkit", path=scripts) is None:
-        pytest.skip("needs the crapkit console script beside this python (pip install -e .)")
-    return scripts
+        pytest.skip("needs the crapkit console script of this python (pip install -e .)")
+    return os.pathsep.join([str(Path(sys.executable).parent), scripts, os.environ["PATH"]])
 
 
 def _steps() -> list[dict]:
@@ -101,9 +104,8 @@ def _run_steps(workspace: Path, runner_temp: Path, base: str) -> Path:
     directory the first step made."""
     output = runner_temp / "github_output"
     output.write_text("", encoding="utf-8")
-    scripts = _scripts_dir()
     env = {**os.environ, "RUNNER_TEMP": str(runner_temp), "GITHUB_OUTPUT": str(output),
-           "GITHUB_ACTION_PATH": str(ROOT), "PATH": scripts + os.pathsep + os.environ["PATH"]}
+           "GITHUB_ACTION_PATH": str(ROOT), "PATH": _search_path()}
     values = {"github.event.pull_request.base.sha": base, "inputs.top": "5",
               "github.event_name == 'pull_request' && inputs.delta == 'true'": "true"}
     for step in _steps():

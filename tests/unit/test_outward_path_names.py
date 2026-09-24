@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 from urllib.parse import unquote
 from xml.sax.saxutils import quoteattr
@@ -128,10 +129,11 @@ SHELLS = ["cmd.exe", "powershell"] if WINDOWS else ["sh"]
 
 def _console_script_on_path(monkeypatch) -> None:
     """The printed command starts `crapkit`, the console script pip installs
-    beside this interpreter."""
-    scripts = str(Path(sys.executable).parent)
+    for this interpreter: beside it in a venv, in its Scripts directory for a
+    Windows install with no venv, as setup-python's is on a CI runner."""
+    scripts = sysconfig.get_path("scripts")
     if shutil.which("crapkit", path=scripts) is None:
-        pytest.skip("needs the crapkit console script beside this python (pip install -e .)")
+        pytest.skip("needs the crapkit console script of this python (pip install -e .)")
     monkeypatch.setenv("PATH", scripts + os.pathsep + os.environ["PATH"])
 
 
