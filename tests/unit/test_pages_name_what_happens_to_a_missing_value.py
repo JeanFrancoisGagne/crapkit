@@ -95,6 +95,22 @@ def test_the_upgrade_notes_name_each_change_that_moves_an_exit_code_or_a_count()
     assert "0.4.15" in notes and "without `--reuse-artifacts`" in notes
 
 
+def test_the_0_4_15_note_quotes_the_refusal_reuse_prints_once_a_real_run_records_it(tmp_path):
+    """The note's remedy ends at the line the next reuse prints; quoted wrong,
+    a reader cannot tell the remedy worked."""
+    from crapkit.config import Lane
+    from crapkit.lanes import _no_artifact_head
+
+    lane = Lane(name="py", command="pytest", artifact="cov.json", parser="coveragepy",
+                scopes=("src",))
+    head = _no_artifact_head(tmp_path, lane, ["cov.json"], reuse=True)
+    quoted = head.split(" — ", 1)[0]
+    notes = " ".join(_section(UPGRADING, UPGRADE_NOTES).split())
+
+    assert quoted == "wrote no artifact on its last attempt"
+    assert f"`{quoted}`" in notes
+
+
 def test_the_mutate_row_and_the_upgrade_note_name_the_same_two_counts():
     row = _row(README, "`mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]`")
     notes = _section(UPGRADING, UPGRADE_NOTES)

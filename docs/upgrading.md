@@ -190,9 +190,12 @@ of mutants run.
 **Artifact stamps from 0.4.15 or older.** The record that stops `--reuse-artifacts` from
 scoring the artifact a failed lane left behind lives in `.crapkit/artifacts.json`, and
 crapkit writes it from 0.5.0 on. A stamps file written by 0.4.15 or older holds no such
-record, and nothing else tells a leftover from a good artifact. After upgrading from
-0.4.15 or older, run `crapkit coverage` once without `--reuse-artifacts` before any
-reuse, so every lane writes its artifact and its stamp again.
+record, and nothing else on disk says the last attempt failed, so the first
+`coverage --reuse-artifacts` after the upgrade scores that leftover as a good run. After
+upgrading from 0.4.15 or older, run `crapkit coverage` once without `--reuse-artifacts`
+before any reuse. Every lane runs: one that works writes its artifact and stamp again, and
+one that still writes nothing exits 5 and records the refusal the old release never
+wrote, so the next reuse refuses it with `wrote no artifact on its last attempt`.
 
 ## Plugin and MCP clients
 
