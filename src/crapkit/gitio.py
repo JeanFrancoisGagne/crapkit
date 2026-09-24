@@ -1,6 +1,7 @@
 """Git shell layer: the tracked-file universe and the current commit."""
 from __future__ import annotations
 
+import io
 import os
 import re
 import shutil
@@ -12,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .errors import GitError, ToolError
+from .textcodec import lenient
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
@@ -34,7 +36,16 @@ _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
 # does. git still quotes a path holding a double-quote or a control character
 # whatever this says, which is why gitpaths.unquote_path stays for
 # line-oriented history and diff headers.
-_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
+#
+# i18n.logOutputEncoding answers the same question about free text. A repo that
+# sets i18n.commitEncoding or i18n.logOutputEncoding had its UTF-8 author names
+# and subjects re-encoded into that encoding on the way out, so `José` reached
+# the churn window as `Jos\xe9`. Pinned to UTF-8, git prints what a commit
+# stored and re-encodes only a commit whose header names another encoding. A
+# commit with no header that holds bytes that are not UTF-8 still comes out as
+# written, and the readers below take those through textcodec.lenient.
+_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
+             "-c", "i18n.logOutputEncoding=UTF-8")
 # Parsed patches are a protocol, independent of display settings and converters.
 _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
           "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0",
@@ -48,8 +59,8 @@ def _environment() -> dict[str, str]:
     return environment
 
 
-def _git(root: Path, *args: str, binary: bool = False) -> str:
-    return _run(root, (*_RELATIVE, *args), args, binary=binary)
+def _git(root: Path, *args: str) -> str:
+    return _run(root, (*_RELATIVE, *args), args)
 
 
 def _git_unflagged(root: Path, *args: str) -> str:
@@ -63,37 +74,48 @@ def _git_unflagged(root: Path, *args: str) -> str:
 
 
 def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subprocess.CompletedProcess:
-    """One git process run to completion, whatever it exits with."""
+    """One git process run to completion, whatever it exits with.
+
+    Read as bytes and decoded here, never by subprocess: a text-mode read
+    decodes in a reader thread on Windows, where a byte that is not UTF-8 killed
+    the thread and handed the caller None for stdout. Text mode is for answers
+    that are object names, words or filesystem paths (`rev-parse`, `config`):
+    stdout keeps each byte that is not UTF-8 as the lone surrogate Python gives
+    an OS path, so a directory named in Latin-1 on Linux still opens. stderr is
+    only ever quoted in a message, so it reads through textcodec.lenient."""
     try:
-        return subprocess.run(["git", *argv], cwd=root, env=_environment(),
-                              capture_output=True, text=not binary, encoding=None if binary else "utf-8")
+        res = subprocess.run(["git", *argv], cwd=root, env=_environment(), capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
+    if binary:
+        return res
+    return subprocess.CompletedProcess(res.args, res.returncode,
+                                       res.stdout.decode("utf-8", "surrogateescape"), lenient(res.stderr))
 
 
-def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False,
-         errors: str = "strict") -> str:
+def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False):
     """`named` is what the error says ran — the injected flags are crapkit's
-    business, not the caller's. `errors` is how binary stdout decodes."""
+    business, not the caller's. A binary read answers stdout as bytes, and the
+    caller decides what they are."""
     res = _spawn(root, argv, binary=binary)
     if res.returncode != 0:
-        error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
+        error = lenient(res.stderr) if binary else res.stderr
         raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
-    return res.stdout.decode("utf-8", errors) if binary else res.stdout
+    return res.stdout
 
 
 def _git_text(root: Path, *args: str) -> str:
     """Free text as a commit or a blob stored it: author names, messages, patch
     lines. git re-encodes none of it for a commit with no encoding header, so
     bytes that are not UTF-8 read as U+FFFD instead of ending the command.
-    Paths are not free text, and _git_paths keeps them strict. Read binary, so
-    git's own line framing reaches the caller unconverted."""
-    return _run(root, (*_RELATIVE, *args), args, binary=True, errors="replace")
+    Paths are not free text: _git_paths reads them. Read binary, so git's own
+    line framing reaches the caller unconverted."""
+    return lenient(_run(root, (*_RELATIVE, *args), args, binary=True))
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
     """NUL records decoded without newline conversion, quoting, or trimming."""
-    out = _run(root, (*_RELATIVE, *args), args, binary=True)
+    out = _run(root, (*_RELATIVE, *args), args, binary=True).decode("utf-8")
     return [path for path in out.split("\0") if path]
 
 
@@ -108,15 +130,18 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     Latin-1 inside the churn window stopped every command that reads churn with
     a UnicodeDecodeError. The laid-down copy of the log decodes the same way, so
     a walk and a read of the copy hand out the same lines.
+
+    Lines end at LF alone, as they do in that copy. Universal newlines also
+    ended one at a CR inside an author name, which cut the header off its dates.
     """
     try:
         proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, env=_environment(), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+                                stderr=subprocess.PIPE)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
-        yield from proc.stdout
-        stderr = proc.stderr.read()
+        yield from io.TextIOWrapper(proc.stdout, encoding="utf-8", errors="replace", newline="\n")
+        stderr = lenient(proc.stderr.read())
     if proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed in {root}: {stderr.strip()}")
 
@@ -365,7 +390,7 @@ def _line_paths(paths: list[str]) -> bool:
 
 def _individual_blobs(root: Path, paths: list[str]) -> dict[str, bytes]:
     """Line-bearing names cannot use line-framed requests on older Git versions."""
-    return {path: _Started(root, ("show", f":./{path}"), text=False, stdin=False).result()
+    return {path: _Started(root, ("show", f":./{path}"), stdin=False).result()
             for path in paths}
 
 
@@ -382,27 +407,24 @@ class _Started:
 
     communicate() writes the request and reads the answer in one call, so a
     request stream larger than a pipe buffer cannot deadlock against the child's
-    own output. text=True mirrors _git exactly, universal newlines included: a
-    caller that switched to this must not start seeing CR at the end of every
-    diff line.
+    own output. The answer is bytes: every caller reads a patch, a blob or NUL
+    records, and decides how those decode.
     """
 
-    def __init__(self, root: Path, args: tuple[str, ...], *, text: bool, stdin: bool) -> None:
-        self._args, self._root, self._text = args, root, text
+    def __init__(self, root: Path, args: tuple[str, ...], *, stdin: bool) -> None:
+        self._args, self._root = args, root
         try:
             self._proc = subprocess.Popen(
                 ["git", *_RELATIVE, *args], cwd=root, env=_environment(),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=text, encoding="utf-8" if text else None)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as exc:
             raise GitError("git executable not found") from exc
 
     def result(self, payload=None):
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
-            text = err if self._text else err.decode("utf-8", "replace")
-            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {text.strip()}")
+            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {lenient(err).strip()}")
         return out
 
     def close(self) -> None:
@@ -416,7 +438,7 @@ class _Started:
 def start_read(root: Path, *args: str) -> _Started:
     """One git read with no stdin, started now and collected later with
     `.result()`, which answers bytes or raises GitError."""
-    return _Started(root, args, text=False, stdin=False)
+    return _Started(root, args, stdin=False)
 
 
 def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
@@ -458,7 +480,7 @@ class SourcePatch:
 
     def __init__(self, root: Path, *basis: str, paths: tuple[str, ...] = ()) -> None:
         self._root, self._basis, self._paths = root, basis, paths
-        self._read = _Started(root, _source_diff_args(basis, paths), text=False, stdin=False)
+        self._read = _Started(root, _source_diff_args(basis, paths), stdin=False)
 
     def result(self) -> str:
         patch = self._read.result().decode("utf-8", "surrogateescape")
@@ -467,8 +489,7 @@ class SourcePatch:
         paths = _binary_source_paths(self._root, self._basis, self._paths)
         if not paths:
             return patch
-        forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True),
-                          text=False, stdin=False)
+        forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True), stdin=False)
         try:
             return patch + forced.result().decode("utf-8", "surrogateescape")
         finally:
@@ -511,7 +532,7 @@ class _StartedReads:
         self._root = root
         basis = (merge_base(root, base),) if base is not None else ()
         self._diff = SourcePatch(root, "--cached", *basis)
-        self._batch = _Started(root, ("cat-file", "--batch"), text=False, stdin=True)
+        self._batch = _Started(root, ("cat-file", "--batch"), stdin=True)
 
     def staged_diff(self) -> str:
         return self._diff.result()
@@ -559,8 +580,8 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
-    out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
-               "-p", *_PATCH, "--text", "--", rel_path, binary=True)
+    out = _git_text(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
+                    "-p", *_PATCH, "--text", "--", rel_path)
     return _history_patches(out)
 
 
