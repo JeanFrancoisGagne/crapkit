@@ -386,9 +386,14 @@ def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
 
 
 def _load_sources(root: Path, paths: set) -> dict:
+    """Each file's text as the scorer read it, so `brief --json`'s `source`
+    holds the `é` a cp1252 file holds, the `é` its long_name already showed,
+    where a UTF-8 read put U+FFFD for an agent to write back."""
+    from ..analyze import decode_source
+
     sources = {}
     for rel in paths:
         p = root / rel
         if p.is_file():
-            sources[rel] = p.read_text(encoding="utf-8", errors="replace")
+            sources[rel] = decode_source(p.read_bytes())
     return sources
