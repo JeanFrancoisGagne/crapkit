@@ -401,7 +401,18 @@ mutation_workers = 6
 ```
 
 The cost line needs at least one recorded lane duration. With none it says so and the
-suggestion comes from the cpu count alone. The suggestion never proposes more lane slots
+suggestion comes from the cpu count alone. A lane's duration is the one `crapkit coverage`
+recorded the last time it ran the lane, else the `time` attributes of the lane's
+`results_artifact`. A lane with neither, a stamp with no usable `seconds` or a junit
+report that is missing, unreadable or carries no `time` is an unknown cost, not a cost of
+0: the sum leaves it out, both numbers become lower bounds, and the line names it. For
+lanes of 100 s, unknown and 30 s:
+
+```
+# lane cost: 130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; cost unknown for 'b', which recorded no duration yet (crapkit coverage records one when it runs a lane)
+```
+
+The suggestion never proposes more lane slots
 than there are lanes, and it stays at 1 while one `coveragepy` lane deletes and combines
 another's coverage.py data files, as a lane left on `.coverage` does to a lane on
 `.coverage.b` in the same directory: a `# held at 1:` line names them and the `COVERAGE_FILE`

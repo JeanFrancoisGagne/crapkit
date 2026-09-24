@@ -1274,12 +1274,20 @@ def _lane_seconds(root: Path, lane, stamps: dict) -> float | None:
     return _junit_seconds(root / lane.results_artifact) if lane.results_artifact else None
 
 
-def _lane_durations(root: Path, cfg) -> tuple[float, ...]:
+def _lane_durations(root: Path, cfg) -> tuple[tuple[float, ...], tuple[str, ...]]:
+    """The durations on disk, and the names of the lanes that left none. A lane
+    with no cost signal is named, never summed as 0 and never dropped unsaid."""
     from ..lanes import read_stamps
 
     stamps = read_stamps(root)
-    measured = [_lane_seconds(root, lane, stamps) for lane in cfg.lanes]
-    return tuple(s for s in measured if s is not None)
+    known, unknown = [], []
+    for lane in cfg.lanes:
+        seconds = _lane_seconds(root, lane, stamps)
+        if seconds is None:
+            unknown.append(lane.name)
+        else:
+            known.append(seconds)
+    return tuple(known), tuple(unknown)
 
 
 def _doctor_tune(root: Path, cfg) -> int:
@@ -1292,7 +1300,8 @@ def _doctor_tune(root: Path, cfg) -> int:
         print(f"{finding.level} {finding.text}", file=sys.stderr)
     cpus, _ = available_cpus()
     knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes), shared=shared_coverage_data(cfg.lanes))
-    for line in tune_lines(cpus=cpus, knobs=knobs, durations=_lane_durations(root, cfg)):
+    durations, unmeasured = _lane_durations(root, cfg)
+    for line in tune_lines(cpus=cpus, knobs=knobs, durations=durations, unmeasured=unmeasured):
         print(line)
     return 0
 

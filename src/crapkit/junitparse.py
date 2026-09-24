@@ -195,23 +195,33 @@ def _admit_declared_count(declared: str | None, counts: set[int]) -> None:
         raise ToolError("junit test count does not match its cases; the report is incomplete")
 
 
-def _seconds(raw: str | None) -> float:
-    """A hand-edited or absent time attribute costs nothing, never a crash."""
+def _seconds(raw: str | None) -> float | None:
+    """A time attribute's seconds, or None when it is absent or hand-edited to
+    something that is not a number. Never a crash, and never a made-up 0."""
     try:
         return float(raw)
     except (TypeError, ValueError):
-        return 0.0
+        return None
 
 
-def _sum_times(elements) -> float:
-    return sum(_seconds(e.get("time")) for e in elements)
+def _sum_times(elements) -> float | None:
+    """What these elements claim together, or None when not one of them
+    carries a readable time."""
+    times = [seconds for seconds in (_seconds(e.get("time")) for e in elements)
+             if seconds is not None]
+    return sum(times) if times else None
 
 
-def suite_seconds(xml_text: str) -> float:
+def suite_seconds(xml_text: str) -> float | None:
     """Wall seconds the report claims, for costing a lane that did not run here.
 
     Suite totals first; a runner that times only its cases is summed case by
-    case. Zero means the report carries no timing at all.
+    case, and so is one whose suite total reads zero. None means the report
+    carries no timing at all: an unknown cost, not a lane that costs nothing.
     """
     root = _root(xml_text)
-    return _sum_times(root.iter("testsuite")) or _sum_times(root.iter("testcase"))
+    suites = _sum_times(root.iter("testsuite"))
+    if suites:
+        return suites
+    cases = _sum_times(root.iter("testcase"))
+    return suites if cases is None else cases

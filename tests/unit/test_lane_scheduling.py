@@ -29,6 +29,15 @@ def test_lanes_that_never_recorded_a_duration_keep_declaration_order(tmp_path):
     assert [l.name for l in lane_order(tmp_path, LANES)] == ["unit", "ui", "py"]
 
 
+def test_a_lane_with_no_duration_starts_after_every_lane_that_has_one(tmp_path):
+    """The start order sorts an unmeasured lane as 0 s, so it starts last. That
+    only moves which lane starts first, never a score, which is why the start
+    order may read the absence as 0 while doctor --tune's cost line may not."""
+    write_stamps(tmp_path, {"unit.json": {"commit": "a", "lane": "unit", "seconds": 100.0},
+                            "py.json": {"commit": "a", "lane": "py", "seconds": 30.0}})
+    assert [l.name for l in lane_order(tmp_path, LANES)] == ["unit", "py", "ui"]
+
+
 def test_a_tie_breaks_on_declaration_order(tmp_path):
     write_stamps(tmp_path, {"unit.json": {"commit": "a", "lane": "unit", "seconds": 5.0},
                             "py.json": {"commit": "a", "lane": "py", "seconds": 5.0}})
