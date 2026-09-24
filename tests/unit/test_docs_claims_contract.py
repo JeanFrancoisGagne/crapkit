@@ -554,21 +554,29 @@ def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
 
 
 def _stale_lane(root: Path, moved: tuple) -> tuple:
-    """(lane, scope paths, git) for the pages' `py` lane: its artifact was built
-    at 525a3276065, which HEAD descends from, and `moved` changed since."""
+    """(lane, scope paths, git, recorded digests) for the pages' `py` lane: its
+    run measured calc/grade.py and calc/hot.py at 525a3276065, and the files in
+    `moved` hold other bytes now. Outside a git repo, so only the digests the
+    stamp recorded are judged."""
     from types import SimpleNamespace
 
     from crapkit.config import Lane
+    from crapkit.lane_sources import source_digest
     from crapkit.lanes import write_stamps
 
     lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
                 parser="coveragepy", scopes=("calc",))
     (root / ".crapkit" / "cov").mkdir(parents=True)
     (root / lane.artifact).write_text("{}", encoding="utf-8")
-    write_stamps(root, {lane.artifact: {"commit": "525a3276065" + "0" * 29, "lane": "py"}})
-    git = SimpleNamespace(root=root, is_ancestor=lambda commit: True,
-                          diff_names_since=lambda commit: moved, status_names=lambda: ())
-    return lane, {"calc": ("calc",)}, git
+    (root / "calc").mkdir()
+    recorded = {}
+    for name in ("calc/grade.py", "calc/hot.py"):
+        (root / name).write_text("def f():\n    return 1\n", encoding="utf-8")
+        recorded[name] = "measured" if name in moved else source_digest(root / name)
+    write_stamps(root, {lane.artifact: {"commit": "525a3276065" + "0" * 29, "lane": "py",
+                                        "sources": recorded}})
+    git = SimpleNamespace(root=root)
+    return lane, {"calc": ("calc",)}, git, recorded
 
 
 def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsys):
@@ -576,7 +584,7 @@ def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsy
     quoted one that counted the changed files and named none of them."""
     from crapkit.lanes import _warn_stale_artifact
 
-    lane, scopes, git = _stale_lane(tmp_path, ("calc/grade.py", "calc/hot.py"))
+    lane, scopes, git, _ = _stale_lane(tmp_path, ("calc/grade.py", "calc/hot.py"))
     _warn_stale_artifact(git, lane, scopes)
 
     warning = capsys.readouterr().err.strip()
@@ -584,15 +592,18 @@ def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsy
 
 
 def test_the_agent_json_page_prints_the_stale_note_the_reader_writes(tmp_path, monkeypatch):
-    """The `measured` example of `uncovered_lines_note` is the note a stale lane
-    gets. It said "files in its scopes changed" whatever the cause and named none."""
-    from crapkit.uncovered import _artifact_state
+    """The `measured` example of `uncovered_lines_note` is the note a file whose
+    bytes moved gets. It said "files in its scopes changed" whatever the cause
+    and named none."""
+    from crapkit.uncovered import MissingLines, SourceDrift
 
     monkeypatch.setattr(sys, "argv", ["crapkit"])
-    lane, scopes, git = _stale_lane(tmp_path, ("calc/grade.py",))
-    note = _artifact_state(tmp_path, lane, scopes, git)
+    lane, _, _, recorded = _stale_lane(tmp_path, ("calc/grade.py",))
+    lines = MissingLines({}, "", SourceDrift(tmp_path, [(lane, recorded)]))
+    note = lines.note_for("calc/grade.py")
 
     assert note and json.dumps(note, ensure_ascii=False) in _doc("docs/agent-json.md")
+    assert lines.moved("calc/hot.py") == "", "a file whose bytes did not move keeps its lines"
 
 
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
@@ -705,11 +716,12 @@ def _payload_splits(ccn: int) -> int:
 # --- the stale-artifact move -------------------------------------------------
 
 def test_no_page_says_committing_alone_clears_a_stale_artifact():
-    """It does not: nothing rereads the artifact until a run does. The runtime
-    note has always said so; the prose on both pages did not."""
+    """It does not: nothing rereads the artifact until a run does, and the
+    staleness is about the file's bytes, which a commit leaves as they are. The
+    runtime note has always said to rerun; the prose on both pages did not."""
     for page in ("AGENTS.md", "docs/agent-json.md"):
         text = " ".join(_doc(page).lower().split())
-        assert "commit or revert the edits, then rerun `crapkit coverage`" in text, \
+        assert "rerun `crapkit coverage`. committing changes nothing" in text, \
             f"{page} never names the working move"
         assert "committing (or the verify at the end of the loop) clears it" not in text
 

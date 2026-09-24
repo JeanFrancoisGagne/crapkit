@@ -25,13 +25,20 @@ class MissingLines(NamedTuple):
     """Per-file dead lines, plus the reason there are none to report.
 
     A populated `note` overrides everything: no span gets lines, because the
-    only lines available would be the wrong ones.
+    only lines available would be the wrong ones. `drift` answers per file: a
+    file whose bytes moved since a lane measured it gets that lane's note and
+    no lines, and every other file keeps its own.
     """
     by_path: dict[str, set[int]]
     note: str
+    drift: SourceDrift | None = None
+
+    def moved(self, path: str) -> str:
+        """Why this file's lines point at bytes it no longer holds, or ""."""
+        return self.drift.note_for(path) if self.drift is not None else ""
 
     def in_span(self, path: str, start: int, end: int) -> list[int]:
-        if self.note:
+        if self.note or self.moved(path):
             return []
         return sorted(n for n in self.by_path.get(path, ()) if start <= n <= end)
 
@@ -51,11 +58,45 @@ class MissingLines(NamedTuple):
         """
         if flag == "cc-only":
             return _cc_only_note(path, scope)
-        if self.note:
-            return self.note
+        why = self.note or self.moved(path)
+        if why:
+            return why
         if path in self.by_path:
             return ""
         return _absent_note(path, flag)
+
+
+class SourceDrift:
+    """Per file, whether a lane that measured it has seen its bytes move since.
+
+    Built from the digests each lane's stamp recorded (lane_sources), and asked
+    one path at a time: `brief` asks about one file, so it hashes one file, not
+    every file under every scope. A file no record holds is not judged here; no
+    lane measured it, and the absent note says so.
+    """
+
+    def __init__(self, root: Path, recorded) -> None:
+        self._root = root
+        self._recorded = tuple(recorded)
+        self._notes: dict[str, str] = {}
+
+    def note_for(self, path: str) -> str:
+        if path not in self._notes:
+            self._notes[path] = self._first_moved(path)
+        return self._notes[path]
+
+    def _first_moved(self, path: str) -> str:
+        from .lane_sources import file_moved
+
+        for lane, sources in self._recorded:
+            if file_moved(self._root, sources, path):
+                return _moved_note(lane, path)
+        return ""
+
+
+def _moved_note(lane, path: str) -> str:
+    return (f"lane {lane.name!r}: {path} changed since {lane.artifact} measured it, so its "
+            f"line numbers there are stale — rerun `{_self()} coverage` to measure it again")
 
 
 def _cc_only_note(path: str, scope: str) -> str:
@@ -186,33 +227,64 @@ def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
     moved = lane_sources_moved(root, lane, scope_paths, git)
     if moved:
         return (f"lane {lane.name!r}: {moved}, so the line numbers in {lane.artifact} are "
-                f"stale — commit or revert any edit under its scopes, then rerun "
-                f"`{_self()} coverage`")
+                f"stale — rerun `{_self()} coverage` to measure the tree as it is")
     return ""
 
 
-def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:
-    """(lane name, why its line numbers are unusable) for every declared lane,
-    "" for a lane whose artifact still describes the tree.
+def lane_views(root: Path, cfg, git=None) -> list[dict]:
+    """{name, note, blackout} for every declared lane: why its line numbers are
+    unusable ("" when its artifact still describes the tree), and whether that
+    withholds every file's lines or only the files the note names.
 
-    `load_uncovered` joins these into one note and throws the per-lane detail
-    away, which is the right shape for "no lines for any path" and the wrong one
-    for a reader who wants to know WHICH lane to rerun. The report's staleness
-    banner reads this list; the joined note is built from it, so a lane cannot be
-    fresh in one and stale in the other.
+    A lane whose stamp recorded digests withholds only the files whose bytes
+    moved. Any other stale lane still withholds every file, because nothing
+    says which of its lines survived. The report's banner reads this list.
 
     Without `git` the reads start together, scoped to the lanes' scope paths
     (lanes.staleness_reads).
     """
-    from .lanes import staleness_reads
+    from .lanes import recorded_sources, staleness_reads
 
     with staleness_reads(root, cfg.lanes, cfg.scope_paths, git) as facts:
-        return [(lane.name, _artifact_state(root, lane, cfg.scope_paths, facts))
+        return [{"name": lane.name, "note": _artifact_state(root, lane, cfg.scope_paths, facts),
+                 "blackout": recorded_sources(root, lane) is None}
                 for lane in cfg.lanes]
 
 
-def _staleness_note(root: Path, cfg, git) -> str:
-    return "; ".join(note for _, note in lane_states(root, cfg, git) if note)
+def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:
+    """(lane name, why its line numbers are unusable) for every declared lane,
+    "" for a lane whose artifact still describes the tree."""
+    return [(view["name"], view["note"]) for view in lane_views(root, cfg, git)]
+
+
+def _judged(root: Path, cfg, git) -> tuple[str, SourceDrift]:
+    """The note that withholds every file, from the lanes only git can judge,
+    and the per-file drift of the lanes whose stamps recorded digests."""
+    by_digest, by_git = _split_by_stamp(root, cfg.lanes)
+    return _blackout(root, by_git, cfg.scope_paths, git), SourceDrift(root, by_digest)
+
+
+def _split_by_stamp(root: Path, lanes) -> tuple[list, list]:
+    """(lane, digests) for each lane whose stamp recorded them, and the lanes
+    whose stamp did not."""
+    from .lanes import recorded_sources
+
+    by_digest, by_git = [], []
+    for lane in lanes:
+        sources = recorded_sources(root, lane)
+        if sources is None:
+            by_git.append(lane)
+        else:
+            by_digest.append((lane, sources))
+    return by_digest, by_git
+
+
+def _blackout(root: Path, lanes, scope_paths: dict, git) -> str:
+    from .lanes import staleness_reads
+
+    with staleness_reads(root, lanes, scope_paths, git) as facts:
+        notes = [_artifact_state(root, lane, scope_paths, facts) for lane in lanes]
+    return "; ".join(note for note in notes if note)
 
 
 def load_uncovered(root: Path, cfg, git=None) -> MissingLines:
@@ -226,10 +298,10 @@ def load_uncovered(root: Path, cfg, git=None) -> MissingLines:
 
     if not cfg.lanes:
         return MissingLines({}, "no [[lane]] declared, so no artifact can say which lines are dark")
-    note = _staleness_note(root, cfg, git)
+    note, drift = _judged(root, cfg, git)
     if note:
         return MissingLines({}, note)
     try:
-        return MissingLines(missing_by_path(root, cfg), "")
+        return MissingLines(missing_by_path(root, cfg), "", drift)
     except ToolError as exc:
         return MissingLines({}, f"unreadable lane artifact: {exc}")

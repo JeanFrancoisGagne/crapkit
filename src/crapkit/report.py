@@ -134,17 +134,24 @@ def _no_lane_reason(lanes: list[dict]) -> list[str]:
 def _stale_lane_reason(lanes: list[dict]) -> list[str]:
     """The blackout, stated at its real size.
 
-    A single stale lane makes `load_uncovered` return no line numbers for ANY
-    path, not just that lane's. Uncommitted edits count, which is the normal
-    state of a tree somebody generates a report from.
+    A stale lane whose stamp recorded no digests makes `load_uncovered` return
+    no line numbers for ANY path, not just that lane's. A lane whose stamp did
+    withholds only the files whose bytes moved since it measured them, and the
+    note names them.
     """
     stale = [lane for lane in lanes if lane["note"]]
     if not stale:
         return []
-    return [f"<p><b>{len(stale)} of {len(lanes)} lanes are stale.</b> One stale lane "
-            "blacks out line-level coverage repo-wide, not just its own scopes. "
-            "Commit or revert the edits, then rerun <code>crapkit coverage</code>.</p>"
+    return [f"<p><b>{len(stale)} of {len(lanes)} lanes are stale.</b> "
+            f"{_stale_reach(stale)} Rerun <code>crapkit coverage</code>.</p>"
             + _lane_list(stale)]
+
+
+def _stale_reach(stale: list[dict]) -> str:
+    if any(lane.get("blackout", True) for lane in stale):
+        return "One stale lane blacks out line-level coverage repo-wide, not just its own scopes."
+    return ("The files each note names show no dark lines until the lane runs again; "
+            "every other file keeps its own.")
 
 
 def _lane_list(stale: list[dict]) -> str:

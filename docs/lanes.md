@@ -1049,7 +1049,7 @@ never prints. Live, on a tree with an edited source file:
 
 ```
 $ crapkit coverage --reuse-artifacts --reuse-unchanged
-crapkit: lane 'py' reuses .crapkit/cov/py.json; 2 file(s) in its scopes changed since 525a3276065 (calc/grade.py, calc/hot.py), uncommitted edits included, so its coverage may be stale
+crapkit: lane 'py' reuses .crapkit/cov/py.json; 2 file(s) in its scopes changed since it measured them (calc/grade.py, calc/hot.py), so its coverage may be stale
 run 9 @ 525a3276065: 5 functions scored: 4 measured / 1 untested, ...
 
 $ crapkit coverage --reuse-unchanged
@@ -1059,12 +1059,28 @@ run 10 @ 525a3276065: 5 functions scored: 5 measured, ...
 The new function reads `untested` in the first run and `measured` in the second, because
 only the second actually ran the suite.
 
-A stale artifact also silences the dark-line fields. `next-item` and `brief` then emit
-`uncovered_lines: null` with a note naming the lane to rerun, rather than an empty list a
-caller would read as "nothing left to cover". The note and the warning above name the
-files that moved. A `touch` that leaves a file's content as git reads it is not a move,
-whatever the repo sets `diff.autoRefreshIndex` to. When git cannot answer, both say so
-and give git's error rather than claim a file changed.
+A stale artifact also silences the dark-line fields of the files that moved. `next-item`
+and `brief` then emit `uncovered_lines: null` for such a file, with a note naming it and
+the lane to rerun, rather than an empty list a caller would read as "nothing left to
+cover". Every other file keeps its lines.
+
+"Moved" is about bytes, not git. Each run's stamp in `.crapkit/artifacts.json` holds a
+`sources` digest of every file under the lane's scopes as the run left them, with CRLF
+read as LF and an expanded `$Id$` read as the bare keyword, and the note and the warning
+above compare those digests with the files on disk. git only lists which files are
+there. So a `touch`, a mode bit, a CRLF checkout, a message-only amend, a rebase, a
+detached HEAD and a shallow CI clone with `.crapkit/` restored are not moves, whatever
+`diff.autoRefreshIndex` says. An edit is, and so is a same-size edit whose old
+modification time was put back, a new or deleted file under the scopes, and an edit
+reverted after the lane measured it. A file the lane itself writes under its scopes
+while it runs, such as `src/__pycache__`, is recorded as the run left it and is not a
+move.
+
+A stamp written by crapkit 0.8.0 or older holds no `sources`. It is judged the old way
+until the next `crapkit coverage` replaces it: git's diff since the stamp's commit,
+uncommitted edits included, which needs that commit behind HEAD. While that says stale,
+every file's dark lines are null, and when git cannot answer, the note and the warning
+say so and give git's error rather than claim a file changed.
 
 ### The artifact a failed attempt left behind is refused
 

@@ -2,7 +2,7 @@
 
 ## 0.8.1 — unreleased
 
-### A lane's staleness names the files that moved, and a `touch` is not one
+### A lane's staleness is about bytes: it names the files that moved, and a `touch` is not one
 
 - A `touch` that leaves a file's bytes alone no longer makes a lane stale. In a repo that
   sets `diff.autoRefreshIndex=false`, git named every file whose modification time moved,
@@ -11,16 +11,31 @@
   dirty. crapkit's git reads now set `diff.autoRefreshIndex=true`, so git compares the
   content through the repo's filters, and a CRLF checkout under `core.autocrlf=true`
   still matches its LF blob.
-- The `--reuse-artifacts` warning and the `uncovered_lines_note` of a stale lane name the
-  commit the artifact was built at and up to three of the files that changed since. The
-  warning counted the files and named none, and the note named neither.
-- When git cannot answer, the warning and the note say so and quote git's error. The
-  note said "files in its scopes changed" for that case, for an artifact no stamp
-  vouches for and for a stamp commit HEAD does not descend from, and the warning printed
-  nothing at all.
+- A lane's line numbers go stale when the bytes they point into change, and only then.
+  Each run's stamp now records a digest of every file under the lane's scopes
+  (`sources` in `.crapkit/artifacts.json`), and the `--reuse-artifacts` warning, the
+  `uncovered_lines_note` and the report banner compare digests instead of asking git
+  about the stamp's commit. A message-only amend, a rebase, a detached HEAD, a mode bit
+  and a shallow CI clone with `.crapkit/` restored used to withhold every dark line;
+  they no longer do. An artifact measured on an uncommitted edit is fresh at once, and
+  reverting that edit now withholds the lines, where git called the tree clean and the
+  old lines were served against the reverted file. A same-size edit whose old
+  modification time was put back is caught too.
+- A stale file withholds its own dark lines and no others. One edit used to black out
+  line-level coverage for every file in the repo. The note names the file and says to
+  rerun `crapkit coverage`, since committing changes nothing.
+- The `--reuse-artifacts` warning and the report banner name up to three of the files
+  that moved. The warning counted the files and named none, and the note named neither.
+- A stamp written by 0.8.0 or older holds no digests and is judged by its commit until
+  the next `crapkit coverage` replaces it. On that path, when git cannot answer, the
+  warning and the note say so and quote git's error. The note said "files in its scopes
+  changed" for that case, for an artifact no stamp vouches for and for a stamp commit
+  HEAD does not descend from, and the warning printed nothing at all.
 - Library API: `lanes.lane_sources_unchanged`, which returned a bool, is now
   `lanes.lane_sources_moved`, which returns why the lane's line numbers are stale, or `""`
-  when git proves nothing under its scopes moved.
+  when every file under its scopes holds the bytes its run measured. `MissingLines`
+  takes an optional third field, `drift`, and `uncovered.lane_views` returns each lane's
+  note with `blackout`, whether it withholds every file's lines.
 
 ## 0.8.0 — 2026-09-23
 

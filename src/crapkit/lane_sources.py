@@ -1,0 +1,75 @@
+"""Which files under a lane's scopes hold other bytes than the ones its artifact measured.
+
+A lane's dark lines point into the bytes its run read. crapkit used to judge
+them by git instead: the stamp's commit had to be behind HEAD, and nothing
+under the lane's scopes could differ from that commit. Neither is the content.
+A message-only amend, a rebase, a shallow CI clone or a stamp commit missing
+from the clone withheld every dark line though no byte moved. An artifact
+measured on an uncommitted edit read as stale at once, and reverting that edit
+made git call the tree clean while the artifact still described the edit.
+
+So a lane's stamp records a digest of every file under its scopes as its run
+leaves them (`sources`), and freshness compares digests. git lists which files
+are there; it never decides whether one changed.
+"""
+from __future__ import annotations
+
+import hashlib
+import re
+from pathlib import Path
+
+from .universe import owning_scope
+
+# git's `ident` attribute writes `$Id: <blob> $` on checkout and stores `$Id$`.
+_IDENT = re.compile(rb"\$Id:[^$\n]*\$")
+
+
+def source_digest(path: Path) -> str:
+    """sha256 of the file's bytes as git's common filters store them, or ""
+    when it cannot be read.
+
+    CRLF reads as LF and an expanded `$Id$` as the bare keyword, because one
+    blob checks out either way under core.autocrlf, an eol attribute or the
+    ident attribute, and none of them moves a line number. A missing file reads
+    "", so a deleted source never matches the digest its lane recorded.
+    """
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    return hashlib.sha256(_IDENT.sub(b"$Id$", data.replace(b"\r\n", b"\n"))).hexdigest()
+
+
+def digests(root: Path, paths) -> dict[str, str]:
+    """path -> digest for each readable file among `paths`."""
+    found = {path: source_digest(root / path) for path in paths}
+    return {path: digest for path, digest in found.items() if digest}
+
+
+def scope_files(root: Path, declared: tuple[str, ...], matchers) -> tuple[str, ...]:
+    """The tracked and untracked files under the declared scope paths that the
+    lane's scopes own, ignored ones left out. Raises GitError."""
+    from .lane_changes import visible_paths
+
+    return tuple(path for path in visible_paths(root, declared) if owning_scope(path, matchers))
+
+
+def settled(before: dict[str, str], after: dict[str, str]) -> dict[str, str]:
+    """The digests a run can vouch for: every file as the run left it, except
+    one whose bytes moved while the run was reading them."""
+    return {path: digest for path, digest in after.items()
+            if before.get(path, digest) == digest}
+
+
+def moved(root: Path, recorded: dict, listed=()) -> list[str]:
+    """Recorded files whose bytes differ now, deleted ones included, and listed
+    files the record does not hold."""
+    changed = {path for path, digest in recorded.items() if source_digest(root / path) != digest}
+    return sorted(changed | {path for path in listed if path not in recorded})
+
+
+def file_moved(root: Path, recorded: dict, path: str) -> bool:
+    """Whether a file the record holds has other bytes now; False for a file it
+    does not hold, which its lane never measured."""
+    digest = recorded.get(path)
+    return digest is not None and source_digest(root / path) != digest

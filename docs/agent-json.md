@@ -155,7 +155,7 @@ runs:
 {
   "flag": "measured",
   "uncovered_lines": null,
-  "uncovered_lines_note": "lane 'py': 1 file(s) in its scopes changed since 525a3276065 (calc/grade.py), uncommitted edits included, so the line numbers in .crapkit/cov/py.json are stale — commit or revert any edit under its scopes, then rerun `crapkit coverage`"
+  "uncovered_lines_note": "lane 'py': calc/grade.py changed since .crapkit/cov/py.json measured it, so its line numbers there are stale — rerun `crapkit coverage` to measure it again"
 }
 ```
 
@@ -179,11 +179,17 @@ A repo with no `[[lane]]` at all answers `no [[lane]] declared, so no artifact c
 which lines are dark`, and an artifact that will not parse answers `unreadable lane
 artifact: ...`. The key is opt-in, so a repo whose artifacts answer never emits it at all.
 
-The move differs per flag. On `measured` a lane did speak about the file and its artifact
-has since gone stale. The note says why: the files under the lane's scopes that changed
-since the artifact's commit, a commit HEAD no longer descends from, or the git error that
-left the question open. Commit or revert the edits, then rerun `crapkit coverage`. Nothing
-rereads the artifact until a run does, so committing alone leaves the lines null. On
+The move differs per flag. On `measured` a lane did speak about the file and the file's
+bytes have changed since, so the lines the artifact holds point at code that moved. Rerun
+`crapkit coverage`. Committing changes nothing: the lane's stamp holds a digest of every
+file under its scopes as its run left them, and only a file whose bytes differ from that
+digest loses its lines. A touch, a mode bit, a CRLF checkout, an amend, a rebase and a
+shallow CI clone with `.crapkit/` restored leave the lines in place, and an edit reverted
+after the lane measured it withholds them. Every other file keeps its lines. An artifact
+whose stamp crapkit 0.8.0 or older wrote records no digests: until the next `crapkit
+coverage` it is judged by git's diff since its commit, and while that says stale every
+file's lines are null, with a note that names the files, a commit HEAD no longer descends
+from, or the git error that left the question open. On
 `untested` no test imports the file, so no artifact was ever going to mention it: the
 whole span is dark and the first test is the move, not another `coverage` run. On
 `cc-only` the scope set `coverage_optional`, so no artifact can ever name lines for it and

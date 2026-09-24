@@ -157,10 +157,11 @@ def _report_worklist(root: Path, cfg, store: SnapshotStore) -> dict:
 
 
 def _report_lanes(root: Path, cfg) -> list[dict]:
-    """Per-lane staleness, the detail the joined note throws away."""
-    from ..uncovered import lane_states
+    """Per-lane staleness, the detail the joined note throws away, and whether
+    each stale lane withholds every file's dark lines or only the ones it names."""
+    from ..uncovered import lane_views
 
-    return [{"name": name, "note": note} for name, note in lane_states(root, cfg)]
+    return lane_views(root, cfg)
 
 
 def _report_payload(root: Path, cfg, store: SnapshotStore) -> dict:

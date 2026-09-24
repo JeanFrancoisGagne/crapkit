@@ -30,6 +30,7 @@ from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
+from .lane_sources import digests, moved, scope_files, settled
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -409,13 +410,16 @@ def read_stamps(root: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict) -> dict:
+def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict,
+                 sources: dict) -> dict:
     """What produced this artifact: the commit reuse judges staleness against,
     plus the wall seconds the parallel scheduler starts the slowest lane on.
     `proof` is the measurement key when it held from start to finish, else "";
     it is named apart from `Lane.inputs`, which holds paths, not a hash.
     `proof_parts` keeps the digests a lane without `inputs` was proved by, so a
-    later rerun can say which of them moved.
+    later rerun can say which of them moved. `sources` holds a digest of each
+    file under the lane's scopes as the run left it: what its line numbers
+    point into (lane_sources).
 
     Empty in a non-git sandbox (unit tests), which records nothing. Lanes hand
     their stamp back rather than writing it, so N of them running at once cannot
@@ -429,7 +433,7 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, prove
     clean = bool(measured) and measured == proof.key
     return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
             "proof": measured if clean else "", "proof_parts": proof.parts if clean else {},
-            "artifacts": _artifact_digests(lane, provenance)}
+            "artifacts": _artifact_digests(lane, provenance), "sources": sources}
 
 
 def _artifact_digests(lane: Lane, provenance: dict) -> dict:
@@ -765,11 +769,18 @@ def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) ->
     """On reuse: say which files touching this lane's scopes moved since the
     artifact was built, or that git could not say. Uncommitted working-tree edits
     count — that is the most common way to go stale."""
-    commit = _stamp_commit(stamp_for(read_stamps(git.root), lane.artifact))
-    drift = _scope_drift(git, lane, scope_paths, commit) if commit and scope_paths else ""
+    drift = _reuse_drift(git, lane, scope_paths or {})
     if drift:
         print(f"crapkit: lane {lane.name!r} reuses {lane.artifact}; {drift}, "
               "so its coverage may be stale", file=sys.stderr)
+
+
+def _reuse_drift(git: GitFacts, lane: Lane, scope_paths: dict) -> str:
+    stamp = stamp_for(read_stamps(git.root), lane.artifact)
+    recorded, commit = stamp.get("sources"), _stamp_commit(stamp)
+    if isinstance(recorded, dict):
+        return _sources_drift(git.root, lane, scope_paths, recorded)
+    return _scope_drift(git, lane, scope_paths, commit) if commit and scope_paths else ""
 
 
 def _facts(root: Path, git: GitFacts | None) -> GitFacts:
@@ -788,8 +799,8 @@ def _artifact_commit(root: Path, lane: Lane) -> str:
 
 def lane_sources_moved(root: Path, lane: Lane, scope_paths: dict,
                        git: GitFacts | None = None) -> str:
-    """Why this artifact's line locations may be stale, or "" when git proves
-    that no source under its scopes moved since its stamp's commit.
+    """Why this artifact's line locations may be stale, or "" when every file
+    under its scopes holds the bytes its run measured.
 
     Tests, runner settings and environment changes require a new measurement
     but leave source locations intact. This read-side check accepts legacy
@@ -800,10 +811,20 @@ def lane_sources_moved(root: Path, lane: Lane, scope_paths: dict,
     left the question open. The note once said "files in its scopes changed"
     for all four, which sent a reader looking for edits that did not exist.
     """
+    stamp = stamp_for(read_stamps(root), lane.artifact)
     commit = _artifact_commit(root, lane)
     if not commit:
-        return _no_commit(root, lane, stamp_for(read_stamps(root), lane.artifact))
-    facts = _facts(root, git)
+        return _no_commit(root, lane, stamp)
+    recorded = stamp.get("sources")
+    if isinstance(recorded, dict):
+        return _sources_drift(root, lane, scope_paths, recorded)
+    return _commit_drift(_facts(root, git), lane, scope_paths, commit)
+
+
+def _commit_drift(facts: GitFacts, lane: Lane, scope_paths: dict, commit: str) -> str:
+    """The verdict for a stamp that recorded no digests (crapkit 0.8.0 and
+    older): git's diff since the stamp commit, which needs that commit behind
+    HEAD. The next `crapkit coverage` writes a stamp that needs neither."""
     try:
         behind = facts.is_ancestor(commit)
     except GitError as exc:
@@ -811,6 +832,24 @@ def lane_sources_moved(root: Path, lane: Lane, scope_paths: dict,
     if not behind:
         return f"its artifact was built at {commit[:11]}, which is not behind HEAD"
     return _scope_drift(facts, lane, scope_paths, commit)
+
+
+def _sources_drift(root: Path, lane: Lane, scope_paths: dict, recorded: dict) -> str:
+    """The files under this lane's scopes whose bytes differ from the ones its
+    run measured, named; "" when none do. New files count, and so do deleted
+    ones. git only lists the files; the digests decide."""
+    changed = moved(root, recorded, _scope_listing(root, lane, scope_paths))
+    if not changed:
+        return ""
+    return f"{len(changed)} file(s) in its scopes changed since it measured them ({_sample(changed)})"
+
+
+def recorded_sources(root: Path, lane: Lane) -> dict | None:
+    """The digests the stamp of the artifact on disk recorded, or None when the
+    stamp holds none: no artifact, a refused one, no stamp, or a stamp crapkit
+    0.8.0 or older wrote."""
+    recorded = stamp_for(read_stamps(root), lane.artifact).get("sources")
+    return recorded if isinstance(recorded, dict) and _artifact_commit(root, lane) else None
 
 
 def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):
@@ -1379,6 +1418,7 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
 def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, owner) -> LaneOutcome:
     facts = _facts(root, git)
     measured = "" if reuse_artifact else _measurement_key(root, lane)
+    before = {} if reuse_artifact else _lane_sources(root, lane, scope_paths)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact, owner)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
     _judge_artifact_scope(lane, coverage, scope_paths, root)
@@ -1390,8 +1430,28 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
     }
     if lane.results_artifact:
         provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
-    stamp = {} if reuse_artifact else _stamp_entry(facts, lane, seconds, measured, provenance)
+    stamp = {} if reuse_artifact else _stamp_entry(
+        facts, lane, seconds, measured, provenance,
+        settled(before, _lane_sources(root, lane, scope_paths, coverage)))
     return LaneOutcome(coverage, provenance, stamp)
+
+
+def _lane_sources(root: Path, lane: Lane, scope_paths: dict | None, measured=()) -> dict[str, str]:
+    """A digest of every file under the lane's scopes, and of every in-tree file
+    its artifact measured, but the lanes' own outputs."""
+    listed = _scope_listing(root, lane, scope_paths or {})
+    return digests(root, {*listed, *(path for path in measured if not _escapes_repo(path))})
+
+
+def _scope_listing(root: Path, lane: Lane, scope_paths: dict) -> list[str]:
+    """The files git lists under the lane's scopes, outputs left out; none when
+    git cannot list them, and then the record holds what the artifact names."""
+    matchers = _lane_matchers(lane, scope_paths)
+    try:
+        listed = scope_files(root, _declared_paths(lane, scope_paths), matchers) if matchers else ()
+    except GitError:
+        return []
+    return _unless(listed, _output_names(root, lane))
 
 
 def _output_lock(path: Path) -> Path:
