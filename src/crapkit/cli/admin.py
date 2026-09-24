@@ -240,11 +240,22 @@ def _no_scopes_reason(root: Path) -> str:
     from ..gitio import untracked_files
     from ..scaffold import source_candidates
 
-    untracked = source_candidates(untracked_files(root))
+    untracked = sorted(source_candidates(untracked_files(root)))
     if not untracked:
         return "no source files found to scope — is this the repo root?"
     return ("no tracked source files to scope — crapkit scores git-tracked files only; "
-            f"run `git add` first ({len(untracked)} untracked source file(s) found)")
+            f"run `git add` first ({len(untracked)} untracked source file(s) found: "
+            f"{_first_few(untracked)})")
+
+
+_NAMED_FEW = 3
+
+
+def _first_few(paths: list[str]) -> str:
+    """The first three, and a count of the rest: enough to find them by."""
+    rest = len(paths) - _NAMED_FEW
+    shown = ", ".join(paths[:_NAMED_FEW])
+    return f"{shown} and {rest} more" if rest > 0 else shown
 
 
 _PROBE_TIMEOUT_SECONDS = 15
