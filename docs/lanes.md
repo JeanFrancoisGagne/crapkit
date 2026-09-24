@@ -1380,9 +1380,10 @@ Reading that absent count as zero is what used to turn such a run into a KeyErro
 the lane had already run.
 
 `coverage` reads both absences the same way. A lane with no count this run compares
-nothing and adds no line of its own, since the reuse warning above already names the gap. A
-trusted run that counted nothing for a lane is passed over, so the count compared is the
-newest one a trusted run recorded.
+nothing and prints no drop: a lane with no `results_artifact` has nothing to count, and
+under `--reuse-artifacts` the reuse warning above already names the missing junit. A
+trusted run that counted nothing for a lane is passed over, so a drop is measured from the
+newest count a trusted run recorded, even when an older run holds it.
 
 ---
 
