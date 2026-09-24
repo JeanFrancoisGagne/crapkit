@@ -759,16 +759,21 @@ def test_verify_cannot_conclude_with_a_lane_that_failed(baselined, capsys):
 
 def test_a_test_the_baseline_never_saw_fail_is_a_new_failure(baselined, capsys):
     """A lane declaring no retest_command keeps its failures untouched, so the
-    verdict is the lane's report."""
+    verdict is the lane's report. The baseline's lane declared no
+    results_artifact, so exit 8 comes with the line saying the failure may
+    predate the change (Q26): a gate fails closed, and the line keeps that from
+    reading as this change's doing."""
     _junit(baselined, failing=True)
     _results_artifact(baselined)
 
-    code, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
+    code, out, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
     assert code == 8
     assert "NEW FAILURE  src/app.test.ts::renders" in out, out
     assert "findings: 1 committed / 0 dirty" in out, \
         "nothing in this tree edited the test file, so the failure is the commit's"
+    assert ("no trusted run at or behind the baseline recorded which of its tests failed, so "
+            "its 1 new failure may predate this change") in err, err
 
 
 def test_a_failure_that_passes_on_rerun_is_reported_as_a_flake(baselined, capsys):
