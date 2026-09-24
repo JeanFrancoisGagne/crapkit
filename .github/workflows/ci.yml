@@ -17,7 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        # Every version pyproject's classifiers name. 3.14 is where argparse
+        # colours help, so its legs are the ones that run the colour tests.
+        python: ["3.11", "3.12", "3.13", "3.14"]
         # Windows runs the unit and e2e sessions four to five times slower than
         # Ubuntu, so each Windows session is a job of its own and the two run
         # side by side. Ubuntu keeps both sessions in one job.

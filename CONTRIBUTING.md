@@ -67,6 +67,11 @@ probe before and after each test. Fake interpreters on PATH therefore do not lea
 cached answers for later tests. Investigate doctor failures under a changed test order;
 the former cache leak is fixed.
 
+`tests/conftest.py` removes `FORCE_COLOR`, `PY_COLORS`, `PYTHON_COLORS`, `NO_COLOR` and
+`CLICOLOR_FORCE` and sets `COLUMNS=80` for the whole session, children included. Help
+text colours on Python 3.14 and wraps at `COLUMNS`, so the help tests pass or fail the
+same way in any shell. A test that needs colour or a width sets it with `monkeypatch`.
+
 ### The e2e CLI runner
 
 `tests/e2e/conftest.py` holds the one way e2e runs the CLI. Before it, 42 copies of the
@@ -141,7 +146,7 @@ cancels the run it replaces; every push to main runs to the end.
 
 | Job | Runs | What fails the job |
 |---|---|---|
-| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu job runs both suites; each Windows suite is a job of its own. | A test failure. |
+| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows, every version pyproject's classifiers name; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu job runs both suites; each Windows suite is a job of its own. | A test failure. |
 | `verdict-measure` | One job per side: `python tools/testing/ci.py --base "$BASE_REF" --measure base` or `--measure candidate` builds and verifies that side's wheel, measures both suites and uploads the coverage evidence, the wheel and its proof. | A build, install or provenance failure. A failing suite still uploads; the join judges it. |
 | `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
