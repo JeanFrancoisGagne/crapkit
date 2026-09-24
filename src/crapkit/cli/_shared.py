@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
-from ..invocation import _self
+from ..invocation import _self, typed_path
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -164,7 +164,7 @@ def _repo_out_path(root: Path, out: str) -> Path:
     rooted = _is_rooted(out)
     path = Path(out) if rooted else (root / out).resolve()
     if not rooted and root.resolve() not in path.parents:
-        raise ConfigError(f"{out!r} is repo-relative and climbs out of {root}; "
+        raise ConfigError(f"{typed_path(out)} is repo-relative and climbs out of {root}; "
                           "pass an absolute path to write outside it")
     path.parent.mkdir(parents=True, exist_ok=True)
     return path

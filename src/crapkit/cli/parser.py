@@ -9,7 +9,7 @@ import sys
 
 from .. import __version__
 from ..errors import ConfigError, CrapkitError
-from ..invocation import _self
+from ..invocation import _self, typed_path
 
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
@@ -550,7 +550,7 @@ def _refuse_path_argument(arg: str) -> int:
     """Same exit code argparse already gave this argv, with the route the dump
     left out. Nothing that used to work changes: every argv reaching here was a
     usage error before."""
-    print(f"crapkit: {arg!r} is not a subcommand; the repo is a flag on one, "
+    print(f"crapkit: {typed_path(arg)} is not a subcommand; the repo is a flag on one, "
           f"e.g. `{_self()} inventory --repo {arg}` "
           f"(`{_self()} --help` lists the subcommands)", file=sys.stderr)
     return 2

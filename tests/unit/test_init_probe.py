@@ -573,7 +573,8 @@ def test_a_launcher_the_repo_does_not_carry_is_still_a_problem(tmp_path, monkeyp
 
     problems = _lane_command_problems(repo, _doctor_lane(f"{word} -m pytest --cov"))
 
-    assert problems == [f"lane 'py': executable {word!r} does not resolve on PATH"]
+    # The word is quoted as the config spells it, one backslash each on Windows.
+    assert problems == [f"lane 'py': executable '{word}' does not resolve on PATH"]
 
 
 def test_a_launcher_is_read_from_the_directory_the_lane_runs_in(tmp_path, monkeypatch):

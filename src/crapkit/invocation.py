@@ -24,6 +24,10 @@ Not everything crapkit prints goes through here. The brief packet's `commands.*`
 stay console-script strings (docs/agent-json.md, #37), and so do the crapkit.toml
 template comments `init` writes into a consumer's repo: both are read somewhere
 other than the process that produced them.
+
+A path the reader typed, on the command line or in crapkit.toml, is quoted back
+by `typed_path` as typed. repr doubled every backslash, so `crapkit .\\mini`
+answered about `'.\\\\mini'`, a token nobody typed.
 """
 from __future__ import annotations
 
@@ -66,3 +70,15 @@ def _quoted(interpreter: str) -> str:
     and unquoted it reaches cmd.exe as `C:/Program` plus two arguments. Double
     quotes are the one form cmd, bash and zsh all read."""
     return f'"{interpreter}"' if " " in interpreter else interpreter
+
+
+def typed_path(value: str | os.PathLike) -> str:
+    r"""A path the reader typed, in single quotes and spelled as typed: `.\mini`
+    reads `'.\mini'`, where repr printed `'.\\mini'`. A character that would
+    break the line (a control character, a lone surrogate) is still escaped the
+    way repr escapes it."""
+    return "'" + "".join(map(_shown, os.fspath(value))) + "'"
+
+
+def _shown(char: str) -> str:
+    return char if char.isprintable() else repr(char)[1:-1]

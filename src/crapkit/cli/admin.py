@@ -17,7 +17,7 @@ from ..config import load_config_text
 from ..doctor import Finding
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
-from ..invocation import _self
+from ..invocation import _self, typed_path
 from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
@@ -644,7 +644,7 @@ def _doctor_scopes(root: Path, cfg, files: list[str], show_files: bool) -> list[
 
 def _lane_problem(root: Path, lane) -> str | None:
     if not launch_spec(root, lane).cwd.is_dir():
-        return f"lane {lane.name!r}: cwd {lane.cwd!r} does not exist"
+        return f"lane {lane.name!r}: cwd {typed_path(lane.cwd)} does not exist"
     return None
 
 
@@ -667,9 +667,9 @@ def _segment_problems(name: str, spec: LaunchSpec, tokens: list[str]) -> list[st
     of its own, and asking from there failed every repo but the server's."""
     if not tokens:
         return []
-    runner = ([f"lane {name!r}: executable {tokens[0]!r} does not resolve on PATH"]
+    runner = ([f"lane {name!r}: executable {typed_path(tokens[0])} does not resolve on PATH"]
               if spec.resolve(tokens[0]) is None else [])
-    return runner + [f"lane {name!r}: command names {tok!r}, which does not exist"
+    return runner + [f"lane {name!r}: command names {typed_path(tok)}, which does not exist"
                      for tok in tokens[1:] if _missing_named_script(spec.cwd, tok)]
 
 
@@ -698,7 +698,7 @@ def _lane_start_problem(root: Path, lane) -> str | None:
     if not dead:
         return None
     word, code = dead
-    return (f"lane {lane.name!r}: {_shell_label()} cannot run {word!r} (exit {code}) — "
+    return (f"lane {lane.name!r}: {_shell_label()} cannot run {typed_path(word)} (exit {code}) — "
             "the lane cannot start, so its scopes can only ever score no-lane")
 
 

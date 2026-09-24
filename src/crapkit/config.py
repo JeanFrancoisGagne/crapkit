@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .errors import ConfigError
+from .invocation import typed_path
 from .config_contract import admit, enum_values
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
@@ -656,7 +657,7 @@ def _scope_path(name, raw: str) -> str:
     """
     path = _unrooted(raw)
     if path == "" or ".." in path.split("/") or ":" in path:
-        raise ConfigError(f"scope {name!r}: path {raw!r} can never match a tracked file — "
+        raise ConfigError(f"scope {name!r}: path {typed_path(raw)} can never match a tracked file — "
                           "scope paths are repo-relative, with no drive and no `..` "
                           "(docs/configuration.md)")
     return path
@@ -755,10 +756,10 @@ def _lane_input(name, entry: str) -> str:
     `src\app.ts` matched on Windows git and named a file holding a backslash on
     Linux; the scope-path spelling rule settles that before git sees it."""
     if _outside_root(entry):
-        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is not a path "
+        raise ConfigError(f"lane {name!r}: inputs entry {typed_path(entry)} is not a path "
                           "inside the root; list paths relative to crapkit.toml, without '..'")
     if "*" in entry or "?" in entry:
-        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is a glob; inputs are literal "
+        raise ConfigError(f"lane {name!r}: inputs entry {typed_path(entry)} is a glob; inputs are literal "
                           "paths from the root, so list the directory or file itself")
     return _unrooted(entry) or "."
 
@@ -771,7 +772,7 @@ def _reject_shared_artifacts(lanes: list, root=None) -> None:
             if key in seen_artifacts:
                 raise ConfigError(
                     f"lanes {seen_artifacts[key]!r} and {lane.name!r} share the artifact path "
-                    f"{artifact!r}; reused paths cross-attribute coverage under --reuse-artifacts")
+                    f"{typed_path(artifact)}; reused paths cross-attribute coverage under --reuse-artifacts")
             seen_artifacts[key] = lane.name
 
 
