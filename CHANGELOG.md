@@ -1,5 +1,92 @@
 # Changelog
 
+## 0.8.1 — unreleased
+
+### Upgrading from 0.8.0
+
+- crapkit's own messages spell a dash as ` - ` where 0.8.0 printed an em dash. 95
+  string literals changed, among them doctor on a repo with no lane and worklist, brief
+  and digest before the first run. A script or a test that matches one of those lines has to
+  match ` - ` now. A path or a function name crapkit quotes keeps its own characters.
+- The churn window is counted on the UTC calendar. On a machine whose local date is not
+  the UTC date, a commit on the window's first day can move in or out of churn once, and
+  worklist and brief can rank a function differently from 0.8.0 on that machine. Scores
+  do not move and the analysis version stays 11, so no repo re-seeds.
+
+### Colour codes stay out of the text a program reads
+
+- Help, `--help` and usage errors print plain text off a terminal on Python 3.14, even
+  with FORCE_COLOR, PYTHON_COLORS=1 or TERM=dumb FORCE_COLOR=1 set. 3.14's argparse
+  coloured them into a pipe, into a file and into an agent's tool result. At a terminal,
+  help keeps 3.14's colour, and NO_COLOR and TERM=dumb still turn it off. The Action's
+  comment builder prints its usage error plain on 3.14 too.
+- MCP tool results carry no escape codes. A tool whose CLI child printed nothing on
+  stdout answers with the child's stderr, and under the client's colour variables the
+  child coloured an uncaught traceback on 3.13 and 3.14 and a usage error on 3.14.
+- A failed lane names its cause, and the pull-request comment reads as plain text, when
+  FORCE_COLOR or PY_COLORS colours the test runner's output. pytest's colour code in
+  front of `E   ModuleNotFoundError` hid the cause behind the `ERROR path` summary lines,
+  and the refusal on stderr, `--json` lane_failures, the junit collection refusal, the
+  comment and the base run's reason quoted the escape codes. The lane log file keeps its
+  colour.
+
+### MCP and hook arguments
+
+- An MCP string argument that starts with `-` reaches the command as a value.
+  `get_function_brief path="--help"` answered brief's help text, and `path="-x.py"`,
+  `get_next_item exclude=["-legacy"]` and `check_gate path="-x.py"` answered a usage
+  dump where the tool promises JSON, on Python 3.11 to 3.14.
+- A `claude-hook` flag this crapkit does not know exits 0 with one line naming the
+  version skew: `crapkit claude-hook: this crapkit does not know `--budget 5`; the hook
+  was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run
+  `crapkit doctor --plugin-root``. It exited 2 with the usage block, and PostToolUse
+  hands the model an exit 2's stderr on every Edit or Write. The flags this build knows,
+  `--protocol` included, are still read, and other subcommands keep argparse's refusal.
+
+### The same repo prints the same bytes on every machine
+
+- The churn window counts months on the UTC calendar, so a CI runner and a laptop in
+  another time zone rank the same repo the same way. git counted `N months ago` on the
+  local calendar, and where the local and UTC dates fell on either side of a day the
+  earlier month lacks, the window began a day apart.
+- Tracked files missing from the working tree are named in path order. inventory,
+  coverage and verify printed one line per missing file in an order that changed with
+  Python's hash seed from one run to the next.
+
+### Text reaches every shell and encoding intact
+
+- Every line crapkit writes from its own words is ASCII, so `$x = crapkit doctor` in
+  Windows PowerShell 5.1 captures it intact under code page 437 or 1252 (see Upgrading).
+- A message quotes a path the reader typed as typed. Ten messages quoted a path from the
+  command line or `crapkit.toml` with every backslash doubled: `crapkit .\mini`
+  answered `'.\\mini' is not a subcommand`, and doctor named a lane's cwd `'sub\\dir'`.
+- A next step crapkit prints runs as printed in Git Bash. It names `crapkit` when PATH
+  finds this installation's console script, and otherwise the interpreter running it,
+  spelled with forward slashes. Before the first run, an MCP tool on Windows named
+  `C:\venv\Scripts\python.exe -m crapkit coverage` as the step to run, and Git Bash
+  answered `C:venvScriptspython.exe: command not found`.
+- A report or packet command made on Linux runs as printed in cmd.exe, PowerShell, Git
+  Bash and bash, and a report made on Linux and one made on Windows print the same line.
+  The Linux page quoted a path in single quotes, which cmd.exe hands over as part of the
+  path.
+- The measurement owner's channel reads as UTF-8 under any PYTHONIOENCODING. Under
+  utf-8-sig, utf-16 or utf-32, `coverage --json` and `coverage --github` exited 1 before
+  a lane ran, and on Linux every MCP tool call answered a JSON-RPC error.
+- An analysis worker writes UTF-8 to stderr whatever PYTHONIOENCODING says. lizard's
+  `[skip]` line for `src/café.ts` reached the parent as the lone byte 0xe9 on Windows.
+- The override and `digest --alert` hand `alert_command` UTF-8 bytes with LF line ends on
+  every OS. On Windows each LF arrived as CR LF.
+
+### CI and tests
+
+- CI tests Python 3.14 on Ubuntu and Windows, and the classifiers name it.
+- tests/conftest.py drops FORCE_COLOR, PY_COLORS, PYTHON_COLORS, NO_COLOR and
+  CLICOLOR_FORCE and sets COLUMNS=80 for every test, so the help tests pass whatever
+  colour or width the contributor's shell exports. The scripts under tools/ print plain
+  help and usage in a pipe on 3.14.
+- Every Python file under src/crapkit, tests and tools compiles with warnings as errors on
+  each CI interpreter, so no SyntaxWarning reaches a first run's stderr.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
