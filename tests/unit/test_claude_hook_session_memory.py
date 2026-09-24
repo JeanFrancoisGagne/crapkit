@@ -253,3 +253,31 @@ def test_a_memory_that_cannot_be_written_changes_no_verdict(tmp_path, monkeypatc
     _later_touch(path)
 
     assert hook(monkeypatch, capsys, bash_event(repo, "touch calc/grade.py"))[0] == 2
+
+
+# --- where the memory is, when the disk will not say --------------------------
+
+@pytest.mark.parametrize("content", [b"", b"gitdir:\n", b"not a gitdir line\n", b"\xff\xfe\n"],
+                         ids=["empty", "gitdir-names-nothing", "no-gitdir-line", "not-utf8"])
+def test_a_dot_git_file_that_names_no_directory_turns_the_memory_off(content, tmp_path):
+    """A `.git` file is how a linked worktree or a submodule points at its git
+    directory. One that names none leaves no place for a record, so the memory
+    is off and the hook judges as it did before the memory existed."""
+    (tmp_path / ".git").write_bytes(content)
+
+    assert claude_hook._git_dir(tmp_path / "calc") is None
+    assert claude_hook._Memory(SESSION)._slot(tmp_path / "calc" / "grade.py") is None
+
+
+def test_a_sessions_directory_that_cannot_be_listed_prunes_nothing(tmp_path):
+    """A parallel hook in another session can remove the directory between the
+    write and the prune; the prune then has nothing to remove."""
+    assert claude_hook._sessions(tmp_path / "gone") == []
+
+
+def test_a_session_whose_age_cannot_be_read_is_kept(tmp_path):
+    """A directory another prune removed first reads as written now, so this
+    prune never removes a session it could not date."""
+    before = time.time()
+
+    assert claude_hook._last_write(tmp_path / "gone") >= before
