@@ -143,3 +143,18 @@ def test_the_message_quotes_the_path_as_typed(repo, capsys, driver, typed):
     assert f"'{typed}'" in said, said
     if "\\" in typed:
         assert typed.replace("\\", "\\\\") not in said, said
+
+
+# --- a path crapkit settled before the message -----------------------------------------
+
+@pytest.mark.parametrize("typed", ["src" + chr(92) + "nothere", "src/nothere"],
+                         ids=["Windows spelling", "POSIX spelling"])
+def test_an_unmatched_input_is_quoted_the_way_git_reads_it(repo, capsys, typed):
+    """config turns an inputs entry's backslash into `/` on every OS before git
+    reads it (the scope-path spelling rule), so doctor's unmatched-input line
+    names that one spelling and never a doubled backslash."""
+    _toml(repo, 'name = "unit"\n', f'name = "unit"\ninputs = ["{_toml_text(typed)}"]\n')
+    said = _said(capsys, ["doctor", "--repo", str(repo)])
+
+    assert "inputs entry 'src/nothere' matches no file" in said, said
+    assert chr(92) * 2 not in said, said
