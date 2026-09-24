@@ -1,4 +1,4 @@
-"""Which files under a lane's scopes hold other bytes than the ones its artifact measured.
+"""The content record: which bytes each file under a lane's scopes held when its artifact measured it.
 
 A lane's dark lines point into the bytes its run read. crapkit used to judge
 them by git instead: the stamp's commit had to be behind HEAD, and nothing
@@ -8,44 +8,48 @@ from the clone withheld every dark line though no byte moved. An artifact
 measured on an uncommitted edit read as stale at once, and reverting that edit
 made git call the tree clean while the artifact still described the edit.
 
-So a lane's stamp records a digest of every file under its scopes as its run
-leaves them (`sources`), and freshness compares digests. git lists which files
-are there; it never decides whether one changed.
+So a lane's stamp records the git blob id of every file under its scopes as its
+run leaves them (`blobs`), and freshness compares blob ids. A blob id is what
+`git add` would store: the bytes through the repo's filters, so a CRLF checkout
+under core.autocrlf=true and an expanded `$Id$` hold their blob's id, while a
+CRLF rewrite under core.autocrlf=false, or a pending renormalization, does not.
+
+git's index is the fast path. A tracked file that git's worktree diff calls
+unchanged holds the id the index records, so only a file git calls changed,
+one it does not track, and one flagged skip-worktree or assume-unchanged is
+hashed. The trade: git decides "unchanged" from the index's stat cache, so a
+same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
+`rsync -t`) keeps the index's id. That is a named limit until the cost of
+hashing every file is measured.
 """
 from __future__ import annotations
 
-import hashlib
-import re
 from pathlib import Path
 
+from .gitio import index_blobs, worktree_blobs, worktree_changes
 from .universe import owning_scope
 
-# git's `ident` attribute writes `$Id: <blob> $` on checkout and stores `$Id$`.
-_IDENT = re.compile(rb"\$Id:[^$\n]*\$")
+
+def record(root: Path, paths, within=()) -> dict[str, str]:
+    """path -> blob id for each of `paths` that is a file now, or a submodule
+    whose checkout is clean (its commit). `within` narrows git's reads to the
+    lane's declared paths; a path outside them is hashed. Raises GitError."""
+    wanted = set(paths)
+    if not wanted:
+        return {}
+    held = _held(root, wanted, tuple(within))
+    return {**held, **worktree_blobs(root, _files(root, wanted - held.keys()))}
 
 
-def normalized(data: bytes) -> bytes:
-    """The bytes as git's common filters store them: CRLF as LF, and an
-    expanded `$Id$` as the bare keyword. One blob checks out either way under
-    core.autocrlf, an eol attribute or the ident attribute, and none of them
-    moves a line number or changes what a config file says."""
-    return _IDENT.sub(b"$Id$", data.replace(b"\r\n", b"\n"))
+def _held(root: Path, wanted: set, spec: tuple) -> dict[str, str]:
+    """The index's id for each wanted path git's worktree diff calls unchanged."""
+    changed = set(worktree_changes(root, spec))
+    return {path: blob for path, blob in index_blobs(root, spec).items()
+            if path in wanted and path not in changed}
 
 
-def source_digest(path: Path) -> str:
-    """sha256 of the file's `normalized` bytes, or "" when it cannot be read,
-    so a deleted source never matches the digest its lane recorded."""
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return ""
-    return hashlib.sha256(normalized(data)).hexdigest()
-
-
-def digests(root: Path, paths) -> dict[str, str]:
-    """path -> digest for each readable file among `paths`."""
-    found = {path: source_digest(root / path) for path in paths}
-    return {path: digest for path, digest in found.items() if digest}
+def _files(root: Path, paths) -> list[str]:
+    return sorted(path for path in paths if (root / path).is_file())
 
 
 def scope_files(root: Path, declared: tuple[str, ...], matchers) -> tuple[str, ...]:
@@ -57,29 +61,27 @@ def scope_files(root: Path, declared: tuple[str, ...], matchers) -> tuple[str, .
 
 
 def settled(before: dict[str, str], after: dict[str, str]) -> dict[str, str]:
-    """The digests a run can vouch for: every file as the run left it, except
-    one whose bytes moved while the run was reading them."""
-    return {path: digest for path, digest in after.items()
-            if before.get(path, digest) == digest}
+    """The ids a run can vouch for: every file as the run left it, except one
+    whose bytes moved while the run was reading them."""
+    return {path: blob for path, blob in after.items() if before.get(path, blob) == blob}
 
 
-def moved(root: Path, recorded: dict, listed=()) -> list[str]:
-    """Recorded files whose bytes differ now, deleted ones included, and listed
-    files the record does not hold that have bytes now."""
-    changed = {path for path, digest in recorded.items() if source_digest(root / path) != digest}
-    return sorted(changed | _added(root, recorded, listed))
+def moved(root: Path, recorded: dict, listed=(), within=()) -> list[str]:
+    """Recorded files whose blob id differs now, deleted ones included, and
+    listed files the record does not hold that are files now. A listed path the
+    record never held and that holds nothing (a tracked file deleted before the
+    run, a submodule with an edit in it) is not new. Raises GitError."""
+    now = record(root, {*recorded, *listed}, within)
+    changed = {path for path, blob in recorded.items() if now.get(path) != blob}
+    return sorted(changed | _added(recorded, listed, now))
 
 
-def _added(root: Path, recorded: dict, listed) -> set[str]:
-    """Listed files the record does not hold and that have bytes now. git also
-    lists paths no digest reads: a submodule, a directory here, and a tracked
-    file deleted before the run. The record never held them, and counting them
-    as new made every later read call the lane stale."""
-    return {path for path in listed if path not in recorded and source_digest(root / path)}
+def _added(recorded: dict, listed, now: dict) -> set[str]:
+    return {path for path in listed if path not in recorded and path in now}
 
 
 def file_moved(root: Path, recorded: dict, path: str) -> bool:
-    """Whether a file the record holds has other bytes now; False for a file it
-    does not hold, which its lane never measured."""
-    digest = recorded.get(path)
-    return digest is not None and source_digest(root / path) != digest
+    """Whether a file the record holds has another blob id now; False for a
+    file it does not hold, which its lane never measured. Raises GitError."""
+    blob = recorded.get(path)
+    return blob is not None and record(root, (path,), (path,)).get(path) != blob

@@ -554,14 +554,14 @@ def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
 
 
 def _stale_lane(root: Path, moved: tuple) -> tuple:
-    """(lane, scope paths, git, recorded digests) for the pages' `py` lane: its
+    """(lane, scope paths, git, recorded blob ids) for the pages' `py` lane: its
     run measured calc/grade.py and calc/hot.py at 525a3276065, and the files in
-    `moved` hold other bytes now. Outside a git repo, so only the digests the
-    stamp recorded are judged."""
+    `moved` hold other bytes now. That commit is not in this repo, so only the
+    blob ids the stamp recorded are judged."""
     from types import SimpleNamespace
 
     from crapkit.config import Lane
-    from crapkit.lane_sources import source_digest
+    from crapkit.lane_sources import record
     from crapkit.lanes import write_stamps
 
     lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
@@ -569,12 +569,13 @@ def _stale_lane(root: Path, moved: tuple) -> tuple:
     (root / ".crapkit" / "cov").mkdir(parents=True)
     (root / lane.artifact).write_text("{}", encoding="utf-8")
     (root / "calc").mkdir()
-    recorded = {}
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     for name in ("calc/grade.py", "calc/hot.py"):
         (root / name).write_text("def f():\n    return 1\n", encoding="utf-8")
-        recorded[name] = "measured" if name in moved else source_digest(root / name)
+    recorded = {name: "0" * 40 if name in moved else blob
+                for name, blob in record(root, ["calc/grade.py", "calc/hot.py"]).items()}
     write_stamps(root, {lane.artifact: {"commit": "525a3276065" + "0" * 29, "lane": "py",
-                                        "sources": recorded}})
+                                        "blobs": recorded}})
     git = SimpleNamespace(root=root)
     return lane, {"calc": ("calc",)}, git, recorded
 

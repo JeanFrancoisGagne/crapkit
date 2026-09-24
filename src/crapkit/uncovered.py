@@ -86,17 +86,27 @@ class SourceDrift:
         return self._notes[path]
 
     def _first_moved(self, path: str) -> str:
+        from .errors import GitError
         from .lane_sources import file_moved
 
         for lane, sources in self._recorded:
-            if file_moved(self._root, sources, path):
-                return _moved_note(lane, path)
+            try:
+                if file_moved(self._root, sources, path):
+                    return _moved_note(lane, path)
+            except GitError as exc:
+                return _unknown_note(lane, path, exc)
         return ""
 
 
 def _moved_note(lane, path: str) -> str:
     return (f"lane {lane.name!r}: {path} changed since {lane.artifact} measured it, so its "
             f"line numbers there are stale — rerun `{_self()} coverage` to measure it again")
+
+
+def _unknown_note(lane, path: str, exc) -> str:
+    return (f"lane {lane.name!r}: git cannot say whether {path} changed since {lane.artifact} "
+            f"measured it ({exc}), so its line numbers there are withheld — rerun "
+            f"`{_self()} coverage` once git answers")
 
 
 def _cc_only_note(path: str, scope: str) -> str:

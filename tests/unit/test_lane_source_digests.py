@@ -1,16 +1,17 @@
 """A lane's line numbers are stale when the bytes they point into moved, and only then.
 
-The stamp a lane run writes holds a digest of every file under its scopes
-(`sources`), and every reader of lane staleness compares digests: the
+The stamp a lane run writes holds the git blob id of every file under its
+scopes (`blobs`), and every reader of lane staleness compares blob ids: the
 `--reuse-artifacts` warning, the dark-line note `brief`, `next-item`,
 `explain` and the MCP `get_function_brief` print, and the report's banner.
-They used to ask git instead, and git's answer is about commits and its stat
-cache, not the bytes: a `touch` under diff.autoRefreshIndex=false, a mode bit,
-a message-only amend, a shallow CI clone missing the stamp commit and a
-measurement taken on an uncommitted edit all read as stale, while a same-size
-edit under a restored mtime and an edit reverted after a dirty measurement read
-as fresh. Each EVENTS row in stale_tree is one of those, run through the lane
-runner the coverage command uses and read back through each reader.
+They used to ask git's diff instead, and that answer is about commits and its
+stat cache, not the content: a `touch` under diff.autoRefreshIndex=false, a
+mode bit, a message-only amend, a shallow CI clone missing the stamp commit and
+a measurement taken on an uncommitted edit all read as stale, while an edit
+reverted after a dirty measurement read as fresh. Each EVENTS row in stale_tree
+is one of those, run through the lane runner the coverage command uses and read
+back through each reader. The oracle for "moved" is git's own: the id
+`git hash-object --path` gives the file now against the one recorded.
 """
 from __future__ import annotations
 
@@ -26,28 +27,104 @@ MOVED = sorted(name for name, event in EVENTS.items() if event.moved)
 KEPT = sorted(name for name, event in EVENTS.items() if not event.moved)
 
 
-# --- the root: one digest rule, one comparison -------------------------------
+# --- the root: one content rule, one comparison ------------------------------
 
-def test_a_digest_reads_crlf_as_lf_and_a_missing_file_as_nothing(tmp_path):
-    from crapkit.lane_sources import source_digest
+def _repo(tmp_path: Path, files: dict, gitcfg: dict | None = None) -> Path:
+    root = tmp_path / "rec"
+    root.mkdir()
+    stale_tree.git(root, "init", "-q", "-b", "main")
+    for key, value in (gitcfg or {}).items():
+        stale_tree.git(root, "config", key, value)
+    for rel, data in files.items():
+        stale_tree.write(root / rel, data)
+        stale_tree.age(root / rel)
+    stale_tree.git(root, "add", "-A")
+    stale_tree.git(root, "commit", "-q", "-m", "init")
+    return root
 
-    (tmp_path / "lf.ts").write_bytes(b"a\nb\n")
-    (tmp_path / "crlf.ts").write_bytes(b"a\r\nb\r\n")
 
-    assert source_digest(tmp_path / "lf.ts") == source_digest(tmp_path / "crlf.ts")
-    assert source_digest(tmp_path / "gone.ts") == ""
+def _blob(root: Path, rel: str) -> str:
+    return stale_tree.git(root, "hash-object", f"--path={rel}", "--", rel).strip()
 
 
-def test_a_digest_reads_an_expanded_ident_keyword_as_the_stored_one(tmp_path):
-    from crapkit.lane_sources import source_digest
+def test_the_record_holds_the_blob_id_git_add_would_store(tmp_path):
+    """A CRLF checkout under core.autocrlf=true holds its LF blob's id, and
+    only the id git itself gives a file is recorded, never a digest of raw
+    bytes."""
+    from crapkit.lane_sources import record
 
-    (tmp_path / "stored.ts").write_bytes(b"// $Id$\nx\n")
-    (tmp_path / "checked-out.ts").write_bytes(b"// $Id: 47f02ca3b0e1 $\r\nx\r\n")
-    (tmp_path / "edited.ts").write_bytes(b"// $Id$\ny\n")
+    root = _repo(tmp_path, {"src/a.ts": b"a\nb\n"}, {"core.autocrlf": "true"})
+    (root / "src/a.ts").unlink()
+    stale_tree.git(root, "checkout", "--", "src/a.ts")
+    assert b"\r\n" in (root / "src/a.ts").read_bytes()
+    committed = stale_tree.git(root, "rev-parse", "HEAD:src/a.ts").strip()
 
-    stored = source_digest(tmp_path / "stored.ts")
-    assert source_digest(tmp_path / "checked-out.ts") == stored
-    assert source_digest(tmp_path / "edited.ts") != stored
+    assert record(root, ["src/a.ts", "src/gone.ts"], ("src",)) == {"src/a.ts": committed}
+
+
+def test_a_crlf_rewrite_under_autocrlf_false_is_a_new_blob(tmp_path):
+    from crapkit.lane_sources import record
+
+    root = _repo(tmp_path, {"src/a.ts": b"a\nb\n"}, {"core.autocrlf": "false"})
+    (root / "src/a.ts").write_bytes(b"a\r\nb\r\n")
+
+    assert record(root, ["src/a.ts"], ("src",)) == {"src/a.ts": _blob(root, "src/a.ts")}
+    assert record(root, ["src/a.ts"], ("src",))["src/a.ts"] != stale_tree.git(
+        root, "rev-parse", "HEAD:src/a.ts").strip()
+
+
+def test_an_expanded_ident_keyword_holds_the_stored_blob(tmp_path):
+    from crapkit.lane_sources import record
+
+    root = _repo(tmp_path, {".gitattributes": "*.ts ident\n", "src/a.ts": "// $Id$\nx\n"})
+    (root / "src/a.ts").unlink()
+    stale_tree.git(root, "checkout", "--", "src/a.ts")
+    assert b"$Id: " in (root / "src/a.ts").read_bytes()
+
+    assert record(root, ["src/a.ts"], ("src",)) == {
+        "src/a.ts": stale_tree.git(root, "rev-parse", "HEAD:src/a.ts").strip()}
+
+
+def test_an_untracked_file_and_a_path_outside_the_reads_are_hashed(tmp_path):
+    from crapkit.lane_sources import record
+
+    root = _repo(tmp_path, {"src/a.ts": "a\n", "lib/b.ts": "b\n"})
+    stale_tree.write(root / "src/new.ts", "new\n")
+
+    assert record(root, ["src/new.ts", "lib/b.ts"], ("src",)) == {
+        "src/new.ts": _blob(root, "src/new.ts"), "lib/b.ts": _blob(root, "lib/b.ts")}
+
+
+def test_a_flagged_file_edited_on_disk_is_hashed_not_read_from_the_index(tmp_path):
+    """skip-worktree and assume-unchanged hide an edit from git's diff; the
+    index's id would vouch for bytes that are not on disk."""
+    from crapkit.lane_sources import record
+
+    root = _repo(tmp_path, {"src/a.ts": "a\n", "src/b.ts": "b\n"})
+    stale_tree.git(root, "update-index", "--skip-worktree", "src/a.ts")
+    stale_tree.git(root, "update-index", "--assume-unchanged", "src/b.ts")
+    stale_tree.write(root / "src/a.ts", "edited a\n")
+    stale_tree.write(root / "src/b.ts", "edited b\n")
+
+    assert record(root, ["src/a.ts", "src/b.ts"], ("src",)) == {
+        "src/a.ts": _blob(root, "src/a.ts"), "src/b.ts": _blob(root, "src/b.ts")}
+
+
+def test_a_same_size_edit_under_the_old_mtime_keeps_the_index_id(tmp_path):
+    """The named limit of the fast path: git's stat cache calls the file
+    unchanged, so the record keeps the index's id while hash-object gives
+    another. Hashing every file would close it; that cost is measured first."""
+    from crapkit.lane_sources import record
+
+    root = _repo(tmp_path, {"src/a.ts": "case 1\n"})
+    path = root / "src/a.ts"
+    stat = path.stat()
+    path.write_bytes(b"case 7\n")
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    committed = stale_tree.git(root, "rev-parse", "HEAD:src/a.ts").strip()
+
+    assert _blob(root, "src/a.ts") != committed
+    assert record(root, ["src/a.ts"], ("src",)) == {"src/a.ts": committed}
 
 
 def test_a_file_that_moved_while_the_run_read_it_is_not_vouched_for():
@@ -60,44 +137,55 @@ def test_a_file_that_moved_while_the_run_read_it_is_not_vouched_for():
 
 
 def test_moved_names_changed_deleted_and_new_files(tmp_path):
-    from crapkit.lane_sources import file_moved, moved, source_digest
+    from crapkit.lane_sources import file_moved, moved, record
 
-    (tmp_path / "same.ts").write_bytes(b"same\n")
-    (tmp_path / "edited.ts").write_bytes(b"new\n")
-    (tmp_path / "added.ts").write_bytes(b"added\n")
-    recorded = {"same.ts": source_digest(tmp_path / "same.ts"),
-                "edited.ts": "old", "deleted.ts": "gone"}
+    root = _repo(tmp_path, {"same.ts": "same\n", "edited.ts": "old\n", "deleted.ts": "gone\n"})
+    recorded = record(root, ["same.ts", "edited.ts", "deleted.ts"])
+    stale_tree.write(root / "edited.ts", "new\n")
+    (root / "deleted.ts").unlink()
+    stale_tree.write(root / "added.ts", "added\n")
 
-    assert moved(tmp_path, recorded, ["same.ts", "edited.ts", "added.ts"]) == [
+    assert moved(root, recorded, ["same.ts", "edited.ts", "added.ts"]) == [
         "added.ts", "deleted.ts", "edited.ts"]
-    assert not file_moved(tmp_path, recorded, "same.ts")
-    assert file_moved(tmp_path, recorded, "edited.ts")
-    assert not file_moved(tmp_path, recorded, "never-measured.ts")
+    assert not file_moved(root, recorded, "same.ts")
+    assert file_moved(root, recorded, "edited.ts")
+    assert not file_moved(root, recorded, "never-measured.ts")
 
 
 def test_a_listed_path_with_no_bytes_is_not_a_new_file(tmp_path):
-    """git lists a submodule as one path, a directory here, and lists a tracked
-    file deleted before the run though nothing is on disk. Neither had bytes to
-    record, so neither is new on a later read until bytes appear."""
+    """git lists a tracked file deleted before the run though nothing is on
+    disk, and a directory holds no blob. Neither had content to record, so
+    neither is new on a later read until a file appears."""
     from crapkit.lane_sources import moved
 
-    (tmp_path / "vendor").mkdir()
+    root = _repo(tmp_path, {"deleted.ts": "was here\n"})
+    (root / "deleted.ts").unlink()
+    (root / "vendor").mkdir()
 
-    assert moved(tmp_path, {}, ["vendor", "deleted.ts"]) == []
-    (tmp_path / "deleted.ts").write_bytes(b"back\n")
-    assert moved(tmp_path, {}, ["vendor", "deleted.ts"]) == ["deleted.ts"]
+    assert moved(root, {}, ["vendor", "deleted.ts"]) == []
+    stale_tree.write(root / "deleted.ts", "back\n")
+    assert moved(root, {}, ["vendor", "deleted.ts"]) == ["deleted.ts"]
+
+
+def test_without_git_the_record_raises_instead_of_answering(tmp_path, monkeypatch):
+    from crapkit.errors import GitError
+    from crapkit.lane_sources import moved
+
+    root = _repo(tmp_path, {"a.ts": "a\n"})
+    monkeypatch.setenv("PATH", str(tmp_path / "no-git-here"))
+
+    with pytest.raises(GitError):
+        moved(root, {"a.ts": "0" * 40})
 
 
 # --- the stamp ------------------------------------------------------------------
 
-def test_the_stamp_records_a_digest_of_each_file_under_the_lane_scope(tmp_path):
-    from crapkit.lane_sources import source_digest
-
+def test_the_stamp_records_the_blob_id_of_each_file_under_the_lane_scope(tmp_path):
     root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
 
-    sources = stale_tree.stamp(root)["coverage/coverage-final.json"]["sources"]
+    blobs = stale_tree.stamp(root)["coverage/coverage-final.json"]["blobs"]
 
-    assert sources == {REL: source_digest(root / REL)}
+    assert blobs == {REL: stale_tree.git(root, "rev-parse", f"HEAD:{REL}").strip()}
 
 
 def test_a_file_the_lane_itself_writes_under_its_scope_is_not_a_change(tmp_path):
@@ -107,16 +195,14 @@ def test_a_file_the_lane_itself_writes_under_its_scope_is_not_a_change(tmp_path)
     root = stale_tree.measure(stale_tree.build(
         tmp_path / "repo", byproduct="src/__pycache__/app.cpython-311.pyc"))
 
-    sources = stale_tree.stamp(root)["coverage/coverage-final.json"]["sources"]
+    blobs = stale_tree.stamp(root)["coverage/coverage-final.json"]["blobs"]
 
-    assert "src/__pycache__/app.cpython-311.pyc" in sources
+    assert "src/__pycache__/app.cpython-311.pyc" in blobs
     assert _lane_view(root)["note"] == ""
 
 
-def test_a_submodule_under_the_scope_is_not_a_change_on_its_own(tmp_path, capsys):
-    """git lists the submodule as one path, src/vendor, which is a directory
-    no digest reads. Counting it as a file the record lacks made every read
-    after the run say src/vendor changed, with nothing touched."""
+def _with_submodule(tmp_path: Path) -> Path:
+    """The measured repo with a submodule at src/vendor, under the lane's scope."""
     library = tmp_path / "library"
     library.mkdir()
     stale_tree.git(library, "init", "-q", "-b", "main")
@@ -127,9 +213,43 @@ def test_a_submodule_under_the_scope_is_not_a_change_on_its_own(tmp_path, capsys
     stale_tree.git(root, "-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
                    library.as_uri(), "src/vendor")
     stale_tree.git(root, "commit", "-q", "-m", "vendor")
-    stale_tree.measure(root)
+    return stale_tree.measure(root)
 
-    assert (_reuse_warning(root, capsys), _lane_view(root)["note"]) == ("", "")
+
+def _touch_inside(root: Path, norefresh: bool = False) -> None:
+    if norefresh:
+        stale_tree.git(root / "src/vendor", "config", "diff.autoRefreshIndex", "false")
+        stale_tree.git(root, "config", "diff.autoRefreshIndex", "false")
+    stale_tree.touch(root / "src/vendor/lib.ts")
+
+
+SUBMODULE_EVENTS = {
+    "nothing": (lambda root: None, False),
+    "submodule-touch": (_touch_inside, False),
+    "submodule-touch-norefresh": (lambda root: _touch_inside(root, norefresh=True), False),
+    "submodule-edit": (lambda root: stale_tree.write(root / "src/vendor/lib.ts",
+                                                    "export const v = 2;\n"), True),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SUBMODULE_EVENTS))
+def test_a_submodule_under_the_scope_is_recorded_by_its_commit(name, tmp_path, capsys):
+    """git lists the submodule as one path, src/vendor. The record holds the
+    commit its checkout is at, so a touch inside it moves nothing, and an edit
+    inside it names src/vendor: the checkout no longer holds that commit's
+    bytes. Counting it as a file the record lacked made every read after the
+    run say src/vendor changed; recording nothing for it made an edit silent."""
+    root = _with_submodule(tmp_path)
+    act, moves = SUBMODULE_EVENTS[name]
+    act(root)
+
+    warning, note = _reuse_warning(root, capsys), _lane_view(root)["note"]
+
+    if not moves:
+        assert (warning, note) == ("", "")
+        return
+    assert "1 file(s) in its scopes changed since it measured them (src/vendor)" in warning
+    assert "src/vendor" in note
 
 
 def test_a_tracked_file_deleted_before_the_run_is_not_a_change_after_it(tmp_path, capsys):
@@ -185,6 +305,10 @@ def test_the_reuse_warning_names_exactly_the_files_whose_bytes_moved(name, tmp_p
     if not truth:
         assert warning == "", warning
         return
+    if EVENTS[name].unknown:
+        assert "git cannot say which files in its scopes changed since it measured them" in warning
+        assert "git executable not found" in warning and "coverage may be stale" in warning
+        return
     assert f"{len(truth)} file(s) in its scopes changed since it measured them" in warning
     assert all(path in warning for path in truth), warning
     assert "coverage may be stale" in warning
@@ -204,6 +328,9 @@ def test_the_dark_line_note_withholds_only_a_file_whose_bytes_moved(name, tmp_pa
         return
     assert lines.in_span(REL, 1, 20) == []
     note = lines.note_for(REL)
+    if EVENTS[name].unknown:
+        assert f"git cannot say whether {REL} changed since" in note, note
+        return
     assert f"{REL} changed since coverage/coverage-final.json measured it" in note, note
     assert "coverage` to measure it again" in note
 
@@ -220,6 +347,9 @@ def test_the_report_banner_names_the_moved_files_and_blacks_out_nothing_else(nam
     assert view["blackout"] is False, "a stamp with digests withholds only the files it names"
     if not truth:
         assert view["note"] == "" and _stale_lane_reason([view]) == []
+        return
+    if EVENTS[name].unknown:
+        assert "git cannot say which files in its scopes changed" in view["note"], view["note"]
         return
     assert all(path in view["note"] for path in truth), view["note"]
     banner = "".join(_stale_lane_reason([view]))
@@ -318,11 +448,11 @@ def test_a_stamp_commit_force_pushed_away_keeps_the_lines(tmp_path):
 
 
 def test_a_stamp_from_an_older_crapkit_still_reads_by_its_commit(tmp_path):
-    """A stamp with no `sources` (0.8.0 and older) is judged the old way until
+    """A stamp with no `blobs` (0.8.0 and older) is judged the old way until
     the next run writes one, and withholds every file while it is stale."""
     root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
     stamps = stale_tree.stamp(root)
-    del stamps["coverage/coverage-final.json"]["sources"]
+    del stamps["coverage/coverage-final.json"]["blobs"]
     from crapkit.lanes import write_stamps
     (root / ".crapkit" / "artifacts.json").unlink()
     write_stamps(root, stamps)

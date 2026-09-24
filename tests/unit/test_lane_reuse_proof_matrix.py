@@ -3,9 +3,10 @@
 Two proofs, one per lane shape (docs/lanes.md). A lane that lists no `inputs`
 is proved by HEAD, a clean working tree, crapkit.toml, its lane table, the
 inherited environment and the crapkit version. A lane that lists them is proved
-by the tree under them at its stamp's commit against the working tree. Both then
-check the digests the stamp recorded, which is what catches the one edit git's
-index cannot see: same size, old modification time put back.
+by the tree under them at its stamp's commit against the working tree. Both read
+git's index as the answer for a file whose size and modification time it still
+holds, so a same-size edit with its old modification time put back is reused:
+the named limit docs/lanes.md states, until hashing every file is measured.
 
 Every row runs the coverage command's own lane runner to write the stamp,
 applies one event from stale_tree.EVENTS or one of the environment and
@@ -25,7 +26,8 @@ from stale_tree import EVENTS, REL
 INPUTS = ("src", "make_cov.py")
 
 # The whole-tree proof reads git's dirty set and HEAD, so every move git sees
-# reruns, and a same-size edit git's index misses is caught by the digests.
+# reruns. A same-size edit under the old modification time is one git's index
+# does not see: the named limit, pinned here as a reuse.
 WHOLE_TREE = {
     "norefresh-control": "", "touch": "", "touch-norefresh": "",
     "crlf-autocrlf-true": "", "crlf-touch-norefresh": "",
@@ -33,7 +35,7 @@ WHOLE_TREE = {
     "eol-attr-touch": "", "eol-attr-touch-norefresh": "",
     "ident-filter-touch": "", "ident-filter-touch-norefresh": "",
     "detached-head": "", "fresh-clone": "", "case-only-rename": "",
-    "autocrlf-false-crlf-bytes": REL, "same-size-one-tick": "git's index calls them unchanged",
+    "autocrlf-false-crlf-bytes": REL, "same-size-one-tick": "",
     "content-change": REL, "delete": REL, "rename": REL, "add-in-scope": "src/added.ts",
     "mode-change-staged": REL, "symlink-add": "src/link.ts",
     "shallow-clone-scope-changed": "HEAD is", "shallow-clone-scope-unchanged": "HEAD is",

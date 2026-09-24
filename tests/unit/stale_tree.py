@@ -184,13 +184,15 @@ def clone_with_state(origin: Path, dest: Path, *, depth: int | None = None) -> P
 @dataclass
 class Event:
     """One matrix row: how the repo is set up, what happens after measuring,
-    and which paths moved (the paths a right answer names)."""
+    and which paths moved (the paths a right answer names). `unknown` marks the
+    row where git cannot answer, so a right answer names git's failure."""
     name: str
     act: Callable[[Path], Path | None]
     moved: tuple[str, ...] = ()
     gitcfg: dict = field(default_factory=dict)
     attrs: str = ""
     app: str = APP_TS
+    unknown: bool = False
 
     def prepare(self, tmp: Path, **build_args) -> Path:
         """The measured repo with this event applied; the returned root is the
@@ -238,9 +240,9 @@ def _case_rename(root: Path) -> None:
 
 
 def _renormalize(root: Path) -> None:
-    """The blob holds CRLF, and an uncommitted .gitattributes now says `text`.
-    Once git looks at the file again (the touch), it reads it as modified,
-    since its next `add` would store LF, and no byte on disk moved."""
+    """The blob holds CRLF, and an uncommitted .gitattributes now says `text`:
+    no byte on disk moved, but the next `add` would store LF, a new blob. The
+    content record holds blob ids, so the file is named."""
     write(root / ".gitattributes", "*.ts text\n")
     touch(root / REL)
 
@@ -293,7 +295,7 @@ EVENTS = {event.name: event for event in (
     Event("detached-head", lambda root: git(root, "checkout", "-q", "--detach") and None),
     Event("case-only-rename", _case_rename),
     Event("renormalize-crlf-blob", _renormalize, gitcfg={"core.autocrlf": "false"},
-          app=APP_TS.replace("\n", "\r\n")),
+          app=APP_TS.replace("\n", "\r\n"), moved=(REL,)),
     Event("fresh-clone", lambda root: clone_with_state(root, root.parent / "clone")),
     Event("shallow-clone-scope-unchanged", lambda root: _shallow(root, scope_moves=False)),
     Event("amend-message-only",
@@ -302,11 +304,14 @@ EVENTS = {event.name: event for event in (
           lambda root: (git(root, "checkout", "-q", "-b", "alt", "HEAD"),
                         write(root / "NOTES.md", "two\n"), git(root, "add", "-A"),
                         git(root, "commit", "-q", "--amend", "-m", "sibling")) and None),
-    # Under core.autocrlf=false the bytes a commit would take differ, and yet
-    # no line moved: the artifact still describes every line of the file.
+    # A same-size edit under the old mtime keeps the index's blob id: git's
+    # stat cache calls the file unchanged, the named limit of the content
+    # record's fast path. The readers stay silent, and this row pins it.
+    Event("same-size-one-tick", _same_size_one_tick),
+    # Under core.autocrlf=false the bytes a commit would take are a new blob.
     Event("autocrlf-false-crlf-bytes",
-          lambda root: (git(root, "config", "core.autocrlf", "false"), _crlf_bytes(root)) and None),
-    Event("same-size-one-tick", _same_size_one_tick, moved=(REL,)),
+          lambda root: (git(root, "config", "core.autocrlf", "false"), _crlf_bytes(root)) and None,
+          moved=(REL,)),
     Event("content-change", _content, moved=(REL,)),
     Event("delete", lambda root: (root / REL).unlink(), moved=(REL,)),
     Event("rename", _rename, moved=(REL, "src/moved.ts")),
@@ -319,7 +324,7 @@ EVENTS = {event.name: event for event in (
           moved=("src/App.ts",)),
     Event("shallow-clone-scope-changed", lambda root: _shallow(root, scope_moves=True),
           moved=(REL,)),
-    Event("git-missing", _without_git, moved=(REL,)),
+    Event("git-missing", _without_git, moved=(REL,), unknown=True),
 )}
 
 

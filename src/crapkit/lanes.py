@@ -31,7 +31,7 @@ from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, untracked_files, worktree_root
 from .lane_command import launch_spec, pytest_python
-from .lane_sources import digests, moved, normalized, scope_files, settled
+from .lane_sources import moved, record, scope_files, settled
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -413,17 +413,19 @@ def read_stamps(root: Path) -> dict:
 
 class _Before(NamedTuple):
     """What a lane run reads off the tree before it starts: the proof key, the
-    digests of the files under its scopes, and the untracked files already there."""
+    content record of the files under its scopes (None when git cannot give
+    one), and the untracked files already there."""
     measured: str
-    sources: dict
+    sources: dict | None
     untracked: frozenset
 
 
 class _Trace(NamedTuple):
-    """What the run left: the proof key taken before it, the digests it can
-    vouch for, and the untracked files the run itself wrote (`byproducts`)."""
+    """What the run left: the proof key taken before it, the content record it
+    can vouch for (None when git gave none), and the untracked files the run
+    itself wrote (`byproducts`)."""
     measured: str
-    sources: dict
+    sources: dict | None
     byproducts: frozenset
 
 
@@ -434,9 +436,9 @@ def _before_run(root: Path, lane: Lane, scope_paths: dict | None) -> _Before:
 
 def _after_run(root: Path, lane: Lane, scope_paths: dict | None, coverage: dict,
                before: _Before) -> _Trace:
-    return _Trace(before.measured,
-                  settled(before.sources, _lane_sources(root, lane, scope_paths, coverage)),
-                  _byproducts(root, lane, before.untracked))
+    after = _lane_sources(root, lane, scope_paths, coverage)
+    kept = None if before.sources is None or after is None else settled(before.sources, after)
+    return _Trace(before.measured, kept, _byproducts(root, lane, before.untracked))
 
 
 def _untracked(root: Path) -> frozenset[str]:
@@ -485,10 +487,11 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, provenance: dict,
     `proof` is the measurement key when it held from start to finish, else "";
     it is named apart from `Lane.inputs`, which holds paths, not a hash.
     `proof_parts` keeps the digests a lane without `inputs` was proved by, so a
-    later rerun can say which of them moved. `sources` holds a digest of each
-    file under the lane's scopes as the run left it: what its line numbers
-    point into (lane_sources). `byproducts` names the untracked files the run
-    wrote, which no later proof counts as a change.
+    later rerun can say which of them moved. `blobs` holds the git blob id of
+    each file under the lane's scopes as the run left it: what its line numbers
+    point into (lane_sources), left out when git could not give them.
+    `byproducts` names the untracked files the run wrote, which no later proof
+    counts as a change.
 
     Empty in a non-git sandbox (unit tests), which records nothing. Lanes hand
     their stamp back rather than writing it, so N of them running at once cannot
@@ -498,12 +501,21 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, provenance: dict,
         commit = git.head_commit()
     except GitError:
         return {}
-    proof = _measurement_proof(git.root, lane, trace.byproducts)
-    clean = bool(trace.measured) and trace.measured == proof.key
     return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
-            "proof": trace.measured if clean else "", "proof_parts": proof.parts if clean else {},
-            "artifacts": _artifact_digests(lane, provenance), "sources": trace.sources,
-            "byproducts": sorted(trace.byproducts)}
+            **_held_proof(git.root, lane, trace), "artifacts": _artifact_digests(lane, provenance),
+            "byproducts": sorted(trace.byproducts), **_blobs_field(trace)}
+
+
+def _held_proof(root: Path, lane: Lane, trace: _Trace) -> dict:
+    """The proof taken before the run and its parts, when it still held after."""
+    proof = _measurement_proof(root, lane, trace.byproducts)
+    if not trace.measured or trace.measured != proof.key:
+        return {"proof": "", "proof_parts": {}}
+    return {"proof": trace.measured, "proof_parts": proof.parts}
+
+
+def _blobs_field(trace: _Trace) -> dict:
+    return {} if trace.sources is None else {"blobs": trace.sources}
 
 
 def _artifact_digests(lane: Lane, provenance: dict) -> dict:
@@ -598,7 +610,8 @@ def _whole_tree_proof(root: Path, lane: Lane, byproducts: frozenset = frozenset(
         return _Proof("", {}, f"nothing proves its inputs unchanged: {exc}")
     if dirty:
         return _Proof("", {}, f"the working tree has {len(dirty)} uncommitted change(s): {_sample(dirty)}")
-    parts = {"commit": head, "config": _digest(normalized(config)), "lane": _digest(_lane_bytes(lane)),
+    parts = {"commit": head, "config": _digest(config.replace(b"\r\n", b"\n")),
+             "lane": _digest(_lane_bytes(lane)),
              "env": _environment_digests(), "crapkit": __version__}
     return _Proof(_digest(json.dumps(parts, sort_keys=True).encode("utf-8")), parts, "")
 
@@ -853,7 +866,7 @@ def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) ->
 
 def _reuse_drift(git: GitFacts, lane: Lane, scope_paths: dict) -> str:
     stamp = stamp_for(read_stamps(git.root), lane.artifact)
-    recorded, commit = stamp.get("sources"), _stamp_commit(stamp)
+    recorded, commit = stamp.get("blobs"), _stamp_commit(stamp)
     if isinstance(recorded, dict):
         return _sources_drift(git.root, lane, scope_paths, recorded)
     return _scope_drift(git, lane, scope_paths, commit) if commit and scope_paths else ""
@@ -891,7 +904,7 @@ def lane_sources_moved(root: Path, lane: Lane, scope_paths: dict,
     commit = _artifact_commit(root, lane)
     if not commit:
         return _no_commit(root, lane, stamp)
-    recorded = stamp.get("sources")
+    recorded = stamp.get("blobs")
     if isinstance(recorded, dict):
         return _sources_drift(root, lane, scope_paths, recorded)
     return _commit_drift(_facts(root, git), lane, scope_paths, commit)
@@ -911,20 +924,24 @@ def _commit_drift(facts: GitFacts, lane: Lane, scope_paths: dict, commit: str) -
 
 
 def _sources_drift(root: Path, lane: Lane, scope_paths: dict, recorded: dict) -> str:
-    """The files under this lane's scopes whose bytes differ from the ones its
-    run measured, named; "" when none do. New files count, and so do deleted
-    ones. git only lists the files; the digests decide."""
-    changed = moved(root, recorded, _scope_listing(root, lane, scope_paths))
+    """The files under this lane's scopes whose blob ids differ from the ones
+    its run measured, named; "" when none do. New files count, and so do
+    deleted ones. A git failure leaves the question open, and says so."""
+    try:
+        changed = moved(root, recorded, _scope_listing(root, lane, scope_paths),
+                        _declared_paths(lane, scope_paths))
+    except GitError as exc:
+        return f"git cannot say which files in its scopes changed since it measured them ({exc})"
     if not changed:
         return ""
     return f"{len(changed)} file(s) in its scopes changed since it measured them ({_sample(changed)})"
 
 
 def recorded_sources(root: Path, lane: Lane) -> dict | None:
-    """The digests the stamp of the artifact on disk recorded, or None when the
+    """The blob ids the stamp of the artifact on disk recorded, or None when the
     stamp holds none: no artifact, a refused one, no stamp, or a stamp crapkit
     0.8.0 or older wrote."""
-    recorded = stamp_for(read_stamps(root), lane.artifact).get("sources")
+    recorded = stamp_for(read_stamps(root), lane.artifact).get("blobs")
     return recorded if isinstance(recorded, dict) and _artifact_commit(root, lane) else None
 
 
@@ -999,7 +1016,7 @@ def lane_reuse_verdict(root: Path, lane: Lane) -> ReuseVerdict:
     stamp = stamp_for(read_stamps(root), lane.artifact)
     commit = _artifact_commit(root, lane)
     reason = (_stamp_gap(root, lane, stamp, commit) or _proof_gap(root, lane, stamp, commit)
-              or _artifact_gap(root, lane, stamp) or _sources_gap(root, lane, stamp))
+              or _artifact_gap(root, lane, stamp))
     return ReuseVerdict("" if reason else commit, reason)
 
 
@@ -1104,33 +1121,6 @@ def _artifact_gap(root: Path, lane: Lane, stamp: dict) -> str:
         return "its stamp records no digest of its artifact"
     moved = [name for name in _declared_files(lane) if _file_digest(root / name) != expected.get(name)]
     return f"{_sample(moved)}: bytes differ from its stamp" if moved else ""
-
-
-def _sources_gap(root: Path, lane: Lane, stamp: dict) -> str:
-    """The files the stamp's digests say changed though git's index calls them
-    unchanged, under the lane's inputs when it declares them.
-
-    git decides a file unchanged from its size and modification time. A
-    same-size edit whose old time was put back (`cp -p`, `tar -x`, `rsync -t`)
-    passes that check, and reuse republished the old coverage. A stamp from
-    0.8.0 or older records no digests and is judged by git alone."""
-    recorded = stamp.get("sources")
-    if not isinstance(recorded, dict):
-        return ""
-    changed = moved(root, _under_inputs(lane, recorded))
-    if not changed:
-        return ""
-    return (f"{len(changed)} file(s) under its scopes hold other bytes than it measured, though "
-            f"git's index calls them unchanged: {_sample(changed)}")
-
-
-def _under_inputs(lane: Lane, recorded: dict) -> dict:
-    """The recorded digests a reuse decision may read: all of them for a lane
-    proved by the whole tree, the ones under its inputs for one that lists them."""
-    if not lane.inputs:
-        return recorded
-    matchers = path_matchers({"inputs": tuple(lane.inputs)})
-    return {path: digest for path, digest in recorded.items() if owning_scope(path, matchers)}
 
 
 def _file_digest(path: Path) -> str:
@@ -1549,11 +1539,17 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
     return LaneOutcome(coverage, provenance, stamp)
 
 
-def _lane_sources(root: Path, lane: Lane, scope_paths: dict | None, measured=()) -> dict[str, str]:
-    """A digest of every file under the lane's scopes, and of every in-tree file
-    its artifact measured, but the lanes' own outputs."""
-    listed = _scope_listing(root, lane, scope_paths or {})
-    return digests(root, {*listed, *(path for path in measured if not _escapes_repo(path))})
+def _lane_sources(root: Path, lane: Lane, scope_paths: dict | None, measured=()) -> dict | None:
+    """The blob id of every file under the lane's scopes, and of every in-tree
+    file its artifact measured, but the lanes' own outputs; None when git
+    cannot give them."""
+    scope_paths = scope_paths or {}
+    listed = _scope_listing(root, lane, scope_paths)
+    try:
+        return record(root, {*listed, *(path for path in measured if not _escapes_repo(path))},
+                      _declared_paths(lane, scope_paths))
+    except GitError:
+        return None
 
 
 def _scope_listing(root: Path, lane: Lane, scope_paths: dict) -> list[str]:
