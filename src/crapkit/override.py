@@ -111,12 +111,23 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     line = f"crapkit OVERRIDE ({reason}): {summary}"
     # The line reaches the alert command on stdin, never interpolated into the
     # shell string: function names come from analyzed source and are not shell-safe.
-    proc = subprocess.run(alert_command, shell=True, cwd=root, input=line + "\n",
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if proc.returncode != 0:
+    code, printed = send_alert(alert_command, root, line + "\n")
+    if code != 0:
         raise ToolError(
-            f"override alert command failed (exit {proc.returncode}): "
-            f"{(proc.stderr or proc.stdout).strip()[-300:]} — no alert, no override")
+            f"override alert command failed (exit {code}): "
+            f"{printed.strip()[-300:]} — no alert, no override")
+
+
+def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:
+    """Hand `text` to the alert command on stdin, and return its exit code and
+    what it printed (stderr, else stdout).
+
+    The bytes are UTF-8 with LF line ends on every OS. A text-mode pipe turned
+    each LF into CR LF on Windows, so an alert log fed by `cat >>` held CR LF
+    from a Windows committer and LF from everyone else."""
+    proc = subprocess.run(alert_command, shell=True, cwd=root,
+                          input=text.encode("utf-8", "replace"), capture_output=True)
+    return proc.returncode, (proc.stderr or proc.stdout).decode("utf-8", "replace")
 
 
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,

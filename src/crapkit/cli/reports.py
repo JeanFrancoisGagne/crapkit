@@ -50,15 +50,14 @@ def _warn_skipped_runs(scored_runs: list[dict], pair) -> None:
 
 def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str]) -> None:
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
-    import subprocess
+    from ..override import send_alert
 
     if not cfg.alert_command.strip():
         raise ConfigError("digest --alert needs [crapkit] alert_command")
     body = f"crapkit digest (runs {prev['id']} -> {cur['id']}):\n" + "\n".join(lines) + "\n"
-    proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=body,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if proc.returncode != 0:
-        raise ToolError(f"digest alert command failed (exit {proc.returncode})")
+    code, _printed = send_alert(cfg.alert_command, root, body)
+    if code != 0:
+        raise ToolError(f"digest alert command failed (exit {code})")
 
 
 def cmd_digest(args: argparse.Namespace) -> int:
