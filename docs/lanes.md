@@ -1410,10 +1410,10 @@ crapkit: lane 'py' declares results_artifact .crapkit/cov/junit-py.xml, which th
 EXIT=5
 ```
 
-That verify used to pass: exit 0, `"ok": true` under `--json`, `verify passed.` in the
-Action's comment, and the run stored as the next trusted baseline. A lane that declares no
-`results_artifact` had no report to read, so verify still passes it and lists it under
-`lanes_without_results`.
+That verify used to pass: exit 0, `"ok": true` under `--json`, and the run stored as the
+next trusted baseline. The Action never reached it, since its `coverage` step refuses the
+same junit first. A lane that declares no `results_artifact` had no report to read, so
+verify still passes it and lists it under `lanes_without_results`.
 
 ### The test count is the second check
 

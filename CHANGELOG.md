@@ -19,16 +19,17 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   that adds `results_artifact` to a lane whose suite already fails a test. `verify --json`
   lists such lanes under `lanes_without_baseline_results`, and the Action's comment gives
   each one a bullet.
-- `verify --json` lists under `lanes_without_results` every lane that recorded no test
-  results this run, and the Action's comment says their new failures went unchecked. A
+- `verify --reuse-artifacts` exits 5 when a lane declares a `results_artifact` it reused
+  and could not read (gone, empty, malformed, zero testcases, a crashed worker, a count
+  that does not match its cases), names each such lane and its file, and stores no run.
+  The refusal ends `run verify without --reuse-artifacts so the lane writes it again`.
+  verify read the absent failure list as no new failures: exit 0, `"ok": true`, and a run
+  that checked no test became the next trusted baseline. `coverage --reuse-artifacts`
+  over the same junit still warns and scores the lane.
+- `verify --json` lists under `lanes_without_results` every lane that declares no
+  `results_artifact`, and the Action's comment says their new failures went unchecked. A
   lane with no `results_artifact` whose command exited nonzero gets a stderr line naming
   the exit code, which was the only sign a test failed.
-- `verify --reuse-artifacts` exits 5 when a lane's declared `results_artifact` is missing,
-  empty, malformed or says its run never finished, names each such lane and its file, and
-  stores no run. The refusal ends `run verify without --reuse-artifacts so the lane writes
-  it again`. verify read the absent failure list as no new failures: exit 0, `"ok": true`,
-  a passing Action comment, and a run that checked no test became the next trusted
-  baseline. `coverage --reuse-artifacts` over the same junit still warns and scores on.
 - A verify run that crapkit 0.7.x stored kept a failure that passed its flake retry in its
   failure list. Read as a baseline, it forgave a later real failure of that test. verify
   now reads such a run's failures from the newest trusted run behind it, and says so.
@@ -105,7 +106,10 @@ the report gone or unreadable. Every reader of those fields took that absence fo
 The shallow-clone refusal and the mutate counts below, and the `verify --reuse-artifacts`
 refusal above, can change a CI job's exit code or a number a script reads; the [upgrade
 guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
-says what to change.
+says what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
+without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores
+an artifact a failed lane left, and one real run records the refusal for a lane that still
+writes nothing.
 
 - A depth-1 clone, the `actions/checkout` default, holds one commit, so every mark read 0
   days old, nothing read as repaid and churn counted one commit per file. `ratchet report
@@ -123,11 +127,13 @@ says what to change.
   untested, and `brief` and `next-item` multiplied that stand-in into
   `est_uncovered_paths`. `cov`, `crap`, `flag`, `remedy` and `est_uncovered_paths` keep
   their values until JSON schema 2.
-- `brief` and `next-item` give a function in a scope no lane covers its own dark-line
-  note, which says no lane covers the scope and to add it to a lane's `scopes`. A lane
-  whose artifact went stale, or was only ever reused and so never stamped, set its note
-  for every path, so such a function read `lane 'lib': files in its scopes changed since
-  cov.json was written`, and rerunning that lane measured nothing there.
+- `brief`, `next-item` and the MCP tools `get_function_brief` and `get_next_item` give a
+  function in a scope no lane covers its own dark-line note: `no lane covers scope 'src',
+  so no artifact can name uncovered lines for src/a.py; add 'src' to a [[lane]]'s scopes
+  to measure it`. A lane whose artifact went stale, or was only ever reused and so never
+  stamped, set its note for every path, so such a function read `lane 'lib': files in
+  its scopes changed since cov.json was written`, and rerunning that lane measured nothing
+  there.
 - `mutate` reports a mutant whose suite ran past `mutation_timeout_seconds` apart from a
   kill: its progress line says `timed out, counted killed`, the summary says how many of
   the killed timed out, and `--json` adds `timed_out`, a count inside `killed`. A mutant
