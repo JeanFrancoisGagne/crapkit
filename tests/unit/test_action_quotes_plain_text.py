@@ -156,3 +156,25 @@ def test_the_builders_usage_error_and_help_are_plain_in_a_pipe(tmp_path, argv, c
     assert ESC.encode() not in output, output
     assert b"usage: comment.py" in output
     assert result.returncode == (0 if argv == ["--help"] else 2)
+
+
+# --- what the base step keeps of a crash --------------------------------------
+
+@pytest.mark.parametrize("colour", list(_COLOUR_ENVS.values()), ids=list(_COLOUR_ENVS))
+def test_the_first_stderr_line_of_a_crash_is_plain(tmp_path, colour):
+    """action.yml keeps `head -n 1` of the base run's stderr. From 3.13 the
+    interpreter colours an uncaught traceback under FORCE_COLOR or
+    PYTHON_COLORS, and a store that is not a database is one way to get one;
+    the header line it starts with carries no colour, so the reason stays
+    plain whatever crapkit prints first."""
+    (tmp_path / "crapkit.toml").write_text('[crapkit]\ntarget = 6\n', encoding="utf-8")
+    (tmp_path / ".crapkit").mkdir()
+    (tmp_path / ".crapkit" / "crap.sqlite").write_bytes(b"not a sqlite database " * 8)
+    env = {k: v for k, v in os.environ.items() if k not in _KNOBS}
+    env.update(colour)
+    result = hang_guard.run([sys.executable, "-m", "crapkit", "runs"], cwd=tmp_path, env=env)
+
+    first = (result.stderr.splitlines() or [b""])[0]
+    assert result.returncode != 0, "a store that is not a database is refused"
+    assert first.strip(), result.stderr
+    assert ESC.encode() not in first, result.stderr

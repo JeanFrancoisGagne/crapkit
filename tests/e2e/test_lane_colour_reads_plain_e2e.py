@@ -253,3 +253,25 @@ def test_every_reader_of_a_failed_lane_gets_plain_text(tmp_path, row):
 
     assert not bad, f"{row} (lane on Python {sys.version.split()[0]}):\n" + "\n".join(bad)
     assert _log_colour(repo) == (row in _PYTEST_COLOURS), "the lane log keeps the colour pytest wrote"
+
+
+# The settings that leave pytest plain, or move where its tail breaks. One lane
+# is enough to show the cause still leads: pytest's separators follow COLUMNS,
+# and a wider one spends more of the 500-character tail.
+QUIET_ENVS = {
+    "TERM=dumb": {"TERM": "dumb"},
+    "NO_COLOR=1": {"NO_COLOR": "1"},
+    "COLUMNS=40": {"COLUMNS": "40"},
+    "COLUMNS=250": {"COLUMNS": "250"},
+    "COLUMNS=250 FORCE_COLOR=1": {"COLUMNS": "250", "FORCE_COLOR": "1"},
+}
+
+
+@pytest.mark.parametrize("row", list(QUIET_ENVS), ids=list(QUIET_ENVS))
+def test_the_broken_lane_names_its_cause_at_any_width(tmp_path, row):
+    repo = copy_of(template(tmp_path, "colour-lanes", _build), tmp_path / "repo")
+    extra = {**dict.fromkeys((*_KNOBS, "COLUMNS")), **QUIET_ENVS[row]}
+    result = run_cli(repo, "coverage", "--lane", "broken", env_extra=extra)
+
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert _fault(result.stderr, CAUSE) == "", result.stderr
