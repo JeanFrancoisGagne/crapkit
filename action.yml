@@ -26,7 +26,9 @@ inputs:
     required: false
     default: "true"
   top:
-    description: worklist rows to render for the changed files.
+    description: >-
+      worklist rows to render for the changed files. An empty value renders 5;
+      a value that is not a whole number renders 5 and warns.
     required: false
     default: "5"
   python-version:

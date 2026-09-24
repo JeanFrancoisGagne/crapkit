@@ -652,9 +652,16 @@ The verdict opens with the exit code and the rule it stands for (`complexity gat
 `ratchet regressions`, `new test failures`, `diff-coverage ceiling N`), then one bullet per
 finding: each gate violation with its function, ccn, coverage, CRAP and remedy; each
 ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
-uncovered changed lines, one bullet per file, with a count of the rest. The counts line
-closes it. A verify that passed is one line: `**verify passed.** Run 2 against baseline 1,
-7 changed files.`
+uncovered changed lines, one bullet per file, with a count of the rest. Each kind prints
+fifty bullets at most, then `- and 1450 more new test failures; `crapkit verify` lists them
+all`. The counts line closes it. A verify that passed is one line: `**verify passed.** Run 2
+against baseline 1, 7 changed files.`
+
+GitHub refuses a comment over 65,536 characters, and a pull request then gets no comment
+at all. A body that still runs over (long names under a large `top`) is cut at the last
+line that fits, the marker line still first, and ends with `the comment stopped at
+GitHub's 65,536-character limit; the job log above holds the whole text.` The step prints
+the whole comment to the job log before it posts.
 
 The rows are the ranked worklist for the files the pull request changed, worst first,
 `top` of them, with the rows a finding names listed first. `risk` is ccn times churn
@@ -676,7 +683,7 @@ behind the checkout to measure from.
 |---|---|---|
 | `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. On a pull request with `delta` on it also exits 1 when the base run was not made, because a verdict with no base run judged no changed function. Anything else exits 0 and the comment is the whole output |
 | `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone, and the verdict then judges no changed function |
-| `top` | `"5"` | worklist rows rendered in the table |
+| `top` | `"5"` | worklist rows rendered in the table. An empty value renders 5. A value that is not a whole number (`"ten"`, `"5.0"`, `"-1"`) renders 5 and puts a warning naming the input on the run's summary page |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
 
 `gate: "false"` is the default on purpose. A team adopts the action before it has decided

@@ -455,6 +455,48 @@ def test_top_caps_the_rows_after_the_filter_not_before():
     assert [row["path"] for row in picked] == ["calc/report.py"]
 
 
+def _three_rows(tmp_path) -> Path:
+    worklist = tmp_path / "worklist.json"
+    worklist.write_text(json.dumps({"active": [
+        {"path": f"calc/m{i}.py", "start": 1, "function": f"f{i}( x )", "ccn": 9 - i, "risk": 1.0,
+         "remedy": "decompose"} for i in range(3)]}), encoding="utf-8")
+    return worklist
+
+
+# The `top` input as a workflow hands it over: a string, "" when the expression
+# it names is unset. The number is the rows the table shows out of three.
+_TOPS = {"5": 3, "2": 2, " 5 ": 3, "": 3, "ten": 3, "five": 3, "5.0": 3, "-1": 3, "1" * 20: 3}
+
+
+@pytest.mark.parametrize("top", list(_TOPS), ids=[repr(top) for top in _TOPS])
+def test_the_top_input_renders_rows_whatever_string_the_workflow_hands_over(tmp_path, top, capsys):
+    """`--top` was `type=int`: "", "ten" and "5.0" exited 2 in "build the
+    comment", the composite stopped there, and the job failed with the gate off
+    and no comment. "-1" sliced the last row off without a word."""
+    out = tmp_path / "comment.md"
+
+    code = _builder().main(["--worklist", str(_three_rows(tmp_path)), "--top", top, "--out", str(out)])
+
+    assert code == 0
+    assert out.read_text(encoding="utf-8").count("| `calc/m") == _TOPS[top]
+
+
+@pytest.mark.parametrize("top", ["ten", "5.0", "-1"])
+def test_a_top_that_is_not_a_row_count_is_named_in_a_warning(tmp_path, top, capsys):
+    _builder().main(["--worklist", str(_three_rows(tmp_path)), "--top", top, "--out", str(tmp_path / "c.md")])
+
+    assert capsys.readouterr().out == (
+        f"::warning title=crapkit::input top is {top!r}, not a whole number of rows; the comment "
+        f"shows 5. Set top to a number such as \"10\", or leave it out for 5.\n")
+
+
+@pytest.mark.parametrize("top", ["5", "", " 5 "])
+def test_a_row_count_or_an_empty_top_warns_about_nothing(tmp_path, top, capsys):
+    _builder().main(["--worklist", str(_three_rows(tmp_path)), "--top", top, "--out", str(tmp_path / "c.md")])
+
+    assert capsys.readouterr().out == ""
+
+
 def test_a_changed_file_with_no_ranked_function_says_so():
     body = _builder().table([])
 
@@ -977,6 +1019,87 @@ def test_the_verdict_prints_one_bullet_per_new_test_failure():
     assert "- new test failure: `tests/test_calc.py::test_route`" in line
 
 
+_GITHUB_COMMENT_LIMIT = 65536
+
+
+def _failures(count: int) -> list:
+    return [f"tests/unit/test_module_{i}.py::test_a_case_whose_name_runs_long_{i}" for i in range(count)]
+
+
+def _violations(count: int) -> list:
+    return [{**_violation(), "start": i, "long_name": f"route_{i}( a , b , c , d )"} for i in range(count)]
+
+
+def _regressions(count: int) -> list:
+    return [{"path": f"app/m{i}.py", "long_name": f"f{i}( x )", "recorded": 8.0, "fresh_crap": 9.0}
+            for i in range(count)]
+
+
+# A finding kind with more entries than one comment can carry: the entries the
+# verdict prints, and the line that counts the rest.
+_FLOODS = {
+    "10-new-failures": (dict(new_failures=_failures(10)), 8, 10, None),
+    "1500-new-failures": (dict(new_failures=_failures(1500)), 8, 50,
+                          "- and 1450 more new test failures; `crapkit verify` lists them all"),
+    "1000-gate-violations": (dict(gate_violations=_violations(1000)), 6, 50,
+                             "- and 950 more gate violations; `crapkit verify` lists them all"),
+    "1000-ratchet-regressions": (dict(ratchet_regressions=_regressions(1000)), 7, 50,
+                                 "- and 950 more ratchet regressions; `crapkit verify` lists them all"),
+}
+
+
+@pytest.mark.parametrize("name", list(_FLOODS))
+def test_a_flood_of_findings_prints_fifty_of_a_kind_and_counts_the_rest(name):
+    """Every entry was a bullet, and GitHub refuses a comment body over 65,536
+    characters: 1,500 new failures made a 152,245-character body, the POST came
+    back 422, and the pull request got no comment at all."""
+    over, code, shown, rest = _FLOODS[name]
+
+    text = _builder().body(None, _failing_verify(**over), code, None, [], 5)
+
+    assert len(text) <= _GITHUB_COMMENT_LIMIT
+    assert len([ln for ln in text.splitlines() if ln.startswith("- ") and " more " not in ln]) == shown
+    assert rest is None or rest in text
+
+
+def test_a_body_over_githubs_limit_is_cut_below_it_and_says_so(tmp_path):
+    """Long names and a large `top` still make a table GitHub refuses. The
+    request body is cut at a line under the limit, in UTF-8 bytes so no count
+    of a multibyte character can tip it over; the marker stays first, so the
+    next push still edits this comment, and the markdown the step prints to
+    the job log keeps every row."""
+    worklist = tmp_path / "worklist.json"
+    worklist.write_text(json.dumps({"active": [
+        {"path": f"app/m{i}.py", "start": 1, "function": "é" * 300, "ccn": 9, "risk": 1.0,
+         "remedy": "decompose"} for i in range(1000)]}), encoding="utf-8")
+    out, request = tmp_path / "c.md", tmp_path / "c.json"
+
+    _builder().main(["--worklist", str(worklist), "--top", str(10 ** 20), "--out", str(out),
+                     "--json-out", str(request)])
+
+    sent = json.loads(request.read_text(encoding="utf-8"))["body"]
+    assert len(sent.encode("utf-8")) <= _GITHUB_COMMENT_LIMIT
+    assert sent.startswith(_builder().MARKER)
+    assert sent.endswith("the comment stopped at GitHub's 65,536-character limit; the job log above "
+                         "holds the whole text.\n")
+    assert out.read_text(encoding="utf-8").count("| `app/m") == 1000
+
+
+def test_a_flood_of_new_failures_posts_one_comment_github_accepts(tmp_path):
+    """The whole route: main() writes the request body, the post step sends it,
+    and the local API refuses a body over the limit with 422 as GitHub does."""
+    verify = tmp_path / "verify.json"
+    verify.write_text(json.dumps(_failing_verify(new_failures=_failures(1500))), encoding="utf-8")
+    request = tmp_path / "request.json"
+    _builder().main(["--verify", str(verify), "--verify-exit", "8", "--out", str(tmp_path / "c.md"),
+                     "--json-out", str(request)])
+
+    result, writes = _post_under_real_gh(tmp_path, [], request=request)
+
+    assert writes == _POST_FRESH
+    assert "posting the crapkit comment exited 0" in result.stdout, result.stdout + result.stderr
+
+
 def test_the_verdict_lists_the_first_twenty_uncovered_changed_lines_grouped_per_file():
     uncovered = [{"path": "a.py", "line": n} for n in range(1, 16)] + \
                 [{"path": "b.py", "line": n} for n in range(1, 11)]
@@ -1234,7 +1357,10 @@ class _CommentsApi(BaseHTTPRequestHandler):
         self._write(201)
 
     def _write(self, status: int):
-        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        sent = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        if len(sent.get("body", "")) > 65536:
+            self._answer(422, {"message": "Validation Failed", "errors": [{"code": "too_long"}]})
+            return
         self.server.writes.append(f"{self.command} {urlsplit(self.path).path}")
         self._answer(status, {"id": 99})
 
@@ -1261,16 +1387,19 @@ def _env_routing_gh_to(port: int) -> dict:
     return env
 
 
-def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0) -> tuple:
+def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0, request=None) -> tuple:
     """The post step under bash with the `gh` on PATH, whose built-in jq runs the
     lookup, against a local API that lists `comments` on pull request 7 (or
-    serves `pages` one per request, the way GitHub pages a long thread).
-    Returns the step's result and the writes the API received."""
+    serves `pages` one per request, the way GitHub pages a long thread), and
+    refuses a body over 65,536 characters with a 422 as GitHub does. The step
+    sends `request`, or a marker-only body. Returns the step's result and the
+    writes the API accepted."""
     if shutil.which("gh") is None:
         pytest.skip("needs gh on PATH, which the ubuntu-latest and windows-latest runners carry")
     state = tmp_path / "state"
     state.mkdir()
-    (state / "crapkit-comment.json").write_text('{"body": "<!-- crapkit-action -->"}', encoding="utf-8")
+    sent = request.read_text(encoding="utf-8") if request else '{"body": "<!-- crapkit-action -->"}'
+    (state / "crapkit-comment.json").write_text(sent, encoding="utf-8")
     script = tmp_path / "post-step.sh"
     script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
     server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)

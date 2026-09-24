@@ -34,6 +34,15 @@ _RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures"
 # The verify lists whose entries name a function. The comment's table lists
 # those rows first, so the function the gate stopped is not below the fold.
 _FINDING_LISTS = ("gate_violations", "ratchet_regressions", "overridden")
+_SHOWN_PER_KIND = 50
+
+# GitHub refuses a comment body over 65,536 characters with a 422, and the pull
+# request then gets no comment at all. The request body is measured in UTF-8
+# bytes, which a character never counts fewer of, and cut at a line under it.
+_BODY_LIMIT = 65536
+_CUT_NOTE = ("the comment stopped at GitHub's 65,536-character limit; the job log above "
+             "holds the whole text.\n")
+_DEFAULT_TOP = 5
 _CELL_BREAKS = str.maketrans({char: ascii(char)[1:-1] for char in "\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029"})
 
 
@@ -69,13 +78,19 @@ def _read_lines(path: str | None) -> list[str]:
 
 
 def _changed_paths(args: argparse.Namespace) -> list[str]:
-    """Exact Git NUL records, or the legacy saved-payload line format."""
+    """Exact Git NUL records, or the legacy saved-payload line format.
+
+    A git tree can name a file with any bytes, and a Linux checkout keeps them,
+    so a record that is not UTF-8 reads with U+FFFD in place of each bad byte.
+    It still counts as a changed file; it matches no worklist row, and crapkit
+    scores no file under such a name either."""
     if args.changed_z is None:
         return _read_lines(args.changed)
     try:
-        return [path for path in Path(args.changed_z).read_bytes().decode("utf-8").split("\0") if path]
+        raw = Path(args.changed_z).read_bytes()
     except OSError:
         return []
+    return [path for path in raw.decode("utf-8", "replace").split("\0") if path]
 
 
 def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
@@ -239,12 +254,25 @@ def _uncovered_bullets(verify: dict) -> list[str]:
     return bullets
 
 
+def _capped(bullets: list[str], noun: str) -> list[str]:
+    """The first fifty bullets of one finding kind, then how many the cut hid.
+    Every one was a bullet, and 1,500 new failures made a body GitHub refused
+    with a 422, so the pull request got no comment at all."""
+    hidden = len(bullets) - _SHOWN_PER_KIND
+    if hidden <= 0:
+        return bullets
+    return bullets[:_SHOWN_PER_KIND] + [f"- and {_plural(hidden, 'more ' + noun)}; "
+                                        f"`crapkit verify` lists them all"]
+
+
 def _failed(verify: dict, exit_code: int) -> str:
-    """The exit phrase, one bullet per finding, and the counts line last, as
-    it always read."""
+    """The exit phrase, one bullet per finding up to fifty of a kind, and the
+    counts line last, as it always read."""
     head = f"**verify failed, {_exit_phrase(verify, exit_code)}.**"
     counts = f"{_against(verify)}: {_findings(verify)}."
-    bullets = (_gate_bullets(verify) + _ratchet_bullets(verify) + _failure_bullets(verify)
+    bullets = (_capped(_gate_bullets(verify), "gate violation")
+               + _capped(_ratchet_bullets(verify), "ratchet regression")
+               + _capped(_failure_bullets(verify), "new test failure")
                + _uncovered_bullets(verify))
     if not bullets:
         return f"{head} {counts}"
@@ -352,6 +380,33 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
                       table(entries), ""])
 
 
+def request_text(text: str) -> str:
+    """The comment as the request sends it: whole when GitHub will take it,
+    else cut at the last line that fits, the marker still first, and a line
+    that says where the rest is."""
+    raw = text.encode("utf-8")
+    if len(raw) <= _BODY_LIMIT:
+        return text
+    kept = raw[:_BODY_LIMIT - len(_CUT_NOTE) - 1].decode("utf-8", "ignore")
+    return kept[:kept.rfind("\n") + 1] + "\n" + _CUT_NOTE
+
+
+def top_rows(value: str) -> int:
+    """The `top` input as a row count. A workflow hands it over as a string, ""
+    when the expression it names is unset, which reads as the default. Anything
+    but a whole number reads as the default too, with a warning that names the
+    input: `type=int` exited 2 on "ten", and the job failed with the gate off
+    and no comment; "-1" sliced the last row off."""
+    text = (value or "").strip()
+    if not text:
+        return _DEFAULT_TOP
+    if text.isascii() and text.isdigit():
+        return int(text)
+    print(f"::warning title=crapkit::input top is {value!r}, not a whole number of rows; the comment "
+          f"shows {_DEFAULT_TOP}. Set top to a number such as \"10\", or leave it out for {_DEFAULT_TOP}.")
+    return _DEFAULT_TOP
+
+
 def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--coverage", help="crapkit coverage --json output")
@@ -364,8 +419,10 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--base-reason", help="file holding why the base run was not made")
     parser.add_argument("--worklist", help="crapkit worklist --json output")
     parser.add_argument("--changed", help="file holding one changed path per line")
-    parser.add_argument("--changed-z", help="file holding UTF-8, NUL-separated Git paths")
-    parser.add_argument("--top", type=int, default=5, help="rows to render (default 5)")
+    parser.add_argument("--changed-z", help="file holding NUL-separated Git paths")
+    parser.add_argument("--top", default=str(_DEFAULT_TOP),
+                        help="rows to render (default 5); a value that is not a whole number "
+                             "warns and renders 5")
     parser.add_argument("--out", required=True, help="where to write the markdown")
     parser.add_argument("--json-out", help="where to write the {\"body\": ...} gh api sends")
     return parser.parse_args(argv)
@@ -374,11 +431,11 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
-                _read_json(args.worklist), _changed_paths(args), args.top,
+                _read_json(args.worklist), _changed_paths(args), top_rows(args.top),
                 _base_reason(args.base_sha, args.base_reason), args.coverage_exit)
     Path(args.out).write_text(text, encoding="utf-8", newline="\n")
     if args.json_out:
-        Path(args.json_out).write_text(json.dumps({"body": text}),
+        Path(args.json_out).write_text(json.dumps({"body": request_text(text)}),
                                        encoding="utf-8", newline="\n")
     return 0
 

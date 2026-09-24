@@ -26,6 +26,18 @@
   lane that failed, and a crapkit killed before it printed anything left the reason
   empty after its colon. That case now reads `crapkit coverage exited <code> and printed
   nothing`.
+- "build the comment" no longer stops the job on a changed file whose name is not UTF-8.
+  A Linux checkout keeps such names as git stores them, the builder decoded them as
+  strict UTF-8, and the composite stopped before it posted a comment or ran the gate, so
+  the job failed with `gate: "false"`. The name still counts as a changed file.
+- The `top` input takes whatever string the workflow hands over. `""` (an unset
+  expression) renders 5 rows. `"ten"`, `"5.0"` and `"-1"` render 5 and print a warning
+  naming the input on the run's summary page. The first three exited 2 and failed the job
+  with no comment, and `"-1"` dropped the last row without a word.
+- The verdict prints fifty bullets per finding kind at most, then a line counting the
+  rest, and a request body still over GitHub's 65,536-character limit is cut at a line
+  that fits, the marker first. A pull request with 1,500 new test failures made a
+  152,245-character body, GitHub answered 422, and no comment was posted.
 
 ## 0.8.0 — 2026-09-23
 
