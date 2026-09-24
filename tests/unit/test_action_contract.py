@@ -1745,11 +1745,11 @@ _ENGINE_PAGES = {
 def test_the_lookup_filter_holds_under_every_jq_engine(engine, page):
     """gh runs the filter in its built-in gojq; jq 1.6 and 1.7.1 fail `contains`
     on null the same way, so the filter is held to all three. Each engine runs
-    where it is on PATH: jq 1.7.1 on both CI runner images, gojq and jq 1.6
-    where a machine installed them."""
+    where it is on PATH: jq 1.7.1 on every CI runner image, and gojq and jq 1.6
+    on the Linux jobs, whose ci.yml step puts both there."""
     binary = shutil.which(engine)
     if binary is None:
-        pytest.skip(f"needs {engine} on PATH; the CI runner images carry jq only")
+        pytest.skip(f"needs {engine} on PATH; ci.yml puts it there on the Linux jobs only")
     comments, expected = _ENGINE_PAGES[page]
 
     done = subprocess.run([binary, "-r", _lookup_filter()], input=json.dumps(comments),
