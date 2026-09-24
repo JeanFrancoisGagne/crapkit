@@ -82,16 +82,85 @@ def test_doctor_refuses_a_broken_path_launcher(tmp_path):
     assert os.path.normcase(str(shim)) in os.path.normcase(done.stdout) and "FAIL" in done.stdout
 
 
-def test_doctor_refuses_unreadable_launcher_output(monkeypatch, capsys):
-    from crapkit.cli import admin
+def test_mcp_brief_carries_a_cp1252_function_name_and_its_source_whole(tmp_path):
+    """The MCP server reads its CLI child's answer as bytes and the child
+    writes UTF-8, so a latin-1 module's name and lines come back as the file
+    holds them, under a host locale that is not UTF-8."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "crapkit.toml").write_text(
+        '[crapkit]\ntarget=6\n[[scope]]\nname="src"\npaths=["src"]\n'
+        'languages=["python"]\ncoverage_optional=true\n', encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_bytes(b"# -*- coding: latin-1 -*-\ndef caf\xe9(x):\n"
+                                          b"    # \xe9t\xe9\n    if x:\n        return 1\n"
+                                          b"    return 2\n")
+    for step in (["init", "-q"], ["add", "-A"],
+                 ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "m"]):
+        subprocess.run(["git", *step], cwd=repo, check=True, capture_output=True)
+    assert main(["coverage", "--repo", str(repo)]) == 0
+    frames = [{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+               "params": {"name": "get_function_brief",
+                          "arguments": {"path": "src/app.py", "name": "café"}}}]
 
-    def unreadable(*args, **kwargs):
-        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid byte")
+    done = run_mcp([sys.executable, "-m", "crapkit", "mcp", "--repo", str(repo)], cwd=repo,
+                   frames="".join(json.dumps(x) + "\n" for x in frames),
+                   env=dict(os.environ, PYTHONUTF8="0"), encoding="utf-8", errors="strict")
 
-    monkeypatch.setattr(subprocess, "run", unreadable)
-    monkeypatch.setattr(admin, "_spawned_cli", lambda: ("broken-cli", admin._probed_cli_version("broken-cli")))
-    assert main(["doctor", "--plugin-root", str(ROOT / "plugin")]) == 1
-    assert "FAIL broken-cli" in capsys.readouterr().out
+    answer = json.loads(done.stdout.splitlines()[0])
+    brief = json.loads(answer["result"]["content"][0]["text"])
+    assert done.returncode == 0, done.stderr
+    assert brief["function"] == "café( x )"
+    assert "# été" in brief["source"]
+
+
+def _launcher(directory: Path, answer: bytes) -> Path:
+    """A `crapkit` on PATH that answers `--version` with exactly `answer`."""
+    directory.mkdir()
+    say = directory / "say.py"
+    say.write_text(f"import sys\nsys.stdout.buffer.write({answer!r})\n", encoding="utf-8")
+    if os.name == "nt":
+        shim = directory / "crapkit.cmd"
+        shim.write_text(f'@"{sys.executable}" "{say}"\r\n', encoding="utf-8")
+    else:
+        shim = directory / "crapkit"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{say}"\n', encoding="utf-8")
+        shim.chmod(0o755)
+    return shim
+
+
+def _plugin_version() -> str:
+    manifest = ROOT / "plugin" / ".claude-plugin" / "plugin.json"
+    return json.loads(manifest.read_text(encoding="utf-8"))["version"]
+
+
+LAUNCHER_ANSWERS = [
+    # id, what the launcher prints, whether doctor must FAIL it as unreadable
+    ("version-0xff", b"crapkit \xff.9.9\n", True),
+    ("version-latin1-tail", b"crapkit 0.8.0\xe9\xff\n", True),
+    ("plugin-version", None, False),
+]
+
+
+@pytest.mark.parametrize("answer, unreadable", [row[1:] for row in LAUNCHER_ANSWERS],
+                         ids=[row[0] for row in LAUNCHER_ANSWERS])
+def test_doctor_refuses_unreadable_launcher_output(tmp_path, answer, unreadable):
+    """On Windows a text-mode read decodes in subprocess's reader thread, so a
+    byte that is not UTF-8 printed that thread's traceback into doctor's
+    stderr, and the except around the call never saw it."""
+    answer = answer or f"crapkit {_plugin_version()}\n".encode()
+    shim = _launcher(tmp_path / "bin", answer)
+    environment = dict(os.environ, PATH=str(shim.parent) + os.pathsep + os.environ["PATH"])
+
+    done = subprocess.run([sys.executable, "-m", "crapkit", "doctor", "--plugin-root",
+                           str(ROOT / "plugin")], capture_output=True, encoding="utf-8",
+                          errors="replace", env=environment, timeout=HANG_SECONDS)
+
+    fail = (f"crapkit doctor: FAIL {shim} gave no readable answer to `crapkit --version`. "
+            "Repair this launcher or install crapkit on the PATH the plugin inherits.")
+    assert "Traceback" not in done.stderr and "Exception in thread" not in done.stderr, done.stderr
+    assert done.returncode == int(unreadable), done.stdout
+    assert (os.path.normcase(fail) in os.path.normcase(done.stdout)) is unreadable, done.stdout
 
 
 def test_action_comment_selects_exact_nul_framed_paths(tmp_path):

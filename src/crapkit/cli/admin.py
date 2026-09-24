@@ -1497,16 +1497,29 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
 
 
 def _probed_cli_version(executable: str) -> str | None:
-    """The launcher's declared version, or None when it cannot answer."""
+    """The launcher's declared version, or None when it cannot answer.
+
+    Read as bytes and decoded here: on Windows a text-mode read decodes in
+    subprocess's reader thread, so a byte that is not UTF-8 printed that
+    thread's traceback into doctor's stderr and never reached an except."""
     import subprocess
 
+    from ..textcodec import lenient
+
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True, encoding="utf-8",
+        done = subprocess.run([executable, "--version"], capture_output=True,
                               timeout=_PROBE_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError, UnicodeError):
+    except (OSError, subprocess.SubprocessError):
         return None
-    answer = (done.stdout or done.stderr).split() if done.returncode == 0 else []
-    return answer[1] if len(answer) == 2 and answer[0] == "crapkit" else None
+    return _declared_version(lenient(done.stdout or done.stderr)) if done.returncode == 0 else None
+
+
+def _declared_version(answer: str) -> str | None:
+    """The version in `crapkit X.Y.Z`. One holding U+FFFD, a byte that was not
+    UTF-8, is no version: printed, it named a CLI nothing on the machine is."""
+    words = answer.split()
+    readable = len(words) == 2 and words[0] == "crapkit" and "�" not in words[1]
+    return words[1] if readable else None
 
 
 @lru_cache(maxsize=None)
@@ -1543,6 +1556,24 @@ def _no_crapkit_on_path() -> str:
             "plugin at the environment holding it.")
 
 
+def _answering_cli() -> tuple[str, str] | None:
+    """The launcher the plugin spawns and the version it declares, or None
+    after the FAIL line that says why there is none. A launcher that exits
+    nonzero and one that answers in bytes that are not UTF-8 get the same
+    line. The second one did answer, so `did not answer` sent the reader after
+    the wrong fault."""
+    spawned = _spawned_cli()
+    if spawned is None:
+        print(_no_crapkit_on_path())
+        return None
+    executable, cli_version = spawned
+    if cli_version is None:
+        print(f"crapkit doctor: FAIL {executable} gave no readable answer to `crapkit --version`. "
+              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
+        return None
+    return executable, cli_version
+
+
 def _name_found_root(root: Path, looked_in: str) -> None:
     """A root the search found, not one the operator typed: the glob reaches
     three levels under the named directory, so a source checkout can win over an
@@ -1574,15 +1605,10 @@ def _doctor_plugin(plugin_root: str) -> int:
               "`claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)")
         return 1
     _name_found_root(root, looked_in)
-    spawned = _spawned_cli()
+    spawned = _answering_cli()
     if spawned is None:
-        print(_no_crapkit_on_path())
         return 1
     executable, cli_version = spawned
-    if cli_version is None:
-        print(f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
-              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
-        return 1
     lines = plugin_handshake(where=str(root), version=_manifest_version(root),
                              cli_version=cli_version, cli_where=executable,
                              protocols=_hook_protocols(root), supported=PROTOCOL)
