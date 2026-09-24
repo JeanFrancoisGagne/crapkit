@@ -139,3 +139,20 @@ def test_powershell_captures_what_crapkit_wrote(fresh_repo, label):
 
     assert int(report.get("LINES", "0")) > 0, result.stdout + result.stderr
     assert report.get("HIGH") == "", result.stdout
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None,
+                    reason="the POSIX shell capture; Windows runs the PowerShell row")
+@pytest.mark.parametrize("label", list(FIRST_COMMANDS))
+def test_bash_captures_what_crapkit_wrote(fresh_repo, label):
+    """`x=$(... 2>&1)` keeps every byte but the trailing newlines, and the
+    captured text is ASCII."""
+    argv, _stream = FIRST_COMMANDS[label]
+    direct = subprocess.run([sys.executable, "-m", "crapkit", *argv], cwd=fresh_repo,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            timeout=hang_guard.HANG_SECONDS).stdout
+    script = 'x=$("$0" -m crapkit "$@" 2>&1); printf %s "$x"'
+    captured = hang_guard.run(["bash", "-c", script, sys.executable, *argv], cwd=fresh_repo).stdout
+
+    assert captured and captured == direct.rstrip(b"\n"), (captured, direct)
+    assert captured.isascii(), captured.decode("utf-8", "replace")
