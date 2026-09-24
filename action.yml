@@ -78,6 +78,10 @@ runs:
     # which holds no diff and so judges no changed function. The reason is
     # written to crapkit-base.reason: the comment quotes it in place of
     # "verify passed", and with gate "true" the exit step fails the check on it.
+    # A lane failure's reason is crapkit's first `FAILED:` line, not its first
+    # line: a lane that passed can warn before another lane fails, and the
+    # reason then named the lane that passed. A crapkit that died printing
+    # nothing gets its exit code quoted instead of an empty reason.
     - name: isolate this invocation's state
       id: state
       shell: bash
@@ -109,11 +113,12 @@ runs:
         if [ "$code" = 0 ]; then
           crapkit coverage --repo "$base" --json > "$CRAPKIT_STATE/crapkit-base.json" 2> "$log" || code=$?
           cat "$log"
-          first="$(head -n 1 "$log")"
+          why="$(grep -m 1 -F ' FAILED: ' "$log" || head -n 1 "$log")"
+          [ -n "$why" ] || why="crapkit coverage exited $code and printed nothing"
           if [ "$code" = 3 ]; then
-            refuse "no usable crapkit.toml at the fork point $fork: $first"
+            refuse "no usable crapkit.toml at the fork point $fork: $why"
           elif [ "$code" != 0 ]; then
-            refuse "lane failed at the fork point $fork: $first"
+            refuse "lane failed at the fork point $fork: $why"
           fi
         fi
         if [ "$code" = 0 ]; then

@@ -712,8 +712,10 @@ point, a fork point older than your `crapkit.toml`, and a lane that will not run
 that tree. The step logs `crapkit base scoring exited N` and writes the reason to
 `crapkit-base.reason` in the words the comment then quotes, `shallow clone does not hold
 the fork point of <sha>; set fetch-depth: 0 on the checkout`, `no usable crapkit.toml at
-the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the lane's
-first error line. The verdict falls back the same way `delta: "false"` does, and the
+the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the first
+`lane '<name>' FAILED:` line crapkit printed, so a warning from a lane that passed never
+stands in for the lane that failed. A crapkit that died printing nothing reads `crapkit
+coverage exited <code> and printed nothing`. The verdict falls back the same way `delta: "false"` does, and the
 ratchet still runs, so exit 7 there is a finding. What differs is the job's status. With
 `gate: "true"` on a pull request whose base run was attempted and not made, the exit step
 exits 1 and prints the reason, because `actions/checkout`'s default depth-1 clone would

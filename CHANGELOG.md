@@ -20,6 +20,12 @@
 - A thread with a crapkit comment on two pages no longer logs `looking the existing
   comment up exited 141: posting a fresh one` before editing the first one. `head -n 1`
   closed the pipe while gh was still writing.
+- The reason a base run was not made quotes crapkit's first `lane '<name>' FAILED:`
+  line. It quoted the first stderr line, so a lane that passed with coverage.py's
+  no-branch-data warning was named in the comment and the failing gate in place of the
+  lane that failed, and a crapkit killed before it printed anything left the reason
+  empty after its colon. That case now reads `crapkit coverage exited <code> and printed
+  nothing`.
 
 ## 0.8.0 — 2026-09-23
 

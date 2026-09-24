@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -599,6 +600,126 @@ def test_the_exit_steps_failure_prints_the_reason_the_base_step_wrote(tmp_path):
     result = _run_exit_step(tmp_path, "true", "true", 0, None)
 
     assert _REASON in result.stdout
+
+
+def _two_commit_repo(repo: Path, fork_files: dict) -> str:
+    """A repo whose first commit, the fork point, holds `fork_files`; HEAD is a
+    second commit on top. Returns the fork point's sha."""
+    def git(*args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.test", *args],
+                              cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    repo.mkdir()
+    git("init", "-q")
+    for rel, text in {"README.md": "fork\n", **fork_files}.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text, encoding="utf-8", newline="\n")
+    git("add", "-A")
+    git("commit", "-qm", "fork point")
+    fork = git("rev-parse", "HEAD")
+    (repo / "README.md").write_text("head\n", encoding="utf-8")
+    git("commit", "-qam", "head")
+    return fork
+
+
+def _run_base_step(tmp_path, shim_body: str, fork_files=None, env_extra=None) -> str:
+    """The base step under bash with a `crapkit` on PATH running `shim_body`,
+    in a repo whose fork point holds `fork_files`. Returns the reason it wrote."""
+    base_sha = _two_commit_repo(tmp_path / "repo", fork_files or {})
+    state, shim = tmp_path / "state", tmp_path / "bin"
+    state.mkdir()
+    shim.mkdir()
+    (shim / "crapkit").write_text("#!/bin/sh\n" + shim_body, encoding="utf-8", newline="\n")
+    (shim / "crapkit").chmod(0o755)
+    script = tmp_path / "base-step.sh"
+    script.write_text(_step_named("score the base commit")["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, **(env_extra or {}), "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base_sha,
+           "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"}
+    subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                   cwd=tmp_path / "repo", env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+    return (state / "crapkit-base.reason").read_text(encoding="utf-8").strip()
+
+
+# What `crapkit coverage` at the fork point printed on stderr and exited with,
+# and the words the reason must carry. A warning can come first: coverage.py's
+# no-branch-data line is the first stderr line of the default CI lane, and the
+# reason quoted it for a run whose other lane failed.
+_BASE_FAILURES = {
+    "warning-lane-then-failing-lane": (
+        "crapkit: lane 'a-py': coverage.py report carries no branch data, so the coverage term is "
+        "statement-based\ncrapkit: lane 'b-js' FAILED: lane 'b-js' produced no artifact at "
+        "coverage/coverage-final.json (command exit 1)\n", 5, "lane 'b-js' FAILED"),
+    "killed-with-no-stderr": ("", 137, "crapkit coverage exited 137 and printed nothing"),
+    "no-crapkit-toml-at-the-fork-point": (
+        "crapkit: no crapkit.toml at or above /tmp/base\n", 3, "no crapkit.toml at or above"),
+    "lane-exits-1-with-no-artifact": (
+        "crapkit: lane 'unit' FAILED: lane 'unit' produced no artifact at coverage/coverage-final.json "
+        "(command exit 1)\n", 5, "lane 'unit' FAILED"),
+    "an-empty-istanbul-artifact": (
+        "crapkit: lane 'unit' FAILED: istanbul artifact is empty (zero files)\n", 5, "istanbul artifact is empty"),
+    "a-key-of-the-wrong-type": (
+        "crapkit: crapkit.toml: scope 'src'.languages must be array\n", 3, ".languages must be array"),
+}
+
+
+@pytest.mark.parametrize("name", list(_BASE_FAILURES))
+def test_the_base_reason_quotes_the_line_that_names_the_failure(tmp_path, name):
+    """The step quoted `head -n 1` of crapkit's stderr: a warning a passing lane
+    printed first, or nothing at all when crapkit died silent. The comment and
+    the failing gate then named the wrong lane, or no cause."""
+    stderr, code, needle = _BASE_FAILURES[name]
+    (tmp_path / "stderr.txt").write_text(stderr, encoding="utf-8", newline="\n")
+
+    reason = _run_base_step(tmp_path, f"cat '{(tmp_path / 'stderr.txt').as_posix()}' >&2\nexit {code}\n")
+
+    assert needle in reason, reason
+
+
+_A_PY_LANE = """
+[[scope]]
+name = "py"
+paths = ["pylib"]
+languages = ["python"]
+
+[[scope]]
+name = "src"
+paths = ["src"]
+languages = ["typescript"]
+
+[[lane]]
+name = "a-py"
+command = "python py.py"
+artifact = "cov-py.json"
+parser = "coveragepy"
+scopes = ["py"]
+
+[[lane]]
+name = "b-js"
+command = "python fail.py"
+artifact = "coverage/coverage-final.json"
+parser = "istanbul"
+scopes = ["src"]
+"""
+
+_NO_BRANCH_REPORT = (
+    "import json\njson.dump({'meta': {'branch_coverage': False}, 'files': {'pylib/a.py': "
+    "{'executed_lines': [1, 2], 'missing_lines': [], 'summary': {'num_statements': 2, "
+    "'covered_lines': 2}, 'functions': {'f': {'executed_lines': [2], 'missing_lines': [], "
+    "'summary': {'num_statements': 1, 'covered_lines': 1}, 'start_line': 1}}}}}, "
+    "open('cov-py.json', 'w'))\n")
+
+
+def test_the_base_reason_names_the_failed_lane_under_the_real_cli(tmp_path):
+    """The same run through crapkit itself: lane a-py passes and warns about
+    branch data, lane b-js fails. The reason names b-js."""
+    files = {"crapkit.toml": _A_PY_LANE, "pylib/a.py": "def f():\n    return 1\n",
+             "src/app.ts": "export function f(x: number) { return x > 0 ? 1 : 0; }\n",
+             "fail.py": "import sys\nsys.exit(1)\n", "py.py": _NO_BRANCH_REPORT}
+    python = Path(sys.executable).as_posix()
+
+    reason = _run_base_step(tmp_path, f'exec "{python}" -m crapkit "$@"\n', files,
+                            {"PYTHONPATH": str(ROOT / "src")})
+
+    assert "lane 'b-js' FAILED" in reason, reason
 
 
 def test_the_comment_step_hands_the_builder_the_base_files():
