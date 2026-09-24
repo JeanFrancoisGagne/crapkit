@@ -71,14 +71,24 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
         raise GitError("git executable not found") from exc
 
 
-def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False) -> str:
+def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False,
+         errors: str = "strict") -> str:
     """`named` is what the error says ran — the injected flags are crapkit's
-    business, not the caller's."""
+    business, not the caller's. `errors` is how binary stdout decodes."""
     res = _spawn(root, argv, binary=binary)
     if res.returncode != 0:
         error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
         raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
-    return res.stdout.decode("utf-8") if binary else res.stdout
+    return res.stdout.decode("utf-8", errors) if binary else res.stdout
+
+
+def _git_text(root: Path, *args: str) -> str:
+    """Free text as a commit or a blob stored it: author names, messages, patch
+    lines. git re-encodes none of it for a commit with no encoding header, so
+    bytes that are not UTF-8 read as U+FFFD instead of ending the command.
+    Paths are not free text, and _git_paths keeps them strict. Read binary, so
+    git's own line framing reaches the caller unconverted."""
+    return _run(root, (*_RELATIVE, *args), args, binary=True, errors="replace")
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
