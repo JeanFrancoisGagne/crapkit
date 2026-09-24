@@ -6,9 +6,9 @@ it in full on every invocation, at an unmoved HEAD. Every one of them reaches
 git through this module, so `.crapkit/churn-cache-v2.json` has one writer.
 
 The key is (HEAD sha, window months, UTC date, path format). The sha pins the
-history; the window pins the command; the date is there because `--since=N
-months ago` is evaluated against the wall clock, so yesterday's cache describes
-a window one day wider than today's; the format marker retires maps whose
+history; the window pins the command; the date is there because the window
+cutoff is counted back from the clock, so yesterday's cache describes a window
+one day wider than today's; the format marker retires maps whose
 paths predate exact path decoding. Anything else is a miss, and a miss
 rebuilds.
 
