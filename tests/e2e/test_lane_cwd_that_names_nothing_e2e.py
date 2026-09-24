@@ -130,7 +130,10 @@ _ISTANBUL = (
 )
 
 
-def _istanbul_repo(tmp_path: Path, cwd: str, artifact: str = ".crapkit/cov/unit.json") -> Path:
+def _istanbul_repo(tmp_path: Path, cwd: str, artifact: str = ".crapkit/cov/unit.json",
+                   writes: str = ".crapkit/cov/unit.json") -> Path:
+    """`writes` is where the reporter puts the report, root-relative with `/`;
+    `artifact` is how crapkit.toml spells that same file."""
     repo = tmp_path / "repo"
     files = {
         "web/src/app.js": ("function dispatch(a) {\n  if (a) {\n    return 1;\n  }\n  return 2;\n}\n"
@@ -142,7 +145,7 @@ def _istanbul_repo(tmp_path: Path, cwd: str, artifact: str = ".crapkit/cov/unit.
             "[exclude]\nglobs = ['make_istanbul.py']\n\n"
             "[[lane]]\nname = 'unit'\nparser = 'istanbul'\nscopes = ['web']\n"
             f"cwd = '{cwd}'\nartifact = '{artifact}'\n"
-            "command = 'python ../make_istanbul.py ../.crapkit/cov/unit.json'\n"),
+            f"command = 'python ../make_istanbul.py ../{writes}'\n"),
     }
     for rel, body in files.items():
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -159,9 +162,36 @@ def test_an_istanbul_lane_cwd_in_any_spelling_runs_and_joins(tmp_path, cwd):
     _measured_one(run_cli(_istanbul_repo(tmp_path, cwd), "coverage", "--json"))
 
 
-@pytest.mark.parametrize("artifact", [".crapkit\\cov\\unit.json", "./.crapkit/cov/unit.json"])
-def test_an_istanbul_artifact_spelled_from_windows_is_reused(tmp_path, artifact):
-    repo = _istanbul_repo(tmp_path, "web", artifact)
+def _folds_case(folder: Path) -> bool:
+    """Does the filesystem under `folder` open a name in another letter case?"""
+    probe = folder / "Case-Probe"
+    probe.write_text("", encoding="utf-8")
+    try:
+        return (folder / "case-probe").exists()
+    finally:
+        probe.unlink()
+
+
+@pytest.mark.parametrize("cwd", ["Web", "WEB/"])
+def test_an_istanbul_lane_cwd_in_another_case_joins_on_a_case_insensitive_disk(tmp_path, cwd):
+    """The reporter keys the file under the directory as the lane named it,
+    `Web/src/app.js`, and git names it `web/src/app.js`: the key is read in the
+    case the disk lists."""
+    if not _folds_case(tmp_path):
+        pytest.skip("needs a case-insensitive filesystem (Windows NTFS, macOS APFS)")
+    _measured_one(run_cli(_istanbul_repo(tmp_path, cwd), "coverage", "--json"))
+
+
+@pytest.mark.parametrize("artifact, writes", [
+    (".crapkit\\cov\\unit.json", ".crapkit/cov/unit.json"),
+    ("./.crapkit/cov/unit.json", ".crapkit/cov/unit.json"),
+    ("cov\\unit.json", "cov/unit.json"),
+    ("cov/unit.json", "cov/unit.json"),
+], ids=["ignored-backslash", "ignored-dot-slash", "unignored-backslash", "unignored-control"])
+def test_an_istanbul_artifact_spelled_from_windows_is_reused(tmp_path, artifact, writes):
+    """Inside .gitignore and outside it: `cov/` is a directory git would list as
+    untracked, and the artifact is still read on the run and on reuse."""
+    repo = _istanbul_repo(tmp_path, "web", artifact, writes)
     _measured_one(run_cli(repo, "coverage", "--json"))
 
     res = run_cli(repo, "coverage", "--json", "--reuse-artifacts")
