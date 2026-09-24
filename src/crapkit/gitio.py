@@ -34,7 +34,16 @@ _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
 # does. git still quotes a path holding a double-quote or a control character
 # whatever this says, which is why gitpaths.unquote_path stays for
 # line-oriented history and diff headers.
-_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
+#
+# diff.autoRefreshIndex answers whether a file changed at all. On by default,
+# a worktree `git diff --name-only` checks each stat-dirty file's content
+# through the repo's filters and drops the ones that still match. Off, it names
+# every file whose mtime moved, so a `touch` read as an edit: lane staleness
+# said "1 file(s) in its scopes changed", reuse refused a clean tree and verify
+# counted the file dirty. On, a CRLF checkout under core.autocrlf=true still
+# matches its LF blob, which a raw-bytes comparison would not.
+_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
+             "-c", "diff.autoRefreshIndex=true")
 # Parsed patches are a protocol, independent of display settings and converters.
 _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
           "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0",
