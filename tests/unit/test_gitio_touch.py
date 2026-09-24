@@ -15,7 +15,6 @@ Real git processes, because the bug lives in the argv crapkit builds.
 """
 import os
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
@@ -31,8 +30,9 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _touch(path: Path) -> None:
-    """A new mtime on the same bytes, far enough ahead that no stat cache matches it."""
-    later = time.time() + 120
+    """A new mtime on the same bytes, two minutes past the file's own, so no
+    stat cache matches it."""
+    later = path.stat().st_mtime + 120
     os.utime(path, (later, later))
 
 
