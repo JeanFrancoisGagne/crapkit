@@ -183,10 +183,14 @@ clone, and add `shallow: true` to their JSON (`false` in a full clone).
 
 **Mutants with no test verdict.** `mutate` counted a mutant whose suite exited 5, which
 means no test ran, as killed. It now gets no verdict: `--json` counts it under
-`no_verdict`, and it stays out of `killed` and out of the printed rate, so `killed` can
-read lower on the same tree. A mutant whose suite timed out still counts as killed, and
-`--json` also counts it apart under `timed_out`. `mutants` keeps its meaning, the number
-of mutants run.
+`no_verdict`, outside both `killed` and `survived`, and the text summary leaves it out
+of the rate and prints
+`no verdict: N mutant(s) whose suite ran no test (exit 5), left out of the score`. So
+`killed` can read lower on the same tree, and a script that divides `killed` by
+`mutants` now counts those mutants as survivors; divide by `killed + survived` instead.
+A mutant whose suite timed out still counts as killed, and `--json` also counts it under
+`timed_out`, a count inside `killed`. `mutants` keeps its meaning, the number of mutants
+run.
 
 **Artifact stamps from 0.4.15 or older.** The record that stops `--reuse-artifacts` from
 scoring the artifact a failed lane left behind lives in `.crapkit/artifacts.json`, and
