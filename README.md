@@ -963,9 +963,10 @@ under `lanes_without_baseline_results`.
 
 **A junit this verify cannot read.** `verify --reuse-artifacts` over a lane that declares
 a `results_artifact` it finds missing or unreadable exits 5 and stores no run, the exit a
-real run of that lane gets for the same file. Before 0.8.1 it passed, stored a trusted run,
-and the Action posted `verify passed.` over tests nobody read. `coverage --reuse-artifacts`
-over the same junit still warns and scores on. A lane that declares no `results_artifact`
+real run of that lane gets for the same file. Before 0.8.1 it passed at exit 0 with no
+test checked and stored a passing run, which became the next baseline. The Action never
+reaches this case: its `coverage` step runs the lanes and refuses the same junit first.
+`coverage --reuse-artifacts` over that junit still warns and scores on. A lane that declares no `results_artifact`
 passes with a stderr line, and `verify --json` lists it under `lanes_without_results`.
 
 **The escape, twice.** Fix the findings and let a `verify` pass, which clears the taint
