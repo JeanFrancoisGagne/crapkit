@@ -11,6 +11,7 @@ from .procs import run_owned
 import sys
 from pathlib import Path
 
+from .agent_fields import schema_of
 from .invocation import _self
 from .rootfind import CONFIG_NAME, find_root
 
@@ -54,19 +55,18 @@ _SCOPE = {
     "items": {
         "type": "string"}}
 
-# A depth-1 clone holds one commit, so churn, mark ages and repayments counted
-# from it read as every file changed once and every mark new.
-_SHALLOW_CHURN = {"type": "boolean", "description": (
-    "true when this checkout is a shallow clone: commits, authors and the churn the ranking "
-    "reads count only the commits the clone holds; set fetch-depth: 0 on the checkout or run "
-    "git fetch --unshallow for the real counts")}
 
-# A no-lane or cc-only row scores at cov 0.0 because no artifact can speak about
-# it; the flag says that 0.0 is a stand-in, and the numbers keep their values.
-_UNMEASURED = {"type": "boolean", "description": (
-    "true when no measurement stands behind cov: flag no-lane (no lane covers the scope) or "
-    "cc-only (the scope asks for no coverage). cov 0.0 and est_uncovered_paths are then "
-    "stand-ins, not a count of paths no test walks")}
+def _unread_files_schema(payload: str, key: str) -> dict:
+    """The one shape an unread-file finding has in every payload that carries it."""
+    return {**schema_of(payload, key), "items": {
+        "type": "object", "description": "one changed file the gate refused unread",
+        "properties": {name: schema_of(payload, f"{key}[].{name}")
+                       for name in ("path", "reason", "dirty")}}}
+
+
+# The fields 0.8.1 adds take their schema from the one declaration of them.
+_SHALLOW_CHURN = schema_of("worklist --json", "shallow")
+_UNMEASURED = schema_of("next-item", "item.unmeasured")
 
 _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
  'path': {'type': 'string', 'description': 'repo-relative source path, forward slashes'},
@@ -496,12 +496,8 @@ TOOLS: tuple[dict, ...] = (
                 "type": "boolean",
                 "description": ("true when the run's commit is not HEAD, so every number here "
                 "describes an older tree; run commands.refresh first")},
-            "shallow": {
-                "type": "boolean",
-                "description": ("true when this checkout is a shallow clone: churn and "
-                "gate_rule.mark_age_days count only the commits the clone holds; set "
-                "fetch-depth: 0 on the checkout or run git fetch --unshallow")},
-            "unmeasured": _UNMEASURED,
+            "shallow": schema_of("brief --json", "shallow"),
+            "unmeasured": schema_of("brief --json", "unmeasured"),
             "path": {
                 "type": "string",
                 "description": "the resolved file, repo-relative"},
@@ -1313,12 +1309,7 @@ TOOLS: tuple[dict, ...] = (
                 "clean, else the findings as sentences"),
                 "items": {
                     "type": "string"}},
-            "shallow": {
-                "type": "boolean",
-                "description": ("true when this checkout is a shallow clone: ages and "
-                "repayments count only the commits the clone holds, and crapkit ratchet report "
-                "--enforce refuses to judge the debt policy there (exit 4); set fetch-depth: 0 "
-                "on the checkout or run git fetch --unshallow")}},
+            "shallow": schema_of("ratchet report --json", "shallow")},
     },
     {
         "name": "check_gate",
@@ -1399,19 +1390,15 @@ TOOLS: tuple[dict, ...] = (
                             "type": "boolean",
                             "description": ("always true: complexity is the working tree's, coverage "
                             "is the baseline run's")},
-                        "unmeasured": {
-                            "type": "boolean",
-                            "description": ("true when no measurement stands behind cov: the "
-                            "baseline run holds no row this function joins by name (it was added "
-                            "or renamed since), or its scope has no lane or asks for none. cov "
-                            "0.0 is then a stand-in")}}}},
+                        "unmeasured": schema_of("rescore --gate --json",
+                                                "functions[].unmeasured")}}},
             "gate": {
                 "type": "object",
                 "description": "the verdict block",
                 "properties": {
                     "ok": {
                         "type": "boolean",
-                        "description": ("true when breaches and unread are empty; false is the "
+                        "description": ("true when breaches and unread_files are empty; false is the "
                         "verdict (CLI exit 6), delivered as a normal result")},
                     "judged": {
                         "type": "integer",
@@ -1461,21 +1448,8 @@ TOOLS: tuple[dict, ...] = (
                         "description": "rescored paths git tracks nothing of, judged in full",
                         "items": {
                             "type": "string"}},
-                    "unread": {
-                        "type": "array",
-                        "description": ("changed files no reader could read, so none of their "
-                        "functions was judged; any entry makes ok false"),
-                        "items": {
-                            "type": "object",
-                            "description": "one changed file the gate refused unread",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "repo-relative path"},
-                                "reason": {
-                                    "type": "string",
-                                    "description": ("the reader's refusal, naming the line and "
-                                    "what to change")}}}}}}},
+                    "unread_files": _unread_files_schema("rescore --gate --json",
+                                                         "gate.unread_files")}}},
     },
     {
         "name": "list_claims",

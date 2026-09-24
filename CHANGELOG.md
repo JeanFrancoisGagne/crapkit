@@ -68,8 +68,9 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   changed file no reader could read, exit 6, with an `UNREAD` line naming the file and the
   reader's reason. Such a file is scored as zero functions, and every gate read that as
   nothing over the ceiling: a ccn-8 function in the same file as one TypeScript arrow the
-  reader refuses passed all four. `rescore --gate --json` lists them under `gate.unread`,
-  `verify --json` under `unread_files`, SARIF as `crapkit/unread`, and the Action's comment
+  reader refuses passed all four. `rescore --gate --json` lists them under
+  `gate.unread_files` and `verify --json` under `unread_files`, each entry
+  `{path, reason, dirty}`; SARIF names them `crapkit/unread`, and the Action's comment
   gives each a bullet. An unread file the change never touched still passes.
 - An override never grants past an unread file. With `CRAPKIT_OVERRIDE_REASON` set, the
   commit hook signed the debt beside a staged file no reader could read: it wrote and

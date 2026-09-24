@@ -297,7 +297,7 @@ def test_the_gate_line_and_the_payload_name_the_scopes_own_ceiling(tmp_path: Pat
         "gate: 1 changed function(s) judged, 0 over ceiling 10"), text.stdout
     gate = json.loads(as_json.stdout)["gate"]
     assert gate == {"ok": True, "judged": 1, "ceilings": {"src/mod.py": 10}, "breaches": [],
-                    "untracked": [], "unread": []}
+                    "untracked": [], "unread_files": []}
 
 
 def test_a_breach_prints_no_passing_line(breached: Path):

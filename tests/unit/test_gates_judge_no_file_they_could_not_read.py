@@ -162,8 +162,8 @@ def test_check_gate_reports_the_unread_file_and_not_ok(scored, capsys):
     gate = json.loads(out)["gate"]
     assert code == 6
     assert gate["ok"] is False
-    assert [u["path"] for u in gate["unread"]] == ["src/app.ts"]
-    assert REASON in gate["unread"][0]["reason"]
+    assert [(u["path"], u["dirty"]) for u in gate["unread_files"]] == [("src/app.ts", True)]
+    assert REASON in gate["unread_files"][0]["reason"]
 
 
 def test_rescore_gate_passes_an_unread_file_nothing_changed(scored, capsys):
@@ -175,7 +175,7 @@ def test_rescore_gate_passes_an_unread_file_nothing_changed(scored, capsys):
     code, out, err = run(["rescore", "src/app.ts", "--gate", "--json"], scored, capsys)
 
     assert code == 0, out + err
-    assert json.loads(out)["gate"]["unread"] == []
+    assert json.loads(out)["gate"]["unread_files"] == []
 
 
 def test_verify_fails_a_changed_file_it_could_not_read(scored, capsys):

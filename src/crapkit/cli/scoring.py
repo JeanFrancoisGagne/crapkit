@@ -928,11 +928,14 @@ def _breach_json(v, ceilings: dict[str, int]) -> dict:
 
 def _gate_json(verdict: _GateVerdict) -> dict:
     """The `gate` block of `rescore --gate --json`: the fields a wrapper needs
-    to say which function, which rule, and whether the tree clears the gate."""
+    to say which function, which rule, and whether the tree clears the gate.
+    `unread_files` has verify's name and shape; every file this gate judges is
+    a working-tree change, so each is dirty."""
     return {"ok": verdict.ok, "judged": verdict.judged, "ceilings": verdict.ceilings,
             "breaches": [_breach_json(v, verdict.ceilings) for v in verdict.breaches],
             "untracked": verdict.untracked,
-            "unread": [{"path": path, "reason": why} for path, why in sorted(verdict.unread.items())]}
+            "unread_files": [{"path": path, "reason": why, "dirty": True}
+                             for path, why in sorted(verdict.unread.items())]}
 
 
 def _gate_ceiling_label(ceilings: dict[str, int]) -> str:

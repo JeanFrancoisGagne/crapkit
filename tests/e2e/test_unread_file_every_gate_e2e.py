@@ -88,8 +88,9 @@ def test_the_commit_hook_refuses_the_probe_naming_the_file_and_the_fix(staged):
 def test_rescore_gate_refuses_the_probe(staged):
     res = run_cli(staged, "rescore", "src/a.ts", "--gate", "--json", env_extra=NO_REASON)
 
+    (found,) = json.loads(res.stdout)["gate"]["unread_files"]
     assert res.returncode == 6, res.stdout + res.stderr
-    assert [u["path"] for u in json.loads(res.stdout)["gate"]["unread"]] == ["src/a.ts"]
+    assert (found["path"], found["dirty"]) == ("src/a.ts", True) and FIX in found["reason"]
 
 
 def test_claude_hook_names_the_probe_after_the_edit(staged):
