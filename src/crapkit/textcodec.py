@@ -4,19 +4,19 @@ Stdlib only, so the advisory hook and the MCP stdio loop can import it. One
 rule per kind of source, and each one lives here or in the module named:
 
 - A file the repository owns and crapkit must read exactly (crapkit.toml, a
-  portable baseline) is UTF-8 or refused with a sentence naming the byte:
-  `repotext.repo_text`.
+  portable baseline, each package.json init reads) is UTF-8 or refused with a
+  sentence naming the byte: `repotext.repo_text`.
 - The marks file, today's copy, every past revision and each side git hands the
   merge driver, goes through `marks_text`: UTF-16 when a byte-order mark says
   so, else UTF-8 with a BOM dropped, and each byte neither reads as U+FFFD. A
   command that rewrites the file asks `unreadable_byte` first and writes it
   back through `marks_bytes`.
 - Text crapkit only reads, ranks or passes along (git's free text such as an
-  author name or a commit message, a runner's output, an MCP frame, a
-  package.json) goes through `lenient`: a UTF-8 BOM is dropped and each byte
-  that is not UTF-8 reads as U+FFFD. git, Node and a browser read such bytes
-  the same way, and one of them in an author name inside the churn window used
-  to stop every command that reads churn.
+  author name or a commit message, a runner's output, an MCP frame) goes
+  through `lenient`: a UTF-8 BOM is dropped and each byte that is not UTF-8
+  reads as U+FFFD. git, Node and a browser read such bytes the same way, and
+  one of them in an author name inside the churn window used to stop every
+  command that reads churn.
 - A source file crapkit rewrites (a mutant) goes through `source_text` and
   back through `source_bytes`, which return every byte it held. The scorer
   reads the same order of encodings through `analyze.decode_source`, which

@@ -1,11 +1,12 @@
-"""The one reader for the text files a repository owns: crapkit.toml, the marks
-file, a portable baseline.
+"""The one reader for the text files a repository owns and crapkit must read
+exactly: crapkit.toml, a portable baseline, each package.json init reads.
+The marks file reads by textcodec.marks_text instead.
 
 Stdlib and `errors` only, on purpose. Two callers cannot reach `cli._shared`,
 where this first lived: the advisory hook, whose module scope must never import
-the snapshot store, and `override`, a core module that imports no CLI family.
-Each of them carried its own copy of the decode, and each copy was one more
-place where a UTF-16 file was a traceback instead of the sentence below.
+the snapshot store, and `lanes`, a core module that imports no CLI family.
+A private copy of the decode in either would be one more place where a UTF-16
+file was a traceback instead of the sentence below.
 """
 from __future__ import annotations
 
@@ -25,8 +26,7 @@ def repo_text(path: Path, what: str) -> str:
     be read as the same file, so it is refused as a configuration error naming
     the bytes and the fix, where before it was a UnicodeDecodeError traceback at
     exit 1, a code the exit table does not define. `what` is the name the
-    refusal prints: `crapkit.toml`, the marks file as configured, a merge side
-    as git spelled it.
+    refusal prints: `crapkit.toml`, a baseline's path, a package.json's path.
     """
     return repo_bytes_text(path.read_bytes(), what)
 
