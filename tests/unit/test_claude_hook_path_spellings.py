@@ -24,7 +24,8 @@ import pytest
 from cli_inproc_repo import commit_all, git
 from crapkit.cli import main
 
-from path_spellings import need_case_insensitive, only_posix, only_windows
+from path_spellings import (linked_checkout, lower_drive, need, need_case_insensitive, only_posix,
+                            only_windows)
 
 _BRANCHES = "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8))
 BREACH = f"def sprawl(n):\n{_BRANCHES}    return n\n"  # ccn 8, over the ceiling of 6
@@ -98,6 +99,64 @@ def test_a_breach_is_advised_whatever_the_payload_spells(breached, monkeypatch, 
 
     assert code == 2, err
     assert "calc/mod.py" in err and "sprawl" in err, err
+
+
+# id -> (need, file_path, the event's cwd): a relative path is read against the
+# cwd the event reports, in whatever spelling Claude Code wrote it.
+RELATIVE_EDITS = {
+    "up-from-a-subdirectory": ("", lambda root: "../calc/mod.py", lambda root: root / "calc"),
+    "linked-checkout": ("", lambda root: "calc/mod.py", linked_checkout),
+    "linked-checkout-absolute": ("", lambda root: str(linked_checkout(root) / "calc" / "mod.py"),
+                                 lambda root: root),
+    "lower-drive-cwd": ("windows", lambda root: "calc/mod.py", lower_drive),
+    "backslash-lower-drive-cwd": ("windows", lambda root: "calc\\mod.py", lower_drive),
+    "up-backslash-from-a-subdirectory": ("windows", lambda root: "..\\calc\\mod.py",
+                                         lambda root: root / "calc"),
+    "msys-cwd": ("windows", lambda root: "calc/mod.py", _msys),
+}
+
+
+@pytest.mark.parametrize("which", RELATIVE_EDITS)
+def test_a_relative_edit_is_read_against_the_cwd_in_any_spelling(breached, monkeypatch, capsys,
+                                                                 which):
+    spec, file_path, cwd = RELATIVE_EDITS[which]
+    need(spec, breached)
+
+    code, err = _hook(monkeypatch, capsys, _edit(file_path(breached), cwd(breached)))
+
+    assert code == 2, err
+    assert "calc/mod.py" in err and "sprawl" in err, err
+
+
+def _bash(cwd: str) -> dict:
+    return {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": cwd,
+            "tool_input": {"command": "python - <<'PY'\nPY"}}
+
+
+# id -> (need, the cwd a Bash event reports, under the resolved root)
+BASH_CWDS = {
+    "native": ("", str),
+    "subdirectory": ("", lambda root: str(root / "calc")),
+    "linked-checkout": ("", lambda root: str(linked_checkout(root))),
+    "forward-slashes": ("windows", lambda root: root.as_posix()),
+    "lower-drive": ("windows", lower_drive),
+    "dir-case": ("windows case", lambda root: str(root.parent / root.name.upper())),
+    "msys": ("windows", _msys),
+}
+
+
+@pytest.mark.parametrize("which", BASH_CWDS)
+def test_a_bash_written_breach_is_advised_whatever_the_cwd_spells(breached, monkeypatch, capsys,
+                                                                  which):
+    """The opt-in Bash matcher reads the tree from the event's cwd, which is
+    the session's own directory in the spelling Claude Code keeps."""
+    spec, cwd = BASH_CWDS[which]
+    need(spec, breached)
+
+    code, err = _hook(monkeypatch, capsys, _bash(cwd(breached)))
+
+    assert code == 2, err
+    assert "calc/mod.py" in err, err
 
 
 def test_a_clean_edit_beside_legacy_debt_stays_silent_in_another_case(tmp_path, monkeypatch,
