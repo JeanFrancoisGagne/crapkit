@@ -39,10 +39,14 @@ _COLOUR_ON = {
     "CLICOLOR_FORCE": {"CLICOLOR_FORCE": "1"},
 }
 # Exports under which argparse itself stays plain: NO_COLOR and PYTHON_COLORS=0
-# outrank FORCE_COLOR. The fix must leave these plain too.
+# outrank FORCE_COLOR, and TERM=dumb alone or no variable asks for no colour.
+# The fix must leave these plain too.
 _COLOUR_OFF = {
     "NO_COLOR-FORCE_COLOR": {"NO_COLOR": "1", "FORCE_COLOR": "1"},
     "PYTHON_COLORS=0-FORCE_COLOR": {"PYTHON_COLORS": "0", "FORCE_COLOR": "1"},
+    "NO_COLOR": {"NO_COLOR": "1"},
+    "TERM-dumb": {"TERM": "dumb"},
+    "no-colour-variable": {},
 }
 _ASKED = ("FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS", "TERM", "CLICOLOR_FORCE")
 
@@ -93,8 +97,8 @@ def test_help_in_a_pipe_is_plain_whatever_the_colour_variables_say(argv, colour_
 
 
 @pytest.mark.parametrize("name", sorted(parser._help_topics(parser.build_parser())))
-def test_every_subcommands_help_in_a_pipe_is_plain_when_colour_is_forced(
-        name, forced_color, capsys):
+def test_every_subcommands_help_in_a_pipe_is_plain_whatever_the_colour_variables_say(
+        name, colour_env, capsys):
     """No subcommand parser decides colour for itself: each one inherits the
     root's keyword."""
     code = _exit_code([name, "--help"])
