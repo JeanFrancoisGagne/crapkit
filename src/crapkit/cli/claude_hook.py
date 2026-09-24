@@ -82,11 +82,19 @@ def _advise(args, stream) -> int:
 
 def _judge_path(path: Path) -> int:
     """Root discovery and judgement for one absolute file path: the tail every
-    event shape shares once it holds a file to answer for."""
+    event shape shares once it holds a file to answer for.
+
+    The path below the root takes the case its directories list: on a
+    case-insensitive disk a payload's `CALC\\mod.py` opens calc/mod.py, and
+    keyed as typed it matched no scope, so a breach went unadvised, while
+    `calc\\Mod.py` read the tracked file as untracked and advised debt the
+    edit never touched."""
+    from ..repopath import disk_spelling
+
     root = _repo_root(path.parent)
     if root is None or _sequencing(root):
         return 0
-    return _judge(root, path.relative_to(root).as_posix())
+    return _judge(root, disk_spelling(root, path.relative_to(root).as_posix()))
 
 
 def _payload(stream) -> dict:
@@ -121,10 +129,24 @@ def _edited_path(payload: dict, edited: str) -> Path:
     edit inside a worktree would resolve to the mainline checkout's store with
     the edited file untracked from that root.
     """
-    path = Path(edited)
+    path = _native_path(edited)
     if path.is_absolute():
         return path
-    return Path(payload.get("cwd") or ".") / path
+    return _event_cwd(payload) / path
+
+
+def _event_cwd(payload: dict) -> Path:
+    """Where the event's tool ran, the only base the payload offers."""
+    return _native_path(payload.get("cwd") or ".")
+
+
+def _native_path(raw: str) -> Path:
+    """A payload path as this OS opens it. Claude Code on Windows reports a
+    session cwd as `/c/Users/...`, and a model can write a file_path the same
+    way; either one read as a Windows path named no directory."""
+    from ..repopath import native
+
+    return Path(native(raw))
 
 
 def _command_event(payload: dict) -> bool:
@@ -152,7 +174,7 @@ def _advise_command(payload: dict) -> int:
     """
     if not _command_event(payload):
         return 0
-    top = _repo_top(Path(payload.get("cwd") or "."))
+    top = _repo_top(_event_cwd(payload))
     if top is None:
         return 0
     verdicts = [_judge_path(path) for path in _fresh_python(top)]
@@ -355,9 +377,11 @@ def _changed(root: Path, rel: str, diff_text: str):
 
 def _tracked(root: Path, rel: str) -> bool:
     """Whether git has this one path in the index. Asked only when the diff came
-    back empty, which is the only case that cannot tell untracked from unchanged."""
-    listed = subprocess.run(["git", "ls-files", "--", rel], cwd=root, capture_output=True,
-                            text=True, encoding="utf-8", errors="replace")
+    back empty, which is the only case that cannot tell untracked from unchanged.
+    Literal, as the diff beside it is: read as a pathspec, a new
+    `calc/[ab]/mod.py` matched the tracked calc/a/mod.py and read as tracked."""
+    listed = subprocess.run(["git", "--literal-pathspecs", "ls-files", "--", rel], cwd=root,
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     return bool(listed.stdout.strip())
 
 
