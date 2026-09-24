@@ -200,7 +200,7 @@ class _Response(io.BytesIO):
 def test_fetch_refuses_bytes_that_do_not_match_the_lock(tmp_path):
     entry = {"name": "a-1-py3-none-any.whl", "url": "https://x/a", "sha256": "1" * 64}
 
-    with pytest.raises(SystemExit, match="does not match its sha256"):
+    with pytest.raises(SystemExit, match="does not match its pinned sha256"):
         lock.fetch_one(entry, tmp_path, opener=lambda url: _Response(b"not the pinned bytes"))
     assert list(tmp_path.iterdir()) == []
 

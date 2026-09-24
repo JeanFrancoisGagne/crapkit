@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -132,10 +133,21 @@ def bake(image: str, out: Path) -> str:
 
 # --- the tree under test -----------------------------------------------------------
 
+def _writable_then_retry(function, path, _info) -> None:
+    """git writes its objects read-only, and Windows refuses to delete those."""
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
+
+
+def remove(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path, onerror=_writable_then_retry)
+
+
 def prepare_out(out: Path) -> Path:
     """<out>/in holds the export and entry.sh. The directory is world-writable
     because the container writes to it as uid 1000, whoever owns it here."""
-    shutil.rmtree(out, ignore_errors=True)
+    remove(out)
     (out / "in").mkdir(parents=True)
     for path in (out, out / "in"):
         os.chmod(path, 0o777)

@@ -1,0 +1,16 @@
+# The `crapkit` launcher a harness finds first on PATH in a shim cell.
+# kit/shim.py builds it into a wheel with the real launcher's path and the log
+# path written into crapkit_shim/_config.py, so the shim needs no environment
+# variable a harness might strip.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crapkit-shim"
+version = "1.0"
+description = "Records how a harness starts crapkit, then runs the real launcher."
+requires-python = ">=3.11"
+
+[project.scripts]
+crapkit = "crapkit_shim:main"

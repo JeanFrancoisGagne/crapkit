@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -207,12 +208,13 @@ def fetch_one(entry: dict, dest: Path, opener=urllib.request.urlopen) -> Path:
     target = dest / entry["name"]
     if target.exists() and sha256(target) == entry["sha256"]:
         return target
+    dest.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix(target.suffix + ".part")
     with opener(entry["url"]) as response, partial.open("wb") as out:
-        out.write(response.read())
+        shutil.copyfileobj(response, out, 1 << 20)
     if sha256(partial) != entry["sha256"]:
         partial.unlink()
-        raise SystemExit(f"lock: {entry['name']} does not match its sha256 in wheelhouse.lock")
+        raise SystemExit(f"lock: {entry['name']} does not match its pinned sha256")
     return partial.replace(target)
 
 
