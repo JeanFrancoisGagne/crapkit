@@ -73,9 +73,21 @@ def _changed_paths(args: argparse.Namespace) -> list[str]:
     if args.changed_z is None:
         return _read_lines(args.changed)
     try:
-        return [path for path in Path(args.changed_z).read_bytes().decode("utf-8").split("\0") if path]
+        records = Path(args.changed_z).read_bytes().split(b"\0")
     except OSError:
         return []
+    return [path for path in map(_utf8_path, records) if path]
+
+
+def _utf8_path(record: bytes) -> str:
+    """A changed file's path, or "" for a name whose bytes are not UTF-8.
+    crapkit reads every path as UTF-8 and leaves such a file out of its runs,
+    so no row can name it; decoded strictly, one of them in a pull request
+    failed this step and no comment was posted."""
+    try:
+        return record.decode("utf-8")
+    except UnicodeDecodeError:
+        return ""
 
 
 def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
