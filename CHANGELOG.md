@@ -12,10 +12,13 @@
   content through the repo's filters, and a CRLF checkout under `core.autocrlf=true`
   still matches its LF blob.
 - A lane's line numbers go stale when the bytes they point into change, and only then.
-  Each run's stamp now records a digest of every file under the lane's scopes
-  (`sources` in `.crapkit/artifacts.json`), and the `--reuse-artifacts` warning, the
-  `uncovered_lines_note` and the report banner compare digests instead of asking git
-  about the stamp's commit. A message-only amend, a rebase, a detached HEAD, a mode bit
+  Each run's stamp now records the git blob id of every file under the lane's scopes
+  (`blobs` in `.crapkit/artifacts.json`), the id `git add` would store, and the
+  `--reuse-artifacts` warning, the `uncovered_lines_note` and the report banner compare
+  blob ids instead of asking git about the stamp's commit. git's index gives the id of a
+  file its worktree diff calls unchanged, and `git hash-object --path` hashes the rest, so
+  a CRLF checkout under `core.autocrlf=true` keeps its blob's id, and a submodule is
+  recorded by the commit checked out in it. A message-only amend, a rebase, a detached HEAD, a mode bit
   and a shallow CI clone with `.crapkit/` restored used to withhold every dark line;
   they no longer do. An artifact measured on an uncommitted edit is fresh at once, and
   reverting that edit now withholds the lines, where git called the tree clean and the
@@ -25,9 +28,9 @@
   rerun `crapkit coverage`, since committing changes nothing.
 - The `--reuse-artifacts` warning and the report banner name up to three of the files
   that moved. The warning counted the files and named none, and the note named neither.
-- A stamp written by 0.8.0 or older holds no digests and is judged by its commit until
-  the next `crapkit coverage` replaces it. On that path, when git cannot answer, the
-  warning and the note say so and quote git's error. The note said "files in its scopes
+- A stamp written by 0.8.0 or older holds no blob ids and is judged by its commit until
+  the next `crapkit coverage` replaces it. When git cannot answer, for an old stamp or a
+  new one, the warning and the note say so and quote git's error. The note said "files in its scopes
   changed" for that case, for an artifact no stamp vouches for and for a stamp commit
   HEAD does not descend from, and the warning printed nothing at all.
 - Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
@@ -70,6 +73,27 @@
   tree is clean, and quotes git's error. It printed nothing, as for a clean tree.
 - Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
   where it returned `[]`.
+
+### A failed lane's leftover stays refused until new bytes replace it
+
+- Whether a lane's attempt wrote its artifact was judged by the file's modification time,
+  so a command that only touched the old report (a make rule, a cache restore that sets
+  times) passed, and crapkit scored the previous run's coverage and stamped it with the
+  new commit. A lane's declared outputs now move under `.crapkit/aside/` before its
+  attempts start, so a file at a declared path afterwards is one an attempt wrote, and a
+  leftover goes back only where nothing was written. The flake retest runs the same way,
+  and a retest that rewrote its junit inside the old file's time tick is read.
+- A failed attempt's leftover stays refused while it holds the same bytes. The refusal was
+  keyed on the leftover's modification time, so a `touch`, a copy of the checkout that
+  drops times, or a same-bytes rewrite handed the dead lane's numbers back to
+  `--reuse-artifacts` and `--reuse-unchanged`. The stamp now records the leftover's sha256
+  (`refused_sha256`), `.crapkit/artifacts.json` is replaced in one step rather than
+  rewritten in place, and the snapshot store keeps a copy of each refusal, so deleting
+  `.crapkit/artifacts.json` does not lift it. New bytes lift it, as a run of the lane or a
+  salvage writes them. A refusal 0.8.0 recorded still holds by its modification time.
+- A `.crapkit/artifacts.json` that does not parse, or an entry in it that is not an
+  object, no longer reads as "nothing refused": reuse refuses the artifact while the
+  record that would hold its refusal cannot be read, and says why.
 
 ### `scored_changes` says whether the run still describes the files
 

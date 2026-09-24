@@ -264,7 +264,7 @@ def _hook_remembers() -> bool:
 
 
 HOOK_PAGES = ("README.md", "AGENTS.md", "plugin/skills/crapkit-onboard/SKILL.md",
-              "docs/handbook.html", "CHANGELOG.md")
+              "docs/handbook.html", "CHANGELOG.md", "docs/upgrading.md")
 
 
 @pytest.mark.parametrize("page", HOOK_PAGES)
@@ -281,6 +281,7 @@ def test_the_pages_state_how_long_an_idle_session_is_kept():
 
     assert f"idle for {days} days" in _prose(_page("README.md"))
     assert f"idle for {days} days" in _prose(_release())
+    assert f"idle for {days} days" in _prose(_page("docs/upgrading.md"))
     assert days == 7 and "idle for a week" in _prose(_page("docs/handbook.html"))
 
 
@@ -630,3 +631,132 @@ def test_the_pages_quote_the_names_the_comment_gives_verify_s_count():
     assert named == "1 changed file (`app/calc.py`)"
     assert f"``{named}``" in _prose(_release())
     assert f"``{named}``" in _prose(_page("README.md"))
+
+
+# -- Q67: the stamp records git blob ids -------------------------------------------
+
+def _module(name: str):
+    """crapkit.NAME, or None while the change that adds it has not landed."""
+    import importlib
+
+    try:
+        return importlib.import_module(f"crapkit.{name}")
+    except ImportError:
+        return None
+
+
+def _hash_object(root: Path, name: str) -> str:
+    return subprocess.run(["git", "hash-object", "--path", name, name], cwd=root, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+@landed(hasattr(_module("lane_sources"), "record"), "the blob-id content record")
+def test_the_record_the_pages_describe_is_the_id_git_add_would_store(tmp_path):
+    _one_commit_repo(tmp_path)
+    (tmp_path / "b.py").write_text("y = 2\n", encoding="utf-8")
+
+    recorded = _module("lane_sources").record(tmp_path, ["a.py", "b.py"])
+
+    assert recorded == {name: _hash_object(tmp_path, name) for name in ("a.py", "b.py")}
+    assert "(`blobs` in `.crapkit/artifacts.json`), the id `git add` would store" in _prose(_release())
+    assert "`record` is the one rule" in _page("AGENTS.md")
+    assert "stamp holds the git blob id of each file it measured" in _prose(_page("AGENTS.md"))
+
+
+# -- Q33: a failed lane's leftover stays refused until new bytes replace it --------
+
+@landed(_module("lane_stamps") is not None, "the refusal keyed on the leftover's sha256")
+def test_a_leftover_stays_refused_through_a_touch_and_a_lost_stamp_file_until_new_bytes(tmp_path):
+    import os
+
+    from crapkit.config import Lane
+
+    stamps = _module("lane_stamps")
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("calc",))
+    leftover = tmp_path / lane.artifact
+    leftover.parent.mkdir(parents=True)
+    leftover.write_text("{}", encoding="utf-8")
+    stamps.write(tmp_path, stamps.refusal_entry(stamps.read(tmp_path), lane,
+                                                stamps.file_sha256(leftover)))
+    later = leftover.stat().st_mtime + 60
+    os.utime(leftover, (later, later))
+    after_touch = stamps.read(tmp_path).refusal(lane.artifact).kind
+    (tmp_path / stamps.STAMPS_FILE).unlink()
+    after_delete = stamps.read(tmp_path).refusal(lane.artifact).kind
+    leftover.write_text('{"meta": 1}', encoding="utf-8")
+    after_new_bytes = stamps.read(tmp_path).refusal(lane.artifact).kind
+
+    assert (after_touch, after_delete, after_new_bytes) == ("leftover", "leftover", "")
+    assert ("a touch keeps the leftover refused, deleting `.crapkit/artifacts.json` does not "
+            "lift it, and new bytes lift it") in _prose(_page("docs/upgrading.md"))
+    assert "so deleting `.crapkit/artifacts.json` does not lift it. New bytes lift it" in _prose(_release())
+
+
+@landed(_module("lane_outputs") is not None, "declared outputs moved aside per attempt")
+def test_a_declared_output_is_gone_while_the_attempt_runs_and_a_leftover_comes_back(tmp_path):
+    report = tmp_path / ".crapkit" / "cov" / "py.json"
+    report.parent.mkdir(parents=True)
+    report.write_text("{}", encoding="utf-8")
+
+    with _module("lane_outputs").owned(tmp_path, "py", (".crapkit/cov/py.json",)):
+        during = report.exists()
+
+    upgrading = _prose(_page("docs/upgrading.md"))
+    assert during is False and report.read_text(encoding="utf-8") == "{}"
+    assert "sit under `.crapkit/aside/` while it runs" in upgrading
+    assert "finds nothing at that path" in upgrading
+    assert "move under `.crapkit/aside/` before its attempts start" in _prose(_release())
+
+
+# -- docs/upgrading.md: what 0.8.1 changes about freshness ----------------------------
+
+def _upgrading_freshness() -> str:
+    text = _page("docs/upgrading.md")
+    return _prose(text.split("\n## Freshness in 0.8.1\n", 1)[1].split("\n## ", 1)[0])
+
+
+def test_the_upgrade_notes_name_the_stop_rule_the_shim_and_prune_s_exit():
+    notes = _upgrading_freshness()
+
+    assert "The stop rule gains a fourth clause, `scored_changes == 0`" in notes
+    assert "`null` included, means run `commands.refresh`" in notes
+    assert "`lanes.lane_sources_unchanged` keeps its 0.8.0 arguments" in notes
+    assert "`DeprecationWarning`" in notes and "0.9.0 removes it" in notes
+    assert "it exits 4 before writing anything" in notes
+
+
+@landed(hasattr(verifying, "_not_behind"), "verify's not-in-this-clone refusal")
+def test_the_upgrade_notes_quote_the_not_in_this_clone_refusal(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    missing = _not_behind(shallow=False, held=False)
+
+    assert re.match(r"baseline commit \w+ is not in this clone", missing)
+    assert "`baseline commit ... is not in this clone`" in _upgrading_freshness()
+
+
+def test_a_touch_after_restoring_an_old_mtime_lets_git_read_the_content(tmp_path):
+    """The upgrade notes' way out of the same-size limit. git compares its
+    index's stat data first; core.trustctime=false makes Linux and macOS answer
+    as Windows does, where the change time is the creation time."""
+    import os
+    import time
+
+    from crapkit.gitio import status_names
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "core.trustctime", "false")
+    source = tmp_path / "a.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    past = time.time_ns() - 100 * 10**9
+    os.utime(source, ns=(past, past))
+    _git(tmp_path, "add", "a.py")
+    _git(tmp_path, "commit", "-q", "-m", "one")
+    source.write_text("x = 2\n", encoding="utf-8")
+    os.utime(source, ns=(past, past))
+    restored = status_names(tmp_path)
+    os.utime(source)
+    touched = status_names(tmp_path)
+
+    assert (restored, touched) == ([], ["a.py"])
+    assert "`touch` the files after restoring them that way, and every reader compares their content" in _upgrading_freshness()

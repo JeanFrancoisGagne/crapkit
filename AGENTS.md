@@ -457,7 +457,7 @@ word:
 - `flag: "measured"`: a lane did measure this file, but the file's bytes changed since,
   usually by your own edit. Rerun `crapkit coverage`. Committing changes nothing here,
   and a touch, a mode bit, an amend or a rebase never withholds the lines: the lane's
-  stamp holds a digest of each file it measured, and only other bytes count. Every
+  stamp holds the git blob id of each file it measured, and only another blob counts. Every
   other file keeps its lines.
 - `flag: "cc-only"`: the scope sets `coverage_optional = true`, so no artifact was ever
   going to name lines for it. Nothing clears this one, and nothing should: `crap` is `ccn`
@@ -769,7 +769,7 @@ Shared rules belong to these modules:
 | `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
-| `lane_sources.py` | whether a file under a lane's scopes still holds the bytes its artifact measured. `source_digest` is the one rule; the stamp records it and every staleness reader compares it, so git's stat cache and commit history never decide |
+| `lane_sources.py` | the content record: the git blob id each file under a lane's scopes held when its artifact measured it. `record` is the one rule: git's index gives the id of a file its worktree diff calls unchanged, and `git hash-object --path` hashes the rest. The stamp keeps it as `blobs` and every staleness reader compares it, so commit history never decides. The index fast path trusts git's stat cache, so a same-size edit under a restored modification time keeps the old id, a named limit |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time

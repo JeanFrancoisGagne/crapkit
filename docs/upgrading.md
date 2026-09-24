@@ -160,6 +160,68 @@ paths still have to name the measured tree. Use the documented
 [portable record reader](portable-records.md) when automating around exports.
 JSON stays at `schema: 1`; consumers must accept added fields.
 
+## Freshness in 0.8.1
+
+0.8.1 decides whether a run, a lane or an edit still describes the tree by its
+content, where 0.8.0 read a commit, a modification time or a count. Most of that
+needs nothing from you. These parts change what a script or an agent loop reads.
+
+**Agent loops read `scored_changes`.** `next-item`, `brief`, `brief --batch`,
+`worklist --json` and the MCP tools add `scored_changes`: how many files the ranked
+run scored hold other content now, your own uncommitted edits included. `stale`
+keeps its 0.8.0 meaning, HEAD moved past the run's commit, so an amend sets it with
+no byte moved and an uncommitted edit leaves it `false`. The stop rule gains a
+fourth clause, `scored_changes == 0`: anything but `0`, `null` included, means run
+`commands.refresh` and ask again. A run 0.8.0 wrote recorded no content, so it reads
+`null` until the first `crapkit coverage` after the upgrade. A loop written against
+the three-clause rule in [AGENTS.md](../AGENTS.md#the-termination-rule) or
+[docs/agent-json.md](agent-json.md#reasons-and-the-stop-condition) needs the fourth.
+
+**Library callers.** `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and
+its bool answer through 0.8.x and warns with a `DeprecationWarning` when called;
+0.9.0 removes it.
+
+**A failed lane's leftover stays refused until new bytes replace it.** When a lane's
+attempt fails and leaves the previous run's artifact in place, `--reuse-artifacts` and
+`--reuse-unchanged` refuse that file. 0.8.0 keyed the refusal on its modification time,
+so a `touch`, a copy of the checkout that drops times, or a same-bytes rewrite lifted it.
+0.8.1 keys it on the file's sha256 and keeps a copy in `.crapkit/crap.sqlite`: a touch
+keeps the leftover refused, deleting `.crapkit/artifacts.json` does not lift it, and new
+bytes lift it, from a run of the lane or a salvage you write. A refusal 0.8.0 recorded
+still holds by its modification time until the lane runs again.
+
+**A lane's declared outputs sit under `.crapkit/aside/` while it runs.** crapkit moves
+the artifact and results files a lane declares out of the way before its attempts start,
+and puts one back only where no attempt wrote a new one. A lane command that reads or
+appends to its own previous report finds nothing at that path; write the report fresh
+each run.
+
+**A same-size edit that keeps the old modification time can pass unseen.**
+`cp -p`, `tar -x`, `rsync -t` and `touch -r` write new bytes under the file's old
+mtime. crapkit's analysis cache and `watch` compare the mtime and size before they
+read a file, and git answers "unchanged" from its index's stat data for lane reuse,
+verify's split of committed and dirty findings, the commit hook's stale-staged note
+and `mutate`'s input snapshot. `touch` the files after restoring them that way, and
+every reader compares their content. 0.9.0 measures what hashing every file costs
+before it changes this.
+
+**claude-hook writes one directory.** Its `Bash` fallback records the bytes each
+advisory judged under `.git/crapkit/claude-hook/<session_id>/`, one directory per
+Claude Code session, and removes a session idle for 7 days when another one starts.
+Delete the directory to make the hook judge those files again.
+
+**`ratchet prune` can exit 4 in a shallow clone.** Its rename diff starts at the
+store's first run, and a depth-1 CI checkout with `.crapkit/` restored lacks that
+commit. 0.8.0 read the failed diff as "nothing was renamed" and dropped a renamed
+file's marks as repaid. 0.8.1 reads renames from the oldest run whose commit the
+clone holds, and when a marked file left the checkout before that run it exits 4
+before writing anything, naming the commit and the `git fetch` that brings it back.
+Run prune in a clone that holds the store's first commit, or run that fetch first.
+
+**verify names a baseline commit the clone never fetched.** It still exits 4. It
+now says `baseline commit ... is not in this clone` and names the `git fetch origin`
+that brings the commit, where it blamed a rebase or an amend.
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating
