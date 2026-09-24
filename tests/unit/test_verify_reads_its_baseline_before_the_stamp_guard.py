@@ -7,7 +7,6 @@ serve was refused for the stamp instead of for itself, the taint warning naming
 seed`, which reads the pinned run and cannot clear it. Reading the baseline
 first lets the refusal name the run to seed from.
 """
-import sys
 from pathlib import Path
 
 from cli_inproc_repo import repo, template_repo  # noqa: F401
@@ -15,6 +14,7 @@ from pinned_store import pinned, stale_marks, write_run, twin
 
 import lizard
 
+from crapkit import invocation
 from crapkit import ratchet
 from crapkit.cli import main
 from crapkit.cli.verifying import _stamp_refusal
@@ -90,7 +90,7 @@ def test_the_ratchet_page_prints_the_refusal_a_named_baseline_gets(monkeypatch):
     """The page's session is `$ crapkit verify --baseline 12` on a crapkit that
     measures analysis 10, so the quoted line is the one that process prints."""
     running = "crapkit-analysis=10 lizard=1.24.0"
-    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "verify"])
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: True)
     monkeypatch.setattr(ratchet, "metric_version", lambda: running)
     named = {"id": 12, "tool_versions": {"analysis_version": "10", "lizard": "1.24.0"}}
 

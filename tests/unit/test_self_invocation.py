@@ -7,69 +7,123 @@ those environments puts a `crapkit` on PATH. Both used to be answered with "run
 `crapkit coverage`", so `init` finished by naming a command the shell it just
 ran in exits 127 on.
 
-The process knows how it was started. `sys.argv[0]` is the console script when
-that is what launched it and the `__main__.py` inside the package when
-`python -m` did, so the message can name the form that resolves.
+So a message names `crapkit` only when PATH resolves it to a console script of
+the interpreter running crapkit, and names that interpreter otherwise, spelled
+with forward slashes so Git Bash runs it too
+(test_agent_read_commands_run_in_git_bash.py runs it in every shell).
 """
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
+from crapkit import invocation
 from crapkit.errors import CrapkitError
 from crapkit.invocation import _self
 
-MODULE_RUN = str(Path(sys.prefix) / "Lib" / "site-packages" / "crapkit" / "__main__.py")
-CONSOLE_RUN = str(Path(sys.prefix) / "Scripts" / "crapkit.exe")
+LAUNCHER = "crapkit.exe" if os.name == "nt" else "crapkit"
+
+
+def _launcher_in(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    launcher = directory / LAUNCHER
+    launcher.write_bytes(b"#!/bin/sh\n")
+    launcher.chmod(0o755)
+    return launcher
 
 
 @pytest.fixture()
-def as_module(monkeypatch):
-    """argv as `python -m crapkit` leaves it: the package's own __main__.py."""
-    monkeypatch.setattr(sys, "argv", [MODULE_RUN, "coverage"])
+def on_path(tmp_path, monkeypatch):
+    """PATH resolves `crapkit` to a console script this interpreter installed."""
+    scripts = tmp_path / "env" / "Scripts"
+    _launcher_in(scripts)
+    monkeypatch.setattr(invocation, "_scripts_dirs", lambda: {scripts.resolve()})
+    monkeypatch.setenv("PATH", str(scripts))
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture()
-def as_console(monkeypatch):
-    """argv as the installed console script leaves it."""
-    monkeypatch.setattr(sys, "argv", [CONSOLE_RUN, "coverage"])
+def off_path(tmp_path, monkeypatch):
+    """No `crapkit` on PATH: the source checkout and the git hook."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.chdir(tmp_path)
 
 
 # --- the helper itself -------------------------------------------------------
 
-def test_the_console_script_names_itself(as_console):
+def test_a_console_script_this_interpreter_installed_names_itself(on_path):
     assert _self() == "crapkit"
 
 
-def test_a_module_run_names_the_interpreter_that_is_running_it(as_module):
+def test_no_console_script_on_path_names_the_interpreter_that_is_running(off_path):
     """Not bare `python`: the reader may have no activated venv (the hook case),
     and the interpreter running this process is the one crapkit is installed in."""
+    assert _self() == f"{invocation._quoted(invocation._forward(sys.executable))} -m crapkit"
+
+
+def test_a_console_script_of_another_environment_is_not_named(tmp_path, monkeypatch):
+    """A crapkit first on PATH that another interpreter installed runs another
+    crapkit, maybe another version, so the message names this one's interpreter."""
+    elsewhere = tmp_path / "other-env" / "bin"
+    _launcher_in(elsewhere)
+    monkeypatch.setattr(invocation, "_scripts_dirs", lambda: {(tmp_path / "env" / "bin").resolve()})
+    monkeypatch.setenv("PATH", str(elsewhere))
+    monkeypatch.chdir(tmp_path)
+
     assert _self().endswith(" -m crapkit")
-    assert sys.executable in _self()
 
 
-def test_an_interpreter_path_holding_a_space_is_quoted(monkeypatch):
-    r"""`C:\Program Files\Python311\python.exe` is an ordinary Windows install,
-    and unquoted it reaches cmd.exe as `C:\Program` plus two arguments."""
-    monkeypatch.setattr(sys, "argv", [MODULE_RUN])
-    monkeypatch.setattr(sys, "executable", r"C:\Program Files\Python311\python.exe")
+@pytest.mark.skipif(os.name == "nt", reason="pipx and uv tool link console scripts on POSIX only")
+def test_a_linked_console_script_counts_where_it_points(tmp_path, monkeypatch):
+    """pipx and uv tool put a symlink on PATH that points into the tool's venv."""
+    target = _launcher_in(tmp_path / "tool-venv" / "bin")
+    shelf = tmp_path / "local-bin"
+    shelf.mkdir()
+    (shelf / LAUNCHER).symlink_to(target)
+    monkeypatch.setattr(invocation, "_scripts_dirs", lambda: {target.parent.resolve()})
+    monkeypatch.setenv("PATH", str(shelf))
 
-    assert _self() == r'"C:\Program Files\Python311\python.exe" -m crapkit'
+    assert _self() == "crapkit"
 
 
-def test_an_interpreter_path_without_a_space_is_left_bare(monkeypatch):
-    monkeypatch.setattr(sys, "argv", [MODULE_RUN])
+def test_the_scripts_dirs_hold_this_interpreters_own_environment():
+    import sysconfig
+
+    own = Path(sysconfig.get_path("scripts")).resolve()
+
+    assert own in invocation._scripts_dirs()
+
+
+def test_a_windows_interpreter_is_spelled_with_forward_slashes():
+    r"""Git Bash drops every backslash of `C:\venv\Scripts\python.exe`, and
+    cmd.exe and PowerShell run the forward-slash form as well."""
+    assert invocation._forward(r"C:\venv\Scripts\python.exe", "\\") == "C:/venv/Scripts/python.exe"
+    assert invocation._forward("/usr/bin/python3", "/") == "/usr/bin/python3"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="sys.executable holds backslashes on Windows only")
+def test_the_module_form_on_windows_holds_no_backslash(off_path, monkeypatch):
+    monkeypatch.setattr(sys, "executable", r"C:\venv\Scripts\python.exe")
+
+    assert _self() == "C:/venv/Scripts/python.exe -m crapkit"
+
+
+def test_an_interpreter_path_holding_a_space_is_quoted(off_path, monkeypatch):
+    """`C:/Program Files/Python311/python.exe` is an ordinary Windows install,
+    and unquoted it reaches cmd.exe as `C:/Program` plus two arguments."""
+    spaced = os.sep.join(["", "opt", "my python", "python.exe"])
+    monkeypatch.setattr(sys, "executable", spaced)
+
+    assert _self() == f'"{invocation._forward(spaced)}" -m crapkit'
+
+
+def test_an_interpreter_path_without_a_space_is_left_bare(off_path, monkeypatch):
     monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
 
     assert _self() == "/usr/bin/python3 -m crapkit"
-
-
-def test_an_empty_argv_falls_back_to_the_module_form(monkeypatch):
-    """An embedded interpreter leaves argv empty. Nothing put a console script
-    on PATH there either, so the module form is the honest answer."""
-    monkeypatch.setattr(sys, "argv", [])
-
-    assert _self().endswith(" -m crapkit")
 
 
 # --- the messages ------------------------------------------------------------
@@ -96,12 +150,13 @@ MESSAGES = pytest.mark.parametrize("message", [_init_next_step, _queue_refusal, 
 
 
 @MESSAGES
-def test_the_console_script_run_prescribes_the_console_script(message, tmp_path, as_console):
+def test_a_console_script_on_path_prescribes_the_console_script(message, tmp_path, on_path):
     assert "`crapkit coverage`" in message(tmp_path)
 
 
 @MESSAGES
-def test_the_module_run_prescribes_the_interpreter_that_is_running_it(message, tmp_path, as_module):
+def test_no_console_script_on_path_prescribes_the_interpreter_that_is_running(message, tmp_path,
+                                                                             off_path):
     """The red loop: with the venv's Scripts dir off PATH, every one of these
     lines named `crapkit coverage`, and the shell answered 127."""
     text = message(tmp_path)

@@ -6,10 +6,10 @@ to print, `ratchet seed` alone, kept the old stamp and verify refused again.
 The remedy is a fresh coverage run, then the seed.
 """
 import argparse
-import sys
 
 import pytest
 
+from crapkit import invocation
 from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.cli.verifying import _guard_ratchet_stamp
 from crapkit.errors import ConfigError
@@ -22,9 +22,9 @@ NEW = "crapkit-analysis=10 lizard=1.24.0"
 
 @pytest.fixture(autouse=True)
 def console_script(monkeypatch):
-    """The refusals name the invocation the process started with; a console
-    script run spells it `crapkit`."""
-    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "verify"])
+    """The refusals name `crapkit` when PATH resolves it to this interpreter's
+    console script, as it does where crapkit is installed."""
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: True)
 
 
 def marks(path, stamp: str):

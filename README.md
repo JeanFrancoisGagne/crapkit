@@ -187,7 +187,10 @@ crapkit 0.8.0
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
-source checkout. Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
+source checkout. A next step crapkit prints names `crapkit` when PATH finds this
+installation's console script, and otherwise the interpreter running it, spelled with
+forward slashes (`C:/venv/Scripts/python.exe -m crapkit coverage`) so Git Bash, cmd.exe
+and PowerShell all run it as printed. Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
 at or above the current directory, so a monorepo workspace finds the root's), and with it
 you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
 where the flag goes.

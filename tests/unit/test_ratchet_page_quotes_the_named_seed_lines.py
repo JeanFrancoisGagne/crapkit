@@ -5,11 +5,11 @@ and the legacy-identity refusal on a run a failed verify pins. Reword either and
 this pins the page to the new text instead of leaving a transcript nobody can
 reproduce.
 """
-import sys
 from pathlib import Path
 
 import pytest
 
+from crapkit import invocation
 from crapkit.cli.ratchet_cmds import _identity_advice, _WorkRun
 from crapkit.errors import CrapkitError, ToolError
 from crapkit.keys import require_unambiguous
@@ -35,7 +35,7 @@ def twin() -> ScoredRow:
 @pytest.fixture(autouse=True)
 def console_script(monkeypatch):
     """The page's sessions run `$ crapkit ...`, so the messages name that spelling."""
-    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "ratchet", "seed"])
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: True)
 
 
 def test_the_page_quotes_the_refusal_a_named_failed_verify_gets():
