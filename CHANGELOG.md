@@ -81,6 +81,23 @@
   so git cannot say whether it is behind HEAD` and names the `git fetch origin` that
   brings it. It still exits 4, and the shallow-clone and rewrite sentences are as
   they were.
+- `ratchet prune` refuses to drop a marked file's debt when the commit its renames start
+  from is gone. The rename diff starts at the store's first run, and a clone can lack that
+  commit: a depth-1 CI checkout with `.crapkit/` restored, a rebase followed by gc, a
+  squash-merged branch that was collected. prune read the failed diff as "nothing was
+  renamed" and dropped a renamed file's marks as repaid debt, printing `followed 0
+  rename(s)`. It now reads renames from the oldest run whose commit the clone holds and
+  says so on stderr, and when a marked file left the checkout before that run it exits 4
+  before writing anything: `run 1's commit 35f524b3f89 is not in this clone, so git
+  cannot say whether src/old.py was renamed or deleted`, then the fetch that brings the
+  commit back, or `ratchet move` when no remote holds it.
+- The prune line names the renames it followed, up to three:
+  `followed 1 rename(s) (calc/grade.py -> calc/grading.py)`.
+- `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
+  lane's artifact with, or `null`. A leftover a failed attempt left behind showed as
+  `artifact_present: true` beside "no problems found". doctor now WARNs on it, and on a
+  `.crapkit/artifacts.json` it cannot read, which every reader takes as no stamps at all,
+  refusals included.
 
 ### claude-hook remembers what it judged, and says what it could not judge
 

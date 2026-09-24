@@ -320,3 +320,66 @@ def test_the_unread_next_step_agents_gives_is_the_one_the_hook_prints():
     closing = _hook()._UNREAD_NEXT
 
     assert "[exclude] globs" in closing and "`[exclude] globs`" in _page("AGENTS.md")
+
+
+# -- S21: ratchet prune refuses when the commit its renames start from is gone ---
+
+def _ratchet_cmds():
+    from crapkit.cli import ratchet_cmds
+
+    return ratchet_cmds
+
+
+_FIRST_RUN = {"id": 1, "commit": "35f524b3f89" + "a" * 29}
+
+
+@landed(hasattr(_ratchet_cmds(), "_unseen_refusal"), "prune's missing-anchor refusal")
+def test_the_changelog_quotes_the_refusal_prune_raises_for_a_missing_anchor(tmp_path):
+    _one_commit_repo(tmp_path)
+    refusal = _ratchet_cmds()._unseen_refusal(tmp_path, _FIRST_RUN, ["src/old.py"])
+    head = refusal.removeprefix("ratchet prune: ").split(", and prune would")[0]
+
+    assert head in _prose(_release())
+    assert "nothing was written" in refusal and "exits 4" in _prose(_release())
+
+
+@landed(hasattr(_ratchet_cmds(), "_followed_names"), "prune naming the renames it followed")
+def test_the_changelog_prints_the_renames_the_prune_line_names():
+    from typing import NamedTuple
+
+    class Mark(NamedTuple):
+        path: str
+        name: str
+
+    names = _ratchet_cmds()._followed_names([Mark("calc/grade.py", "curve")], [],
+                                            {"calc/grade.py": "calc/grading.py"})
+
+    assert f"`followed 1 rename(s){names}`" in _prose(_release())
+
+
+def test_the_exit_code_table_lists_the_git_refusals_0_8_1_adds():
+    row = next(line for line in _page("README.md").splitlines() if line.startswith("| 4 |"))
+
+    assert "missing from this clone" in row and "`ratchet prune`" in row
+
+
+# -- S27: doctor names the refusal reuse applies ----------------------------------
+
+def _admin():
+    from crapkit.cli import admin
+
+    return admin
+
+
+@landed(hasattr(_admin(), "_lane_refusal"), "doctor's per-lane refusal")
+def test_the_doctor_row_documents_the_refusal_each_json_lane_carries(tmp_path):
+    from crapkit.config import Lane
+
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("calc",))
+    report = _admin()._lane_report(tmp_path, lane, {})
+    row = next(line for line in _page("README.md").splitlines() if line.startswith("| `doctor "))
+
+    assert report["refusal"] is None, "no artifact on disk, so nothing to refuse"
+    assert "`--json` gives each lane a `refusal`" in row and "or `null`" in row
+    assert "`doctor --json` gives each lane a `refusal`" in _prose(_release())
