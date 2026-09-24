@@ -770,6 +770,8 @@ Shared rules belong to these modules:
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `lane_sources.py` | the content record: the git blob id each file under a lane's scopes held when its artifact measured it. `record` is the one rule: git's index gives the id of a file its worktree diff calls unchanged, and `git hash-object --path` hashes the rest. The stamp keeps it as `blobs` and every staleness reader compares it, so commit history never decides. The index fast path trusts git's stat cache, so a same-size edit under a restored modification time keeps the old id, a named limit |
+| `lane_stamps.py` | what `.crapkit/artifacts.json` says, read once per command into explicit states (absent, unreadable, mangled, legacy, recorded). `read(root).refusal(artifact)` is the one refusal query: a reader that decides whether the artifact on disk may be scored asks it and nothing else. Writes replace the file in one step and copy each refusal into the snapshot store |
+| `lane_outputs.py` | which declared files an attempt wrote. `owned` moves a lane's declared outputs under `.crapkit/aside/` before its attempts and puts a leftover back only where no attempt wrote one; its sha256 is what a refusal records |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time
