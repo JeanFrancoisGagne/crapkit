@@ -142,10 +142,20 @@ def _run(command, streams, owner, kwargs, watch):
     `streams` are the command's stdout and stderr. `watch` is the deadline, the
     progress stream and the no-progress limit. None means the deadline passed.
     """
+    _refuse_missing_cwd(kwargs.get("cwd"))
     with _START(command, *streams, owner, kwargs) as process:
         code = _complete_command(process, *watch, owner)
     _refuse_failed_start(code)
     return code
+
+
+def _refuse_missing_cwd(cwd) -> None:
+    """A start failure naming a cwd that is not a directory. Popen raised
+    FileNotFoundError on POSIX and NotADirectoryError on Windows, which the
+    lane layer does not read as a lane's failure, so a lane whose cwd named
+    nothing ended `crapkit coverage` in a traceback, exit 1."""
+    if cwd is not None and not os.path.isdir(cwd):
+        raise _StartFailed(f"cwd {cwd} is not a directory, so the command never ran")
 
 
 @contextmanager
