@@ -42,8 +42,9 @@ Automatic reuse requires the same clean HEAD and unchanged configuration,
 environment, crapkit version and coverage/JUnit bytes, or, for a lane that lists its `inputs`, no
 change under those paths, its lane table or its `env` since the artifact's commit;
 every other lane reruns. That is what
-`stale: true` asks for. Nothing else clears it, because nothing else lands a run on the
-current commit. `commands.refresh_writes_run: true` marks that ledger write.
+`stale: true` and a `scored_changes` above `0` ask for. Nothing else answers them: `stale`
+clears only when a run lands on the current commit, and `scored_changes` falls to `0` only
+when a run records the content on disk now. `commands.refresh_writes_run: true` marks that ledger write.
 The other commands can still write caches or test artifacts; the field does not
 promise filesystem read-only execution.
 
@@ -78,7 +79,8 @@ do next.
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
 | `gate_rule` | `ceiling` is the number step 3 judges ccn against; `binds` is the gate's scope rule as one fixed sentence: print it, do not branch on it |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
-| `stale` | `true` means the run predates HEAD: run `commands.refresh` before trusting `cov` |
+| `scored_changes` | how many files the run scored hold other content now, your own edits included. Anything but `0`, `null` included: run `commands.refresh` before trusting `cov` or `source` |
+| `stale` | `true` means HEAD moved past the run's commit; it says nothing about the files |
 | `file_functions`, `file_totals` | the siblings an extracted helper lands beside, and the file's rollup |
 | `regrowth` | `regrown: true` says an earlier decomposition of this function did not hold |
 | `attempts` | every claim already taken on it, oldest first. Not empty: read `regrowth.history` before repeating their split |
@@ -135,7 +137,7 @@ exits 1:
 
     crapkit brief --batch 5 --json
 
-`{"schema": 1, "run_id": ..., "commit": ..., "stale": ..., "packets": [...]}`: the top N
+`{"schema": 1, "run_id": ..., "commit": ..., "stale": ..., "scored_changes": ..., "commands": {"refresh": ...}, "packets": [...]}`: the top N
 of the queue as N packets, `crap` descending, built from one read of the store, the
 churn log and the ratchet file. Hand one packet to one session. A function another
 session holds under `next-item --claim` is skipped, as `next-item` skips it, and the
@@ -425,7 +427,7 @@ Where a packet's `PATH` and `FUNCTION` come from when no orchestrator handed you
 `next-item` always prints one JSON object on stdout and has no `--json` flag. One real
 payload, one line, sorted keys:
 
-    {"commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84]}, "run_id": 5, "schema": 1, "skipped_no_lane": 0, "stale": false}
+    {"commands": {"refresh": "crapkit coverage --reuse-unchanged"}, "commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84]}, "run_id": 5, "schema": 1, "scored_changes": 0, "skipped_no_lane": 0, "stale": false}
 
 Act on these fields:
 
@@ -439,7 +441,8 @@ Act on these fields:
 | `function` | pass verbatim to `brief` and `claims release` |
 | `handle` | the shorter name form, and the one to use on a function printed as `(anonymous)`: `(anonymous)#2` names a position in the file, so it outlives your own edit |
 | `start` | the other name form `brief` takes; a line number, so an edit above it invalidates it |
-| `stale` | `true` means the run predates HEAD; rerun `crapkit coverage` before acting on `cov` |
+| `scored_changes` | how many files the run scored hold other content now, your own uncommitted edits included. Anything but `0`, `null` included, means run `commands.refresh` before acting on `cov` or the span; `null` means the run recorded no content (crapkit 0.8.0 and older) |
+| `stale` | `true` means HEAD moved past the run's commit. It judges the commit, not the files: an amend or an empty commit sets it with every number still true, and an uncommitted edit leaves it `false`, so read `scored_changes` for the content |
 
 `uncovered_lines: null` with a sibling `uncovered_lines_note` means no artifact could name
 line numbers for that file. The note names which case, and `flag` is the same answer in one
@@ -467,22 +470,27 @@ configured scopes, matched exactly rather than as a substring.
 
 ## The termination rule
 
-**Stop looping when all three of these hold in one bare `crapkit next-item`, and not
+**Stop looping when all four of these hold in one bare `crapkit next-item`, and not
 before:**
 
     empty                        true
     skipped_claimed              0, or absent
     reasons.no_lane_over_target  0, or absent
+    scored_changes               0
 
-    {"commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "skipped_no_lane": 0, "stale": false}
+    {"commands": {"refresh": "crapkit coverage --reuse-unchanged"}, "commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "scored_changes": 0, "skipped_no_lane": 0, "stale": false}
 
 That payload is a finished burn-down. `empty: true` on its own is not: it says the queue
-has nothing to hand out, and two things stop it handing out work that still exists. A
+has nothing to hand out, and three things stop it handing out work that still exists. A
 claim hides a row from every session, yours included. A `no-lane` row never reaches this
 queue, because its `cov = 0` is a tooling gap rather than a testing one, and
 `no_lane_over_target` counts how many of those rows are over their ceiling anyway. Either
 count non-zero means work is left somewhere the queue cannot reach. `crapkit worklist` does
-rank those rows, marked `no-lane`, so the gap stays visible somewhere.
+rank those rows, marked `no-lane`, so the gap stays visible somewhere. And the queue ranks
+the run, not the tree: `scored_changes` counts the files the run scored whose content
+changed since, your own last edit included. Anything but `0`, `null` included, means run
+`commands.refresh` and ask again. `stale` is not part of the rule: it says HEAD moved past
+the run's commit, which an amend does with no byte moved.
 
 The two read the same run, the newest trusted one, so where they disagree it is about
 ranking and never about which snapshot each is describing. `ratchet seed` and `prune` pick

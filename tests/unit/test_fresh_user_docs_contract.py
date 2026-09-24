@@ -137,7 +137,7 @@ def test_the_sample_payload_carries_every_envelope_key_the_command_emits():
     sample = _sample_payload()
 
     assert set(sample) == {"schema", "empty", "item", "run_id", "commit",
-                           "skipped_no_lane", "stale"}
+                           "skipped_no_lane", "stale", "scored_changes", "commands"}
 
 
 def test_the_sample_item_carries_every_key_the_payload_builder_returns():
@@ -147,7 +147,7 @@ def test_the_sample_item_carries_every_key_the_payload_builder_returns():
 
 
 def test_the_sample_payload_is_printed_with_sorted_keys():
-    line = [ln for ln in _doc(README).splitlines() if ln.startswith('{"commit"')][0]
+    line = [ln for ln in _doc(README).splitlines() if ln.startswith('{"comm')][0]
 
     assert line == json.dumps(json.loads(line), sort_keys=True), \
         "every read command prints sorted-keys JSON; the sample has to look like one"

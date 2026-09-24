@@ -212,8 +212,11 @@ def test_the_watch_row_says_a_touch_rescores_nothing_and_new_bytes_do(tmp_path):
 
     from crapkit import watch
 
+    _git(tmp_path, "init", "-q")
     source = tmp_path / "app.py"
     source.write_text("x = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", "app.py")
+    _git(tmp_path, "commit", "-q", "-m", "one")
     first = watch.snapshot(tmp_path, ["app.py"])
     later = os.stat(source).st_mtime + 5
     os.utime(source, (later, later))
@@ -383,3 +386,99 @@ def test_the_doctor_row_documents_the_refusal_each_json_lane_carries(tmp_path):
     assert report["refusal"] is None, "no artifact on disk, so nothing to refuse"
     assert "`--json` gives each lane a `refusal`" in row and "or `null`" in row
     assert "`doctor --json` gives each lane a `refusal`" in _prose(_release())
+
+
+# -- S10, Q15: scored_changes beside stale ------------------------------------------
+
+def _queue():
+    from crapkit.cli import queue
+
+    return queue
+
+
+def _has_run_freshness() -> bool:
+    return hasattr(_queue(), "run_freshness")
+
+
+def _samples(page: str) -> list[dict]:
+    """Every next-item payload a page prints: one JSON object per line."""
+    import json
+
+    return [json.loads(line.strip()) for line in _page(page).splitlines()
+            if line.strip().startswith('{"comm')]
+
+
+@landed(_has_run_freshness(), "scored_changes and commands.refresh")
+@pytest.mark.parametrize("page, count", [("README.md", 1), ("AGENTS.md", 2)])
+def test_each_next_item_sample_carries_the_envelope_the_command_builds(page, count):
+    queue = _queue()
+    head = queue._next_head({"id": 1, "commit": "f" * 40}, 0, 0,
+                            queue.RunFreshness(False, []))
+    samples = _samples(page)
+
+    assert len(samples) == count
+    for sample in samples:
+        assert set(head) <= set(sample), (page, set(head) - set(sample))
+        assert sample["scored_changes"] == 0 and sample["commands"] == head["commands"]
+
+
+@landed(_has_run_freshness(), "scored_changes and commands.refresh")
+def test_agents_and_agent_json_stop_on_the_same_scored_changes_clause():
+    rule = _page("AGENTS.md").split("\n## The termination rule\n", 1)[1].split("\n## ", 1)[0]
+    stop = _page("docs/agent-json.md")
+
+    assert re.search(r"^    scored_changes +0$", rule, re.M), "the rule's fourth line"
+    assert "`scored_changes == 0`" in stop
+    assert "null` included" in _prose(rule) and "null` included" in _prose(stop)
+
+
+@landed(_has_run_freshness(), "the worklist's changed-files warning")
+def test_the_changelog_quotes_the_worklist_warning_that_names_changed_files(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    queue = _queue()
+    fresh = queue.RunFreshness(False, ["calc/grade.py", "calc/report.py"])
+    (line,) = queue._freshness_warnings(fresh, {"id": 4, "commit": "f" * 40})
+    head = line.removeprefix("warning: ").split(" — ")[0]
+
+    assert f"`{head}`" in _prose(_release())
+
+
+def test_the_readme_says_what_scored_changes_and_stale_each_answer():
+    section = _prose(_page("README.md").split("### 4. Take the top item", 1)[1].split("### 5.", 1)[0])
+
+    assert "`scored_changes: 0` says no file the run scored holds other content now" in section
+    assert "`stale: false` says HEAD is still the run's commit" in section
+
+
+@landed(_has_run_freshness(), "scored_changes and commands.refresh")
+def test_agents_names_the_batch_envelope_the_command_builds():
+    line = next(ln for ln in _page("AGENTS.md").splitlines() if ln.startswith('`{"schema": 1, "run_id"'))
+    named = set(re.findall(r'"(\w+)":', line)) - {"refresh"}
+    envelope = _queue().RunFreshness(False, []).envelope()
+
+    assert named == {"schema", "run_id", "commit", "packets", *envelope}
+    assert envelope["commands"] == {"refresh": "crapkit coverage --reuse-unchanged"}
+
+
+def _handbook_rules() -> list[str]:
+    """The two places the handbook states the stop rule: §11 and the §16 recipe."""
+    text = _prose(_page("docs/handbook.html"))
+    return [text.split("<h3>The termination rule</h3>", 1)[1].split("</p>", 1)[0],
+            next(p for p in text.split("<p>") if p.startswith("Stop when <code>next-item</code>"))]
+
+
+@pytest.mark.parametrize("which", [0, 1], ids=["queue", "recipe"])
+def test_each_handbook_stop_rule_carries_the_scored_changes_clause(which):
+    rule = _handbook_rules()[which]
+
+    assert "<code>no_lane_over_target</code>" in rule
+    assert re.search(r"<code>scored_changes(: 0</code>|</code> is <code>0</code>)", rule), rule
+    assert "Three conditions" not in rule and "two riders" not in _page("docs/handbook.html")
+
+
+def test_agents_brief_table_reads_scored_changes_before_stale():
+    rows = [ln for ln in _page("AGENTS.md").splitlines() if ln.startswith(("| `scored_changes`", "| `stale`"))]
+
+    assert len(rows) == 4, "one pair in the brief table, one in the next-item table"
+    assert all(rows[i].startswith("| `scored_changes`") for i in (0, 2))
+    assert all("predates HEAD" not in row for row in rows)

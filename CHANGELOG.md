@@ -71,6 +71,25 @@
 - Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
   where it returned `[]`.
 
+### `scored_changes` says whether the run still describes the files
+
+- `next-item`, `brief`, `brief --batch`, `worklist --json`, the report payload and the MCP
+  tools that print them add `scored_changes`: how many files the ranked run scored hold
+  other content now than the run recorded, deleted files included, or `null` when the run
+  recorded none, as every run 0.8.0 wrote. `stale` keeps its meaning, the run's commit is
+  not HEAD, and it judges the commit and not the files: an uncommitted rewrite of a scored
+  function left it `false` while `next-item` handed out the pre-edit ccn and span, a run
+  measured on an edit that was later reverted read fresh, and an amend, an empty commit or
+  a README-only commit set it `true` over an identical tree. 0.9.0's schema 2 redefines
+  `stale` as a content difference.
+- Every payload that carries `stale` carries `commands.refresh`, the one call that answers
+  both fields.
+- The stop rule in AGENTS.md, `docs/agent-json.md` and the crapkit skill gains a fourth
+  clause, `scored_changes == 0`. Anything but `0`, `null` included, means run
+  `commands.refresh` and ask again.
+- The plain `worklist` warns on stderr when files the run scored changed since, and names
+  up to three: `2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py`.
+
 ### A git question that fails is named, and a count names its files
 
 - `verify` tells a baseline commit this clone does not hold from one a rewrite left

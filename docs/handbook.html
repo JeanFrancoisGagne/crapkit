@@ -692,7 +692,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
   <text x="680" y="152" text-anchor="middle" class="sm">ranked by crap descending</text>
   <text x="680" y="170" text-anchor="middle" class="sm">drops ok and no-lane rows</text>
   <text x="680" y="188" text-anchor="middle" class="sm">carries budget estimates and dark lines</text>
-  <text x="680" y="206" text-anchor="middle" class="sm">empty: true is the stop signal (with two riders)</text>
+  <text x="680" y="206" text-anchor="middle" class="sm">empty: true is the stop signal (with three riders)</text>
   <text x="680" y="230" text-anchor="middle" class="sm" font-style="italic">for: the session asking “what do I fix next”</text>
 </svg>
 <figcaption>The same run through two lenses. The worklist has no stop condition on purpose; <code>next-item</code> carries the only one.</figcaption>
@@ -714,7 +714,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 <p>The weight favors recent activity: five commits last month outrank one commit each of five months. A function over its ceiling is admitted whatever its ccn, so the admission floor (<code>worklist_floor</code>, default ccn 5) trims the list without ever hiding debt. Hot-but-simple code appears too, which is the map doing its job; the <code>ok</code> marker says no action is owed.</p>
 
 <h3>The termination rule</h3>
-<p>Three conditions from <code>next-item</code>, all at once: <code>empty: true</code>, no items skipped because another session claims them, and no <code>no_lane_over_target</code> count in the reasons. Debt a wiring gap keeps unreachable is still debt. One flag alone is not done.</p>
+<p>Four conditions from <code>next-item</code>, all at once: <code>empty: true</code>, no items skipped because another session claims them, no <code>no_lane_over_target</code> count in the reasons, and <code>scored_changes: 0</code>. Debt a wiring gap keeps unreachable is still debt, and a run that scored files your own edits have since changed ranks code that is no longer there. One flag alone is not done.</p>
 
 <!-- ============================ 12 PACKET ============================ -->
 <h2 id="packet"><span class="sn">12</span>The packet</h2>
@@ -768,7 +768,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
   <li><strong>Batch mode:</strong> <code>crapkit brief --batch N --json</code> emits the top N queue items as N packets from <em>one</em> process. One store open, one churn load, one source read per file, and since 0.4.5 one shingling pass over the snapshot for the whole batch instead of one per packet: a batch of 5 on a 31k-file repo went from 11.8 s to 5.2 s, byte-identical output. An orchestrator dealing work to parallel agents pays the fixed costs once.</li>
   <li><strong>Run the supplied commands as written.</strong> For ordinary paths, <code>commands.gate</code> is <code>crapkit rescore PATH --gate</code> and <code>commands.scoped_tests</code> is <code>crapkit test-scoped PATH</code>. Paths that a Windows shell would expand use an encoded PowerShell wrapper. That preserves the path when the command is pasted into cmd.exe or PowerShell. The <code>crapkit</code> console script must be on PATH.</li>
   <li><strong>Five name forms:</strong> the long name the worklist prints, the bare name, the start line, the ordinal handle <code>(anonymous)#N</code> meaning the Nth anonymous function in the file by start order, or the twin selector <code>NAME#2</code> for one of several functions a file gives one name to. Both ordinal forms survive edits that shift lines above them, which a start line does not; <code>claims</code> takes the handle. The bare name is the long name's leading token, which in Rust and Go is all there is before the parameters: <code>route cmd : &amp; Cmd</code> is <code>route</code>. Matching is exact first and falls back to a substring search only when no function answers to the name, so <code>route</code> never also returns <code>route_chain</code>. Since 0.4.5 <code>explain</code> resolves a start line the same way, so <code>crapkit explain app/grade.py 1</code> answers where it used to want a name.</li>
-  <li><strong>Honesty flags:</strong> <code>stale</code> says the snapshot predates HEAD. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
+  <li><strong>Honesty flags:</strong> <code>scored_changes</code> counts the files the run scored whose content changed since, your own uncommitted edits included, and anything but <code>0</code>, <code>null</code> included, means run <code>commands.refresh</code> first. <code>stale</code> says HEAD moved past the run's commit, which an amend does with no byte moved. <code>uncovered_lines: null</code> plus a note names the lane that abstained, never conflated with "nothing to cover". <code>refresh_writes_run</code> warns that refreshing writes a run.</li>
 </ul>
 
 <!-- ============================ 13 AGENTS ============================ -->
@@ -929,7 +929,7 @@ $ crapkit brief PATH NAME --json       # source, siblings, ceiling, lane, comman
 $ crapkit rescore PATH --gate          # exit 6 sends you back to the edit
 $ crapkit test-scoped PATH             # just this scope's tests, from its template
 $ crapkit verify                       # the full verdict; green releases the claim</code></pre>
-<p>Stop when <code>next-item</code> reports <code>empty: true</code> <em>and</em> nothing is skipped as claimed <em>and</em> no <code>no_lane_over_target</code> count appears (<a href="#queue">§11</a>). An empty-looking worklist is not the stop signal.</p>
+<p>Stop when <code>next-item</code> reports <code>empty: true</code> <em>and</em> nothing is skipped as claimed <em>and</em> no <code>no_lane_over_target</code> count appears <em>and</em> <code>scored_changes</code> is <code>0</code> (<a href="#queue">§11</a>). An empty-looking worklist is not the stop signal.</p>
 
 <h3>3 · Day one on a polyglot repo</h3>
 <p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, the other two get scored anyway.</p>
