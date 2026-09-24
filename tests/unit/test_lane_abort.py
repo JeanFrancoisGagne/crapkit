@@ -148,11 +148,17 @@ def test_a_testcase_error_that_is_not_a_crash_is_still_just_a_failed_test():
     assert failed == {"t::b"} and counts == {"tests": 2, "skipped": 0}
 
 
+def behind(*lane_sets: dict):
+    """What coverage hands suite_drops: the trusted runs, newest first, read on
+    demand. Each mapping is one run's lane provenance, as the store keeps it."""
+    return lambda: [{"kind": "coverage", "lanes": lanes} for lanes in lane_sets]
+
+
 def test_a_lane_that_ran_far_fewer_tests_than_the_last_trusted_run_is_named():
     """The reporter's own numbers: 10,674 of 15,300 after one worker died."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    (note,) = suite_drops({"py": {"tests_total": 15300}}, {"py": {"tests_total": 10674}})
+    (note,) = suite_drops(behind({"py": {"tests_total": 15300}}), {"py": {"tests_total": 10674}})
 
     assert "lane 'py' ran 10674 tests, 4626 fewer" in note
 
@@ -160,39 +166,39 @@ def test_a_lane_that_ran_far_fewer_tests_than_the_last_trusted_run_is_named():
 def test_a_handful_of_deleted_tests_is_not_a_drop():
     """Deleting a test file is routine. A warning that fires on it is noise, and
     noise is what makes the real one invisible."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    assert suite_drops({"py": {"tests_total": 15300}}, {"py": {"tests_total": 15290}}) == []
+    assert suite_drops(behind({"py": {"tests_total": 15300}}), {"py": {"tests_total": 15290}}) == []
 
 
 def test_a_lane_the_last_trusted_run_never_measured_cannot_drop():
     """A new lane, or one whose junit the old run had no count for. There is
     nothing to compare, and inventing zero would flag every first run."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    assert suite_drops({}, {"py": {"tests_total": 10}}) == []
-    assert suite_drops({"py": {}}, {"py": {"tests_total": 10}}) == []
+    assert suite_drops(behind({}), {"py": {"tests_total": 10}}) == []
+    assert suite_drops(behind({"py": {}}), {"py": {"tests_total": 10}}) == []
 
 
 def test_a_reused_junit_that_is_gone_is_not_a_suite_that_ran_zero_tests(tmp_path, capsys):
     """The reuse warning already says the count cannot be checked. Reading the
     absent count as zero added a second line claiming the lane ran 0 tests,
     every one of the last trusted run's tests short."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
     lane = lane_over(tmp_path, CLEAN)
     (tmp_path / "junit.xml").unlink()
     outcome = run_lane(tmp_path, lane, reuse_artifact=True)
 
-    assert suite_drops({"py": {"tests_total": 1}}, {"py": outcome.provenance}) == []
+    assert suite_drops(behind({"py": {"tests_total": 1}}), {"py": outcome.provenance}) == []
 
 
 def test_a_lane_that_stopped_declaring_a_junit_cannot_drop():
     """The same absence from the config side: the lane ran, its provenance has
     no count, and nothing says how many tests it ran."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    assert suite_drops({"py": {"tests_total": 20}}, {"py": {"exit_code": 0}}) == []
+    assert suite_drops(behind({"py": {"tests_total": 20}}), {"py": {"exit_code": 0}}) == []
 
 
 def test_coverage_warns_off_the_last_trusted_run_before_writing_this_one(tmp_path, capsys):

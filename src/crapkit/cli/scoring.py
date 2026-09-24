@@ -611,10 +611,10 @@ def _warn_suite_drop(store: SnapshotStore, provenance: dict) -> None:
     baseline; `coverage` is the command that WRITES a baseline, and until now it
     said nothing at all about a suite that halved.
     """
-    from ..lanes import last_counts, suite_drops
+    from ..lane_results import suite_drops
     from ..store import trusted_runs
 
-    for note in suite_drops(last_counts(trusted_runs(store)), provenance):
+    for note in suite_drops(lambda: reversed(trusted_runs(store)), provenance):
         print(f"crapkit: {note}", file=sys.stderr)
 
 

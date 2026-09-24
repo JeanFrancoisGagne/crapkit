@@ -547,12 +547,12 @@ def test_the_refusal_names_every_lane_it_could_not_check(counted, capsys):
 
 
 def test_the_lanes_page_quotes_both_lines_the_refusal_prints(tmp_path, capsys):
-    from crapkit.cli.verifying import _refuse_unread_results
+    from crapkit.cli.verifying import _refuse_unreadable_junits
 
     lane = SimpleNamespace(name="py", results_artifact=".crapkit/cov/junit-py.xml")
     provenance = _results_provenance(tmp_path, lane, reuse_artifact=True)
     with pytest.raises(ToolError) as refused:
-        _refuse_unread_results([lane], {"py": provenance})
+        _refuse_unreadable_junits([lane], {"py": provenance})
 
     page = LANES_PAGE.read_text(encoding="utf-8")
     assert f"{capsys.readouterr().err}crapkit: {refused.value}\nEXIT=5\n" in page

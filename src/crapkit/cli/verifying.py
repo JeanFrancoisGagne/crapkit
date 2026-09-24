@@ -658,7 +658,7 @@ def _warn_baseline_file(baseline: dict, provenance: dict) -> bool:
     return stale
 
 
-def _refuse_unread_results(lanes, provenance: dict) -> None:
+def _refuse_unreadable_junits(lanes, provenance: dict) -> None:
     """Refuse a verdict over a declared junit this run reused and could not read.
 
     A lane that runs refuses that report and exits 5. Under `--reuse-artifacts`
@@ -668,14 +668,23 @@ def _refuse_unread_results(lanes, provenance: dict) -> None:
     here, before anything is stored, as a real run does. A lane that declares
     no junit had nothing to read and still passes, under `lanes_without_results`.
     """
-    from ..lane_results import unread_junits
-
-    unread = unread_junits(lanes, provenance)
-    if unread:
-        raise ToolError("; ".join(_unread_results_line(lane) for lane in unread))
+    unreadable = _unreadable_junits(lanes, provenance)
+    if unreadable:
+        raise ToolError("; ".join(_unreadable_junit_line(lane) for lane in unreadable))
 
 
-def _unread_results_line(lane) -> str:
+def _unreadable_junits(lanes, provenance: dict) -> list:
+    """The lanes, in declaration order, that declare a `results_artifact` and
+    recorded no failure list: this run reused a junit it could not read. A lane
+    that ran refuses that report itself, and a lane that declares none has no
+    report to read, so neither is named here."""
+    from ..lane_results import without_results
+
+    unrecorded = set(without_results(provenance))
+    return [lane for lane in lanes if lane.results_artifact and lane.name in unrecorded]
+
+
+def _unreadable_junit_line(lane) -> str:
     return (f"lane {lane.name!r} declares results_artifact {lane.results_artifact}, which "
             "this verify reused and could not read, so no test in it was checked for a new "
             "failure; run verify without --reuse-artifacts so the lane writes it again")
@@ -899,7 +908,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     tool_versions, fresh_failures = run.tool_versions, run.test_failures
     if run.lane_errors:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
-    _refuse_unread_results(cfg.lanes, provenance)
+    _refuse_unreadable_junits(cfg.lanes, provenance)
 
     ranges = changed_ranges(diff_since(root, basis))
     ratchet = judged.marks.entries
@@ -993,10 +1002,10 @@ def _warn_suite_shrink(baseline: dict, provenance: dict, behind=tuple) -> None:
     declared no `results_artifact` then) once left the next verify comparing
     nothing, so a suite that fell from 20 tests to 2 passed without a word.
     """
-    from ..lane_results import counted, record_of
+    from ..lane_results import counted_record
 
     for name, prov in provenance.items():
-        source = record_of(baseline, behind, name, counted)
+        source = counted_record(baseline, behind, name)
         for line in _suite_size_lines(name, source, baseline, prov):
             print(f"warning: {line}", file=sys.stderr)
 

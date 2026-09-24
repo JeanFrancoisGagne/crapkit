@@ -35,9 +35,9 @@ def _lane(results_artifact: str | None = "junit.xml"):
 
 @pytest.mark.parametrize("page", [README, UPGRADING, RECOVER])
 def test_the_pages_quote_the_step_verifys_junit_refusal_ends_with(page: str):
-    from crapkit.cli.verifying import _unread_results_line
+    from crapkit.cli.verifying import _unreadable_junit_line
 
-    step = _unread_results_line(_lane()).rsplit("; ", 1)[1]
+    step = _unreadable_junit_line(_lane()).rsplit("; ", 1)[1]
 
     assert step == "run verify without --reuse-artifacts so the lane writes it again"
     assert f"`{step}`" in _flat(page)

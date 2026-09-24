@@ -1236,51 +1236,6 @@ def _results_provenance(root: Path, lane: Lane, *, reuse_artifact: bool = False)
             "results_artifact_sha256": digest}
 
 
-SUITE_DROP_FRACTION = 0.1
-
-
-def suite_drops(previous: dict, current: dict, *,
-                fraction: float = SUITE_DROP_FRACTION) -> list[str]:
-    """Lanes whose junit counted far fewer tests than the last trusted run's.
-
-    The cheap half of the crashed-worker check, for the runner that dies without
-    writing the crash into its own report: then the count is the only signature
-    left. The lane this came from wrote 10,674 of 15,300 collected tests after
-    one xdist worker died, and reported success.
-
-    A tenth is wide enough that deleting a test file does not cry wolf, and
-    narrow enough that a dead worker's whole queue cannot hide under it. Both
-    arguments are lane-name -> provenance, the shape a run records.
-
-    A lane with no count on either side compares nothing. This run's lane has
-    none when it declares no `results_artifact` or `--reuse-artifacts` could not
-    read one, and the reuse warning already says so; reading that absence as
-    zero once reported a lane that ran nothing as every test short.
-    """
-    notes = []
-    for name, prov in sorted(current.items()):
-        before, now = previous.get(name, {}).get("tests_total"), prov.get("tests_total")
-        if before and now is not None and now < before * (1 - fraction):
-            notes.append(f"lane {name!r} ran {now} tests, {before - now} fewer than the "
-                         f"last trusted run's {before} — check the runner's log for a "
-                         "worker that died without reporting it")
-    return notes
-
-
-def last_counts(runs: list[dict]) -> dict:
-    """Each lane's provenance from the newest of these runs that counted its tests.
-
-    `suite_drops` compares against this, not against the newest run alone. A run
-    that counted nothing for a lane (its junit was gone under
-    `--reuse-artifacts`) is still trusted, and as the only comparison point it
-    left the run after it free to lose any number of tests unreported.
-    """
-    counted = {}
-    for run in runs:
-        counted |= {name: prov for name, prov in run["lanes"].items() if prov.get("tests_total")}
-    return counted
-
-
 def retest_lane(root: Path, lane: Lane, tests: set[str]) -> set[str]:
     with measurement_owner(root, (lane,)) as owner:
         return _retest_owned(root, lane, tests, owner)

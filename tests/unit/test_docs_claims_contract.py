@@ -554,10 +554,11 @@ def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
 
 
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
-    from crapkit.lanes import SUITE_DROP_FRACTION, suite_drops
+    from crapkit.lane_results import SUITE_DROP_FRACTION, suite_drops
 
     assert f"**{SUITE_DROP_FRACTION:.0%}**" in _doc("docs/lanes.md")
-    (note,) = suite_drops({"py": {"tests_total": 20}}, {"py": {"tests_total": 12}})
+    previous = [{"kind": "coverage", "lanes": {"py": {"tests_total": 20}}}]
+    (note,) = suite_drops(lambda: previous, {"py": {"tests_total": 12}})
     assert f"crapkit: {note}" in _doc("docs/lanes.md")
 
 
