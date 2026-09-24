@@ -16,6 +16,7 @@ from .keys import stated_key
 from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
 from .store import SnapshotStore
+from .textcodec import os_text
 from .verify import GateViolation
 
 
@@ -40,7 +41,12 @@ def record_override(
     an empty metric. The hook's grant (`raise_marks=False`) synthesizes its
     numbers from ccn alone and compares no mark, so it keeps the recorded
     stamps: a stale file stays stale and verify keeps refusing it. `metric`
-    then stamps only a file the grant creates."""
+    then stamps only a file the grant creates.
+
+    `reason` comes from argv or CRAPKIT_OVERRIDE_REASON, which can hold a byte
+    that is not UTF-8; the alert and the audit both carry it as U+FFFD, where
+    the store refused it after the alert had already gone out."""
+    reason = os_text(reason)
     saved = ratchet_input or RatchetFile.read(root / ratchet_file)
     text = _checked_grant_text(saved, violations, raise_marks=raise_marks, keys=key_version,
                                metric=metric)
