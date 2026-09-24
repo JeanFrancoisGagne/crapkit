@@ -112,7 +112,8 @@ def test_non_list_persisted_rows_rebuild_cold_records(persisted_cache, rows):
     _assert_cold_recovery(path, data, cold)
 
 
-@pytest.mark.parametrize('stamps', [[], {'same.sh': 1}, {'same.sh': ['bad', 1, 'hash']}])
+@pytest.mark.parametrize('stamps', [[], {'same.sh': 1}, {'same.sh': ['bad', 1, 'hash']},
+                                    {'same.sh': [1, '2', 'hash']}])
 def test_malformed_stat_index_shapes_do_not_break_analysis(tmp_path, stamps):
     (tmp_path / 'same.sh').write_text(SOURCE, encoding='utf-8')
     directory = tmp_path / '.crapkit'

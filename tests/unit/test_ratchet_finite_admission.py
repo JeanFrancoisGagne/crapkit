@@ -44,3 +44,31 @@ def test_merge_command_refuses_nonfinite_input_without_rewriting_ours(tmp_path, 
     assert result.returncode == 3
     assert "unreadable mark" in result.stderr and "theirs.tsv" in result.stderr
     assert paths[1].read_bytes() == before
+
+
+
+# A line a hand edit or a botched merge leaves: the read side salvages the rest
+# and names the line, the write side refuses the file. An older file with no
+# metric stamp, and non-ASCII paths and names, read as they were written.
+
+@pytest.mark.parametrize("line, words", [
+    ("app.ts\tf( )", "has 2 fields, expected 3"),
+    ("app.ts\tf( )\t", "has an unreadable mark"),
+], ids=["two-fields", "an-empty-mark"])
+def test_a_line_carrying_no_mark_is_named_and_the_rest_still_reads(line, words):
+    text = f"path\tlong_name\tcrap\napp.ts\tg( )\t12\n{line}\n"
+
+    marks, complaints = read_ratchet(text)
+
+    assert marks == [RatchetEntry("app.ts", "g( )", 12.0)]
+    assert len(complaints) == 1 and words in complaints[0] and "line 3" in complaints[0]
+    with pytest.raises(ValueError, match="ratchet line 3"):
+        load_ratchet(text)
+
+
+@pytest.mark.parametrize("path, name", [("pkg/mod.py", "grade"), ("pkg/café.py", "gräde世")],
+                         ids=["an-older-file-with-no-stamp", "non-ascii-path-and-name"])
+def test_a_file_with_no_stamp_or_non_ascii_keys_reads_as_written(path, name):
+    text = f"path\tlong_name\tcrap\n{path}\t{name}\t20.0\n"
+
+    assert load_ratchet(text) == [RatchetEntry(path, name, 20.0)]
