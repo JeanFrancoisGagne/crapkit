@@ -19,7 +19,9 @@ rule per kind of source, and each one lives here or in the module named:
   to stop every command that reads churn.
 - A source file crapkit rewrites (a mutant) goes through `source_text` and
   back through `source_bytes`, which return every byte it held. The scorer
-  reads the same order of encodings through `analyze.decode_source`.
+  reads the same order of encodings through `analyze.decode_source`, which
+  turns the five bytes cp1252 leaves undefined into letters so an identifier
+  holding one stays whole.
 - Text the OS hands over (argv, the environment, a host name, a directory name)
   arrives as Python decodes it: a byte that is not UTF-8 is a lone surrogate on
   POSIX. `os_bytes` turns it back into the bytes the OS meant, for a hash or a

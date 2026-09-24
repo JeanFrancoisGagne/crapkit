@@ -37,6 +37,36 @@ Ordinary three-column rows retain their bytes.
 Identity is `(path, key name)`, never the line number. Spans drift on every edit; names
 survive.
 
+### How the file is read
+
+A shell can save the marks file in another encoding. PowerShell 5.1's `Out-File` with no
+`-Encoding` writes UTF-16 behind a byte-order mark, `Out-File -Encoding utf8` puts a UTF-8
+BOM in front, and an editor set to cp1252 saves `é` as the one byte 0xE9. Today's file, every
+past revision `ratchet report` and `brief` read from git, and the three sides the merge driver
+gets all read by one rule:
+
+- UTF-16 when the file opens with a UTF-16 byte-order mark;
+- else UTF-8, with a UTF-8 BOM dropped;
+- each byte that fits neither reads as U+FFFD.
+
+So `verify`, `ratchet report`, `brief` and the Claude Code advisory read such a file instead of
+stopping. A name that held a replaced byte reads as `caf�( n )`, keys no function, and
+costs that one mark only.
+
+A command that rewrites the file (`ratchet seed`, `prune`, `move` and `merge`, `verify`'s
+tighten, and both overrides) refuses at exit 3 when the read replaced a byte, because the
+rewrite would save U+FFFD where the name was:
+
+```
+crapkit: crapkit-ratchet.tsv holds byte e9 at offset 120, which reads as U+FFFD, and rewriting the file would save U+FFFD in its place; save it as UTF-8 and rerun; file left unchanged
+```
+
+A command with nothing to change writes nothing and refuses nothing. A UTF-16 file is written
+back as UTF-16, behind its own byte-order mark and in its own line ending, so the PowerShell
+that saved it reads it the same way next time. `crapkit.toml` and `verify --baseline-tsv` keep
+the strict rule and refuse a byte that is not UTF-8 by name: read as U+FFFD, it would be a
+setting nobody wrote.
+
 ---
 
 ## Twins: one name, several functions

@@ -66,3 +66,23 @@ def test_a_utf16_file_is_written_back_as_utf16_behind_its_own_mark(like):
                          ids=["new-or-empty", "utf8", "utf8-bom"])
 def test_every_other_file_is_written_as_utf8_without_a_bom(like):
     assert marks_bytes(ROWS, marks_codec(like)) == ROWS.encode()
+
+
+def test_the_ratchet_page_quotes_the_refusal_a_rewrite_gives(tmp_path):
+    """docs/ratchet.md shows the line seed prints over a cp1252 marks file."""
+    import re
+    from pathlib import Path
+
+    from crapkit.errors import ConfigError
+    from crapkit.ratchet import RatchetEntry
+    from crapkit.ratchetfile import RatchetFile
+
+    page = (Path(__file__).resolve().parents[2] / "docs" / "ratchet.md").read_text(encoding="utf-8")
+    quoted = re.search(r"crapkit: (crapkit-ratchet\.tsv holds byte e9 at offset (\d+), [^\n]*)", page)
+    marks = tmp_path / "crapkit-ratchet.tsv"
+    marks.write_bytes(b"#" * int(quoted[2]) + b"\xe9\n")
+
+    with pytest.raises(ConfigError) as refused:
+        RatchetFile.read(marks).kept([RatchetEntry("src/a.py", "f( )", 9.0)])
+
+    assert str(refused.value) == quoted[1]
