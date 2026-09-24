@@ -5,7 +5,13 @@ missing artifact clears on the next commit. A file no artifact mentions is
 `flag: untested` on a clean tree, and committing does nothing for it: the move
 is a first test that imports the file.
 """
+import json
+import re
+from pathlib import Path
+
 from crapkit.uncovered import MissingLines
+
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 MEASURED = MissingLines({"calc/report.py": {5, 6}}, "")
@@ -57,3 +63,23 @@ def test_the_cc_only_note_outranks_a_measuring_artifact_too():
     note = MEASURED.note_for("calc/report.py", "cc-only", "calc")
 
     assert "coverage_optional" in note
+
+
+def _page_notes() -> dict[str, str]:
+    """docs/agent-json.md's sample notes, keyed by the flag each sample carries."""
+    page = (ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```json\n(\{[^`]*\"uncovered_lines_note\"[^`]*\})\n```", page)
+    return {s["flag"]: s["uncovered_lines_note"] for s in map(json.loads, blocks)}
+
+
+def test_the_agent_page_shows_the_note_a_scope_no_lane_covers_reads():
+    """An agent branches on flag and prints the note. The page showed a stale
+    lane's note, the untested note and the cc-only note, but not the no-lane
+    one, which names the scope to add to a lane rather than a lane to rerun."""
+    stale = MissingLines({}, "lane 'py': files in its scopes changed since cov.json "
+                             "was written (uncommitted edits count)")
+
+    note = stale.note_for("lib/util.py", "no-lane", "lib")
+
+    assert _page_notes().get("no-lane") == note
+    assert _page_notes()["cc-only"] == MEASURED.note_for("tools/helper.py", "cc-only", "tools")

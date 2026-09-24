@@ -152,7 +152,7 @@ The distinction is load-bearing. An empty list is what a fully covered function 
 returning `[]` for a file no artifact measured would tell you there is nothing left to test.
 
 **The note is prose and may be reworded; `flag` is the contract.** Branch on `flag`, and
-print the note for a human. These three are what it reads like today, captured from real
+print the note for a human. These four are what it reads like today, captured from real
 runs:
 
 ```json
@@ -176,6 +176,14 @@ runs:
   "flag": "cc-only",
   "uncovered_lines": null,
   "uncovered_lines_note": "scope 'tools' sets coverage_optional = true, so no artifact can name uncovered lines for tools/helper.py"
+}
+```
+
+```json
+{
+  "flag": "no-lane",
+  "uncovered_lines": null,
+  "uncovered_lines_note": "no lane covers scope 'lib', so no artifact can name uncovered lines for lib/util.py; add 'lib' to a [[lane]]'s scopes to measure it"
 }
 ```
 
