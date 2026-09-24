@@ -257,6 +257,22 @@ def test_reverting_the_edit_a_lane_measured_withholds_its_lines(tmp_path):
     assert lines == [] and "changed since coverage/coverage-final.json measured it" in note
 
 
+def test_the_reuse_warning_judges_the_bytes_the_run_measured(tmp_path, capsys):
+    """The warning compared the stamp's commit with the tree: it fired right
+    after a run on an uncommitted edit, and went quiet once that edit was
+    reverted, while the artifact still described the edit."""
+    root = stale_tree.build(tmp_path / "repo")
+    stale_tree.write(root / REL, "// one\n// two\n" + stale_tree.APP_TS)
+    stale_tree.measure(root)
+
+    after_the_run = _reuse_warning(root, capsys)
+    stale_tree.git(root, "checkout", "--", REL)
+
+    assert after_the_run == ""
+    assert f"1 file(s) in its scopes changed since it measured them ({REL})" in _reuse_warning(
+        root, capsys)
+
+
 def test_an_edit_to_another_file_keeps_this_files_lines(tmp_path):
     root = stale_tree.measure(stale_tree.build(
         tmp_path / "repo", extra={"src/other.ts": "export const other = 1;\n"}))
