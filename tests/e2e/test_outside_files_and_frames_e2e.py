@@ -209,6 +209,7 @@ FRAME_ROWS = [
     _frame_row("invalid-utf8-inside-json-string", [_ping(2, b"caf\xe9")], {1, 2, 9}),
     _frame_row("invalid-utf8-junk-line", [b"\xff\xfe junk"], {1, 9}),
     _frame_row("utf8-bom-before-first-request", [], {1, 9}, first=b"\xef\xbb\xbf" + INITIALIZE),
+    _frame_row("utf8-bom-before-a-later-request", [b"\xef\xbb\xbf" + rpc(2, "tools/list")], {1, 2, 9}),
     _frame_row("cp1252-path-in-arguments", [_call(2, "get_function_history", HISTORY, "cp1252")], {1, 2, 9}),
     _frame_row("notification-holding-0xff",
                [b'{"jsonrpc":"2.0","method":"notifications/progress","params":{"x":"\xff"}}'], {1, 9}),
@@ -498,3 +499,15 @@ def _doctor_plugin(tmp_path: Path, parent: str, *, recorded: bool) -> tuple[int,
 def test_doctor_plugin_root_answers_the_same_under_a_non_ascii_directory(tmp_path, recorded):
     assert _doctor_plugin(tmp_path, "plugin-José 李雷", recorded=recorded) == \
         _doctor_plugin(tmp_path, "plugin-ascii", recorded=recorded)
+
+
+# --- rows no input reaches ------------------------------------------------------
+#
+# utf8-author-shape-17, comment.py's _read_text on the payload, base sha and
+# base reason files: action.yml fills each one with crapkit's own output (ASCII
+# JSON, or the first line of its stderr, which crapkit writes as UTF-8 to a
+# file) or with a sentence and a sha of its own, so no byte a repo holds reaches
+# that read in any other encoding.
+# utf8-author-boundary-8, lanes._still_failed on a Latin-1 or UTF-16 junit
+# report: nothing called it, and it is deleted (utf8-author-shape-33). The
+# flake retest reads its report through _retested_passes, in the rows above.

@@ -67,6 +67,23 @@ ALLOWED = {
         "a launcher's --version answer; it goes once doctor reads that answer as bytes",
 }
 
+# The utf8-author rows no input reaches, each held by the scan or named here:
+# shape-33, lanes._still_failed: nothing called it, and it is deleted.
+# shape-34, procs._captured_text under the MCP server's _run_cli: the child is
+#   crapkit, which writes a pipe in UTF-8 (the MCP frame rows in
+#   tests/e2e/test_outside_files_and_frames_e2e.py run it).
+# shape-35, the owner's JSON channel and `ps`: the two _process_owner entries.
+# shape-36, commit-graph-chain: the cli/admin.py _graph_files entry.
+# shape-37, churn_log._encoded: an encode, not a read, of lines _git_lines
+#   decoded with errors="replace", so no line holds a lone surrogate.
+# shape-38, crapkit's own caches: the analyze, churn, coupling, stamp and pool
+#   receipt entries.
+# shape-39, gitpaths.unquote_path: gitpaths is a rule home, so the scan skips
+#   it; tests/unit/test_git_path_bytes.py holds its rule.
+# shape-40, the shell steps (action.yml, git-hooks/pre-commit, the plugin's
+#   hooks.json and .mcp.json, the Dockerfile): each passes bytes on without a
+#   codec, and the python:3.12-slim image sets LANG=C.UTF-8.
+
 
 def _name(call: ast.Call) -> str:
     func = call.func

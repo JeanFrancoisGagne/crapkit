@@ -82,6 +82,21 @@ def test_a_mutant_changes_only_its_own_line_in_any_source_encoding(tmp_path, sou
     assert all(_changed_lines(source, each) == [mutated] for each in seen[1:]), seen
 
 
+def test_a_cp1252_python_file_with_no_coding_cookie_is_a_suite_that_fails_unmutated(tmp_path):
+    """utf8-author-history-6, the row no mutant reaches: Python refuses to
+    compile such a file (Non-UTF-8 code), so the suite fails on the unmutated
+    tree, mutate refuses by name before it writes a mutant, and the file keeps
+    its bytes."""
+    source = BODY.encode("cp1252")
+    repo = _mutation_repo(tmp_path / "repo", source, tmp_path / "seen.log")
+
+    res = run_cli(repo, "mutate", "--files", "src/app.py", "--json")
+
+    answered(res, 5)
+    assert "exits 1 on the UNMUTATED tree" in json.loads(res.stdout)["error"]["message"], shown(res)
+    assert (repo / "src" / "app.py").read_bytes() == source
+
+
 # --- a function's source handed to an agent: brief --json `source` --------------
 #
 # utf8-author-boundary-10. AGENTS.md tells an agent to edit from `source`, so

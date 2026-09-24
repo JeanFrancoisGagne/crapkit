@@ -331,3 +331,16 @@ def test_doctor_reads_a_git_config_value_in_any_bytes(tmp_path, config):
     res, expected = run_cli(repo, "doctor"), run_cli(control, "doctor")
 
     answered(res, expected.returncode)
+
+
+# --- rows no input reaches ------------------------------------------------------
+#
+# utf8-author-shape-1, an LF or a NUL inside an author name: an LF ends the
+# author line of a commit object and git stops a name at a NUL, so no walk
+# reads either. A CR does reach the walk, in
+# test_a_cr_inside_an_author_name_keeps_the_commit_whole.
+# utf8-author-shape-3 on win32, a leftover pool file named in Latin-1: NTFS
+# stores every name as UTF-16, so `clean` names each file in UTF-8 there.
+# utf8-author-shape-3 and -history-3, the unowned worktree commands: mutate
+# passes the measurement owner to every pool command, and the unowned path
+# reads git's answer through gitio._spawn, which never raises on a byte.
