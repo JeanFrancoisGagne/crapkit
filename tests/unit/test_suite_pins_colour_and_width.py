@@ -29,9 +29,15 @@ HELP_TESTS = [
     "tests/unit/test_cli_argument_guards.py::test_help_names_the_topics_when_the_topic_is_not_one",
     "tests/unit/test_help_names_where_paths_are_read.py",
     "tests/unit/test_runner_refuses_negative_retention_flags.py",
+    # These three read help text too, and passed under every row before the fixture.
+    "tests/unit/test_cli_lazy_families.py::test_the_help_text_still_names_every_subcommand",
+    "tests/unit/test_cli_docs_contract.py",
+    "tests/unit/test_subcommand_rows_name_every_flag.py",
 ]
 PYTEST = [sys.executable, "-m", "pytest", *HELP_TESTS, "-q", "--color=no", "-p", "no:randomly",
           "-p", "no:cacheprovider", "-o", "addopts="]
+# The first three colour help on 3.14 and the next three wrap it narrow. The
+# last two were green before the fixture, and stay green with it.
 EXPORTED = {
     "FORCE_COLOR=1": {"FORCE_COLOR": "1"},
     "PYTHON_COLORS=1": {"PYTHON_COLORS": "1"},
@@ -39,6 +45,8 @@ EXPORTED = {
     "COLUMNS=30": {"COLUMNS": "30"},
     "COLUMNS=40": {"COLUMNS": "40"},
     "COLUMNS=60": {"COLUMNS": "60"},
+    "NO_COLOR=1 FORCE_COLOR=1": {"NO_COLOR": "1", "FORCE_COLOR": "1"},
+    "COLUMNS=250": {"COLUMNS": "250"},
 }
 
 
