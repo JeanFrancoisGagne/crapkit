@@ -13,8 +13,8 @@ import pytest
 from crapkit.cli.scoring import _DIRTY_TREE_NOTE, _dirty_note
 from crapkit.config import Lane
 from crapkit.errors import GitError
-from crapkit.lanes import (_SESSION_VARIABLES, _from_top, _output_names, lane_reuse_verdict,
-                           read_stamps, run_lane, uncommitted_changes, write_stamps)
+from crapkit.lane_freshness import _SESSION_VARIABLES, Freshness, _from_top, uncommitted_changes
+from crapkit.lanes import lane_reuse_verdict, read_stamps, run_lane, write_stamps
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -82,7 +82,7 @@ def test_the_measured_stamp_keeps_digests_never_environment_values(tmp_path, mon
     repo = _measured(tmp_path)
 
     stamp = read_stamps(repo)[_lane().artifact]
-    assert set(stamp["proof_parts"]) == {"commit", "config", "crapkit", "env", "lane"}
+    assert set(stamp["proof_parts"]) == {"commit", "config", "crapkit", "env", "kind", "lane"}
     assert len(stamp["proof_parts"]["env"]["CRAPKIT_REASON_SECRET"]) == 16
     assert "hunter2-value" not in json.dumps(stamp)
     assert "OLDPWD" not in stamp["proof_parts"]["env"]
@@ -104,10 +104,14 @@ def test_the_partial_run_hint_quotes_git_when_git_cannot_read_the_tree(tmp_path)
     assert "not a git repository" in note, note
 
 
+def _outputs(root: Path) -> frozenset:
+    return Freshness(root, (_lane(),)).outputs(_lane())
+
+
 def test_an_unparsable_crapkit_toml_leaves_only_the_lanes_own_outputs(tmp_path):
     (tmp_path / "crapkit.toml").write_text("[[lane]\nname = ", encoding="utf-8")
 
-    assert _output_names(tmp_path, _lane()) == frozenset({"out/cov.json"})
+    assert _outputs(tmp_path) == frozenset({"out/cov.json"})
 
 
 def test_every_configured_lane_output_is_named_from_the_root(tmp_path):
@@ -116,7 +120,7 @@ def test_every_configured_lane_output_is_named_from_the_root(tmp_path):
         '[[lane]]\nname = "py"\ncommand = "x"\nartifact = "./scripts/cov.json"\nparser = "istanbul"\n'
         'scopes = ["src"]\nresults_artifact = "scripts\\\\junit.xml"\n', encoding="utf-8")
 
-    assert _output_names(tmp_path, _lane()) == frozenset(
+    assert _outputs(tmp_path) == frozenset(
         {"out/cov.json", "scripts/cov.json", "scripts/junit.xml"})
 
 
@@ -143,6 +147,6 @@ def test_the_pages_quote_the_note_a_partial_run_on_a_dirty_tree_prints():
 def test_every_variable_the_lanes_page_says_the_proof_leaves_out_is_left_out():
     text = _flat("docs/lanes.md")
     named = text.split("The environment half of the proof leaves out", 1)[1].split("so a `cd`", 1)[0]
-    quoted = {word.strip("`,.:") for word in named.split() if word.startswith("`")}
+    quoted = {word.strip("`,.:").upper() for word in named.split() if word.startswith("`")}
 
     assert quoted and quoted <= _SESSION_VARIABLES, quoted - _SESSION_VARIABLES

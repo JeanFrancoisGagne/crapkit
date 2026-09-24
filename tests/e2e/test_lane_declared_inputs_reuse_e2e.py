@@ -274,12 +274,13 @@ def test_a_change_under_the_inputs_is_named_with_the_stamp_commit(repo: Path):
 
 
 def test_a_changed_lane_table_is_named(repo: Path):
+    """The inputs proof records its parts now, as the whole-tree proof does,
+    so the rerun names the lane table instead of "its lane table or env"."""
     _measure(repo)
     _write(repo, "crapkit.toml", _toml(INPUTS, env="two"))
     _commit(repo, "new env")
 
-    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
-        "its lane table or env differs from the one it was measured with")
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == "its lane table changed"
 
 
 def test_a_stamp_commit_this_clone_no_longer_holds_is_named(repo: Path):

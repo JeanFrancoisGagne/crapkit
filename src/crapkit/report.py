@@ -134,7 +134,7 @@ def _no_lane_reason(lanes: list[dict]) -> list[str]:
 def _stale_lane_reason(lanes: list[dict]) -> list[str]:
     """The blackout, stated at its real size.
 
-    A stale lane whose stamp recorded no digests makes `load_uncovered` return
+    A stale lane whose stamp recorded no blob ids makes `load_uncovered` return
     no line numbers for ANY path, not just that lane's. A lane whose stamp did
     withholds only the files whose bytes moved since it measured them, and the
     note names them.

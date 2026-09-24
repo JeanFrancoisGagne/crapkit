@@ -12,32 +12,31 @@ process. Timeouts and retries are lane config (timeout_seconds, retries).
 from __future__ import annotations
 
 import hashlib
-from contextlib import nullcontext
-from functools import lru_cache
-import json
 import os
-import posixpath
 import re
 import socket
 import sys
 import time
+import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from typing import IO, NamedTuple
 
-from . import __version__
 from .config import Lane
 from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
-from .errors import CrapkitError, GitError, ToolError
-from .gitio import GitFacts, untracked_files, worktree_root
+from .errors import GitError, ToolError
+from .gitio import GitFacts, untracked_files
 from .lane_command import launch_spec, pytest_python
-from .lane_outputs import owned
-from .lane_sources import moved, record, scope_files, settled
-from .lane_stamps import (STAMPS_FILE, file_sha256, read, read_stamps,  # noqa: F401
+from .lane_freshness import (Freshness, Proof, ReuseVerdict, measurement_proof,  # noqa: F401
+                             sample, uncommitted_changes, unproved)
+from .lane_outputs import declared_files, declared_outputs, owned
+from .lane_sources import lane_matchers, lane_record, settled
+from .lane_stamps import (STAMPS_FILE, Stamps, file_sha256, read, read_stamps,  # noqa: F401
                           recorded_seconds, refusal_entry, stamp_for, unreadable_stamps,
                           write as write_stamps)
 from .procs import NoProgress, own_processes, run_bounded
-from .universe import ScopeMatch, owning_scope, path_matchers
+from .universe import owning_scope
 
 
 def _in_container() -> bool:
@@ -346,11 +345,6 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
         f"{_shard_hint(root, lane)}", refused)
 
 
-def _declared_files(lane: Lane) -> tuple[str, ...]:
-    """Every path the lane says its command writes."""
-    return (lane.artifact, lane.results_artifact) if lane.results_artifact else (lane.artifact,)
-
-
 def _run_attempts(root: Path, lane: Lane, owner=None) -> int | None:
     """The exit code of the attempt that wrote every declared file, or the
     refusal naming what the last attempt left unwritten.
@@ -367,7 +361,7 @@ def _run_attempts(root: Path, lane: Lane, owner=None) -> int | None:
     sentence one layer up.
     """
     log_path = _lane_log_path(root, lane)
-    with owned(root, lane.name, _declared_files(lane)) as outputs:
+    with owned(root, lane.name, declared_files(lane)) as outputs:
         exit_code = _attempts(root, lane, log_path, owner, outputs)
     if _complete(root, lane, exit_code, outputs.leftovers):
         return exit_code
@@ -391,33 +385,37 @@ def _complete(root: Path, lane: Lane, exit_code: int | None, leftovers: dict) ->
 
 
 class _Before(NamedTuple):
-    """What a lane run reads off the tree before it starts: the proof key, the
+    """What a lane run reads off the tree before it starts: the proof, the
     content record of the files under its scopes (None when git cannot give
     one), and the untracked files already there."""
-    measured: str
+    measured: Proof
     sources: dict | None
     untracked: frozenset
 
 
 class _Trace(NamedTuple):
-    """What the run left: the proof key taken before it, the content record it
-    can vouch for (None when git gave none), and the untracked files the run
-    itself wrote (`byproducts`)."""
-    measured: str
+    """What the run left: the proof taken before it, the content record it can
+    vouch for (None when git gave none), and the untracked files the run itself
+    wrote (`byproducts`)."""
+    measured: Proof
     sources: dict | None
     byproducts: frozenset
 
 
-def _before_run(root: Path, lane: Lane, scope_paths: dict | None) -> _Before:
-    return _Before(_measurement_key(root, lane), _lane_sources(root, lane, scope_paths),
-                   _untracked(root))
+def _before_run(lane: Lane, fresh: Freshness) -> _Before:
+    outputs = fresh.outputs(lane)
+    return _Before(measurement_proof(fresh.root, lane, outputs),
+                   lane_record(fresh.root, lane, fresh.scope_paths, outputs), _untracked(fresh.root))
 
 
-def _after_run(root: Path, lane: Lane, scope_paths: dict | None, coverage: dict,
-               before: _Before) -> _Trace:
-    after = _lane_sources(root, lane, scope_paths, coverage)
+def _after_run(lane: Lane, fresh: Freshness, coverage: dict, before: _Before) -> _Trace:
+    """The record as the run left the files under its scopes and every in-tree
+    file its artifact measured."""
+    measured = [path for path in coverage if not _escapes_repo(path)]
+    after = lane_record(fresh.root, lane, fresh.scope_paths, fresh.outputs(lane), measured)
     kept = None if before.sources is None or after is None else settled(before.sources, after)
-    return _Trace(before.measured, kept, _byproducts(root, lane, before.untracked))
+    return _Trace(before.measured, kept,
+                  _byproducts(fresh.root, lane, before.untracked, fresh.stamps))
 
 
 def _untracked(root: Path) -> frozenset[str]:
@@ -427,38 +425,25 @@ def _untracked(root: Path) -> frozenset[str]:
         return frozenset()
 
 
-def _byproducts(root: Path, lane: Lane, before: frozenset) -> frozenset[str]:
+def _byproducts(root: Path, lane: Lane, before: frozenset, stamps: Stamps) -> frozenset[str]:
     """The untracked files this run wrote, plus the ones earlier runs of the
     lane wrote that are still there. A pytest-cov lane leaves `.coverage` at the
     root and a python lane with bytecode on leaves `__pycache__` under its
     scopes; a repo whose .gitignore holds only `.crapkit/`, which is what
     `crapkit init` writes, never had a clean tree to prove reuse on again."""
-    now = _untracked(root) - _declared_outputs(root, lane)
-    earlier = read(root).byproducts(lane.artifact)
+    now = _untracked(root) - declared_outputs(root, lane)
+    earlier = stamps.byproducts(lane.artifact)
     return (now - before) | (now & earlier)
 
 
-def _declared_outputs(root: Path, lane: Lane, config: bytes | None = None) -> frozenset[str]:
-    """Every artifact and results file crapkit.toml declares, plus this lane's
-    own, as root-relative paths: outputs by name, never recorded as by-products."""
-    text = _config_bytes(root) if config is None else config
-    own = frozenset(_normalized(name) for name in _declared_files(lane))
-    return own | _configured_outputs(text)
-
-
-def _recorded_byproducts(root: Path) -> frozenset[str]:
-    """Every untracked file a stamp says its lane's own run wrote."""
-    return read(root).byproducts()
-
-
 def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, provenance: dict,
-                 trace: _Trace) -> dict:
+                 trace: _Trace, fresh: Freshness) -> dict:
     """What produced this artifact: the commit reuse judges staleness against,
     plus the wall seconds the parallel scheduler starts the slowest lane on.
-    `proof` is the measurement key when it held from start to finish, else "";
-    it is named apart from `Lane.inputs`, which holds paths, not a hash.
-    `proof_parts` keeps the digests a lane without `inputs` was proved by, so a
-    later rerun can say which of them moved. `blobs` holds the git blob id of
+    `proof` is the measurement key when it held from start to finish, else "",
+    and then `unproved` says why; it is named apart from `Lane.inputs`, which
+    holds paths, not a hash. `proof_parts` keeps the named parts the key hashes,
+    so a later rerun can say which of them moved. `blobs` holds the git blob id of
     each file under the lane's scopes as the run left it: what its line numbers
     point into (lane_sources), left out when git could not give them.
     `byproducts` names the untracked files the run wrote, which no later proof
@@ -473,16 +458,17 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, provenance: dict,
     except GitError:
         return {}
     return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
-            **_held_proof(git.root, lane, trace), "artifacts": _artifact_digests(lane, provenance),
+            **_held_proof(lane, trace, fresh), "artifacts": _artifact_digests(lane, provenance),
             "byproducts": sorted(trace.byproducts), **_blobs_field(trace)}
 
 
-def _held_proof(root: Path, lane: Lane, trace: _Trace) -> dict:
-    """The proof taken before the run and its parts, when it still held after."""
-    proof = _measurement_proof(root, lane, trace.byproducts)
-    if not trace.measured or trace.measured != proof.key:
-        return {"proof": "", "proof_parts": {}}
-    return {"proof": trace.measured, "proof_parts": proof.parts}
+def _held_proof(lane: Lane, trace: _Trace, fresh: Freshness) -> dict:
+    """The proof taken before the run and its parts when it still held after,
+    else why it did not: the changes it was measured over, or what moved."""
+    after = measurement_proof(fresh.root, lane, fresh.outputs(lane) | trace.byproducts)
+    if trace.measured.key and trace.measured.key == after.key:
+        return {"proof": after.key, "proof_parts": after.parts}
+    return {"proof": "", "proof_parts": {}, "unproved": unproved(trace.measured, after)}
 
 
 def _blobs_field(trace: _Trace) -> dict:
@@ -494,170 +480,6 @@ def _artifact_digests(lane: Lane, provenance: dict) -> dict:
     if lane.results_artifact:
         digests[lane.results_artifact] = provenance["results_artifact_sha256"]
     return digests
-
-
-class _Proof(NamedTuple):
-    """The key a stamp records, the digests a lane without `inputs` takes it
-    over, and why there is no key: `why` is set exactly when `key` is ""."""
-    key: str
-    parts: dict
-    why: str
-
-
-def _measurement_key(root: Path, lane: Lane) -> str:
-    """The proof a stamp records that nothing the lane reads moved while it ran.
-
-    A lane that declares `inputs` is proved by those paths and its own config
-    block, env included. Every other lane is proved by the whole clean checkout,
-    crapkit.toml and the inherited environment.
-    """
-    return _measurement_proof(root, lane).key
-
-
-def _measurement_proof(root: Path, lane: Lane, byproducts: frozenset = frozenset()) -> _Proof:
-    """`byproducts` are untracked files the run being stamped wrote, which the
-    stamp does not record yet."""
-    if lane.inputs:
-        key = _declared_inputs_key(root, lane, byproducts)
-        return _Proof(key, {}, "" if key else "its inputs have uncommitted changes")
-    return _whole_tree_proof(root, lane, byproducts)
-
-
-def _inputs_key(commit: str, lane: Lane) -> str:
-    """The `proof` a lane that declares `inputs` stamps: its own configuration,
-    env and input paths included, bound to a commit."""
-    payload = json.dumps(("inputs", commit, lane), sort_keys=True).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _declared_inputs_key(root: Path, lane: Lane, byproducts: frozenset = frozenset()) -> str:
-    """HEAD bound to the lane's config, or "" while an uncommitted change touches
-    its inputs: the artifact would describe the edit, not the commit. A lane
-    output under the inputs is not such a change."""
-    from .lane_changes import ChangeReads
-
-    try:
-        outputs = _output_names(root, lane) | byproducts
-        commit = GitFacts(root).head_commit()
-        with ChangeReads(root, (), lane.inputs) as reads:
-            dirty = _unless(reads.status_names(), outputs)
-    except (GitError, OSError):
-        return ""
-    return "" if dirty else _inputs_key(commit, lane)
-
-
-# Variables a shell or terminal keeps for its own bookkeeping. A `cd` moves
-# OLDPWD and each new terminal or SSH login gets its own session ids, and no
-# runner measures differently for them. Hashed, OLDPWD alone reran every lane of
-# a large consumer repo on a clean, unchanged tree.
-# The agent and IPC sockets a login, a tmux server or an editor terminal opens
-# are session ids too: each new one moved SSH_AUTH_SOCK, TMUX or
-# VSCODE_GIT_IPC_HANDLE and reran a lane on an unchanged tree.
-_SESSION_VARIABLES = frozenset({
-    "OLDPWD", "PWD", "SHLVL", "_",
-    "WT_SESSION", "TERM_SESSION_ID", "ITERM_SESSION_ID", "TMUX_PANE", "WINDOWID",
-    "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "SECURITYSESSIONID", "XDG_SESSION_ID",
-    "SSH_AUTH_SOCK", "SSH_AGENT_PID", "TMUX", "VSCODE_GIT_IPC_HANDLE",
-})
-
-
-def _whole_tree_proof(root: Path, lane: Lane, byproducts: frozenset = frozenset()) -> _Proof:
-    """The clean worktree's HEAD, crapkit.toml's bytes, the lane's own table,
-    the inherited environment and the crapkit version, hashed together.
-
-    Only a clean worktree qualifies, but the lanes' declared artifacts and
-    results files do not count against it: every run rewrites them, and each
-    stamp proves its own by their digests. Nor do the untracked files a lane's
-    own run wrote. crapkit.toml is hashed apart from the tree because callers
-    can supply a lane without a tracked crapkit.toml, with CRLF read as LF, so a
-    checkout under core.autocrlf=true is the file it was. The version is there
-    because a crapkit that parses or scores an artifact differently must read
-    it fresh. External files and services remain outside this proof.
-    """
-    try:
-        config = _config_bytes(root)
-        head, dirty = _worktree(root, _output_names(root, lane, config) | byproducts)
-    except (GitError, OSError) as exc:
-        return _Proof("", {}, f"nothing proves its inputs unchanged: {exc}")
-    if dirty:
-        return _Proof("", {}, f"the working tree has {len(dirty)} uncommitted change(s): {_sample(dirty)}")
-    parts = {"commit": head, "config": _digest(config.replace(b"\r\n", b"\n")),
-             "lane": _digest(_lane_bytes(lane)),
-             "env": _environment_digests(), "crapkit": __version__}
-    return _Proof(_digest(json.dumps(parts, sort_keys=True).encode("utf-8")), parts, "")
-
-
-def _digest(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _lane_bytes(lane: Lane) -> bytes:
-    return json.dumps(lane, sort_keys=True).encode("utf-8")
-
-
-def _environment_digests() -> dict[str, str]:
-    """Each inherited variable the proof covers, as a short digest of its value.
-    The stamp keeps these, never a value, so a rerun can name what changed."""
-    return {name: _digest(value.encode("utf-8", "surrogatepass"))[:16]
-            for name, value in os.environ.items() if name not in _SESSION_VARIABLES}
-
-
-def _config_bytes(root: Path) -> bytes:
-    config = root / "crapkit.toml"
-    return config.read_bytes() if config.is_file() else b""
-
-
-def _worktree(root: Path, outputs: frozenset[str]) -> tuple[str, list[str]]:
-    """HEAD, and every uncommitted change in the whole checkout but `outputs`,
-    named from the checkout's top as git names them."""
-    top = worktree_root(root)
-    facts = GitFacts(top)
-    skip = _from_top(root, top, outputs)
-    return facts.head_commit(), _unless(facts.status_names(), skip)
-
-
-def uncommitted_changes(root: Path) -> list[str]:
-    """The changes that keep every lane without `inputs` from reuse: each
-    uncommitted change in the checkout but the lane outputs crapkit.toml
-    declares and the files the lanes' own runs wrote. Raises GitError when git
-    cannot say, which the caller must not read as a clean tree."""
-    return _worktree(root, _configured_outputs(_config_bytes(root)) | _recorded_byproducts(root))[1]
-
-
-def _unless(names, skip: frozenset[str]) -> list[str]:
-    return [name for name in names if name not in skip]
-
-
-def _from_top(root: Path, top: Path, names: frozenset[str]) -> frozenset[str]:
-    """Root-relative `names` spelled from the checkout's top."""
-    try:
-        prefix = root.resolve().relative_to(top).as_posix()
-    except ValueError:
-        return frozenset()
-    return frozenset(posixpath.normpath(f"{prefix}/{name}") for name in names)
-
-
-def _output_names(root: Path, lane: Lane, config: bytes | None = None) -> frozenset[str]:
-    """Every declared artifact and results file of the lanes crapkit.toml
-    configures, plus this lane's own, and every untracked file a stamp says its
-    lane's run wrote, as root-relative paths."""
-    return _declared_outputs(root, lane, config) | _recorded_byproducts(root)
-
-
-@lru_cache(maxsize=4)
-def _configured_outputs(config: bytes) -> frozenset[str]:
-    from .config import load_config_text
-    from .repotext import repo_bytes_text
-
-    try:
-        lanes = load_config_text(repo_bytes_text(config, "crapkit.toml")).lanes
-    except (CrapkitError, ValueError):
-        return frozenset()
-    return frozenset(_normalized(name) for lane in lanes for name in _declared_files(lane))
-
-
-def _normalized(name: str) -> str:
-    return posixpath.normpath(name.replace("\\", "/"))
 
 
 def refusal_stamp(root: Path, lane: Lane, error: object) -> dict[str, dict]:
@@ -678,82 +500,25 @@ def refusal_stamp(root: Path, lane: Lane, error: object) -> dict[str, dict]:
     return refusal_entry(read(root), lane, refused) if refused else {}
 
 
-def lane_order(root: Path, lanes: list[Lane]) -> list[Lane]:
+def lane_order(root: Path, lanes: list[Lane], stamps: Stamps | None = None) -> list[Lane]:
     """Longest recorded lane first: with lanes running concurrently the makespan
     is the slowest lane, so starting it last wastes exactly its own duration.
     Sorting is stable, so unrecorded lanes and ties keep declaration order.
     A recorded duration only ever changes WHICH lane starts first — results are
     merged in declaration order regardless, so it cannot move a score."""
-    stamps = read(root)
+    stamps = stamps if stamps is not None else read(root)
     return sorted(lanes, key=lambda lane: -(stamps.seconds(lane) or 0.0))
 
 
-def _lane_matchers(lane: Lane, scope_paths: dict) -> tuple[ScopeMatch, ...]:
-    """Ownership over the scopes THIS lane names, read by universe's one predicate.
-
-    Both questions a lane asks about paths go through here: which of its scopes'
-    files moved since the artifact was stamped, and whether the artifact reached
-    any of them at all. A second hand-rolled prefix test would answer the exact
-    arm — a scope that declares a FILE rather than a directory — differently
-    from the rule that assigns files, and the two would drift.
-    """
-    return path_matchers({name: scope_paths.get(name, ()) for name in lane.scopes})
-
-
-def _scope_changes(git: GitFacts, lane: Lane, scope_paths: dict, since_commit: str) -> list[str]:
-    """Committed or working-tree changes under this lane's scope paths since a commit.
-
-    Ownership is universe's, asked over this lane's scopes alone so a file a
-    NESTED scope owns cannot go stale on the parent's lane. Prefix matching on
-    its own missed a scope that declares a FILE rather than a directory — the
-    shape crapkit's own tests/e2e/test_parallel_lanes_e2e.py writes — and
-    editing that file read as no change at all.
-    """
-    matchers = _lane_matchers(lane, scope_paths)
-    if not matchers:
-        return []
-    changed = set(git.diff_names_since(since_commit)) | set(git.status_names())
-    return sorted(f for f in changed if owning_scope(f, matchers))
-
-
-def _scope_drift(git: GitFacts, lane: Lane, scope_paths: dict, commit: str) -> str:
-    """The files under this lane's scopes that moved since the commit, named, or
-    why git cannot say; "" when none did.
-
-    The reuse warning and the line-number note both print this. The warning
-    used to count the files without naming one and to print nothing when git
-    failed, the same silence as a scope that never moved.
-    """
-    try:
-        changed = _scope_changes(git, lane, scope_paths, commit)
-    except GitError as exc:
-        return _git_unanswered(commit, exc)
-    if not changed:
-        return ""
-    return (f"{len(changed)} file(s) in its scopes changed since {commit[:11]} "
-            f"({_sample(changed)}), uncommitted edits included")
-
-
-def _git_unanswered(commit: str, exc: GitError) -> str:
-    return f"git cannot say which files in its scopes changed since {commit[:11]} ({exc})"
-
-
-def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) -> None:
-    """On reuse: say which files touching this lane's scopes moved since the
-    artifact was built, or that git could not say. Uncommitted working-tree edits
-    count — that is the most common way to go stale."""
-    drift = _reuse_drift(git, lane, scope_paths or {})
+def _warn_stale_artifact(git, lane: Lane, scope_paths: dict | None,
+                         fresh: Freshness | None = None) -> None:
+    """On reuse: say which files under this lane's scopes moved since the
+    artifact measured them, or that git could not say."""
+    fresh = fresh if fresh is not None else Freshness(git.root, (lane,), scope_paths, git=git)
+    drift = fresh.warning(lane)
     if drift:
         print(f"crapkit: lane {lane.name!r} reuses {lane.artifact}; {drift}, "
               "so its coverage may be stale", file=sys.stderr)
-
-
-def _reuse_drift(git: GitFacts, lane: Lane, scope_paths: dict) -> str:
-    stamps = read(git.root)
-    recorded, commit = stamps.blobs(lane.artifact), stamps.commit(lane.artifact)
-    if recorded is not None:
-        return _sources_drift(git.root, lane, scope_paths, recorded)
-    return _scope_drift(git, lane, scope_paths, commit) if commit and scope_paths else ""
 
 
 def _facts(root: Path, git: GitFacts | None) -> GitFacts:
@@ -761,110 +526,10 @@ def _facts(root: Path, git: GitFacts | None) -> GitFacts:
     return git if git is not None else GitFacts(root)
 
 
-def _artifact_commit(root: Path, lane: Lane) -> str:
-    """The recorded commit of an existing artifact with no pending write refusal."""
-    stamps = read(root)
-    if not (root / lane.artifact).is_file() or stamps.refusal(lane.artifact).kind:
-        return ""
-    return stamps.commit(lane.artifact)
-
-
-def lane_sources_moved(root: Path, lane: Lane, scope_paths: dict,
-                       git: GitFacts | None = None) -> str:
-    """Why this artifact's line locations may be stale, or "" when every file
-    under its scopes holds the bytes its run measured.
-
-    Tests, runner settings and environment changes require a new measurement
-    but leave source locations intact. This read-side check accepts legacy
-    commit stamps and shares Git facts across lanes; it cannot authorize reuse.
-
-    Each answer names its cause: no stamp to vouch for the file, a stamp commit
-    HEAD does not descend from, the files that moved, or the git failure that
-    left the question open. The note once said "files in its scopes changed"
-    for all four, which sent a reader looking for edits that did not exist.
-    """
-    commit = _artifact_commit(root, lane)
-    if not commit:
-        return _no_commit(root, lane)
-    recorded = read(root).blobs(lane.artifact)
-    if recorded is not None:
-        return _sources_drift(root, lane, scope_paths, recorded)
-    return _commit_drift(_facts(root, git), lane, scope_paths, commit)
-
-
-def _commit_drift(facts: GitFacts, lane: Lane, scope_paths: dict, commit: str) -> str:
-    """The verdict for a stamp that recorded no digests (crapkit 0.8.0 and
-    older): git's diff since the stamp commit, which needs that commit behind
-    HEAD. The next `crapkit coverage` writes a stamp that needs neither."""
-    try:
-        behind = facts.is_ancestor(commit)
-    except GitError as exc:
-        return _git_unanswered(commit, exc)
-    if not behind:
-        return f"its artifact was built at {commit[:11]}, which is not behind HEAD"
-    return _scope_drift(facts, lane, scope_paths, commit)
-
-
-def _sources_drift(root: Path, lane: Lane, scope_paths: dict, recorded: dict) -> str:
-    """The files under this lane's scopes whose blob ids differ from the ones
-    its run measured, named; "" when none do. New files count, and so do
-    deleted ones. A git failure leaves the question open, and says so."""
-    try:
-        changed = moved(root, recorded, _scope_listing(root, lane, scope_paths),
-                        _declared_paths(lane, scope_paths))
-    except GitError as exc:
-        return f"git cannot say which files in its scopes changed since it measured them ({exc})"
-    if not changed:
-        return ""
-    return f"{len(changed)} file(s) in its scopes changed since it measured them ({_sample(changed)})"
-
-
-def recorded_sources(root: Path, lane: Lane) -> dict | None:
-    """The blob ids the stamp of the artifact on disk recorded, or None when the
-    stamp holds none: no artifact, a refused one, no stamp, or a stamp crapkit
-    0.8.0 or older wrote."""
-    recorded = read(root).blobs(lane.artifact)
-    return recorded if recorded is not None and _artifact_commit(root, lane) else None
-
-
-def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):
-    """The git answers lane staleness reads, for every lane of one command.
-
-    A caller's own facts are used as they stand. Without them every read starts
-    at once: the ancestry and commit-range reads for each stamp commit on disk,
-    and diff and ls-files narrowed to every lane's scope paths. The pathspec
-    names lanes with no stamp yet too, because a concurrent `crapkit coverage`
-    can stamp one between these reads and its verdict. With no stamp on disk at
-    all, git is asked only if a lane gets one, and then about the whole tree.
-    """
-    if git is not None:
-        return nullcontext(git)
-    commits = tuple(dict.fromkeys(_stamped_commits(root, lanes)))
-    if not commits:
-        return nullcontext(GitFacts(root))
-    paths = dict.fromkeys(path for lane in lanes for path in _declared_paths(lane, scope_paths))
-    return _started_reads(root, commits, tuple(paths))
-
-
-def _stamped_commits(root: Path, lanes) -> list[str]:
-    """The stamp commit of each lane whose artifact only git can judge."""
-    return [commit for commit in (_artifact_commit(root, lane) for lane in lanes) if commit]
-
-
-def _declared_paths(lane: Lane, scope_paths: dict) -> tuple[str, ...]:
-    """The paths this lane's scopes declare, as written in the config."""
-    return tuple(path for name in lane.scopes for path in scope_paths.get(name, ()))
-
-
-def _started_reads(root: Path, commits: tuple, paths: tuple):
-    """ChangeReads, or lazy GitFacts when git cannot even start: each question
-    then raises GitError and the lane reads stale, as it always has."""
-    from .lane_changes import ChangeReads
-
-    try:
-        return ChangeReads(root, commits, paths)
-    except GitError:
-        return nullcontext(GitFacts(root))
+def lane_reuse_verdict(root: Path, lane: Lane) -> ReuseVerdict:
+    """Whether automatic reuse is proved for this lane, and the first condition
+    that fails when it is not (lane_freshness)."""
+    return Freshness(root, (lane,)).reuse(lane)
 
 
 def lane_reuse_commit(root: Path, lane: Lane) -> str:
@@ -873,137 +538,15 @@ def lane_reuse_commit(root: Path, lane: Lane) -> str:
     return lane_reuse_verdict(root, lane).commit
 
 
-class ReuseVerdict(NamedTuple):
-    """`commit` is the commit the lane's artifact was built at when reuse is
-    proved, else "", and then `reason` says why the lane reruns."""
-    commit: str
-    reason: str
-
-
-def lane_reuse_verdict(root: Path, lane: Lane) -> ReuseVerdict:
-    """Whether automatic reuse is proved for this lane, and the first condition
-    that fails when it is not.
-
-    A lane command can read tests, configuration or any other repository input,
-    and source ownership cannot prove that a changed path leaves its
-    measurement intact. So a lane that declares nothing is reused only at the
-    same clean repository. A lane that declares `inputs` is reused while no
-    committed, staged, unstaged or untracked change touches those paths between
-    its commit's tree and the working tree. Either way the stamp's `proof` has to equal the
-    key the lane would stamp now and the artifact bytes have to match the stamp.
-    A stamp without a `proof` (one written before it had that name, or measured
-    while it did not hold) is never reused automatically. Explicit artifact
-    reuse remains a separate deliberate request.
-    """
-    stamp = read(root).entry(lane.artifact)
-    commit = _artifact_commit(root, lane)
-    reason = (_stamp_gap(root, lane, stamp, commit) or _proof_gap(root, lane, stamp, commit)
-              or _artifact_gap(root, lane, stamp))
-    return ReuseVerdict("" if reason else commit, reason)
-
-
-def _stamp_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
-    """Why the stamp itself cannot vouch for the artifact, or ""."""
-    if not commit:
-        return _no_commit(root, lane)
-    if not stamp.get("proof"):
-        return ("its stamp holds no proof: it was measured with uncommitted changes, or by "
-                "a crapkit that recorded none")
-    return ""
-
-
-def _no_commit(root: Path, lane: Lane) -> str:
-    if not (root / lane.artifact).is_file():
-        return f"no artifact at {lane.artifact}"
-    refusal = read(root).refusal(lane.artifact)
-    if refusal.kind == "leftover":
-        return f"its last attempt wrote no artifact, and the {lane.artifact} on disk predates it"
-    unread = f" ({STAMPS_FILE}: {refusal.why})" if refusal.why else ""
-    return f"no stamp records the commit {lane.artifact} was built at{unread}"
-
-
-def _proof_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
-    if lane.inputs:
-        return _inputs_gap(root, lane, stamp["proof"], commit)
-    return _whole_tree_gap(root, lane, stamp, commit)
-
-
-def _inputs_gap(root: Path, lane: Lane, proof: str, commit: str) -> str:
-    """Nothing under the inputs moved since the stamp's commit.
-
-    git reads the inputs as a pathspec, so an untracked file outside them
-    costs nothing and blocks nothing."""
-    if proof != _inputs_key(commit, lane):
-        return "its lane table or env differs from the one it was measured with"
-    return _inputs_moved(root, lane, commit)
-
-
-def _inputs_moved(root: Path, lane: Lane, commit: str) -> str:
-    """The changes under the inputs between the stamp's commit and the working
-    tree, whatever the history between them. An amend, a rebase or a branch
-    switch that leaves the inputs' tree as it was reruns nothing; the commit
-    only has to be in this clone for git to compare its tree."""
-    from .gitio import has_commit
-    from .lane_changes import ChangeReads
-
-    try:
-        if not has_commit(root, commit):
-            return _commit_absent(root, commit)
-        outputs = _output_names(root, lane)
-        with ChangeReads(root, (), lane.inputs) as reads:
-            moved = _unless(reads.changed_since(commit), outputs)
-    except (GitError, OSError) as exc:
-        return f"nothing proves its inputs unchanged: {exc}"
-    return f"{len(moved)} change(s) under its inputs since {commit[:11]}: {_sample(moved)}" if moved else ""
-
-
-def _commit_absent(root: Path, commit: str) -> str:
-    from .gitio import _shallow_fix
-
-    return (f"its artifact was built at {commit[:11]}, which this clone does not hold, so git "
-            f"cannot compare its inputs{_shallow_fix(root)}")
-
-
-def _whole_tree_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
-    proof = _whole_tree_proof(root, lane)
-    if proof.why:
-        return proof.why
-    if proof.parts["commit"] != commit:
-        return f"HEAD is {proof.parts['commit'][:11]} and its artifact was built at {commit[:11]}"
-    if proof.key == stamp["proof"]:
-        return ""
-    return _moved_parts(proof.parts, stamp.get("proof_parts"))
-
-
-_PART_NAMES = (("config", "crapkit.toml"), ("lane", "its lane table"),
-               ("crapkit", "the crapkit version"))
-_UNNAMED_PART = ("crapkit.toml, its lane table or the environment changed, and its stamp "
-                 "does not record which")
-
-
-def _moved_parts(now: dict, then) -> str:
-    """Which recorded part of a whole-tree proof moved, named."""
-    moved = _moved_names(now, then) if isinstance(then, dict) else []
-    return "; ".join(moved) if moved else _UNNAMED_PART
-
-
-def _moved_names(now: dict, then: dict) -> list[str]:
-    moved = [f"{name} changed" for key, name in _PART_NAMES if now[key] != then.get(key)]
-    env = _environment_moved(now["env"], then.get("env"))
-    return moved + ([f"{len(env)} environment variable(s) changed: {_sample(env)}"] if env else [])
-
-
-def _environment_moved(now: dict, then) -> list[str]:
-    then = then if isinstance(then, dict) else {}
-    return sorted(name for name in now.keys() | then.keys() if now.get(name) != then.get(name))
-
-
-def _artifact_gap(root: Path, lane: Lane, stamp: dict) -> str:
-    expected = stamp.get("artifacts")
-    if not isinstance(expected, dict):
-        return "its stamp records no digest of its artifact"
-    moved = [name for name in _declared_files(lane) if file_sha256(root / name) != expected.get(name)]
-    return f"{_sample(moved)}: bytes differ from its stamp" if moved else ""
+def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict, git=None) -> bool:
+    """Deprecated since 0.8.1 and removed in 0.9: whether every file under the
+    lane's scopes holds the bytes its artifact measured. Read
+    `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)` instead,
+    which says why when they do not."""
+    warnings.warn("crapkit.lanes.lane_sources_unchanged is deprecated and goes in 0.9; read "
+                  "crapkit.lane_freshness.Freshness(...).lines(lane) instead",
+                  DeprecationWarning, stacklevel=2)
+    return not Freshness(root, (lane,), scope_paths, git=git).lines(lane)
 
 
 def _read_and_parse(lane: Lane, root: Path,
@@ -1025,8 +568,6 @@ def _read_and_parse(lane: Lane, root: Path,
         dead_lines.add(artifact_path, dead)
     return per_file, digest
 
-
-_SAMPLE_PATHS = 3
 
 # A path the runner did not write relative to this checkout: absolute, drive
 # lettered, or climbing out of the tree. Both parsers rebase a file INSIDE the
@@ -1085,7 +626,7 @@ def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str
     individual file, and the prefix half of that is `src/faro/core.py/`, a path
     that exists neither in the config the reader is about to open nor on disk.
     """
-    matchers = _lane_matchers(lane, scope_paths)
+    matchers = lane_matchers(lane, scope_paths)
     if not matchers or any(owning_scope(path, matchers) for path in coverage):
         return ()
     return tuple(dict.fromkeys(m.path for m in matchers))
@@ -1114,29 +655,19 @@ def _split_escaped(root: Path, escaped: list[str]) -> tuple[list[str], list[str]
     return elsewhere, inside
 
 
-def _sample(paths) -> str:
-    """A few of them and a count of the rest. A lane scoped to forty declared
-    paths listed all forty, which pushed the sentence saying what to do off the
-    end of a line nobody reads that far into."""
-    ordered = sorted(paths)
-    shown = ", ".join(ordered[:_SAMPLE_PATHS])
-    rest = len(ordered) - _SAMPLE_PATHS
-    return f"{shown} and {rest} more" if rest > 0 else shown
-
-
 def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
     """The finding both verdicts open on, written once: what the artifact
     measured, and that none of it is in scope. The two messages part company
     after it, and a sentence kept in two places is a sentence that drifts."""
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({_sample(declared)})")
+            f"paths its scopes declare ({sample(declared)})")
 
 
 def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(outside)} of them "
             f"outside this checkout entirely — {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
-            f"paths like {_sample(outside)}. {lane_format(lane).WRONG_TREE_FIX}")
+            f"paths like {sample(outside)}. {lane_format(lane).WRONG_TREE_FIX}")
 
 
 def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -> str:
@@ -1144,11 +675,11 @@ def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -
             f"as absolute paths that DO sit under this checkout — {lane.artifact} measured "
             f"this tree and spelled it absolutely, and the join is on root-relative paths, "
             f"so it still matches nothing and every function in those scopes would score "
-            f"untested; it reports paths like {_sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
+            f"untested; it reports paths like {sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
 
 
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
-    reports = f"; it measured {_sample(coverage)}" if coverage else ""
+    reports = f"; it measured {sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
             f"{lane_format(lane).UNMEASURED_READING}")
@@ -1342,8 +873,8 @@ class LaneOutcome(NamedTuple):
     stamp: dict
 
 
-def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | None,
-                  reuse_artifact: bool, owner=None) -> tuple[int | None, float]:
+def _run_or_reuse(lane: Lane, fresh: Freshness, reuse_artifact: bool,
+                  owner=None) -> tuple[int | None, float]:
     """Reuse warns and costs nothing; a real run returns its exit code and wall seconds.
 
     The container guard belongs on this side of the branch. It names an OOM a
@@ -1354,22 +885,22 @@ def _run_or_reuse(root: Path, lane: Lane, git: GitFacts, scope_paths: dict | Non
     about what the lane was going to do.
     """
     if reuse_artifact:
-        _refuse_unwritten_artifact(root, lane)
-        _warn_stale_artifact(git, lane, scope_paths)
+        _refuse_unwritten_artifact(fresh.root, lane, fresh.stamps)
+        _warn_stale_artifact(fresh.git, lane, fresh.scope_paths, fresh)
         return None, 0.0
     _refuse_container_python(lane)
     started = time.monotonic()
-    return _run_attempts(root, lane, owner), time.monotonic() - started
+    return _run_attempts(fresh.root, lane, owner), time.monotonic() - started
 
 
-def _refuse_unwritten_artifact(root: Path, lane: Lane) -> None:
+def _refuse_unwritten_artifact(root: Path, lane: Lane, stamps: Stamps) -> None:
     """On reuse: the refusal the failed attempt raised, again, while the file
     on disk is still the one that attempt left. Reuse read that file back and
     scored it, so a dead lane's old numbers became the trusted baseline. A file
     that is gone falls through to `_artifact_path`, whose sentence is the one
     the recover skill triages on. A stamp record crapkit cannot read may have
     held that refusal, so it refuses too, unless the store's copy answers."""
-    refusal = read(root).refusal(lane.artifact)
+    refusal = stamps.refusal(lane.artifact)
     if refusal.kind == "leftover":
         _raise_no_artifact(root, lane, _lane_log_path(root, lane), None,
                            {lane.artifact: file_sha256(root / lane.artifact)}, reuse=True)
@@ -1406,18 +937,23 @@ def _artifact_path(root: Path, lane: Lane) -> Path:
 
 def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
              scope_paths: dict | None = None, git: GitFacts | None = None,
-             dead_lines=None, owner=None) -> LaneOutcome:
+             dead_lines=None, owner=None, freshness: Freshness | None = None) -> LaneOutcome:
+    """One lane run, or one reuse of its artifact. `freshness` is the command's
+    own (one stamp read for every lane); a lone caller gets one of its own,
+    read once the lane's outputs are held."""
     ownership = nullcontext(owner) if owner is not None else measurement_owner(root, (lane,))
     with ownership as held:
-        return _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, held)
+        fresh = freshness or Freshness(root, (lane,), scope_paths, git=_facts(root, git))
+        return _run_owned_lane(lane, fresh, reuse_artifact, dead_lines, held)
 
 
-def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, owner) -> LaneOutcome:
-    facts = _facts(root, git)
-    before = None if reuse_artifact else _before_run(root, lane, scope_paths)
-    exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact, owner)
+def _run_owned_lane(lane: Lane, fresh: Freshness, reuse_artifact: bool, dead_lines,
+                    owner) -> LaneOutcome:
+    root = fresh.root
+    before = None if reuse_artifact else _before_run(lane, fresh)
+    exit_code, seconds = _run_or_reuse(lane, fresh, reuse_artifact, owner)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
-    _judge_artifact_scope(lane, coverage, scope_paths, root)
+    _judge_artifact_scope(lane, coverage, fresh.scope_paths, root)
     provenance = {
         "artifact_sha256": digest,
         "exit_code": exit_code,
@@ -1427,32 +963,9 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
     if lane.results_artifact:
         provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
     stamp = {} if before is None else _stamp_entry(
-        facts, lane, seconds, provenance, _after_run(root, lane, scope_paths, coverage, before))
+        _facts(root, fresh.git), lane, seconds, provenance,
+        _after_run(lane, fresh, coverage, before), fresh)
     return LaneOutcome(coverage, provenance, stamp)
-
-
-def _lane_sources(root: Path, lane: Lane, scope_paths: dict | None, measured=()) -> dict | None:
-    """The blob id of every file under the lane's scopes, and of every in-tree
-    file its artifact measured, but the lanes' own outputs; None when git
-    cannot give them."""
-    scope_paths = scope_paths or {}
-    listed = _scope_listing(root, lane, scope_paths)
-    try:
-        return record(root, {*listed, *(path for path in measured if not _escapes_repo(path))},
-                      _declared_paths(lane, scope_paths))
-    except GitError:
-        return None
-
-
-def _scope_listing(root: Path, lane: Lane, scope_paths: dict) -> list[str]:
-    """The files git lists under the lane's scopes, outputs left out; none when
-    git cannot list them, and then the record holds what the artifact names."""
-    matchers = _lane_matchers(lane, scope_paths)
-    try:
-        listed = scope_files(root, _declared_paths(lane, scope_paths), matchers) if matchers else ()
-    except GitError:
-        return []
-    return _unless(listed, _output_names(root, lane))
 
 
 def _output_lock(path: Path) -> Path:
@@ -1467,7 +980,7 @@ def measurement_owner(root: Path, lanes):
     """Own resolved outputs, plus this checkout's shared log and stamp state."""
     if not lanes:
         return nullcontext(None)
-    outputs = {root / name for lane in lanes for name in _declared_files(lane)}
+    outputs = {root / name for lane in lanes for name in declared_files(lane)}
     paths = {_output_lock(path) for path in outputs}
     paths.add(root / ".crapkit" / "measurement.lock")
     return own_processes(sorted(paths))

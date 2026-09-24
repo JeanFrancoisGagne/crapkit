@@ -596,11 +596,12 @@ def test_the_agent_json_page_prints_the_stale_note_the_reader_writes(tmp_path, m
     """The `measured` example of `uncovered_lines_note` is the note a file whose
     bytes moved gets. It said "files in its scopes changed" whatever the cause
     and named none."""
-    from crapkit.uncovered import MissingLines, SourceDrift
+    from crapkit.lane_freshness import Freshness
+    from crapkit.uncovered import MissingLines
 
     monkeypatch.setattr(sys, "argv", ["crapkit"])
-    lane, _, _, recorded = _stale_lane(tmp_path, ("calc/grade.py",))
-    lines = MissingLines({}, "", SourceDrift(tmp_path, [(lane, recorded)]))
+    lane, scopes, _, _ = _stale_lane(tmp_path, ("calc/grade.py",))
+    lines = MissingLines({}, "", Freshness(tmp_path, (lane,), scopes))
     note = lines.note_for("calc/grade.py")
 
     assert note and json.dumps(note, ensure_ascii=False) in _doc("docs/agent-json.md")

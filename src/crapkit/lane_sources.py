@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .errors import GitError
 from .gitio import index_blobs, worktree_blobs, worktree_changes
 from .universe import owning_scope
 
@@ -85,3 +86,48 @@ def file_moved(root: Path, recorded: dict, path: str) -> bool:
     file it does not hold, which its lane never measured. Raises GitError."""
     blob = recorded.get(path)
     return blob is not None and record(root, (path,), (path,)).get(path) != blob
+
+
+# --- a lane's record ---------------------------------------------------------------
+
+def declared_paths(lane, scope_paths: dict) -> tuple[str, ...]:
+    """The paths this lane's scopes declare, as written in the config."""
+    return tuple(path for name in lane.scopes for path in scope_paths.get(name, ()))
+
+
+def lane_matchers(lane, scope_paths: dict):
+    """Ownership over the scopes THIS lane names, read by universe's one predicate.
+
+    Both questions a lane asks about paths go through here: which of its scopes'
+    files moved since the artifact was stamped, and whether the artifact reached
+    any of them at all. A second hand-rolled prefix test would answer the exact
+    arm, a scope that declares a FILE rather than a directory, differently from
+    the rule that assigns files, and the two would drift.
+    """
+    from .universe import path_matchers
+
+    return path_matchers({name: scope_paths.get(name, ()) for name in lane.scopes})
+
+
+def listing(root: Path, lane, scope_paths: dict, outputs: frozenset = frozenset()) -> list[str]:
+    """The files git lists under the lane's scopes, `outputs` left out; none when
+    git cannot list them, and then a record holds what the artifact names."""
+    matchers = lane_matchers(lane, scope_paths)
+    try:
+        listed = scope_files(root, declared_paths(lane, scope_paths), matchers) if matchers else ()
+    except GitError:
+        return []
+    return [path for path in listed if path not in outputs]
+
+
+def lane_record(root: Path, lane, scope_paths: dict | None, outputs: frozenset,
+                measured=()) -> dict | None:
+    """The blob id of every file under the lane's scopes and of every in-tree
+    file its artifact measured (`measured`), but the lanes' own outputs; None
+    when git cannot give them."""
+    scope_paths = scope_paths or {}
+    try:
+        return record(root, {*listing(root, lane, scope_paths, outputs), *measured},
+                      declared_paths(lane, scope_paths))
+    except GitError:
+        return None

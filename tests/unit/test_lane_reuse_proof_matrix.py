@@ -153,19 +153,28 @@ def test_any_other_inherited_variable_moving_is_named(tmp_path, monkeypatch):
     assert _verdict(root) == "1 environment variable(s) changed: CRAPKIT_MATRIX_MODE"
 
 
-def test_a_switch_from_powershell_to_git_bash_reruns_and_names_the_variables(tmp_path,
-                                                                             monkeypatch):
-    """Kept on purpose: PATHEXT decides what cmd.exe starts for a lane's first
-    word, so two shells that disagree on it can run different programs."""
+def test_a_switch_from_powershell_to_git_bash_reruns_naming_pathext_alone(tmp_path,
+                                                                           monkeypatch):
+    """history-2's shell switch. PSModulePath is PowerShell's own module search
+    and moves with the shell alone, so it is a session variable. PATHEXT is
+    kept on purpose: it decides what cmd.exe starts for a lane's first word,
+    so two shells that disagree on it can run different programs."""
     monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD;.CPL")
     monkeypatch.setenv("PSModulePath", "C:/modules")
     root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
     monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
     monkeypatch.delenv("PSModulePath")
 
-    reason = _verdict(root)
+    assert _verdict(root) == "1 environment variable(s) changed: PATHEXT"
 
-    assert "2 environment variable(s) changed" in reason and "PATHEXT" in reason
+
+@pytest.mark.parametrize("spelling", ["PSModulePath", "PSMODULEPATH", "psmodulepath"])
+def test_psmodulepath_is_a_session_variable_in_any_case(spelling, tmp_path, monkeypatch):
+    monkeypatch.setenv(spelling, "C:/one")
+    root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
+    monkeypatch.setenv(spelling, "C:/two")
+
+    assert _verdict(root) == ""
 
 
 def test_crapkit_toml_checked_out_again_as_crlf_is_the_same_config(tmp_path):
@@ -189,12 +198,32 @@ def test_a_crapkit_toml_edit_is_named(tmp_path):
 def test_another_crapkit_version_reruns_the_lane(tmp_path, monkeypatch):
     """A crapkit that parses or scores an artifact differently must read it
     fresh; the version was outside the proof, so an upgrade reused every lane."""
-    import crapkit.lanes
+    import crapkit.lane_freshness
 
     root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
-    monkeypatch.setattr(crapkit.lanes, "__version__", "99.0.0")
+    monkeypatch.setattr(crapkit.lane_freshness, "__version__", "99.0.0")
 
     assert _verdict(root) == "the crapkit version changed"
+
+
+def test_another_crapkit_version_reruns_an_inputs_lane_too(tmp_path, monkeypatch):
+    """The version reached one proof builder: an inputs lane reused an
+    artifact across a crapkit upgrade, and its rerun could not name why."""
+    import crapkit.lane_freshness
+
+    root = stale_tree.measure(stale_tree.build(tmp_path / "repo", inputs=INPUTS))
+    monkeypatch.setattr(crapkit.lane_freshness, "__version__", "99.0.0")
+
+    assert _verdict(root) == "the crapkit version changed"
+
+
+def test_an_inputs_lane_names_a_changed_lane_table(tmp_path):
+    root = stale_tree.measure(stale_tree.build(tmp_path / "repo", inputs=INPUTS))
+    lane = stale_tree.config(root).lanes[0]
+    from crapkit.lanes import lane_reuse_verdict
+
+    assert lane_reuse_verdict(root, lane._replace(timeout_seconds=99)).reason == \
+        "its lane table changed"
 
 
 def test_an_ignored_file_the_suite_reads_stays_outside_the_proof(tmp_path):

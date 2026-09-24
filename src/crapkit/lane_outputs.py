@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import posixpath
 import re
 import shutil
+from functools import lru_cache
 from pathlib import Path
 
 from .errors import ToolError
@@ -107,3 +109,42 @@ def owned(root: Path, owner: str, names) -> Outputs:
     """The declared files `names` of `owner` (a lane's name), to hold through
     its attempts."""
     return Outputs(root, owner, names)
+
+
+# --- which files are lane outputs --------------------------------------------------
+
+def declared_files(lane) -> tuple[str, ...]:
+    """Every path the lane says its command writes."""
+    return (lane.artifact, lane.results_artifact) if lane.results_artifact else (lane.artifact,)
+
+
+def normalized(name: str) -> str:
+    return posixpath.normpath(name.replace("\\", "/"))
+
+
+def config_bytes(root: Path) -> bytes:
+    """crapkit.toml's bytes, or b"" when the root holds none."""
+    config = root / "crapkit.toml"
+    return config.read_bytes() if config.is_file() else b""
+
+
+@lru_cache(maxsize=4)
+def configured_outputs(config: bytes) -> frozenset[str]:
+    """Every artifact and results file the lanes of this crapkit.toml declare,
+    or none when it does not load."""
+    from .config import load_config_text
+    from .errors import CrapkitError
+    from .repotext import repo_bytes_text
+
+    try:
+        lanes = load_config_text(repo_bytes_text(config, "crapkit.toml")).lanes
+    except (CrapkitError, ValueError):
+        return frozenset()
+    return frozenset(normalized(name) for lane in lanes for name in declared_files(lane))
+
+
+def declared_outputs(root: Path, lane, config: bytes | None = None) -> frozenset[str]:
+    """Every artifact and results file crapkit.toml declares, plus this lane's
+    own, as root-relative paths: outputs by name, never recorded as by-products."""
+    text = config_bytes(root) if config is None else config
+    return frozenset(normalized(name) for name in declared_files(lane)) | configured_outputs(text)
