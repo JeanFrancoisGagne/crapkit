@@ -102,6 +102,69 @@ def test_a_lane_cwd_that_names_the_directory_in_any_spelling_runs(tmp_path, cwd)
 
     res = run_cli(repo, "coverage", "--json")
 
+    _measured_one(res)
+
+
+def _measured_one(res) -> None:
     assert res.returncode == 0, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert (payload["measured"], payload["untested"], payload["lane_failures"]) == (1, 0, {}), payload
+
+
+# --- an istanbul lane, whose report keys every file absolutely --------------------
+
+# coverage-final.json about web/src/app.js, keyed by the absolute path the lane's
+# own working directory gives it, as a reporter run from there writes it.
+_ISTANBUL = (
+    "import json, os, sys\n"
+    "app = os.path.join(os.getcwd(), 'src', 'app.js')\n"
+    "report = {app: {'path': app,\n"
+    "    'fnMap': {'0': {'name': 'dispatch', 'decl': {'start': {'line': 1}},\n"
+    "                    'loc': {'start': {'line': 1}, 'end': {'line': 6}}}},\n"
+    "    'f': {'0': 3},\n"
+    "    'branchMap': {'0': {'loc': {'start': {'line': 2}},\n"
+    "                        'locations': [{'start': {'line': 2}}, {'start': {'line': 5}}]}},\n"
+    "    'b': {'0': [2, 1]}}}\n"
+    "os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)\n"
+    "open(sys.argv[1], 'w', encoding='utf-8').write(json.dumps(report))\n"
+)
+
+
+def _istanbul_repo(tmp_path: Path, cwd: str, artifact: str = ".crapkit/cov/unit.json") -> Path:
+    repo = tmp_path / "repo"
+    files = {
+        "web/src/app.js": ("function dispatch(a) {\n  if (a) {\n    return 1;\n  }\n  return 2;\n}\n"
+                           "module.exports = { dispatch };\n"),
+        "make_istanbul.py": _ISTANBUL,
+        ".gitignore": ".crapkit/\n",
+        "crapkit.toml": (
+            "[[scope]]\nname = 'web'\npaths = ['web']\nlanguages = ['javascript']\n\n"
+            "[exclude]\nglobs = ['make_istanbul.py']\n\n"
+            "[[lane]]\nname = 'unit'\nparser = 'istanbul'\nscopes = ['web']\n"
+            f"cwd = '{cwd}'\nartifact = '{artifact}'\n"
+            "command = 'python ../make_istanbul.py ../.crapkit/cov/unit.json'\n"),
+    }
+    for rel, body in files.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(body, encoding="utf-8")
+    git_init_repo(repo)
+    git_commit_all(repo, "sources")
+    return repo
+
+
+@pytest.mark.parametrize("cwd", ["web", "web/", "./web", "web/../web", "web\\"])
+def test_an_istanbul_lane_cwd_in_any_spelling_runs_and_joins(tmp_path, cwd):
+    """The report's keys come from the directory the lane ran in, so a cwd read
+    as another directory would key the file outside this checkout."""
+    _measured_one(run_cli(_istanbul_repo(tmp_path, cwd), "coverage", "--json"))
+
+
+@pytest.mark.parametrize("artifact", [".crapkit\\cov\\unit.json", "./.crapkit/cov/unit.json"])
+def test_an_istanbul_artifact_spelled_from_windows_is_reused(tmp_path, artifact):
+    repo = _istanbul_repo(tmp_path, "web", artifact)
+    _measured_one(run_cli(repo, "coverage", "--json"))
+
+    res = run_cli(repo, "coverage", "--json", "--reuse-artifacts")
+
+    _measured_one(res)
+    assert json.loads(res.stdout)["lanes"]["unit"]["exit_code"] is None, "reused, not rerun"
