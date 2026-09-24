@@ -15,7 +15,9 @@
   encloser's coverage. On the new coverage that function scores its own region, so its
   CRAP can rise once, and `verify` reports the rise as a `RATCHET` line at exit 7 on a
   function the diff never touched. The new number is the measured one: raise that mark
-  in `crapkit-ratchet.tsv` by hand and commit it where a reviewer sees it.
+  in `crapkit-ratchet.tsv` by hand and commit it where a reviewer sees it. The [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
+  says how to find each such function.
 
 ### The Action finds its own comment on every thread
 
@@ -89,10 +91,11 @@
   object (got 3)`. It answered `-32603` carrying a Python `AttributeError`, and a string
   was read one character at a time, so the refusal named `'t'` as an undeclared key. An
   empty list still reads as no arguments.
-- `tools/call` and `initialize` whose `params` are a list, a string or a number answer
-  JSON-RPC error `-32602`, with a message naming `params` and the type it got, and the
-  session answers the next request. Both answered `-32603` carrying a Python
-  `AttributeError`. Null or absent `params` answer as before.
+- `tools/call` and `initialize` whose `params` are an array, a string, a number or a
+  boolean answer JSON-RPC error `-32602`, with a message naming `params` and the type it
+  got, and the session answers the next request. Both answered `-32603` carrying a
+  Python `AttributeError`. An empty array, an empty string, `0` and `false` get `-32602`
+  too, where 0.8.0 read them as no params. Null or absent `params` answer as before.
 - A `method` that is not a string answers `-32601 unknown method`, where it answered
   `-32603`.
 
