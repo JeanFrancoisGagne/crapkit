@@ -228,18 +228,20 @@ def test_explain_and_doctor_shell_to_json_like_the_other_tools():
     explain = next(t for t in TOOLS if t["name"] == "get_function_history")
     doctor = next(t for t in TOOLS if t["name"] == "check_config")
 
-    assert build_argv(explain, {"path": "a.py", "name": "f"}) == ["explain", "a.py", "f", "--json"]
-    assert build_argv(doctor, {}) == ["doctor", "--json"]
+    assert build_argv(explain, {"path": "a.py", "name": "f"}, "R") == [
+        "explain", "--repo=R", "--json", "--", "a.py", "f"]
+    assert build_argv(doctor, {}, "R") == ["doctor", "--repo=R", "--json"]
 
 
 def test_explain_history_and_tests_are_bare_flags_only_when_true():
     explain = next(t for t in TOOLS if t["name"] == "get_function_history")
     props = next(t for t in tool_listing() if t["name"] == "get_function_history")["inputSchema"]["properties"]
 
-    assert props["history"]["type"] == "boolean" and props["tests"]["type"] == "boolean"
-    argv = build_argv(explain, {"path": "a.py", "name": "f", "history": True, "tests": False})
-    assert argv == ["explain", "a.py", "f", "--history", "--json"]
-    assert "--tests" not in build_argv(explain, {"path": "a.py", "name": "f"})
+    assert props["history"]["type"] == "boolean"
+    assert props["tests"]["type"] == "boolean"
+    argv = build_argv(explain, {"path": "a.py", "name": "f", "history": True, "tests": False}, "R")
+    assert argv == ["explain", "--history", "--repo=R", "--json", "--", "a.py", "f"]
+    assert "--tests" not in build_argv(explain, {"path": "a.py", "name": "f"}, "R")
 
 
 # --- the docs contract: what the two pages promise about these tools ----------
@@ -329,7 +331,8 @@ def test_gate_is_listed_with_a_required_path_and_the_read_only_annotations():
 def test_gate_maps_to_rescore_path_gate_json():
     tool = next(t for t in TOOLS if t["name"] == "check_gate")
 
-    assert build_argv(tool, {"path": "src/a.py"}) == ["rescore", "--gate", "src/a.py", "--json"]
+    assert build_argv(tool, {"path": "src/a.py"}, "R") == [
+        "rescore", "--gate", "--repo=R", "--json", "--", "src/a.py"]
 
 
 def test_a_breach_is_a_result_with_ok_false_not_a_tool_error(monkeypatch, tmp_path):
@@ -343,7 +346,8 @@ def test_a_breach_is_a_result_with_ok_false_not_a_tool_error(monkeypatch, tmp_pa
     assert call["isError"] is False, call
     assert call["structuredContent"]["gate"]["ok"] is False
     assert call["structuredContent"]["gate"]["breaches"] == [{"path": "src/a.py"}]
-    assert calls[0][3:7] == ["rescore", "--gate", "src/a.py", "--json"], calls
+    assert calls[0][3:] == ["rescore", "--gate", f"--repo={tmp_path}", "--json", "--",
+                            "src/a.py"], calls
 
 
 def test_a_clean_edit_is_a_result_with_ok_true(monkeypatch, tmp_path):
@@ -426,7 +430,7 @@ def test_a_repo_below_the_root_spawns_the_cli_on_the_root_above_it(monkeypatch, 
                      [_call(1, "list_runs", {"repo": str(tmp_path / "web" / "src")})])
 
     assert replies[1]["result"]["isError"] is False
-    assert calls[0][-2:] == ["--repo", str(tmp_path)], calls
+    assert calls[0][-2:] == [f"--repo={tmp_path}", "--json"], calls
 
 
 def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing(monkeypatch,

@@ -1528,20 +1528,25 @@ def _flag_values(value) -> list:
 
 
 def _flag_args(flags: dict, arguments: dict) -> list[str]:
+    """Each option bound to its value in one word, `--exclude=-legacy`: split
+    in two, a value that starts with `-` is read by argparse as a flag."""
     out: list[str] = []
     for key, flag in flags.items():
         for v in _flag_values(arguments.get(key)):
-            out += [flag] if v is True else [flag, str(v)]
+            out.append(flag if v is True else f"{flag}={v}")
     return out
 
 
-def build_argv(tool: dict, arguments: dict) -> list[str]:
-    argv = list(tool["argv"])
-    argv += [str(arguments[p]) for p in tool["positional"]]
-    argv += _flag_args(tool["flags"], arguments)
+def build_argv(tool: dict, arguments: dict, repo: str) -> list[str]:
+    """The CLI argv for one call: the options bound to their values, then
+    `--repo=` and `--json`, then `--` and the positionals. After `--` argparse
+    reads every word as a value, so `path="--help"` is a path, never brief's
+    help answered as a successful result."""
+    argv = [*tool["argv"], *_flag_args(tool["flags"], arguments), f"--repo={repo}"]
     if tool["json_flag"]:
         argv.append("--json")
-    return argv
+    positionals = [str(arguments[p]) for p in tool["positional"]]
+    return argv + ["--", *positionals] if positionals else argv
 
 
 def _result(text: str, *, is_error: bool) -> dict:
@@ -1570,7 +1575,7 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     refusal reaches the caller as text. An exit the tool declares in
     `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
     and its payload says so in `gate.ok`."""
-    argv = build_argv(tool, arguments) + ["--repo", repo]
+    argv = build_argv(tool, arguments, repo)
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
