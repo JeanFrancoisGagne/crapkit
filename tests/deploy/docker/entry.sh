@@ -21,7 +21,8 @@ first_line() {
 }
 
 versions() {
-    VERSION_HOME=$(mktemp -d)
+    # Codex refuses a CODEX_HOME under /tmp and prints that refusal first.
+    VERSION_HOME=$(mktemp -d /work/.versions.XXXXXX)
     export VERSION_HOME DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
         DISABLE_TELEMETRY=1 COPILOT_OFFLINE=true PATH="/opt/bun/bin:$PATH"
     echo "uv $(first_line uv --version)"
