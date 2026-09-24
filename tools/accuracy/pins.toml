@@ -23,9 +23,11 @@
 
 [snapshot]
 # apt in the image reads snapshot.debian.org at this instant, so a rebuild with
-# unchanged pins installs the same packages.
+# unchanged pins installs the same packages. The base is trixie because two
+# pinned binaries need a newer C library than bookworm's glibc 2.36:
+# cargo-crap 0.5.0 needs glibc 2.39, SwiftLint 0.65.1 glibc 2.38.
 debian = "20260920T000000Z"
-base = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+base = "debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 python_build_standalone = "20260901"
 
 [oracle."cpython-3.11"]
@@ -732,7 +734,10 @@ version = "26.02"
 url = "https://github.com/oclint/oclint/archive/refs/tags/v26.02.tar.gz"
 sha256 = "abd1e020d94d9f38e6ce81e26b4d4ab8d144a6c7eea9f7b42b2254e621b256ed"
 command = ["oclint", "--version"]
-version_line = "26.02"
+# The v26.02 source still prints 24.11 (oclint-core/lib/Constants.cpp:7 returns
+# "24.11" while oclint-core/cmake/OCLintConfig.cmake says 26.02); the source
+# tarball's sha256 above is what names the release.
+version_line = "OCLint version 24.11."
 
 [oracle.swiftlint]
 kind = "binary"

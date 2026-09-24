@@ -6,6 +6,8 @@ that mangles such a path answers for no function, which reads as a mismatch
 in the packet's test instead of the tool problem it is. Each row runs one
 oracle on a small file under `ñandú-データ/` and names what its answer must
 hold. The binaries live in the accuracy image, so this runs on Linux nightly.
+The C and C++ files include a system header: the corpus members fmt and cJSON
+do, and clang-tidy answers a missing header with an error, not a count.
 """
 from dataclasses import dataclass, field
 import os
@@ -26,7 +28,9 @@ SOURCES = {
     "go": "package p\n\nfunc Fuenf(x int) int {\n\tif x > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n",
     "rs": "pub fn fuenf(x: i32) -> i32 {\n    if x > 0 { 1 } else { 0 }\n}\n",
     "java": "class Fuenf {\n  int fuenf(int x) {\n    if (x > 0) { return 1; }\n    return 0;\n  }\n}\n",
-    "c": "int fuenf(int x) {\n  if (x > 0) { return 1; }\n  return 0;\n}\n",
+    "c": "#include <stdio.h>\n\nint fuenf(int x) {\n  if (x > 0) { return 1; }\n  return 0;\n}\n",
+    "cpp": ("#include <string>\n\nint fuenf(const std::string &x) {\n"
+            "  if (x.empty()) { return 1; }\n  return 0;\n}\n"),
     "swift": "func fuenf(_ x: Int) -> Int {\n  if x > 0 { return 1 }\n  return 0\n}\n",
     "sh": "fuenf() {\n  if [ \"$1\" ]; then echo 1; fi\n}\n",
     "ps1": "function Fuenf($x) {\n  if ($x) { return 1 }\n  return 0\n}\nWrite-Output 'ran'\n",
@@ -77,6 +81,11 @@ CASES = (
                              "--checks=-*,readability-function-cognitive-complexity",
                              "--config={CheckOptions: {readability-function-cognitive-complexity"
                              ".Threshold: 0}}", "--"), "cognitive complexity of 1"),
+    Case("clang-tidy", "cpp", ("clang-tidy", "{file}",
+                               "--checks=-*,readability-function-cognitive-complexity",
+                               "--config={CheckOptions: {readability-function-cognitive-"
+                               "complexity.Threshold: 0}}", "--", "-std=c++17"),
+         "cognitive complexity of 1"),
     Case("oclint", "c", ("oclint", "{file}", "--", "-c"), "Summary"),
     Case("swiftlint", "swift", ("swiftlint", "lint", "--quiet", "{file}"), "", (0, 2)),
     Case("shellmetrics", "sh", ("shellmetrics", "{file}"), "fuenf"),
@@ -104,7 +113,7 @@ def _values(place: Path, case: Case) -> dict:
             "node_modules": str(oracles.node_modules("push"))}
 
 
-@pytest.mark.parametrize("case", CASES, ids=[case.oracle for case in CASES])
+@pytest.mark.parametrize("case", CASES, ids=[f"{case.oracle}-{case.language}" for case in CASES])
 def test_the_oracle_reads_a_file_under_a_non_ascii_path(case, place, oracle):
     oracle(case.oracle)
 

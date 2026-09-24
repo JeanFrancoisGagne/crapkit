@@ -81,7 +81,9 @@ def _edit(base: Path, name: str = "scored.tsv") -> str:
     return f"{KIT_RELATIVE.as_posix()}/seed-goldens/{name}"
 
 
-def _declare(base: Path, change_id: str = "K2", kind: str = "fix") -> list[str]:
+# The tests declare under T ids: the kit's own seed-changes.tsv grows K rows,
+# and a test id must never collide with one.
+def _declare(base: Path, change_id: str = "T1", kind: str = "fix") -> list[str]:
     lock, changes, _ = _paths(base)
     change = {"id": change_id, "date": "2026-09-24", "kind": kind, "calcs": "CRAP score",
               "reason": "the seed's CRAP moved"}
@@ -110,8 +112,8 @@ def test_a_declared_golden_change_passes(tree):
 
     lock = goldens.read_lock(_paths(tree)[0])
     assert _check(tree) == []
-    assert lock[path] != before[path] and lock[path][1] == "K2"
-    assert goldens.read_changes(_paths(tree)[1])["K2"]["kind"] == "fix"
+    assert lock[path] != before[path] and lock[path][1] == "T1"
+    assert goldens.read_changes(_paths(tree)[1])["T1"]["kind"] == "fix"
 
 
 def test_a_relock_under_an_old_change_fails_against_the_base(tree):
@@ -149,7 +151,7 @@ def test_a_removed_golden_needs_a_declared_change(tree):
     (_paths(tree)[2] / "trend.json").unlink()
 
     assert "is locked but gone" in _check(tree)[0]
-    _declare(tree, "K3", "none")
+    _declare(tree, "T2", "none")
     assert _check(tree) == []
 
 
@@ -157,10 +159,10 @@ def test_a_lock_row_naming_no_change_fails(tree):
     lock_path = _paths(tree)[0]
     rows = goldens.read_lock(lock_path)
     first = sorted(rows)[0]
-    rows[first] = (rows[first][0], "K99")
+    rows[first] = (rows[first][0], "T99")
     goldens.write_lock(lock_path, rows)
 
-    assert _check(tree) == [f"{first} names change K99, which no CHANGES row declares"]
+    assert _check(tree) == [f"{first} names change T99, which no CHANGES row declares"]
 
 
 def test_declare_refuses_a_reused_id_an_unknown_kind_and_nothing_to_declare(tree):
@@ -170,7 +172,7 @@ def test_declare_refuses_a_reused_id_an_unknown_kind_and_nothing_to_declare(tree
     with pytest.raises(goldens.ChangeControlError, match="K1 is already declared"):
         _declare(tree, "K1")
     with pytest.raises(goldens.ChangeControlError, match="kind 'tweak'"):
-        _declare(tree, "K2", "tweak")
+        _declare(tree, "T1", "tweak")
 
 
 def _stale(base: Path) -> str:
@@ -189,21 +191,21 @@ def test_kit_goldens_rewrites_a_moved_seed_golden_and_declares_it(tree):
     path = _stale(tree)
     assert _check(tree) == []
 
-    done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "K2", "--kind",
+    done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "T1", "--kind",
                            "fix", "--reason", "the seed's output moved", "--base", str(tree)],
                           cwd=goldens.REPO, text=True, encoding="utf-8", errors="replace")
 
     assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == f"relocked {path} under K2"
+    assert done.stdout.strip() == f"relocked {path} under T1"
     assert _check(tree) == []
     assert (tree / path).read_bytes() == (goldens.REPO / path).read_bytes()
-    assert goldens.read_lock(_paths(tree)[0])[path][1] == "K2"
+    assert goldens.read_lock(_paths(tree)[0])[path][1] == "T1"
 
 
 @pytest.mark.nightly
 @pytest.mark.process
 def test_kit_goldens_refuses_when_nothing_moved(tree):
-    done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "K2", "--kind",
+    done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "T1", "--kind",
                            "none", "--reason", "nothing", "--base", str(tree)],
                           cwd=goldens.REPO, text=True, encoding="utf-8", errors="replace")
 

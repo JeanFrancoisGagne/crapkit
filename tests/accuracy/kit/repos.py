@@ -196,11 +196,14 @@ def copy_command(*pairs: tuple[str, str]) -> str:
 def lane_toml(name: str, artifact: str, parser: str, scopes: list[str], recorded: str,
               results: tuple[str, str] | None = None) -> str:
     """A [[lane]] table whose command copies recorded artifacts into place.
-    `results` is (recorded JUnit, results_artifact) when the lane reports tests."""
+    `results` is (recorded JUnit, results_artifact) when the lane reports tests.
+    container_ok: the lane runs no suite, so it may run in the accuracy image,
+    where crapkit otherwise refuses a coveragepy lane."""
     pairs = [(recorded, artifact)] + ([results] if results else [])
     command = copy_command(*pairs).replace('"', '\\"')
     lines = [f'[[lane]]\nname = "{name}"\ncommand = "{command}"\nartifact = "{artifact}"',
-             f'parser = "{parser}"\nscopes = {json.dumps(scopes)}\nenv = {LANE_ENV}']
+             f'parser = "{parser}"\nscopes = {json.dumps(scopes)}\nenv = {LANE_ENV}',
+             "container_ok = true"]
     if results:
         lines.append(f'results_artifact = "{results[1]}"')
     return "\n".join(lines) + "\n"

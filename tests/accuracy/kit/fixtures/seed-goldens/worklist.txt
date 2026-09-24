@@ -1,2 +1,2 @@
-worklist @ 8c47c0b358c (run 2, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
+worklist @ 7d3c8e52076 (run 2, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk      5.0  ccn   5  crap     5.1  cov  83%    1c/1a  src/py/calc.py:4  classify( score , late )  ok

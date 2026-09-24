@@ -124,8 +124,17 @@ def _answer(pin: Pin, binary: str) -> str:
     return pin.version_line if pin.version_line in said else (said.strip().splitlines() or [""])[0]
 
 
+def _program(pin: Pin) -> str | None:
+    """The file a version is asked about: the pinned tool itself when its
+    command names it as {bin} (`go version -m {bin}` for gocyclo), else the
+    command's first word."""
+    if not pin.command:
+        return None
+    return shutil.which(pin.name if "{bin}" in pin.command else pin.command[0])
+
+
 def _binary(pin: Pin) -> Found:
-    binary = shutil.which(pin.command[0]) if pin.command else None
+    binary = _program(pin)
     if binary is None:
         raise OracleMissing(f"oracle {pin.name} {pin.version} is not on PATH; it ships in the "
                             "accuracy image built from tools/accuracy/image/Dockerfile")

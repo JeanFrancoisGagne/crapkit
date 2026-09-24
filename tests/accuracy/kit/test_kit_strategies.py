@@ -37,19 +37,20 @@ def test_each_strategy_draws_each_of_its_shapes(name, shape):
     assert shape in classify(found)
 
 
-@strategies.examples("coverage_pair")
-@given(strategies.coverage_pair())
-@pure
-def test_an_example_decorated_test_runs_every_shape(pair):
-    seen.append(pair)
+def test_an_example_decorated_test_runs_every_shape():
+    """One test collects and checks: under xdist a second test that read what
+    the first collected could land on another worker and see nothing."""
+    seen = []
 
+    @strategies.examples("coverage_pair")
+    @given(strategies.coverage_pair())
+    @pure
+    def collect(pair):
+        seen.append(pair)
 
-seen = []
+    collect()
 
-
-def test_the_literals_ran_first():
     literals = set(map(repr, strategies.REQUIRED["coverage_pair"].values()))
-
     assert literals <= set(map(repr, seen))
 
 
@@ -73,20 +74,27 @@ def test_a_tie_is_exactly_half_a_ten_thousandth_past_a_4dp_value(value):
         assert (Fraction(value) * 10_000).denominator == 2
 
 
-@given(strategies.fs_paths(case_twins=False))
-@pure
-def test_filesystem_paths_are_creatable_everywhere(paths):
-    assert len({path.casefold() for path in paths}) == len(paths)
-    for segment in (part for path in paths for part in path.split("/")):
-        assert not set(segment) & strategies.WINDOWS_INVALID
-        assert segment.split(".", 1)[0].upper() not in strategies.RESERVED
+def _without_twin(paths: list[str]) -> list[str]:
+    """The plain list: every path but a trailing swapcase twin of the first."""
+    twinned = len(paths) > 1 and paths[-1] == paths[0].swapcase()
+    return paths[:-1] if twinned else paths
+
+
+def _segments(paths: list[str]) -> list[str]:
+    return [part for path in paths for part in path.split("/")]
 
 
 @given(strategies.fs_paths(case_twins=True))
 @pure
-def test_a_case_twin_differs_only_in_case(paths):
-    folded = [path.casefold() for path in paths]
-    assert len(set(folded)) in (len(paths), len(paths) - 1)
+def test_filesystem_paths_are_creatable_everywhere_and_a_twin_differs_only_in_case(paths):
+    """The twin variant is the plain list plus, when the first path has case, its
+    swapcase twin; one test checks both, since 20,000 nested-list draws take minutes."""
+    plain = _without_twin(paths)
+    assert len({path.casefold() for path in plain}) == len(plain)
+    assert len({path.casefold() for path in paths}) in (len(paths), len(paths) - 1)
+    for segment in _segments(paths):
+        assert not set(segment) & strategies.WINDOWS_INVALID
+        assert segment.split(".", 1)[0].upper() not in strategies.RESERVED
 
 
 def test_draws_are_counted_for_the_run_log():

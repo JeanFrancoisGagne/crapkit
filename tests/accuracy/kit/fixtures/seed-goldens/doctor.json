@@ -4,14 +4,14 @@
   {
    "artifact": ".crapkit/cov/py.json",
    "artifact_present": true,
-   "commit": "8c47c0b358caa30fc3820385c3c3f2565a201684",
+   "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
    "name": "py",
    "seconds": "<seconds>"
   },
   {
    "artifact": ".crapkit/cov/ts.json",
    "artifact_present": true,
-   "commit": "8c47c0b358caa30fc3820385c3c3f2565a201684",
+   "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
    "name": "ts",
    "seconds": "<seconds>"
   }

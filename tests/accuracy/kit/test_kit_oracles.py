@@ -1,6 +1,7 @@
 """pins.toml agrees with the locks it describes, and kit.oracles finds and checks tools."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -48,11 +49,28 @@ def test_node_pins_equal_their_package_manifest():
         assert _node_manifest(pin.tier).get(pin.package) == pin.version, pin.name
 
 
-def test_the_snapshot_pins_the_base_image_by_digest():
-    snapshot = tomllib.loads(oracles.PINS.read_text(encoding="utf-8"))["snapshot"]
+SNAPSHOT = tomllib.loads(oracles.PINS.read_text(encoding="utf-8"))["snapshot"]
+DOCKERFILE = (ACCURACY_TOOLS / "image" / "Dockerfile").read_text(encoding="utf-8")
 
-    assert re.fullmatch(r"\d{8}T\d{6}Z", snapshot["debian"])
-    assert re.fullmatch(r"debian:bookworm-slim@sha256:[0-9a-f]{64}", snapshot["base"])
+
+def test_the_snapshot_pins_the_base_image_by_digest():
+    """trixie, not bookworm: cargo-crap 0.5.0 needs glibc 2.39 and SwiftLint
+    0.65.1 needs glibc 2.38 with GLIBCXX_3.4.32; bookworm ships glibc 2.36."""
+    assert re.fullmatch(r"\d{8}T\d{6}Z", SNAPSHOT["debian"])
+    assert re.fullmatch(r"debian:trixie-slim@sha256:[0-9a-f]{64}", SNAPSHOT["base"])
+
+
+def test_the_dockerfile_builds_from_the_pinned_base_and_snapshot():
+    assert f"ARG BASE={SNAPSHOT['base']}\n" in DOCKERFILE
+    assert f"ARG DEBIAN_SNAPSHOT={SNAPSHOT['debian']}\n" in DOCKERFILE
+
+
+def test_the_dockerfile_installs_every_binary_pin():
+    """A binary pin no install-tools.sh line names would ship missing from the image."""
+    named = {name for line in re.findall(r"install-tools\.sh \S*pins\.toml ([^\n]+)", DOCKERFILE)
+             for name in line.split()}
+
+    assert named == {pin.name for pin in PINS.values() if pin.kind == "binary"}
 
 
 def _pin(**fields):
@@ -116,6 +134,24 @@ def test_a_binary_that_says_something_else_reports_its_first_line():
     assert found.version.startswith("Python 3.")
     assert oracles.drift(found, pins["tool"]) == (
         f"oracle tool is {found.version}, pins.toml says Python 2.7.18")
+
+
+@pytest.mark.process
+def test_bin_in_a_command_is_the_pinned_tool_not_the_program_that_asks(monkeypatch, tmp_path):
+    """gocyclo's version comes from `go version -m {bin}`: {bin} is gocyclo's
+    own file. Resolving it to the command's first word asks go about itself."""
+    for name, mode in (("crapkit-probe-tool", 0o755), ("crapkit-probe-tool.cmd", 0o644)):
+        (tmp_path / name).write_text("exit 0\n", encoding="utf-8")
+        (tmp_path / name).chmod(mode)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    ask = (sys.executable, "-c", "import sys; print('module', sys.argv[1])", "{bin}")
+    pins = {"crapkit-probe-tool": _pin(name="crapkit-probe-tool", kind="binary", command=ask,
+                                       version_line="crapkit-probe-tool")}
+
+    found = oracles.locate("crapkit-probe-tool", pins)
+
+    assert found.version == "crapkit-probe-tool"
+    assert Path(found.where).name.startswith("crapkit-probe-tool")
 
 
 def test_a_binary_pinned_by_digest_hashes_its_file(tmp_path):

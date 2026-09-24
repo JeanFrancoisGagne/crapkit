@@ -149,6 +149,21 @@ def test_coverage_scores_a_kit_repo_twice_in_a_row(make_repo, spawn):
     assert counts == [{"run_id": 1, "n": 9}, {"run_id": 2, "n": 9}]
 
 
+@pytest.mark.process
+def test_a_recorded_lane_scores_inside_a_container(make_repo):
+    """The accuracy image is a container, where crapkit refuses a coveragepy
+    lane without container_ok. A lane that copies a recording runs no suite, so
+    the seed's lanes and every lane_toml table say container_ok."""
+    built = make_repo(repos.tree_spec(SEED))
+    driver = drive.Driver(built.root, env={"CRAPKIT_INSIDE_CONTAINER": "1"})
+
+    run = driver.run("coverage", "--json")
+
+    assert run.code == 0, run.stderr
+    table = tomllib.loads(repos.lane_toml("py", "a.json", "coveragepy", ["py"], "r.json"))
+    assert table["lane"][0]["container_ok"] is True
+
+
 def test_the_seed_holds_no_path_of_the_machine_that_recorded_it():
     for path in (SEED / "recorded").iterdir():
         text = path.read_text(encoding="utf-8")
