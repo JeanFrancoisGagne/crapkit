@@ -1628,7 +1628,7 @@ def _argument_error(tool: dict, arguments) -> str | None:
     is read: a string's characters read as undeclared keys.
     """
     if not isinstance(arguments, dict):
-        return f"arguments must be an object (got {json.dumps(arguments)})"
+        return f"arguments must be an object (got {_json_type(arguments)})"
     return (_missing_positional(tool, arguments) or _unknown_key(tool, arguments)
             or _wrong_type(tool, arguments))
 
@@ -1750,6 +1750,13 @@ _PARAMS_HOLD = {"initialize": "carrying protocolVersion",
 _JSON_TYPES = {list: "an array", str: "a string", bool: "a boolean"}
 
 
+def _json_type(value) -> str:
+    """The JSON type a value that is not an object arrived as, in the words both
+    refusals print. The type, not the value: a by-position list or a long string
+    echoed back tells the agent less than the name of what it sent."""
+    return _JSON_TYPES.get(type(value), "a number")
+
+
 def _params(msg: dict):
     """The request's params, with null or absent read as the empty object."""
     params = msg.get("params")
@@ -1764,8 +1771,8 @@ def _invalid_params(method, params) -> dict | None:
     holds = _PARAMS_HOLD.get(method) if isinstance(method, str) else None
     if holds is None or isinstance(params, dict):
         return None
-    got = _JSON_TYPES.get(type(params), "a number")
-    return {"code": -32602, "message": f"params must be an object {holds} (got {got})"}
+    return {"code": -32602,
+            "message": f"params must be an object {holds} (got {_json_type(params)})"}
 
 
 def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:

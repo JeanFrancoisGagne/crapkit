@@ -87,10 +87,10 @@
 ### The MCP server refuses `params` and `arguments` that are not objects in words an agent can act on
 
 - `tools/call` with `arguments` sent as a number, a string or a list, by-position
-  arguments included, answers a tool result with `isError: true`: `arguments must be an
-  object (got 3)`. It answered `-32603` carrying a Python `AttributeError`, and a string
-  was read one character at a time, so the refusal named `'t'` as an undeclared key. An
-  empty list still reads as no arguments.
+  arguments included, answers a tool result with `isError: true` that names the JSON type
+  it got: `arguments must be an object (got a number)`. It answered `-32603` carrying a
+  Python `AttributeError`, and a string was read one character at a time, so the refusal
+  named `'t'` as an undeclared key. An empty list still reads as no arguments.
 - `tools/call` and `initialize` whose `params` are an array, a string, a number or a
   boolean answer JSON-RPC error `-32602`, with a message naming `params` and the type it
   got, and the session answers the next request. Both answered `-32603` carrying a

@@ -602,10 +602,10 @@ carries `required` from each tool's positionals, and a missing positional, an un
 key or a wrong type answers a tool result with `isError` true, naming the MCP tool rather
 than the CLI command behind it (`get_function_brief needs name (see inputSchema.required)`),
 not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `arguments` sent as a
-list, a string or a number get the same kind of answer
-(`arguments must be an object (got 3)`), since MCP takes them by name. `params` that are
-not an object on `tools/call` or `initialize` name no tool, so they answer `-32602` with no
-result (`params must be an object naming the tool and its arguments (got an array)`) and
+list, a string or a number get the same kind of answer, naming the JSON type they came as
+(`arguments must be an object (got a number)`), since MCP takes them by name. `params` that
+are not an object on `tools/call` or `initialize` name no tool, so they answer `-32602` with
+no result (`params must be an object naming the tool and its arguments (got an array)`) and
 the session reads on; null or absent `params` read as `{}`. `ping` answers `{}`.
 An exception escaping the server answers `-32603` and the loop continues.
 `structuredContent` rides beside the text whenever the CLI exited 0; a `doctor` that finds

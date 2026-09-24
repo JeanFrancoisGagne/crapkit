@@ -456,12 +456,17 @@ def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing
 # name no tool, so tools/call and initialize answer JSON-RPC -32602 (invalid
 # params) with no result, and the session reads on.
 
+# The refusal names the JSON type, as the -32602 answer for params does, and
+# never echoes the value: a whole by-position list, or a long string, is not
+# what the agent needs to read to correct its call.
 @pytest.mark.parametrize("tool, arguments, sentence", [
-    ("list_runs", 3, "arguments must be an object (got 3)"),
-    ("list_worklist", "top=3", 'arguments must be an object (got "top=3")'),
-    ("list_runs", [1], "arguments must be an object (got [1])"),
-    ("get_function_brief", ["a.py", "f"], 'arguments must be an object (got ["a.py", "f"])'),
-], ids=["a-number", "a-string", "a-list-on-a-tool-without-positionals",
+    ("list_runs", 3, "arguments must be an object (got a number)"),
+    ("list_runs", 1.5, "arguments must be an object (got a number)"),
+    ("list_worklist", "top=3", "arguments must be an object (got a string)"),
+    ("list_worklist", True, "arguments must be an object (got a boolean)"),
+    ("list_runs", [1], "arguments must be an object (got an array)"),
+    ("get_function_brief", ["a.py", "f"], "arguments must be an object (got an array)"),
+], ids=["a-number", "a-float", "a-string", "true", "a-list-on-a-tool-without-positionals",
         "positionals-by-position"])
 def test_arguments_that_are_not_an_object_are_refused_in_the_tools_words(
         monkeypatch, tmp_path, tool, arguments, sentence):
