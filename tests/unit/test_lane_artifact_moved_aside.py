@@ -1,0 +1,187 @@
+"""Whether an attempt wrote its declared files, decided by where the files are.
+
+The runner moves a lane's artifact and results file aside under .crapkit/
+before each attempt (lane_outputs). A file at a declared path afterwards is
+one the attempt wrote; a leftover goes back only where the attempt wrote
+nothing. The old test compared modification times, so a command that only
+touched the previous report passed, and the previous run's numbers were scored
+and stamped as this commit's (stale-touch shape-8, boundary-11). The flake
+retest judged its junit the same way and ignored a retest that rewrote it
+inside the old file's time tick (boundary-23).
+
+Every lane here writes, touches or leaves its artifact through a real child
+process started by the lane runner.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+from crapkit.config import Lane
+from crapkit.errors import ToolError
+from crapkit.lane_outputs import owned
+from crapkit.lanes import retest_lane, run_lane
+
+ISTANBUL = json.dumps({"C:/r/src/a.ts": {"fnMap": {}, "f": {}, "branchMap": {}, "b": {}}})
+OLD = 1_000_000_000
+
+SCRIPTS = {
+    # the loops' touch: os.utime on the declared path, which is empty now
+    "utime-only": "import os, time; t = time.time(); os.utime('cov.json', (t, t))",
+    # a shell `touch`: creates an empty file where the old report was
+    "create-empty": "import pathlib; pathlib.Path('cov.json').touch()",
+    "nothing": "pass",
+    "same-bytes": f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL!r})",
+    "new-bytes": f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL + ' '!r})",
+}
+
+
+def _script(root: Path, name: str, body: str) -> str:
+    """A command that runs `body` from a file, so no quoting reaches the shell."""
+    (root / name).write_text(body, encoding="utf-8")
+    return f'"{sys.executable}" "{root / name}"'
+
+
+def _lane(root: Path, script: str) -> Lane:
+    return Lane(name="py", command=_script(root, "attempt.py", script), artifact="cov.json",
+                parser="istanbul", scopes=())
+
+
+def _previous_run(root: Path) -> None:
+    path = root / "cov.json"
+    path.write_text(ISTANBUL, encoding="utf-8")
+    os.utime(path, ns=(OLD, OLD))
+
+
+# (what the attempt did, the words its refusal holds or "" for a scored run)
+ATTEMPTS = {
+    "utime-only": "wrote no artifact this run",
+    "create-empty": "",
+    "nothing": "wrote no artifact this run",
+    "same-bytes": "",
+    "new-bytes": "",
+}
+
+
+@pytest.mark.parametrize("name", sorted(ATTEMPTS))
+def test_only_a_file_the_attempt_wrote_is_scored(name, tmp_path):
+    _previous_run(tmp_path)
+    lane = _lane(tmp_path, SCRIPTS[name])
+
+    if ATTEMPTS[name]:
+        with pytest.raises(ToolError, match=ATTEMPTS[name]) as raised:
+            run_lane(tmp_path, lane)
+        assert raised.value.refused == {"cov.json": _sha(tmp_path / "cov.json")}
+        assert (tmp_path / "cov.json").read_text(encoding="utf-8") == ISTANBUL
+        assert (tmp_path / "cov.json").stat().st_mtime_ns == OLD, "the leftover went back as it was"
+        return
+    if name == "create-empty":
+        with pytest.raises(ToolError) as raised:
+            run_lane(tmp_path, lane)
+        assert "wrote no artifact" not in str(raised.value), "the attempt wrote this empty file"
+        assert (tmp_path / "cov.json").read_bytes() == b"", "never the previous run's numbers"
+        return
+    assert run_lane(tmp_path, lane).provenance["exit_code"] == 0
+
+
+def test_the_aside_directory_is_gone_after_the_run(tmp_path):
+    _previous_run(tmp_path)
+
+    with pytest.raises(ToolError):
+        run_lane(tmp_path, _lane(tmp_path, SCRIPTS["nothing"]))
+
+    assert not (tmp_path / ".crapkit" / "aside").exists()
+
+
+def _sha(path: Path) -> str:
+    from crapkit.lane_stamps import file_sha256
+
+    return file_sha256(path)
+
+
+# --- the Outputs seam itself ------------------------------------------------------
+
+def test_a_partial_file_an_earlier_attempt_left_is_cleared_before_the_next(tmp_path):
+    _previous_run(tmp_path)
+    with owned(tmp_path, "py", ("cov.json",)) as outputs:
+        (tmp_path / "cov.json").write_text("{partial", encoding="utf-8")
+        outputs.clear()
+        assert not outputs.written("cov.json")
+        assert outputs.unwritten() == ["cov.json"]
+
+    assert (tmp_path / "cov.json").read_text(encoding="utf-8") == ISTANBUL
+    assert outputs.leftovers == {"cov.json": _sha(tmp_path / "cov.json")}
+
+
+def test_a_crash_inside_the_attempt_puts_the_leftover_back(tmp_path):
+    _previous_run(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt):
+        with owned(tmp_path, "py", ("cov.json",)):
+            assert not (tmp_path / "cov.json").exists()
+            raise KeyboardInterrupt
+
+    assert (tmp_path / "cov.json").read_text(encoding="utf-8") == ISTANBUL
+
+
+def test_a_file_the_attempt_wrote_replaces_the_leftover(tmp_path):
+    _previous_run(tmp_path)
+    with owned(tmp_path, "py", ("cov.json",)) as outputs:
+        (tmp_path / "cov.json").write_text("new", encoding="utf-8")
+
+    assert (tmp_path / "cov.json").read_text(encoding="utf-8") == "new"
+    assert outputs.leftovers == {}
+
+
+def test_a_file_that_cannot_be_moved_aside_is_named(tmp_path, monkeypatch):
+    import crapkit.lane_outputs as lane_outputs
+
+    _previous_run(tmp_path)
+
+    def refuses(*_args):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(lane_outputs.shutil, "move", refuses)
+    with pytest.raises(ToolError, match=r"cannot move cov.json aside .* \(in use\)"):
+        with owned(tmp_path, "py", ("cov.json",)):
+            pass
+
+
+# --- the flake retest -------------------------------------------------------------
+
+PASSING = ('<?xml version="1.0"?><testsuites><testsuite name="s" tests="1">'
+           '<testcase classname="tests" name="t1"/></testsuite></testsuites>')
+FAILING = ('<?xml version="1.0"?><testsuites><testsuite name="s" tests="1">'
+           '<testcase classname="tests" name="t1"><failure/></testcase></testsuite></testsuites>')
+
+RETESTS = {
+    # what the retest command does to junit.xml, and whether t1 counts as a flake
+    "rewrites-passing": (f"open('junit.xml', 'w').write({PASSING!r})", True),
+    "rewrites-passing-old-time": (
+        f"import os; open('junit.xml', 'w').write({PASSING!r}); os.utime('junit.xml', ns=({OLD}, {OLD}))",
+        True),
+    "utime-only": ("import os, time; t = time.time(); os.utime('junit.xml', (t, t))", False),
+    "writes-nothing": ("pass", False),
+}
+
+
+@pytest.mark.parametrize("name", sorted(RETESTS))
+def test_the_retest_counts_the_report_it_wrote_and_only_that_one(name, tmp_path):
+    """rewrites-passing-old-time is boundary-23's same-size pass: the retest's
+    report kept the failing one's time, and its passes were ignored."""
+    (tmp_path / "junit.xml").write_text(FAILING, encoding="utf-8")
+    os.utime(tmp_path / "junit.xml", ns=(OLD, OLD))
+    script, flake = RETESTS[name]
+    lane = Lane(name="py", command="unused", artifact="cov.json", parser="istanbul", scopes=(),
+                results_artifact="junit.xml",
+                retest_command=_script(tmp_path, "retest.py", script) + " {tests}")
+
+    passed = retest_lane(tmp_path, lane, {"tests::t1"})
+
+    assert passed == ({"tests::t1"} if flake else set())
+    if not flake:
+        assert (tmp_path / "junit.xml").read_text(encoding="utf-8") == FAILING, "the lane's report"

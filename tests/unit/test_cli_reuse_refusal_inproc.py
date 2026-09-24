@@ -5,7 +5,7 @@ the runs the store holds. The template's lanes run `python -c pass`, which
 writes nothing, so a plain `coverage` over seeded artifacts is the failed
 attempt this file is about.
 """
-import os
+import json
 
 from cli_inproc_repo import repo, seed_artifacts, template_repo  # noqa: F401
 
@@ -24,9 +24,10 @@ def runs(repo) -> list[dict]:
 
 
 def _salvage(repo, rel: str) -> None:
+    """The artifact combined again by hand: other bytes than the refused file."""
     artifact = repo / rel
-    later = artifact.stat().st_mtime_ns + 5_000_000_000
-    os.utime(artifact, ns=(later, later))
+    artifact.write_text(json.dumps(json.loads(artifact.read_text(encoding="utf-8")), indent=2),
+                        encoding="utf-8")
 
 
 def test_reuse_refuses_what_the_failed_attempt_left_and_scores_the_salvage(repo, capsys):

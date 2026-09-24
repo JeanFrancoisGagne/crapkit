@@ -145,6 +145,11 @@ CREATE TABLE IF NOT EXISTS run_collisions (
     legacy INTEGER NOT NULL,
     PRIMARY KEY (run_id, identity_id)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS lane_refusals (
+    artifact TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+) WITHOUT ROWID;
 {_TWIN_DDL}
 """
 
@@ -167,7 +172,8 @@ CREATE INDEX IF NOT EXISTS idx_attempts_identity ON attempts(path, key_name);
 _DEAD_INDEXES = ("idx_functions_run_path", "idx_identities_path")
 
 _CURRENT_OBJECTS = frozenset(("runs", "identities", "flags", "remedies", "functions",
-                              "overrides", "attempts", "run_rollup", "run_collisions", "idx_functions_run",
+                              "overrides", "attempts", "run_rollup", "run_collisions", "lane_refusals",
+                              "idx_functions_run",
                               "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity",
                               *_TWIN_TABLES))
 _ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence",
@@ -1233,6 +1239,24 @@ class SnapshotStore:
         with self._conn:
             self._conn.execute("UPDATE runs SET verdict_ok = ?, findings = ? WHERE id = ?",
                                (1 if ok else 0, findings, run_id))
+
+    def record_refusals(self, refused: dict[str, str]) -> None:
+        """Keep each artifact's refused sha256 (lane_stamps): the copy of a
+        refusal that outlives a deleted or unreadable .crapkit/artifacts.json."""
+        with self._conn:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO lane_refusals (artifact, sha256) VALUES (?, ?)",
+                sorted(refused.items()))
+
+    def clear_refusals(self, artifacts) -> None:
+        """Drop the refusal of each artifact a run just measured."""
+        with self._conn:
+            self._conn.executemany("DELETE FROM lane_refusals WHERE artifact = ?",
+                                   [(artifact,) for artifact in artifacts])
+
+    def lane_refusals(self) -> dict[str, str]:
+        """artifact -> the sha256 of the leftover its lane's last attempt left."""
+        return dict(self._conn.execute("SELECT artifact, sha256 FROM lane_refusals"))
 
     def list_runs(self) -> list[dict]:
         cur = self._conn.execute(

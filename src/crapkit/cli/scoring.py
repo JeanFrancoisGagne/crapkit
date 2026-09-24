@@ -187,8 +187,8 @@ def _progress(message: str) -> None:
 
 def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None, owner=None):
     """One lane's outcome or the error that failed it; a failed lane never sinks
-    the run. The error object, not its text: a refusal carries the modification
-    times of the files the attempt left unwritten, which the fold persists."""
+    the run. The error object, not its text: a refusal carries the sha256 of
+    each file the attempt left unwritten, which the fold persists."""
     from ..lanes import run_lane
 
     try:
