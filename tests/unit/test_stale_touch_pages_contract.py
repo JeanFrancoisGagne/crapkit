@@ -169,7 +169,7 @@ _COUPLING_KEY_WORDS = {"head": "HEAD", "months": "the churn window", "date": "th
 
 
 @landed(_has_history_depth(), "the history depth in the churn and coupling keys")
-def test_the_handbook_names_every_part_of_the_coupling_cache_key(tmp_path):
+def test_the_pages_name_every_part_of_the_coupling_cache_key(tmp_path):
     from crapkit import coupling_cache
 
     _one_commit_repo(tmp_path)
@@ -177,9 +177,14 @@ def test_the_handbook_names_every_part_of_the_coupling_cache_key(tmp_path):
     sentence = next(s for s in _prose(_page("docs/handbook.html")).split(". ")
                     if s.startswith("Its key is HEAD"))
 
+    row = next(line for line in _page("README.md").splitlines() if line.startswith("| `coupling "))
+    readme = {**_COUPLING_KEY_WORDS, "date": "today's UTC date"}
+
     assert set(key) == set(_COUPLING_KEY_WORDS)
     assert [word for word in _COUPLING_KEY_WORDS.values() if word not in sentence] == []
+    assert [word for word in readme.values() if word not in row] == []
     assert "git fetch --unshallow</code> rebuilds it the same day" in sentence
+    assert "`git fetch --unshallow` rebuilds them the same day" in row
 
 
 def test_the_changelog_says_a_deepened_clone_rebuilds_the_history_caches():
