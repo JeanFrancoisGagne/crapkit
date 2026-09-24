@@ -10,7 +10,8 @@ Markers: the cadence (push, nightly, weekly, published; "weekly+published"
 gives both), each OS, image_<image>, and real_cli, nonblocking, docker_host
 and online when set. run.py builds its -m expression from these, so a cell
 reaches exactly the jobs its markers name. The kit's own tests carry `kit`
-and run in every job.
+and run in every job; `--cell` or `--packet` narrows a run to the cells it
+names, and `--packet deploy-kit` runs the kit's tests alone.
 
 JUnit properties: every field above plus packet, the image digest and the
 toolchain hash, written by the autouse fixture in tests/deploy/conftest.py.
@@ -108,10 +109,18 @@ def partition(items: list, keep_item) -> tuple[list, list]:
     return keep, dropped
 
 
+KIT_PACKET = "deploy-kit"
+
+
+def _kit_selected(cells: list[str], packet: str | None) -> bool:
+    return not cells and packet in (None, KIT_PACKET)
+
+
 def selected(meta: dict | None, cells: list[str], packet: str | None) -> bool:
-    """Whether --deploy-cell / --deploy-packet keep an item. Kit tests always stay."""
+    """Whether --deploy-cell / --deploy-packet keep an item. The kit's own
+    tests run when neither narrows the run, or under --deploy-packet deploy-kit."""
     if meta is None:
-        return True
+        return _kit_selected(cells, packet)
     if cells and meta["id"] not in cells:
         return False
     return packet is None or meta.get("packet") == packet

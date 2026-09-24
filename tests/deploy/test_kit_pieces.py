@@ -58,6 +58,15 @@ def test_a_cell_carries_its_cadence_os_and_image_markers():
         cells.markers({**meta, "cadence": "hourly"})
 
 
+def test_a_cell_or_packet_filter_runs_only_what_it_names():
+    meta = {"id": "lin-x", "packet": "deploy-channels"}
+
+    assert cells.selected(None, [], None) and cells.selected(None, [], "deploy-kit")
+    assert not cells.selected(None, ["lin-x"], None) and not cells.selected(None, [], "deploy-channels")
+    assert cells.selected(meta, ["lin-x"], None) and not cells.selected(meta, ["lin-y"], None)
+    assert cells.selected(meta, [], "deploy-channels") and not cells.selected(meta, [], "deploy-git")
+
+
 def test_a_cells_junit_properties_name_the_image_and_the_toolchain(monkeypatch):
     monkeypatch.setenv("CRAPKIT_DEPLOY_IMAGE_DIGEST", "sha256:abc")
     pairs = dict(cells.properties({"id": "lin-x", "channel": "pip", "real_cli": False}))
