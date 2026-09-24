@@ -977,19 +977,30 @@ def _environment_moved(now: dict, then) -> list[str]:
 
 
 def _artifact_gap(root: Path, lane: Lane, stamp: dict) -> str:
+    """Each declared file that no longer holds its stamped bytes, grouped by why."""
     expected = stamp.get("artifacts")
     if not isinstance(expected, dict):
         return "its stamp records no digest of its artifact"
-    moved = [name for name in _declared_files(lane) if _file_digest(root / name) != expected.get(name)]
-    return f"{_sample(moved)}: bytes differ from its stamp" if moved else ""
+    by_state: dict[str, list[str]] = {}
+    for name in _declared_files(lane):
+        state = _file_state(root / name, expected.get(name))
+        if state:
+            by_state.setdefault(state, []).append(name)
+    return "; ".join(f"{_sample(names)}: {state}" for state, names in by_state.items())
 
 
-def _file_digest(path: Path) -> str:
+def _file_state(path: Path, expected) -> str:
+    """"" when the file holds the bytes its stamp recorded, else what stands in
+    the way. A file that is gone has no digest to compare, so it reads
+    missing, never a byte difference."""
     try:
         with path.open("rb") as source:
-            return hashlib.file_digest(source, "sha256").hexdigest()
-    except OSError:
-        return ""
+            digest = hashlib.file_digest(source, "sha256").hexdigest()
+    except FileNotFoundError:
+        return "missing"
+    except OSError as exc:
+        return f"unreadable ({exc.strerror or type(exc).__name__})"
+    return "" if digest == expected else "bytes differ from its stamp"
 
 
 def _read_and_parse(lane: Lane, root: Path,

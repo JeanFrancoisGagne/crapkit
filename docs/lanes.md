@@ -1042,8 +1042,9 @@ A rerun names the first condition that failed: `no artifact at PATH`, a last att
 that wrote none, `its stamp holds no proof` (measured with uncommitted changes, or by a
 crapkit that recorded none), uncommitted changes, `HEAD is X and its artifact was built
 at Y`, `crapkit.toml changed`, `its lane table changed`, `N environment variable(s)
-changed: NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that
-differ from the stamp. `coverage --json` carries the same sentence per lane as
+changed: NAME`, changes under a lane's `inputs` since its commit, or a declared file
+that no longer matches its stamp: `PATH: missing`, `PATH: unreadable (why)` or `PATH:
+bytes differ from its stamp`. `coverage --json` carries the same sentence per lane as
 `rerun_reason`, `""` for a lane it reused.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
