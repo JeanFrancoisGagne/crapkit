@@ -690,7 +690,7 @@ def test_a_timed_out_mutant_takes_its_whole_process_tree_with_it(tmp_path, monke
     mutant = Mutant("m.py", 1, "flag = True", "flag = False", "True -> False")
 
     observed = _timeout_after_start(monkeypatch, started)
-    assert mutate_pool.run_one(tmp_path, cfg, mutant) is True
+    assert mutate_pool.run_one(tmp_path, cfg, mutant) is mutate_pool.MutantVerdict.TIMED_OUT
     assert time.perf_counter() - observed["start"] < _CEILING
     assert observed["timed_out"] == [_TIMEOUT]
     assert started.is_file(), "the command never started: this proved nothing"

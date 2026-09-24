@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from crapkit.mutate import file_mutants
-from crapkit.mutate_pool import drop_pool, run_mutants
+from crapkit.mutate_pool import MutantVerdict, drop_pool, run_mutants
 from hang_guard import HANG_SECONDS
 from test_mutate_pool_kept import commit, repo
 
@@ -47,7 +47,8 @@ def test_nested_workers_capture_inputs_across_the_git_checkout(repo, workers):
                           mutation_command=f'"{sys.executable}" runner.py')
     try:
         for _ in range(2):
-            assert run_mutants(app, cfg, [mutant, mutant], lambda *args: None) == [True, True]
+            assert run_mutants(app, cfg, [mutant, mutant],
+                               lambda *args: None) == [MutantVerdict.KILLED] * 2
         assert not (app / "runner-wrote.txt").exists()
         assert (app / "m.py").read_text() == source
     finally:

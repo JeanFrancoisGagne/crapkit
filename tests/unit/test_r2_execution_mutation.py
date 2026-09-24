@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
 from crapkit.mutate import file_mutants
-from crapkit.mutate_pool import run_mutants
+from crapkit.mutate_pool import MutantVerdict, run_mutants
 from hang_guard import CHILD_HOLD, exited, wait_until
 from test_r2_execution_lifetime import wait_for
 
@@ -94,7 +94,7 @@ def test_a_dead_mutation_caller_stops_the_suite_before_the_pool_can_be_reused(tm
             old_tree = Path((tmp_path / 'started').read_text())
             (root / 'runner.py').write_text('import m\nassert m.enabled()\n', encoding='utf-8')
             cfg, mutant = mutation(root)
-            assert run_mutants(root, cfg, [mutant], lambda *a: None) == [True]
+            assert run_mutants(root, cfg, [mutant], lambda *a: None) == [MutantVerdict.KILLED]
             assert old_tree == root / '.crapkit' / 'mutate-pool' / 'w0'
             assert (old_tree / 'm.py').read_text() == SOURCE
             assert (root / 'm.py').read_text() == SOURCE

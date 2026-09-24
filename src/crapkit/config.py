@@ -589,8 +589,8 @@ class Config(NamedTuple):
     ratchet_file: str = "crapkit-ratchet.tsv"
     alert_command: str = ""
     scoped_tests: tuple[tuple[str, str], ...] = ()
-    mutation_command: str = ""  # the suite run once per mutant; nonzero exit = killed
-    mutation_timeout_seconds: int = 300  # a mutant that loops forever counts as killed
+    mutation_command: str = ""  # the suite run once per mutant; nonzero = killed, 5 = no verdict
+    mutation_timeout_seconds: int = 300  # past it a mutant counts as killed, reported as timed_out
     mutation_workers: int = 1  # one retained detached worktree per worker
     diff_uncovered_max: int | None = None  # verify exit 9 past this many dead changed lines
     # A tighten claims an improvement; one commit measured twice cannot have

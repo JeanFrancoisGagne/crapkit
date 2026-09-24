@@ -129,3 +129,12 @@ Active rows are ranked by risk; dormant rows have no recent churn.
 **Churn window**:
 The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff
+
+### Mutation
+
+**Killed mutant**:
+A mutant whose suite failed a test, or ran past `mutation_timeout_seconds`. A timeout counts as killed and is reported apart, as `timed_out`.
+
+**No verdict**:
+A mutant whose suite ran no test (exit 5, pytest's "no tests collected"). No test judged it, so it is in neither `killed` nor `survived`, and the kill rate leaves it out.
+_Avoid_: killed, for a suite that never ran a test

@@ -131,31 +131,67 @@ def _collect_mutants(root: Path, targets: dict, max_mutants: int) -> list:
     return out
 
 
-def _mutation_payload(survivors: list, total: int, outside: list[str]) -> dict:
-    return {"mutants": total, "killed": total - len(survivors), "survived": len(survivors),
-            "survivors": [m._asdict() for m in survivors], "outside_corpus": outside}
+def _mutation_counts(verdicts: list) -> dict:
+    """`timed_out` is a count inside `killed`. A no-verdict mutant is in neither
+    `killed` nor `survived`: no test judged it, so it never moves the rate."""
+    from collections import Counter
+
+    from ..mutate_pool import MutantVerdict as V
+
+    count = Counter(verdicts)
+    return {"killed": count[V.KILLED] + count[V.TIMED_OUT], "survived": count[V.SURVIVED],
+            "timed_out": count[V.TIMED_OUT], "no_verdict": count[V.NO_VERDICT]}
 
 
-def _print_mutation_text(survivors: list, total: int) -> None:
-    killed = total - len(survivors)
-    rate = f"{killed / total:.0%}" if total else "n/a"
-    print(f"mutation: {killed}/{total} killed ({rate})")
-    for m in survivors:
+def _survivors(mutants: list, verdicts: list) -> list:
+    from ..mutate_pool import MutantVerdict
+
+    return [m for m, verdict in zip(mutants, verdicts) if verdict is MutantVerdict.SURVIVED]
+
+
+def _mutation_payload(mutants: list, verdicts: list, outside: list[str]) -> dict:
+    return {"mutants": len(mutants), **_mutation_counts(verdicts),
+            "survivors": [m._asdict() for m in _survivors(mutants, verdicts)],
+            "outside_corpus": outside}
+
+
+def _unjudged_lines(counts: dict) -> list[str]:
+    """The mutants the rate cannot show as plain kills: timeouts inside it and
+    no-verdict mutants outside it, each with where to look."""
+    lines = []
+    if counts["timed_out"]:
+        lines.append(f"  {counts['timed_out']} of the {counts['killed']} killed timed out past "
+                     "mutation_timeout_seconds; a timeout counts as killed")
+    if counts["no_verdict"]:
+        lines.append(f"  no verdict: {counts['no_verdict']} mutant(s) whose suite ran no test "
+                     "(exit 5), left out of the score; check that mutation_command collects "
+                     "a test for them")
+    return lines
+
+
+def _print_mutation_text(mutants: list, verdicts: list) -> None:
+    counts = _mutation_counts(verdicts)
+    judged = counts["killed"] + counts["survived"]
+    rate = f"{counts['killed'] / judged:.0%}" if judged else "n/a"
+    print(f"mutation: {counts['killed']}/{judged} killed ({rate})")
+    for line in _unjudged_lines(counts):
+        print(line)
+    for m in _survivors(mutants, verdicts):
         print(f"  SURVIVED  {m.path}:{m.line}  [{m.op}]  {m.mutated.strip()}")
 
 
-def _print_mutation(as_json: bool, survivors: list, total: int, outside: list[str]) -> None:
+def _print_mutation(as_json: bool, mutants: list, verdicts: list, outside: list[str]) -> None:
     """A zero-mutant run whose files the corpus cut dropped says so on stdout:
     `0/0 killed` over a diff that held a test file read as a suite with nothing
     to prove, when it was a diff with nothing crapkit would mutate."""
     from ..mutate import OUTSIDE_CORPUS
 
     if as_json:
-        _print_json(_mutation_payload(survivors, total, outside))
-    elif outside and not total:
+        _print_json(_mutation_payload(mutants, verdicts, outside))
+    elif outside and not mutants:
         print(f"mutation: nothing to mutate; {OUTSIDE_CORPUS}: {', '.join(outside)}")
     else:
-        _print_mutation_text(survivors, total)
+        _print_mutation_text(mutants, verdicts)
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
@@ -203,8 +239,7 @@ def cmd_mutate(args: argparse.Namespace) -> int:
                                        _mutation_targets(root, args.files, cwd=_stand(args.repo)))
     mutants = _collect_mutants(root, targets, args.max_mutants)
     verdicts = run_mutants(root, cfg, mutants, reporter(len(mutants), sys.stderr))
-    survivors = [m for m, killed in zip(mutants, verdicts) if not killed]
-    _print_mutation(args.json, survivors, len(mutants), outside)
+    _print_mutation(args.json, mutants, verdicts, outside)
     return 0
 
 

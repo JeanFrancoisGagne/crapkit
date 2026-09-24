@@ -339,3 +339,80 @@ def test_a_file_over_max_file_bytes_reads_a_reason_that_names_the_ceiling(clamp_
             "(scopes, excludes, test files, max_file_bytes)") in res.stderr
     assert res.stdout.strip() == ("mutation: nothing to mutate; outside the scored corpus "
                                   "(scopes, excludes, test files, max_file_bytes): clamp.py")
+
+
+# --- a suite that gave no test result is not a kill ------------------------------
+#
+# `if n > 0` grows two mutants, `>=` and `<=`. The mutation command exits 0 on
+# the unmutated file, so the baseline passes, and on a mutant does what the
+# mode says. A timeout used to read as a kill with nothing said, and pytest's
+# exit 5 (no tests ran) as a kill too: 2/2 killed, 100%, the output of real kills.
+
+HOT = "def hot(n):\n    if n > 0:\n        return 1\n    return 0\n"
+
+MUT = r'''import sys, time
+src = open("hot.py").read()
+if "n > 0" in src:
+    sys.exit(0)
+mode = open("mode.txt").read().strip()
+if mode == "mixed":
+    mode = "kill" if "n >= 0" in src else "nocollect"
+if mode == "kill":
+    print("FAILED test_hot"); sys.exit(1)
+if mode == "live":
+    sys.exit(0)
+if mode == "timeout":
+    time.sleep(60); sys.exit(0)
+print("no tests ran"); sys.exit(5)
+'''
+
+# mode -> (mutants, killed, survived, timed_out, no_verdict), and a word each
+# mutant's progress line on stderr must carry
+_NO_RESULT = {
+    "kill": ((2, 2, 0, 0, 0), "] killed"),
+    "live": ((2, 0, 2, 0, 0), "] SURVIVED"),
+    "timeout": ((2, 2, 0, 2, 0), "] timed out, counted killed"),
+    "nocollect": ((2, 0, 0, 0, 2), "] no verdict: the suite ran no test (exit 5)"),
+    "mixed": ((2, 1, 0, 0, 1), "] "),
+}
+
+
+def _no_result_repo(root: Path, mode: str) -> Path:
+    (root / "hot.py").write_text(HOT, encoding="utf-8")
+    (root / "mut.py").write_text(MUT, encoding="utf-8")
+    (root / "mode.txt").write_text(mode, encoding="utf-8")
+    (root / "crapkit.toml").write_text(
+        '[crapkit]\ntarget = 6\nmutation_command = "python mut.py"\n'
+        'mutation_timeout_seconds = 3\n\n'
+        '[[scope]]\nname = "py"\npaths = ["hot.py"]\nlanguages = ["python"]\n', encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True, capture_output=True)
+    commit(root, "-A")
+    return root
+
+
+@pytest.mark.parametrize("mode", list(_NO_RESULT))
+def test_a_mutant_whose_suite_gave_no_result_is_counted_apart(tmp_path: Path, mode: str):
+    counts, word = _NO_RESULT[mode]
+    repo = _no_result_repo(tmp_path, mode)
+
+    res = run_cli(repo, "mutate", "--files", "hot.py", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    out = json.loads(res.stdout)
+    assert tuple(out[k] for k in ("mutants", "killed", "survived", "timed_out",
+                                  "no_verdict")) == counts, out
+    progress = [line for line in res.stderr.splitlines() if "mutant " in line]
+    assert len(progress) == 2 and all(word in line for line in progress), res.stderr
+    assert (repo / "hot.py").read_text(encoding="utf-8") == HOT
+
+
+def test_the_printed_rate_leaves_a_no_verdict_mutant_out(tmp_path: Path):
+    repo = _no_result_repo(tmp_path, "mixed")
+
+    res = run_cli(repo, "mutate", "--files", "hot.py")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout.splitlines() == [
+        "mutation: 1/1 killed (100%)",
+        "  no verdict: 1 mutant(s) whose suite ran no test (exit 5), left out of the score; "
+        "check that mutation_command collects a test for them"]

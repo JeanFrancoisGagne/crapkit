@@ -290,7 +290,8 @@ def test_every_worker_measures_dirty_tests_config_dependencies_and_deletions(rep
     cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=HANG_SECONDS,
                           mutation_command=f'"{sys.executable}" runner.py')
 
-    assert mutate_pool.run_mutants(repo, cfg, [mutant, mutant], lambda *a: None) == [True, True]
+    assert mutate_pool.run_mutants(repo, cfg, [mutant, mutant],
+                                   lambda *a: None) == [mutate_pool.MutantVerdict.KILLED] * 2
     assert not (repo / 'runner-wrote.txt').exists(), 'the suite must never write into the user checkout'
     assert (repo / 'm.py').read_text() == source
 
