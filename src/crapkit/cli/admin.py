@@ -174,13 +174,32 @@ def _package_json(root: Path) -> dict[str, str]:
     node_modules is skipped: its packages describe somebody else's tests.
     """
     found: dict[str, str] = {}
-    for path in ls_files(root):
-        directory, _, name = path.rpartition("/")
-        if name != "package.json" or "node_modules/" in path:
-            continue
-        if (root / path).is_file():
-            found[directory] = (root / path).read_text(encoding="utf-8")
+    for path in _package_files(root):
+        text = _package_text(root, path)
+        if text is not None:
+            found[path.rpartition("/")[0]] = text
     return found
+
+
+def _package_files(root: Path) -> list[str]:
+    return [path for path in ls_files(root) if path.rpartition("/")[2] == "package.json"
+            and "node_modules/" not in path and (root / path).is_file()]
+
+
+def _package_text(root: Path, rel: str) -> str | None:
+    """A package.json read the way npm reads it: a UTF-8 BOM dropped, and a
+    stray cp1252 byte in a description read as U+FFFD. A BOM used to cost the
+    js lane in silence, and one é ended init. UTF-16, which npm cannot read
+    either, is named on stderr and gives no lane."""
+    from ..textcodec import lenient, utf16_marked
+
+    raw = (root / rel).read_bytes()
+    if not utf16_marked(raw):
+        return lenient(raw)
+    print(f"crapkit: init read no test runner from {rel}: it is UTF-16 (first bytes "
+          f"{raw[:2].hex(' ')}), which npm cannot read either; save it as UTF-8 and "
+          "declare its lane in crapkit.toml", file=sys.stderr)
+    return None
 
 def _next_step(scopes: dict, lanes: tuple) -> str:
     """What to run next, which is not the same sentence in all three cases.
@@ -483,18 +502,41 @@ def _extend_gitignore(root: Path, lanes: tuple) -> None:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
     untracked coverage output nobody asked for. A nested configuration under a
-    root whose .gitignore already ignores the store writes nothing (ADR 0002)."""
-    from ..scaffold import gitignore_update
+    root whose .gitignore already ignores the store writes nothing (ADR 0002).
+
+    git reads .gitignore as bytes, and so does this: every byte already there
+    stays, a cp1252 comment included, and the entries take the file's own line
+    ending. A UTF-16 file, which git cannot read, is left as it was and named."""
+    from ..textcodec import utf16_marked
 
     if _store_ignored_above(root):
         return
     path = root / ".gitignore"
-    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    raw = path.read_bytes() if path.is_file() else b""
+    if utf16_marked(raw):
+        return _name_unreadable_gitignore(raw, lanes)
+    extended, added = _extended_gitignore(raw, lanes)
+    if added:
+        path.write_bytes(extended)
+        print(f"added to .gitignore: {', '.join(added)}")
+
+
+def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
+    """`raw` with crapkit's entries appended in the line ending it already uses."""
+    from ..scaffold import gitignore_update
+
+    current = raw.decode("utf-8", "surrogateescape")
     text, added = gitignore_update(current, lanes)
-    if not added:
-        return
-    path.write_text(text, encoding="utf-8", newline="\n")
-    print(f"added to .gitignore: {', '.join(added)}")
+    newline = "\r\n" if b"\r\n" in raw else "\n"
+    return raw + text[len(current):].replace("\n", newline).encode("utf-8"), added
+
+
+def _name_unreadable_gitignore(raw: bytes, lanes: tuple) -> None:
+    from ..scaffold import gitignore_entries
+
+    print(f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
+          "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
+          f"and add {', '.join(gitignore_entries(lanes))}", file=sys.stderr)
 
 
 def _refuse_claimed_by_ancestor(root: Path) -> None:
