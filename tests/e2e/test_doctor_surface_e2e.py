@@ -7,6 +7,7 @@ can read, advisory parallelism knobs, and a warning for directories whose tests
 no lane measures. A hermetic istanbul generator stands in for a coverage tool.
 """
 import json
+import os
 import platform
 import subprocess
 from pathlib import Path
@@ -172,11 +173,110 @@ def test_doctor_json_separates_lane_rot_from_a_stale_artifact(measured_repo: Pat
     assert lane["artifact_present"] is True
     assert lane["commit"] == head
     assert isinstance(lane["seconds"], float)
+    assert lane["refusal"] is None
 
     (measured_repo / ARTIFACT).unlink()
     (gone,) = json.loads(run_cli(measured_repo, "doctor", "--json").stdout)["lanes"]
     assert gone["artifact_present"] is False
     assert gone["commit"] == head, "the stamp outlives the artifact it describes"
+
+
+# --- doctor --json: the refusal reuse reads --------------------------------
+
+FAILING = "command = 'python -c \"raise SystemExit(1)\"'"
+LANE_COMMAND = f'command = "python {GEN} {ARTIFACT} src/measured.py"'
+
+
+def refused(repo: Path) -> Path:
+    """A good run, then an attempt that exits 1 and writes nothing, so the good
+    run's artifact is the leftover the failed attempt stands in front of."""
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    config = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    write(repo, "crapkit.toml", config.replace(LANE_COMMAND, FAILING))
+    failed = run_cli(repo, "coverage", "--json")
+    assert failed.returncode == 5, failed.stdout + failed.stderr
+    return repo
+
+
+def test_doctor_names_a_lane_whose_last_attempt_left_its_artifact_unwritten(measured_repo: Path):
+    repo = refused(measured_repo)
+
+    payload = json.loads(run_cli(repo, "doctor", "--json").stdout)
+    text = run_cli(repo, "doctor")
+
+    (lane,) = payload["lanes"]
+    assert lane["artifact_present"] is True
+    assert lane["refusal"] == (f"its last attempt wrote no artifact, and the {ARTIFACT} on disk "
+                               "predates it; --reuse-artifacts will not score it until a run of "
+                               "the lane writes it again")
+    assert f"lane 'unit': {lane['refusal']}" in payload["warnings"]
+    assert f"WARN lane 'unit': {lane['refusal']}" in text.stdout.splitlines()
+    assert text.returncode == 0, "a refused leftover is a warning: the next run clears it"
+
+
+def test_a_lane_with_a_good_run_reports_no_refusal(measured_repo: Path):
+    assert run_cli(measured_repo, "coverage", "--json").returncode == 0
+
+    (lane,) = json.loads(run_cli(measured_repo, "doctor", "--json").stdout)["lanes"]
+
+    assert lane["refusal"] is None
+
+
+def _touch(path: Path) -> None:
+    later = path.stat().st_mtime + 60
+    os.utime(path, (later, later))
+
+
+def _rewrite(path: Path) -> None:
+    """A salvage: new bytes combined by hand over the leftover."""
+    path.write_bytes(path.read_bytes().replace(b'"f": {"0": 1}', b'"f": {"0": 2}'))
+
+
+@pytest.mark.parametrize("act", [
+    lambda path: None,
+    _touch,
+    lambda path: path.write_bytes(path.read_bytes()),
+    _rewrite,
+    lambda path: path.unlink(),
+], ids=["untouched", "touched", "same-bytes-copy", "new-bytes", "deleted"])
+def test_doctor_reports_a_refusal_exactly_when_reuse_refuses(measured_repo: Path, act):
+    """doctor asks the question --reuse-artifacts asks, so the two never
+    disagree about one leftover, whichever answer reuse gives a touch."""
+    repo = refused(measured_repo)
+    act(repo / ARTIFACT)
+
+    (lane,) = json.loads(run_cli(repo, "doctor", "--json").stdout)["lanes"]
+    reuse = run_cli(repo, "coverage", "--reuse-artifacts", "--json")
+
+    assert (lane["refusal"] is not None) == (reuse.returncode == 5
+                                             and "last attempt" in reuse.stderr), reuse.stderr
+
+
+@pytest.mark.parametrize("content, why", [
+    ("{ not json", "Expecting property name"),
+    ("[1, 2]", "it holds a JSON list, not an object"),
+    (b"\xff\xfe{", "codec can't decode"),
+], ids=["torn", "a-list", "not-utf8"])
+def test_doctor_names_a_stamps_file_it_cannot_read(measured_repo: Path, content, why):
+    """Read as no stamps, the file hides every commit, proof and refusal, so a
+    refused leftover would pass --reuse-artifacts unseen."""
+    assert run_cli(measured_repo, "coverage", "--json").returncode == 0
+    stamps = measured_repo / ".crapkit" / "artifacts.json"
+    if isinstance(content, bytes):
+        stamps.write_bytes(content)
+    else:
+        stamps.write_text(content, encoding="utf-8")
+
+    res = run_cli(measured_repo, "doctor", "--json")
+
+    payload = json.loads(res.stdout)
+    assert res.returncode == 0, payload["problems"]
+    (warning,) = [w for w in payload["warnings"] if w.startswith(".crapkit/artifacts.json")]
+    assert why in warning
+    assert warning.endswith("so crapkit reads it as no stamps: --reuse-unchanged reruns every "
+                            "lane and --reuse-artifacts cannot see a failed attempt's leftover; "
+                            "the next lane run writes the file again, or delete it")
+    assert payload["lanes"][0]["commit"] is None
 
 
 def test_doctor_json_and_text_report_the_same_problems_and_exit_code(measured_repo: Path):
