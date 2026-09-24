@@ -322,6 +322,73 @@ def _knotty(repo):
     return repo
 
 
+# --- the files verify judged, by name (S26) -----------------------------------
+#
+# "(1 changed files)" named nothing, so a reader could not check what verify
+# judged, and a new file nobody added read as "(0 changed files)".
+
+def test_the_text_verdict_names_the_changed_files_under_the_count(baselined, capsys):
+    code, out, _ = run(["verify", "--reuse-artifacts"], _knotty(baselined), capsys)
+
+    assert code == 6
+    lines = out.splitlines()
+    assert lines[0].endswith("(1 changed files)"), lines[0]
+    assert lines[1] == "  changed files: src/app.ts", out
+
+
+def test_the_json_verdict_lists_the_changed_paths_beside_the_count(baselined, capsys):
+    _, out, _ = run(["verify", "--reuse-artifacts", "--json"], _knotty(baselined), capsys)
+    payload = json.loads(out)
+
+    assert payload["changed_files"] == 1
+    assert payload["changed_paths"] == ["src/app.ts"]
+
+
+def test_past_three_changed_files_the_line_counts_the_rest(baselined, capsys):
+    for name in ("a", "b", "c", "d"):
+        (baselined / f"{name}.txt").write_text(f"{name}\n", encoding="utf-8")
+    git(baselined, "add", "a.txt", "b.txt", "c.txt", "d.txt")
+    add_knotty(baselined)
+
+    _, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert "  changed files: a.txt, b.txt, c.txt and 2 more" in out.splitlines(), out
+
+
+def test_a_clean_tree_prints_no_changed_files_line(baselined, capsys):
+    _, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert "changed files:" not in out, out
+
+
+def test_an_untracked_source_file_in_a_scope_is_named_as_not_judged(baselined, capsys):
+    """verify scores git-tracked files only. A breach in a file nobody added
+    is not judged, and the run says so instead of reading as no change."""
+    (baselined / "src" / "added.ts").write_text(
+        "export function added(): number { return 1; }\n", encoding="utf-8")
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+    payload = json.loads(out)
+
+    assert code == 0, err
+    assert payload["changed_files"] == 0 and payload["changed_paths"] == []
+    assert payload["untracked_in_scope"] == ["src/added.ts"]
+    assert ("warning: 1 untracked file(s) in a scope were not judged (src/added.ts): verify "
+            "scores git-tracked files only; `git add` them to have them judged") in err, err
+
+
+def test_an_untracked_file_no_scope_would_score_is_not_named(baselined, capsys):
+    """Notes beside the source, and files outside every scope, are nothing a
+    scope scores, so naming them as unjudged would be noise."""
+    (baselined / "src" / "notes.md").write_text("notes\n", encoding="utf-8")
+    (baselined / "scratch.ts").write_text("export const x = 1;\n", encoding="utf-8")
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    assert (code, err) == (0, "")
+    assert json.loads(out)["untracked_in_scope"] == []
+
+
 @pytest.mark.parametrize("reason", ["", "   "])
 def test_an_empty_override_reason_is_refused_before_anything_runs(baselined, capsys, reason):
     """`--override ""` ran as a plain verify and recorded the failure it was
@@ -1081,6 +1148,26 @@ def test_over_ceiling_functions_with_no_mark_are_counted_on_stderr(repo, capsys)
     assert "warning: 1 function(s) over the ceiling carry no ratchet mark" in err, err
     assert "coverage loss included" in err and "ratchet seed" in err, err
     assert json.loads(out)["unmarked_over_target"] == 1
+
+
+def test_the_standing_debt_line_names_the_functions_it_counts(repo, capsys):
+    """A count alone sent the reader to `worklist` to find out which ones."""
+    _, _, err = run(["verify", "--reuse-artifacts"], _standing_debt(repo, capsys), capsys)
+
+    assert ("warning: 1 function(s) over the ceiling carry no ratchet mark "
+            "(src/app.ts knotty ( n )), so a rise") in err, err
+
+
+def test_past_three_unmarked_functions_the_debt_line_counts_the_rest(capsys):
+    from crapkit.score import ScoredRow
+
+    rows = [ScoredRow("src", f"src/{n}.ts", f"{n} ( )", 1, 9, 9, 9, 9, 9, 0, 0, 0.0,
+                      "untested", 90.0, "decompose") for n in "abcd"]
+
+    verifying._warn_standing_debt(rows)
+
+    assert ("(src/a.ts a ( ), src/b.ts b ( ), src/c.ts c ( ) and 1 more), so a rise"
+            in capsys.readouterr().err)
 
 
 def test_a_mark_on_the_standing_debt_silences_the_count(repo, capsys):

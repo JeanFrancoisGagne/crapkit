@@ -18,6 +18,7 @@ from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
+from .ratchet_cmds import _first_three
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -555,6 +556,7 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "baseline_commit": baseline["commit"],
         "commit": commit,
         "changed_files": len(ranges),
+        "changed_paths": sorted(ranges),
         "gate_violations": [v._asdict() for v in verdict.gate_violations],
         "ratchet_regressions": [r._asdict() for r in verdict.ratchet_regressions],
         "new_failures": verdict.new_failures,
@@ -581,9 +583,33 @@ def _warn_standing_debt(unmarked: list) -> None:
     """
     if not unmarked:
         return
-    print(f"warning: {len(unmarked)} function(s) over the ceiling carry no ratchet mark, so a "
-          f"rise on them (coverage loss included) passes unseen; record them with "
-          f"`{_self()} ratchet seed`", file=sys.stderr)
+    named = _first_three([f"{row.path} {row.long_name}" for row in unmarked])
+    print(f"warning: {len(unmarked)} function(s) over the ceiling carry no ratchet mark "
+          f"({named}), so a rise on them (coverage loss included) passes unseen; record them "
+          f"with `{_self()} ratchet seed`", file=sys.stderr)
+
+
+def _untracked_in_scope(root: Path, cfg) -> list[str]:
+    """Source files a scope would score if git tracked them.
+
+    verify's diff and its corpus hold git-tracked files only, so a new file
+    nobody added was judged as nothing and read as `(0 changed files)`. Asked
+    before any lane runs, like the dirty set: a file a lane writes is the
+    lane's output, not somebody's unjudged work."""
+    from ..gitio import untracked_files
+    from ..universe import assign_files
+
+    by_scope = assign_files(untracked_files(root), cfg)
+    return sorted(path for paths in by_scope.values() for path in paths)
+
+
+def _warn_untracked_in_scope(untracked: list[str]) -> None:
+    """stderr, because `--json` prints one object on stdout; the paths are in
+    it as `untracked_in_scope`."""
+    if untracked:
+        print(f"warning: {len(untracked)} untracked file(s) in a scope were not judged "
+              f"({_first_three(untracked)}): verify scores git-tracked files only; `git add` "
+              "them to have them judged", file=sys.stderr)
 
 
 def _warn_diff_uncovered(uncovered: list) -> None:
@@ -661,8 +687,16 @@ def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None
           f"({out['changed_files']} changed files)"
           f"{_forgiven_suffix(out)}{_retried_suffix(out)}"
           f"{_ratchet_suffix(out['ratchet_changes'], verdict.overridden, ratchet_file)}")
+    _print_changed_paths(out["changed_paths"])
     _print_verify_findings(verdict)
     _print_finding_split(verdict)
+
+
+def _print_changed_paths(paths: list[str]) -> None:
+    """The files behind the count, on their own line so the verdict line keeps
+    its shape. Nothing for an empty diff."""
+    if paths:
+        print(f"  changed files: {_first_three(paths)}")
 
 
 def _refuse_lane_less_verify(cfg) -> None:
@@ -702,6 +736,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # cannot enlarge the set this verdict blames on somebody else.
     git = GitFacts(root)
     dirty = set(git.status_names())
+    untracked = _untracked_in_scope(root, cfg)
     baseline, basis = _verify_basis(root, store, args, git)
     _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline))
     _emit_baseline(root, store, baseline, args.emit_baseline)
@@ -715,6 +750,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
 
     ranges = changed_ranges(diff_since(root, basis))
+    _warn_untracked_in_scope(untracked)
     ratchet = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store,
                                           entries=ratchet)
@@ -747,7 +783,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, saved.sha256, changes)},
+                    **_receipt(tool_versions, saved.sha256, changes),
+                    "untracked_in_scope": untracked},
                    verdict, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)

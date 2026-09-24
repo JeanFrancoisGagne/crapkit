@@ -123,6 +123,7 @@ EXIT=0
 
 $ crapkit verify
 verify OK @ 4a06338604a vs baseline 4a06338604a (1 changed files)
+  changed files: calc/grade.py
 EXIT=0
 ```
 
@@ -136,6 +137,7 @@ EXIT=6
 
 $ crapkit verify
 verify FAILED @ 4a06338604a vs baseline 4a06338604a (1 changed files)
+  changed files: calc/grade.py
   GATE  crap     76.6  ccn  17 cov 41%  calc/grade.py:1  classify( score , attempts , late , bonus )  -> decompose  [dirty]
   RATCHET  calc/grade.py  classify( score , attempts , late , bonus ): 51.5698 -> 76.6293  [dirty]
   findings: 0 committed / 2 dirty (uncommitted edits and untracked files)
@@ -174,9 +176,11 @@ score. It is idempotent, and it can only lower: rerunning after an improvement r
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
 `verify` still gates the diff, but the standing debt is unprotected. Since 0.5.1 every
-verify counts that gap: `warning: N function(s) over the ceiling carry no ratchet mark, so
-a rise on them (coverage loss included) passes unseen; record them with `crapkit ratchet
-seed`` on stderr, and `unmarked_over_target` in `--json`. It fires no exit code and is
+verify counts that gap: `warning: N function(s) over the ceiling carry no ratchet mark
+(<first three, each as path and function>), so a rise on them (coverage loss included) passes
+unseen; record them with `crapkit ratchet seed`` on stderr, and `unmarked_over_target` in
+`--json`. Since 0.8.1 the line names the first three functions and counts the rest as `and N
+more`. It fires no exit code and is
 silent at zero, which is the state of a repo with no debt and of one seeded in full: a
 header-only marks file is not a mistake, it says nothing is over the ceiling.
 
@@ -317,6 +321,7 @@ EXIT=3
 $ crapkit verify
 warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) — run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
 verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: restamped -> git add crapkit-ratchet.tsv
+  changed files: crapkit-ratchet.tsv
 EXIT=0
 ```
 
@@ -672,6 +677,7 @@ to do about it:
 ```
 $ crapkit verify
 verify OK @ 8c780bb18da vs baseline 8c780bb18da (3 changed files) ratchet: 6 dropped, 1 tightened -> git add crapkit-ratchet.tsv
+  changed files: app/m.py, app/n.py, tests/test_m.py
 ```
 
 `dropped` counts marks whose function is now at or under its ceiling; `tightened` counts
@@ -691,6 +697,7 @@ touched it. That is the point: coverage rot regresses functions nobody edited.
 ```
 $ crapkit verify
 verify FAILED @ 8c780bb18da vs baseline 8c780bb18da (1 changed files)
+  changed files: tests/test_m.py
   RATCHET  app/m.py  pick( a , b , c ): 10.75 -> 20.0
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 EXIT=7
@@ -698,6 +705,19 @@ EXIT=7
 
 That run changed only a test file. The source function was untouched; deleting its coverage
 was enough.
+
+The `changed files:` line under the verdict names the files behind the count: the first
+three, then `and N more`. `--json` lists them all as `changed_paths` beside the
+`changed_files` count. verify judges git-tracked files only, so a new source file inside a
+scope that nobody has `git add`ed is not judged, and verify says so on stderr instead of
+reading it as no change:
+
+```
+warning: 1 untracked file(s) in a scope were not judged (src/added.ts): verify scores git-tracked files only; `git add` them to have them judged
+```
+
+`--json` carries those paths as `untracked_in_scope`. A file no scope would score (a note, a
+file outside every scope) is not named.
 
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
@@ -767,6 +787,7 @@ With it configured:
 ```
 $ crapkit verify --override "shipping the hotfix, ticket 412"
 verify OK @ 8c780bb18da vs baseline 8c780bb18da (2 changed files) ratchet: 1 mark granted -> git add crapkit-ratchet.tsv
+  changed files: app/m.py, tests/test_m.py
   OVERRIDDEN  app/m.py:9  route( a , b , c , d )
 EXIT=0
 ```
@@ -787,6 +808,7 @@ the escape; the exit code stays the verdict's:
 ```
 $ crapkit verify --override "hotfix INV-412 ships tonight; decompose next sprint"
 verify FAILED @ 8c780bb18da vs baseline 8c780bb18da (1 changed files)
+  changed files: app/billing/invoice.py
   GATE  crap    380.0  ccn  19 cov 0%  app/billing/invoice.py:88  check_band( r , t )  -> decompose
   RATCHET  app/billing/invoice.py  check_band( r , t ): 240.0 -> 380.0
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
