@@ -2,8 +2,11 @@
 
 Everything asserts through a public seam: the CLI as a subprocess on a tmp_path
 repo built inline, or the file reader other tools call.
-The coverage artifacts are hand-written because explain never runs a lane; it
-only reads what a lane left on disk.
+explain never runs a lane; it reads what a lane left on disk, and it names test
+ids only off an artifact whose stamp says its line numbers still point at the
+file. A test that wants ids listed has `crapkit coverage` run a stub lane that
+writes the contexts the test chose. A hand-written artifact carries no stamp,
+so the tests that write one pin what explain says in its place.
 """
 import copy
 import json
@@ -54,7 +57,7 @@ languages = ["python"]
 PY_LANE = """
 [[lane]]
 name = "py"
-command = "python --version"
+command = "python write_cov.py"
 artifact = "coverage-py.json"
 parser = "coveragepy"
 scopes = ["py"]
@@ -63,11 +66,44 @@ scopes = ["py"]
 ISTANBUL_LANE = """
 [[lane]]
 name = "web"
-command = "python --version"
+command = "python write_web.py"
 artifact = "web-coverage.json"
 parser = "istanbul"
 scopes = ["py"]
 """
+
+# The py lane: every function in pylib fully run, plus the per-line contexts
+# the test left in contexts.json.
+WRITE_COV = '''import ast, json, pathlib
+
+files = {}
+for path in sorted(pathlib.Path("pylib").rglob("*.py")):
+    functions = {}
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.FunctionDef):
+            lines = list(range(node.lineno, node.end_lineno + 1))
+            functions[node.name] = {"start_line": node.lineno, "executed_lines": lines,
+                                    "missing_lines": [],
+                                    "summary": {"covered_lines": len(lines),
+                                                "num_statements": len(lines),
+                                                "num_branches": 0, "covered_branches": 0}}
+    files[path.as_posix()] = {"functions": functions, "missing_lines": []}
+for rel, entry in json.loads(pathlib.Path("contexts.json").read_text(encoding="utf-8")).items():
+    files.setdefault(rel, {}).update(entry)
+with open("coverage-py.json", "w", encoding="utf-8") as fh:
+    json.dump({"meta": {"branch_coverage": True, "show_contexts": True}, "files": files}, fh)
+'''
+
+# The web lane: a valid istanbul report, which is no coverage.py report.
+WRITE_WEB = '''import json
+
+loc = {"start": {"line": 4, "column": 0}, "end": {"line": 7, "column": 13}}
+report = {"pylib/mod.py": {"path": "pylib/mod.py", "statementMap": {"0": loc}, "s": {"0": 1},
+                           "fnMap": {"0": {"name": "guarded", "decl": loc, "loc": loc}},
+                           "f": {"0": 1}, "branchMap": {}, "b": {}}}
+with open("web-coverage.json", "w", encoding="utf-8") as fh:
+    json.dump(report, fh)
+'''
 
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
@@ -78,6 +114,9 @@ def make_repo(tmp_path: Path, config: str, module: str = MODULE) -> Path:
     (repo / "pylib").mkdir(parents=True)
     (repo / "pylib" / "mod.py").write_text(module, encoding="utf-8", newline="\n")
     (repo / "crapkit.toml").write_text(config, encoding="utf-8", newline="\n")
+    for name, text in {"write_cov.py": WRITE_COV, "write_web.py": WRITE_WEB,
+                       ".gitignore": ".crapkit/\n*.json\ninv.tsv\n"}.items():
+        (repo / name).write_text(text, encoding="utf-8", newline="\n")
     git_init_repo(repo)
     git_commit_all(repo, "init")
     return repo
@@ -96,8 +135,16 @@ def span_of(repo: Path, path: str, fragment: str) -> tuple[int, int]:
 
 
 def write_contexts(repo: Path, rel: str, files: dict) -> None:
+    """A hand-written artifact: no lane ran, so no stamp vouches for it."""
     report = {"meta": {"branch_coverage": True, "show_contexts": True}, "files": files}
     (repo / rel).write_text(json.dumps(report), encoding="utf-8", newline="\n")
+
+
+def measure_contexts(repo: Path, files: dict) -> None:
+    """`crapkit coverage` runs the stub lanes, which record FILES' contexts."""
+    (repo / "contexts.json").write_text(json.dumps(files), encoding="utf-8", newline="\n")
+    res = run_cli(repo, "coverage")
+    assert res.returncode == 0, res.stdout + res.stderr
 
 
 @pytest.fixture()
@@ -111,7 +158,7 @@ def inventoried(tmp_path: Path):
 
 def test_explain_tests_lists_the_covering_tests_sorted(inventoried):
     repo, start, end = inventoried
-    write_contexts(repo, "coverage-py.json", {"pylib/mod.py": {"contexts": {
+    measure_contexts(repo, {"pylib/mod.py": {"contexts": {
         str(start): ["tests/test_mod.py::test_beta|run", ""],
         str(end): ["tests/test_mod.py::test_alpha|run"],
         str(end + 40): ["tests/test_mod.py::test_far_away|run"],
@@ -120,7 +167,7 @@ def test_explain_tests_lists_the_covering_tests_sorted(inventoried):
     res = run_cli(repo, "explain", "pylib/mod.py", "guarded", "--tests")
 
     assert res.returncode == 0, res.stderr
-    assert "    covered by tests/test_mod.py::test_alpha" in res.stdout
+    assert "    covered by tests/test_mod.py::test_alpha" in res.stdout, res.stdout
     assert "    covered by tests/test_mod.py::test_beta" in res.stdout
     assert res.stdout.index("test_alpha") < res.stdout.index("test_beta"), "listed sorted"
     assert "test_far_away" not in res.stdout, "a hit past the span belongs to another function"
@@ -153,13 +200,13 @@ def test_explain_tests_without_any_artifact_prints_the_guidance_line(inventoried
 
 
 def test_explain_tests_skips_lanes_that_are_not_coveragepy(tmp_path: Path):
-    # The istanbul lane's artifact is unparseable as a coverage.py report: if the
-    # parser check did not skip it first, explain would die at exit 5.
+    # An istanbul lane measured beside the py lane records no contexts. explain
+    # asks each lane through its own format, so the py lane's ids still list;
+    # test_coverage_format_adapters pins that the istanbul lane is never asked.
     repo = make_repo(tmp_path, BASE_CFG + ISTANBUL_LANE + PY_LANE)
     assert run_cli(repo, "inventory", "--export", "inv.tsv").returncode == 0
     start, end = span_of(repo, "pylib/mod.py", "guarded")
-    (repo / "web-coverage.json").write_text("{ not json at all", encoding="utf-8", newline="\n")
-    write_contexts(repo, "coverage-py.json", {"pylib/mod.py": {"contexts": {
+    measure_contexts(repo, {"pylib/mod.py": {"contexts": {
         str(start): ["tests/test_mod.py::test_guarded|run"],
     }}})
 

@@ -5,6 +5,7 @@ function's trajectory, its ratchet mark, its dark lines, its commits and tests).
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -402,7 +403,7 @@ def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: st
     if args.history:
         out.update(_commits_fields(ctx.root, ctx.path, span))
     if args.tests:
-        out.update(_tests_fields(ctx.contexts, span))
+        out.update(_tests_fields(ctx.contexts, span, _withheld(ctx.uncovered, ctx.path)))
     return out
 
 
@@ -458,16 +459,110 @@ def _dark_fields(uncovered: MissingLines, path: str, span) -> dict:
 
 
 def _commits_fields(root: Path, path: str, span) -> dict:
+    """The commits that touched the span, or null and why git had none to give.
+
+    A git failure is named, never read as a function nothing ever touched."""
     if span is None:
         return {"commits": None, "commits_note": _NO_SPAN}
-    return {"commits": _function_commits(root, path, span[0], span[1])}
+    try:
+        return _span_commits(root, path, span)
+    except GitError as exc:
+        return {"commits": None,
+                "commits_note": f"git cannot read the history of {path}:{span[0]}-{span[1]} ({exc})"}
 
 
-def _tests_fields(contexts: dict, span) -> dict:
+def _span_commits(root: Path, path: str, span) -> dict:
+    """`git log -L` over HEAD's lines, which is what it reads. The run measured
+    the working tree, so its span moves through the uncommitted diff first: four
+    new lines above a function made git answer with the function below it, and
+    forty made it refuse a span past HEAD's last line. Before the first commit
+    every line is uncommitted. Raises GitError."""
+    from ..gitio import has_commit
+
+    head = _head_span(_worktree_hunks(root, path), *span) if has_commit(root, "HEAD") else None
+    if head is None:
+        return {"commits": None,
+                "commits_note": (f"{path}:{span[0]}-{span[1]} holds only uncommitted lines, "
+                                 "so no commit has touched it yet")}
+    return {"commits": _function_commits(root, path, *head)}
+
+
+_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+
+
+class _Hunk(NamedTuple):
+    """One `git diff -U0 HEAD` hunk: HEAD's `old_count` lines from `old` became
+    the working tree's `new_count` lines from `new`. With a count of 0 the
+    other side's number is the line the insertion or deletion sits after."""
+    old: int
+    old_count: int
+    new: int
+    new_count: int
+
+    def holds(self, line: int) -> bool:
+        """The working-tree LINE is one of this hunk's new lines."""
+        return self.new <= line < self.new + self.new_count
+
+    def before(self, line: int) -> bool:
+        """This hunk ends above the working-tree LINE."""
+        return self.new + max(self.new_count, 1) - 1 < line
+
+    def head_lines(self) -> tuple[int, int] | None:
+        """The HEAD lines this hunk replaced, or None for a pure insertion."""
+        return (self.old, self.old + self.old_count - 1) if self.old_count else None
+
+
+def _worktree_hunks(root: Path, rel_path: str) -> list[_Hunk]:
+    """How the working tree's copy of REL_PATH, staged edits included, differs
+    from HEAD's. Raises GitError."""
+    from ..gitio import _git
+
+    out = _git(root, "--literal-pathspecs", "diff", "-U0", "--no-color", "--no-ext-diff",
+               "--no-textconv", "HEAD", "--", rel_path)
+    return [_Hunk(int(old), int(old_count or 1), int(new), int(new_count or 1))
+            for old, old_count, new, new_count in _HUNK.findall(out)]
+
+
+def _head_line(hunks: list[_Hunk], line: int) -> tuple[int, int] | None:
+    """The HEAD lines behind one working-tree LINE: itself shifted past the
+    hunks above it, the lines an edit replaced, or None for a new line."""
+    shift = 0
+    for hunk in hunks:
+        if hunk.holds(line):
+            return hunk.head_lines()
+        if not hunk.before(line):
+            break
+        shift += hunk.old_count - hunk.new_count
+    return line + shift, line + shift
+
+
+def _head_span(hunks: list[_Hunk], start: int, end: int) -> tuple[int, int] | None:
+    """The HEAD lines a working-tree span came from, or None when every line in
+    it is new. The mapping never runs backwards, so the ends bound it."""
+    found = [pair for pair in (_head_line(hunks, n) for n in range(start, end + 1)) if pair]
+    if not found:
+        return None
+    return found[0][0], found[-1][1]
+
+
+def _withheld(uncovered: MissingLines, path: str) -> str:
+    """Why PATH's line numbers in the lane artifacts no longer point at its
+    code, or "": the verdict that withholds its dark lines."""
+    return uncovered.note or uncovered.moved(path)
+
+
+def _tests_fields(contexts: dict, span, withheld: str = "") -> dict:
     """No span means silence, not guidance: nothing is missing for a function
-    the latest run does not carry."""
+    the latest run does not carry.
+
+    The test ids sit on the same line numbers as the dark lines, so a file
+    whose dark lines are withheld has its tests withheld with the same note.
+    Read off a stale artifact they credited a function with the tests that ran
+    whatever used to sit on its lines."""
     if span is None:
         return {"tests": None}
+    if withheld and contexts:
+        return {"tests": None, "tests_note": withheld}
     tests = _contexts_for_span(contexts, span)
     return {"tests": tests} if tests else {"tests": None, "tests_note": _NO_CONTEXT}
 
@@ -499,17 +594,15 @@ def _contexts_for_span(contexts: dict, span) -> list[str]:
 
 def _function_commits(root: Path, rel_path: str, start: int, end: int,
                       limit: int = 10) -> list[dict]:
-    """Commits that touched one line span, subject AND body, from `git log -L`.
+    """Commits that touched HEAD's lines START to END, subject AND body, from
+    `git log -L`. Raises GitError.
 
     The body is what says why a span keeps changing; a subject line rarely does.
     """
     from ..gitio import _git
 
-    try:
-        out = _git(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
-                   "--date=short", f"--max-count={limit}")
-    except GitError:
-        return []
+    out = _git(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
+               "--date=short", f"--max-count={limit}")
     return _parse_log_records(out)
 
 

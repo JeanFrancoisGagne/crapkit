@@ -422,3 +422,130 @@ def test_a_commit_outside_every_scope_still_warns_that_head_moved(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "HEAD has moved on" in res.stderr
     assert "changed since run" not in res.stderr
+
+
+# --- explain --tests: per-test contexts are withheld with the dark lines -----
+
+HALF_FIRST = ('def half(n):\n    return n / 2\n\n\n'
+              'def grade(n):\n    if n > 90:\n        return "a"\n'
+              '    if n > 80:\n        return "b"\n    return "c"\n')
+GRADE_FIRST = ('def grade(n):\n    if n > 90:\n        return "a"\n'
+               '    if n > 80:\n        return "b"\n    return "c"\n\n\n'
+               'def half(n):\n    return n / 2\n')
+
+
+def _swap_committed(repo: Path) -> None:
+    _write(repo, "src/mod.py", GRADE_FIRST)
+    git_commit_all(repo, "swap")
+
+
+def _swap_dirty(repo: Path) -> None:
+    _write(repo, "src/mod.py", GRADE_FIRST)
+
+
+@pytest.mark.parametrize("variation", ["control", "swap-committed", "swap-dirty"])
+def test_explain_tests_never_credits_a_test_the_stale_lane_recorded_for_other_lines(
+        tmp_path, variation):
+    repo = _py_repo(tmp_path, {"src/mod.py": HALF_FIRST})
+    _measure(repo)
+    {"control": _nothing, "swap-committed": _swap_committed, "swap-dirty": _swap_dirty}[
+        variation](repo)
+    assert run_cli(repo, "inventory").returncode == 0
+
+    fn = _json(repo, "explain", "src/mod.py", "grade", "--tests", "--json")["functions"][0]
+
+    if variation == "control":
+        assert fn["tests"] == ["tests/test_app.py::test_grade"]
+        return
+    assert fn["tests"] is None, fn
+    assert fn["tests_note"] == fn["uncovered_lines_note"], fn
+    assert fn["tests_note"].startswith("lane 'py': ") and "src/mod.py" in fn["tests_note"], fn
+
+
+def test_explain_tests_text_prints_the_stale_note_instead_of_a_test(tmp_path):
+    repo = _py_repo(tmp_path, {"src/mod.py": HALF_FIRST})
+    _measure(repo)
+    _swap_dirty(repo)
+    assert run_cli(repo, "inventory").returncode == 0
+
+    res = run_cli(repo, "explain", "src/mod.py", "grade", "--tests")
+
+    assert res.returncode == 0, res.stderr
+    assert "covered by" not in res.stdout, res.stdout
+    assert "  tests: lane 'py': " in res.stdout, res.stdout
+
+
+# --- explain --history: the run's span, mapped onto HEAD's lines -------------
+
+HISTORY_CONFIG = """[crapkit]
+target = 6
+
+[[scope]]
+name = "pkg"
+paths = ["pkg"]
+languages = ["python"]
+"""
+
+V1 = "def a(n):\n    return n\n\n\ndef b(n):\n    return n + 1\n"
+
+
+def _history_repo(tmp_path: Path) -> Path:
+    repo = _new_repo(tmp_path)
+    _write(repo, "crapkit.toml", HISTORY_CONFIG)
+    _write(repo, ".gitignore", ".crapkit/\n")
+    module = _write(repo, "pkg/m.py", V1)
+    git_commit_all(repo, "init")
+    module.write_text(V1.replace("return n + 1", "return n + 2"), encoding="utf-8", newline="\n")
+    git_commit_all(repo, "edit b only")
+    module.write_text(module.read_text(encoding="utf-8").replace("    return n\n",
+                                                                 "    return n * 1\n", 1),
+                      encoding="utf-8", newline="\n")
+    git_commit_all(repo, "edit a only")
+    return repo
+
+
+def _pad(repo: Path, lines: int) -> None:
+    module = repo / "pkg" / "m.py"
+    padding = "".join(f"# pad {i}\n" for i in range(lines))
+    module.write_text(padding + module.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+
+
+def _history(repo: Path, name: str) -> dict:
+    assert run_cli(repo, "inventory").returncode == 0
+    return _json(repo, "explain", "pkg/m.py", name, "--history", "--json")["functions"][0]
+
+
+@pytest.mark.parametrize("pad", [0, 4, 40], ids=["clean", "dirty-shift", "dirty-past-end"])
+def test_explain_history_lists_the_function_s_own_commits_under_uncommitted_lines(tmp_path, pad):
+    repo = _history_repo(tmp_path)
+    _pad(repo, pad)
+
+    fn = _history(repo, "a")
+
+    assert [c["subject"] for c in fn["commits"]] == ["edit a only", "init"], fn
+
+
+def test_explain_history_names_a_span_head_holds_no_line_of(tmp_path):
+    repo = _history_repo(tmp_path)
+    module = repo / "pkg" / "m.py"
+    module.write_text(module.read_text(encoding="utf-8") + "\n\ndef c(n):\n    return -n\n",
+                      encoding="utf-8", newline="\n")
+
+    fn = _history(repo, "c")
+
+    assert fn["commits"] is None, fn
+    assert fn["commits_note"] == ("pkg/m.py:9-10 holds only uncommitted lines, so no commit "
+                                  "has touched it yet"), fn
+
+
+def test_explain_history_text_prints_the_note_for_a_file_staged_before_its_first_commit(tmp_path):
+    repo = _history_repo(tmp_path)
+    _write(repo, "pkg/new.py", "def fresh(n):\n    return n\n")
+    _git(repo, "add", "pkg/new.py")
+    assert run_cli(repo, "inventory").returncode == 0
+
+    res = run_cli(repo, "explain", "pkg/new.py", "fresh", "--history")
+
+    assert res.returncode == 0, res.stderr
+    assert ("  commits: pkg/new.py:1-2 holds only uncommitted lines, so no commit has "
+            "touched it yet\n") in res.stdout, res.stdout
