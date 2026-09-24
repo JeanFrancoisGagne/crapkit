@@ -292,16 +292,46 @@ def test_coverage_says_when_a_lane_measured_far_fewer_tests_than_before(repo, ca
     """`coverage` is the command that WRITES a baseline, and until this warning
     it said nothing at all about a suite that halved between two runs."""
     seed_artifacts(repo)
-    (repo / ".crapkit").mkdir()
-    store = SnapshotStore(repo / ".crapkit" / "crap.sqlite")
-    store.write_run(commit=head(repo), tool_versions={}, rows=[], kind="coverage",
-                    lanes={"unit": {"tests_total": 400}, "ui": {"tests_total": 0}})
+    _unit_junit(repo, tests=12)
+    _baseline_counts(repo, {"unit": {"tests_total": 400}, "ui": {"tests_total": 0}})
 
     code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
 
     assert code == 0
-    assert "lane 'unit' ran 0 tests, 400 fewer" in err, err
+    assert "lane 'unit' ran 12 tests, 388 fewer" in err, err
     assert "lane 'ui'" not in err, "a lane the baseline never counted cannot have dropped"
+
+
+def test_coverage_does_not_say_a_lane_that_counted_nothing_ran_zero_tests(repo, capsys):
+    """A lane that declares no results_artifact records no count. That is not a
+    count of zero, and reading it as one told the operator every test of the
+    last trusted run was missing."""
+    seed_artifacts(repo)
+    _baseline_counts(repo, {"unit": {"tests_total": 400}})
+
+    code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 0
+    assert "ran 0 tests" not in err, err
+
+
+def _baseline_counts(repo, lanes: dict) -> None:
+    """One trusted coverage run at HEAD carrying these lane provenances."""
+    (repo / ".crapkit").mkdir()
+    store = SnapshotStore(repo / ".crapkit" / "crap.sqlite")
+    store.write_run(commit=head(repo), tool_versions={}, rows=[], kind="coverage", lanes=lanes)
+
+
+def _unit_junit(repo, *, tests: int) -> None:
+    """Give the `unit` lane a junit of this many passing tests."""
+    cases = "".join(f'<testcase classname="src/app.test.ts" name="t{i}"/>' for i in range(tests))
+    (repo / "junit.xml").write_text(f'<testsuite tests="{tests}">{cases}</testsuite>',
+                                    encoding="utf-8")
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(
+        text.replace('artifact = "coverage/unit.json"',
+                     'artifact = "coverage/unit.json"\nresults_artifact = "junit.xml"'),
+        encoding="utf-8")
 
 
 # --- rescore ------------------------------------------------------------------
