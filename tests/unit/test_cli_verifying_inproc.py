@@ -793,6 +793,37 @@ def test_a_failure_that_passes_on_rerun_is_reported_as_a_flake(baselined, capsys
     assert "flake retry: 1 of 1 new failures passed on rerun" in err, err
 
 
+# The rerun's own report is the only proof a failure was a flake. Each of these
+# leaves no report that proves it, so nothing it names may leave the verdict.
+_RERUNS_WITH_NO_RESULT = {
+    "writes-nothing": "pass\n",
+    "deletes-the-junit": "import os\nos.remove('junit.xml')\n",
+    "writes-malformed-xml": ("import pathlib\n"
+                             "pathlib.Path('junit.xml').write_text('<testsuite><testcase')\n"),
+    "writes-an-unfinished-run": (
+        "import pathlib\n"
+        "pathlib.Path('junit.xml').write_text('<testsuites><testsuite tests=\"1\">"
+        "<testcase classname=\"src/app.test.ts\" name=\"renders\"/></testsuite>"
+        "<error message=\"worker &apos;gw0&apos; crashed while running "
+        "&apos;src/app.test.ts::renders&apos;\"/></testsuites>')\n"),
+    "exits-3": "import sys\nsys.exit(3)\n",
+}
+
+
+@pytest.mark.parametrize("rerun", sorted(_RERUNS_WITH_NO_RESULT))
+def test_a_rerun_that_leaves_no_readable_result_keeps_every_failure(baselined, capsys, rerun):
+    _junit(baselined, failing=True)
+    (baselined / "repair.py").write_text(_RERUNS_WITH_NO_RESULT[rerun], encoding="utf-8")
+    _results_artifact(baselined, retest=True)
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    payload = json.loads(out)
+    assert code == 8, (out, err)
+    assert payload["new_failures"] == ["src/app.test.ts::renders"]
+    assert payload["retried_passes"] == []
+
+
 def _junit(repo, *, failing: bool, skipped: bool = False) -> None:
     body = '<failure message="boom">trace</failure>' if failing else ""
     extra = ('<testcase classname="src/app.test.ts" name="later"><skipped/></testcase>'
