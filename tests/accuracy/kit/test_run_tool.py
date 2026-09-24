@@ -67,6 +67,7 @@ def _outcomes(receipt: dict) -> dict:
     return {(check["key"], check["name"]): check["outcome"] for check in receipt["checks"]}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_passing_tier_exits_0_and_writes_its_receipt(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 3)])})
@@ -82,6 +83,7 @@ def test_a_passing_tier_exits_0_and_writes_its_receipt(tmp_path):
     assert receipt["hypothesis_seed"] == "derandomized"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_planted_failing_check_exits_1_and_names_itself(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 1),
@@ -94,6 +96,7 @@ def test_a_planted_failing_check_exits_1_and_names_itself(tmp_path):
     assert "alpha: fails" in done.stdout
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_missing_tool_exits_3_after_one_retry(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("needs x", "test_infra.py", 1)])})
@@ -106,6 +109,7 @@ def test_a_missing_tool_exits_3_after_one_retry(tmp_path):
     assert _outcomes(receipt) == {("alpha", "needs x"): "infra"}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_real_failure_outranks_an_infra_miss(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("needs x", "test_infra.py", 1),
@@ -117,6 +121,7 @@ def test_a_real_failure_outranks_an_infra_miss(tmp_path):
     assert receipt["outcome"] == "fail"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_notes_reach_the_receipt(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("notes", "test_notes.py", 1)])})
@@ -129,6 +134,7 @@ def test_notes_reach_the_receipt(tmp_path):
     assert receipt["skipped_files"] == {"ast": 2}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_receipt_digests_equal_hashlib_of_the_files(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 1)])})
@@ -151,6 +157,7 @@ def _comparable(receipt: dict) -> dict:
     return kept
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_shards_merge_to_the_receipt_of_the_whole_tier(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 1)]),
@@ -169,6 +176,7 @@ def test_shards_merge_to_the_receipt_of_the_whole_tier(tmp_path):
     assert _comparable(merged) == _comparable(whole)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_time_table_goes_to_the_job_summary(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 7)])})

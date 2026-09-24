@@ -5,6 +5,10 @@
     python tools/accuracy/run.py merge RECEIPT... --out PATH
     python tools/accuracy/run.py image-tag
     python tools/accuracy/run.py kit-goldens --declare ID --kind KIND --reason TEXT
+    python tools/accuracy/run.py doc-range PATH START END
+    python tools/accuracy/run.py xplat RECEIPT...
+    python tools/accuracy/run.py events --min N RECEIPT...
+    python tools/accuracy/run.py oracle-versions [--tier push|nightly]
 
 A check is one row of CHECKS in tools/accuracy/checks/<key>.py, the module a
 packet owns:
@@ -37,6 +41,14 @@ tests read, the image tag and digest, the sha256 of the pins, locks and corpus
 files, the digests tests noted, the Hypothesis seed, event counts, skipped-file
 counts and infra messages. With GITHUB_STEP_SUMMARY set, the time table is
 appended to the job summary as well.
+
+The other commands serve CI and packet authors: `merge` joins shard receipts,
+`image-tag` names the accuracy image, `kit-goldens` redeclares the kit's seed
+goldens, `doc-range` prints the header line a model cites a doc range with,
+`xplat` fails when two cells' receipts carry different export digests,
+`events` fails when a required strategy shape occurred fewer than N times, and
+`oracle-versions` fails naming each installed oracle that is missing or is not
+its pin (the weekly no-cache image rebuild runs it).
 """
 from __future__ import annotations
 
@@ -62,6 +74,7 @@ sys.path.insert(0, str(REPO / "tests"))
 from accuracy.kit import runlog, tiers  # noqa: E402
 
 CHECKS_DIR = REPO / "tools" / "accuracy" / "checks"
+PINS = REPO / "tools" / "accuracy" / "pins.toml"
 FIELDS = frozenset({"name", "pytest", "argv", "seconds", "os", "tiers"})
 EXIT = {"pass": 0, "fail": 1, "infra": 3}
 OS_NAMES = {"win32": "windows", "linux": "linux", "darwin": "macos"}
@@ -529,7 +542,106 @@ def _kit_goldens_main(argv: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"merge": _merge_main, "image-tag": _image_tag_main, "kit-goldens": _kit_goldens_main}
+def _doc_range_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="run.py doc-range")
+    parser.add_argument("path")
+    parser.add_argument("start", type=int)
+    parser.add_argument("end", type=int)
+    args = parser.parse_args(argv)
+    from accuracy.kit import docrange
+    print(docrange.header(args.path, args.start, args.end))
+    return 0
+
+
+def _load_receipts(paths: list[str]) -> list[dict]:
+    return [json.loads(Path(path).read_text(encoding="utf-8")) for path in paths]
+
+
+def _cell(saved: dict) -> str:
+    return "-".join(filter(None, (saved.get("os"), saved.get("python"), saved.get("shard"))))
+
+
+def _export_names(receipts: list[dict]) -> list[str]:
+    return sorted({name for saved in receipts for name in saved.get("exports", {})})
+
+
+def _export_line(name: str, receipts: list[dict]) -> str | None:
+    values = [saved.get("exports", {}).get(name, "<missing>") for saved in receipts]
+    if len(set(values)) == 1:
+        return None
+    cells = ", ".join(f"{_cell(saved)} {value}" for saved, value in zip(receipts, values))
+    return f"{name} differs: {cells}"
+
+
+def export_differences(receipts: list[dict]) -> list[str]:
+    """One line per export whose digest is not the same in every receipt."""
+    found = (_export_line(name, receipts) for name in _export_names(receipts))
+    return [line for line in found if line]
+
+
+def _xplat_main(argv: list[str]) -> int:
+    receipts = _load_receipts(argv)
+    differences = export_differences(receipts)
+    agreed = f"{len(_export_names(receipts))} exports agree across {len(receipts)} receipts"
+    print("\n".join(f"xplat: {line}" for line in differences or [agreed]))
+    return 1 if differences else 0
+
+
+def _refuse(prefix: str, problems: list[str]) -> int:
+    """Print each problem on stderr; exit 1 when there is any."""
+    for problem in problems:
+        print(f"{prefix}: {problem}", file=sys.stderr)
+    return 1 if problems else 0
+
+
+def rare_events(receipts: list[dict], floor: int) -> list[str]:
+    """Each required strategy shape that occurred fewer than `floor` times."""
+    from accuracy.kit import strategies
+    counts = _summed(_column(receipts, "events", {}))
+    required = sorted({name for table in strategies.REQUIRED.values() for name in table})
+    return [f"{name} occurred {counts.get(name, 0)} times, fewer than {floor}"
+            for name in required if counts.get(name, 0) < floor]
+
+
+def _events_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="run.py events")
+    parser.add_argument("--min", type=int, default=50, dest="floor")
+    parser.add_argument("receipts", nargs="+")
+    args = parser.parse_args(argv)
+    return _refuse("events", rare_events(_load_receipts(args.receipts), args.floor))
+
+
+def _oracle_line(name: str, pins: dict) -> tuple[str, str | None]:
+    """(the table line, the problem or None) for one pinned oracle."""
+    from accuracy.kit import oracles
+    try:
+        found = oracles.locate(name, pins)
+    except oracles.OracleMissing as missing:
+        return f"{name}: missing", str(missing)
+    return f"{name}: {found.version}", oracles.drift(found, pins[name])
+
+
+def _checked_pins(pins: dict, tier: str) -> list[str]:
+    """Every installed oracle a tier reads: push pins only, or all but producers."""
+    return [name for name, pin in sorted(pins.items())
+            if pin.kind != "producer" and (tier == "nightly" or pin.tier == "push")]
+
+
+def _oracle_versions_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="run.py oracle-versions")
+    parser.add_argument("--tier", choices=("push", "nightly"), default="nightly")
+    parser.add_argument("--pins", type=Path, default=PINS, help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    from accuracy.kit import oracles
+    pins = oracles.load_pins(args.pins)
+    results = [_oracle_line(name, pins) for name in _checked_pins(pins, args.tier)]
+    print("\n".join(line for line, _ in results))
+    return _refuse("oracle-versions", [problem for _, problem in results if problem])
+
+
+COMMANDS = {"merge": _merge_main, "image-tag": _image_tag_main, "kit-goldens": _kit_goldens_main,
+            "doc-range": _doc_range_main, "xplat": _xplat_main, "events": _events_main,
+            "oracle-versions": _oracle_versions_main}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -11,20 +11,18 @@ from accuracy.kit import guards, rulings, tiers
 
 HERE = Path(__file__).resolve().parent
 PROBES = HERE / "test_kit_guard_probes.py"
-WRITTEN = HERE / "guard-probe-written.txt"
 
 
 @pytest.fixture(scope="module")
-def probe_session():
-    env = {**os.environ, tiers.GUARD_PROBES_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1"}
+def probe_session(tmp_path_factory):
+    watched = tmp_path_factory.mktemp("guarded")
+    (watched / "fixture.tsv").write_text("kept\n", encoding="utf-8")
+    env = {**os.environ, tiers.GUARD_PROBES_ENV: "1", guards.ROOT_ENV: str(watched),
+           "PYTHONDONTWRITEBYTECODE": "1"}
     argv = [sys.executable, "-m", "pytest", "-rA", "-p", "no:randomly", "-p", "no:cacheprovider",
             str(PROBES)]
-    try:
-        done = hang_guard.run(argv, cwd=HERE.parents[2], env=env, text=True, encoding="utf-8",
-                              errors="replace")
-    finally:
-        WRITTEN.unlink(missing_ok=True)
-    return done
+    return hang_guard.run(argv, cwd=HERE.parents[2], env=env, text=True, encoding="utf-8",
+                          errors="replace")
 
 
 @pytest.mark.process
@@ -43,10 +41,15 @@ def test_an_xfail_outside_a_ruling_fails(probe_session):
 @pytest.mark.process
 def test_a_write_under_tests_accuracy_fails_the_session(probe_session):
     assert probe_session.returncode == 1
-    assert ("tests/accuracy changed during the session: kit/guard-probe-written.txt"
+    assert ("tests/accuracy changed during the session: guard-probe-written.txt"
             in probe_session.stdout)
     assert "PASSED tests/accuracy/kit/test_kit_guard_probes.py::test_probe_passes" in (
         probe_session.stdout)
+
+
+def test_the_guard_watches_tests_accuracy_unless_told_otherwise(tmp_path):
+    assert guards.guarded_root(HERE, environ={}) == HERE
+    assert guards.guarded_root(HERE, environ={guards.ROOT_ENV: str(tmp_path)}) == tmp_path
 
 
 def test_the_probes_are_deselected_without_the_switch():

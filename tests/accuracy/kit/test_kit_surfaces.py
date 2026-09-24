@@ -126,6 +126,7 @@ def roster(bundle):
     return surfaces.roster_from_tsv(_file(bundle, "scored.tsv"))
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_exports_key_every_function(bundle, roster):
     scored = surfaces.from_tsv(_file(bundle, "scored.tsv"), roster)
@@ -138,6 +139,7 @@ def test_the_exports_key_every_function(bundle, roster):
     assert ("src/ts/grade.ts", "clamp") in scored
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_sarif_and_annotations_name_the_same_findings(bundle, roster):
     sarif = surfaces.from_sarif(json.loads(_file(bundle, "cov.sarif")), roster)
@@ -150,6 +152,7 @@ def test_sarif_and_annotations_name_the_same_findings(bundle, roster):
     assert annotations[CLASSIFY]["cov"] == "83"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_json_payloads_and_mcp_land_on_the_same_keys(bundle, roster):
     worklist = surfaces.from_json(bundle["worklist_json"].json(), roster)
@@ -160,6 +163,7 @@ def test_the_json_payloads_and_mcp_land_on_the_same_keys(bundle, roster):
     assert surfaces.mcp_result(bundle["mcp"][2], roster)[("", "mcp_error")]["text"]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_verify_payload_reads_each_finding_list_by_section(bundle, roster):
     verdict = surfaces.from_json(json.loads(bundle["verify_json"]), roster)
@@ -169,6 +173,7 @@ def test_the_verify_payload_reads_each_finding_list_by_section(bundle, roster):
     assert verdict[UNUSED]["ratchet_regressions.recorded"] == 6.0
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_html_report_and_worklist_text_read_the_same_rows(bundle, roster):
     html = surfaces.from_html(_file(bundle, "report.html"), roster)
@@ -179,6 +184,7 @@ def test_the_html_report_and_worklist_text_read_the_same_rows(bundle, roster):
     assert (text[CLASSIFY]["crap"], text[CLASSIFY]["cov"]) == ("5.1", "83")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_ratchet_file_and_the_baseline_export_key_by_name(bundle, roster):
     marks = surfaces.from_tsv(_file(bundle, "crapkit-ratchet.tsv"), roster)
@@ -189,6 +195,7 @@ def test_the_ratchet_file_and_the_baseline_export_key_by_name(bundle, roster):
     assert len(baseline) == 9
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_store_reads_the_run_the_export_wrote(bundle, roster):
     scored = surfaces.from_tsv(_file(bundle, "scored.tsv"), roster)
@@ -199,6 +206,7 @@ def test_the_store_reads_the_run_the_export_wrote(bundle, roster):
     assert stored[CLASSIFY]["remedy_name"] == "decompose"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_pr_comment_reads_its_table_and_gate_bullets(bundle, roster, tmp_path):
     saved = {}
@@ -219,6 +227,7 @@ def test_the_pr_comment_reads_its_table_and_gate_bullets(bundle, roster, tmp_pat
     assert comment[CLASSIFY]["worklist.remedy"].startswith("decompose")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_an_error_envelope_and_the_run_list_name_no_function(bundle):
     error = surfaces.error_envelope(bundle["error"].json())[("", "error")]

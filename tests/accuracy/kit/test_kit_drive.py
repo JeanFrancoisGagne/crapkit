@@ -21,6 +21,7 @@ def _rows(driver, run_id):
                         "from functions where run_id = ? order by identity_id, start", (run_id,))
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_in_process_and_spawned_calls_answer_alike(seeded):
     inline = drive.Driver(seeded.root)
@@ -40,6 +41,7 @@ def test_a_usage_error_or_unknown_command_is_unsupported(seeded, argv):
         drive.Driver(seeded.root).run(*argv)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_refusal_is_an_answer_not_a_usage_error(seeded):
     result = drive.Driver(seeded.root).run("worklist")
@@ -62,6 +64,7 @@ def _churned(repo_root, now):
     return len(listing["active"]), listing["dormant_count"]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_date_now_is_the_clock_the_churn_window_reads(make_repo):
     spec = repos.tree_spec(SEED)
@@ -70,6 +73,7 @@ def test_date_now_is_the_clock_the_churn_window_reads(make_repo):
     assert _churned(make_repo(spec).root, repos.EPOCH + 3 * YEAR) == (0, 1)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_one_mcp_session_answers_every_call_in_order(seeded):
     driver = drive.Driver(seeded.root)
@@ -82,6 +86,7 @@ def test_one_mcp_session_answers_every_call_in_order(seeded):
     assert "no_such_tool" in results[2]["content"][0]["text"]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_store_is_read_with_sqlite3_and_never_written(seeded):
     driver = drive.Driver(seeded.root)

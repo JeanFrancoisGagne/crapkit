@@ -11,9 +11,19 @@
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+import os
 from pathlib import Path
 
 SKIPPED = ("__pycache__",)
+# test_kit_guards points the write guard at a directory of its own, so its
+# probe never writes into the tree a concurrent session is guarding.
+ROOT_ENV = "CRAPKIT_ACCURACY_GUARD_ROOT"
+
+
+def guarded_root(default: Path, environ: Mapping[str, str] = os.environ) -> Path:
+    """The tree the write guard watches: tests/accuracy, unless a probe session says."""
+    return Path(environ.get(ROOT_ENV) or default)
 
 
 def _kept(path: Path, root: Path) -> bool:

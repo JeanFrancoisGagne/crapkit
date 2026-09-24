@@ -18,6 +18,12 @@ on:
   schedule:
     # Before the weekly coverage lanes upload anything.
     - cron: "10 2 * * *"
+  # accuracy.yml hands receipts between jobs as one-day artifacts and keeps
+  # the weekly mutation meta files for seven; sweeping after each of its runs
+  # deletes whatever expired since, instead of leaving it billed until 02:10.
+  workflow_run:
+    workflows: [accuracy]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:

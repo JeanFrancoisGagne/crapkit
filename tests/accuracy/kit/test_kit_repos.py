@@ -16,6 +16,7 @@ def _log(top, *fmt):
     return repos.git(top, "log", "--format=" + "%x09".join(fmt)).splitlines()
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_two_builds_of_one_spec_have_the_same_commit_ids(tmp_path):
     spec = repos.Spec(steps=(repos.Commit(files={"a.py": "x = 1\n"}, date=repos.EPOCH),
@@ -27,6 +28,7 @@ def test_two_builds_of_one_spec_have_the_same_commit_ids(tmp_path):
     assert _log(first.top, "%H") == _log(second.top, "%H")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_commits_carry_the_spec_dates_and_identity(tmp_path):
     spec = repos.Spec(steps=(repos.Commit(files={"a.py": "x = 1\n"}, date=1_000_000_000,
@@ -38,6 +40,7 @@ def test_commits_carry_the_spec_dates_and_identity(tmp_path):
         "1000000000\t1000000000\tZoë\tzoe@example.com"]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_bytes_are_stored_as_written_and_non_ascii_paths_come_back_quoted(tmp_path):
     spec = repos.Spec(steps=(repos.Commit(files={"crlf.txt": b"a\r\nb\r\n", "café.py": "x = 1\n"}),))
@@ -51,6 +54,7 @@ def test_bytes_are_stored_as_written_and_non_ascii_paths_come_back_quoted(tmp_pa
     assert '"caf\\303\\251.py"' in repos.git(built.top, "ls-files")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_renames_branches_and_merges(tmp_path):
     spec = repos.Spec(steps=(
@@ -70,6 +74,7 @@ def test_renames_branches_and_merges(tmp_path):
     assert sorted(repos.git(built.top, "ls-files").split()) == ["pkg/new.py", "side.py"]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_root_below_the_git_top(make_repo):
     spec = repos.Spec(steps=(repos.Commit(files={"pkg/crapkit.toml": "[crapkit]\n"}),),
@@ -81,6 +86,7 @@ def test_a_root_below_the_git_top(make_repo):
     assert (built.root / "crapkit.toml").is_file()
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_each_copy_starts_from_the_template(make_repo, repo_templates):
     spec = repos.Spec(steps=(repos.Commit(files={"a.py": "x = 1\n"}),))
@@ -104,6 +110,7 @@ def test_the_digest_moves_with_any_byte_date_or_root():
     assert len({repos.digest(spec) for spec in [base, *variants]}) == 4
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_copy_command_moves_the_mtime_every_run(tmp_path):
     (tmp_path / "rec.json").write_bytes(b"{}")

@@ -28,6 +28,7 @@ def test_the_seed_run_equals_its_committed_goldens(seed_goldens):
     assert problems == [], "\n".join([*problems, goldens.SEED_FIX])
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_two_runs_in_two_places_give_one_set_of_goldens(seed_goldens, tmp_path):
     elsewhere = corpus_run.measure(corpus_run.SEED, tmp_path / "some where")
@@ -35,6 +36,7 @@ def test_two_runs_in_two_places_give_one_set_of_goldens(seed_goldens, tmp_path):
     assert goldens.goldens_of(elsewhere) == seed_goldens
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_goldens_hold_no_root_no_host_and_no_clock(seed_goldens, tmp_path_factory):
     text = "\n".join(seed_goldens.values())
@@ -181,6 +183,7 @@ def _stale(base: Path) -> str:
     return path
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_kit_goldens_rewrites_a_moved_seed_golden_and_declares_it(tree):
     path = _stale(tree)
@@ -197,6 +200,7 @@ def test_kit_goldens_rewrites_a_moved_seed_golden_and_declares_it(tree):
     assert goldens.read_lock(_paths(tree)[0])[path][1] == "K2"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_kit_goldens_refuses_when_nothing_moved(tree):
     done = hang_guard.run([sys.executable, str(RUN), "kit-goldens", "--declare", "K2", "--kind",

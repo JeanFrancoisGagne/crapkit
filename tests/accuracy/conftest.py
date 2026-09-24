@@ -85,7 +85,7 @@ def _controller(config) -> bool:
 
 def pytest_sessionstart(session):
     if _controller(session.config):
-        session.config.stash[_SNAPSHOT] = guards.snapshot(HERE)
+        session.config.stash[_SNAPSHOT] = guards.snapshot(guards.guarded_root(HERE))
 
 
 
@@ -116,7 +116,8 @@ def pytest_sessionfinish(session, exitstatus):
     if drawn is not None and drawn.EVENTS:
         runlog.note("events", counts=dict(drawn.EVENTS))
     before = session.config.stash.get(_SNAPSHOT, None)
-    written = guards.changed(before, guards.snapshot(HERE)) if before is not None else []
+    now = guards.snapshot(guards.guarded_root(HERE)) if before is not None else {}
+    written = guards.changed(before, now) if before is not None else []
     if written:
         session.config.get_terminal_writer().line(
             f"tests/accuracy changed during the session: {', '.join(written)}; a test writes "

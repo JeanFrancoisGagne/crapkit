@@ -24,12 +24,14 @@ def _runs(root):
         connection.close()
 
 
+@pytest.mark.nightly
 def test_one_inventory_and_one_coverage_run_write_the_store(seed_run):
     assert _runs(seed_run.root) == [("inventory",), ("coverage",)]
     assert seed_run.codes["coverage.json"] == 0
     assert json.loads(seed_run.output("coverage.json"))["functions"] == 9
 
 
+@pytest.mark.nightly
 def test_every_surface_is_on_disk_and_readable(seed_run):
     roster = surfaces.roster_from_tsv(seed_run.output("scored.tsv"))
 
@@ -45,6 +47,7 @@ def _worklist_counts(run):
     return worklist["active_total"], worklist["dormant_count"]
 
 
+@pytest.mark.nightly
 def test_the_clock_is_the_corpus_epoch(seed_run, tmp_path):
     # The seed commit is one day old at the corpus epoch, so its one
     # over-floor function is active; 13 months later the 12-month churn
@@ -56,6 +59,7 @@ def test_the_clock_is_the_corpus_epoch(seed_run, tmp_path):
     assert _worklist_counts(later) == (0, 1)
 
 
+@pytest.mark.nightly
 def test_a_second_ask_reads_the_first_measurement(seed_run, tmp_path_factory):
     again = corpus_run.measure(corpus_run.SEED, seed_run.root.parent.parent)
 
@@ -63,6 +67,7 @@ def test_a_second_ask_reads_the_first_measurement(seed_run, tmp_path_factory):
     assert _runs(again.root) == [("inventory",), ("coverage",)]
 
 
+@pytest.mark.nightly
 def test_workers_that_ask_at_once_share_one_measurement(tmp_path):
     with ThreadPoolExecutor(3) as pool:
         runs = list(pool.map(lambda _: corpus_run.measure(corpus_run.SEED, tmp_path), range(3)))
@@ -71,6 +76,7 @@ def test_workers_that_ask_at_once_share_one_measurement(tmp_path):
     assert _runs(runs[0].root) == [("inventory",), ("coverage",)]
 
 
+@pytest.mark.nightly
 def test_a_private_copy_leaves_the_shared_run_alone(seed_run, tmp_path):
     copy = seed_run.private_copy(tmp_path / "mine")
     (copy / "src" / "py" / "calc.py").write_text("x = 1\n", encoding="utf-8")

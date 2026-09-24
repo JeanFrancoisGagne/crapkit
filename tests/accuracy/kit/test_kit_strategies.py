@@ -8,6 +8,10 @@ import pytest
 from accuracy.kit import exact, strategies
 from accuracy.kit.settings import pure
 
+# The kit's machinery runs inside every packet's push tests; its own
+# process-heavy self-tests run nightly, keeping the push budget for packets.
+pytestmark = pytest.mark.nightly
+
 STRATEGIES = {"ccn": strategies.ccn, "coverage_pair": strategies.coverage_pair,
               "spans": strategies.spans, "run_kinds": strategies.run_kinds,
               "stamps": strategies.stamps, "marks": strategies.marks,
