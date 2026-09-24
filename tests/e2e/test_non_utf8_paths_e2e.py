@@ -99,6 +99,8 @@ CLAIMED = [
     ("git-quotes-it", b'src/q"\xff.py'),
     ("cp1252-smart-quote", b"src/o\x92brien.py"),
 ]
+# Staged, git quotes this one for its double quotes and names the byte in octal.
+STAGED_CLAIMED = CLAIMED + [("latin1-and-quotes", b'src/caf\xe9"q".py')]
 UNCLAIMED = [
     ("docs-txt", b"docs/caf\xe9.txt"),
     ("docs-md", b"docs/caf\xe9.md"),
@@ -113,6 +115,8 @@ VALID = [
     ("valid-accent", "src/café.py", True),
     ("cjk", "src/日本.py", True),
     ("emoji", "src/\U0001f680.py", True),
+    ("accent-space-cjk", "src/café 李.py", True),
+    ("quote-and-accent", 'src/q"é.py', sys.platform != "win32"),
     ("double-quote", 'src/q".py', sys.platform != "win32"),
     ("tab", "src/a\tb.py", sys.platform != "win32"),
     ("newline", "src/a\nb.py", sys.platform != "win32"),
@@ -201,7 +205,7 @@ def test_a_scoped_name_committed_since_the_base_is_refused(tmp_path, name, comma
     _refused(run_cli(repo, command), name)
 
 
-@pytest.mark.parametrize("name", [row[1] for row in CLAIMED], ids=[row[0] for row in CLAIMED])
+@pytest.mark.parametrize("name", [row[1] for row in STAGED_CLAIMED], ids=[row[0] for row in STAGED_CLAIMED])
 @pytest.mark.parametrize("command", ["hook-precommit", "inventory"])
 def test_a_scoped_name_staged_is_refused_and_the_gate_never_passes_it(tmp_path, name, command):
     """The gate used to leave such a staged ccn-8 function out and exit 0."""
@@ -217,6 +221,20 @@ def test_a_second_coverage_with_a_lane_stamp_refuses_a_scoped_name(tmp_path):
     _commit(repo, {b"src/caf\xe9.py": SOURCE}, "add a Latin-1 name")
 
     _refused(run_cli(repo, "coverage", "--reuse-unchanged"), b"src/caf\xe9.py")
+
+
+@POSIX_NAME
+@pytest.mark.xfail(strict=True, reason=(
+    "cli/_shared._repo_relative turns each byte of a path argument that is not UTF-8 into "
+    "U+FFFD (textcodec.os_text) before any scope assignment, so rescore answers "
+    "'src/caf\ufffd.py does not exist' at exit 3 instead of naming the rename"))
+def test_rescore_refuses_a_scoped_name_it_is_handed(tmp_path):
+    """A Linux shell hands the name over as its own bytes."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    _commit(repo, {b"src/caf\xe9.py": SOURCE}, "add a Latin-1 name")
+
+    _refused(run_cli(repo, "rescore", os.fsdecode(b"src/caf\xe9.py")), b"src/caf\xe9.py")
 
 
 # --- a name no scope takes: left out, one line ---------------------------------------
@@ -243,6 +261,23 @@ def test_worklist_reads_the_churn_of_a_commit_that_adds_such_a_name(tmp_path, na
     result = run_cli(repo, "worklist")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Traceback" not in result.stderr and REFUSAL not in result.stderr
+
+
+@pytest.mark.parametrize("name", ["café.txt", "docs/café 李雷 \U0001f600.txt"],
+                         ids=["root-accent", "docs-accent-cjk-emoji"])
+@pytest.mark.parametrize("command", ["inventory", "coverage", "doctor", "worklist", "hook-precommit"])
+def test_a_utf8_name_no_scope_takes_is_read_without_a_word(tmp_path, name, command):
+    """Committed for the commands that list the tree, staged for the gate."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    if command == "hook-precommit":
+        _stage(repo, {name.encode(): SOURCE})
+    else:
+        _commit(repo, {name.encode(): SOURCE}, "add a UTF-8 name")
+
+    result = run_cli(repo, command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert LEFT_OUT not in result.stderr and REFUSAL not in result.stderr and "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize("name", [row[1] for row in UNCLAIMED], ids=[row[0] for row in UNCLAIMED])
