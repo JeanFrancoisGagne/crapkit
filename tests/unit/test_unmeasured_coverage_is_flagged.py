@@ -200,14 +200,19 @@ def test_rescore_flags_a_function_the_run_never_measured(rescored, capsys, argv,
     assert {r["unmeasured"] for n, r in rows.items() if n != name} <= {False}
 
 
+def table_lines(out: str, path: str, word: str = "") -> list[str]:
+    """rescore's table rows for PATH, only those holding WORD when one is given."""
+    return [ln for ln in out.splitlines() if f"{path}:" in ln and word in ln]
+
+
 @pytest.mark.parametrize("change, said", [("control", False), ("new", True), ("renamed", True)])
 def test_the_rescore_table_says_not_measured_on_that_row_alone(rescored, capsys, change, said):
     path, name = edit(rescored, change)
 
     code, out, _ = run(rescored, capsys, "rescore", path)
 
-    lines = [ln for ln in out.splitlines() if f"{path}:" in ln]
-    flagged = [ln for ln in lines if "not measured" in ln]
+    lines = table_lines(out, path)
+    flagged = table_lines(out, path, "not measured")
     assert code == 0 and len(lines) >= 2
     assert [f"  {name} (" in ln for ln in flagged] == ([True] if said else [])
 

@@ -390,6 +390,11 @@ def _no_result_repo(root: Path, mode: str) -> Path:
     return root
 
 
+def _progress_lines(stderr: str) -> list[str]:
+    """mutate's one stderr line per mutant, each ending in its verdict."""
+    return [line for line in stderr.splitlines() if "mutant " in line]
+
+
 @pytest.mark.parametrize("mode", list(_NO_RESULT))
 def test_a_mutant_whose_suite_gave_no_result_is_counted_apart(tmp_path: Path, mode: str):
     counts, word = _NO_RESULT[mode]
@@ -401,7 +406,7 @@ def test_a_mutant_whose_suite_gave_no_result_is_counted_apart(tmp_path: Path, mo
     out = json.loads(res.stdout)
     assert tuple(out[k] for k in ("mutants", "killed", "survived", "timed_out",
                                   "no_verdict")) == counts, out
-    progress = [line for line in res.stderr.splitlines() if "mutant " in line]
+    progress = _progress_lines(res.stderr)
     assert len(progress) == 2 and all(word in line for line in progress), res.stderr
     assert (repo / "hot.py").read_text(encoding="utf-8") == HOT
 
