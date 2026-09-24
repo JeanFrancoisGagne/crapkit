@@ -1245,7 +1245,7 @@ def _junit_seconds(path: Path) -> float | None:
     if not path.is_file():
         return None
     try:
-        return suite_seconds(path.read_text(encoding="utf-8"))
+        return suite_seconds(path.read_bytes())
     except ToolError:
         return None
 
