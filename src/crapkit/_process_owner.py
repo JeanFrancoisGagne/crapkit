@@ -331,5 +331,17 @@ def main(options: dict) -> None:
         _reply({"error": str(error)})
 
 
+def _utf8_channel() -> None:
+    """The channel is UTF-8 JSON lines whatever the environment says. This
+    child inherits the caller's environment, and PYTHONIOENCODING=utf-8-sig
+    opened its first reply with a byte-order mark while utf-16 and utf-32 wrote
+    bytes the caller's UTF-8 reader could not parse, so `coverage` exited 1
+    before a lane ran. Nothing has been read or written yet, so both streams
+    can still change codec."""
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+
+
 if __name__ == "__main__":
+    _utf8_channel()
     main(json.loads(sys.argv[1]))
