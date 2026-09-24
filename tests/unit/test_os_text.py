@@ -6,7 +6,7 @@ Windows command line or environment can carry one too. sqlite and
 path argument, an override reason in such bytes, and a host or checkout
 directory named in Latin-1 ended with a UnicodeEncodeError traceback. The
 override's alert had already gone out, so its three-record audit was left
-half written. Each value now passes through textcodec.os_text (text a store
+half written. Each value now passes through repotext.os_text (text a store
 can hold) or os_bytes (the bytes a hash or a lock key needs).
 """
 import hashlib
@@ -18,7 +18,7 @@ import pytest
 
 from hand_scored_repo import make_repo, run, scored, write_run
 
-from crapkit import lanes, resources, textcodec
+from crapkit import lanes, repotext, resources
 from crapkit.cli._shared import _repo_relative
 from crapkit.override import record_override
 from crapkit.ratchet import metric_version
@@ -110,5 +110,5 @@ def test_an_output_under_a_directory_named_in_latin1_takes_a_lock(tmp_path):
 
 @pytest.mark.parametrize("value", ["caf\udce9", "caf\ud800", "café", "x"])
 def test_os_text_and_os_bytes_never_raise(value):
-    assert textcodec.os_text(value).encode("utf-8")
-    assert textcodec.os_bytes(value)
+    assert repotext.os_text(value).encode("utf-8")
+    assert repotext.os_bytes(value)

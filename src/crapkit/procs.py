@@ -23,7 +23,7 @@ from typing import IO
 
 from ._process_owner import CommandCancelled, close_input, kill_process_tree, own_processes
 from .errors import ToolError
-from .textcodec import lenient
+from .repotext import lenient
 
 __all__ = ["CommandCancelled", "NoProgress", "own_processes", "prepare_template",
            "run_bounded", "run_owned"]

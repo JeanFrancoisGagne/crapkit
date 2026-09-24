@@ -5,7 +5,6 @@ nested node_modules (measured hang on the first consumer repo).
 """
 from __future__ import annotations
 
-import codecs
 import hashlib
 import json
 import os
@@ -30,7 +29,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
-from .textcodec import source_text, utf16_marked
+from .repotext import source_chars
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
 from .keys import bare_name
@@ -504,17 +503,6 @@ def _trusted_records(rel_path: str, functions) -> list[FunctionRecord]:
 # since none was ever scored, so reading it moves no recorded number.
 
 
-def _characters(raw: bytes) -> str:
-    if utf16_marked(raw):
-        return source_text(raw).removeprefix("﻿")
-    if raw.startswith(codecs.BOM_UTF8):
-        raw = raw[len(codecs.BOM_UTF8):]
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("cp1252", "replace")
-
-
 def decode_source(raw: bytes) -> str:
     """Source bytes as text, decoded by content rather than by machine locale.
 
@@ -527,7 +515,7 @@ def decode_source(raw: bytes) -> str:
     every cache depends on it: a lone `\\r` left in the stream is one more
     whitespace token, not one more line.
     """
-    return _characters(raw).replace("\r\n", "\n").replace("\r", "\n")
+    return source_chars(raw).replace("\r\n", "\n").replace("\r", "\n")
 
 
 def read_source(path: str) -> str:

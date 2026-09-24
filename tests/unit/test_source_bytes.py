@@ -21,7 +21,7 @@ import pytest
 
 from raw_git import checkout, commit, repository, stage
 
-from crapkit import mutate_pool, textcodec
+from crapkit import mutate_pool, repotext
 from crapkit.analyze import analyze_one, decode_source
 from crapkit.cli._shared import _load_sources
 from crapkit.cli.analyses import _file_mutants
@@ -96,7 +96,7 @@ ROUND_TRIP = [
 
 @pytest.mark.parametrize("raw", [row[1] for row in ROUND_TRIP], ids=[row[0] for row in ROUND_TRIP])
 def test_source_text_and_source_bytes_return_every_byte(raw):
-    assert textcodec.source_bytes(textcodec.source_text(raw), raw) == raw
+    assert repotext.source_bytes(repotext.source_text(raw), raw) == raw
 
 
 MODULE = "{cookie}NAME = 'caf{e}'\n\n\ndef positive(x):\n    return x > 0\n"

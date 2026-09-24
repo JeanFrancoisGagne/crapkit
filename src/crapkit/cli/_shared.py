@@ -14,10 +14,9 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
-from ..repotext import repo_text
+from ..repotext import os_text, repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
-from ..textcodec import os_text
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped

@@ -513,7 +513,7 @@ def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
     git reads .gitignore as bytes, and so does this: every byte already there
     stays, a cp1252 comment included, and the entries take the file's own line
     ending. A UTF-16 file, which git cannot read, is left as it was and named."""
-    from ..textcodec import utf16_marked
+    from ..repotext import utf16_marked
 
     if _store_ignored_above(root):
         return []
@@ -1360,19 +1360,19 @@ def _doctor_tune(root: Path, cfg) -> int:
     return 0
 
 
-def _plugin_json(path: Path):
-    """One JSON file off an installed plugin, or None.
+def _plugin_json(path: Path) -> dict | None:
+    """One JSON object off an installed plugin, or None.
 
-    Missing, unreadable and half-written all read the same, because doctor's job
-    here is to name the file rather than to raise inside it. A plugin cache is
-    written by an installer this process does not control. A leading BOM is
-    read past, as crapkit reads its own configuration.
+    Missing, unreadable, half-written and not an object all read the same,
+    because doctor's job here is to name the file rather than to raise inside
+    it. A plugin cache is written by an installer this process does not
+    control. repotext's JSON kind reads past a leading BOM, as Claude Code does.
     """
-    import json
+    from ..repotext import repo_json
 
     try:
-        return json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
-    except (OSError, ValueError):
+        return repo_json(path, path.name)
+    except (OSError, ConfigError):
         return None
 
 

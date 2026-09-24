@@ -15,8 +15,8 @@ from .errors import ConfigError, ToolError
 from .keys import stated_key
 from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
+from .repotext import os_text
 from .store import SnapshotStore
-from .textcodec import os_text
 from .verify import GateViolation
 
 

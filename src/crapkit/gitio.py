@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, nul_records, split_record
-from .textcodec import lenient
+from .repotext import lenient
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
@@ -44,7 +44,7 @@ _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
 # the churn window as `Jos\xe9`. Pinned to UTF-8, git prints what a commit
 # stored and re-encodes only a commit whose header names another encoding. A
 # commit with no header that holds bytes that are not UTF-8 still comes out as
-# written, and the readers below take those through textcodec.lenient.
+# written, and the readers below take those through repotext.lenient.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
              "-c", "i18n.logOutputEncoding=UTF-8")
 # Parsed patches are a protocol, independent of display settings and converters.
@@ -83,7 +83,7 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
     that are object names, words or filesystem paths (`rev-parse`, `config`):
     stdout keeps each byte that is not UTF-8 as the lone surrogate Python gives
     an OS path, so a directory named in Latin-1 on Linux still opens. stderr is
-    only ever quoted in a message, so it reads through textcodec.lenient."""
+    only ever quoted in a message, so it reads through repotext.lenient."""
     try:
         res = subprocess.run(["git", *argv], cwd=root, env=_environment(), capture_output=True)
     except FileNotFoundError as exc:

@@ -6,7 +6,7 @@ that posts end of input on a ValueError. One frame holding a byte that is not
 UTF-8 (a client writing its ANSI code page) ended the session in silence:
 exit 0, nothing on stderr, every later request unanswered. A UTF-8 BOM in
 front of the first frame made `initialize` go unanswered. A frame now decodes
-through textcodec.lenient: the BOM is dropped, a stray byte reads as U+FFFD,
+through repotext.lenient: the BOM is dropped, a stray byte reads as U+FFFD,
 and a frame that is still not JSON gets no reply while the session reads on.
 """
 import io

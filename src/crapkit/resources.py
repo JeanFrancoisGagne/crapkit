@@ -14,7 +14,7 @@ import socket
 
 from .errors import ToolError
 from .locks import exclusive_lock
-from .textcodec import os_bytes
+from .repotext import os_bytes
 
 
 WORKER_MEMORY_MB = 35

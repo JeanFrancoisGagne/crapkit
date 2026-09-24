@@ -37,8 +37,8 @@ from .config import shell_words
 from .errors import GitError, ToolError
 from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
 from .mutate import apply_mutant
-from .textcodec import source_bytes, source_text
 from .procs import own_processes, run_bounded
+from .repotext import source_bytes, source_text
 
 def _suite_env() -> dict:
     """Python validates .pyc files by source SIZE and whole-second mtime, so a

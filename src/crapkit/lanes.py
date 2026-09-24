@@ -31,7 +31,7 @@ from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
-from .textcodec import os_bytes
+from .repotext import os_bytes
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
