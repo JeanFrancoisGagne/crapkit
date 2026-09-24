@@ -158,6 +158,42 @@ paths still have to name the measured tree. Use the documented
 [portable record reader](portable-records.md) when automating around exports.
 JSON stays at `schema: 1`; consumers must accept added fields.
 
+## Missing values that 0.8.1 names
+
+Before 0.8.1 some commands read a value nobody measured as zero, empty or passing.
+0.8.1 names each one instead, and three of those changes can move a CI job's exit code
+or a number a script reads.
+
+**verify over a junit it cannot read.** `verify --reuse-artifacts` over a lane that
+declares a `results_artifact` it finds missing or unreadable passed at exit 0 and stored
+a trusted run. It now exits 5 and stores no run, as a real run of that lane does. Rerun
+the lane, `crapkit verify` without `--reuse-artifacts` or `crapkit coverage --lane NAME`
+first, so the junit is there to read. `coverage --reuse-artifacts` over the same junit
+still warns and scores on. A lane that declares no `results_artifact` still passes, with
+a stderr line and the lane under `lanes_without_results` in `verify --json`.
+
+**Shallow clones.** A depth-1 checkout holds one commit, so churn counts one commit per
+file and a ratchet mark's age reads as 0 days. `ratchet report --enforce` now refuses
+there with exit 4 and `set fetch-depth: 0 on the checkout or run git fetch --unshallow`.
+A CI job that ran it on a default `actions/checkout` passed its debt-age policy on those
+zeros; set `fetch-depth: 0` on the checkout. `worklist`, `next-item`, `brief` and
+`ratchet report` without `--enforce` still answer, print one line naming the shallow
+clone, and add `shallow: true` to their JSON (`false` in a full clone).
+
+**Mutants with no test verdict.** `mutate` counted a mutant whose suite exited 5, which
+means no test ran, as killed. It now gets no verdict: `--json` counts it under
+`no_verdict`, and it stays out of `killed` and out of the printed rate, so `killed` can
+read lower on the same tree. A mutant whose suite timed out still counts as killed, and
+`--json` also counts it apart under `timed_out`. `mutants` keeps its meaning, the number
+of mutants run.
+
+**Artifact stamps from 0.4.15 or older.** The record that stops `--reuse-artifacts` from
+scoring the artifact a failed lane left behind lives in `.crapkit/artifacts.json`, and
+crapkit writes it from 0.5.0 on. A stamps file written by 0.4.15 or older holds no such
+record, and nothing else tells a leftover from a good artifact. After upgrading from
+0.4.15 or older, run `crapkit coverage` once without `--reuse-artifacts` before any
+reuse, so every lane writes its artifact and its stamp again.
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating
