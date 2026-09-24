@@ -11,6 +11,7 @@ import re
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import __version__, config
 from ..config import load_config_text
@@ -22,6 +23,7 @@ from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pyt
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
+from ..watch import Snapshot, poll, snapshot
 from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, repo_text
 
 
@@ -1545,9 +1547,38 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
 
 
 def _watched_files(root: Path, cfg) -> list[str]:
-    """Every tracked file a scope claims, flat — the whole subject of one poll."""
-    by_scope = assign_files(ls_files(root), cfg, size_of=_file_sizer(root))
+    """Every file a scope claims, tracked or not yet added, ignored ones left
+    out, flat: the whole subject of one poll. Listed again each poll, so a
+    file created in a scope while the watch runs is rescored too. git looks
+    for new files under the declared scope paths only: over the whole tree
+    of a 33k-file repo that search took 0.88 s a poll, under its scopes 0.27 s.
+    Raises GitError."""
+    from ..lane_changes import visible_paths
+
+    declared = tuple(dict.fromkeys(path for scope in cfg.scopes for path in scope.paths))
+    by_scope = assign_files(list(visible_paths(root, declared)), cfg, size_of=_file_sizer(root))
     return [f for files in by_scope.values() for f in files]
+
+
+class _Watching(NamedTuple):
+    """What one poll hands the next: the files it listed, what it saw, and
+    the git error its listing hit, "" when git listed them."""
+    files: list[str]
+    seen: Snapshot
+    fault: str
+
+
+def _relisted(root: Path, cfg, state: _Watching) -> tuple[list[str], str]:
+    """This poll's files. When git cannot list them, the last poll's files, and
+    the error named on the first poll that hits it, not on every one after."""
+    try:
+        return _watched_files(root, cfg), ""
+    except GitError as exc:
+        fault = str(exc)
+    if fault != state.fault:
+        print(f"crapkit watch: could not list the files your scopes claim ({fault}); "
+              "polling the last list, and listing again next poll", flush=True)
+    return state.files, fault
 
 
 def _watch_cycles(cycles: int | None):
@@ -1570,31 +1601,28 @@ def _watch_banner(watched: int, interval: float, cycles: int | None) -> str:
     return f"watching {watched} tracked files every {interval}s - {stop}"
 
 
-def _watch_cycle(root: Path, files: list[str], prev: dict[str, float],
-                 interval: float) -> dict[str, float]:
-    """One poll: wait, re-stat, rescore whatever moved; the new snapshot out."""
+def _watch_cycle(root: Path, cfg, state: _Watching, interval: float) -> _Watching:
+    """One poll: wait, list the files again, rescore whatever holds new bytes;
+    what the next poll starts from out."""
     import time
 
-    from ..watch import changed_paths, snapshot_mtimes
-
     time.sleep(interval)
-    cur = snapshot_mtimes(root, files)
-    moved = changed_paths(prev, cur)
+    files, fault = _relisted(root, cfg, state)
+    seen, moved = poll(root, files, state.seen)
     if moved:
         _watch_rescore(root, moved)
-    return cur
+    return _Watching(files, seen, fault)
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
-    from ..watch import snapshot_mtimes
-
     root = _command_root(args.repo)
-    files = _watched_files(root, _load_repo_config(root))
-    prev = snapshot_mtimes(root, files)
-    print(_watch_banner(len(prev), args.interval, args.cycles), flush=True)
+    cfg = _load_repo_config(root)
+    files = _watched_files(root, cfg)
+    state = _Watching(files, snapshot(root, files), "")
+    print(_watch_banner(len(state.seen.mtimes), args.interval, args.cycles), flush=True)
     try:
         for _ in _watch_cycles(args.cycles):
-            prev = _watch_cycle(root, files, prev, args.interval)
+            state = _watch_cycle(root, cfg, state, args.interval)
     except KeyboardInterrupt:
         pass
     return 0

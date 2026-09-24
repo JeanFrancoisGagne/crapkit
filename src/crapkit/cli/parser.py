@@ -416,7 +416,8 @@ def build_parser() -> argparse.ArgumentParser:
     rat.add_argument("--repo", **_REPO_FLAG)
     rat.set_defaults(func=_Handler("ratchet_cmds", "cmd_ratchet"))
 
-    wat = sub.add_parser("watch", help="rescore files as they change (polls tracked files from start)")
+    wat = sub.add_parser("watch", help="rescore scoped files whose content changes; lists them "
+                                       "again each poll, so a new file counts and a touch does not")
     wat.add_argument("--repo", **_REPO_FLAG)
     wat.add_argument("--interval", type=float, default=2.0, help="poll seconds (default 2)")
     wat.add_argument("--cycles", type=int, default=None,

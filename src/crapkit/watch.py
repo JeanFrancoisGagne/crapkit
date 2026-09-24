@@ -1,4 +1,16 @@
-"""Watch-mode core. Pure: mtime snapshots in, changed paths out.
+"""Watch-mode core: which watched files hold other bytes than the last poll saw.
+
+An mtime is the fast path and content is the verdict. A file whose mtime did not
+move is taken as unchanged without being read. A file whose mtime moved, or
+that appeared, has changed only when its bytes differ from the ones recorded
+for it, through the content record lane staleness uses (lane_sources.digests).
+So a touch, an editor saving the same bytes, or a checkout rewriting a file
+with its own bytes rescores nothing, and a deleted file counts as changed.
+
+The one change a poll cannot see is new content written under the file's old
+mtime (cp -p, touch -r, robocopy, tar -x): the named limit the analysis stat
+index shares. Hashing every file on every poll would close it, and what that
+costs is measured in 0.9.0 with the rest of the content record.
 
 The polling loop in the CLI stays a thin shell around this; stdlib mtimes,
 no filesystem-event dependency, works the same on every host.
@@ -8,6 +20,9 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import NamedTuple
+
+from .lane_sources import digests
 
 
 def _stat_mtime(path: Path) -> float | None:
@@ -110,3 +125,47 @@ def changed_paths(before: dict[str, float], after: dict[str, float]) -> list[str
     """New, modified, and deleted paths between two snapshots, sorted."""
     moved = {p for p, m in after.items() if before.get(p) != m}
     return sorted(moved | (set(before) - set(after)))
+
+
+class Snapshot(NamedTuple):
+    """One poll's view: each file's mtime, and the content recorded for it.
+
+    A file whose bytes could not be read has no mtime here, so the next poll
+    reads it again, and it keeps the content recorded before, so a read that
+    failed is never taken for a change."""
+    mtimes: dict[str, float]
+    content: dict[str, str]
+
+
+def snapshot(root: Path, files: list[str]) -> Snapshot:
+    """The first poll: every watched file's mtime and content."""
+    mtimes = snapshot_mtimes(root, files)
+    content = digests(root, mtimes)
+    return Snapshot(_settled(mtimes, content, ()), content)
+
+
+def poll(root: Path, files: list[str], before: Snapshot) -> tuple[Snapshot, list[str]]:
+    """The next snapshot, and the files whose content changed since `before`,
+    deleted ones included, sorted."""
+    mtimes = snapshot_mtimes(root, files)
+    stirred = changed_paths(before.mtimes, mtimes)
+    fresh = digests(root, [path for path in stirred if path in mtimes])
+    content = {**_standing(before.content, mtimes, fresh), **fresh}
+    moved = [path for path in stirred if before.content.get(path) != content.get(path)]
+    return Snapshot(_settled(mtimes, content, set(stirred) - set(fresh)), content), moved
+
+
+def _standing(recorded: dict[str, str], mtimes: dict[str, float],
+              fresh: dict[str, str]) -> dict[str, str]:
+    """The recorded content that still stands: every file still there that no
+    new read replaced, whether its mtime held or its read failed."""
+    return {path: digest for path, digest in recorded.items()
+            if path in mtimes and path not in fresh}
+
+
+def _settled(mtimes: dict[str, float], content: dict[str, str], unread) -> dict[str, float]:
+    """The mtimes the next poll compares against: those of the files whose
+    content is recorded, except a file this poll could not read, which the
+    next poll has to read again."""
+    return {path: mtime for path, mtime in mtimes.items()
+            if path in content and path not in unread}
