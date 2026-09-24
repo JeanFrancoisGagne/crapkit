@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .invocation import _self
+from .plaintext import strip_escapes
 from .rootfind import CONFIG_NAME, find_root
 
 # Newest first. Everything this server does — tools, annotations, structured
@@ -1572,13 +1573,15 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     server started in a workspace must not hand the command a working
     directory below the root, because `path` is repo-relative on every tool's
     schema. A command that printed nothing answers with its stderr, so a
-    refusal reaches the caller as text. An exit the tool declares in
-    `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
-    and its payload says so in `gate.ok`."""
+    refusal reaches the caller as text, with its escape codes removed: the
+    child shares the client's environment, and under FORCE_COLOR or
+    PYTHON_COLORS=1 a 3.13+ traceback or a 3.14 argparse message arrives
+    coloured. An exit the tool declares in `verdict_exits` is an answer, not
+    a failure: `gate` exits 6 on a breach and its payload says so in `gate.ok`."""
     argv = build_argv(tool, arguments, repo)
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
-    text = proc.stdout if proc.stdout.strip() else proc.stderr
+    text = proc.stdout if proc.stdout.strip() else strip_escapes(proc.stderr)
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
     return _structured(_result(text, is_error=failed))
 
