@@ -137,12 +137,18 @@ def test_eof_stops_an_active_request_before_its_hold_is_released(tmp_path):
         client.close()
 
 
-def test_unknown_cancellation_does_not_stop_the_active_request(tmp_path):
+@pytest.mark.parametrize('params', [{'requestId': '73'}, {'requestId': {'a': 1}}, None],
+                         ids=['requestId-a-string', 'requestId-an-object', 'params-null'])
+def test_unknown_cancellation_does_not_stop_the_active_request(tmp_path, params):
+    """A cancellation naming no active request by id and type, or naming none
+    at all, is ignored: the running request answers, and the session reads on."""
     client = Client(tmp_path)
     try:
         client.send('tools/call', msg_id=73, params={'name': 'list_runs', 'arguments': {}})
         client.ready()
-        client.send('notifications/cancelled', params={'requestId': '73'})
+        client.process.stdin.write(json.dumps({'jsonrpc': '2.0', 'method': 'notifications/cancelled',
+                                               'params': params}) + '\n')
+        client.process.stdin.flush()
         client.send('ping', msg_id=74)
         assert client.receive()['id'] == 74
         with pytest.raises(ToolError):

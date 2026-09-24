@@ -144,6 +144,8 @@ def test_an_undeclared_key_names_the_accepted_ones(monkeypatch, tmp_path):
     ("get_function_history", {"path": "a.py", "name": "f", "history": "yes"},
      'history must be a boolean (got "yes")'),
     ("get_function_brief", {"path": 7, "name": "f"}, "path must be a string (got 7)"),
+    ("list_runs", {"repo": 5}, "repo must be a string (got 5)"),
+    ("list_runs", {"repo": ["a"]}, 'repo must be a string (got ["a"])'),
 ])
 def test_a_wrong_type_is_named_in_the_tools_words(monkeypatch, tmp_path, tool, arguments,
                                                   sentence):

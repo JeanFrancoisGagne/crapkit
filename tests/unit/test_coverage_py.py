@@ -244,3 +244,83 @@ def test_a_region_without_a_summary_object_refuses_the_report_naming_the_functio
 
     with pytest.raises(ToolError, match=r"coverage\.py report .*guarded: no summary object"):
         parse_coveragepy(json.dumps(report), path_prefix="")
+
+
+# --- every other shape a region's fields arrive in ----------------------------
+#
+# Each field a reader needs is either refused out loud or read as coverage.py
+# means it; a field the reader does not need changes nothing.
+
+def _shaped(mutate) -> dict:
+    fn = {"start_line": 1, "executed_lines": [2, 3], "missing_lines": [5],
+          "summary": {"num_statements": 3, "covered_lines": 2,
+                      "num_branches": 2, "covered_branches": 1}}
+    report = {"meta": {"version": "7.13.2", "branch_coverage": True},
+              "files": {"src/a.py": {"executed_lines": [1, 2, 3], "missing_lines": [5],
+                                     "functions": {"f": fn, "": {
+                                         "executed_lines": [1], "missing_lines": [],
+                                         "summary": {"num_statements": 1, "covered_lines": 1}}}}},
+              "totals": {"covered_lines": 3}}
+    mutate(report, report["files"]["src/a.py"], fn)
+    return report
+
+
+_REFUSED = {
+    "executed_lines-null": (lambda r, f, fn: fn.update(executed_lines=None), "not iterable"),
+    "missing_lines-null": (lambda r, f, fn: fn.update(missing_lines=None), "not iterable"),
+    "num_branches-null": (lambda r, f, fn: fn["summary"].update(num_branches=None),
+                          "num_branches must be a nonnegative integer count"),
+    "num_branches-a-string": (lambda r, f, fn: fn["summary"].update(num_branches="2"),
+                              "num_branches must be a nonnegative integer count"),
+    "function-entry-null": (lambda r, f, fn: f["functions"].update(f=None), "coverage.py report"),
+    "file-entry-null": (lambda r, f, fn: r["files"].update({"src/a.py": None}),
+                        "coverage.py report"),
+    "files-null": (lambda r, f, fn: r.update(files=None), "'files' is not a JSON object"),
+    "functions-null-in-every-file": (lambda r, f, fn: f.update(functions=None),
+                                     "no function regions for any"),
+}
+
+
+@pytest.mark.parametrize("shape", list(_REFUSED))
+def test_a_needed_field_in_the_wrong_shape_refuses_the_report(shape):
+    mutate, words = _REFUSED[shape]
+
+    with pytest.raises(ToolError, match=words):
+        parse_coveragepy(json.dumps(_shaped(mutate)), path_prefix="")
+
+
+def test_a_report_that_is_a_list_refuses_as_not_an_object():
+    with pytest.raises(ToolError, match="not a JSON object"):
+        parse_coveragepy("[]", path_prefix="")
+
+
+_UNCHANGED = {
+    "meta-absent": lambda r, f, fn: r.pop("meta"),
+    "meta-null": lambda r, f, fn: r.update(meta=None),
+    "totals-null": lambda r, f, fn: r.update(totals=None),
+    "covered_lines-a-whole-float": lambda r, f, fn: fn["summary"].update(covered_lines=2.0),
+}
+
+
+@pytest.mark.parametrize("shape", list(_UNCHANGED))
+def test_a_field_the_scores_do_not_read_changes_nothing(shape):
+    """meta carries branch_coverage, so without it the reader warns that the
+    report holds no branch data; its functions, spans and counts stay the same."""
+    control = parse_coveragepy(json.dumps(_shaped(lambda *_: None)), path_prefix="")
+
+    assert (parse_coveragepy(json.dumps(_shaped(_UNCHANGED[shape])), path_prefix="")
+            == control)
+
+
+def test_a_non_ascii_function_name_is_kept_as_written():
+    def rename(r, f, fn):
+        f["functions"]["café_世界"] = f["functions"].pop("f")
+
+    (fn,) = parse_coveragepy(json.dumps(_shaped(rename)), path_prefix="")["src/a.py"]
+
+    assert (fn.name, fn.start, fn.coverage) == ("café_世界", 1, 0.5)
+
+
+def test_a_report_with_no_files_measures_no_file():
+    assert parse_coveragepy(json.dumps(_shaped(lambda r, f, fn: r.update(files={}))),
+                            path_prefix="") == {}
