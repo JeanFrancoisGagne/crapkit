@@ -760,3 +760,54 @@ def test_a_touch_after_restoring_an_old_mtime_lets_git_read_the_content(tmp_path
 
     assert (restored, touched) == ([], ["a.py"])
     assert "`touch` the files after restoring them that way, and every reader compares their content" in _upgrading_freshness()
+
+
+# -- S12, S13: explain reads the run's lines, not HEAD's ------------------------------
+
+def _reports():
+    from crapkit.cli import reports
+
+    return reports
+
+
+def _tests_withheld() -> bool:
+    import inspect
+
+    return "withheld" in inspect.signature(_reports()._tests_fields).parameters
+
+
+@landed(_tests_withheld(), "explain --tests withheld with the dark lines")
+def test_the_pages_say_explain_tests_withholds_its_ids_with_the_dark_line_note():
+    fields = _reports()._tests_fields({3: {"tests/test_m.py::test_a"}}, (1, 5), "the note")
+
+    assert fields == {"tests": None, "tests_note": "the note"}
+    assert "`tests_note` repeats `uncovered_lines_note`" in _prose(_release())
+    assert "withholds them with the same note whenever the file's dark lines are withheld" in \
+        _prose(_page("README.md"))
+
+
+@landed(hasattr(_reports(), "_span_commits"), "explain --history on HEAD's lines")
+def test_the_changelog_quotes_the_note_for_a_span_no_commit_holds(tmp_path):
+    _git(tmp_path, "init", "-q")
+
+    fields = _reports()._span_commits(tmp_path, "pkg/m.py", (9, 10))
+
+    assert fields["commits"] is None
+    assert f"`{fields['commits_note']}`" in _prose(_release())
+    assert "carried through your uncommitted edits onto HEAD's lines" in _prose(_page("README.md"))
+
+
+def _freshness_carries_git_errors() -> bool:
+    return "unread" in getattr(getattr(_queue(), "RunFreshness", None), "_fields", ())
+
+
+@landed(_freshness_carries_git_errors(), "scored_changes null on a git failure")
+def test_the_changelog_quotes_the_worklist_warning_when_git_cannot_read_the_tree(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    queue = _queue()
+    fresh = queue.RunFreshness(False, None, "fatal: index file corrupt")
+    (line,) = queue._freshness_warnings(fresh, {"id": 4, "commit": "f" * 40})
+    head = line.removeprefix("warning: ").split("git failed:")[0] + "git failed:"
+
+    assert fresh.envelope()["scored_changes"] is None
+    assert f"`{head}`" in _prose(_release())

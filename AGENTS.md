@@ -443,7 +443,7 @@ Act on these fields:
 | `function` | pass verbatim to `brief` and `claims release` |
 | `handle` | the shorter name form, and the one to use on a function printed as `(anonymous)`: `(anonymous)#2` names a position in the file, so it outlives your own edit |
 | `start` | the other name form `brief` takes; a line number, so an edit above it invalidates it |
-| `scored_changes` | how many files the run scored hold other content now, your own uncommitted edits included. Anything but `0`, `null` included, means run `commands.refresh` before acting on `cov` or the span; `null` means the run recorded no content (crapkit 0.8.0 and older) |
+| `scored_changes` | how many files the run scored hold other content now, your own uncommitted edits included. Anything but `0`, `null` included, means run `commands.refresh` before acting on `cov` or the span; `null` means the run recorded no content (crapkit 0.8.0 and older) or git could not read the tree to compare |
 | `stale` | `true` means HEAD moved past the run's commit. It judges the commit, not the files: an amend or an empty commit sets it with every number still true, and an uncommitted edit leaves it `false`, so read `scored_changes` for the content |
 
 `uncovered_lines: null` with a sibling `uncovered_lines_note` means no artifact could name

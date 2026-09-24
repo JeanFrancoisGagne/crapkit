@@ -100,7 +100,7 @@
 - `next-item`, `brief`, `brief --batch`, `worklist --json`, the report payload and the MCP
   tools that print them add `scored_changes`: how many files the ranked run scored hold
   other content now than the run recorded, deleted files included, or `null` when the run
-  recorded none, as every run 0.8.0 wrote. `stale` keeps its meaning, the run's commit is
+  recorded none, as every run 0.8.0 wrote, or git cannot read the tree to compare. `stale` keeps its meaning, the run's commit is
   not HEAD, and it judges the commit and not the files: an uncommitted rewrite of a scored
   function left it `false` while `next-item` handed out the pre-edit ccn and span, a run
   measured on an edit that was later reverted read fresh, and an amend, an empty commit or
@@ -113,6 +113,20 @@
   `commands.refresh` and ask again.
 - The plain `worklist` warns on stderr when files the run scored changed since, and names
   up to three: `2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py`.
+  When git cannot read the tree it says that instead, `cannot tell which files changed
+  since run 4 scored them, because git failed:` and git's error, and `scored_changes` is
+  `null`: a failed read is neither "changed" nor "unchanged".
+- `explain --tests` withholds a file's test ids whenever its dark lines are withheld, and
+  `tests_note` repeats `uncovered_lines_note`. The ids sit on the same line numbers, so
+  after two functions swapped places it credited one with the tests that ran the other. A
+  lane that records no contexts keeps its guidance line.
+- `explain --history` maps the span the run measured through the uncommitted diff onto
+  HEAD's lines before it asks `git log -L`. Four uncommitted lines above a function listed
+  the commits of the function below it, and forty made git refuse the span, which read as
+  an empty list. A span with no line in HEAD, every span before the first commit included,
+  answers `commits: null` with `commits_note` `pkg/m.py:9-10 holds only uncommitted lines,
+  so no commit has touched it yet`, and a git failure quotes git's error in `commits_note`
+  instead of answering `[]`.
 
 ### A git question that fails is named, and a count names its files
 
