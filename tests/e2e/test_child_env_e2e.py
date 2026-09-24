@@ -1,5 +1,6 @@
-"""A CLI child finds the suite's own interpreter first on PATH, and a lane's
-coverage opt-out stays inside that lane.
+"""A CLI child finds the suite's own interpreter first on PATH, a lane's
+coverage opt-out stays inside that lane, and a lane or mutation child writes
+its output in UTF-8.
 
 Fixture lanes spell a bare `python`, which the lane's shell resolves through
 PATH. With another project's virtualenv first on PATH, every nested pytest in
@@ -15,6 +16,7 @@ import sys
 import pytest
 
 from conftest import child_env, git_commit_all, git_init_repo, run_cli
+from legacy_locale import latin1_env
 
 SUITE_BIN = str(Path(sys.executable).parent)
 
@@ -105,3 +107,112 @@ def test_a_bare_python_lane_runs_the_suite_interpreter_and_keeps_its_opt_out(
     measured = bool(os.environ.get("COVERAGE_PROCESS_CONFIG"))
     assert bool(seen["plain"]["coverage_config"]) == measured
     assert seen["plain"]["coverage_started"] is measured
+
+
+# A lane or mutation child writes UTF-8 whatever the shell that ran crapkit
+# hands it. A Python child below 3.15 wrote the ANSI code page on Windows, the
+# locale's encoding on POSIX, or an inherited PYTHONIOENCODING, and crapkit
+# reads the lane log as UTF-8. Every row forces PYTHONUTF8=0 unless it sets
+# PYTHONUTF8 itself, so Python 3.15's UTF-8 default (PEP 686) cannot make a row
+# pass, and every lane is spelled with this interpreter.
+
+PYTHON = f'"{sys.executable}"'
+POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="a POSIX locale row: Windows reads no LANG or LC_ALL")
+INHERITED = [
+    pytest.param({}, id="no-env"),
+    pytest.param({"PYTHONIOENCODING": "cp1252"}, id="inherited-PYTHONIOENCODING-cp1252"),
+    pytest.param({"LC_ALL": "C", "PYTHONCOERCECLOCALE": "0"}, id="LC_ALL-C", marks=POSIX_ONLY),
+    pytest.param("latin1", id="LANG-en_US.ISO-8859-1"),
+    pytest.param({"PYTHONUTF8": "1"}, id="control-PYTHONUTF8-1"),
+    pytest.param({"PYTHONIOENCODING": "utf-8"}, id="control-PYTHONIOENCODING-utf-8"),
+]
+
+APP = "def f(x):\n    if x > 0:\n        return 1\n    return 2\n"
+MISSING_MODULE = ("import sys\n"
+                  "sys.stderr.write('ModuleNotFoundError: No module named ' + repr('caf\\u00e9') + '\\n')\n"
+                  "sys.exit(2)\n")
+EMOJI_TEST = ("import sys\nsys.path.insert(0, 'src')\nimport app\n\n\n"
+              "def test_f():\n    print('done \\U0001f680')\n    assert app.f(1) == 1\n")
+PYTEST_S = (f"{PYTHON} -m pytest -s -q -p no:cacheprovider -p no:randomly --cov=src --cov-branch"
+            " --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml")
+
+
+def _config(lane_command: str, lane_env: str = "") -> str:
+    """One python scope, one lane, and a mutation command that runs the same
+    tests with -s. TOML literal strings, so the interpreter path's
+    backslashes and quotes stay as they are."""
+    return ("[crapkit]\ntarget = 6\n"
+            f"mutation_command = '{PYTHON} -m pytest -s -q -p no:cacheprovider -p no:randomly tests'\n"
+            "mutation_workers = 1\n\n"
+            '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
+            f"[[lane]]\nname = \"py\"\ncommand = '{lane_command}'\n"
+            'artifact = ".crapkit/cov/py.json"\nresults_artifact = ".crapkit/cov/junit-py.xml"\n'
+            'parser = "coveragepy"\nscopes = ["src"]\n'
+            f'env = {{ COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = ""{lane_env} }}\n')
+
+
+def _repo(root: Path, config: str) -> Path:
+    repo = root / "repo"
+    repo.mkdir()
+    git_init_repo(repo)
+    for name, text in {"src/app.py": APP, "tests/test_app.py": EMOJI_TEST,
+                       "missing_module.py": MISSING_MODULE, "crapkit.toml": config,
+                       ".gitignore": ".crapkit/\n.coverage*\n"}.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(text, encoding="utf-8")
+    git_commit_all(repo, "one scope, one lane")
+    return repo
+
+
+@pytest.fixture
+def inherited(request, tmp_path) -> dict:
+    """The row's variables as the shell running crapkit would hand them over,
+    over PYTHONUTF8=0 and no PYTHONIOENCODING."""
+    row = request.param
+    pairs = latin1_env(tmp_path / "locales") if row == "latin1" else row
+    return {"PYTHONUTF8": "0", "PYTHONIOENCODING": None, **pairs}
+
+
+@pytest.mark.parametrize("inherited", INHERITED, indirect=True)
+def test_a_lane_refusal_quotes_what_the_child_printed(tmp_path, inherited):
+    repo = _repo(tmp_path, _config(f"{PYTHON} missing_module.py"))
+
+    result = run_cli(repo, "coverage", env_extra=inherited, encoding="utf-8")
+
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert "No module named 'caf\u00e9'" in result.stderr, result.stderr
+
+
+def test_a_lane_that_sets_pythonioencoding_keeps_its_own(tmp_path):
+    """The lane's env is the user's word: its child writes cp1252, so the
+    refusal quotes a byte UTF-8 cannot read."""
+    repo = _repo(tmp_path, _config(f"{PYTHON} missing_module.py", ', PYTHONIOENCODING = "cp1252"'))
+
+    result = run_cli(repo, "coverage", env_extra={"PYTHONUTF8": "0"}, encoding="utf-8")
+
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert "No module named 'caf\ufffd'" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("inherited", INHERITED, indirect=True)
+def test_a_pytest_s_lane_that_prints_an_emoji_scores_as_in_a_console(tmp_path, inherited):
+    """The print raised under a cp1252 or Latin-1 pipe, the test failed before
+    it called f, and coverage still exited 0 with the CRAP load at 6.0."""
+    repo = _repo(tmp_path, _config(PYTEST_S))
+
+    result = run_cli(repo, "coverage", env_extra=inherited, encoding="utf-8")
+
+    log = (repo / ".crapkit" / "lane-py.log").read_bytes().decode("utf-8")
+    assert result.returncode == 0 and "UnicodeEncodeError" not in log, log
+    assert "CRAP load 2.5," in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("inherited", INHERITED, indirect=True)
+def test_mutate_runs_a_suite_that_prints_an_emoji_on_the_unmutated_tree(tmp_path, inherited):
+    repo = _repo(tmp_path, _config(PYTEST_S))
+
+    result = run_cli(repo, "mutate", "--files", "src/app.py", "--json", env_extra=inherited,
+                     encoding="utf-8", timeout=300)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["mutants"] > 0
