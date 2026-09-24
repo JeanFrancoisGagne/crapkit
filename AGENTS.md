@@ -700,10 +700,15 @@ clears tempfile's cached directory for the call. These files do:
 | `test_encoding_e2e.py` | the child's stdio encoding under a legacy code page |
 | `test_mcp_e2e.py`, `test_mcp_no_config.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
 | `test_claude_hook_e2e.py` | the hook as Claude Code starts it: stdin payload, start time, PYTHONPATH shims |
-| `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py` | PYTHONPATH set through `env_extra` |
+| `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py`, `test_absent_state_fixed_by_other_classes_e2e.py` | PYTHONPATH set through `env_extra` |
 | `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
 | `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
 | `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
+
+Two files start their processes without the runner.
+`test_verify_reads_stores_older_crapkits_wrote_e2e.py` runs older releases, taken from
+`git archive`, through PYTHONPATH, and `test_action_fork_point_without_results_e2e.py` runs
+the Action's step bodies under bash, whose steps start crapkit themselves.
 
 Every test-side wait on a child goes through `tests/hang_guard.py`, whose one bound,
 `HANG_SECONDS` (120), replaces a guess per call site: verify run 103 failed six tests on a
