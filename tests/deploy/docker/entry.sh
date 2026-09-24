@@ -16,8 +16,9 @@ set -eu
 RUNNER=/opt/runner/bin/python
 
 first_line() {
-    # A CLI that hangs under --network none must not hang the listing.
-    HOME="$VERSION_HOME" timeout 60 "$@" 2>&1 </dev/null | head -n 1 || true
+    # A CLI that hangs under --network none must not hang the listing. Amp
+    # prints its release's age ("6h ago"), which the manifest must not hold.
+    HOME="$VERSION_HOME" timeout 60 "$@" 2>&1 </dev/null | head -n 1 | sed -E 's/, [0-9]+[a-z]+ ago\)/)/' || true
 }
 
 versions() {
@@ -39,7 +40,7 @@ versions() {
         [ -d "$dir" ] || continue
         for tool in "$dir"/*; do echo "$(basename "$tool") $(first_line "$tool" --version)"; done
     done
-    [ -x /opt/vscode/bin/code ] && echo "code $(first_line /opt/vscode/bin/code --version --no-sandbox)"
+    [ -x /opt/vscode/bin/code ] && echo "vscode $(first_line /opt/vscode/bin/code --version --no-sandbox)"
     [ -x /opt/zed/bin/zed ] && echo "zed $(first_line /opt/zed/bin/zed --version)"
     rm -rf "$VERSION_HOME"
 }

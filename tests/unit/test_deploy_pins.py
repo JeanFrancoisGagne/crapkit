@@ -295,3 +295,16 @@ def test_a_harness_whose_binary_prints_another_version_is_held_to_that_text():
 
     assert junie["version"] != junie["prints"] and full["junie"] == junie["prints"]
     assert pinsfile.version_problems({"junie": full["junie"]}, f"junie Junie version: {junie['prints']}\n") == []
+
+
+# entry.sh names these after the file its bin-dir loop finds, like a harness.
+LISTED_FROM_BIN_DIRS = {"bun", "act"}
+
+
+def test_entry_sh_prints_a_line_under_each_name_the_pins_expect_for_a_downloaded_tool():
+    entry = (DOCKER / "entry.sh").read_text(encoding="utf-8")
+    commands = {spec["command"] for spec in PINS["harness"].values() if "command" in spec}
+    named = {name for image in pinsfile.IMAGE_CHAIN for name in pinsfile.expected_versions(PINS, image)
+             if name not in commands and "-" not in name and not name.startswith("python")}
+
+    assert [name for name in sorted(named - LISTED_FROM_BIN_DIRS) if f'echo "{name} ' not in entry] == []

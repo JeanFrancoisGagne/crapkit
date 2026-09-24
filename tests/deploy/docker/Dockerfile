@@ -268,6 +268,9 @@ RUN apt-get update; \
     rm -rf /var/lib/apt/lists/*
 COPY --from=gui-tools /opt/vscode /opt/vscode
 COPY --from=gui-tools /opt/zed /opt/zed
+# VS Code's `code` script refuses to start when /proc/version names Microsoft,
+# which it does under Docker Desktop's WSL2 kernel and not on a CI runner.
+ENV DONT_PROMPT_WSL_INSTALL=1
 USER 1000:1000
 
 FROM gui-pre AS gui
