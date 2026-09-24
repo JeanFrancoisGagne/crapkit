@@ -301,10 +301,14 @@ def test_a_harness_whose_binary_prints_another_version_is_held_to_that_text():
 LISTED_FROM_BIN_DIRS = {"bun", "act"}
 
 
+def _names(versions) -> set[str]:
+    """Every tool name `versions(pins, image)` gives, across the images."""
+    return {name for image in pinsfile.IMAGE_CHAIN for name in versions(PINS, image)}
+
+
 def test_entry_sh_prints_a_line_under_each_name_the_pins_expect_for_a_downloaded_tool():
     entry = (DOCKER / "entry.sh").read_text(encoding="utf-8")
-    commands = {spec["command"] for spec in PINS["harness"].values() if "command" in spec}
-    named = {name for image in pinsfile.IMAGE_CHAIN for name in pinsfile.expected_versions(PINS, image)
-             if name not in commands and "-" not in name and not name.startswith("python")}
+    downloaded = _names(pinsfile.expected_versions) - _names(pinsfile._harness_versions) - LISTED_FROM_BIN_DIRS
+    missing = [name for name in sorted(downloaded) if not name.startswith("python") and f'echo "{name} ' not in entry]
 
-    assert [name for name in sorted(named - LISTED_FROM_BIN_DIRS) if f'echo "{name} ' not in entry] == []
+    assert missing == []
