@@ -93,22 +93,37 @@ def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) ->
     return pick.run
 
 
-def _require_ancestor(git, commit: str) -> None:
-    """Exit 4 when the baseline's commit is not behind HEAD, blaming the right
-    thing: a shallow clone never fetched the commit, and the fix is a deeper
-    fetch, not the fresh baseline the rewrite message asks for."""
+def _require_ancestor(git, commit: str, held=None) -> None:
+    """Exit 4 when the baseline's commit is not behind HEAD.
+
+    `held(commit)` says whether this clone holds the commit at all. `git
+    merge-base --is-ancestor` exits 128 on a commit it does not hold, which read
+    as "not an ancestor" and was blamed on a rewrite."""
     from ..errors import GitError
 
     if git.is_ancestor(commit):
         return
+    raise GitError(_not_behind(git, commit, held))
+
+
+def _not_behind(git, commit: str, held) -> str:
+    """Why the baseline's commit is not behind HEAD, blaming the right thing.
+
+    A shallow clone never fetched the commit, and a store copied from another
+    clone (a CI cache keyed on a branch) can name one this checkout never
+    fetched. The fix for both is a fetch, not the fresh baseline the rewrite
+    sentence asks for. An amend keeps the old commit in the object store, so
+    that one still reads as a rewrite."""
     if git.is_shallow():
-        raise GitError(
-            f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
-            "which does not hold it; set fetch-depth: 0 on the checkout or run "
-            "git fetch --unshallow")
-    raise GitError(
-        f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-        f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
+        return (f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
+                "which does not hold it; set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow")
+    if held is not None and not held(commit):
+        return (f"baseline commit {commit[:11]} is not in this clone, so git cannot say whether "
+                f"it is behind HEAD; fetch it with `git fetch origin {commit}`, or run "
+                f"`{_self()} coverage` here for a baseline this clone holds")
+    return (f"baseline commit {commit[:11]} is not an ancestor of HEAD "
+            f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -176,11 +191,11 @@ def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, st
     --base pins the basis to merge-base(REF, HEAD) instead of the baseline run's
     own commit; without it the two are the same commit and nothing changes.
     """
-    from ..gitio import merge_base
+    from ..gitio import has_commit, merge_base
 
     basis = merge_base(root, args.base) if args.base else None
     baseline = _pick_baseline(root, store, args, basis, git)
-    _require_ancestor(git, baseline["commit"])
+    _require_ancestor(git, baseline["commit"], held=lambda commit: has_commit(root, commit))
     return baseline, basis or baseline["commit"]
 
 
