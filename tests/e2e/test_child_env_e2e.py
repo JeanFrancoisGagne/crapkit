@@ -11,11 +11,13 @@ interpreter found first.
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
 
 from conftest import child_env, git_commit_all, git_init_repo, run_cli
+from hang_guard import CHILD_HOLD, exited, next_line
 from legacy_locale import latin1_env
 
 SUITE_BIN = str(Path(sys.executable).parent)
@@ -216,3 +218,68 @@ def test_mutate_runs_a_suite_that_prints_an_emoji_on_the_unmutated_tree(tmp_path
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["mutants"] > 0
+
+
+def test_a_crashed_owner_leaves_its_traceback_in_owner_log_and_the_line_names_it(tmp_path):
+    """The owner is forced to raise before it replies, by a family list it
+    cannot parse. Its stderr went to DEVNULL, and the exit-5 line named no cause."""
+    repo = _repo(tmp_path, _config(PYTEST_S))
+
+    result = run_cli(repo, "coverage", env_extra={"CRAPKIT_COMMAND_FAMILIES": "not json"}, encoding="utf-8")
+
+    log = repo.resolve() / ".crapkit" / "owner.log"
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert result.stderr.startswith("crapkit: measurement owner stopped before confirming ownership; "
+                                    f"its error is at the end of {log}\n"), result.stderr
+    text = log.read_text(encoding="utf-8", errors="replace")
+    assert "measurement owner" in text and "JSONDecodeError" in text, text
+
+
+# The owner waits for a stopped command's process group by reading every
+# /proc/<pid>/stat on a Linux host, and the kernel keeps a process name as the
+# bytes it was set to, cut at 15 bytes. One such name anywhere on the machine,
+# decoded in the owner's locale, stopped every lane run with exit 5.
+
+LINUX_ONLY = pytest.mark.skipif(not sys.platform.startswith("linux"),
+                                reason="/proc/<pid>/stat and prctl(PR_SET_NAME) are Linux's")
+NAMED = ("import ctypes, os, sys, time\n"
+         "ctypes.CDLL(None).prctl(15, bytes.fromhex(sys.argv[1]), 0, 0, 0)\n"
+         "print(open(f'/proc/{os.getpid()}/comm', 'rb').read().hex(), flush=True)\n"
+         f"time.sleep({CHILD_HOLD})\n")
+NAMES = [
+    pytest.param((b"caf\xe9-daemon", b"caf\xe9-daemon"), id="comm-invalid-utf8"),
+    pytest.param(("abcdefghijklmné-tool".encode(), b"abcdefghijklmn\xc3"), id="comm-utf8-cut-mid-char"),
+    pytest.param(("café-daemon".encode(),) * 2, id="control-comm-valid-accent"),
+    pytest.param((b"cafe-daemon",) * 2, id="control-comm-ascii"),
+]
+OWNER_LOCALES = [
+    pytest.param({}, id="default-locale"),
+    pytest.param({"LC_ALL": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}, id="LC_ALL-C-PYTHONUTF8-0"),
+    pytest.param("latin1", id="LANG-en_US.ISO-8859-1"),
+]
+
+
+@pytest.fixture
+def host_process(request):
+    """A process on the host, unrelated to the repo, named with these bytes.
+    Yields once /proc says the kernel kept the bytes the row expects."""
+    name, kept = request.param
+    process = subprocess.Popen([sys.executable, "-c", NAMED, name.hex()], stdout=subprocess.PIPE)
+    try:
+        assert bytes.fromhex(next_line(process).decode().strip()) == kept + b"\n"
+        yield kept
+    finally:
+        process.kill()
+        exited(process)
+
+
+@LINUX_ONLY
+@pytest.mark.parametrize("host_process", NAMES, indirect=True)
+@pytest.mark.parametrize("locale_row", OWNER_LOCALES)
+def test_a_host_process_name_that_is_not_utf8_leaves_coverage_at_exit_0(tmp_path, host_process, locale_row):
+    repo = _repo(tmp_path, _config(PYTEST_S))
+    pairs = {**latin1_env(tmp_path / "locales"), "PYTHONUTF8": "0"} if locale_row == "latin1" else locale_row
+
+    result = run_cli(repo, "coverage", env_extra=pairs, encoding="utf-8")
+
+    assert result.returncode == 0, result.stdout + result.stderr
