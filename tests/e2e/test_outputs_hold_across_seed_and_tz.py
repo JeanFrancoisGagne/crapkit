@@ -198,21 +198,28 @@ def _off_the_utc_clock(stamps: list[str]) -> list[str]:
             > timedelta(minutes=15)]
 
 
+def _label(seed: str, zone: str | None) -> str:
+    return f"PYTHONHASHSEED={seed} TZ={zone}"
+
+
+def _names_that_differ(base: dict[str, str], other: dict[str, str]) -> list[str]:
+    """The outputs `other` printed otherwise than `base`."""
+    return [name for name, text in base.items() if other[name] != text]
+
+
 def test_every_read_prints_the_same_bytes_under_any_seed_and_zone(tmp_path):
     repo = tmp_path / "repo"
     seen, off_clock = {}, {}
     for seed, zone in VARIATIONS:
         _remove(repo)
         _build(repo)
-        seen[(seed, zone)], stamps = _outputs(repo, seed, zone)
-        off_clock[f"PYTHONHASHSEED={seed} TZ={zone}"] = _off_the_utc_clock(stamps)
+        seen[_label(seed, zone)], stamps = _outputs(repo, seed, zone)
+        off_clock[_label(seed, zone)] = _off_the_utc_clock(stamps)
 
-    first, *others = VARIATIONS
-    differing = {f"PYTHONHASHSEED={seed} TZ={zone}": [name for name, text in seen[first].items()
-                                                      if seen[(seed, zone)][name] != text]
-                 for seed, zone in others}
-    assert differing == {variation: [] for variation in differing}
-    assert off_clock == {variation: [] for variation in off_clock}
+    base = seen[_label(*VARIATIONS[0])]
+    differing = {label: _names_that_differ(base, printed) for label, printed in seen.items()}
+    assert differing == {label: [] for label in seen}
+    assert off_clock == {label: [] for label in seen}
 
 
 def test_the_compared_bytes_hold_the_churn_history_and_skipped_files(tmp_path):
