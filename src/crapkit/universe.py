@@ -3,6 +3,13 @@
 The file universe itself comes from `git ls-files` in the shell layer; lizard is
 always fed these explicit lists because its own directory walking descends
 nested node_modules (measured hang).
+
+A name git gives in bytes that are not UTF-8 has no spelling a row can be keyed
+on. It arrives as a raw name a listing left out (gitpaths.PathList) or as a
+surrogateescape spelling in the list (a diff header). When the scope assignment
+below takes that spelling, the assignment refuses with exit 3 and names the
+rename: left out, a scoped file nothing read would pass every gate. Any other
+such name stays left out, named once on stderr by the reader.
 """
 from __future__ import annotations
 
@@ -12,6 +19,8 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 from .config import Config, Scope
+from .errors import ConfigError
+from .gitpaths import readable, shown, spelled
 
 LANGUAGE_EXTENSIONS = {
     "typescript": (".ts",),
@@ -261,13 +270,41 @@ def _partition(candidates: list[tuple[str, str | None]], scopes: tuple[Scope, ..
     return assigned, unclaimed, oversized
 
 
+def _unreadable(files: list[str]) -> list[str]:
+    """The names git gave in bytes that are not UTF-8, spelled with surrogates:
+    those the listing left out, then any the list holds, each once."""
+    left_out = [spelled(raw) for raw in getattr(files, "left_out", ())]
+    return list(dict.fromkeys(left_out + [path for path in files if not readable(path)]))
+
+
+def _claimed_text(claimed: list[tuple[str, str]]) -> str:
+    path, scope = claimed[0]
+    more = f" (and {len(claimed) - 1} more)" if len(claimed) > 1 else ""
+    return (f"{shown(path)}{more} is in scope {scope!r}, but git names it in bytes that are not "
+            "UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not "
+            "left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name")
+
+
+def _refuse_claimed(names: list[str], cfg: Config, matchers: tuple[ScopeMatch, ...]) -> None:
+    """Exit 3 when the scope assignment takes a name crapkit cannot read."""
+    claimed = sorted((path, owner) for path, owner in _candidates(names, cfg, matchers)
+                     if owner is not None)
+    if claimed:
+        raise ConfigError(_claimed_text(claimed))
+
+
 def scan_files(files: list[str], cfg: Config, *,
                size_of: Callable[[str], int] | None = None) -> Universe:
     """The whole verdict. `size_of` is injected so this stays pure; the shell
-    layer passes a working-tree stat, and callers with no tree pass nothing."""
+    layer passes a working-tree stat, and callers with no tree pass nothing.
+    A name that is not UTF-8 is refused when a scope takes it and left out
+    otherwise; it is never keyed, and never listed as unclaimed."""
+    matchers = scope_matchers(cfg.scopes)
+    unreadable = _unreadable(files)
+    _refuse_claimed(unreadable, cfg, matchers)
+    keyed = [path for path in files if readable(path)] if unreadable else files
     assigned, unclaimed, oversized = _partition(
-        _candidates(files, cfg, scope_matchers(cfg.scopes)),
-        cfg.scopes, cfg.max_file_bytes, size_of)
+        _candidates(keyed, cfg, matchers), cfg.scopes, cfg.max_file_bytes, size_of)
     return Universe({name: sorted(paths) for name, paths in assigned.items()},
                     tuple(sorted(unclaimed)), tuple(sorted(oversized)))
 
