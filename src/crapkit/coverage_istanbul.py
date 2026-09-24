@@ -61,7 +61,8 @@ def coverage_count(value: object, field: str) -> int:
     if type(value) is float and value.is_integer():
         value = int(value)
     if type(value) is not int or value < 0:
-        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}")
+        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}; "
+                         "regenerate the artifact with the coverage tool that wrote it")
     return value
 
 

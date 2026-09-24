@@ -265,7 +265,9 @@ def test_the_refusal_names_the_first_function_without_a_start_line():
 def test_a_start_line_that_is_not_a_line_number_refuses_the_report(start):
     read = _read_7_12({**WRITTEN_7_13, "outer": start}, _starts)
 
-    assert read == f"pkg/mod.py: outer: start_line must be a line number, got {start!r}"
+    assert read == (f"pkg/mod.py: outer: start_line must be a line number, got {start!r}; "
+                    "coverage.py writes the def's line there, so regenerate the report "
+                    "with `coverage json`")
 
 
 def test_the_extras_install_the_coverage_the_reader_names():
@@ -337,9 +339,11 @@ _REFUSED = {
     "executed_lines-null": (lambda r, f, fn: fn.update(executed_lines=None), "not iterable"),
     "missing_lines-null": (lambda r, f, fn: fn.update(missing_lines=None), "not iterable"),
     "num_branches-null": (lambda r, f, fn: fn["summary"].update(num_branches=None),
-                          "num_branches must be a nonnegative integer count"),
+                          "num_branches must be a nonnegative integer count, got None; "
+                          "regenerate the artifact with the coverage tool that wrote it"),
     "num_branches-a-string": (lambda r, f, fn: fn["summary"].update(num_branches="2"),
-                              "num_branches must be a nonnegative integer count"),
+                              "num_branches must be a nonnegative integer count, got '2'; "
+                              "regenerate the artifact with the coverage tool that wrote it"),
     "function-entry-null": (lambda r, f, fn: f["functions"].update(f=None), "coverage.py report"),
     "file-entry-null": (lambda r, f, fn: r["files"].update({"src/a.py": None}),
                         "coverage.py report"),
@@ -423,12 +427,21 @@ REFUSED = {
     "function-summary-missing": (lambda fn: fn.pop("summary"),
                                  "guarded: no summary object, so crapkit cannot tell how much "
                                  "of it ran"),
-    "covered-lines-missing": (_drop("covered_lines"), "guarded: num_statements without covered_lines"),
+    "covered-lines-missing": (_drop("covered_lines"),
+                              "guarded: num_statements without covered_lines; coverage.py "
+                              "writes both, so regenerate the report with `coverage json`"),
     "covered-branches-missing": (_drop("covered_branches"),
-                                 "guarded: num_branches without covered_branches"),
-    "num-statements-missing": (_drop("num_statements"), "guarded: covered_lines without num_statements"),
+                                 "guarded: num_branches without covered_branches; coverage.py "
+                                 "writes both, so regenerate the report with `coverage json`"),
+    "num-statements-missing": (_drop("num_statements"),
+                               "guarded: covered_lines without num_statements; coverage.py "
+                               "writes both, so regenerate the report with `coverage json`"),
     "summary-empty": (_drop("covered_lines", "num_statements", "num_branches", "covered_branches"),
-                      "guarded: summary holds neither statement nor branch counts"),
+                      "guarded: summary holds neither statement nor branch counts; coverage.py "
+                      "writes one kind or both, so regenerate the report with `coverage json`"),
+    "covered-over-total": (lambda fn: fn["summary"].update(covered_lines=9),
+                           "guarded: covered_lines exceeds num_statements; regenerate the report "
+                           "with `coverage json`"),
 }
 
 

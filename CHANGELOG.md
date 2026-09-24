@@ -108,7 +108,8 @@
   statement in the encloser's region, so a nested function that never ran scored as half
   covered. The `py` and `dev` extras now require `coverage>=7.13.1`, the first release
   that writes `start_line`. A `start_line` that is not a positive whole number exits 5
-  naming the file, the function and the value it holds.
+  naming the file, the function and the value it holds, and says to regenerate the report
+  with `coverage json`.
 - A coverage.py region without a `summary` object exits 5 naming the file and the
   function, where it scored the function as never run. A null one exits 5 with the same
   line, where it printed a Python `AttributeError`.

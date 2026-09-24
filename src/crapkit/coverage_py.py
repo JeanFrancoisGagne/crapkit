@@ -31,6 +31,10 @@ _NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch 
 # region's start_line. pyproject.toml's py and dev extras pin the same floor.
 COVERAGE_FLOOR = "coverage>=7.13.1"
 _OLD_COVERAGE = f"needs {COVERAGE_FLOOR}"
+# What every refusal of a count or a line coverage.py itself writes tells the
+# user to do: the report was edited, merged or truncated after coverage.py
+# wrote it, and only a fresh one holds the numbers.
+_REGENERATE = "regenerate the report with `coverage json`"
 _SAMPLE = 3
 
 
@@ -46,12 +50,13 @@ def _admit_summary(name: str, summary: object) -> dict:
     with neither count is one the report did not measure."""
     if not isinstance(summary, dict):
         raise ValueError(f"{name}: no summary object, so crapkit cannot tell how much of it "
-                         "ran; regenerate the report with `coverage json`")
+                         f"ran; {_REGENERATE}")
     counts = {}
     for total, covered in _PAIRS:
         counts.update(_admit_pair(name, summary, total, covered))
     if not counts:
-        raise ValueError(f"{name}: summary holds neither statement nor branch counts")
+        raise ValueError(f"{name}: summary holds neither statement nor branch counts; "
+                         f"coverage.py writes one kind or both, so {_REGENERATE}")
     return counts
 
 
@@ -66,14 +71,15 @@ def _admit_pair(name: str, summary: dict, total: str, covered: str) -> dict:
 def _counted_pair(name: str, summary: dict, total: str, covered: str) -> dict:
     counts = {key: coverage_count(summary[key], f"{name}: {key}") for key in (total, covered)}
     if counts[covered] > counts[total]:
-        raise ValueError(f"{name}: {covered} exceeds {total}")
+        raise ValueError(f"{name}: {covered} exceeds {total}; {_REGENERATE}")
     return counts
 
 
 def _require_partner(name: str, present: list[str], total: str, covered: str) -> None:
     if len(present) == 1:
         other = covered if present[0] == total else total
-        raise ValueError(f"{name}: {present[0]} without {other}")
+        raise ValueError(f"{name}: {present[0]} without {other}; coverage.py writes both, "
+                         f"so {_REGENERATE}")
 
 
 def _region_start(name: str, fn: dict) -> int:
@@ -90,7 +96,8 @@ def _region_start(name: str, fn: dict) -> int:
         raise ValueError(f"{name}: no start_line; coverage.py writes it on every function "
                          f"from 7.13.1, so install {COVERAGE_FLOOR} and rerun the lane")
     if type(start) is not int or start < 1:
-        raise ValueError(f"{name}: start_line must be a line number, got {start!r}")
+        raise ValueError(f"{name}: start_line must be a line number, got {start!r}; "
+                         f"coverage.py writes the def's line there, so {_REGENERATE}")
     return start
 
 
