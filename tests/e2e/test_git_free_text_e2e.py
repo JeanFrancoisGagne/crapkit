@@ -18,6 +18,7 @@ rows no input reaches are listed at the bottom with the reason.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -300,7 +301,7 @@ def test_a_kept_pool_cleans_a_file_whose_name_is_not_utf8(tmp_path):
     """`clean -xdff` names the leftover it removes (utf8-author-shape-3, Linux)."""
     repo = _kept_pool(tmp_path / "repo")
     for tree in (repo / ".crapkit" / "mutate-pool").glob("w*"):
-        Path(bytes(tree) + b"/caf\xe9.o").write_bytes(b"x")
+        (tree / os.fsdecode(b"caf\xe9.o")).write_bytes(b"x")
 
     assert _mutated(repo)["killed"] == 2
 
