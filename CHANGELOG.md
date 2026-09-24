@@ -84,6 +84,15 @@
 
 ### watch reads content, and the history caches know their depth
 
+- `watch` rescores a file when its bytes change, not when its mtime moves. A touch, or an
+  editor saving the same bytes, printed `--- changed: src/app.ts` and ran a rescore that
+  labeled the file's coverage STALE; now a file whose mtime moved is read and compared
+  with the content recorded for it, and nothing prints. Each poll lists the files your
+  scopes claim again, tracked or not yet added, so a file created while `watch` runs is
+  rescored; the list used to come from `git ls-files` once, at start. When git cannot
+  list them, `watch` keeps polling the last list and says so once. New bytes written
+  under the file's old mtime (`cp -p`, `touch -r`) are not seen, the same limit the
+  analysis cache has.
 - After `git fetch --unshallow` or `--deepen` at an unmoved HEAD, the churn map, the churn
   log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
   how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit

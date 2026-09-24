@@ -192,3 +192,57 @@ def test_the_changelog_says_a_deepened_clone_rebuilds_the_history_caches():
 
     assert "`git fetch --unshallow` or `--deepen` at an unmoved HEAD" in section
     assert "A cache 0.8.0 wrote reads as a full clone's" in section
+
+
+# -- S18: watch judges content ----------------------------------------------------
+
+def _watch_polls_content() -> bool:
+    from crapkit import watch
+
+    return hasattr(watch, "poll")
+
+
+def _watch_row() -> str:
+    return next(line for line in _page("README.md").splitlines() if line.startswith("| `watch "))
+
+
+@landed(_watch_polls_content(), "watch's content check")
+def test_the_watch_row_says_a_touch_rescores_nothing_and_new_bytes_do(tmp_path):
+    import os
+
+    from crapkit import watch
+
+    source = tmp_path / "app.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    first = watch.snapshot(tmp_path, ["app.py"])
+    later = os.stat(source).st_mtime + 5
+    os.utime(source, (later, later))
+    touched, moved_by_touch = watch.poll(tmp_path, ["app.py"], first)
+    source.write_text("x = 22\n", encoding="utf-8")
+    os.utime(source, (later + 5, later + 5))
+    _, moved_by_edit = watch.poll(tmp_path, ["app.py"], touched)
+    row = _prose(_watch_row())
+
+    assert moved_by_touch == [] and moved_by_edit == ["app.py"]
+    assert "a touch or an editor saving the same bytes rescores nothing" in row
+    assert "Each poll lists the tracked and untracked files under the scope paths again" in row
+    assert "mtime polling" not in row
+
+
+def test_the_watch_row_names_the_edit_under_an_old_mtime_as_a_limit():
+    row = _prose(_watch_row())
+
+    assert "an edit written under the file's old mtime (`cp -p`, `touch -r`) is not seen" in row
+
+
+@landed(_watch_polls_content(), "watch's content check")
+def test_the_changelog_and_the_help_agree_on_what_watch_rescores():
+    from crapkit.cli.parser import build_parser
+
+    parser = build_parser()
+    sub = next(a for a in parser._actions if a.__class__.__name__ == "_SubParsersAction")
+    help_line = next(c.help for c in sub._choices_actions if c.dest == "watch")
+    section = _prose(_release())
+
+    assert "from start" not in help_line and "a touch does not" in help_line
+    assert "`watch` rescores a file when its bytes change, not when its mtime moves" in section
