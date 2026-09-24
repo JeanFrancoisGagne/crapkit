@@ -636,9 +636,11 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
 The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist` and `coverage`. None of the
 four is a convenience.
 
-`coverage>=7.10.6` is the floor `[tool.coverage.run] patch = ["subprocess"]` needs, and
-the key stays although tests/e2e now runs most CLI calls inside the pytest worker, where
-they are measured like any test. The files that bind `cli_runner(spawn=True)`, and every
+`coverage>=7.13.1` is the oldest coverage whose report the coverage.py reader takes (it
+writes `start_line`), and it clears 7.10.6, the floor the
+`[tool.coverage.run] patch = ["subprocess"]` key needs. The key stays although tests/e2e
+now runs most CLI calls inside the pytest worker, where they are measured like any test.
+The files that bind `cli_runner(spawn=True)`, and every
 Python child crapkit starts, run in processes of their own and are measured only through
 that patch. pytest-cov 7.0.0 dropped its own subprocess measurement, and without the
 patch what only they reach reads 0% with nothing said. An older coverage warns about the

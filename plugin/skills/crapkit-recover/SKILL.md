@@ -51,7 +51,7 @@ in this version.
 |---|---|---|---|
 | 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, or a baseline commit rewritten out of the history | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list` |
-| 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
+| 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, wrote a report crapkit refuses to read, timed out past its retries, or refused a container | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
@@ -83,6 +83,18 @@ the command the way the shell will. On Windows a single-quoted value reaches the
 one word per space, so the guard sees a positional that would narrow the run. Rewrite the
 value in double quotes:
 [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start).
+
+## An exit-5 line about the report itself
+
+`lane 'py' FAILED: unparseable coverage.py report PATH: pkg/mod.py: outer: no start_line;
+coverage.py writes it on every function from 7.13.1, so install coverage>=7.13.1 and rerun
+the lane` means the lane ran and wrote its report with coverage.py 7.6 to 7.13.0, which
+writes no `start_line`. crapkit reads each function's span from that line and refuses the
+whole report rather than guess it. Install coverage.py 7.13.1 or newer where the lane runs,
+`pip install "coverage>=7.13.1"`, or `pip install "crapkit[py]"` when crapkit shares the
+suite's venv, then rerun `crapkit coverage`. A nested function can then score above its mark
+once, which `verify` reports at exit 7:
+[docs: upgrading](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130).
 
 ## a lane that wrote no artifact: seven causes
 

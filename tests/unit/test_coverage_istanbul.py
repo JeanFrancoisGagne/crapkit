@@ -96,10 +96,10 @@ def test_branches_attach_to_the_innermost_containing_function():
 # declaration's, so the branches in its body attached to nothing and an invoked
 # function scored as covered. A loc that was null refused the artifact with an
 # AttributeError. Every istanbul producer writes loc.end.line, so both now
-# refuse the artifact naming the entry. A branch with no loc attached to no
-# function; it now sits on the `line` producers write beside loc. A branch with
-# neither is still left out:
-# tests/e2e/test_explain_gaps.py::test_istanbul_branches_without_a_loc_line_and_outside_every_span_are_ignored
+# refuse the artifact naming the file and the entry. A branch with no loc
+# attached to no function; it now sits on the `line` producers write beside
+# loc. A branch with neither was left out, and the function it sat in lost its
+# arms with nothing said; it now refuses the artifact naming the branch id.
 
 def _with(mutate) -> str:
     art = copy.deepcopy(ARTIFACT)
@@ -135,6 +135,37 @@ def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
     per_file = parse_istanbul(_with(mutate), repo_root="C:\\repo")
 
     assert per_file == parse_istanbul(json.dumps(ARTIFACT), repo_root="C:\\repo")
+
+
+@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": None}, {"start": {"line": None}},
+                                 {"start": {"line": "2"}}],
+                         ids=["loc-absent", "loc-null", "loc-empty", "start-null", "start-line-null",
+                              "start-line-a-string"])
+@pytest.mark.parametrize("line", ["absent", None, "2"],
+                         ids=["line-absent", "line-null", "line-a-string"])
+def test_a_branch_with_neither_loc_nor_line_refuses_the_artifact_naming_it(loc, line):
+    def mutate(cov):
+        _set(cov["branchMap"]["1"], "loc", loc)
+        _set(cov["branchMap"]["1"], "line", line)
+
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(_with(mutate), repo_root="C:\\repo")
+
+    assert str(raised.value).endswith(
+        ": src/app.ts: branchMap['1'] has no loc.start.line and no line (every istanbul "
+        "reporter writes one; regenerate the artifact with the runner's reporter)"), raised.value
+
+
+def test_the_lanes_page_quotes_the_branch_refusal():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(_with(lambda cov: cov["branchMap"]["1"].pop("loc")), repo_root="C:\\repo")
+    reason = str(raised.value).split(".json: ", 1)[1]
+
+    page = (root / "docs" / "lanes.md").read_text(encoding="utf-8")
+    assert f"/repo/.crapkit/cov/js/coverage-final.json: {reason}" in page
 
 
 # --- every other shape a file's fields arrive in -------------------------------

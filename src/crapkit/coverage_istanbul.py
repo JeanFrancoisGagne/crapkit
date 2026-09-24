@@ -167,14 +167,19 @@ def _fn_spans(cov: dict) -> list[list]:
     return spans
 
 
-def _branch_line(branch: dict) -> int | None:
+def _branch_line(bid: str, branch: dict) -> int:
     """Where a branch sits: loc.start.line, else the `line` producers write
     beside it. Without the fallback a branch with no loc attached to no
-    function. A branch with neither is left out, as one outside every span is."""
+    function. A branch with neither was left out, and the function it sat in
+    lost its arms with nothing said, so the artifact is refused instead."""
     loc = branch.get("loc")
     start = loc.get("start") if isinstance(loc, dict) else None
     line = start.get("line") if isinstance(start, dict) else None
-    return branch.get("line") if line is None else line
+    line = branch.get("line") if type(line) is not int else line
+    if type(line) is not int:
+        raise ValueError(f"branchMap[{bid!r}] has no loc.start.line and no line (every istanbul "
+                         "reporter writes one; regenerate the artifact with the runner's reporter)")
+    return line
 
 
 def _stmt_line(stmt: dict) -> int | None:
@@ -183,7 +188,7 @@ def _stmt_line(stmt: dict) -> int | None:
 
 def _query_lines(cov: dict) -> set[int]:
     """Every line the attribution will ask about, branches and statements both."""
-    lines = {_branch_line(b) for b in cov.get("branchMap", {}).values()}
+    lines = {_branch_line(bid, b) for bid, b in cov.get("branchMap", {}).items()}
     lines |= {_stmt_line(s) for s in cov.get("statementMap", {}).values()}
     lines.discard(None)
     return lines
@@ -228,7 +233,7 @@ def _span_owners(fn_spans: list[list], lines: set[int]) -> dict[int, list | None
 def _attach_branches(owners: dict[int, list | None], cov: dict) -> None:
     hits_by_id = cov.get("b", {})
     for bid, branch in cov.get("branchMap", {}).items():
-        best = owners.get(_branch_line(branch))
+        best = owners.get(_branch_line(bid, branch))
         if best is not None:
             hits = hits_by_id.get(bid, [])
             best[_B_TOTAL] += len(hits)
@@ -252,6 +257,16 @@ def _file_coverage(cov: dict) -> list[FnCoverage]:
     _attach_statements(owners, cov)
     rows = [FnCoverage(*s) for s in fn_spans]
     return ClampedBranchCounts(rows, clamped) if clamped else rows
+
+
+def _read_file(rel: str, cov: dict) -> list[FnCoverage]:
+    """One file's function coverage, or a refusal that names the file: an
+    fnMap or branchMap id alone does not say which of the artifact's files
+    holds it."""
+    try:
+        return _file_coverage(cov)
+    except ValueError as exc:
+        raise ValueError(f"{rel}: {exc}") from exc
 
 
 def _dead_lines(cov: dict) -> set[int]:
@@ -280,7 +295,7 @@ def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
     for abs_path, cov in covstream.split_window(w):
         rel = _rel_path(abs_path, repo_root)
-        per_file[rel] = _file_coverage(_require_counters(cov, rel))
+        per_file[rel] = _read_file(rel, _require_counters(cov, rel))
         dead[rel] = _dead_lines(cov)
     return per_file, dead
 

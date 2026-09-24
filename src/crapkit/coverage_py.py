@@ -1,12 +1,12 @@
 """Per-file coverage.py regions, context cleanup, and report completeness rules.
 
-Requires the per-function regions coverage.py has emitted since 7.6.0. Branch
-data is preferred and not required: the coverage term falls back to statements,
-with a warning, so an artifact built by `pytest --cov --cov-report=json` — the
-default CI shape, with no --cov-branch — still scores. Function spans run from
-the def statement to the maximum executed/missing line, the closest thing the
-report offers to an end line. coverage.py names the def statement's line as
-start_line from 7.13.1; before that the reader finds it (`_region_start`).
+Requires the per-function regions coverage.py writes with their start_line,
+which it has done since 7.13.1. Branch data is preferred and not required: the
+coverage term falls back to statements, with a warning, so an artifact built by
+`pytest --cov --cov-report=json` — the default CI shape, with no --cov-branch —
+still scores. Function spans run from start_line, the def statement's line, to
+the maximum executed/missing line, the closest thing the report offers to an
+end line.
 
 This module is also the coverage.py adapter (coverage_format looks it up from a
 lane's `parser`): it walks the report's "files" member through covstream's
@@ -16,7 +16,6 @@ for the wrong-tree check, and owns the runner advice a refusal gives.
 from __future__ import annotations
 
 import sys
-from bisect import bisect_left
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,7 +27,10 @@ if TYPE_CHECKING:
     from .config import Lane
 
 _NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
-_OLD_COVERAGE = "needs coverage >= 7.6"
+# The oldest coverage.py whose report this reader takes: 7.13.1 writes each
+# region's start_line. pyproject.toml's py and dev extras pin the same floor.
+COVERAGE_FLOOR = "coverage>=7.13.1"
+_OLD_COVERAGE = f"needs {COVERAGE_FLOOR}"
 _SAMPLE = 3
 
 
@@ -74,28 +76,28 @@ def _require_partner(name: str, present: list[str], total: str, covered: str) ->
         raise ValueError(f"{name}: {present[0]} without {other}")
 
 
-def _region_start(fn: dict, lines: list[int], statements: list[int]) -> int:
-    """The region's def line: start_line from coverage 7.13.1 on.
+def _region_start(name: str, fn: dict) -> int:
+    """The function's def line, which coverage.py writes as start_line from 7.13.1.
 
-    Older reports carry no start line, and a region's first line is its body's.
-    The def statement is the last statement line above the body, in the
-    enclosing region, so `statements`, the file's sorted statement lines, holds
-    it. Taking the body's first line instead put a nested function's start on
-    its encloser's `def inner` line, and the join handed it the encloser's
-    coverage.
+    An older report carries none, and no line inside the region is the def's:
+    the body starts below it, and a nested function's def statement sits in its
+    encloser's region. Read from the body, a nested function that never ran
+    joined its encloser by exact start and scored as half covered, so the
+    report is refused instead.
     """
     start = fn.get("start_line")
-    if start or not lines:
-        return start or 0
-    first = min(lines)
-    above = bisect_left(statements, first)
-    return statements[above - 1] if above else first
+    if start is None:
+        raise ValueError(f"{name}: no start_line; coverage.py writes it on every function "
+                         f"from 7.13.1, so install {COVERAGE_FLOOR} and rerun the lane")
+    if type(start) is not int or start < 1:
+        raise ValueError(f"{name}: start_line must be a line number, got {start!r}")
+    return start
 
 
-def _fn_coverage(name: str, fn: dict, statements: list[int]) -> FnCoverage:
+def _fn_coverage(name: str, fn: dict) -> FnCoverage:
     summary = _admit_summary(name, fn.get("summary"))
+    start = _region_start(name, fn)
     lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
-    start = _region_start(fn, lines, statements)
     end = max(lines) if lines else start
     return FnCoverage(name=name, start=start, end=end,
                       invoked=summary.get("covered_lines", 0) > 0,
@@ -121,8 +123,7 @@ def _file_functions(data: dict) -> list[FnCoverage]:
     """One file's functions, sorted by start line. Ask `has_regions` first: this
     reads an absent "functions" key as an empty one."""
     # the "" key is the "(no function)" module-level bucket
-    statements = sorted({*data.get("executed_lines", ()), *data.get("missing_lines", ())})
-    fns = [_fn_coverage(name, fn, statements)
+    fns = [_fn_coverage(name, fn)
            for name, fn in (data.get("functions") or {}).items() if name]
     return sorted(fns, key=lambda f: f.start)
 
@@ -265,10 +266,19 @@ class _Files:
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
-        self.per_file[path] = _file_functions(data)
+        self.per_file[path] = _read_functions(path, data)
         branchless = _branchless(path, data)
         self.branchless += branchless
         self.branch_counted += len(self.per_file[path]) - len(branchless)
+
+
+def _read_functions(path: str, data: dict) -> list[FnCoverage]:
+    """One file's functions, or a refusal that names the file: a function's
+    name alone does not say which of a report's files to look in."""
+    try:
+        return _file_functions(data)
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
 
 
 def _branchless(path: str, data: dict) -> list[str]:

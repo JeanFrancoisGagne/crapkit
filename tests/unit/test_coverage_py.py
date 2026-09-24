@@ -117,7 +117,7 @@ def test_report_without_function_regions_anywhere_is_rejected():
     """No file in the report carries regions, which is the "coverage is too old"
     case the message is written for."""
     old = {"meta": {"branch_coverage": True}, "files": {"a.py": {"summary": {}}}}
-    with pytest.raises(ToolError, match="function regions"):
+    with pytest.raises(ToolError, match="function regions .* needs coverage>=7.13.1"):
         parse_coveragepy(json.dumps(old), path_prefix="")
 
 
@@ -166,12 +166,15 @@ def test_qualname_collapse_fails_conservative_never_confident():
 # --- a region with no start_line ----------------------------------------------
 #
 # coverage.py writes start_line from 7.13.1; 7.6.0 to 7.13.0 write the regions
-# without it. The reader took the region's first line instead, which is the
-# first line of the body, and that is the line a nested function's def
-# statement sits on in its encloser's region: `outer.inner` never ran, yet it
-# joined `outer`'s region by exact start and scored as half covered. Regions
-# below are coverage 7.12.0's report on this source, recorded, with the file's
-# statement lines beside them; 7.13.2 writes start_line 1, 2, 11 and 17.
+# without it, and no line inside a region is its def line. The body starts
+# below the def, and a nested function's def statement sits in its encloser's
+# region: read from the body, `outer.inner` never ran, yet it joined `outer`'s
+# region by exact start and scored as half covered. A def line worked out from
+# the statements around the region is a guess the report never made, so a
+# region without start_line refuses the report, naming the file, the first such
+# function and the coverage to install. Regions below are coverage 7.12.0's
+# report on this source, recorded; 7.13.2 writes start_line 1, 2, 11 and 17 on
+# the functions and 1 on the "" module region.
 
 MOD_SOURCE = (
     "def outer(x):\n    def inner(y):\n        if y > 0:\n            return y + 1\n"
@@ -201,29 +204,89 @@ def _report_7_12(start_lines: dict) -> dict:
 
 
 STARTS_7_13 = {"outer": 1, "outer.inner": 2, "documented": 11, "deco": 17}
+WRITTEN_7_13 = {**STARTS_7_13, "": 1}
+NO_START = ("pkg/mod.py: outer: no start_line; coverage.py writes it on every function from "
+            "7.13.1, so install coverage>=7.13.1 and rerun the lane")
 
 
-@pytest.mark.parametrize("start_lines", [{}, dict.fromkeys(STARTS_7_13), STARTS_7_13],
-                         ids=["absent-coverage-7.12", "null", "present-coverage-7.13"])
-def test_a_region_starts_on_its_def_statement_whatever_coverage_wrote(start_lines):
-    per_file = parse_coveragepy(json.dumps(_report_7_12(start_lines)), path_prefix="")
+def _read_7_12(start_lines: dict, then):
+    """`then` of the functions the reader read, or the reason it refused the
+    report, which follows the artifact's name."""
+    try:
+        per_file = parse_coveragepy(json.dumps(_report_7_12(start_lines)), path_prefix="")
+    except ToolError as exc:
+        return str(exc).split(".json: ", 1)[1]
+    return then(per_file)
 
-    assert {fn.name: fn.start for fn in per_file["pkg/mod.py"]} == STARTS_7_13
+
+def _starts(per_file: dict) -> dict:
+    return {fn.name: fn.start for fn in per_file["pkg/mod.py"]}
 
 
-@pytest.mark.parametrize("start_lines", [{}, STARTS_7_13], ids=["coverage-7.12", "coverage-7.13"])
-def test_a_nested_function_that_never_ran_scores_its_own_coverage(start_lines):
+def _nested_cov(per_file: dict) -> dict:
     from crapkit.analyze import analyze_source
     from crapkit.score import score_rows
     from crapkit.snapshot import build_inventory_rows
 
-    per_file = parse_coveragepy(json.dumps(_report_7_12(start_lines)), path_prefix="")
     rows = build_inventory_rows({"py": analyze_source("pkg/mod.py", MOD_SOURCE)})
-
     scored = {row.long_name: row.cov for row in score_rows(rows, per_file, lane_scopes={"py"})}
+    return {name: scored[name] for name in ("outer( x )", "outer.inner( y )")}
 
-    assert scored["outer.inner( y )"] == 0.0
-    assert scored["outer( x )"] == 0.5
+
+@pytest.mark.parametrize("start_lines, read",
+                         [({}, NO_START), (dict.fromkeys(STARTS_7_13), NO_START),
+                          (WRITTEN_7_13, STARTS_7_13)],
+                         ids=["absent-coverage-7.12", "null", "present-coverage-7.13"])
+def test_a_region_starts_on_its_def_statement_whatever_coverage_wrote(start_lines, read):
+    assert _read_7_12(start_lines, _starts) == read
+
+
+@pytest.mark.parametrize("start_lines, read",
+                         [({}, NO_START),
+                          (WRITTEN_7_13, {"outer( x )": 0.5, "outer.inner( y )": 0.0})],
+                         ids=["coverage-7.12", "coverage-7.13"])
+def test_a_nested_function_that_never_ran_scores_its_own_coverage(start_lines, read):
+    assert _read_7_12(start_lines, _nested_cov) == read
+
+
+def test_the_refusal_names_the_first_function_without_a_start_line():
+    """outer carries its start_line, so outer.inner, nested in it, is the one named."""
+    written = {name: WRITTEN_7_13[name] for name in ("outer", "documented", "deco", "")}
+
+    assert _read_7_12(written, _starts) == NO_START.replace("outer:", "outer.inner:")
+
+
+@pytest.mark.parametrize("start", ["1", 1.0, True, 0, -1, [1]],
+                         ids=["a-string", "a-float", "true", "zero", "negative", "a-list"])
+def test_a_start_line_that_is_not_a_line_number_refuses_the_report(start):
+    read = _read_7_12({**WRITTEN_7_13, "outer": start}, _starts)
+
+    assert read == f"pkg/mod.py: outer: start_line must be a line number, got {start!r}"
+
+
+def test_the_extras_install_the_coverage_the_reader_names():
+    """`pip install "crapkit[py]"` and the dev install must land a coverage
+    whose report this reader takes, or the lane fails on a fresh setup."""
+    import tomllib
+    from pathlib import Path
+
+    from crapkit.coverage_py import COVERAGE_FLOOR
+
+    root = Path(__file__).resolve().parents[2]
+    extras = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"]["optional-dependencies"]
+
+    assert {name: [d for d in extras[name] if d.startswith("coverage")]
+            for name in ("py", "dev")} == {"py": [COVERAGE_FLOOR], "dev": [COVERAGE_FLOOR]}
+
+
+def test_the_lanes_page_quotes_the_start_line_refusal():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "docs" / "lanes.md").read_text(encoding="utf-8")
+
+    assert f"/repo/.crapkit/cov/py.json: {NO_START}" in page
 
 
 # --- a function region with no summary ----------------------------------------
@@ -386,14 +449,16 @@ def test_statement_counts_alone_missing_still_score_on_branches():
     assert guarded.coverage == 0.75
 
 
-def test_a_start_line_missing_takes_the_first_measured_line():
-    """coverage 7.6 to 7.13.0 wrote no start_line: the span starts where the
-    function's measured lines do, and the score does not move."""
-    per_file = parse_coveragepy(json.dumps(_edited(lambda fn: fn.pop("start_line"))),
-                                path_prefix="")
+def test_a_start_line_missing_refuses_the_report_naming_the_file_as_the_lane_keys_it():
+    """The file is named by the key crapkit joins on: the lane's path_prefix
+    glued on and the report's backslashes turned forward."""
+    with pytest.raises(ToolError) as raised:
+        parse_coveragepy(json.dumps(_edited(lambda fn: fn.pop("start_line"))),
+                         path_prefix="backend")
 
-    guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
-    assert (guarded.start, guarded.coverage) == (1, 0.75)
+    assert str(raised.value).endswith(
+        ": backend/pylib/mod.py: guarded: no start_line; coverage.py writes it on every "
+        "function from 7.13.1, so install coverage>=7.13.1 and rerun the lane"), raised.value
 
 
 def test_one_function_with_no_branch_counts_in_a_branch_report_refuses_the_report():

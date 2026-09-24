@@ -252,7 +252,7 @@ artifact:
 |---|---|
 | `fnMap` | The function list. Every entry needs `decl.start.line`, and `loc.end.line` to close the span. A missing `name` reads as `(anonymous)`. |
 | `f` | Call counts per `fnMap` id. |
-| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`, or the `line` beside it when `loc` is missing. A branch with neither is left out. This is the function's coverage whenever it has one branch. |
+| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`, or the `line` beside it when `loc` is missing. A branch with neither refuses the artifact. This is the function's coverage whenever it has one branch. |
 | `statementMap` and `s` | The fallback for a function with no branch in its span, and the only source of the uncovered lines `verify` measures a diff against. |
 
 A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
@@ -279,7 +279,7 @@ Both exit 0. That is the [wrong `path_prefix`](#running-from-a-subdirectory) fai
 other side: the lane ran, the artifact parsed, and the score is wrong. `0 measured` on a lane
 that ran is the number to read.
 
-Two shapes do fail loudly, both in `fnMap`. An entry with no `decl` exits 5:
+Three shapes do fail loudly. An `fnMap` entry with no `decl` exits 5:
 
 ```
 crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: 'decl'
@@ -290,7 +290,14 @@ So does an entry with no `loc.end.line`. Read as the declaration line, as it was
 that was called scored as covered:
 
 ```
-crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: fnMap['0'] has no loc.end.line (every istanbul reporter writes one; regenerate the artifact with the runner's reporter)
+crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: src/app.ts: fnMap['0'] has no loc.end.line (every istanbul reporter writes one; regenerate the artifact with the runner's reporter)
+```
+
+So does a `branchMap` entry with neither `loc.start.line` nor the `line` beside it. Before
+0.8.1 it was left out, and the function it sat in scored without those arms:
+
+```
+crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: src/app.ts: branchMap['1'] has no loc.start.line and no line (every istanbul reporter writes one; regenerate the artifact with the runner's reporter)
 ```
 
 ### What else lives in .crapkit/
@@ -627,24 +634,34 @@ crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(
 
 A report where NO file carries regions is still exit 5, which is the "coverage is too old"
 case the message was written for: `coverage.py report has no function regions for any of
-its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
+its 40 file(s) — needs coverage>=7.13.1`. That verdict is read before the branch-data one, so
 a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
 which a coverage that old would not fix.
 
 ### A report from coverage 7.6 to 7.13.0
 
-coverage.py names each region's `def` line as `start_line` from 7.13.1. An older report
-carries none, and crapkit reads the `def` line as the last statement line above the region's
-body, which is where coverage 7.13.1 puts it. Before 0.8.1 it took the body's first line, and
-a nested function that never ran joined its encloser's region and scored as half covered.
-A mark recorded from that number can be exceeded once after upgrading; the
+coverage.py writes each function region's `def` line as `start_line` from 7.13.1, and a
+function's span starts there. An older report carries none, and no line inside the region
+is the `def` line: the body starts below it, and a nested function's `def` statement sits in
+its encloser's region. Read from the body, a nested function that never ran joined its
+encloser's region and scored as half covered. A report with a region whose `start_line` is
+missing or null is refused at exit 5, naming the artifact, the file and the first such
+function:
+
+```
+crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: pkg/mod.py: outer: no start_line; coverage.py writes it on every function from 7.13.1, so install coverage>=7.13.1 and rerun the lane
+```
+
+Install coverage.py 7.13.1 or newer where the lane runs (`pip install "crapkit[py]"` pulls
+it when crapkit shares the suite's venv), then rerun `crapkit coverage`. A repo that measured
+on an older coverage can see a nested function's mark exceeded once; the
 [upgrade guide](upgrading.md#081-on-coverage-76-to-7130) says what to do.
 
 Every region in the report needs its `summary` object; coverage.py writes one on each. A
 region without one exits 5, where it used to score the function as never run:
 
 ```
-crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: guarded: no summary object, so crapkit cannot tell how much of it ran; regenerate the report with `coverage json`
+crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: pkg/mod.py: guarded: no summary object, so crapkit cannot tell how much of it ran; regenerate the report with `coverage json`
 ```
 
 ### `--continue-on-collection-errors`
@@ -762,8 +779,10 @@ Without it, on pytest-cov 7 and later, a suite that drives its CLI through
 `subprocess.run` measures the parent only: every entry point reads 0% and every function
 behind one is scored as untested. Nothing warns. crapkit's own e2e suite is exactly that
 shape, and the key is in crapkit's pyproject.toml for exactly that reason. Note that
-coverage 7.9 and earlier answer the key with a warning and ignore it, so pin
-`coverage>=7.10.6` beside `pytest-cov` wherever the lane's environment is declared.
+coverage 7.9 and earlier answer the key with a warning and ignore it. Pin
+`coverage>=7.13.1` beside `pytest-cov` wherever the lane's environment is declared: it
+takes the key, and it writes the `start_line` crapkit
+[needs](#a-report-from-coverage-76-to-7130).
 
 **Prefer `--cov=<module>` over `--cov=<path>`.** The source has to resolve from the
 **child's** cwd, and a suite that runs its CLI in a tmp directory is not in the repo any

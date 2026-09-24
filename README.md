@@ -994,9 +994,10 @@ pip install pytest-cov
 (`pip install "crapkit[py]"` pulls both at once when crapkit shares the suite's venv.)
 
 If your suite drives its own CLI through `subprocess.run`, add `[tool.coverage.run]
-patch = ["subprocess"]` to `pyproject.toml` and keep `coverage>=7.10.6`: pytest-cov 7.0.0
+patch = ["subprocess"]` to `pyproject.toml` and keep `coverage>=7.13.1`: pytest-cov 7.0.0
 dropped subprocess measurement, so without that key every entry point scores 0% and nothing
-warns. [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) has the whole rule.
+warns. 7.13.1 is also the oldest coverage whose report crapkit reads; an older one fails the
+lane at exit 5. [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) has the whole rule.
 
 ### 1. Scaffold the config
 
