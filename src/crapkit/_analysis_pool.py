@@ -8,6 +8,7 @@ import multiprocessing
 from multiprocessing.connection import wait
 import os
 from pathlib import Path
+import sys
 import threading
 
 from .errors import ToolError
@@ -46,6 +47,27 @@ def _retain_worker_slot(paths):
 def _stop_with_parent(parent):
     wait([parent.sentinel])
     os._exit(1)
+
+
+def _utf8_output() -> None:
+    """The parent's stream rule, in a worker: a pipe carries UTF-8 and a
+    terminal keeps its own encoding, and neither raises on a character it
+    cannot encode. A spawned worker builds its own sys.stderr and never ran the
+    parent's `_reconfigure_streams`, so lizard's `[skip] fail to process` line
+    reached a UTF-8 reader in the ANSI code page or PYTHONIOENCODING's codec."""
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        if stream.isatty():
+            stream.reconfigure(errors="replace")
+        else:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _worker_start(registrations, paths) -> None:
+    """The pool's initializer: the worker's output first, then its gate."""
+    _utf8_output()
+    _worker_gate(registrations, paths)
 
 
 def _worker_gate(registrations, paths) -> None:
@@ -96,7 +118,7 @@ class _OwnedPool:
         # Windows spawn writes this descriptor through a bounded bootstrap pipe.
         packed = (str(Path(paths[0]).parent), tuple(Path(path).name for path in paths))
         self.executor = ProcessPoolExecutor(max_workers=len(paths), mp_context=context,
-                                           initializer=_worker_gate,
+                                           initializer=_worker_start,
                                            initargs=(self.registrations, packed))
         self.errors = []
         self.registrar = threading.Thread(target=_register_workers,
