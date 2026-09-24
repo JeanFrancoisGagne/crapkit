@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .errors import GitError, ToolError
+from .gitpaths import nul_paths, nul_records, split_record
 from .textcodec import lenient
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
@@ -110,13 +111,17 @@ def _git_text(root: Path, *args: str) -> str:
     bytes that are not UTF-8 read as U+FFFD instead of ending the command.
     Paths are not free text: _git_paths reads them. Read binary, so git's own
     line framing reaches the caller unconverted."""
-    return lenient(_run(root, (*_RELATIVE, *args), args, binary=True))
+    return lenient(_git_bytes(root, *args))
+
+
+def _git_bytes(root: Path, *args: str) -> bytes:
+    return _run(root, (*_RELATIVE, *args), args, binary=True)
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
-    """NUL records decoded without newline conversion, quoting, or trimming."""
-    out = _run(root, (*_RELATIVE, *args), args, binary=True).decode("utf-8")
-    return [path for path in out.split("\0") if path]
+    """NUL path records, each name that is not UTF-8 left out and named on
+    stderr (gitpaths.nul_paths)."""
+    return nul_paths(_git_bytes(root, *args))
 
 
 def _git_lines(root: Path, *args: str) -> Iterator[str]:
@@ -187,11 +192,11 @@ def index_modes(root: Path, pathspec: str) -> dict[str, str]:
     Windows, where the filesystem has no such bit and the working copy always
     looks 0644.
     """
-    records = _git_paths(root, "ls-files", "-s", "-z", "--", pathspec)
     modes = {}
-    for record in records:
-        meta, _, path = record.partition("\t")
-        modes[path] = meta.split(" ", 1)[0]
+    for record in _git_bytes(root, "ls-files", "-s", "-z", "--", pathspec).split(b"\0"):
+        meta, path = split_record(record, 1)
+        if path:
+            modes[path] = meta.split(" ", 1)[0]
     return modes
 
 
@@ -255,8 +260,9 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
     so only renames wholly inside the root pair up here; a mark on a file moved
     in from above the root reads as new.
     """
-    fields = _git_paths(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD")
-    return _rename_pairs(fields)
+    fields = nul_records(_git_bytes(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD"))
+    # A name that is not UTF-8 holds its record's place as None and pairs with nothing.
+    return {old: new for old, new in _rename_pairs(fields).items() if old is not None and new is not None}
 
 
 def status_names(root: Path) -> list[str]:
@@ -449,9 +455,9 @@ def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
             *_PATCH, *text, "--", *paths)
 
 
-def _binary_source_path(record: str, extensions: tuple[str, ...]) -> str | None:
-    added, removed, path = record.split("\t", 2)
-    if added == removed == "-" and path.endswith(extensions):
+def _binary_source_path(record: bytes, extensions: tuple[str, ...]) -> str | None:
+    counts, path = split_record(record, 2)
+    if counts == "-\t-" and path and path.endswith(extensions):
         return path
     return None
 
@@ -461,8 +467,8 @@ def _binary_source_paths(root: Path, basis: tuple[str, ...],
     from .universe import LANGUAGE_EXTENSIONS
 
     extensions = tuple(ext for group in LANGUAGE_EXTENSIONS.values() for ext in group)
-    records = _git_paths(root, "--literal-pathspecs", "diff", *basis, "--numstat", "-z",
-                         "--no-renames", "--no-ext-diff", "--no-textconv", "--", *paths)
+    records = _git_bytes(root, "--literal-pathspecs", "diff", *basis, "--numstat", "-z",
+                         "--no-renames", "--no-ext-diff", "--no-textconv", "--", *paths).split(b"\0")
     return tuple(path for record in records if (path := _binary_source_path(record, extensions)))
 
 
@@ -474,8 +480,9 @@ class SourcePatch:
     and a forced patch for supported source paths. PNG/ZIP payloads stay binary.
 
     UTF-8 surrogateescape preserves opaque body bytes, including admitted cp1252
-    source. It does not replace bytes or relax path decoding: gitpaths and NUL
-    metadata retain the strict UTF-8 identity contract.
+    source. It does not replace bytes or relax path decoding: a header or NUL
+    record that names a file in bytes that are not UTF-8 leaves that file out
+    (gitpaths), and every other path keeps its exact spelling.
     """
 
     def __init__(self, root: Path, *basis: str, paths: tuple[str, ...] = ()) -> None:

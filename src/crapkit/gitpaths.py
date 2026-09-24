@@ -1,9 +1,69 @@
-"""Decode Git record framing without changing a path's spelling."""
+"""Decode Git record framing without changing a path's spelling.
+
+A path is UTF-8 text here, the one spelling every row, mark and key is joined
+on. git names a file in the bytes its name was created with, and a Linux
+checkout can hold a Latin-1 name that has no UTF-8 spelling at all. Such a file
+is left out of every answer, and stderr names it once with the fix, so one
+legacy file name under docs/ no longer ends `init`, `inventory` or the
+pre-commit gate with a traceback.
+"""
 from __future__ import annotations
+
+import sys
 
 PATH_FORMAT = "root-relative-exact"
 _SIMPLE_ESCAPES = {"n": 10, "t": 9, "r": 13, '"': 34, "\\": 92,
                    "a": 7, "b": 8, "f": 12, "v": 11}
+_NAMED = 5
+_left_out: set[bytes] = set()
+
+
+def repo_path(raw: bytes) -> str | None:
+    """The path git named in `raw`, or None when those bytes are not UTF-8."""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        _name_left_out(raw)
+        return None
+
+
+def _name_left_out(raw: bytes) -> None:
+    """One stderr line per name, the first five of them, then one line more."""
+    if raw in _left_out:
+        return
+    _left_out.add(raw)
+    if len(_left_out) <= _NAMED:
+        print(f"crapkit: left out {raw.decode('utf-8', 'backslashreplace')}: git names it in bytes "
+              "that are not UTF-8, and crapkit reads every path as UTF-8; rename it "
+              "(git mv) to have it read", file=sys.stderr)
+    elif len(_left_out) == _NAMED + 1:
+        print("crapkit: left out more names that are not UTF-8 than the five above", file=sys.stderr)
+
+
+def nul_records(out: bytes) -> list[str | None]:
+    """`-z` records in git's order, None where a name is not UTF-8, so a reader
+    that pairs records (`--name-status`) keeps its place."""
+    return [repo_path(record) for record in out.split(b"\0") if record]
+
+
+def nul_paths(out: bytes) -> list[str]:
+    """`-z` path records decoded without newline conversion, quoting or
+    trimming, each one that is not UTF-8 left out."""
+    return [path for path in nul_records(out) if path is not None]
+
+
+def split_record(record: bytes, fields: int) -> tuple[str, str | None]:
+    """A `-z` record whose path follows `fields` tab-separated ASCII fields
+    (`ls-files -s`, `diff --numstat`): those fields, then the path or None."""
+    *meta, raw = record.split(b"\t", fields)
+    return b"\t".join(meta).decode("ascii"), repo_path(raw)
+
+
+def header_path(target: str) -> str | None:
+    """The path a `+++ ` header names, `b/` prefix dropped, from a patch read
+    with surrogateescape; None when its bytes are not UTF-8."""
+    raw = _path_bytes(target)
+    return repo_path(raw[2:] if raw.startswith(b"b/") else raw)
 
 
 def _escape_at(body: str, i: int) -> tuple[bytes, int]:
@@ -15,23 +75,35 @@ def _escape_at(body: str, i: int) -> tuple[bytes, int]:
     return nxt.encode("utf-8"), i + 2
 
 
+def _quoted(line: str) -> bool:
+    return len(line) >= 2 and line.startswith('"') and line.endswith('"')
+
+
 def unquote_path(line: str) -> str:
     """Decode C-quoted Git paths; Git already supplies directory slashes."""
-    if len(line) < 2 or not line.startswith('"') or not line.endswith('"'):
+    if not _quoted(line):
         # Source patch bodies can carry opaque bytes; a path cannot.
         line.encode("utf-8")
         return line
+    return _path_bytes(line).decode("utf-8")
+
+
+def _path_bytes(line: str) -> bytes:
+    """The bytes a git path line stands for: C quoting undone, and each byte a
+    surrogateescape decode kept as a surrogate put back."""
+    if not _quoted(line):
+        return line.encode("utf-8", "surrogateescape")
     body, out, i = line[1:-1], bytearray(), 0
     while i < len(body):
         chunk, i = _path_character(body, i)
         out += chunk
-    return out.decode("utf-8")
+    return bytes(out)
 
 
 def _path_character(body: str, i: int) -> tuple[bytes, int]:
     if body[i] == "\\":
         return _escape_at(body, i)
-    return body[i].encode("utf-8"), i + 1
+    return body[i].encode("utf-8", "surrogateescape"), i + 1
 
 
 def history_line(raw: str) -> str:

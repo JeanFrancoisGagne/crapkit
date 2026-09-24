@@ -16,6 +16,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from .errors import GitError
+from .gitpaths import nul_paths
 
 _NAMES = ("--name-only", "--no-renames", "-z")
 
@@ -32,8 +33,10 @@ def _start(root: Path, *args: str):
 
 
 def _names(out: bytes) -> tuple[str, ...]:
-    """NUL records, decoded without newline conversion, quoting or trimming."""
-    return tuple(name for name in out.decode("utf-8").split("\0") if name)
+    """NUL records, decoded without newline conversion, quoting or trimming. A
+    file named in bytes that are not UTF-8 is left out, as gitio's whole-tree
+    reads leave it out."""
+    return tuple(nul_paths(out))
 
 
 def visible_paths(root: Path, paths) -> tuple[str, ...]:
