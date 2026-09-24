@@ -99,21 +99,22 @@
 ### The coverage readers stop reading an absent field as a value
 
 - A coverage.py artifact with a function region whose `start_line` is absent or null
-  exits 5 with a line naming the artifact, the first such function, `start_line` and
-  `coverage>=7.13.1`. Coverage 7.6 to 7.13.0 write no `start_line`. The reader took the
-  body's first line as the start, which is the line of the `def inner` statement in the
-  encloser's region, so a nested function that never ran scored as half covered. The
-  `py` and `dev` extras now require `coverage>=7.13.1`, the first release that writes
-  `start_line`.
-- A coverage.py region without a `summary` object exits 5 naming the function, where it
-  scored the function as never run. A null one exits 5 with the same line, where it
-  printed a Python `AttributeError`.
-- An istanbul `fnMap` entry without `loc.end.line` exits 5 naming the entry. The span fell
-  back to the declaration line, the body's branches attached to nothing, and a function
-  that was called scored as covered. A `branchMap` entry without `loc` counts against the
-  function that holds its `line`, where it attached to none. One with neither
-  `loc.start.line` nor `line` exits 5 naming the branch id, where its branches counted
-  against no function.
+  exits 5 with a line naming the artifact, the file, the first such function,
+  `start_line` and `coverage>=7.13.1`. Coverage 7.6 to 7.13.0 write no `start_line`. The
+  reader took the body's first line as the start, which is the line of the `def inner`
+  statement in the encloser's region, so a nested function that never ran scored as half
+  covered. The `py` and `dev` extras now require `coverage>=7.13.1`, the first release
+  that writes `start_line`. A `start_line` that is not a positive whole number exits 5
+  naming the file, the function and the value it holds.
+- A coverage.py region without a `summary` object exits 5 naming the file and the
+  function, where it scored the function as never run. A null one exits 5 with the same
+  line, where it printed a Python `AttributeError`.
+- An istanbul `fnMap` entry without `loc.end.line` exits 5 naming the file and the entry.
+  The span fell back to the declaration line, the body's branches attached to nothing,
+  and a function that was called scored as covered. A `branchMap` entry without `loc`
+  counts against the function that holds its `line`, where it attached to none. One with
+  neither `loc.start.line` nor `line` exits 5 naming the file and the branch id, where
+  its branches counted against no function.
 
 ## 0.8.0 — 2026-09-23
 
