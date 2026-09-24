@@ -88,7 +88,8 @@ def test_a_corrupt_index_is_named_and_no_untouched_function_is_listed(tmp_path, 
     assert code == 2
     assert err[0] == ("crapkit advisory: git could not report what changed in calc/grade.py, "
                       "so no function in it was judged (the edit landed; nothing was blocked)")
-    assert "index file" in err[1] and "fatal:" in err[1], err
+    assert err[1].startswith("  git diff HEAD -- calc/grade.py: fatal: "), err
+    assert "index file" in err[1] and "--output-indicator" not in err[1], err
     assert err[2] == claude_hook._GIT_NEXT
     assert not any("sprawl" in line for line in err), err
 
@@ -101,8 +102,15 @@ def test_a_failed_ls_files_is_named_rather_than_read_as_untracked(tmp_path, monk
 
     answer = claude_hook._listed(tmp_path, "calc/grade.py")
 
-    assert "fatal: index file corrupt" in answer.reason
-    assert "calc/grade.py" in answer.reason
+    assert answer.reason == "git ls-files -- calc/grade.py: fatal: index file corrupt"
+
+
+@pytest.mark.parametrize("message,said", [
+    ("git diff HEAD failed in {root}: fatal: bad object HEAD", "fatal: bad object HEAD"),
+    ("git executable not found", "git executable not found"),
+], ids=["git-spoke", "no-root-in-message"])
+def test_the_named_error_is_gits_own_words(message, said, tmp_path):
+    assert claude_hook._git_said(Exception(message.format(root=tmp_path)), tmp_path) == said
 
 
 @pytest.mark.parametrize("listed,ranges", [("calc/grade.py\n", []), ("", None)],

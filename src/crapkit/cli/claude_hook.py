@@ -403,7 +403,7 @@ def _changed(root: Path, rel: str, diff):
     try:
         text = diff.result()
     except GitError as exc:
-        return _without_diff(root, exc)
+        return _without_diff(root, rel, exc)
     if text.strip():
         from ..diffparse import changed_ranges
 
@@ -411,7 +411,7 @@ def _changed(root: Path, rel: str, diff):
     return _listed(root, rel)
 
 
-def _without_diff(root: Path, exc) -> None | _Unknown:
+def _without_diff(root: Path, rel: str, exc) -> None | _Unknown:
     """What a failed `git diff HEAD` leaves, read off HEAD itself.
 
     When HEAD resolves, git failed at something else, so its error is named.
@@ -419,7 +419,16 @@ def _without_diff(root: Path, exc) -> None | _Unknown:
     commit, or in a measured directory no repository holds. Every function in
     the file is new there, so the file is judged whole, staged or not.
     """
-    return _Unknown(str(exc)) if _head_resolves(root) else None
+    if _head_resolves(root):
+        return _Unknown(f"git diff HEAD -- {rel}: {_git_said(exc, root)}")
+    return None
+
+
+def _git_said(exc, root: Path) -> str:
+    """git's own words out of a GitError, without the argv the model has no use
+    for; the whole message when it is not shaped `... failed in ROOT: WORDS`."""
+    text = str(exc)
+    return text.partition(f" failed in {root}: ")[2] or text
 
 
 def _head_resolves(root: Path) -> bool:
@@ -437,7 +446,7 @@ def _listed(root: Path, rel: str) -> list | None | _Unknown:
     listed = subprocess.run(["git", "--literal-pathspecs", "ls-files", "--", rel], cwd=root,
                             capture_output=True, text=True, encoding="utf-8", errors="replace")
     if listed.returncode != 0:
-        return _Unknown(f"git ls-files -- {rel} failed in {root}: {listed.stderr.strip()}")
+        return _Unknown(f"git ls-files -- {rel}: {listed.stderr.strip()}")
     return [] if listed.stdout.strip() else None
 
 
