@@ -18,7 +18,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 from urllib.parse import unquote
 from xml.sax.saxutils import quoteattr
@@ -187,7 +186,7 @@ def test_watch_sees_a_file_renamed_on_disk_to_another_case(tmp_path):
 def _assert_watch_names(root: Path, rel: str, on_disk: Path) -> None:
     files = _watched_files(root, _load_repo_config(root))
     before = snapshot_mtimes(root, files)
-    later = time.time() + 60
+    later = on_disk.stat().st_mtime + 60  # a new mtime, not a wait
     os.utime(on_disk, (later, later))
 
     after = snapshot_mtimes(root, files)
