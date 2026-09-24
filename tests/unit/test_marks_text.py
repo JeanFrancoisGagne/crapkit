@@ -59,10 +59,10 @@ def test_the_mark_names_the_codec(raw, codec):
 def test_a_utf16_file_is_written_back_as_utf16_behind_its_own_mark(like):
     """A rewrite in UTF-8 would hand PowerShell 5.1, which wrote the file, a
     file it reads as cp1252 on its next save."""
-    assert marks_bytes(ROWS, like) == like
+    assert marks_bytes(ROWS, marks_codec(like)) == like
 
 
-@pytest.mark.parametrize("like", [None, b"", ROWS.encode(), codecs.BOM_UTF8 + ROWS.encode()],
-                         ids=["new-file", "empty", "utf8", "utf8-bom"])
+@pytest.mark.parametrize("like", [b"", ROWS.encode(), codecs.BOM_UTF8 + ROWS.encode()],
+                         ids=["new-or-empty", "utf8", "utf8-bom"])
 def test_every_other_file_is_written_as_utf8_without_a_bom(like):
-    assert marks_bytes(ROWS, like) == ROWS.encode()
+    assert marks_bytes(ROWS, marks_codec(like)) == ROWS.encode()

@@ -17,7 +17,7 @@ from ..invocation import _self
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
-from ..textcodec import os_text
+from ..textcodec import marks_text, os_text
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
@@ -248,10 +248,18 @@ def _ratchet_or_die(text: str, name: str) -> list:
         raise ConfigError(f"unreadable ratchet file {name}: {exc}") from exc
 
 
+def _marks_file_text(ratchet_path: Path) -> str:
+    """The marks file as every reader reads it: UTF-16 by its byte-order mark,
+    else UTF-8 with a BOM dropped and each other byte as U+FFFD
+    (`textcodec.marks_text`). A writer reads through `RatchetFile`, which
+    refuses to save a byte this read replaced."""
+    return marks_text(ratchet_path.read_bytes())
+
+
 def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
     if not ratchet_path.is_file():
         return []
-    return _ratchet_or_die(repo_text(ratchet_path, name), name)
+    return _ratchet_or_die(_marks_file_text(ratchet_path), name)
 
 
 def _dirty_tag(dirty: bool) -> str:
@@ -356,7 +364,7 @@ def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None,
 
 def _ratchet_key_version(root: Path, cfg, rows, store=None, entries=None) -> int:
     path = root / cfg.ratchet_file
-    text = repo_text(path, cfg.ratchet_file) if path.is_file() else ""
+    text = _marks_file_text(path) if path.is_file() else ""
     return _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store, entries)
 
 
@@ -377,7 +385,7 @@ def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
     ratchet_path = root / cfg.ratchet_file
     if not ratchet_path.is_file():
         return None
-    text = repo_text(ratchet_path, cfg.ratchet_file)
+    text = _marks_file_text(ratchet_path)
     entries, complaints = read_ratchet(text)
     if rows is not None:
         _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store, entries)

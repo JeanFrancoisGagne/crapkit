@@ -13,7 +13,7 @@ from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
-                      _print_json, _ratchet_or_die, _repo_relative, _stand, repo_text)
+                      _print_json, _ratchet_or_die, _repo_relative, _stand)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -169,12 +169,15 @@ def _ratchet_merge(files: list) -> int:
     if len(files) != 3:
         raise ConfigError("ratchet merge takes exactly three files: BASE OURS THEIRS (git %O %A %B)")
     # The one reader: OURS is the working copy a shell may have saved with a
-    # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3).
+    # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3),
+    # or as UTF-16, which OURS stays when it is written back.
     saved = [RatchetFile.read(Path(f), required=True) for f in files]
     texts = _mergeable_texts(saved)
     merged = merge_ratchets(*(_ratchet_or_die(t, f) for t, f in zip(texts, files)))
     # Merging adds no number: OURS keeps the stamps all three sides share.
-    saved[1].publish(saved[1].kept(merged))
+    # THEIRS's rows reach OURS, so a byte its read replaced refuses the write;
+    # BASE only tells the two changes apart, and a name it misread keys nothing.
+    saved[1].publish(saved[1].kept(merged, read_with=(saved[2],)))
     print(f"ratchet merge: {len(merged)} mark(s)")
     return 0
 

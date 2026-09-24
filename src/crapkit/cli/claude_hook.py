@@ -427,12 +427,15 @@ def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
 
     Parse only this file's lines and the format comments. Whole-repo entry
     construction costs 35 ms for 40,303 marks and answers no extra question.
+    The file reads by `textcodec.marks_text`, the rule every marks reader
+    shares, so a UTF-16 save keeps its marks and a cp1252 byte costs only the
+    mark whose name held it.
     """
-    from ..repotext import repo_text
+    from ..textcodec import marks_text
 
     if not marks_path.is_file():
         return set()
-    text = repo_text(marks_path, marks_path.name)
+    text = marks_text(marks_path.read_bytes())
     return _known_marks(_file_lines(text, rel), records)
 
 

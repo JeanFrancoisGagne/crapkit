@@ -88,10 +88,9 @@ def unreadable_byte(data: bytes) -> str | None:
     return None
 
 
-def marks_bytes(text: str, like: bytes | None) -> bytes:
-    """`text` in the encoding `like` was read in: UTF-16 behind the byte-order
-    mark it opened with, else UTF-8 with no BOM."""
-    codec = marks_codec(like or b"")
+def marks_bytes(text: str, codec: str) -> bytes:
+    """`text` in the codec `marks_codec` read its file in: UTF-16 behind its
+    byte-order mark, else UTF-8 with no BOM."""
     marks = [mark for mark, name in _UTF16 if name == codec] or [b""]
     return marks[0] + text.encode(codec)
 

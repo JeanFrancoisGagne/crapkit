@@ -208,13 +208,16 @@ def test_ratchet_report_reads_a_cp1252_past_revision(tmp_path, capsys):
     assert "1 open mark(s)" in capsys.readouterr().out
 
 
-def test_ratchet_report_refuses_a_cp1252_marks_file_by_name(tmp_path, capsys):
-    """The history read used to die first, so the refusal that names the byte
-    and the fix never printed."""
+def test_ratchet_report_reads_a_cp1252_marks_file_with_u_fffd(tmp_path, capsys):
+    """The history read used to die first, then the current file was refused
+    at exit 3. A report rewrites nothing, so the name that held the byte reads
+    as U+FFFD and the report goes on."""
     root = _marked_repo(tmp_path, STAMPED + b"src/app.py\tcaf\xe9( n )\t9.0\n")
 
-    assert main(["ratchet", "report", "--repo", str(root)]) == 3
-    assert "crapkit-ratchet.tsv is not UTF-8" in capsys.readouterr().err
+    assert main(["ratchet", "report", "--repo", str(root)]) == 0
+    out, err = capsys.readouterr()
+    assert "caf�( n )" in out
+    assert "is not UTF-8" not in err
 
 
 # --- answers that name a file or a ref: `config`, `rev-parse`, stderr echoes ----
