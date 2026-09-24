@@ -74,7 +74,7 @@ A run that `--baseline ID` names for verify, ratchet seed or ratchet prune. It s
 _Avoid_: forced baseline, override baseline
 
 **Verdict**:
-The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline.
+The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline. A lane whose declared junit `verify --reuse-artifacts` reused and could not read leaves no verdict: verify exits 5 and stores nothing.
 
 **Forgiven failure**:
 A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it. When the baseline recorded no failure list for a lane, the newest trusted run at or behind it that did stands in for that lane.
