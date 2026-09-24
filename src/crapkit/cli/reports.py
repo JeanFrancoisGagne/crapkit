@@ -500,12 +500,13 @@ def _function_commits(root: Path, rel_path: str, start: int, end: int,
     """Commits that touched one line span, subject AND body, from `git log -L`.
 
     The body is what says why a span keeps changing; a subject line rarely does.
+    Both, and the span's own patch lines, come out as the commit stored them.
     """
-    from ..gitio import _git
+    from ..gitio import _git_text
 
     try:
-        out = _git(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
-                   "--date=short", f"--max-count={limit}")
+        out = _git_text(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
+                        "--date=short", f"--max-count={limit}")
     except GitError:
         return []
     return _parse_log_records(out)
