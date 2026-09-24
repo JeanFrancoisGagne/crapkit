@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.repopath import disk_spelling, file_separators, inside, is_unc, native
+from crapkit.repopath import (disk_spelling, entries, file_separators, inside, is_unc,
+                              native, reported)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
                             need_case_sensitive, only_posix, only_windows)
@@ -102,6 +103,52 @@ def test_a_path_naming_nothing_keeps_its_unmatched_tail(tmp_path):
     need_case_insensitive(tmp_path)
 
     assert disk_spelling(_tree(tmp_path), "SRC/new/Thing.py") == "src/new/Thing.py"
+
+
+def test_a_given_lister_answers_every_folder_the_walk_reads(tmp_path):
+    root = _tree(tmp_path)
+    asked: list[Path] = []
+
+    def listing(folder: Path) -> set[str]:
+        asked.append(folder)
+        return entries(folder)
+
+    assert disk_spelling(root, "src/pkg/mod.py", listing) == "src/pkg/mod.py"
+    assert asked == [root, root / "src", root / "src" / "pkg"]
+
+
+REPORTED = {
+    "relative": (lambda root: "src/pkg/mod.py", "src/pkg/mod.py"),
+    "dot-slash": (lambda root: "./src/pkg/mod.py", "src/pkg/mod.py"),
+    "backslash": (lambda root: "src\\pkg\\mod.py", "src/pkg/mod.py"),
+    "absolute-native": (lambda root: str(root / "src" / "pkg" / "mod.py"), "src/pkg/mod.py"),
+    "absolute-forward": (lambda root: (root / "src" / "pkg" / "mod.py").as_posix(),
+                         "src/pkg/mod.py"),
+    "climbs-out": (lambda root: "../other/mod.py", "../other/mod.py"),
+    "dotted-module": (lambda root: "src.pkg.test_mod", "src.pkg.test_mod"),
+}
+
+
+@pytest.mark.parametrize("which", REPORTED)
+def test_a_reported_path_reads_as_git_spells_the_file(tmp_path, which):
+    """A JUnit file attribute or classname, in each spelling a runner writes."""
+    spell, expected = REPORTED[which]
+    root = _tree(tmp_path).resolve()
+
+    assert reported(spell(root), root) == expected
+
+
+def test_a_reported_path_in_another_case_takes_the_listed_case(tmp_path):
+    need_case_insensitive(tmp_path)
+
+    assert reported("SRC\\Pkg\\mod.py", _tree(tmp_path)) == "src/pkg/mod.py"
+
+
+def test_a_reported_path_elsewhere_comes_back_folded(tmp_path):
+    root = _tree(tmp_path / "repo").resolve()
+    other = (tmp_path / "other" / "mod.py").resolve()
+
+    assert reported(str(other), root) == str(other).replace("\\", "/")
 
 
 def test_an_absolute_path_through_a_linked_directory_lands_in_the_checkout(tmp_path):

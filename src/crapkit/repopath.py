@@ -96,6 +96,19 @@ def file_separators(raw: str) -> str:
     return raw.replace("\\", "/")
 
 
+def reported(raw: str, root: str | os.PathLike) -> str:
+    """A path a runner wrote into its report, as git spells the file it names:
+    root-relative, `/` between directories, no leading `./`, and in the letter
+    case the directories list. A runner names a file the way it was started, so
+    a JUnit classname reads `./web/app.test.ts`, `C:\\repo\\web\\app.test.ts` or
+    `WEB/app.test.ts` for git's `web/app.test.ts`. A path that names nothing
+    under `root` comes back folded."""
+    path = file_separators(raw).removeprefix("./")
+    if os.path.isabs(path):
+        return inside(path, root) or path
+    return disk_spelling(root, path)
+
+
 def disk_spelling(root: str | os.PathLike, rel: str,
                   listing: Callable[[Path], set[str]] | None = None) -> str:
     """`rel`, a `/`-separated path under `root`, in the letter case each

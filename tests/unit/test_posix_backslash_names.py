@@ -27,6 +27,7 @@ from path_spellings import only_posix
 
 from crapkit import coverage_istanbul, coverage_py
 from crapkit.cli import main
+from crapkit.cli.verifying import _test_files
 from crapkit.config import Lane
 from crapkit.junitparse import failed_test_ids
 from crapkit.score import score_rows
@@ -125,10 +126,12 @@ def test_a_junit_classname_reads_the_name_with_a_slash(tree):
     report = (f'<testsuite><testcase name="t" classname="{TRACKED}"><failure/></testcase>'
               "</testsuite>")
 
+    failures = failed_test_ids(report)
+
     def dirty(paths: set[str]) -> list[str]:
         return evaluate(fresh=[], changed_ranges={}, ratchet=[], baseline_failures=set(),
-                        fresh_failures=failed_test_ids(report), target=6, dirty_paths=paths,
-                        root=tree).dirty_failures
+                        fresh_failures=failures, target=6, dirty_paths=paths,
+                        test_files=_test_files(tree, failures)).dirty_failures
 
     assert dirty({FOLDED}) == [f"{TRACKED}::t"]
     assert dirty({TRACKED}) == []

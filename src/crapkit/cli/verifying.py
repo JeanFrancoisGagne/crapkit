@@ -498,6 +498,15 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
               f"over the ceiling {maximum}", file=sys.stderr)
 
 
+def _test_files(root: Path, failures: set[str]) -> dict[str, str]:
+    """Each failing test's file part as git spells the file, read off the disk
+    here so the verdict stays a pure function of its inputs."""
+    from ..repopath import reported
+    from ..verify import file_part
+
+    return {part: reported(part, root) for part in {file_part(f) for f in failures}}
+
+
 def _baseline_failures(baseline: dict) -> set:
     """The failures a baseline carries. One that passed its flake retry in a
     verify run is also named under `retried_passes` and is not carried: that
@@ -707,7 +716,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty,
-                       root=root)
+                       test_files=_test_files(root, fresh_failures))
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
     _warn_suite_shrink(baseline, provenance)
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever

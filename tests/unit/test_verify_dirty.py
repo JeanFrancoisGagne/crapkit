@@ -132,13 +132,22 @@ import os as _os
 
 import pytest as _pytest
 
+from path_spellings import need_case_insensitive as _need_case_insensitive
+from path_spellings import need_case_sensitive as _need_case_sensitive
+
 
 def _dirty_ids(root, classname: str) -> list[str]:
+    """The ids verify tags dirty, with the file parts placed as cmd_verify
+    places them."""
+    from crapkit.cli.verifying import _test_files
+
     report = (f'<testsuite><testcase name="renders" classname="{classname}">'
               '<failure/></testcase></testsuite>')
+    failures = failed_test_ids(report)
     return evaluate(fresh=[scored(ccn=2)], changed_ranges={}, ratchet=[],
-                    baseline_failures=set(), fresh_failures=failed_test_ids(report), target=6,
-                    dirty_paths={"web/src/app.test.ts"}, root=root).dirty_failures
+                    baseline_failures=set(), fresh_failures=failures, target=6,
+                    dirty_paths={"web/src/app.test.ts"},
+                    test_files=_test_files(root, failures)).dirty_failures
 
 
 def _test_file(tmp_path):
@@ -181,3 +190,34 @@ def test_a_junit_file_elsewhere_stays_committed(tmp_path):
     other = _test_file(tmp_path / "other")
 
     assert _dirty_ids(root, str(other / "web" / "src" / "app.test.ts")) == []
+
+
+CASE_SPELLINGS = {
+    "directory-case": "WEB/src/app.test.ts",
+    "file-case": "web/src/App.Test.ts",
+    "backslash-case": "web\\SRC\\app.test.ts",
+    "dot-slash-case": "./Web/src/app.test.ts",
+}
+
+
+@_pytest.mark.parametrize("which", CASE_SPELLINGS)
+def test_a_relative_junit_file_in_another_case_is_dirty_where_the_disk_opens_it(tmp_path,
+                                                                              which):
+    """A runner started from `Web\\` on a case-insensitive disk names the test
+    file in the case it was typed, and git names it in the case the directory
+    lists. The failure is in the file under edit, so it is dirty."""
+    _need_case_insensitive(tmp_path)
+    root = _test_file(tmp_path)
+    classname = CASE_SPELLINGS[which]
+
+    assert _dirty_ids(root, classname) == [f"{classname}::renders"]
+
+
+def test_a_relative_junit_file_in_another_case_names_another_file_on_a_case_sensitive_disk(
+        tmp_path):
+    """On ext4 `WEB/src/app.test.ts` is not git's `web/src/app.test.ts`, so the
+    failure stays committed."""
+    _need_case_sensitive(tmp_path)
+    root = _test_file(tmp_path)
+
+    assert _dirty_ids(root, "WEB/src/app.test.ts") == []

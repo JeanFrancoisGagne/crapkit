@@ -101,6 +101,7 @@ import pytest as _pytest
 
 from crapkit import coverage_istanbul as _adapter
 from crapkit.config import Lane as _Lane
+from crapkit.repopath import entries as _entries
 
 from path_spellings import (link_directory as _link, lower_drive as _lower,
                             need_case_insensitive as _need_case_insensitive)
@@ -159,6 +160,24 @@ def test_every_spelling_of_this_checkout_keys_the_file_git_names(tmp_path, which
     _link(tmp_path / "alias", root)
 
     assert _read_keyed(root, spell(root, tmp_path)) == ["src/app.ts"]
+
+
+def test_a_report_of_many_files_lists_each_folder_once(tmp_path, monkeypatch):
+    """Spelling each key walks its folders, and a report names thousands of
+    files in a few hundred folders, so the reader asks the disk once a folder."""
+    root = _tree(tmp_path / "repo")
+    asked: list[_Path] = []
+
+    def counted(folder):
+        asked.append(folder)
+        return _entries(folder)
+
+    monkeypatch.setattr(_adapter, "entries", counted)
+    keys = _adapter._Keys(str(root))
+    names = [keys.rel(str(root / "src" / f"m{i}.ts")) for i in range(40)]
+
+    assert names == [f"src/m{i}.ts" for i in range(40)]
+    assert sorted(asked) == [root, root / "src"]
 
 
 def test_a_key_from_another_tree_stays_as_the_report_wrote_it(tmp_path):
