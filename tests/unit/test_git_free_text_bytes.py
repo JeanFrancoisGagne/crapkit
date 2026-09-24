@@ -18,14 +18,16 @@ import sys
 
 import pytest
 
-from raw_git import SOURCE, commit, git, repository
+from raw_git import SOURCE, checkout, commit, git, repository
 
 from crapkit import churn_log
 from crapkit.churn import parse_git_log_lines
 from crapkit.cli.parser import main
 from crapkit.cli.reports import _function_commits
 from crapkit.errors import GitError
-from crapkit.gitio import config_value, file_log_patches, merge_base, worktree_root
+from crapkit.gitio import (config_value, file_log_patches, merge_base, worktree_add, worktree_reset,
+                           worktree_root)
+from crapkit.procs import own_processes, run_owned
 from crapkit.ratchet_report import mark_events, report_from_events
 
 LATIN1 = b"Ren\xe9"
@@ -251,3 +253,57 @@ def test_a_checkout_under_a_directory_named_in_latin1_finds_its_top(tmp_path):
     commit(root)
 
     assert worktree_root(root) == root.resolve()
+
+
+# --- git's own messages: `HEAD is now at <sha> <subject>`, `Removing <path>` ----
+
+SUBJECTS = [
+    # id, the HEAD commit's message bytes and encoding header
+    ("subject-invalid-utf8", b"caf\xe9 setup\n", None),
+    ("subject-latin1-encoding-header", b"caf\xe9 setup\n", b"ISO-8859-1"),
+    ("subject-valid-accent", "café setup\n".encode(), None),
+    ("subject-cjk-emoji", "café 修正 \U0001f680\n".encode(), None),
+]
+
+
+@pytest.mark.parametrize("message, encoding", [row[1:] for row in SUBJECTS],
+                         ids=[row[0] for row in SUBJECTS])
+def test_a_mutation_pool_tree_is_added_and_reset_at_any_head_subject(tmp_path, message, encoding):
+    """mutate builds its pool with `worktree add` and keeps it across runs with
+    `checkout --force`; both print the HEAD subject, and an owned git read that
+    text strictly."""
+    root = repository(tmp_path / "repo")
+    commit(root)
+    checkout(root)
+    tree = tmp_path / "w0"
+    with own_processes(()) as owner:
+        worktree_add(root, tree, owner=owner)
+        head = commit(root, message=message, encoding=encoding, files={b"a.py": SOURCE + b"# 2\n"})
+        worktree_reset(tree, head, owner=owner)
+
+    assert (tree / "a.py").read_bytes() == SOURCE + b"# 2\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="needs a POSIX file name whose bytes are not UTF-8")
+def test_a_kept_pool_tree_cleans_a_leftover_named_in_latin1(tmp_path):
+    """`clean -xdff` names each file it removes."""
+    root = repository(tmp_path / "repo")
+    head = commit(root)
+    checkout(root)
+    tree = tmp_path / "w0"
+    with own_processes(()) as owner:
+        worktree_add(root, tree, owner=owner)
+        (tree / os.fsdecode(b"caf\xe9.o")).write_bytes(b"")
+        worktree_reset(tree, head, owner=owner)
+
+    assert sorted(os.listdir(tree)) == [".git", "a.py"]
+
+
+def test_an_owned_command_hands_back_its_output_whatever_the_bytes(tmp_path):
+    """run_owned's capture is how crapkit reads a git or crapkit child it
+    owns; the text is only ever shown or matched."""
+    script = "import sys; sys.stdout.buffer.write(b'Removing caf\\xe9.o\\r\\n'); sys.stderr.buffer.write(b'\\xff')"
+    done = run_owned([sys.executable, "-c", script], capture_output=True)
+
+    assert (done.stdout, done.stderr) == ("Removing caf�.o\n", "�")
