@@ -34,6 +34,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
+import hang_guard
 import pytest
 
 from conftest import child_env, cli_runner, git_commit_all, git_init_repo
@@ -161,15 +162,27 @@ def _comment(tmp_path: Path, coverage_json: str, exit_code: int, reason: str) ->
     return "\n".join((tmp_path / name).read_text(encoding="utf-8") for name in ("failed.md", "base.md"))
 
 
+def _unusable(bash: str | None) -> bool:
+    """No bash, or the WSL launcher under System32, which cannot see this
+    test's files."""
+    return bash is None or "system32" in bash.lower()
+
+
+def _git_bash() -> str | None:
+    """bin/bash.exe beside the git on PATH: Git for Windows ships both."""
+    git = shutil.which("git")
+    if git is None:
+        return None
+    candidate = Path(git).parent.parent / "bin" / "bash.exe"
+    return str(candidate) if candidate.is_file() else None
+
+
 def _bash() -> str:
-    """Git Bash on Windows, never the WSL launcher a bare `bash` can reach
-    there, which cannot see this test's files."""
+    """The bash a runner's `shell: bash` step runs under: Git Bash on Windows."""
     bash = shutil.which("bash")
-    if os.name == "nt" and (bash is None or "system32" in bash.lower()):
-        git = shutil.which("git")
-        candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else Path()
-        bash = str(candidate) if candidate.is_file() else None
-    if bash is None or "system32" in bash.lower():
+    if os.name == "nt" and _unusable(bash):
+        bash = _git_bash()
+    if _unusable(bash):
         pytest.skip("no bash to run action.yml's step under")
     return bash
 
@@ -198,12 +211,13 @@ def _base_reason(tmp_path: Path, repo: Path, row: str) -> str:
     env["PATH"] = os.pathsep.join([str(shim), env["PATH"]])
     script = tmp_path / "base-step.sh"
     script.write_text(_base_step(), encoding="utf-8", newline="\n")
-    subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
-                   cwd=repo, env=env, capture_output=True, check=True)
+    step = hang_guard.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                          cwd=repo, env=env)
+    assert step.returncode == 0, step.stdout + step.stderr
     return (state / "crapkit-base.reason").read_text(encoding="utf-8", errors="replace")
 
 
-def _cells(row: str, result, reason: str, comment: str) -> dict[str, str]:
+def _cells(result, reason: str, comment: str) -> dict[str, str]:
     """Each reader's text, and what it must hold beyond being plain."""
     failures = json.loads(result.stdout).get("lane_failures") or {}
     return {
@@ -217,6 +231,15 @@ def _cells(row: str, result, reason: str, comment: str) -> dict[str, str]:
     }
 
 
+def _fault(text: str, needle: str) -> str:
+    """What is wrong with one cell, or "" when it is plain and holds `needle`."""
+    return _unplain(text) or ("" if needle in text else f"missing {needle!r}")
+
+
+def _log_colour(repo: Path) -> bool:
+    return ESC in (repo / ".crapkit" / "lane-broken.log").read_text(encoding="utf-8", errors="replace")
+
+
 @pytest.mark.parametrize("row", list(COLOUR_ENVS), ids=list(COLOUR_ENVS))
 def test_every_reader_of_a_failed_lane_gets_plain_text(tmp_path, row):
     repo = copy_of(template(tmp_path, "colour-lanes", _build), tmp_path / "repo")
@@ -225,11 +248,8 @@ def test_every_reader_of_a_failed_lane_gets_plain_text(tmp_path, row):
     reason = _base_reason(tmp_path, repo, row)
     comment = _comment(tmp_path, result.stdout, result.returncode, reason)
 
-    bad = [f"{cell}: {_unplain(text) or f'missing {needle!r}'}"
-           for cell, (text, needle) in _cells(row, result, reason, comment).items()
-           if _unplain(text) or needle not in text]
+    cells = _cells(result, reason, comment)
+    bad = [f"{cell}: {_fault(*cells[cell])}" for cell in cells if _fault(*cells[cell])]
 
     assert not bad, f"{row} (lane on Python {sys.version.split()[0]}):\n" + "\n".join(bad)
-    if row in _PYTEST_COLOURS:
-        log = (repo / ".crapkit" / "lane-broken.log").read_text(encoding="utf-8", errors="replace")
-        assert ESC in log, "the lane log keeps the colour pytest wrote"
+    assert _log_colour(repo) == (row in _PYTEST_COLOURS), "the lane log keeps the colour pytest wrote"

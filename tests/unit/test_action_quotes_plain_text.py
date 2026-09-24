@@ -15,11 +15,11 @@ colours a usage error in a pipe once the job sets FORCE_COLOR or PYTHON_COLORS;
 """
 import json
 import os
-import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
 
+import hang_guard
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -150,8 +150,7 @@ def test_the_builders_usage_error_and_help_are_plain_in_a_pipe(tmp_path, argv, c
     where argparse would colour it."""
     env = {k: v for k, v in os.environ.items() if k not in _KNOBS}
     env.update(colour)
-    result = subprocess.run([sys.executable, str(BUILDER), *argv], cwd=tmp_path, env=env,
-                            capture_output=True)
+    result = hang_guard.run([sys.executable, str(BUILDER), *argv], cwd=tmp_path, env=env)
 
     output = result.stdout + result.stderr
     assert ESC.encode() not in output, output

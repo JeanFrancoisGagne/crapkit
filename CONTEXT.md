@@ -40,6 +40,9 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 **Lane**:
 One configured test command that writes one coverage artifact for one scope.
 
+**Lane log**:
+The file a lane's output streams to, `.crapkit/lane-<name>.log`, kept as the command wrote it, colour included. A refusal quotes its tail as plain text.
+
 **Inputs**:
 The root-relative paths a lane declares its command reads. While none of them changed since the artifact's commit, `--reuse-unchanged` reuses the lane instead of rerunning it.
 _Avoid_: dependencies, sources (a scope's paths are its sources)
