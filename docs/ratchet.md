@@ -411,7 +411,7 @@ only diff-visible record. Running `prune` is you confirming.
 
 ```
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) - 2 mark(s) vs run 11 (7d09097ea8a)
+crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) (calc/grade.py -> calc/grading.py) - 2 mark(s) vs run 11 (7d09097ea8a)
 ```
 
 **A rename follows instead of dropping.** Before pruning, crapkit asks git for renames since
@@ -429,6 +429,37 @@ calc/grade.py	audit( rows , strict , cap , floor , verbose )	132.0000
 calc/grading.py	audit( rows , strict , cap , floor , verbose )	132.0000
 ```
 
+The count is marks, and the parenthesis names the renames they followed, `old -> new`, up
+to three and then `and N more`.
+
+### When the first run's commit is gone
+
+The rename diff starts at the store's first run, so git has to hold that commit. A clone
+can lack it: a depth-1 CI checkout with `.crapkit` restored from a cache, a `rebase -f
+--root` followed by gc, or a first run taken on a feature branch that was squash-merged,
+deleted and collected. prune then reads renames from the oldest run whose commit the clone
+does hold, and says so on stderr:
+
+```
+note: run 1's commit 35f524b3f89 is not in this clone, so renames were followed from run 2 (647bfd3173c), the oldest run whose commit it holds
+```
+
+A marked file that left the checkout before that run is one git cannot account for: it
+may have been renamed or deleted. prune refuses with exit 4 and writes nothing, naming the
+commit, the files and the fetch:
+
+```
+$ crapkit ratchet prune
+crapkit: ratchet prune: run 1's commit 35f524b3f89 is not in this clone, so git cannot say whether src/old.py was renamed or deleted, and prune would drop the marks there as repaid debt; this shallow clone does not hold it: set fetch-depth: 0 on the checkout or run git fetch --unshallow, then prune again; nothing was written
+EXIT=4
+```
+
+In a full clone the fix is `git fetch origin <commit>`. When no remote holds the commit any
+more, follow each rename with `crapkit ratchet move OLD NEW` ([below](#moving-marks-by-hand))
+and delete a deleted file's marks from the marks file by hand. Before 0.8.1 prune read the
+missing commit as "nothing was renamed" and dropped the renamed file's marks as repaid debt,
+with `followed 0 rename(s)` and no word about why.
+
 ### A crapkit root below the git top
 
 Marks are keyed on paths relative to the crapkit root, and since 0.4.5 every git spawn asks
@@ -438,7 +469,7 @@ renames like any other. Here the top holds `pkg/`, crapkit runs in `pkg`, and th
 
 ```
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) - 2 mark(s) vs run 2 (db28702d61c)
+crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) (calc/grade.py -> calc/grading.py) - 2 mark(s) vs run 2 (db28702d61c)
 ```
 
 The marks file says `calc/grade.py` before and `calc/grading.py` after, and carries the
