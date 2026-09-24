@@ -132,3 +132,11 @@ Active rows are ranked by risk; dormant rows have no recent churn.
 **Churn window**:
 The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date. The cutoff is that many months before now on the UTC calendar, the same instant in every time zone.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff
+
+### What crapkit prints
+
+**Next step**:
+The command a refusal or note tells its reader to run next. It names `crapkit` when PATH finds this installation's console script, and otherwise the running interpreter spelled with forward slashes, so Git Bash, cmd.exe and PowerShell run it as printed. The brief packet's `commands.*` always say `crapkit`.
+
+**Typed path**:
+A path a message quotes back the way the reader typed it, in single quotes with one backslash where they typed one. A lane or scope name keeps its repr.
