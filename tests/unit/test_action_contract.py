@@ -1515,6 +1515,16 @@ def _env_routing_gh_to(port: int) -> dict:
     return env
 
 
+def _comments_api(pages: list, delay: float, gets) -> ThreadingHTTPServer:
+    """A _CommentsApi serving `pages` on a free local port, running. Its GETs
+    go to `gets` when the caller hands a list over."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)
+    server.pages, server.writes, server.delay = pages, [], delay
+    server.gets = [] if gets is None else gets
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0, request=None,
                         gets=None) -> tuple:
     """The post step under bash with the `gh` on PATH, whose built-in jq runs the
@@ -1531,10 +1541,7 @@ def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 
     (state / "crapkit-comment.json").write_text(sent, encoding="utf-8")
     script = tmp_path / "post-step.sh"
     script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)
-    server.pages, server.writes, server.delay = pages or [comments], [], delay
-    server.gets = [] if gets is None else gets
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = _comments_api(pages or [comments], delay, gets)
     env = {**_env_routing_gh_to(server.server_address[1]), "GH_CONFIG_DIR": str(tmp_path / "gh"),
            "CRAPKIT_STATE": state.as_posix(), "PR": "7", "REPO": "owner/repo", "HEAD_REPO": "owner/repo"}
     try:

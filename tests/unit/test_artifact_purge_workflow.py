@@ -82,16 +82,20 @@ class _ArtifactsApi(BaseHTTPRequestHandler):
 
 
 def _bash() -> str:
-    """Git's bash on Windows, where the `bash` on PATH can be the WSL launcher
-    under System32, which cannot read the files this test writes."""
+    """The bash on PATH, or Git's in place of the WSL launcher under System32,
+    which cannot read the files this test writes."""
     bash = shutil.which("bash")
-    if os.name == "nt" and (bash is None or "system32" in bash.lower()):
-        git = shutil.which("git")
-        candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else Path()
-        bash = str(candidate) if candidate.is_file() else None
     if bash is None or "system32" in bash.lower():
+        bash = _git_bash()
+    if bash is None:
         pytest.skip("no bash on PATH to run the step under")
     return bash
+
+
+def _git_bash():
+    git = shutil.which("git")
+    candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else None
+    return str(candidate) if candidate and candidate.is_file() else None
 
 
 def _purge_step() -> str:
