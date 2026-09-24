@@ -63,6 +63,20 @@
 - A `scripts` list such as `["test"]`, or a string such as `"vitest run"`, no longer writes
   an `npm run test` lane: npm has no such script, and the lane failed on its first run.
 
+### The MCP server refuses `params` and `arguments` that are not objects in words an agent can act on
+
+- `tools/call` with `arguments` sent as a number, a string or a list, by-position
+  arguments included, answers a tool result with `isError: true`: `arguments must be an
+  object (got 3)`. It answered `-32603` carrying a Python `AttributeError`, and a string
+  was read one character at a time, so the refusal named `'t'` as an undeclared key. An
+  empty list still reads as no arguments.
+- `tools/call` whose `params` are a list, a string or a number answers `params must be an
+  object naming the tool and its arguments (got ...)` the same way.
+- `initialize` whose `params` are not an object answers with the newest revision the
+  server speaks, as for a revision it does not know, where it answered `-32603`. A
+  `method` that is not a string answers `-32601 unknown method`, where it answered
+  `-32603`.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

@@ -1616,15 +1616,19 @@ def _wrong_type(tool: dict, arguments: dict) -> str | None:
     return None
 
 
-def _argument_error(tool: dict, arguments: dict) -> str | None:
+def _argument_error(tool: dict, arguments) -> str | None:
     """The first refusal the tool's own table finds, or None when the call can run.
 
     Answered as a tool result with isError true, in the tool's vocabulary, not
     as the protocol's -32602 example: ADR 0001 keeps the house precedent set by
     the unknown-tool and missing-config answers, because a coding agent reads
     tool results and corrects its next call, while a protocol error surfaces in
-    many clients as a transport failure the agent never sees.
+    many clients as a transport failure the agent never sees. Arguments that
+    are not an object, by-position ones included, are refused before any key
+    is read: a string's characters read as undeclared keys.
     """
+    if not isinstance(arguments, dict):
+        return f"arguments must be an object (got {json.dumps(arguments)})"
     return (_missing_positional(tool, arguments) or _unknown_key(tool, arguments)
             or _wrong_type(tool, arguments))
 
@@ -1683,10 +1687,11 @@ _INSTRUCTIONS = (
     "learn whether the file clears rescore --gate, which is stricter than the commit hook.")
 
 
-def _negotiated(params: dict) -> str:
+def _negotiated(params) -> str:
     """The client's revision when this server implements it, else the newest it
-    does; the spec leaves proceeding or disconnecting to the client from there."""
-    offered = params.get("protocolVersion")
+    does; the spec leaves proceeding or disconnecting to the client from there.
+    params that are not an object offer no revision."""
+    offered = params.get("protocolVersion") if isinstance(params, dict) else None
     return offered if offered in SUPPORTED_PROTOCOLS else SUPPORTED_PROTOCOLS[0]
 
 
@@ -1714,7 +1719,7 @@ def _respond(msg_id, result=None, error=None) -> dict:
     return resp
 
 
-def _initialize_result(params: dict) -> dict:
+def _initialize_result(params) -> dict:
     return {"protocolVersion": _negotiated(params),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "crapkit", "version": _version()},
@@ -1728,8 +1733,19 @@ _METHODS = {"initialize": _initialize_result,
             "ping": lambda params: {}}
 
 
-def _tools_call(root: Path, params: dict, run_cli=None) -> dict:
+def _tools_call(root: Path, params, run_cli=None) -> dict:
+    """params that are not an object name no tool, so the refusal says what the
+    call must look like; by-position params are valid JSON-RPC and not MCP."""
+    if not isinstance(params, dict):
+        return _result("params must be an object naming the tool and its arguments "
+                       f"(got {json.dumps(params)})", is_error=True)
     return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
+
+
+def _method_handler(method):
+    """The handler for a method name, or None: a name that is not a string is
+    an unknown method, never a lookup that raises."""
+    return _METHODS.get(method) if isinstance(method, str) else None
 
 
 def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:
@@ -1739,7 +1755,7 @@ def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:
     params = msg.get("params") or {}
     if method == "tools/call":
         return _respond(msg["id"], _tools_call(root, params, run_cli))
-    handler = _METHODS.get(method)
+    handler = _method_handler(method)
     if handler is None:
         return _respond(msg["id"], error={"code": -32601,
                                           "message": f"unknown method {method!r}"})

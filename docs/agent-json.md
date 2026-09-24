@@ -1489,13 +1489,18 @@ declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_history` require `path` and `name`). A missing positional answers
 `get_function_brief needs name (see inputSchema.required)`, an undeclared key answers
 `list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
-`top must be an integer (got "three")`. The refusal names the MCP tool and the argument
+`top must be an integer (got "three")`. Arguments that are not an object, by-position ones
+included, answer `arguments must be an object (got 3)`, and `params` that are not an object
+answer `params must be an object naming the tool and its arguments (got 7)`: MCP takes both
+by name. The refusal names the MCP tool and the argument
 as the schema spells them, never the CLI command behind the tool. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
-reserved for the protocol: an unknown method answers `-32601`, and an exception escaping
-the server answers `-32603` and the loop reads on, so no single call ends the session.
+reserved for the protocol: an unknown method, or a `method` that is not a string, answers
+`-32601`, and an exception escaping the server answers `-32603` and the loop reads on, so no
+single call ends the session. `initialize` whose `params` are not an object offers no
+revision, and the server answers with its newest.
 `ping` answers an empty result, so a client's keepalive never reads as an error.
 
 ## Docker

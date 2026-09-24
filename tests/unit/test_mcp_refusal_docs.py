@@ -25,7 +25,7 @@ def _section(page: str) -> str:
     return text.split(f"\n{PAGES[page]}\n", 1)[1].split("\n## ", 1)[0]
 
 
-def _answer(tmp_path: Path, tool: str, arguments: dict) -> str:
+def _answer(tmp_path: Path, tool: str, arguments) -> str:
     result = mcp_server._call_tool(tmp_path, tool, arguments)
     assert result["isError"] is True
     return result["content"][0]["text"]
@@ -38,14 +38,16 @@ def _probes() -> list[tuple[str, dict]]:
     unnamed = [(tool["name"], {"path": "a.py"}) for tool in mcp_server.TOOLS
                if "name" in tool["positional"]]
     return missing + unnamed + [("list_worklist", {"bogus": 1}),
-                                ("list_worklist", {"top": "three"})]
+                                ("list_worklist", {"top": "three"}),
+                                ("list_runs", 3)]
 
 
 @pytest.fixture(scope="module")
 def spoken(tmp_path_factory) -> set[str]:
     """Every refusal sentence the pages could be quoting, as the server says it."""
     root = tmp_path_factory.mktemp("mcp")
-    return {_answer(root, tool, arguments) for tool, arguments in _probes()}
+    unnamed_call = mcp_server._tools_call(root, 7)["content"][0]["text"]
+    return {_answer(root, tool, arguments) for tool, arguments in _probes()} | {unnamed_call}
 
 
 @pytest.mark.parametrize("page", sorted(PAGES))
