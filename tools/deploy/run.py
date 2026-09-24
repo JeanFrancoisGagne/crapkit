@@ -85,9 +85,24 @@ def cache_flags(cache: str, image: str) -> list[str]:
             f"--cache-to=type=gha,scope={scope},mode=min,ignore-error=true"]
 
 
-def build_command(pins: dict, image: str, cache: str, no_cache: bool) -> list[str]:
-    argv = ["docker", "buildx", "build", "--progress", "plain", "--platform", pins["images"]["platform"],
-            "--target", image, "-f", str(DOCKERFILE), "-t", f"crapkit-deploy:{image}", "--load"]
+def builder_command(pins: dict, name: str) -> list[str]:
+    """A docker-container builder running the pinned BuildKit image."""
+    return ["docker", "buildx", "create", "--name", name, "--driver", "docker-container",
+            "--driver-opt", f"image={pins['images']['buildkit']}"]
+
+
+def ensure_builder(pins: dict, name: str) -> str:
+    """The named builder, created with the pinned BuildKit when it does not exist yet."""
+    present = subprocess.run(["docker", "buildx", "inspect", name], capture_output=True).returncode == 0
+    if not present:
+        subprocess.run(builder_command(pins, name), check=True, capture_output=True)
+    return name
+
+
+def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: str = "crapkit-deploy") -> list[str]:
+    argv = ["docker", "buildx", "build", "--builder", builder, "--progress", "plain",
+            "--platform", pins["images"]["platform"], "--target", image, "-f", str(DOCKERFILE),
+            "-t", f"crapkit-deploy:{image}", "--load"]
     argv += [f"--build-arg={key}={value}" for key, value in build_args(pins).items()]
     argv += cache_flags(cache, image) + (["--no-cache"] if no_cache else [])
     return argv + [str(ROOT)]
@@ -103,14 +118,17 @@ def disk_usage() -> str:
     return subprocess.run(["docker", "system", "df"], capture_output=True, text=True).stdout
 
 
-def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path) -> dict:
+def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, builder: str = "crapkit-deploy") -> dict:
+    """Build one target and record its time, its size and `docker system df`
+    before and after in <out>/build.json."""
+    ensure_builder(pins, builder)
     before = disk_usage()
     started = time.monotonic()
     log = out / f"build-{image}.log"
     with log.open("w", encoding="utf-8") as stream:
-        subprocess.run(build_command(pins, image, cache, no_cache), check=True, stdout=stream,
+        subprocess.run(build_command(pins, image, cache, no_cache, builder), check=True, stdout=stream,
                        stderr=subprocess.STDOUT)
-    record = {"image": image, "seconds": round(time.monotonic() - started, 1),
+    record = {"image": image, "builder": builder, "seconds": round(time.monotonic() - started, 1),
               "size_bytes": image_size(f"crapkit-deploy:{image}"), "no_cache": no_cache,
               "df_before": before, "df_after": disk_usage()}
     _append_json(out / "build.json", record)
@@ -245,6 +263,8 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--cache", default="local", choices=["local", "gha"])
+    parser.add_argument("--builder", default="crapkit-deploy",
+                        help="buildx builder; created with the pinned BuildKit image when absent")
     parser.add_argument("-n", type=int, default=0)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
@@ -276,7 +296,7 @@ def _compare(out: Path, repeat: int) -> int:
 
 def _build(args, out: Path) -> bool:
     """Build the image; True when the invocation asked for nothing more."""
-    build(pinsfile.load(), args.image, args.cache, args.no_cache, out)
+    build(pinsfile.load(), args.image, args.cache, args.no_cache, out, args.builder)
     if args.build_only:
         return True
     args.tag = bake(args.image, out) if args.bake else f"crapkit-deploy:{args.image}"

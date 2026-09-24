@@ -31,6 +31,14 @@ def test_a_build_targets_the_image_for_linux_amd64_with_every_pin():
     assert "--no-cache" not in argv
 
 
+def test_the_builder_runs_the_pinned_buildkit_image():
+    argv = run.builder_command(PINS, "crapkit-deploy")
+
+    assert argv[argv.index("--driver") + 1] == "docker-container"
+    assert argv[-1] == f"image={PINS['images']['buildkit']}"
+    assert run.build_command(PINS, "core", "local", no_cache=True, builder="b")[3:5] == ["--builder", "b"]
+
+
 def test_the_gha_cache_is_one_scope_per_image_that_never_fails_the_build():
     assert run.cache_flags("gha", "core") == [
         "--cache-from=type=gha,scope=crapkit-deploy-core",
