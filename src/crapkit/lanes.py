@@ -1106,7 +1106,17 @@ def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
-            f"{lane_format(lane).UNMEASURED_READING}")
+            f"{_unmeasured_reading(lane)}")
+
+
+def _unmeasured_reading(lane: Lane) -> str:
+    """The other reading. A lane that sets path_prefix was told it needed one,
+    while the prefix it set was what keyed every measured file outside its
+    scopes; the value crapkit read is the one to check."""
+    if lane.path_prefix:
+        return (f"or path_prefix {lane.path_prefix!r}, which crapkit.toml sets for this lane, "
+                "does not rebase the runner's paths onto those scopes")
+    return lane_format(lane).UNMEASURED_READING
 
 
 def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,

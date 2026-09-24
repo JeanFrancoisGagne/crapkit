@@ -119,6 +119,45 @@ def test_a_path_prefix_takes_a_backslash_key_too(tmp_path):
     assert list(per_file) == ["backend/pkg/mod.py"]
 
 
+def _judged(capsys, root: Path, prefix: str) -> str:
+    """What the lane says about an artifact keyed `pkg/mod.py`, read under
+    `prefix`: nothing when the keys reach the scope, else the warning."""
+    from crapkit.lanes import _judge_artifact_scope
+
+    cfg = _load(root, _lane(path_prefix=prefix))
+    artifact = root / ".crapkit" / "cov.json"
+    artifact.write_text(json.dumps(REPORT), encoding="utf-8")
+    per_file, _, _ = coverage_py.read(cfg.lanes[0], root, artifact)
+    capsys.readouterr()
+    _judge_artifact_scope(cfg.lanes[0], per_file, cfg.scope_paths, root)
+    return capsys.readouterr().err
+
+
+@pytest.mark.parametrize("prefix", ["backend", "backend\\", "./backend", ".\\backend", "/backend"])
+def test_a_path_prefix_spelling_that_folds_earns_no_warning(tmp_path, capsys, prefix):
+    assert _judged(capsys, _tree(tmp_path), prefix) == ""
+
+
+@pytest.mark.parametrize("prefix", ["web", "web\\", "./web/", "/web"])
+def test_the_unmeasured_warning_names_the_path_prefix_it_read(tmp_path, capsys, prefix):
+    """It quoted `backend\\/pkg/mod.py` and told the reader to set path_prefix,
+    which was already set: the value that broke the keys went unnamed. It now
+    names the prefix as crapkit read it, and stops asking for one."""
+    err = _judged(capsys, _tree(tmp_path), prefix)
+
+    assert "it measured web/pkg/mod.py" in err, err
+    assert err.rstrip().endswith("or path_prefix 'web', which crapkit.toml sets for this lane, "
+                                 "does not rebase the runner's paths onto those scopes"), err
+    assert "needs path_prefix" not in err
+
+
+def test_a_lane_without_path_prefix_keeps_the_hint_to_set_one(tmp_path, capsys):
+    err = _judged(capsys, _tree(tmp_path), "")
+
+    assert err.rstrip().endswith("or the runner reports paths this lane needs path_prefix to "
+                                 "rebase"), err
+
+
 @pytest.mark.parametrize("prefix", ["Backend", "BACKEND/"])
 def test_a_path_prefix_in_another_case_takes_the_listed_case(tmp_path, prefix):
     need_case_insensitive(tmp_path)
