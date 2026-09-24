@@ -780,3 +780,124 @@ def test_init_writes_the_per_testpath_lanes_a_suite_that_cannot_collect_needs(tm
     assert '# name = "py-pylib"' in text
     assert text.count("# full_suite = false") == 2
     assert run_cli(repo, "doctor").returncode == 0, "the config init wrote still checks out"
+
+
+# --- files and settings init and doctor did not write -------------------------
+
+_PS1 = "function Get-A {\n  param($x)\n  if ($x) { 1 } else { 2 }\n}\n"
+_CONFIG = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+           'languages = ["powershell"]\ncoverage_optional = true\n')
+
+
+def _doctor_repo(tmp_path: Path, name: str, source: bytes) -> Path:
+    repo = _bare_git_repo(tmp_path, name)
+    (repo / "src").mkdir()
+    (repo / "src" / "a.ps1").write_bytes(source)
+    (repo / "src" / "b.ps1").write_bytes(_PS1.replace("Get-A", "Get-B").encode())
+    (repo / "crapkit.toml").write_text(_CONFIG, encoding="utf-8")
+    _git_commit_all(repo, "init")
+    return repo
+
+
+def _notes(stdout: str) -> list[str]:
+    return [line for line in stdout.splitlines() if line.startswith("note ")]
+
+
+SOURCES = [
+    # id, the bytes of src/a.ps1, whether doctor notes it as UTF-16
+    ("utf16-le", _PS1.encode("utf-16"), True),
+    ("utf16-be", b"\xfe\xff" + _PS1.encode("utf-16-be"), True),
+    ("utf8", _PS1.encode(), False),
+    ("utf8-bom", b"\xef\xbb\xbf" + _PS1.encode(), False),
+    ("cp1252", _PS1.replace("Get-A", "Get-Caf\xe9").encode("cp1252"), False),
+]
+
+
+@pytest.mark.parametrize("source, noted", [row[1:] for row in SOURCES], ids=[row[0] for row in SOURCES])
+def test_doctor_notes_a_utf16_source_and_keeps_its_exit_code(tmp_path: Path, source, noted):
+    """crapkit scores a UTF-16 source, and git diffs it as binary. doctor says
+    so once, as a note, which never moves the exit code."""
+    control = run_cli(_doctor_repo(tmp_path, "control", _PS1.encode()), "doctor")
+
+    res = run_cli(_doctor_repo(tmp_path, "subject", source), "doctor")
+
+    assert res.returncode == control.returncode == 0, res.stdout + res.stderr
+    utf16 = [note for note in _notes(res.stdout) if "UTF-16" in note]
+    assert utf16 == ([f"note 1 source file(s) open with a UTF-16 byte-order mark, the "
+                      "PowerShell 5.1 Out-File default: src/a.ps1. crapkit scores them, but "
+                      "git diffs them as binary; save them as UTF-8 (PowerShell: Set-Content "
+                      "-Encoding utf8) to diff them as text"] if noted else [])
+
+
+ENCODINGS = [
+    # id, i18n.commitEncoding, whether doctor notes it
+    ("unset", None, False),
+    ("utf-8", "UTF-8", False),
+    ("utf8-lower", "utf8", False),
+    ("iso-8859-1", "ISO-8859-1", True),
+    ("gbk", "gbk", True),
+]
+
+
+@pytest.mark.parametrize("value, noted", [row[1:] for row in ENCODINGS], ids=[row[0] for row in ENCODINGS])
+def test_doctor_notes_a_commit_encoding_that_is_not_utf8(tmp_path: Path, value, noted):
+    """Git for Windows passes a message and a name as UTF-8, and under
+    i18n.commitEncoding=ISO-8859-1 git stores those bytes labelled Latin-1,
+    so every reader that asks for UTF-8, crapkit included, gets José back as
+    JosÃ©."""
+    repo = _doctor_repo(tmp_path, "repo", _PS1.encode())
+    if value:
+        subprocess.run(["git", "config", "i18n.commitEncoding", value], cwd=repo, check=True)
+
+    res = run_cli(repo, "doctor")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    encoding = [note for note in _notes(res.stdout) if "i18n.commitEncoding" in note]
+    assert encoding == ([f"note i18n.commitEncoding is {value}: git labels each new commit "
+                         f"{value} and crapkit reads commits back as UTF-8, so a name or "
+                         "subject a client wrote in UTF-8 (Git for Windows does) comes out "
+                         f"garbled, its accented letters read as {value} characters, in "
+                         "churn and history; unset it (git config --unset "
+                         f"i18n.commitEncoding) unless this repo's clients write {value}"]
+                        if noted else [])
+
+
+INIT_FILES = [
+    # id, file, bytes, env, the exit code and the stderr line init must end with
+    ("utf16-package-json", "package.json", '{"name": "d"}\n'.encode("utf-16"), {}, 3,
+     "crapkit: init wrote no file: package.json is not UTF-8 (first bytes ff fe = UTF-16, "
+     "the PowerShell 5.1 Out-File default); save it as UTF-8"),
+    ("utf16-package-json-force-color", "package.json", '{"name": "d"}\n'.encode("utf-16"),
+     {"FORCE_COLOR": "1"}, 3,
+     "crapkit: init wrote no file: package.json is not UTF-8 (first bytes ff fe = UTF-16, "
+     "the PowerShell 5.1 Out-File default); save it as UTF-8"),
+    ("utf16-gitignore-force-color", ".gitignore", "build/\n".encode("utf-16"),
+     {"FORCE_COLOR": "1"}, 0,
+     "crapkit: left .gitignore as it was: it is UTF-16 (first bytes ff fe, the PowerShell 5.1 "
+     "Out-File default), which git cannot read; save it as UTF-8 and add .crapkit/"),
+    ("utf8-bom-gitignore-force-color", ".gitignore", b"\xef\xbb\xbfbuild/\n",
+     {"FORCE_COLOR": "1"}, 0, ""),
+    ("utf8-gitignore", ".gitignore", b"build/\n", {}, 0, ""),
+]
+
+
+@pytest.mark.parametrize("name, body, env, code, last", [row[1:] for row in INIT_FILES],
+                         ids=[row[0] for row in INIT_FILES])
+def test_init_ends_in_a_sentence_never_a_traceback(tmp_path: Path, name, body, env, code, last):
+    """A UTF-16 .gitignore or package.json ended init in a traceback at exit 1,
+    which Python 3.13 and later colour under FORCE_COLOR, and the .gitignore
+    one came after crapkit.toml was written. Spawned, so the interpreter reads
+    FORCE_COLOR as it starts."""
+    repo = _bare_git_repo(tmp_path, "repo")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.ts").write_text("export function f(a: number) { return a ? 1 : 2; }\n",
+                                         encoding="utf-8")
+    (repo / name).write_bytes(body)
+    _git_commit_all(repo, "init")
+
+    res = run_cli(repo, "init", env_extra=env)
+
+    assert res.returncode == code, res.stderr
+    assert "Traceback" not in res.stderr and "\x1b[" not in res.stderr, res.stderr
+    assert (res.stderr.splitlines() or [""])[-1] == last
+    assert (repo / "crapkit.toml").is_file() is (code == 0)

@@ -708,12 +708,36 @@ def _doctor_oversized(oversized: tuple[tuple[str, int], ...]) -> list[Finding]:
             for path, size in oversized]
 
 
+def _opens_utf16(path: Path) -> bool:
+    from ..textcodec import utf16_marked
+
+    try:
+        with path.open("rb") as fh:
+            return utf16_marked(fh.read(2))
+    except OSError:
+        return False
+
+
+def _doctor_utf16_sources(root: Path, by_scope: dict) -> list[Finding]:
+    """A note, never a failure: crapkit scores a source that opens with a
+    UTF-16 byte-order mark, and git diffs it as binary (`Binary files ...
+    differ`). One file read of two bytes per scoped source."""
+    marked = sorted(f for files in by_scope.values() for f in files if _opens_utf16(root / f))
+    if not marked:
+        return []
+    return [Finding("note", f"{len(marked)} source file(s) open with a UTF-16 byte-order mark, "
+                            f"the PowerShell 5.1 Out-File default: {', '.join(marked)}. crapkit "
+                            "scores them, but git diffs them as binary; save them as UTF-8 "
+                            "(PowerShell: Set-Content -Encoding utf8) to diff them as text")]
+
+
 def _doctor_scopes(root: Path, cfg, files: list[str], show_files: bool) -> list[Finding]:
     universe = scan_files(files, cfg, size_of=_file_sizer(root))
     return (_doctor_scope_files(universe.by_scope, cfg, show_files)
             + _doctor_unclaimed(universe.unclaimed)
             + _doctor_uncovered(cfg)
-            + _doctor_oversized(universe.oversized))
+            + _doctor_oversized(universe.oversized)
+            + _doctor_utf16_sources(root, universe.by_scope))
 
 
 def _lane_problem(root: Path, lane) -> str | None:
@@ -1170,6 +1194,28 @@ def _doctor_commit_graph(root: Path) -> list[Finding]:
                             "--reachable --changed-paths`")]
 
 
+_UTF8_NAMES = frozenset({"utf-8", "utf8"})
+
+
+def _doctor_commit_encoding(root: Path) -> list[Finding]:
+    """A note, never a failure: i18n.commitEncoding only labels a commit, it
+    does not convert what the client typed. Git for Windows passes a message
+    and a name as UTF-8, so under ISO-8859-1 git stores UTF-8 bytes labelled
+    Latin-1, and every reader that asks for UTF-8, crapkit included, gets
+    `José` back as `JosÃ©`: one author counted twice in churn."""
+    from ..gitio import config_value
+
+    value = config_value(root, "i18n.commitEncoding")
+    if not value or value.lower() in _UTF8_NAMES:
+        return []
+    return [Finding("note", f"i18n.commitEncoding is {value}: git labels each new commit "
+                            f"{value} and crapkit reads commits back as UTF-8, so a name or "
+                            "subject a client wrote in UTF-8 (Git for Windows does) comes out "
+                            f"garbled, its accented letters read as {value} characters, in "
+                            "churn and history; unset it (git config --unset "
+                            f"i18n.commitEncoding) unless this repo's clients write {value}")]
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     return (_doctor_keys(raw)
@@ -1182,6 +1228,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_hook_modes(root)
             + _doctor_hook_encoding(root)
             + _doctor_commit_graph(root)
+            + _doctor_commit_encoding(root)
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))
