@@ -75,6 +75,7 @@ def test_watch_rescoring_stops_its_background_writer(tmp_path):
         assert next_line(process).startswith('watching 1 tracked files')
         source = tmp_path / 'src/a.py'
         stat = source.stat()
+        source.write_text('def f():\n    return 2\n', encoding='utf-8')  # watch rescores new bytes, not a touch
         os.utime(source, (stat.st_atime, stat.st_mtime + 10))
         output, errors = communicate(process)
         assert process.returncode == 0, errors
