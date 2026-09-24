@@ -437,6 +437,40 @@ def test_every_reader_of_the_marks_history_ages_a_mark_from_the_revision_that_br
     assert json.loads(brief.stdout)["gate_rule"]["mark_age_days"] == 2
 
 
+# --- a byte cp1252 leaves undefined keeps a PowerShell name whole -----------------------
+
+PS_TOML = ('[crapkit]\ntarget = 6\n\n'
+           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["powershell"]\n')
+PS_SPRAWL = (b"function Write-Caf%s {\n  param($n)\n"
+             + b"".join(b"  if ($n -eq %d) { $n += %d }\n" % (i, i) for i in range(1, 8))
+             + b"  return $n\n}\n")  # ccn 8, over the ceiling of 6
+
+
+@pytest.mark.parametrize("name", [b"\x81", b"\x9d", "é".encode(), b"\xe9"],
+                         ids=["byte-81", "byte-9d", "utf8-twin", "cp1252-e9"])
+def test_a_powershell_name_holding_a_byte_cp1252_leaves_undefined_is_scored_and_gated(
+        tmp_path: Path, name: bytes):
+    """Read as U+FFFD, the byte split the name and the declaration scored no
+    function: inventory counted 0 where the UTF-8 twin counts 1, and
+    hook-precommit passed a staged ccn-8 function at exit 0 that it blocks at
+    exit 6 in UTF-8."""
+    (tmp_path / "crapkit.toml").write_text(PS_TOML, encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "tool.ps1").write_bytes(PS_SPRAWL % name)
+    git_init_repo(tmp_path)
+    git_commit_all(tmp_path, "init")
+
+    inventory = _run(tmp_path, "inventory", "--json")
+    (tmp_path / "src" / "gated.ps1").write_bytes(PS_SPRAWL % name)
+    subprocess.run(["git", "add", "src/gated.ps1"], cwd=tmp_path, check=True, capture_output=True)
+    gate = _run(tmp_path, "hook-precommit")
+
+    assert inventory.returncode == 0, inventory.stderr
+    assert json.loads(inventory.stdout)["functions"] == 1
+    assert gate.returncode == 6, gate.stdout + gate.stderr
+    assert "Write-Caf" in gate.stdout, gate.stdout
+
+
 # --- doctor names a hook file git cannot spawn ---------------------------------------
 
 HOOK = b"#!/bin/sh\nexec python -m crapkit hook-precommit\n"

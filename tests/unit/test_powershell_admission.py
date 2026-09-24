@@ -64,7 +64,8 @@ CP1252_NAME = "Write-Café"
 UTF8 = CP1252.decode("cp1252").encode("utf-8")
 
 # 0x81 is one of the five bytes cp1252 leaves undefined, so strict cp1252 raises
-# on it too. Replacement is what keeps a file like this analyzable.
+# on it too. It reads as the letter U+0181, which keeps a file like this
+# analyzable and an identifier holding it whole.
 UNDEFINED_BYTE = b'function Write-Bad {\n  # \x81\n  if ($x) { return 1 }\n}\n'
 
 
@@ -189,11 +190,31 @@ def test_a_cp1252_source_file_keeps_the_characters_it_holds(tmp_path: Path):
 
 def test_a_byte_cp1252_itself_leaves_undefined_does_not_break_the_analysis(tmp_path: Path):
     """0x81 has no cp1252 character, so a strict second decode would raise where
-    the first one did and the file would score nothing. Replacement is why the
-    fallback carries 'replace'."""
+    the first one did and the file would score nothing."""
     _, records = analyze_one((_written(tmp_path, "b.ps1", UNDEFINED_BYTE), "b.ps1"))
 
     assert [(r.long_name, r.ccn) for r in records] == [("Write-Bad", 2)]
+
+
+SPRAWL = (b"function Write-Caf%s {\n  param($n)\n"
+          + b"".join(b"  if ($n -eq %d) { $n += %d }\n" % (i, i) for i in range(1, 8))
+          + b"  return $n\n}\n")
+
+
+@pytest.mark.parametrize("name, scored", [
+    (b"\x81", "Write-CafƁ"),
+    ("é".encode(), "Write-Café"),
+], ids=["byte-81-in-the-name", "utf8-twin"])
+def test_a_name_holding_a_byte_cp1252_leaves_undefined_scores_like_its_utf8_twin(
+        tmp_path: Path, name: bytes, scored: str):
+    """Read as U+FFFD, the byte split `Write-Caf` from the rest of its name and
+    the declaration scored no function: inventory counted 0 where the UTF-8
+    twin counts 1, and the pre-commit gate passed this ccn-8 function."""
+    raw = SPRAWL % name
+    _, records = analyze_one((_written(tmp_path, "t.ps1", raw), "t.ps1"))
+
+    assert [(r.long_name, r.ccn) for r in records] == [(scored, 8)]
+    assert staged_records({"t.ps1": raw}) == {"t.ps1": records}
 
 
 def test_a_utf8_source_file_still_declares_its_function(tmp_path: Path):
