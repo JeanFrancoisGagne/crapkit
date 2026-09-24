@@ -3,13 +3,17 @@
 The hooks act on tests under tests/accuracy only: a session that also collects
 tests/unit leaves those items as it found them.
 """
+import itertools
 from pathlib import Path
 
 import pytest
 
-from accuracy.kit import oracles, tiers
+from accuracy.kit import oracles, repos, tiers
 
 HERE = Path(__file__).resolve().parent
+# Corpus files, probes and recordings are data: a test_*.py among them is a
+# fixture's own test, never one of ours.
+collect_ignore_glob = ["*/fixtures/*", "*/small/*", "*/recorded/*", "*/probes/*"]
 
 
 def pytest_configure(config):
@@ -58,3 +62,15 @@ def oracle():
     value from. A missing one fails the test; see kit/oracles.py."""
     tier = tiers.current_tier()
     return lambda name: oracles.require(name, tier)
+
+
+@pytest.fixture(scope="session")
+def repo_templates(tmp_path_factory):
+    return repos.Templates(tmp_path_factory.mktemp("repo-templates"))
+
+
+@pytest.fixture
+def make_repo(repo_templates, tmp_path):
+    """make_repo(spec) is a fresh copy of the spec's repo under this test's tmp_path."""
+    numbers = itertools.count()
+    return lambda spec: repo_templates.copy(spec, tmp_path / f"repo{next(numbers)}")
