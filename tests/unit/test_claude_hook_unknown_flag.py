@@ -37,12 +37,15 @@ UNKNOWN = {
     "a positional": (["claude-hook", "extra"], "`extra`"),
 }
 
-# Each environment that colours 3.14's argparse in a pipe, and none.
+# Each environment that colours 3.14's argparse in a pipe, then the controls
+# that keep it plain even before 166d147's parser fix.
 COLOUR = {
-    "no colour env": {},
     "FORCE_COLOR=1": {"FORCE_COLOR": "1"},
     "PYTHON_COLORS=1": {"PYTHON_COLORS": "1"},
     "TERM=dumb FORCE_COLOR=1": {"TERM": "dumb", "FORCE_COLOR": "1"},
+    "no colour env": {},
+    "NO_COLOR=1 FORCE_COLOR=1": {"NO_COLOR": "1", "FORCE_COLOR": "1"},
+    "PYTHON_COLORS=0 FORCE_COLOR=1": {"PYTHON_COLORS": "0", "FORCE_COLOR": "1"},
 }
 _COLOUR_NAMES = ("FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS", "PY_COLORS", "TERM", "CLICOLOR_FORCE")
 
@@ -107,11 +110,13 @@ def test_the_page_quotes_the_line_the_hook_prints(capsys, monkeypatch):
     assert shown == _one_line(capsys.readouterr().err)
 
 
-def test_a_known_protocol_with_nothing_unknown_stays_silent(capsys, monkeypatch, tmp_path):
-    """`--protocol 2` is the documented drift lever: read, and silent."""
+@pytest.mark.parametrize("protocol", ["2", "x", "99"])
+def test_a_protocol_this_build_does_not_speak_stays_silent(protocol, colour_env, capsys,
+                                                           monkeypatch, tmp_path):
+    """`--protocol N` is the documented drift lever: read, and silent."""
     monkeypatch.setattr(sys, "stdin", io.StringIO(_payload(str(tmp_path / "a.py"))))
 
-    assert main(["claude-hook", "--protocol", "2"]) == 0
+    assert main(["claude-hook", "--protocol", protocol]) == 0
     assert capsys.readouterr() == ("", "")
 
 

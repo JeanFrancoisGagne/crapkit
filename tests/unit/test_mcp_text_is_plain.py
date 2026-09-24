@@ -86,6 +86,7 @@ COLOUR = {
     "TERM=dumb FORCE_COLOR=1": {"TERM": "dumb", "FORCE_COLOR": "1"},
     # controls: colour never turns on for these, fixed or not
     "no colour env": {},
+    "TERM=dumb": {"TERM": "dumb"},
     "NO_COLOR=1 FORCE_COLOR=1": {"NO_COLOR": "1", "FORCE_COLOR": "1"},
     "PYTHON_COLORS=0 FORCE_COLOR=1": {"PYTHON_COLORS": "0", "FORCE_COLOR": "1"},
 }
@@ -129,6 +130,18 @@ def test_a_child_argparse_refusal_answers_without_escape_codes(tmp_path, colour_
 
     assert result["isError"] is True
     assert "unrecognized arguments: --no-such-flag" in text, text
+    assert "\x1b" not in text, text
+
+
+def test_crapkits_own_refusal_answers_without_escape_codes(tmp_path, colour_env):
+    """Control: crapkit writes no colour itself, so its own refusal is plain in
+    every environment, before the relay filters anything."""
+    result = mcp_server._call_tool(_measured(tmp_path), "get_function_brief",
+                                   {"path": "pkg/nope.py", "name": "grade"})
+    text = result["content"][0]["text"]
+
+    assert result["isError"] is True
+    assert json.loads(text)["error"]["kind"] == "state", text
     assert "\x1b" not in text, text
 
 
