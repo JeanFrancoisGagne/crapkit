@@ -118,6 +118,15 @@ def without_results(provenance: dict) -> list[str]:
     return sorted(name for name, prov in provenance.items() if "failures" not in prov)
 
 
+def unread_junits(lanes, provenance: dict) -> list:
+    """The lanes, in declaration order, that declare a `results_artifact` and
+    recorded no failure list: this run reused a junit it could not read. A lane
+    that ran refuses that report itself, and a lane that declares none has no
+    report to read, so neither is named here."""
+    unread = set(without_results(provenance))
+    return [lane for lane in lanes if lane.results_artifact and lane.name in unread]
+
+
 _COUNTS = ("tests_total", "tests_skipped")
 _FAILURES = ("failures", "retried_passes")
 

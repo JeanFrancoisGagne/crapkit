@@ -1005,7 +1005,7 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 
 | Flag | Behavior |
 |---|---|
-| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
+| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. A declared junit it cannot read is a warning under `coverage` and [exit 5 under `verify`](#under---reuse-artifacts-it-is-a-warning). |
 | `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. Each lane prints one line saying which it did, and a rerun names the first condition that failed. |
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
@@ -1395,9 +1395,24 @@ run 11 @ 525a3276065: 5 functions scored: 5 measured, ...
 ```
 
 The lane records no test counts, which is the same no-counts path a lane with no
-`results_artifact` takes, and `verify` says so against its baseline. The alternative was
-deleting `results_artifact` from the config, which gives up both checks on every future
-run to get past one.
+`results_artifact` takes. The alternative was deleting `results_artifact` from the config,
+which gives up both checks on every future run to get past one.
+
+`verify --reuse-artifacts` does not pass over that warning. Its verdict is the
+no-new-failures check, and a lane whose declared junit it could not read checked no test.
+So it exits 5 before it stores the run, as a real run over the same file does:
+
+```
+$ crapkit verify --reuse-artifacts
+crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: results_artifact .crapkit/cov/junit-py.xml is missing; the crashed-worker and no-new-failures checks cannot run for this lane
+crapkit: lane 'py' declares results_artifact .crapkit/cov/junit-py.xml, which this verify reused and could not read, so no test in it was checked for a new failure; run verify without --reuse-artifacts so the lane writes it again
+EXIT=5
+```
+
+That verify used to pass: exit 0, `"ok": true` under `--json`, `verify passed.` in the
+Action's comment, and the run stored as the next trusted baseline. A lane that declares no
+`results_artifact` had no report to read, so verify still passes it and lists it under
+`lanes_without_results`.
 
 ### The test count is the second check
 
@@ -1416,9 +1431,9 @@ A warning, never a failure: deleting a test file is a legitimate way to get ther
 reports **any** shrink against its own baseline, which is the strict half of the same check.
 
 Both counts are optional and neither absence is an error. A baseline recorded before the
-lane declared a `results_artifact` carries no count and compares nothing. A lane that wrote
-no junit this run gets one line naming the gap. Here the baseline had a junit and the lane
-that ran under `verify` had lost it:
+lane declared a `results_artifact` carries no count and compares nothing. A lane that
+declares no junit this run gets one line naming the gap. Here the baseline had a junit and
+the lane has since stopped declaring one:
 
 ```
 $ crapkit verify
@@ -1457,7 +1472,7 @@ warning: lane 'py': no trusted run at or behind the baseline recorded which of i
 
 That is the pull request that adds `results_artifact` to a lane whose suite already fails a
 test. `verify --json` lists such lanes under `lanes_without_baseline_results`, and every
-lane that recorded no test results this run under `lanes_without_results`. A lane with no
+lane that declares no `results_artifact` under `lanes_without_results`. A lane with no
 `results_artifact` whose command exited nonzero gets its own line, since its exit code is
 recorded and not enforced and nothing else says a test failed:
 

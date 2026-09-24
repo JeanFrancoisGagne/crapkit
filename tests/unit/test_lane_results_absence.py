@@ -14,14 +14,20 @@ Every test here feeds one form of that absence through `main`, the entry point
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
 from cli_inproc_repo import commit_all, git, repo, seed_artifacts, template_repo  # noqa: F401
 
 import pytest
 
 from crapkit.cli import main
+from crapkit.errors import ToolError
 from crapkit.invocation import _self
+from crapkit.lanes import _results_provenance
 from crapkit.store import SnapshotStore
+
+LANES_PAGE = Path(__file__).resolve().parents[2] / "docs" / "lanes.md"
 
 JUNIT = "junit.xml"
 
@@ -40,9 +46,10 @@ UNREADABLE = {
                        b"</testsuite>"),
     "not-utf8": b'<testsuite name="t" tests="1"><testcase classname="t" name="caf\xe9"/></testsuite>',
 }
-# The forms a baseline's lane record takes when it holds no results.
-BASELINE_GAPS = ("missing", "zero-testcases", "malformed", "crashed-worker", "undeclared",
-                 "verify-without-junit")
+# The forms a baseline's lane record takes when it holds no results. A verify
+# over a junit it reused and could not read was one more, until it exited 5 and
+# stored no run (test_a_verify_over_a_junit_it_could_not_read_stores_no_run).
+BASELINE_GAPS = ("missing", "zero-testcases", "malformed", "crashed-worker", "undeclared")
 
 
 def run(argv: list[str], repo, capsys) -> tuple[int, str, str]:
@@ -80,7 +87,7 @@ def declare_results(repo, declared: bool = True) -> None:
 def break_junit(repo, form: str) -> None:
     content = UNREADABLE[form]
     if content is None:
-        (repo / JUNIT).unlink()
+        (repo / JUNIT).unlink(missing_ok=True)
     else:
         (repo / JUNIT).write_bytes(content)
 
@@ -91,9 +98,6 @@ def run_without_results(repo, capsys, form: str) -> None:
         declare_results(repo, declared=False)
         code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
         declare_results(repo)
-    elif form == "verify-without-junit":
-        (repo / JUNIT).unlink()
-        code, _, err = run(["verify", "--reuse-artifacts"], repo, capsys)
     else:
         break_junit(repo, form)
         code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
@@ -278,18 +282,30 @@ def test_a_baseline_file_an_older_crapkit_wrote_says_it_holds_no_test_results(co
     assert json.loads(out)["lanes_without_baseline_results"] == []
 
 
-@pytest.mark.parametrize("form", ["missing", "malformed", "undeclared"])
-def test_a_lane_with_no_count_this_run_names_the_gap(counted, capsys, form):
-    if form == "undeclared":
-        declare_results(counted, declared=False)
-    else:
-        break_junit(counted, form)
+def test_a_lane_that_stopped_declaring_a_junit_names_the_gap(counted, capsys):
+    """The one lane with no count this run that verify still judges: it
+    declares no junit, so there is nothing it failed to read."""
+    declare_results(counted, declared=False)
 
     code, _, err = run(["verify", "--reuse-artifacts"], counted, capsys)
 
     assert code == 0, err
     assert ("warning: lane 'unit' wrote no test counts this run (no results_artifact was "
             "parsed), so the baseline's 20 tests cannot be compared") in err, err
+
+
+@pytest.mark.parametrize("form", ["missing", "malformed"])
+def test_a_reused_junit_verify_could_not_read_refuses_before_any_count_is_compared(
+        counted, capsys, form):
+    """These two forms once passed with the no-count line above; the refusal
+    now comes first, and a run that stops there compares nothing."""
+    break_junit(counted, form)
+
+    code, _, err = run(["verify", "--reuse-artifacts"], counted, capsys)
+
+    assert code == 5, err
+    assert f"crapkit: {unread_refusal()}" in err, err
+    assert "cannot be compared" not in err, err
 
 
 def test_a_lane_renamed_since_the_baseline_compares_nothing(counted, capsys):
@@ -335,12 +351,14 @@ def test_a_failure_an_older_run_recorded_is_forgiven_past_a_baseline_with_no_lis
             "failures are compared with run 1's") in err, err
 
 
-def test_a_failure_no_run_recorded_counts_as_new_and_says_why(repo, capsys):
-    """The baseline's lane declared no results_artifact and nothing older did:
-    the failure may predate the change, and nothing can tell."""
-    seed_artifacts(repo)
-    assert run(["coverage", "--reuse-artifacts"], repo, capsys)[0] == 0
+@pytest.mark.parametrize("form", BASELINE_GAPS)
+def test_a_failure_no_run_recorded_counts_as_new_and_says_why(repo, capsys, form):
+    """The baseline's lane recorded no failure list, in the named way, and no
+    run behind it did: the failure may predate the change, and nothing can
+    tell. Exit 8 stands, since a gate fails closed, and the line says why."""
     declare_results(repo)
+    seed_artifacts(repo)
+    run_without_results(repo, capsys, form)
     junit(repo, 3, "t::c0")
 
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], repo, capsys)
@@ -474,16 +492,79 @@ def test_a_coverage_run_an_older_crapkit_stored_still_forgives(repo, capsys):
 
 # --- verify: this run's lane has no failure list ---------------------------------
 
-@pytest.mark.parametrize("form", ["missing", "malformed", "crashed-worker"])
+def unread_refusal(lane: str = "unit", path: str = JUNIT) -> str:
+    return (f"lane {lane!r} declares results_artifact {path}, which this verify reused and "
+            "could not read, so no test in it was checked for a new failure; run verify "
+            "without --reuse-artifacts so the lane writes it again")
+
+
+@pytest.mark.parametrize("form", sorted(UNREADABLE))
 def test_verify_names_the_lane_whose_failures_it_could_not_check(counted, capsys, form):
+    """A declared junit that `verify --reuse-artifacts` cannot read exits 5, as
+    a real run over the same file does, so `verify passed.` never stands for a
+    run that checked no test. Nothing is stored: a passing verify there became
+    the next trusted baseline."""
     break_junit(counted, form)
+    stored = runs(counted)
 
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], counted, capsys)
 
-    payload = json.loads(out)
+    assert code == 5, out + err
+    assert json.loads(out)["error"] == {"exit": 5, "kind": "tool", "message": unread_refusal()}
+    assert f"lane 'unit' reused {JUNIT} and cannot check it" in err, err
+    assert runs(counted) == stored
+
+
+def test_a_verify_over_a_junit_it_could_not_read_stores_no_run(counted, capsys):
+    """The route that once made a trusted run with no count: that verify passed
+    and became the baseline. Now the next verify still compares with run 1."""
+    (counted / JUNIT).unlink()
+    assert run(["verify", "--reuse-artifacts"], counted, capsys)[0] == 5
+    junit(counted, 12)
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], counted, capsys)
+
     assert code == 0, out + err
-    assert payload["lanes_without_results"] == ["ui", "unit"]
-    assert "the crashed-worker and no-new-failures checks cannot run for this lane" in err
+    assert json.loads(out)["baseline_run"] == 1
+    assert "warning: lane 'unit' runs 8 fewer tests than the baseline\n" in err, err
+
+
+def test_the_refusal_names_every_lane_it_could_not_check(counted, capsys):
+    """Each declared lane whose reused junit could not be read is named, in
+    declaration order, in the one refusal."""
+    text = (counted / "crapkit.toml").read_text(encoding="utf-8")
+    (counted / "crapkit.toml").write_text(
+        text.replace('artifact = "coverage/ui.json"',
+                     'artifact = "coverage/ui.json"\nresults_artifact = "ui.xml"', 1),
+        encoding="utf-8")
+    commit_all(counted, "the ui lane reads ui.xml")
+    (counted / JUNIT).unlink()
+
+    code, _, err = run(["verify", "--reuse-artifacts"], counted, capsys)
+
+    assert code == 5, err
+    assert f"crapkit: {unread_refusal()}; {unread_refusal('ui', 'ui.xml')}\n" in err, err
+
+
+def test_the_lanes_page_quotes_both_lines_the_refusal_prints(tmp_path, capsys):
+    from crapkit.cli.verifying import _refuse_unread_results
+
+    lane = SimpleNamespace(name="py", results_artifact=".crapkit/cov/junit-py.xml")
+    provenance = _results_provenance(tmp_path, lane, reuse_artifact=True)
+    with pytest.raises(ToolError) as refused:
+        _refuse_unread_results([lane], {"py": provenance})
+
+    page = LANES_PAGE.read_text(encoding="utf-8")
+    assert f"{capsys.readouterr().err}crapkit: {refused.value}\nEXIT=5\n" in page
+
+
+def test_a_lane_that_declares_no_junit_is_not_refused(counted, capsys):
+    """Q27's other half: a lane that never declared a junit passes, named under
+    lanes_without_results, since there was no report to read."""
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], counted, capsys)
+
+    assert code == 0, out + err
+    assert json.loads(out)["lanes_without_results"] == ["ui"]
 
 
 def test_a_lane_with_no_junit_that_exited_nonzero_is_named(repo, capsys):

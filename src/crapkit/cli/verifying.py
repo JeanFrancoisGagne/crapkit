@@ -636,6 +636,29 @@ def _warn_baseline_file(baseline: dict, provenance: dict) -> bool:
     return stale
 
 
+def _refuse_unread_results(lanes, provenance: dict) -> None:
+    """Refuse a verdict over a declared junit this run reused and could not read.
+
+    A lane that runs refuses that report and exits 5. Under `--reuse-artifacts`
+    the lane only warns, which suits `coverage`, since scoring off a salvaged
+    coverage file is its job. verify then passed with no test checked, stored
+    the run as a passing verify, and made it the next baseline. So it exits 5
+    here, before anything is stored, as a real run does. A lane that declares
+    no junit had nothing to read and still passes, under `lanes_without_results`.
+    """
+    from ..lane_results import unread_junits
+
+    unread = unread_junits(lanes, provenance)
+    if unread:
+        raise ToolError("; ".join(_unread_results_line(lane) for lane in unread))
+
+
+def _unread_results_line(lane) -> str:
+    return (f"lane {lane.name!r} declares results_artifact {lane.results_artifact}, which "
+            "this verify reused and could not read, so no test in it was checked for a new "
+            "failure; run verify without --reuse-artifacts so the lane writes it again")
+
+
 def _warn_unseen_failures(lanes, provenance: dict) -> None:
     """A lane with no results_artifact that exited nonzero: its exit code is
     recorded, not enforced, and it is the only sign a test failed."""
@@ -848,6 +871,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     tool_versions, fresh_failures = run.tool_versions, run.test_failures
     if run.lane_errors:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
+    _refuse_unread_results(cfg.lanes, provenance)
 
     ranges = changed_ranges(diff_since(root, basis))
     ratchet = judged.entries
