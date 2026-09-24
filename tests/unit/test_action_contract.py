@@ -850,7 +850,32 @@ def test_what_a_lane_prints_never_reaches_the_payloads_the_comment_reads(tmp_pat
     comment = (state / "crapkit-comment.md").read_text(encoding="utf-8")
     assert comment.startswith(_builder().MARKER + "\n"), comment
     assert "1 function in 1 file" in comment and "wrote no run summary" not in comment, comment
+    assert "### Worklist: the whole repository" in comment, comment
     assert json.loads((state / "crapkit-comment.json").read_bytes())["body"] == comment
+
+
+@pytest.mark.parametrize("base, expected", [
+    ("the-fork-point", ["README.md"]),
+    ("", []),
+    ("0123456789abcdef0123456789abcdef01234567", []),
+], ids=["pull-request", "push-event", "base-not-in-a-shallow-clone"])
+def test_the_changed_files_step_lists_the_diff_or_nothing(tmp_path, base, expected):
+    """base.sha renders "" on a push, and a shallow clone lacks the commit it
+    names on a pull request. Either way the list is empty, the comment ranks
+    the whole repository, and the step exits 0."""
+    fork = _two_commit_repo(tmp_path / "repo", {})
+    state = tmp_path / "state"
+    state.mkdir()
+    script = tmp_path / "changed-files.sh"
+    script.write_text(_step_named("the changed files")["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base.replace("the-fork-point", fork)}
+
+    done = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                          cwd=tmp_path / "repo", env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+
+    listed = [name for name in (state / "crapkit-changed.txt").read_bytes().decode().split("\0") if name]
+    assert (done.returncode, listed) == (0, expected), done.stderr
+    assert done.stdout.strip() == f"{len(expected)} changed file(s)"
 
 
 def test_the_comment_step_hands_the_builder_the_base_files():
