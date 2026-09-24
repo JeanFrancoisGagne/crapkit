@@ -1,0 +1,90 @@
+"""Which accuracy tests a run selects, and the guard on the `process` marker.
+
+A tier is a cadence. A test with no tier marker is a push test, and push tests
+also run in the nightly and release tiers; weekly is the mutation run and runs
+only its own tests. The tier comes from CRAPKIT_ACCURACY_TIER, which
+tools/accuracy/run.py sets, so a bare `pytest` selects push.
+
+A test that is not in the running tier is deselected, never skipped: the only
+skip or xfail under tests/accuracy is a rulings row's strict xfail.
+
+A test that spawns git, node, pwsh or the crapkit CLI carries `process`, which
+the mutation killer command deselects. The kit's own spawners call
+require_process(), so a test that forgot the marker fails instead of slowing
+every mutant down.
+"""
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+import os
+import sys
+
+TIERS = ("push", "nightly", "weekly", "release")
+TIER_ENV = "CRAPKIT_ACCURACY_TIER"
+RUNS = {
+    "push": frozenset({"push"}),
+    "nightly": frozenset({"push", "nightly"}),
+    "weekly": frozenset({"weekly"}),
+    "release": frozenset({"push", "release"}),
+}
+MARKERS = {
+    "push": "runs on every push and pull request, and in the nightly and release tiers",
+    "nightly": "runs in the nightly tier only",
+    "weekly": "runs in the weekly mutation tier only",
+    "release": "runs in the release tier only",
+    "process": "spawns git, node, pwsh or the crapkit CLI; the mutation killer deselects it",
+    "golden": "compares crapkit to its own recorded output; not an independent method",
+    "change_control": "judges a diff against the change-control rules; not an independent method",
+    "cross_surface": "compares two crapkit surfaces; not an independent method",
+    "platform(name)": "runs only where sys.platform starts with name (win32, linux, darwin)",
+}
+
+
+class TierError(ValueError):
+    """CRAPKIT_ACCURACY_TIER names no tier."""
+
+
+def current_tier(environ: Mapping[str, str] = os.environ) -> str:
+    tier = environ.get(TIER_ENV) or "push"
+    if tier not in RUNS:
+        raise TierError(f"{TIER_ENV}={tier!r} names no tier; use one of {', '.join(TIERS)}")
+    return tier
+
+
+def tiers_of(marker_names: Iterable[str]) -> frozenset[str]:
+    """The tiers a test belongs to. No tier marker means push."""
+    named = frozenset(marker_names) & frozenset(TIERS)
+    return named or frozenset({"push"})
+
+
+def runs_on_platform(platforms: Iterable[str], platform: str = sys.platform) -> bool:
+    wanted = list(platforms)
+    return not wanted or any(platform.startswith(name) for name in wanted)
+
+
+def selected(marker_names: Iterable[str], tier: str, platforms: Iterable[str] = (),
+             platform: str = sys.platform) -> bool:
+    """Whether a test with these markers runs in this tier on this platform."""
+    in_tier = bool(tiers_of(marker_names) & RUNS[tier])
+    return in_tier and runs_on_platform(platforms, platform)
+
+
+_RUNNING: dict[str, frozenset[str] | None] = {"markers": None}
+
+
+def enter(marker_names: Iterable[str]) -> None:
+    """Called as a test starts, so the kit's spawners can read its markers."""
+    _RUNNING["markers"] = frozenset(marker_names)
+
+
+def leave() -> None:
+    _RUNNING["markers"] = None
+
+
+def require_process(what: str) -> None:
+    """Fail a running test that spawns `what` without the `process` marker.
+    Outside a test (run.py, retro.py) there is nothing to check."""
+    markers = _RUNNING["markers"]
+    if markers is not None and "process" not in markers:
+        raise AssertionError(f"this test spawns {what}: mark it @pytest.mark.process, "
+                             "so the mutation killer command can deselect it")

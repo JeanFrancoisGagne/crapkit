@@ -43,8 +43,12 @@ classifiers = [
 requires-python = ">=3.11"
 # lizard 1.24.0 is the PyPI release cut from the exact commit crapkit was built
 # against (tag 1.24.0 == 308b1c3e); earlier releases lack the TSX handling.
+# The cap keeps a new lizard from moving a score unannounced: its readers decide
+# every ccn crapkit stores. Lifting it needs a row in
+# tests/accuracy/change_control/CHANGES.tsv, and the nightly lizard-edge job
+# scores the small corpus under the newest lizard so the move is known first.
 dependencies = [
-    "lizard>=1.24.0",
+    "lizard>=1.24.0,<1.25",
 ]
 
 [project.urls]
@@ -77,6 +81,58 @@ dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3.7", "coverage>=7.10.6", "P
 # `pip install "crapkit[py]"` when those are the same environment. Double
 # quotes: single ones do not survive cmd.exe.
 py = ["pytest-cov>=5", "coverage>=7.10.6"]
+# The calculation-accuracy suite (tests/accuracy, tools/accuracy). Every oracle
+# is pinned exactly: an oracle is the expected value, and a new release of one
+# moves expectations the way a crapkit change moves results. The hashed lock
+# files in tools/accuracy are what CI installs; these lists are their source.
+# accuracy-push is what every push runs; accuracy adds the nightly oracles.
+accuracy-push = [
+    "hypothesis==6.168.1",
+    "radon==6.0.1",
+    "mccabe==0.7.0",
+    "complexipy==8.0.1",
+    "coverage==7.16.1",
+    "unidiff==1.0.1",
+    "junitparser==5.0.3",
+    "numpy==2.4.6",
+    "filelock==4.0.3",
+    "html5lib==1.1",
+    "jsonschema==4.26.0",
+    "rfc3986==2.0.0",
+]
+accuracy = [
+    "hypothesis==6.168.1",
+    "radon==6.0.1",
+    "mccabe==0.7.0",
+    "complexipy==8.0.1",
+    "coverage==7.16.1",
+    "unidiff==1.0.1",
+    "junitparser==5.0.3",
+    "numpy==2.4.6",
+    "filelock==4.0.3",
+    "html5lib==1.1",
+    "jsonschema==4.26.0",
+    "rfc3986==2.0.0",
+    "pylint==4.0.9",
+    "pydriller==2.12",
+    "pygit2==1.20.1",
+    "networkx==3.6.1",
+    "mlxtend==0.25.0",
+    "slipcover==1.1.0",
+    "diff-cover==10.6.0",
+    "pytest-reportlog==1.0.0",
+    "mutmut==3.8.0",
+    "tree-sitter==0.26.0",
+    "tree-sitter-bash==0.25.1",
+    "tree-sitter-c==0.24.2",
+    "tree-sitter-cpp==0.23.4",
+    "tree-sitter-go==0.25.0",
+    "tree-sitter-java==0.23.5",
+    "tree-sitter-objc==3.0.2",
+    "tree-sitter-rust==0.24.2",
+    "tree-sitter-swift==0.7.3",
+    "tree-sitter-zig==1.1.2",
+]
 
 [project.scripts]
 crapkit = "crapkit.cli:main"
