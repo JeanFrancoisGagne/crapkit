@@ -155,6 +155,9 @@ def test_init_does_not_probe_a_lane_it_did_not_write(tmp_path: Path):
 
 
 _DEAD_EXIT = 9009 if os.name == "nt" else 127
+# The name init's `{python}` token reads as on this OS, and so the word the
+# lane starts: `python` on Windows, `python3` elsewhere.
+_DEAD_WORD = "python" if os.name == "nt" else "python3"
 
 
 def _with_a_python_that_will_not_run(tmp_path: Path) -> dict:
@@ -167,7 +170,7 @@ def _with_a_python_that_will_not_run(tmp_path: Path) -> dict:
     if os.name == "nt":
         (shim_dir / "python.bat").write_text(f"@exit /b {_DEAD_EXIT}\n", encoding="utf-8")
     else:
-        shim = shim_dir / "python"
+        shim = shim_dir / _DEAD_WORD
         shim.write_text(f"#!/bin/sh\nexit {_DEAD_EXIT}\n", encoding="utf-8")
         shim.chmod(0o755)
     return {"PATH": os.pathsep.join([str(shim_dir), os.environ["PATH"]])}
@@ -183,7 +186,7 @@ def test_init_says_when_the_shell_cannot_run_the_lanes_interpreter(
 
     assert res.returncode == 0, res.stderr
     assert "cannot run it" in res.stderr and str(_DEAD_EXIT) in res.stderr
-    assert "`python`" in res.stderr, "the note has to name the word the lane starts with"
+    assert f"`{_DEAD_WORD}`" in res.stderr, "the note has to name the word the lane starts with"
     assert "pytest_cov" not in res.stderr, "nothing ran: pytest-cov is not the gap"
     assert (pytest_repo / "crapkit.toml").is_file(), "a note must not stop the scaffold"
 
@@ -200,7 +203,7 @@ def test_doctor_fails_a_lane_whose_first_word_will_not_run(
 
     assert res.returncode == 1, res.stdout
     assert "cannot run" in res.stdout and str(_DEAD_EXIT) in res.stdout
-    assert "'python'" in res.stdout, "name the word that has to change"
+    assert f"'{_DEAD_WORD}'" in res.stdout, "name the word that has to change"
     assert "no problems found" not in res.stdout
 
 
@@ -593,7 +596,7 @@ def test_without_a_lockfile_the_commented_template_keeps_the_bare_interpreter(
 
     text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
 
-    assert re.search(r'# command = "(python3?|py) -m pytest --cov', text), text
+    assert re.search(r'# command = "(\{python\}|python3?|py) -m pytest --cov', text), text
 
 
 # --- the virtualenv the repo carries ------------------------------------------

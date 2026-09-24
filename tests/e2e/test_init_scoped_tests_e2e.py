@@ -25,7 +25,9 @@ _TEST = "from pkg.x import g\n\n\ndef test_g():\n    assert g(0) == 0\n"
 _PYPROJECT = '[project]\nname = "app"\n\n[tool.pytest.ini_options]\npythonpath = ["."]\n'
 _TESTPATHS = _PYPROJECT + 'testpaths = ["tests"]\n'
 _APP_TS = "export function f(a: number) { return a ? 1 : 2; }\n"
-_LAUNCHER = r"(python3?|py|[^\s]+python(\.exe)?)"
+# The python init names: its launcher token (`{python}`, `{python:.venv}`),
+# or the one name that resolves on a machine where the token's does not.
+_LAUNCHER = r"(\{python(:[^\s{}]+)?\}|python3?|py|[^\s]+python(\.exe)?)"
 
 
 def _commit_all(repo: Path, message: str) -> None:

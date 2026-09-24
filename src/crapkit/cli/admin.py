@@ -92,19 +92,17 @@ def _imports_pytest(launcher: Path) -> bool:
 
 
 def _committed_launcher(venv: Path, root: Path) -> str:
-    r"""The launcher as a committed config spells it: repo-relative, so it
-    travels the way an absolute path never could, and written for the file it
-    lands in.
+    r"""The launcher as a committed config spells it: the launcher token for
+    this venv, repo-relative, so it travels the way an absolute path never
+    could, to either OS.
 
-    Windows takes both halves of that. cmd.exe reads an unquoted `/` as the end
-    of the command name (`.venv/Scripts/python --version` answers `'.venv' is
-    not recognized`), so the separator has to be a backslash; and `\` opens an
-    escape inside a TOML basic string, so init writes `.venv\\Scripts\\python.exe`
-    and the config loader hands back the single-backslash path that runs. Both
-    spellings start under cmd.exe, which is why the probe reads this one.
+    The OS's own spelling did not travel. Windows wrote `.venv\\Scripts\\python.exe`
+    (cmd.exe reads an unquoted `/` as the end of the command name, and `\`
+    opens an escape in a TOML basic string), which no Linux checkout has, and
+    Linux wrote `.venv/bin/python`, which cmd.exe cannot start. The loader
+    expands `{python:.venv}` into the launcher of the OS reading the file.
     """
-    separator = "\\\\" if os.name == "nt" else "/"
-    return separator.join([*venv.relative_to(root).parts, *_VENV_LAUNCHER])
+    return config.python_token(venv.relative_to(root).as_posix())
 
 
 def _repo_venv_python(root: Path, scopes: tuple[str, ...] = ()) -> str | None:
@@ -145,7 +143,22 @@ def _interpreter(root: Path, scopes: tuple[str, ...] = ()) -> str:
     runner = lockfile_runner(_present_lockfiles(root))
     if runner:
         return f"{runner} {_python_name()}"
-    return _repo_venv_python(root, scopes) or _python_name()
+    return _repo_venv_python(root, scopes) or _bare_python()
+
+
+def _bare_python() -> str:
+    """The `{python}` token where the name it reads as on this OS resolves
+    here, else `_python_name`'s answer.
+
+    A bare name did not travel either: the `python` a Windows init wrote does
+    not exist on an Ubuntu without python-is-python3, and the token reads as
+    `python3` there. A machine where only another name resolves (`py` on
+    Windows, `python` alone on POSIX) keeps that name, so the config still
+    runs on the machine that wrote it."""
+    import shutil
+
+    token = config.python_token()
+    return token if shutil.which(config.expand_launchers(token)) else _python_name()
 
 
 def _present_markers(root: Path) -> frozenset[str]:
@@ -540,10 +553,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     text = starter_toml(scopes, lanes, interpreter=interpreter,
                         testpaths=pytest_testpaths(_marker_texts(root)),
                         tracked=files, package_json=packages)
-    load_config_text(text)  # self-check: never write a config crapkit cannot read back
+    # Self-check: never write a config crapkit cannot read back. The probe asks
+    # the lanes as they load, with the launcher token read for this OS.
+    written = load_config_text(text)
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
-    _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
+    _warn_missing_pytest_cov(root, written.lanes)
     _extend_gitignore(root, live_lanes(lanes, scopes))
     return 0
 
