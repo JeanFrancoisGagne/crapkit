@@ -1181,18 +1181,29 @@ def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
     fix = (f"lane {writer!r} replaces it on its next successful run, or delete the entry"
            if writer else "no declared lane writes this key, so delete the entry")
     return (f".crapkit/artifacts.json: the entry for {key!r} is not an object, so crapkit "
-            f"reads it as no stamp (no commit, no duration); {fix}")
+            f"reads it as no stamp (no commit, no duration) and `--reuse-artifacts` refuses the "
+            f"lane while it stands; {fix}")
+
+
+def _unreadable_file_note(reason: str) -> str:
+    return (f".crapkit/artifacts.json cannot be read ({reason}), so every lane reads as "
+            "unstamped and `--reuse-artifacts` refuses each lane whose artifact is on disk; "
+            "the next real run of any lane rewrites the file, or delete it to reuse the "
+            "artifacts as they stand")
 
 
 def _doctor_stamps(root: Path, lanes) -> list[Finding]:
     """WARN, never FAIL: every reader already takes a mangled entry as no stamp.
     Named anyway, because the file is hand-edited and the reader has to find the
     line doctor skipped."""
-    from ..lanes import read_stamps, unreadable_stamps
+    from ..lanes import UnreadableStamps, read_stamps, unreadable_stamps
 
+    stamps = read_stamps(root)
+    if isinstance(stamps, UnreadableStamps):
+        return [Finding("WARN", _unreadable_file_note(stamps.reason))]
     writers = {lane.artifact: lane.name for lane in lanes}
     return [Finding("WARN", _unreadable_stamp_note(key, writers))
-            for key in unreadable_stamps(read_stamps(root))]
+            for key in unreadable_stamps(stamps)]
 
 
 def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:

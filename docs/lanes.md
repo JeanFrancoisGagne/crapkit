@@ -1096,6 +1096,24 @@ records nothing either: that file is this run's, and reuse judges it on its own 
 `--reuse-unchanged` reads the same refusal stamp, so a lane whose last attempt wrote
 nothing reruns even when every other input still matches.
 
+The refusal lives only in `.crapkit/artifacts.json`, so reuse also refuses a lane while
+that record cannot be read: a file that does not parse, one whose top level is not an
+object, or an entry for the lane's artifact that is not an object. Each of those read as no
+stamp at all, and reuse scored a dead lane's leftover as a trusted run:
+
+```
+$ crapkit coverage --reuse-artifacts
+crapkit: lane 'py' FAILED: lane 'py': .crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit cannot tell whether .crapkit/cov/py.json is the file a failed attempt left; rerun the lane (`crapkit coverage --lane py`), or delete .crapkit/artifacts.json to reuse the file as it stands
+```
+
+`doctor` WARNs about the same file. crapkit writes it through a temporary file that
+replaces the old one in one step, so a crash mid-write no longer leaves it cut short. A
+missing file is not an unreadable one: a repo that only ever reuses artifacts another
+command wrote never stamps any. That is also why deleting `.crapkit/artifacts.json` drops
+every refusal it held, and why a store a crapkit older than 0.5.0 left behind holds none:
+reuse then scores whatever file is on disk. Delete it only when you mean to trust every
+artifact there.
+
 ---
 
 ## Timeouts and retries

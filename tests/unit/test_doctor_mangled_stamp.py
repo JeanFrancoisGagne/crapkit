@@ -110,3 +110,30 @@ def test_check_config_answers_over_the_entry(repo):
 
     assert result["isError"] is False, result["content"][0]["text"][-800:]
     assert len(_named(result["structuredContent"]["warnings"])) == 1
+
+
+def test_the_warn_says_reuse_refuses_the_lane_while_the_entry_stands(repo, capsys):
+    """The entry may have held the refusal a failed attempt recorded, so reuse
+    refuses the lane rather than score what may be a dead lane's leftover."""
+    _mangle(repo)
+
+    _, out, _ = _run(["doctor", "--json"], repo, capsys)
+
+    [warn] = _warns_about("coverage/unit.json", json.loads(out)["warnings"])
+    assert "`--reuse-artifacts` refuses the lane while it stands" in warn, warn
+
+
+def test_a_stamps_file_that_does_not_parse_draws_a_warn(repo, capsys):
+    """A cut-short or non-object file read as no stamps with no doctor line at
+    all, and the refusals it held went with it."""
+    stamps = repo / ".crapkit" / "artifacts.json"
+    stamps.parent.mkdir(parents=True, exist_ok=True)
+    stamps.write_text('{"coverage/unit.json": {"lane": "un', encoding="utf-8")
+
+    code, out, _ = _run(["doctor", "--json"], repo, capsys)
+
+    assert code == 0
+    assert (".crapkit/artifacts.json cannot be read (it does not parse as JSON), so every lane "
+            "reads as unstamped and `--reuse-artifacts` refuses each lane whose artifact is on "
+            "disk; the next real run of any lane rewrites the file, or delete it to reuse the "
+            "artifacts as they stand") in json.loads(out)["warnings"], out

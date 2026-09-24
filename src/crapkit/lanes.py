@@ -395,18 +395,39 @@ def _stamps_path(root: Path) -> Path:
     return root / ".crapkit" / "artifacts.json"
 
 
+class UnreadableStamps(dict):
+    """The stamps of a .crapkit/artifacts.json that exists and cannot be read as
+    an object: none, plus why. Every reader takes it as no stamps, as it always
+    did; reuse refuses on it, because the refusal a failed attempt recorded may
+    have been in it (`unreadable_stamp`)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__()
+        self.reason = reason
+
+
 def read_stamps(root: Path) -> dict:
     """The recorded artifact stamps: {artifact path: {commit, lane, seconds}},
     plus `refused_mtime_ns` on an artifact the lane's last attempt failed to
-    write. A missing or hand-mangled file reads as no stamps at all."""
+    write. A missing file reads as no stamps; one that cannot be read, as
+    `UnreadableStamps`."""
     path = _stamps_path(root)
     if not path.is_file():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
+        return UnreadableStamps("it does not parse as JSON")
+    return data if isinstance(data, dict) else UnreadableStamps("its top level is not an object")
+
+
+def unreadable_stamp(stamps: dict, artifact: str) -> str:
+    """Why the stamp record for `artifact` cannot be read, or "" when it can,
+    or when the file records none for it."""
+    if isinstance(stamps, UnreadableStamps):
+        return stamps.reason
+    entry = stamps.get(artifact)
+    return "" if entry is None or isinstance(entry, dict) else f"its entry for {artifact} is not an object"
 
 
 def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict) -> dict:
@@ -600,15 +621,25 @@ def write_stamps(root: Path, entries: dict[str, dict]) -> None:
     """Merge this run's artifact stamps into .crapkit/artifacts.json in one write.
 
     Dying before this point loses stamps but never fabricates one, so the worst
-    a crash costs is a rerun of lanes that could have been reused.
+    a crash costs is a rerun of lanes that could have been reused. The text goes
+    to a temporary file that replaces the old one in one step: a crash during a
+    plain write left the file cut short, and with it the refusals it held.
     """
     fresh = {artifact: entry for artifact, entry in entries.items() if entry}
     if not fresh:
         return
     path = _stamps_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**read_stamps(root), **fresh}, sort_keys=True, indent=1),
-                    encoding="utf-8")
+    _replace_text(path, json.dumps({**read_stamps(root), **fresh}, sort_keys=True, indent=1))
+
+
+def _replace_text(path: Path, text: str) -> None:
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def stamp_for(stamps: dict, artifact: str) -> dict:
@@ -1334,12 +1365,28 @@ def _refuse_unwritten_artifact(root: Path, lane: Lane) -> None:
     on disk is still the one that attempt left. Reuse read that file back and
     scored it, so a dead lane's old numbers became the trusted baseline. A file
     that is gone falls through to `_artifact_path`, whose sentence is the one
-    the recover skill triages on."""
+    the recover skill triages on. A stamps file crapkit cannot read may have
+    held that refusal, so it refuses too."""
     path = root / lane.artifact
-    stamp = stamp_for(read_stamps(root), lane.artifact)
-    if path.is_file() and _refused_on_disk(stamp, path):
+    if not path.is_file():
+        return
+    stamps = read_stamps(root)
+    _refuse_unreadable_stamp(lane, unreadable_stamp(stamps, lane.artifact))
+    stamp = stamp_for(stamps, lane.artifact)
+    if _refused_on_disk(stamp, path):
         _raise_no_artifact(root, lane, _lane_log_path(root, lane), None,
                            {lane.artifact: stamp["refused_mtime_ns"]}, reuse=True)
+
+
+def _refuse_unreadable_stamp(lane: Lane, why: str) -> None:
+    from .invocation import _self
+
+    if why:
+        raise ToolError(
+            f"lane {lane.name!r}: .crapkit/artifacts.json cannot be read ({why}), so crapkit "
+            f"cannot tell whether {lane.artifact} is the file a failed attempt left; rerun the "
+            f"lane (`{_self()} coverage --lane {lane.name}`), or delete .crapkit/artifacts.json "
+            "to reuse the file as it stands")
 
 
 def _artifact_path(root: Path, lane: Lane) -> Path:

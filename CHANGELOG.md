@@ -69,6 +69,13 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   run summed a failed or skipped lane's functions at the cov-0 stand-in, so one line read
   `0 over ceiling 6, CRAP load 32.0, grade A+` where the measured scopes held 2.0.
   `by_scope` still carries each unmeasured scope's own load.
+- `--reuse-artifacts` refuses a lane while `.crapkit/artifacts.json` cannot be read (it does
+  not parse, its top level is not an object, or the lane's entry is not an object), and
+  says to rerun the lane or delete the file. The refusal a failed attempt records lives in
+  that file, and each of those forms read as no stamp, so reuse scored the dead lane's
+  leftover as a trusted run. The file is now written through a temporary file, so a crash
+  cannot cut it short, and `doctor` WARNs about a file that does not parse, as it did for a
+  mangled entry.
 
 ## 0.8.0 — 2026-09-23
 
