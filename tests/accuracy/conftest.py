@@ -5,10 +5,11 @@ tests/unit leaves those items as it found them.
 """
 import itertools
 from pathlib import Path
+import sys
 
 import pytest
 
-from accuracy.kit import oracles, repos, tiers
+from accuracy.kit import oracles, repos, runlog, tiers
 
 HERE = Path(__file__).resolve().parent
 # Corpus files, probes and recordings are data: a test_*.py among them is a
@@ -74,3 +75,10 @@ def make_repo(repo_templates, tmp_path):
     """make_repo(spec) is a fresh copy of the spec's repo under this test's tmp_path."""
     numbers = itertools.count()
     return lambda spec: repo_templates.copy(spec, tmp_path / f"repo{next(numbers)}")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Hand run.py the shape events the strategies emitted this session."""
+    drawn = sys.modules.get("accuracy.kit.strategies")
+    if drawn is not None and drawn.EVENTS:
+        runlog.note("events", counts=dict(drawn.EVENTS))
