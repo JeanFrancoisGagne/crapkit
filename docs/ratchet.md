@@ -719,6 +719,12 @@ warning: 1 untracked file(s) in a scope were not judged (src/added.ts): verify s
 `--json` carries those paths as `untracked_in_scope`. A file no scope would score (a note, a
 file outside every scope) is not named.
 
+Which files changed is git's answer, and git reads it from its stat cache: a same-size edit
+whose old modification time was put back (two writes inside one clock tick, or a copy that
+keeps times) reads as unchanged to verify's changed files and its committed/dirty split, to
+`rescore --gate`, to the commit hook's re-stage note and to the files `mutate` copies into its
+workers, the same way `git status` and `git add` miss it until the file's mtime moves again.
+
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
 tree against its own mark.

@@ -44,3 +44,14 @@ def test_the_page_quotes_the_untracked_warning_verify_prints(capsys):
     printed = capsys.readouterr().err.strip()
 
     assert printed in _page(), printed
+
+
+def test_the_page_names_every_reader_the_same_size_limit_reaches():
+    """tests/e2e/test_git_view_readers_e2e.py pins the limit at each of these
+    readers; the page names the same list."""
+    text = " ".join(" ".join(_page()).split())
+    start = text.index("a same-size edit whose old modification time was put back")
+    sentence = text[start:text.index(".", start)]
+
+    for reader in ("committed/dirty split", "`rescore --gate`", "re-stage note", "`mutate`"):
+        assert reader in sentence, reader
