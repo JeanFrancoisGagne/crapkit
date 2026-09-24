@@ -84,8 +84,8 @@ def test_the_gha_cache_and_a_named_builder_skip_the_daemons_builder(monkeypatch)
 
 
 def test_an_image_whose_tools_drifted_from_the_pins_is_named(monkeypatch, tmp_path):
-    printed = "uv uv 0.12.17\nclaude 2.1.281 (Claude Code)\n"
-    monkeypatch.setattr(run.subprocess, "run", lambda *a, **k: run.subprocess.CompletedProcess(a, 0, printed, ""))
+    printed = b"uv uv 0.12.17\nclaude 2.1.281 (Claude Code)\n"
+    monkeypatch.setattr(run.subprocess, "run", lambda *a, **k: run.subprocess.CompletedProcess(a, 0, printed, b""))
     problems = run.check_versions(PINS, "core", tmp_path)
 
     assert "uv: pinned 0.12.18, image prints 'uv 0.12.17'" in problems
@@ -270,3 +270,11 @@ def test_no_cache_rebuilds_whatever_the_label_says(monkeypatch):
     assert not run.unchanged("crapkit-deploy:core", "abc", no_cache=True)
     assert run.unchanged("crapkit-deploy:core", "abc", no_cache=False)
     assert not run.unchanged("crapkit-deploy:core", "abd", no_cache=False)
+
+
+def test_what_an_image_prints_is_read_as_utf8_whatever_the_host_code_page(monkeypatch, tmp_path):
+    printed = "zed Zed 1.21.0 \u2013 /opt/zed\n".encode("utf-8")
+    monkeypatch.setattr(run.subprocess, "run", lambda *a, **k: run.subprocess.CompletedProcess(a, 0, printed, b""))
+    run.check_versions(PINS, "gui", tmp_path)
+
+    assert (tmp_path / "versions-gui.txt").read_text(encoding="utf-8") == "zed Zed 1.21.0 \u2013 /opt/zed\n"

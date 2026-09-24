@@ -312,3 +312,10 @@ def test_entry_sh_prints_a_line_under_each_name_the_pins_expect_for_a_downloaded
     missing = [name for name in sorted(downloaded) if not name.startswith("python") and f'echo "{name} ' not in entry]
 
     assert missing == []
+
+
+def test_a_manifest_is_read_as_utf8_whatever_the_host_code_page(monkeypatch):
+    printed = "zed Zed 1.21.0 \u2013 /opt/zed\n".encode("utf-8")
+    monkeypatch.setattr(lock.subprocess, "run", lambda *a, **k: lock.subprocess.CompletedProcess(a, 0, printed, b""))
+
+    assert lock.manifest("crapkit-deploy:gui") == "zed Zed 1.21.0 \u2013 /opt/zed\n"

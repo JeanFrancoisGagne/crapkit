@@ -254,7 +254,8 @@ def versions_command(image: str) -> list[str]:
 
 def check_versions(pins: dict, image: str, out: Path) -> list[str]:
     """What `versions` prints inside the image, held to pins.toml, offline."""
-    printed = subprocess.run(versions_command(image), capture_output=True, text=True, check=True).stdout
+    # UTF-8 whatever this host's code page is: Zed prints an en dash.
+    printed = subprocess.run(versions_command(image), capture_output=True, check=True).stdout.decode("utf-8")
     (out / f"versions-{image}.txt").write_text(printed, encoding="utf-8")
     return pinsfile.version_problems(pinsfile.expected_versions(pins, image), printed)
 

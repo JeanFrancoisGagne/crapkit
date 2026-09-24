@@ -241,7 +241,8 @@ def manifest(image: str) -> str:
     dpkg-query -W, npm ls per prefix, the runner's pip freeze and the sha256 of
     every wheel and fetched binary."""
     argv = ["docker", "run", "--rm", "--network", "none", image, "manifest"]
-    return subprocess.run(argv, capture_output=True, text=True, check=True).stdout
+    # UTF-8 whatever this host's code page is, so Windows records what Linux does.
+    return subprocess.run(argv, capture_output=True, check=True).stdout.decode("utf-8")
 
 
 MANIFEST_HEADER = "# image: "
