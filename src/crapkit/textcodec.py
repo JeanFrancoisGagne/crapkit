@@ -3,9 +3,14 @@
 Stdlib only, so the advisory hook and the MCP stdio loop can import it. One
 rule per kind of source, and each one lives here or in the module named:
 
-- A file the repository owns and crapkit must read exactly (crapkit.toml, the
-  marks file) is UTF-8 or refused with a sentence naming the byte:
+- A file the repository owns and crapkit must read exactly (crapkit.toml, a
+  portable baseline) is UTF-8 or refused with a sentence naming the byte:
   `repotext.repo_text`.
+- The marks file, today's copy, every past revision and each side git hands the
+  merge driver, goes through `marks_text`: UTF-16 when a byte-order mark says
+  so, else UTF-8 with a BOM dropped, and each byte neither reads as U+FFFD. A
+  command that rewrites the file asks `unreadable_byte` first and writes it
+  back through `marks_bytes`.
 - Text crapkit only reads, ranks or passes along (git's free text such as an
   author name or a commit message, a runner's output, an MCP frame, a
   package.json) goes through `lenient`: a UTF-8 BOM is dropped and each byte
@@ -33,13 +38,62 @@ _C1 = "crapkit-c1"
 
 def lenient(data: bytes) -> str:
     """UTF-8 with a leading BOM dropped and each undecodable byte as U+FFFD."""
-    return data.decode("utf-8-sig", "replace")
+    return data.removeprefix(codecs.BOM_UTF8).decode("utf-8", "replace")
 
 
 def utf16_marked(data: bytes) -> bool:
     """True when the bytes open with a UTF-16 byte-order mark: what Windows
     PowerShell 5.1's `Out-File` and `>` write, and what no UTF-8 reader reads."""
     return data.startswith(tuple(mark for mark, _ in _UTF16))
+
+
+def marks_codec(data: bytes) -> str:
+    """The encoding a marks file is read and written back in: UTF-16 when a
+    byte-order mark says so, which is what a bare `Out-File` in PowerShell 5.1
+    writes, else UTF-8."""
+    for mark, codec in _UTF16:
+        if data.startswith(mark):
+            return codec
+    return "utf-8"
+
+
+def _unmarked(data: bytes, codec: str) -> bytes:
+    """`data` without the byte-order mark that opens it, if any."""
+    marks = [mark for mark, name in _UTF16 if name == codec] or [codecs.BOM_UTF8]
+    return data.removeprefix(marks[0])
+
+
+def marks_text(data: bytes) -> str:
+    """A marks file, or one revision of it, as the rows it holds.
+
+    One rule for today's file, its history and the merge driver's three sides,
+    so a revision that read one way in `verify` never reads another way in
+    `ratchet report`. A byte that is neither UTF-8 nor part of the UTF-16 the
+    mark announced reads as U+FFFD: the file stays readable, and the name that
+    held the byte keys no function."""
+    codec = marks_codec(data)
+    return _unmarked(data, codec).decode(codec, "replace")
+
+
+def unreadable_byte(data: bytes) -> str | None:
+    """The first byte `marks_text` read as U+FFFD, as `byte e9 at offset 57`
+    counted in the file's own bytes; None when it read every byte."""
+    codec = marks_codec(data)
+    body = _unmarked(data, codec)
+    try:
+        body.decode(codec)
+    except UnicodeDecodeError as exc:
+        offset = exc.start + len(data) - len(body)
+        return f"byte {data[offset]:02x} at offset {offset}"
+    return None
+
+
+def marks_bytes(text: str, like: bytes | None) -> bytes:
+    """`text` in the encoding `like` was read in: UTF-16 behind the byte-order
+    mark it opened with, else UTF-8 with no BOM."""
+    codec = marks_codec(like or b"")
+    marks = [mark for mark, name in _UTF16 if name == codec] or [b""]
+    return marks[0] + text.encode(codec)
 
 
 def source_codec(raw: bytes) -> str:
