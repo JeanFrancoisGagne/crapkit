@@ -823,7 +823,7 @@ def test_doctor_notes_a_utf16_source_and_keeps_its_exit_code(tmp_path: Path, sou
 
     assert res.returncode == control.returncode == 0, res.stdout + res.stderr
     utf16 = [note for note in _notes(res.stdout) if "UTF-16" in note]
-    assert utf16 == ([f"note 1 source file(s) open with a UTF-16 byte-order mark, the "
+    assert utf16 == (["note 1 source file(s) open with a UTF-16 byte-order mark, the "
                       "PowerShell 5.1 Out-File default: src/a.ps1. crapkit scores them, but "
                       "git diffs them as binary; save them as UTF-8 (PowerShell: Set-Content "
                       "-Encoding utf8) to diff them as text"] if noted else [])
