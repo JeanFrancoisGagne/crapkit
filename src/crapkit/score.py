@@ -185,13 +185,40 @@ def _overlay_match(row, candidates, unique: bool):
     return None
 
 
-def _named_overlay_cov(row, by_key: dict, positions: dict) -> tuple[float, str]:
-    # Search only this signature's candidates, keeping the baseline order for
-    # equal-distance starts. Occurrence separates siblings at that start.
+def _named_overlay_cov(row, by_key: dict, positions: dict) -> tuple[float, str] | None:
+    """The cov and flag of the baseline row this function joins by name, or None.
+
+    Search only this signature's candidates, keeping the baseline order for
+    equal-distance starts. Occurrence separates siblings at that start.
+    """
     named = _nearest_overlay(row, by_key.get((row.path, row.long_name)))
     unique = len(positions[(row.path, row.long_name, row.start)]) == 1
     match = _overlay_match(row, named, unique)
-    return (match.cov, "measured") if match is not None else (0.0, "untested")
+    return None if match is None else (match.cov, match.flag)
+
+
+class _OverlayIndex(NamedTuple):
+    """The baseline rows a fresh function can join by name: the measured ones,
+    whose number it takes, and the untested ones, whose verdict it keeps."""
+    measured: dict
+    untested: dict
+    positions: dict
+
+
+def _overlay_index(rows, baseline_scored) -> _OverlayIndex:
+    by_flag: dict[str, dict] = {"measured": {}, "untested": {}}
+    for r in baseline_scored:
+        if r.flag in by_flag:
+            by_flag[r.flag].setdefault((r.path, r.long_name), []).append(r)
+    return _OverlayIndex(by_flag["measured"], by_flag["untested"], _overlay_positions(rows))
+
+
+def _joined_overlay_cov(row, index: _OverlayIndex) -> tuple[float, str] | None:
+    """The baseline's number for this function, else the untested verdict the
+    baseline gave it, else None: the baseline holds no row this function joins,
+    so nothing measured it (a function added or renamed since that run)."""
+    return (_named_overlay_cov(row, index.measured, index.positions)
+            or _named_overlay_cov(row, index.untested, index.positions))
 
 
 def _overlay_positions(rows) -> dict:
@@ -199,6 +226,16 @@ def _overlay_positions(rows) -> dict:
     for row in rows:
         positions.setdefault((row.path, row.long_name, row.start), set()).add(row.occurrence)
     return positions
+
+
+# The flags of rows no coverage artifact joins: no lane covers the scope, or the
+# scope asks for none. Their cov of 0.0 stands in for a number nobody measured.
+UNJOINED = ("no-lane", "cc-only")
+
+
+def unjoined(flag: str) -> bool:
+    """Whether a row with this flag has no measurement behind its cov."""
+    return flag in UNJOINED
 
 
 def _cov_without_join(row, lane_scopes: set, cc_only_scopes) -> tuple[float, str] | None:
@@ -275,6 +312,7 @@ def overlay_stale_coverage(
     scope_targets: dict[str, int] | None = None,
     cc_only_scopes: frozenset[str] = frozenset(),
     baseline_run_id: int | None = None,
+    unjoined: set | None = None,
 ) -> list[ScoredRow]:
     """Rescore fresh complexity against a BASELINE run's coverage.
 
@@ -286,27 +324,35 @@ def overlay_stale_coverage(
     preview never passes what the next coverage run fails. Coverage values are
     the baseline's; the caller labels them stale. A legacy-identity refusal
     names BASELINE_RUN_ID, the run the baseline rows came from.
+
+    A function nothing measured still scores at cov 0.0 and flag `untested`,
+    the values this preview has always given it. `unjoined`, when passed,
+    collects each such returned row so a caller can say so beside the number:
+    a row whose scope no lane covers or asks for none, and a row the baseline
+    holds nothing to join by name.
     """
     require_unambiguous(rows)
     require_unambiguous(baseline_scored, run_id=baseline_run_id)
-    positions = _overlay_positions(rows)
-    by_key: dict[tuple[str, str], list[ScoredRow]] = {}
-    for r in baseline_scored:
-        if r.flag == "measured":
-            by_key.setdefault((r.path, r.long_name), []).append(r)
-
+    index = _overlay_index(rows, baseline_scored)
     shared = _shared_source_spans(rows, lane_scopes, cc_only_scopes)
     scored = []
     for row in rows:
         verdict = _cov_without_join(row, lane_scopes, cc_only_scopes)
         on_shared = _on_shared_span(row, verdict, shared)
-        cov, flag = verdict or _floored_overlay_cov(row, on_shared, by_key, positions)
+        joined = verdict or _floored_overlay_cov(row, on_shared, index)
+        cov, flag = joined or (0.0, "untested")
         scored.append(_finish(row, cov, flag, target=target, scope_targets=scope_targets,
                               shared_span=on_shared))
+        _collect_unjoined(unjoined, scored[-1], verdict is not None or joined is None)
     return scored
 
 
-def _floored_overlay_cov(row, on_shared: bool, by_key: dict, positions: dict) -> tuple[float, str]:
+def _collect_unjoined(found: set | None, row: ScoredRow, stand_in: bool) -> None:
+    if found is not None and stand_in:
+        found.add(row)
+
+
+def _floored_overlay_cov(row, on_shared: bool, index: _OverlayIndex) -> tuple[float, str] | None:
     """Uncovered on a shared span, the floor score_rows gives a measured one.
 
     Joining by name there handed two functions edited onto one line their old
@@ -315,7 +361,7 @@ def _floored_overlay_cov(row, on_shared: bool, by_key: dict, positions: dict) ->
     """
     if on_shared:
         return 0.0, "untested"
-    return _named_overlay_cov(row, by_key, positions)
+    return _joined_overlay_cov(row, index)
 
 
 class SharedSpanFold:

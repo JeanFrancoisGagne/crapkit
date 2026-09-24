@@ -25,6 +25,15 @@ MARKER = "<!-- crapkit-action -->"
 
 _HEADER = "| File | Function | ccn | risk | remedy |\n|---|---|---:|---:|---|"
 
+# The line `crapkit worklist` prints on stderr when the checkout is a shallow
+# clone, repeated above the table because `risk` is ranked on the churn it
+# describes and the job log is where nobody reads it. The worklist payload's
+# `shallow` says when; tests/unit/test_action_contract.py pins the words to the
+# CLI's.
+SHALLOW_LINE = ("warning: churn counts read only the commits this clone holds; this shallow "
+                "clone does not hold every commit: set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow")
+
 # The rule each verify exit code stands for. verify reports the first that
 # fires, so the phrase names the rule that refused the tree and the bullets
 # below it list every finding the payload carries.
@@ -412,7 +421,8 @@ def _worklist_section(worklist, changed: list[str], entries: list[dict]) -> list
     if gap is not None:
         heading = f"### Worklist: {_plural(len(changed), 'changed file')}" if changed else "### Worklist"
         return [heading, "", gap]
-    return [_scope_line(changed, entries), "", table(entries)]
+    shallow = [SHALLOW_LINE, ""] if worklist.get("shallow") else []
+    return [_scope_line(changed, entries), "", *shallow, table(entries)]
 
 
 def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,

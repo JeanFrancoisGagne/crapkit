@@ -1110,6 +1110,35 @@ def test_a_worklist_that_ran_and_ranks_nothing_in_the_diff_still_says_so():
     assert "No ranked function in these files." in text, text
 
 
+# --- a ranking read off a shallow clone -----------------------------------------
+
+SHALLOW_LINE = ("warning: churn counts read only the commits this clone holds; this shallow "
+                "clone does not hold every commit: set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow")
+
+
+@pytest.mark.parametrize("payload, said", [
+    ({"shallow": True}, True),
+    ({"shallow": False}, False),
+    ({}, False),
+])
+def test_the_table_repeats_the_shallow_clone_line_above_the_ranking(payload, said):
+    """`risk` is ccn times churn, and a depth-1 checkout counts one commit per
+    file: the ranking inverts and the job log is the only place worklist said
+    so. `{}` is a payload an older crapkit wrote, which names nothing."""
+    text = _builder().body(None, None, 0, {**_worklist(), **payload}, [], 5)
+
+    assert text.count(SHALLOW_LINE) == (1 if said else 0), text
+    if said:
+        assert text.index(SHALLOW_LINE) < text.index("| File | Function |"), text
+
+
+def test_the_comment_line_is_the_one_worklist_prints():
+    from crapkit.gitio import shallow_warning
+
+    assert SHALLOW_LINE == shallow_warning("churn counts")
+
+
 # --- the pin the README hands the consumer ------------------------------------
 
 _USES_PIN = re.compile(r"JeanFrancoisGagne/crapkit@v([0-9]+[.][0-9]+[.][0-9]+)")

@@ -154,3 +154,39 @@ def test_overlay_ignores_unmeasured_baseline_rows_with_the_same_name():
     (scored,) = overlay_stale_coverage([row(path="src/a.ts", name="f( )", start=1, end=6, ccn=5)],
                                        baseline, lane_scopes={"src"})
     assert scored.flag == "untested", "only measured baseline rows carry coverage forward"
+
+
+# --- a row no measurement stands behind -----------------------------------------
+
+@pytest.mark.parametrize("case, name, scope, baseline_flag, cov, flag, stand_in", [
+    ("joined", "f( )", "src", "measured", 0.5, "measured", False),
+    ("baseline-judged-untested", "f( )", "src", "untested", 0.0, "untested", False),
+    ("added-since-the-run", "g( )", "src", "measured", 0.0, "untested", True),
+    ("renamed-since-the-run", "f2( )", "src", "measured", 0.0, "untested", True),
+    ("no-lane-scope", "f( )", "ui", "measured", 0.0, "no-lane", True),
+    ("cc-only-scope", "f( )", "opt", "measured", 0.0, "cc-only", True),
+])
+def test_overlay_collects_every_row_whose_cov_nothing_measured(case, name, scope, baseline_flag,
+                                                               cov, flag, stand_in):
+    """A function the baseline holds no row for reads cov 0.0 and `untested`,
+    the values the preview has always given it. The collector is how a caller
+    learns that nothing measured that 0.0; a function the baseline judged
+    untested was measured at 0.0 and is not collected."""
+    from crapkit.score import ScoredRow, overlay_stale_coverage
+
+    baseline = [ScoredRow("src", "src/a.ts", "f( )", 1, 6, 5, 5, 5, 6, 1, 1,
+                          0.5 if baseline_flag == "measured" else 0.0, baseline_flag, 9.4, "add-tests")]
+    found: set = set()
+    (scored,) = overlay_stale_coverage([row(name=name, start=1, end=6, ccn=5, scope=scope)], baseline,
+                                       lane_scopes={"src", "opt"}, cc_only_scopes=frozenset({"opt"}),
+                                       unjoined=found)
+
+    assert (scored.cov, scored.flag) == (cov, flag), case
+    assert (scored in found) is stand_in, case
+
+
+def test_unjoined_flags_are_the_ones_no_artifact_can_speak_about():
+    from crapkit.score import unjoined
+
+    assert [f for f in ("measured", "untested", "no-lane", "cc-only") if unjoined(f)] == \
+        ["no-lane", "cc-only"]

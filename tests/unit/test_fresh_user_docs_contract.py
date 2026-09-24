@@ -137,7 +137,7 @@ def test_the_sample_payload_carries_every_envelope_key_the_command_emits():
     sample = _sample_payload()
 
     assert set(sample) == {"schema", "empty", "item", "run_id", "commit",
-                           "skipped_no_lane", "stale"}
+                           "skipped_no_lane", "stale", "shallow"}
 
 
 def test_the_sample_item_carries_every_key_the_payload_builder_returns():

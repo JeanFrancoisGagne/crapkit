@@ -19,7 +19,7 @@ import shlex
 
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
-from .score import remedy, shares_its_def_line
+from .score import remedy, shares_its_def_line, unjoined
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -200,9 +200,15 @@ def budget(row, ceiling: int) -> dict:
             "est_uncovered_paths": max(0, round((1 - row.cov) * row.ccn))}
 
 
-# The flags of rows no coverage artifact joins: the scope has no lane, or asks
-# for none. Scoring leaves them out of the shared-span check, so a rejudge does.
-_UNJOINED = ("no-lane", "cc-only")
+def measurement(row) -> dict:
+    """Whether a measurement stands behind `cov`, and so behind the budget.
+
+    A `no-lane` or `cc-only` row scores at cov 0.0 because no artifact could
+    speak about it, and `est_uncovered_paths` multiplies that stand-in into a
+    count of paths no test walks. `unmeasured: true` says so beside them; the
+    numbers keep the values this payload has always given them.
+    """
+    return {"unmeasured": unjoined(row.flag)}
 
 
 def rejudged(row, ceiling: int, rows_of):
@@ -233,7 +239,7 @@ def _shares_span(row, rows_of) -> bool:
     """
     if row.remedy in ("add-tests", "split-lines"):
         return row.remedy == "split-lines"
-    if row.flag in _UNJOINED:
+    if unjoined(row.flag):  # scoring leaves these out of the span check too
         return False
     return shares_its_def_line(row) or any(_same_span(row, other)
                                            for other in rows_of(row.path))
@@ -242,7 +248,7 @@ def _shares_span(row, rows_of) -> bool:
 def _same_span(row, other) -> bool:
     """Another function on the same lines. The same function scored under a
     second scope carries the same name and occurrence, so it is not one."""
-    return (other.flag not in _UNJOINED and (other.start, other.end) == (row.start, row.end)
+    return (not unjoined(other.flag) and (other.start, other.end) == (row.start, row.end)
             and (other.long_name, other.occurrence) != (row.long_name, row.occurrence))
 
 

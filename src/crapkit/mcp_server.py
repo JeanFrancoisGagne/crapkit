@@ -54,6 +54,20 @@ _SCOPE = {
     "items": {
         "type": "string"}}
 
+# A depth-1 clone holds one commit, so churn, mark ages and repayments counted
+# from it read as every file changed once and every mark new.
+_SHALLOW_CHURN = {"type": "boolean", "description": (
+    "true when this checkout is a shallow clone: commits, authors and the churn the ranking "
+    "reads count only the commits the clone holds; set fetch-depth: 0 on the checkout or run "
+    "git fetch --unshallow for the real counts")}
+
+# A no-lane or cc-only row scores at cov 0.0 because no artifact can speak about
+# it; the flag says that 0.0 is a stand-in, and the numbers keep their values.
+_UNMEASURED = {"type": "boolean", "description": (
+    "true when no measurement stands behind cov: flag no-lane (no lane covers the scope) or "
+    "cc-only (the scope asks for no coverage). cov 0.0 and est_uncovered_paths are then "
+    "stand-ins, not a count of paths no test walks")}
+
 _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
  'path': {'type': 'string', 'description': 'repo-relative source path, forward slashes'},
  'function': {'type': 'string',
@@ -96,7 +110,8 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
  'uncovered_lines_note': {'type': 'string',
                           'description': 'present only when uncovered_lines is null: the reason '
                                          'and the move (stale artifact, no test imports the file, '
-                                         'coverage_optional scope)'}}
+                                         'coverage_optional scope)'},
+ 'unmeasured': _UNMEASURED}
 
 _WORKLIST_ITEM = {'type': 'object',
  'description': 'one ranked function',
@@ -193,6 +208,7 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("true when the run's commit is not HEAD, so cov, crap and "
                 "uncovered_lines describe an older tree; crapkit coverage "
                 "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "shallow": _SHALLOW_CHURN,
             "empty": {
                 "type": "boolean",
                 "description": ("true when the queue has nothing to hand out; then reasons is present "
@@ -284,6 +300,7 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("true when the run's commit is not HEAD, so cov, crap and "
                 "uncovered_lines describe an older tree; crapkit coverage "
                 "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "shallow": _SHALLOW_CHURN,
             "floor": {
                 "type": "integer",
                 "description": ("the effective worklist_floor: rows under this ccn are listed only "
@@ -479,6 +496,12 @@ TOOLS: tuple[dict, ...] = (
                 "type": "boolean",
                 "description": ("true when the run's commit is not HEAD, so every number here "
                 "describes an older tree; run commands.refresh first")},
+            "shallow": {
+                "type": "boolean",
+                "description": ("true when this checkout is a shallow clone: churn and "
+                "gate_rule.mark_age_days count only the commits the clone holds; set "
+                "fetch-depth: 0 on the checkout or run git fetch --unshallow")},
+            "unmeasured": _UNMEASURED,
             "path": {
                 "type": "string",
                 "description": "the resolved file, repo-relative"},
@@ -1289,7 +1312,13 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("null when no debt policy is configured, [] when the policy ran "
                 "clean, else the findings as sentences"),
                 "items": {
-                    "type": "string"}}},
+                    "type": "string"}},
+            "shallow": {
+                "type": "boolean",
+                "description": ("true when this checkout is a shallow clone: ages and "
+                "repayments count only the commits the clone holds, and crapkit ratchet report "
+                "--enforce refuses to judge the debt policy there (exit 4); set fetch-depth: 0 "
+                "on the checkout or run git fetch --unshallow")}},
     },
     {
         "name": "check_gate",
@@ -1369,7 +1398,13 @@ TOOLS: tuple[dict, ...] = (
                         "stale_coverage": {
                             "type": "boolean",
                             "description": ("always true: complexity is the working tree's, coverage "
-                            "is the baseline run's")}}}},
+                            "is the baseline run's")},
+                        "unmeasured": {
+                            "type": "boolean",
+                            "description": ("true when no measurement stands behind cov: the "
+                            "baseline run holds no row this function joins by name (it was added "
+                            "or renamed since), or its scope has no lane or asks for none. cov "
+                            "0.0 is then a stand-in")}}}},
             "gate": {
                 "type": "object",
                 "description": "the verdict block",

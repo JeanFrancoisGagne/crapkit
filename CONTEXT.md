@@ -17,6 +17,10 @@ _Avoid_: target (that is the configuration key that sets a ceiling, not the conc
 **Coverage**:
 The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself.
 
+**Unmeasured**:
+A row no measurement stands behind: its scope has no lane (`no-lane`) or asks for none (`cc-only`), or rescore finds no row in the run for a function added or renamed since. It scores at coverage 0.0 all the same; payloads carry `unmeasured: true` beside that stand-in, and text says `not measured`.
+_Avoid_: untested (an untested function was measured, and no test reached it)
+
 **Risk**:
 What ranks the worklist: complexity times recency-weighted churn. Not the CRAP score.
 
@@ -133,6 +137,9 @@ Active rows are ranked by risk; dormant rows have no recent churn.
 **Churn window**:
 The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff
+
+**Shallow clone**:
+A checkout that holds only part of its history (`git clone --depth N`, the `actions/checkout` default). Churn, mark ages and repayments count only the commits it holds, so worklist, next-item, brief and ratchet report carry `shallow: true` and print one line naming `fetch-depth: 0`, and `ratchet report --enforce` refuses to judge the debt policy there.
 
 ### Mutation
 

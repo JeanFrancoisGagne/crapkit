@@ -588,6 +588,29 @@ ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)
 A mark with no commit behind it reports `0d`. The burn-down clock starts when you commit the
 file.
 
+### A history the checkout does not hold
+
+The ages and repayments are only as long as the history git holds. A shallow clone, which is
+what `actions/checkout` makes unless you set `fetch-depth: 0`, holds one commit: every open
+mark reads `0d` and no repayment shows. The report keeps those numbers, adds `"shallow": true`
+to `--json`, and prints one line on stderr:
+
+    warning: mark ages and repayments read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow
+
+`--enforce` refuses to judge the policy there; see [the debt policy](#the-debt-policy).
+`brief` reads `gate_rule.mark_age_days` off the same history, so its packet carries
+`shallow` and prints the same kind of line.
+
+The history is read without rename detection, which cost 0.6 s of a 1.14 s report on a
+72k-commit history. Renaming the marks file (`git mv crapkit-ratchet.tsv debt.tsv`, then
+`ratchet_file = "debt.tsv"`) therefore restarts its history at the rename: every open mark
+reads its age from that commit, and no earlier repayment counts. The report names the commit:
+
+    warning: debt.tsv's history starts at 3f2a91c07be, the commit that renamed it from crapkit-ratchet.tsv, so mark ages and repayments count from there
+
+`--enforce` still judges the policy after a rename, on the history from that commit on. Keep
+the marks file's name if its ages matter to a policy.
+
 ---
 
 ## The debt policy
@@ -620,6 +643,16 @@ distinguishes the three states honestly:
 | `["..."]` | Violations, and the exit code is 1. |
 
 Do not read `[]` off a call without `--enforce`. There is none to read.
+
+In a shallow clone, `--enforce` with a debt key set exits 4 before it judges anything:
+
+    crapkit: ratchet report --enforce judges mark ages and repayments by the git history of crapkit-ratchet.tsv; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow
+
+Every mark there reads `0d` and no repayment shows, so an age limit would pass and a
+repayment quota would fail on history the clone never fetched. With neither key set there is
+nothing to judge, and `--enforce` reports what the plain report does, the stderr line
+included. Under `--json` the refusal is the error object every command prints, with `exit`
+4 and `kind` `git`.
 
 ---
 

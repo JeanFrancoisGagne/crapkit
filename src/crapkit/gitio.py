@@ -10,11 +10,12 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import NamedTuple
 
 from .errors import GitError, ToolError
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-_LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
+_LOG_HEADER = re.compile(r"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -242,6 +243,19 @@ _SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth:
                 "checkout or run git fetch --unshallow")
 
 
+def shallow_warning(counts: str) -> str:
+    """The one stderr line a reader of commit history prints in a shallow clone:
+    what it counted, and the fetch that brings the rest of the history in. Churn,
+    mark ages and repayments are counts of commits, and a depth-1 clone holds
+    one, so the numbers read as every file changed once and every mark new."""
+    return f"warning: {counts} read only the commits this clone holds; {_SHALLOW_FIX}"
+
+
+def shallow_refusal(judgement: str) -> GitError:
+    """The refusal a verdict over commit history gives in a shallow clone."""
+    return GitError(f"{judgement}; {_SHALLOW_FIX}")
+
+
 def merge_base(root: Path, ref: str) -> str:
     """The commit REF and HEAD forked from — a branch's real diff basis, which
     is what a mid-branch run's own commit is not.
@@ -291,6 +305,21 @@ def is_shallow(root: Path) -> bool:
     right thing, since a commit a shallow clone never fetched is not one a
     rebase rewrote. `rev-parse` answers with the word `true` or `false`."""
     return _git(root, "rev-parse", "--is-shallow-repository").strip() == "true"
+
+
+def shallow_checkout(root: Path) -> bool:
+    """is_shallow, read straight out of .git: git marks a depth-limited clone
+    with a `shallow` file in its common directory and deletes it on `fetch
+    --unshallow`, and `rev-parse --is-shallow-repository` answers from that file.
+
+    worklist, next-item, brief and ratchet report ask on every call, and an
+    empty next-item queue starts no git process at all; a spawn costs ~20 ms on
+    Windows. With no .git above root, git is asked, as head_commit asks it.
+    """
+    gitdir = _git_dir(root)
+    if gitdir is None:
+        return is_shallow(root)
+    return (_common_dir(gitdir) / "shallow").is_file()
 
 
 def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
@@ -542,8 +571,21 @@ def staged_reads(root: Path, base: str | None = None):
         reads.close()
 
 
+class FileHistory(NamedTuple):
+    """One file's commits, oldest first, and the commit its history starts at:
+    None when no commit touched the file."""
+    patches: list[tuple[int, str]]
+    first: str | None
+
+
 def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
-    """(commit timestamp, unified patch) per commit touching one file, oldest first.
+    """(commit timestamp, unified patch) per commit touching one file, oldest first."""
+    return file_history(root, rel_path).patches
+
+
+def file_history(root: Path, rel_path: str) -> FileHistory:
+    """(commit timestamp, unified patch) per commit touching one file, oldest
+    first, and the oldest of those commits, which `renamed_into` asks about.
 
     -U0: the only reader is ratchet_report, which looks at +/- lines alone, so
     context lines are pipe traffic that grows with the ratchet file.
@@ -557,9 +599,22 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
-    out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
+    out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
                "-p", *_PATCH, "--text", "--", rel_path, binary=True)
-    return _history_patches(out)
+    first = _LOG_HEADER.search(out)
+    return FileHistory(_history_patches(out), first and first.group(2))
+
+
+def renamed_into(root: Path, rel_path: str, commit: str) -> str | None:
+    """The path `commit` renamed to `rel_path`, or None: it created the file,
+    or it has no parent to rename from (a shallow clone's boundary commit).
+
+    The file's own log walks no renames, so this is where a renamed file's
+    history starts. One commit's diff, with rename detection on for it alone.
+    """
+    fields = _git_paths(root, "diff-tree", "-r", "-M", "--relative", "--name-status",
+                        "--no-commit-id", "-z", commit)
+    return next((old for old, new in _rename_pairs(fields).items() if new == rel_path), None)
 
 
 def _history_patches(out: str) -> list[tuple[int, str]]:

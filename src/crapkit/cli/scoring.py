@@ -760,8 +760,10 @@ def _baseline_rows(store: SnapshotStore, run_id: int, flat: list) -> list:
     return rows
 
 
-def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list, cfg):
-    """Fresh complexity joined onto the LATEST run's stale coverage, by NAME first."""
+def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list, cfg,
+                     unjoined: set | None = None):
+    """Fresh complexity joined onto the LATEST run's stale coverage, by NAME first.
+    `unjoined` collects the rows whose cov no measurement stands behind."""
     from ..score import overlay_stale_coverage
 
     lane_scopes = {s for prov in latest["lanes"].values() for s in prov.get("scopes", ())}
@@ -769,10 +771,20 @@ def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list,
                                   lane_scopes=lane_scopes, target=cfg.target,
                                   scope_targets=cfg.scope_targets,
                                   cc_only_scopes=cfg.coverage_optional_scopes,
-                                  baseline_run_id=latest["id"])
+                                  baseline_run_id=latest["id"], unjoined=unjoined)
 
 
-def _rescore_json(overlay, latest: dict, gate: dict | None = None) -> None:
+def _unmeasured(row, unjoined: set) -> bool:
+    """No measurement behind this row's cov: the overlay found nothing to join
+    it to (a function added or renamed since the run), or its flag says no
+    artifact can speak about its scope."""
+    from ..score import unjoined as unjoined_flag
+
+    return row in unjoined or unjoined_flag(row.flag)
+
+
+def _rescore_json(overlay, latest: dict, gate: dict | None = None,
+                  unjoined: set = frozenset()) -> None:
     """The functions, and under --gate the verdict beside them: one object,
     so an agent reading the payload never has to read stderr for the finding."""
     payload = {
@@ -781,7 +793,7 @@ def _rescore_json(overlay, latest: dict, gate: dict | None = None) -> None:
             "scope": r.scope, "path": r.path, "function": r.long_name, "start": r.start,
             "occurrence": r.occurrence,
             "end": r.end, "ccn": r.ccn, "cov": r.cov, "flag": r.flag, "crap": r.crap,
-            "remedy": r.remedy, "stale_coverage": True,
+            "remedy": r.remedy, "stale_coverage": True, "unmeasured": _unmeasured(r, unjoined),
         } for r in overlay],
         "note": "coverage is the baseline run's; complexity is the working tree's. Run verify for the real verdict.",
     }
@@ -972,18 +984,29 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     store, latest = _rescore_baseline(root)
 
     rows, flat, ceilings, unread = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
-    overlay = _rescore_overlay(store, latest, rows, flat, cfg)
+    unjoined: set = set()
+    overlay = _rescore_overlay(store, latest, rows, flat, cfg, unjoined)
     verdict = _gate_verdict(root, cfg, overlay, ceilings, unread) if args.gate else None
     if args.json:
-        _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict))
+        _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict), unjoined)
     else:
-        _print_rescore_table(overlay, latest)
+        _print_rescore_table(overlay, latest, unjoined)
     return 0 if verdict is None else _report_gate(verdict, args.json)
 
 
-def _print_rescore_table(overlay, latest: dict) -> None:
+def _rescore_cov(r, unjoined: set) -> tuple[str, str]:
+    """The cov cell and the row's tail: a percentage, or a dash and the words
+    `coverage not measured` where a 0% stood for a number nobody took."""
+    if _unmeasured(r, unjoined):
+        return f"{'-':>5}", "  (coverage not measured)"
+    return f"{r.cov:>5.0%}", ""
+
+
+def _print_rescore_table(overlay, latest: dict, unjoined: set = frozenset()) -> None:
     """The refactor loop's view: fresh ccn, worst first, stale cov labeled."""
     print(f"rescore vs run {latest['id']} @ {latest['commit'][:11]} (coverage STALE, complexity fresh)")
     print(f"  {'ccn':>4} {'cov':>5} {'crap':>8}  {'remedy':11} function")
     for r in sorted(overlay, key=lambda x: (-x.ccn, x.path, x.start)):
-        print(f"  {r.ccn:>4} {r.cov:>5.0%} {r.crap:>8.1f}  {r.remedy:11} {r.path}:{r.start}  {r.long_name}")
+        cov, tail = _rescore_cov(r, unjoined)
+        print(f"  {r.ccn:>4} {cov} {r.crap:>8.1f}  {r.remedy:11} {r.path}:{r.start}  "
+              f"{r.long_name}{tail}")
