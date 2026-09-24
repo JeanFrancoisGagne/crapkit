@@ -70,7 +70,7 @@ fallback. UTF-16 source is outside that reader policy.
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `target` | int >= 1 | `6` | The repo-wide CRAP ceiling. A `[[scope]]` may override it. Drives the gate, the `remedy` column, the ratchet drop threshold and every over-target count. |
-| `churn_window_months` | int >= 1 | `12` | How far back `git log` is read for churn weighting, coupling and the worklist rank. |
+| `churn_window_months` | int >= 1 | `12` | How far back `git log` is read for churn weighting, coupling and the worklist rank. The months are counted back from now on the UTC calendar, whatever `TZ` says, so a CI runner and a laptop cut the same window; a day the earlier month lacks rolls into the next, as git rolls it (6 months before Aug 31 is Mar 3). A commit counts when its commit date is at or after that instant. `GIT_TEST_DATE_NOW`, git's own clock pin, pins "now" here too. |
 | `worklist_floor` | int >= 1 | `5` | Minimum ccn for queue admission, in `worklist` and `next-item` alike. Printed in the worklist header as `floor ccn>=5`. It has no CLI flag. Two rules reach under it: files whose churn weight is in the top 10% are promoted down to ccn 3, and a function scoring over its ceiling is admitted whatever its ccn. |
 | `worklist_top` | int >= 1 | `50` | Cap on the worklist active list. `worklist --top N` overrides it per call. |
 | `ratchet_file` | string | `"crapkit-ratchet.tsv"` | The committed marks file, repo-relative. |
