@@ -23,6 +23,7 @@ from typing import IO
 
 from ._process_owner import CommandCancelled, close_input, kill_process_tree, own_processes
 from .errors import ToolError
+from .textcodec import lenient
 
 __all__ = ["CommandCancelled", "NoProgress", "own_processes", "prepare_template",
            "run_bounded", "run_owned"]
@@ -402,7 +403,7 @@ def run_owned(command: str | list[str], timeout: float | None = None, *, owner=N
     """Run literal argv or a shell string until the command and descendants stop.
 
     Input is DEVNULL. Output is inherited unless capture_output requests separate
-    UTF-8 stdout/stderr strings. Background descendants stop with their command;
+    stdout/stderr strings, UTF-8 with each other byte read as U+FFFD. Background descendants stop with their command;
     callers wanting a persistent service must launch that service separately.
     TimeoutExpired and CommandCancelled are raised only after tree cleanup. So
     is the start failure, a ToolError that is also an OSError, which a Windows
@@ -425,10 +426,13 @@ def _capture_streams(stack, capture):
 
 
 def _captured_text(stream):
+    """What an owned command printed. crapkit only shows or matches it, and git
+    quotes a subject or a file name as stored: `HEAD is now at <sha> <subject>`
+    from a worktree add, with a Latin-1 subject, ended `mutate` here."""
     if stream is None:
         return None
     stream.seek(0)
-    return stream.read().decode("utf-8").replace("\r\n", "\n")
+    return lenient(stream.read()).replace("\r\n", "\n")
 
 
 def _raise_launch_error(errors):
