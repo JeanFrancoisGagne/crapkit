@@ -48,17 +48,28 @@ def generated(root: Path) -> dict[str, str]:
     return result
 
 
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args(argv)
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
+def _refresh(check: bool) -> list[str]:
+    """The generated files whose content is stale, rewritten unless `check`."""
     stale = []
     for name, content in generated(ROOT).items():
         path = ROOT / name
         if path.read_text(encoding="utf-8") != content:
             stale.append(name)
-            if not args.check:
+            if not check:
                 path.write_text(content, encoding="utf-8")
+    return stale
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, **PLAIN_HELP)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    stale = _refresh(args.check)
     if stale:
         print("generated files: " + ", ".join(stale))
     return int(args.check and bool(stale))

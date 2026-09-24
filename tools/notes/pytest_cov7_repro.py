@@ -133,8 +133,13 @@ def collect(root: Path) -> dict:
     return record
 
 
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0], **PLAIN_HELP)
     ap.add_argument("--workdir", help="keep the venvs here instead of a temp dir")
     args = ap.parse_args(argv)
     if args.workdir:

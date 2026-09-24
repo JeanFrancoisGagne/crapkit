@@ -479,8 +479,13 @@ def _preview_retention(args: argparse.Namespace) -> int:
     return 0
 
 
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, **PLAIN_HELP)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--coverage", action="store_true")
     parser.add_argument("--workers", type=int, default=E2E_WORKERS)

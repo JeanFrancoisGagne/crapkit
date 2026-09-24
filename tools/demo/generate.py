@@ -23,8 +23,13 @@ import demo_run  # noqa: E402
 DOCS = Path(__file__).resolve().parent.parent.parent / "docs"
 
 
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
 def _parse(argv) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, **PLAIN_HELP)
     parser.add_argument("--out-dir", type=Path, default=DOCS,
                         help="where demo.gif and demo.svg are written")
     return parser.parse_args(argv)
