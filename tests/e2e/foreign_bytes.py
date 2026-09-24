@@ -151,6 +151,15 @@ def answered(res: subprocess.CompletedProcess, *codes: int) -> None:
     assert res.returncode in (codes or (0,)) and clean(res), shown(res)
 
 
+def run_bytes(repo: Path, *args: str, stdin: bytes, env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """`python -m crapkit <args>` in its own process with `stdin` as bytes, so
+    a payload can hold a byte no str can carry; the output decoded as UTF-8
+    with each other byte as U+FFFD."""
+    res = hang_guard.run([*CRAPKIT, *args], cwd=repo, env=child_env(env_extra), input=stdin)
+    return subprocess.CompletedProcess(res.args, res.returncode, res.stdout.decode("utf-8", "replace"),
+                                       res.stderr.decode("utf-8", "replace"))
+
+
 def rpc(msg_id: int, method: str, params: dict | None = None) -> bytes:
     frame = {"jsonrpc": "2.0", "id": msg_id, "method": method}
     if params is not None:
