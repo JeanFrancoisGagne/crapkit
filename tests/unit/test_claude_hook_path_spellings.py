@@ -113,6 +113,8 @@ RELATIVE_EDITS = {
     "up-backslash-from-a-subdirectory": ("windows", lambda root: "..\\calc\\mod.py",
                                          lambda root: root / "calc"),
     "msys-cwd": ("windows", lambda root: "calc/mod.py", _msys),
+    "dir-case-backslash": ("windows case", lambda root: "CALC\\mod.py", lambda root: root),
+    "file-case-backslash": ("windows case", lambda root: "calc\\MOD.PY", lambda root: root),
 }
 
 

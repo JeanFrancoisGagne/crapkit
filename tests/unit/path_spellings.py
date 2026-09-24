@@ -141,6 +141,7 @@ SPELLINGS = {
     "dir-case": ("case", lambda root: "SRC/app.ts"),
     "dir-case-backslash": ("windows case", lambda root: "SRC\\app.ts"),
     "file-case": ("case", lambda root: "src/App.ts"),
+    "file-case-backslash": ("windows case", lambda root: "src\\App.ts"),
     "extension-case": ("case", lambda root: "src/app.TS"),
     "dot-backslash-case": ("windows case", lambda root: ".\\Src\\app.ts"),
     "absolute-dir-case": ("case", lambda root: str(root.resolve() / "SRC" / "app.ts")),
