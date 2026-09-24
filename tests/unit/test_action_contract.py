@@ -1058,3 +1058,99 @@ def test_the_post_step_reads_the_head_repository_off_the_event():
     env = _step_named("post the comment")["env"]
 
     assert env["HEAD_REPO"] == "${{ github.event.pull_request.head.repo.full_name }}"
+
+
+# --- the changed files, named, and a base diff that failed --------------------
+#
+# The comment said "1 changed file" and named none, and a base diff git refused
+# (a depth-1 checkout lacks the base commit) left an empty list that read as
+# "the pull request changed nothing", logged as "0 changed file(s)".
+
+@pytest.mark.parametrize("paths, named", [
+    (["src/app.ts"], "1 changed file (`src/app.ts`)"),
+    (["a.py", "b.py", "c.py", "d.py", "e.py"],
+     "5 changed files (`a.py`, `b.py`, `c.py` and 2 more)"),
+])
+def test_the_verdict_names_up_to_three_of_the_changed_files_verify_listed(paths, named):
+    verify = {**_passing_verify(), "changed_files": len(paths), "changed_paths": paths}
+
+    line = _builder().verdict_line(verify, 0)
+
+    assert f"against baseline 3, {named}." in line, line
+
+
+def test_the_counts_line_of_a_failure_names_the_changed_files_too():
+    verify = _failing_verify(gate_violations=[_violation()], changed_paths=["app/calc.py"])
+
+    lines = _builder().verdict_line(verify, 6).splitlines()
+
+    assert lines[-1].startswith("Run 3 against baseline 1, 1 changed file (`app/calc.py`): "), lines
+
+
+def test_a_verify_payload_without_changed_paths_renders_the_count_alone():
+    """A 0.8.0 verify prints no changed_paths; the README's saved payloads are one."""
+    line = _builder().verdict_line({**_passing_verify(), "changed_files": 1}, 0)
+
+    assert line.endswith("1 changed file."), line
+
+
+def test_a_path_with_a_backtick_or_a_line_break_stays_inside_its_code_span():
+    verify = {**_passing_verify(), "changed_files": 1, "changed_paths": ["a`b\nc.py"]}
+
+    line = _builder().verdict_line(verify, 0)
+
+    assert r"(`a\u0060b\nc.py`)" in line and "\n" not in line, line
+
+
+_GIT_ERROR = "fatal: Invalid symmetric difference expression 1234abc...HEAD"
+
+
+def test_a_failed_base_diff_says_why_the_whole_repository_is_ranked():
+    text = _builder().body(None, _passing_verify(), 0, _worklist(), [], 5,
+                           changed_error=_GIT_ERROR + "\n")
+    lines = text.splitlines()
+    heading = lines.index("### Worklist: the whole repository, top 2")
+
+    assert lines[heading + 2] == (
+        f"The base diff failed (`{_GIT_ERROR}`), so the rows rank the whole repository, not "
+        "this pull request's files. A shallow clone lacks the base commit: `fetch-depth: 0` "
+        "on `actions/checkout` brings it."), text
+
+
+def test_a_base_diff_that_ran_adds_no_note():
+    text = _builder().body(None, _passing_verify(), 0, _worklist(), ["calc/report.py"], 5)
+
+    assert "The base diff failed" not in text
+
+
+def test_main_reads_the_error_the_changed_files_step_wrote(tmp_path):
+    error = tmp_path / "changed.error"
+    error.write_text(_GIT_ERROR + "\n", encoding="utf-8")
+    empty = tmp_path / "changed.txt"
+    empty.write_bytes(b"")
+
+    _builder().main(["--changed-z", str(empty), "--changed-error", str(error),
+                     "--out", str(tmp_path / "c.md")])
+
+    assert f"The base diff failed (`{_GIT_ERROR}`)" in (tmp_path / "c.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("contents", [None, ""])
+def test_no_error_file_or_an_empty_one_adds_no_note(tmp_path, contents):
+    """The step empties the file when git answered; a render from saved payloads
+    passes no flag at all."""
+    argv = ["--out", str(tmp_path / "c.md")]
+    if contents is not None:
+        (tmp_path / "e").write_text(contents, encoding="utf-8")
+        argv += ["--changed-error", str(tmp_path / "e")]
+
+    _builder().main(argv)
+
+    assert "The base diff failed" not in (tmp_path / "c.md").read_text(encoding="utf-8")
+
+
+def test_the_comment_step_hands_the_builder_the_base_diffs_error():
+    body = _step_named("build the comment")["run"]
+    line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
+
+    assert '--changed-error "$CRAPKIT_STATE/crapkit-changed.error"' in line

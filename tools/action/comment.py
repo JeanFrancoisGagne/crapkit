@@ -186,9 +186,25 @@ def _findings(verify: dict) -> str:
     return ", ".join(parts)
 
 
+def _code(value) -> str:
+    """A code span that stays one span on one line, whatever the path holds."""
+    return "`" + str(value).translate(_CELL_BREAKS).replace("`", "\\u0060") + "`"
+
+
+def _named(paths: list) -> str:
+    """` (`a`, `b`, `c` and 2 more)`: the files behind verify's count, so a
+    reader can check what it judged. "" for a verify that listed none (0.8.0
+    printed the count alone)."""
+    if not paths:
+        return ""
+    rest = f" and {len(paths) - 3} more" if len(paths) > 3 else ""
+    return f" ({', '.join(_code(path) for path in paths[:3])}{rest})"
+
+
 def _against(verify: dict) -> str:
     return (f"Run {verify.get('run_id')} against baseline {verify.get('baseline_run')}, "
-            f"{_plural(verify.get('changed_files', 0), 'changed file')}")
+            f"{_plural(verify.get('changed_files', 0), 'changed file')}"
+            f"{_named(verify.get('changed_paths') or [])}")
 
 
 def _exit_phrase(verify: dict, exit_code: int) -> str:
@@ -282,7 +298,8 @@ def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
 def named_by_findings(verify: dict | None) -> set[tuple[str, str]]:
     """The (path, function) pairs verify's findings name: gate violations,
     ratchet regressions and overridden entries. These are the only function
-    identities the comment holds, verify's `changed_files` being a count."""
+    identities the comment holds: verify's `changed_paths` names files, not
+    functions."""
     found = itertools.chain.from_iterable((verify or {}).get(key) or [] for key in _FINDING_LISTS)
     return {(entry.get("path"), entry.get("long_name")) for entry in found}
 
@@ -338,8 +355,24 @@ def _scope_line(changed: list[str], entries: list[dict]) -> str:
     return f"### Worklist: the whole repository, top {len(entries)}"
 
 
+def _scope_lines(changed: list[str], entries: list[dict], changed_error: str | None) -> list[str]:
+    """The heading, and why it ranks everything when git refused the base diff.
+
+    An empty list from a failed diff is not "the pull request changed
+    nothing"; git's first line and the checkout setting that fixes the usual
+    cause go under the heading."""
+    heading = _scope_line(changed, entries)
+    if not changed_error:
+        return [heading]
+    return [heading, "",
+            f"The base diff failed ({_code(_first_line(changed_error))}), so the rows rank the "
+            "whole repository, not this pull request's files. A shallow clone lacks the base "
+            "commit: `fetch-depth: 0` on `actions/checkout` brings it."]
+
+
 def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,
-         base_reason: str | None = None, coverage_exit: int = 0) -> str:
+         base_reason: str | None = None, coverage_exit: int = 0,
+         changed_error: str | None = None) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
     it and the next run still edits this comment instead of adding one."""
     entries = rows(worklist, changed, top, named_by_findings(verify))
@@ -348,7 +381,7 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
     return "\n".join([MARKER, "", "## crapkit", "",
                       scored_line(coverage), "",
                       verdict, "",
-                      _scope_line(changed, entries), "",
+                      *_scope_lines(changed, entries, changed_error), "",
                       table(entries), ""])
 
 
@@ -365,6 +398,8 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--worklist", help="crapkit worklist --json output")
     parser.add_argument("--changed", help="file holding one changed path per line")
     parser.add_argument("--changed-z", help="file holding UTF-8, NUL-separated Git paths")
+    parser.add_argument("--changed-error", help="file holding git's error when the base diff "
+                        "failed; empty or missing when it ran")
     parser.add_argument("--top", type=int, default=5, help="rows to render (default 5)")
     parser.add_argument("--out", required=True, help="where to write the markdown")
     parser.add_argument("--json-out", help="where to write the {\"body\": ...} gh api sends")
@@ -375,7 +410,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
                 _read_json(args.worklist), _changed_paths(args), args.top,
-                _base_reason(args.base_sha, args.base_reason), args.coverage_exit)
+                _base_reason(args.base_sha, args.base_reason), args.coverage_exit,
+                _read_text(args.changed_error).strip() or None)
     Path(args.out).write_text(text, encoding="utf-8", newline="\n")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps({"body": text}),

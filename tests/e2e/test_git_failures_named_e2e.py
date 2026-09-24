@@ -10,9 +10,14 @@ fail and asserts what the reader says and does instead.
 """
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
 
@@ -132,6 +137,21 @@ def collect(repo: Path) -> None:
     git(repo, "gc", "-q", "--prune=now")
 
 
+def rewrite_every_commit(repo: Path, gone: str) -> None:
+    """`rebase -f --root`, then the gc that collects what it replaced.
+
+    A replay in the same second as the commits it replays reproduces their ids,
+    so the rebase takes a committer date of its own; the check after the gc
+    proves the commit really left the clone."""
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "rebase", "-q", "-f",
+                    "--root"], cwd=repo, check=True, capture_output=True,
+                   env={**os.environ, "GIT_COMMITTER_DATE": "2001-01-01T00:00:00+0000"})
+    collect(repo)
+    probe = subprocess.run(["git", "cat-file", "-e", f"{gone}^{{commit}}"], cwd=repo,
+                           capture_output=True)
+    assert probe.returncode != 0, f"{gone} survived the rewrite"
+
+
 def test_prune_with_the_anchor_present_follows_the_rename_and_names_it(tmp_path: Path):
     repo = seeded_then_renamed(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
@@ -150,8 +170,7 @@ def test_prune_after_a_rewrite_collected_the_anchor_refuses_before_writing(tmp_p
     fetch, and `ratchet move` for when no remote holds the commit."""
     repo = seeded_then_renamed(tmp_path)
     anchor = first_run_commit(repo)
-    git(repo, "rebase", "-q", "-f", "--root")
-    collect(repo)
+    rewrite_every_commit(repo, anchor)
     assert run_cli(repo, "coverage").returncode == 0
     before = (repo / MARKS).read_bytes()
 
@@ -253,8 +272,7 @@ def test_a_missing_anchor_refuses_nothing_when_no_marked_file_left_the_checkout(
     git_commit_all(repo, "seed marks")
     (repo / "src" / "app.py").write_text(tangled("tangle"), encoding="utf-8", newline="\n")
     git_commit_all(repo, "drop gone()")
-    git(repo, "rebase", "-q", "-f", "--root")
-    collect(repo)
+    rewrite_every_commit(repo, anchor)
     assert run_cli(repo, "coverage").returncode == 0
 
     res = run_cli(repo, "ratchet", "prune")
@@ -323,3 +341,124 @@ def test_the_prune_line_names_three_renames_and_counts_the_rest(tmp_path: Path):
     assert res.returncode == 0, res.stdout + res.stderr
     assert ("followed 4 rename(s) (src/m0.py -> src/n0.py, src/m1.py -> src/n1.py, "
             "src/m2.py -> src/n2.py and 1 more)") in res.stdout, res.stdout
+
+
+# --- the Action: a base diff git refuses -------------------------------------------
+#
+# "the changed files" step ran `git diff "$BASE_SHA...HEAD" || : > changed`, so on
+# the actions/checkout default (a depth-1 clone, which lacks the base commit) git's
+# refusal became an empty list, the log said "0 changed file(s)" and the comment
+# ranked the whole repository with no reason given. These run the step's own body
+# under bash in a real clone and hand what it leaves to the comment builder.
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _git_bash() -> str | None:
+    """Git for Windows' own bash, beside the git on PATH; None anywhere else."""
+    git_exe = shutil.which("git")
+    candidate = Path(git_exe).parent.parent / "bin" / "bash.exe" if git_exe else None
+    return str(candidate) if candidate and candidate.is_file() else None
+
+
+def _bash() -> str:
+    """The bash a runner's `shell: bash` step runs under. On Windows the `bash`
+    on PATH can be the WSL launcher under System32, which cannot read these
+    files, so Git for Windows' bash comes first."""
+    for found in (_git_bash(), shutil.which("bash")):
+        if found and "system32" not in found.lower():
+            return found
+    pytest.skip("no bash to run the step under")
+
+
+def _action_step(name: str) -> str:
+    yaml = pytest.importorskip("yaml")
+    steps = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))["runs"]["steps"]
+    return next(step["run"] for step in steps if step.get("name") == name)
+
+
+def pr_clone(tmp_path: Path, changed: int, *clone_args: str) -> tuple[Path, str]:
+    """A pull request branch that edits `changed` files, cloned the way
+    actions/checkout clones it; returns the clone and the base commit."""
+    src = cc_only_repo(tmp_path / "src", {f"m{i}.py": f"X = {i}\n" for i in range(5)})
+    base = head(src)
+    git(src, "checkout", "-q", "-b", "pr")
+    for i in range(changed):
+        (src / f"m{i}.py").write_text(f"X = {i + 10}\n", encoding="utf-8")
+    git_commit_all(src, "pr change")
+    dst = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", *clone_args, "--branch", "pr", src.as_uri(), str(dst)],
+                   check=True, capture_output=True)
+    return dst, base
+
+
+def run_changed_step(clone: Path, base_sha: str) -> tuple[str, Path]:
+    """The step's body under `bash --noprofile --norc -eo pipefail`, which is
+    what `shell: bash` means on a runner. Returns its log and the state dir."""
+    state = clone.parent / "state"
+    state.mkdir()
+    script = clone.parent / "changed-step.sh"
+    script.write_text(_action_step("the changed files"), encoding="utf-8", newline="\n")
+    res = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                         cwd=clone, capture_output=True, text=True, encoding="utf-8",
+                         env={**os.environ, "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base_sha})
+    assert res.returncode == 0, res.stdout + res.stderr
+    return (res.stdout + res.stderr).strip(), state
+
+
+def comment_from(state: Path) -> str:
+    worklist = state / "worklist.json"
+    worklist.write_text(json.dumps({"active": [
+        {"path": "m0.py", "function": "a", "start": 1, "ccn": 7, "risk": 7.0},
+        {"path": "m4.py", "function": "b", "start": 1, "ccn": 9, "risk": 9.0}]}), encoding="utf-8")
+    out = state / "comment.md"
+    subprocess.run([sys.executable, str(ROOT / "tools" / "action" / "comment.py"),
+                    "--worklist", str(worklist),
+                    "--changed-z", str(state / "crapkit-changed.txt"),
+                    "--changed-error", str(state / "crapkit-changed.error"),
+                    "--out", str(out)], check=True, capture_output=True)
+    return out.read_text(encoding="utf-8")
+
+
+def test_a_depth_one_checkout_logs_gits_error_and_the_comment_says_why_it_ranks_everything(
+        tmp_path: Path):
+    clone, base = pr_clone(tmp_path, 1, "--depth", "1")
+
+    log, state = run_changed_step(clone, base)
+    comment = comment_from(state)
+
+    assert "0 changed file(s)" not in log, log
+    assert f"the base diff {base[:11]}...HEAD failed, so the comment ranks the whole repository" in log, log
+    assert "fatal:" in log, log
+    assert (state / "crapkit-changed.txt").read_bytes() == b""
+    assert "### Worklist: the whole repository, top 2" in comment, comment
+    assert "The base diff failed (`fatal:" in comment, comment
+
+
+def test_a_full_history_checkout_names_the_changed_file_and_leaves_no_error(tmp_path: Path):
+    clone, base = pr_clone(tmp_path, 1)
+
+    log, state = run_changed_step(clone, base)
+    comment = comment_from(state)
+
+    assert log == "1 changed file(s): m0.py", log
+    assert (state / "crapkit-changed.error").read_text(encoding="utf-8") == ""
+    assert "### Worklist: 1 changed file" in comment, comment
+    assert "The base diff failed" not in comment, comment
+
+
+def test_the_step_log_names_three_changed_files_and_counts_the_rest(tmp_path: Path):
+    clone, base = pr_clone(tmp_path, 5)
+
+    log, _ = run_changed_step(clone, base)
+
+    assert log == "5 changed file(s): m0.py, m1.py, m2.py and 2 more", log
+
+
+def test_a_push_names_no_base_commit_instead_of_zero_changed_files(tmp_path: Path):
+    clone, _ = pr_clone(tmp_path, 1)
+
+    log, state = run_changed_step(clone, "")
+
+    assert log == "no base commit on this event: the comment ranks the whole repository", log
+    assert "The base diff failed" not in comment_from(state)
