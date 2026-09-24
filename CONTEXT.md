@@ -69,6 +69,10 @@ A stored run written before crapkit recorded where same-line functions sit. Its 
 **Baseline**:
 The trusted earlier run a verdict compares against.
 
+**Newly scored**:
+What the digest calls a function that the older run of its pair holds no row for, when that run scored no function in the function's scope: a scope added to crapkit.toml since then, say. The code may be years old; only its measurement is new.
+_Avoid_: new (a new function sits in a scope both runs scored)
+
 **Named baseline**:
 A run that `--baseline ID` names for verify, ratchet seed or ratchet prune. It steps past the rule that a failed verify taints later runs, and nothing else: a failed verify, a hook run, a partial run or an inventory run is still refused.
 _Avoid_: forced baseline, override baseline
