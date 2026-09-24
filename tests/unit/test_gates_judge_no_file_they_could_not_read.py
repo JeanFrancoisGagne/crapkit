@@ -230,3 +230,92 @@ def test_the_pages_quote_the_override_refusal_an_unread_file_prints():
     assert f"`{quoted}`" in " ".join((root / "CHANGELOG.md").read_text(encoding="utf-8").split())
     ratchet = " ".join((root / "docs" / "ratchet.md").read_text(encoding="utf-8").split())
     assert "a new test failure or an unread file in the same run refuses it" in ratchet
+
+
+# --- the user meets an unread file before the commit gate refuses it ----------
+
+def test_the_coverage_line_says_the_commit_gate_refuses_an_unread_file(repo, capsys):
+    """Every file on the could-not-be-tokenized list is refused the next time
+    someone stages it; the run says so where it names the file."""
+    refuse_app(repo, knotty=False)
+    seed_artifacts(repo)
+
+    code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 0, err
+    assert ("crapkit: 1 file(s) could not be tokenized; each is scored as zero functions and "
+            "stays unranked, and the commit gate refuses these files when staged:") in err, err
+
+
+def doctor_warnings(repo, capsys) -> list[str]:
+    code, out, err = run(["doctor", "--json"], repo, capsys)
+    assert code in (0, 1), out + err
+    return [w for w in json.loads(out)["warnings"] if "could not be read" in w]
+
+
+def measure(repo, capsys) -> None:
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+
+def test_doctor_warns_about_each_file_the_newest_run_could_not_read(scored, capsys):
+    """doctor names the file, the reader's reason and what the commit gate will
+    do, so the first refused commit is not where the user learns of it. A file
+    that holds no function is not one of them."""
+    refuse_app(scored, knotty=False)
+    (scored / "web" / "consts.ts").write_text("export const n = 1;\n", encoding="utf-8")
+    commit_all(scored, "the arrow and a file with no function")
+    measure(scored, capsys)
+
+    unread = doctor_warnings(scored, capsys)
+
+    assert len(unread) == 1, unread
+    assert unread[0].startswith("src/app.ts could not be read, so the commit gate refuses it "
+                                "when staged: "), unread
+    assert REASON in unread[0] and ADVICE in unread[0], unread
+
+
+def test_doctor_drops_a_file_fixed_since_the_run(scored, capsys):
+    """doctor reads the files the newest run scored no function in, and reads
+    each again: one a reader parses now is no longer named."""
+    refuse_app(scored, knotty=False)
+    commit_all(scored, "the arrow")
+    measure(scored, capsys)
+    text = (scored / "src" / "app.ts").read_text(encoding="utf-8")
+    (scored / "src" / "app.ts").write_text(text.replace(ARROW, "\n"), encoding="utf-8")
+
+    assert doctor_warnings(scored, capsys) == []
+
+
+def test_doctor_is_quiet_about_files_every_reader_read(scored, capsys):
+    (scored / "web" / "consts.ts").write_text("export const n = 1;\n", encoding="utf-8")
+    commit_all(scored, "a file with no function")
+    measure(scored, capsys)
+
+    assert doctor_warnings(scored, capsys) == []
+
+
+def test_the_onboarding_pages_say_what_to_do_about_an_unread_file():
+    """PRD signal-1: the user meets the refusal before the first refused commit.
+    The upgrade guide says to run coverage and fix or exclude each file, the
+    help text says the hook refuses such a file, and the recover skill routes
+    an UNREAD line under exit 6."""
+    from pathlib import Path
+
+    from crapkit.cli.parser import build_parser
+
+    root = Path(__file__).resolve().parents[2]
+
+    def page(rel: str) -> str:
+        return " ".join((root / rel).read_text(encoding="utf-8").split())
+
+    upgrading = page("docs/upgrading.md")
+    assert "**Files no reader could read.**" in upgrading
+    assert "run `crapkit coverage` and read the files it names" in upgrading
+    assert "under `[exclude]` globs in `crapkit.toml`" in upgrading
+    recover = page("plugin/skills/crapkit-recover/SKILL.md")
+    assert "an `UNREAD` line names a changed file no reader could read" in recover
+    helps = [a for a in build_parser()._subparsers._group_actions[0]._choices_actions
+             if a.dest == "hook-precommit"]
+    assert "a staged file no reader could read" in helps[0].help
+    assert "`crapkit doctor` WARNs about each one the newest run could not read" in page("README.md")

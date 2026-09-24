@@ -161,8 +161,20 @@ JSON stays at `schema: 1`; consumers must accept added fields.
 ## Missing values that 0.8.1 names
 
 Before 0.8.1 some commands read a value nobody measured as zero, empty or passing.
-0.8.1 names each one instead, and three of those changes can move a CI job's exit code
+0.8.1 names each one instead, and four of those changes can move a CI job's exit code
 or a number a script reads.
+
+**Files no reader could read.** A file crapkit's readers refuse, such as a TypeScript
+expression-arrow body with `<` before a comma, still scores as zero functions in a run.
+Every gate read those zero records as nothing over the ceiling, so a function beside
+the refused construct passed the commit hook, `rescore --gate`, `check_gate` and verify.
+From 0.8.1 each of them exits 6 on such a file when a change touches it, and
+`claude-hook` exits 2 after the edit. Before you upgrade the hook or CI, run
+`crapkit coverage` and read the files it names in
+`crapkit: N file(s) could not be tokenized; ...` (or the WARN lines of
+`crapkit doctor`), then for each one change what the reason names so a reader can parse
+it, or list it under `[exclude]` globs in `crapkit.toml` to leave it ungated. A file no
+change touches blocks nothing.
 
 **verify over a junit it cannot read.** `verify --reuse-artifacts` over a lane that
 declares a `results_artifact` it finds missing or unreadable passed at exit 0 and stored

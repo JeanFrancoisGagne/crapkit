@@ -81,6 +81,11 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   tracked file the edit left unchanged against `HEAD` stays silent. The Action's comment
   counts an unread file among the gate violations (`1 gate violation (1 unread file)`),
   where its count line read `0 gate violations` under a failed gate.
+- The run's line for such a file now ends `and the commit gate refuses these files when
+  staged`, `crapkit doctor` WARNs about each file the newest coverage run could not read
+  and no reader can read now, and `hook-precommit --help` names the refusal. The upgrade
+  guide says to run `crapkit coverage` and fix or exclude each file it names before the
+  hook refuses a commit over one.
 - `inventory`, `coverage` and `verify` name on stderr each declared scope that scored no
   function: one that claims no file (a renamed directory, a path typo, the wrong language)
   or one whose every file no reader could read. Such a run reported `0 over ceiling 6,

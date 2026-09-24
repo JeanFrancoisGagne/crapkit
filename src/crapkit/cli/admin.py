@@ -943,6 +943,46 @@ def _doctor_unmeasured(root: Path, cfg, files: list[str]) -> list[Finding]:
             for g in unmeasured_directories(counts, files)]
 
 
+def _doctor_unread(root: Path, cfg, files: list[str]) -> list[Finding]:
+    """WARN, never FAIL: each file the newest coverage run could not read and no
+    reader can read now. The commit gate refuses it once staged, so the user
+    meets it here and not at a refused commit. A file the run scored a
+    function in was read, so only the files it scored nothing in are read
+    again, and a file fixed since then is no longer named."""
+    from ..merge import UNREAD_ADVICE
+
+    scored = _newest_scored_paths(root)
+    if scored is None:
+        return []
+    unread = _unread_now(root, sorted(_scoped_files(root, cfg, files) - scored))
+    return [Finding("WARN", f"{path} could not be read, so the commit gate refuses it when "
+                            f"staged: {why}; {UNREAD_ADVICE}")
+            for path, why in sorted(unread.items())]
+
+
+def _newest_scored_paths(root: Path) -> set[str] | None:
+    """The paths the newest coverage run scored a function in; None with no such run."""
+    store = _store_if_any(root)
+    run = _newest_coverage_run(store) if store else None
+    if run is None:
+        return None
+    return {path for path, *_ in store.count_by_path(run["id"], flag="untested")}
+
+
+def _scoped_files(root: Path, cfg, files: list[str]) -> set[str]:
+    by_scope = assign_files(files, cfg, size_of=_file_sizer(root))
+    return {f for scoped in by_scope.values() for f in scoped}
+
+
+def _unread_now(root: Path, paths: list[str]) -> dict[str, str]:
+    """{path: the reader's reason} for each of `paths` no reader can read."""
+    from ..analyze import analyze_source, read_source, unread_reasons
+
+    present = [p for p in paths if (root / p).is_file()]
+    return unread_reasons({p: analyze_source(p, read_source(str(root / p)), note=False)
+                           for p in present})
+
+
 def _hook_modes(root: Path) -> dict[str, str]:
     """Index modes of the files the repo's `core.hooksPath` points at.
 
@@ -1110,7 +1150,8 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_commit_graph(root)
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
-            + _doctor_unmeasured(root, cfg, files))
+            + _doctor_unmeasured(root, cfg, files)
+            + _doctor_unread(root, cfg, files))
 
 
 def _doctor_inputs(root: Path, lanes) -> list[Finding]:

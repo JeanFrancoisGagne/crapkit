@@ -931,12 +931,12 @@ def _note_unanalyzable(fresh: dict[str, list[FunctionRecord]]) -> None:
     file is now scored as zero functions, which is what an unreadable file
     honestly holds, and stays uncached so every run names it again.
     """
-    refused = [(path, rows.reason) for path, rows in sorted(fresh.items())
-               if isinstance(rows, UnanalyzableFile)]
+    refused = sorted(unread_reasons(fresh).items())
     if not refused:
         return
     print(f"crapkit: {len(refused)} file(s) could not be tokenized; "
-          f"each is scored as zero functions and stays unranked:", file=sys.stderr)
+          f"each is scored as zero functions and stays unranked, "
+          f"and the commit gate refuses these files when staged:", file=sys.stderr)
     for path, reason in refused[:_UNANALYZABLE_NAMED]:
         print(f"crapkit:   {reason}", file=sys.stderr)
     if len(refused) > _UNANALYZABLE_NAMED:
