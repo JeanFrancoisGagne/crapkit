@@ -2,6 +2,8 @@
 import json
 import subprocess
 
+import pytest
+
 from crapkit.cli import main
 
 
@@ -32,3 +34,66 @@ def test_doctor_reports_configured_limits_without_starting_work(tmp_path, monkey
     assert policy["test_retention_days"] == 0  # deprecated keys: crapkit applies neither
     assert policy["test_retention_count"] == 0
     assert not budget.exists()
+
+
+# --- the environment a CI job or a shell profile hands over ---------------------
+
+@pytest.mark.parametrize("value, read", [
+    ("", None), ("four", None), ("\u00b2", None), ("-1", None), ("0", None),
+    ("\u0663", 3), ("9" * 40, int("9" * 40)),
+], ids=["empty", "a-word", "a-superscript-digit", "negative", "zero", "an-arabic-indic-digit",
+        "40-digits"])
+@pytest.mark.parametrize("name, field", [
+    ("CRAPKIT_ANALYSIS_WORKERS", "inherited_analysis_workers"),
+    ("CRAPKIT_ANALYSIS_MEMORY_MB", "memory_budget_mb"),
+])
+def test_a_worker_or_memory_limit_that_is_not_a_positive_count_reads_as_unset(
+        monkeypatch, name, field, value, read):
+    """Python's int() reads any Unicode decimal digit, so an Arabic-Indic three
+    is a three; everything else that is not a positive count is no limit."""
+    from crapkit.resources import resource_status
+
+    monkeypatch.setenv(name, value)
+
+    status = resource_status()
+
+    assert status[field] == read
+    assert status["pool_worker_limit"] >= 1
+
+
+@pytest.mark.parametrize("value", ["", "Z:/no/such/dir", "r\u00e9s"],
+                         ids=["empty", "missing", "non-ascii"])
+def test_a_resource_dir_of_any_spelling_names_a_directory_and_creates_nothing(tmp_path, monkeypatch,
+                                                                              value):
+    from crapkit.resources import _budget_directory
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CRAPKIT_RESOURCE_DIR", value)
+
+    directory = _budget_directory()
+
+    assert directory.is_absolute()
+    assert (value == "") == (directory.parts[-4:-1] == (".cache", "crapkit", "workers"))
+    assert not (tmp_path / value).exists() or value == ""
+
+
+def test_an_inside_container_value_other_than_1_is_not_a_container(monkeypatch):
+    from pathlib import Path
+
+    from crapkit.lanes import _in_container
+
+    if Path("/.dockerenv").exists():
+        pytest.skip("needs a host without /.dockerenv, which every CI runner is")
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "yes")
+
+    assert _in_container() is False
+
+
+def test_an_empty_claude_config_dir_reads_as_the_home_default(monkeypatch):
+    from pathlib import Path
+
+    from crapkit.cli.admin import _plugins_dir
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "")
+
+    assert _plugins_dir() == Path.home() / ".claude" / "plugins"

@@ -45,3 +45,37 @@ def test_editor_contract_is_generated_from_runtime_admission():
 def test_unknown_keys_remain_doctor_findings_for_version_skew():
     config = load_config_text('[crapkit]\nfuture_setting={answer=42}\n' + SCOPE)
     assert config.scopes[0].paths == ("src",)
+
+
+# --- the shapes the hunts tried beyond these ------------------------------------
+#
+# TOML has no null, so an absent key, an empty value, a table where an array of
+# tables belongs, an out-of-range number and non-ASCII text stand in. Each is a
+# ConfigError naming the key, or a configuration that loads as written.
+
+@pytest.mark.parametrize("text,words", [
+    (SCOPE + LANE.replace('artifact="cov.json"\n', ""), "missing a required key: ['artifact']"),
+    (SCOPE.replace('languages=["python"]', "languages=[]"), "languages must contain at least 1"),
+    (SCOPE.replace("[[scope]]", "[scope]"), "scope must be array"),
+    ("[crapkit]\ntarget=0\n" + SCOPE, "target must be >= 1, got 0"),
+    ("[crapkit]\nlog_max_bytes=-1\n" + SCOPE, "log_max_bytes must be >= 0, got -1"),
+], ids=["lane-artifact-absent", "scope-languages-empty", "scope-a-table", "target-zero",
+        "log_max_bytes-negative"])
+def test_an_absent_empty_or_out_of_range_value_is_named(text, words):
+    with pytest.raises(ConfigError, match=words.replace("[", r"\[").replace("]", r"\]")):
+        load_config_text(text)
+
+
+@pytest.mark.parametrize("text,read,value", [
+    (SCOPE.replace('name="src"', 'name="pâquet"') + LANE.replace('scopes=["src"]', 'scopes=["pâquet"]'),
+     lambda cfg: tuple(cfg.lanes[0].scopes), ("pâquet",)),
+    (SCOPE + LANE.replace('command="run"', 'command="run -k café"'),
+     lambda cfg: cfg.lanes[0].command, "run -k café"),
+    ("[crapkit]\ntarget=9223372036854775807\n" + SCOPE, lambda cfg: cfg.target, 9223372036854775807),
+    (SCOPE + LANE.replace('scopes=["src"]', "scopes=[]"), lambda cfg: tuple(cfg.lanes[0].scopes), ()),
+    (SCOPE + LANE.replace('command="run"', 'command=""'), lambda cfg: cfg.lanes[0].command, ""),
+], ids=["scope-name-non-ascii", "lane-command-non-ascii", "target-huge", "lane-scopes-empty",
+        "lane-command-empty"])
+def test_a_value_doctor_judges_rather_than_admission_loads_as_written(text, read, value):
+    """A lane with no scope or no command is doctor's finding, not a parse error."""
+    assert read(load_config_text(text)) == value
