@@ -17,6 +17,7 @@ stops finding the code cannot hide the row.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -53,6 +54,18 @@ def landed(present: bool, change: str):
     """An expected failure while `change` is not in the tree yet; nothing once it is."""
     return pytest.mark.xfail(not present, strict=True,
                              reason=f"{change} lands with another change of this release")
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=root,
+                   check=True, capture_output=True)
+
+
+def _one_commit_repo(root: Path) -> None:
+    _git(root, "init", "-q")
+    (root / "a.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "a.py")
+    _git(root, "commit", "-q", "-m", "one")
 
 
 # -- Q11: the 0.8.0 staleness reader stays, and warns ----------------------------
@@ -139,3 +152,38 @@ def test_the_changelog_quotes_the_not_in_this_clone_refusal(monkeypatch):
 
     assert head in _prose(_release())
     assert re.search(r"blamed a rebase or an amend", _prose(_release()))
+
+
+# -- S23: the history caches key on the clone's depth ----------------------------
+
+def _has_history_depth() -> bool:
+    from crapkit import churn_log
+
+    return hasattr(churn_log, "history_depth")
+
+
+# Each part of the coupling cache's key, as the handbook names it.
+_COUPLING_KEY_WORDS = {"head": "HEAD", "months": "the churn window", "date": "the UTC date",
+                       "paths": "the path format", "depth": "history depth",
+                       "tracked": "a digest of the tracked set"}
+
+
+@landed(_has_history_depth(), "the history depth in the churn and coupling keys")
+def test_the_handbook_names_every_part_of_the_coupling_cache_key(tmp_path):
+    from crapkit import coupling_cache
+
+    _one_commit_repo(tmp_path)
+    key = coupling_cache._cache_key(tmp_path, 12, ["a.py"])
+    sentence = next(s for s in _prose(_page("docs/handbook.html")).split(". ")
+                    if s.startswith("Its key is HEAD"))
+
+    assert set(key) == set(_COUPLING_KEY_WORDS)
+    assert [word for word in _COUPLING_KEY_WORDS.values() if word not in sentence] == []
+    assert "git fetch --unshallow</code> rebuilds it the same day" in sentence
+
+
+def test_the_changelog_says_a_deepened_clone_rebuilds_the_history_caches():
+    section = _prose(_release())
+
+    assert "`git fetch --unshallow` or `--deepen` at an unmoved HEAD" in section
+    assert "A cache 0.8.0 wrote reads as a full clone's" in section

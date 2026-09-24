@@ -82,6 +82,15 @@
   brings it. It still exits 4, and the shallow-clone and rewrite sentences are as
   they were.
 
+### watch reads content, and the history caches know their depth
+
+- After `git fetch --unshallow` or `--deepen` at an unmoved HEAD, the churn map, the churn
+  log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
+  how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit
+  where the history held 6) and `coupling` kept zero pairs until the UTC date rolled
+  over, and deleting the coupling cache alone changed nothing. A cache 0.8.0 wrote reads
+  as a full clone's, so an upgrade does not walk a full clone's history again.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
