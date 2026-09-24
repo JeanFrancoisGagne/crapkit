@@ -25,7 +25,7 @@ import yaml
 from hang_guard import HANG_SECONDS
 from path_spellings import only_posix
 
-from crapkit import coverage_istanbul, coverage_py, doctor
+from crapkit import coverage_istanbul, coverage_py
 from crapkit.cli import main
 from crapkit.cli.verifying import _test_files
 from crapkit.config import Lane
@@ -216,8 +216,6 @@ def test_the_action_hands_the_comment_nul_framed_names():
 
 
 @only_posix
-@pytest.mark.xfail(not hasattr(doctor, "backslash_names"), strict=True,
-                   reason="needs the doctor line that names a tracked backslash name")
 def test_doctor_names_the_tracked_name_as_unsupported(tree, capsys):
     main(["doctor", "--json", "--repo", str(tree)])
     warnings = json.loads(capsys.readouterr().out)["warnings"]

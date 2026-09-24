@@ -150,8 +150,9 @@ def test_an_istanbul_key_naming_the_checkout_in_another_case_keys_gits_file(meas
     assert _istanbul_keys(measured, KEYS[which](measured)) == ["src/app.ts"]
 
 
-# The root comes off a key that starts with it as text, and the rest is kept as
-# written, so only a key whose root differs reaches the listed case.
+# A key that spells the root as crapkit does, or a relative key, with another
+# letter case below the root. The root came off as text and the rest stayed as
+# written, so each keyed a file git does not name and scored it untested.
 KEYS_BELOW_THE_ROOT = {
     "dir-case": lambda root: str(root / "SRC" / "app.ts"),
     "file-case": lambda root: str(root / "src" / "App.ts"),
@@ -159,8 +160,6 @@ KEYS_BELOW_THE_ROOT = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="coverage_istanbul._Keys.rel strips the root as text and "
-                   "keeps the letter case below it; the fix removes this marker")
 @pytest.mark.parametrize("which", KEYS_BELOW_THE_ROOT)
 def test_an_istanbul_key_in_another_case_below_the_root_keys_gits_file(measured, which):
     need_case_insensitive(measured)

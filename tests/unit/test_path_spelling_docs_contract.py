@@ -8,13 +8,6 @@ checks that it names the spelling, and runs the spelling through the reader the
 page describes, so a page cannot promise a reading the code no longer makes. A
 line the pages quote (a doctor WARN, a lane failure, a refusal) is taken from the
 code that prints it.
-
-Some rows describe code another change of this release lands: the launcher
-token, ratchet_file's fold, doctor's two path WARNs, the path_prefix warning,
-the missing-cwd lane failure and the network-share refusal. Until that code is
-in the tree, `landed` marks the row as an expected failure, and a strict one: a
-row that passes while its probe says the code is absent fails, so a probe that
-stops finding the code cannot hide the row.
 """
 from __future__ import annotations
 
@@ -28,6 +21,7 @@ from crapkit import config, doctor, lanes, procs
 from crapkit.cli import _shared
 from crapkit.cli._shared import _repo_relative
 from crapkit.cli.queue import _path_fragment
+from crapkit.cli.verifying import _test_files
 from crapkit.config import load_config_text
 from crapkit.repopath import file_separators, native
 from crapkit.universe import exclude_matcher
@@ -63,21 +57,6 @@ def _prose(text: str) -> str:
 def _row(section: str, key: str) -> str:
     """The table row of a config key, `| `key` | ...`."""
     return next(line for line in section.splitlines() if line.startswith(f"| `{key}` |"))
-
-
-def landed(present: bool, change: str):
-    """An expected failure while `change` is not in the tree yet; nothing once it is."""
-    return pytest.mark.xfail(not present, reason=f"{change} lands with another change of this release",
-                             strict=True)
-
-
-def _has_launcher_token() -> bool:
-    return hasattr(config, "expand_launchers")
-
-
-def _folds_ratchet_file() -> bool:
-    text = "[crapkit]\nratchet_file = 'gates\\ratchet.tsv'\n" + SCOPE
-    return load_config_text(text).ratchet_file == "gates/ratchet.tsv"
 
 
 # -- [exclude] globs -------------------------------------------------------------
@@ -141,7 +120,6 @@ def test_a_path_prefix_of_dot_reads_as_no_prefix():
 
 # -- ratchet_file ----------------------------------------------------------------
 
-@landed(_folds_ratchet_file(), "ratchet_file's fold")
 @pytest.mark.parametrize("raw", ["gates\\ratchet.tsv", "./gates/ratchet.tsv"])
 def test_the_ratchet_file_row_names_the_spellings_that_open_one_file(raw):
     row = _row(_section("docs/configuration.md", "## `[crapkit]`"), "ratchet_file")
@@ -286,7 +264,7 @@ def test_the_dirty_failures_row_names_each_id_spelling_verify_matches(tmp_path):
     ids = [f"{spelling}::renders" for spelling in
            ("web/src/app.test.ts", "web\\src\\app.test.ts", "./web/src/app.test.ts", absolute)]
 
-    assert dirty_failure_ids(ids, {"web/src/app.test.ts"}, tmp_path) == ids
+    assert dirty_failure_ids(ids, {"web/src/app.test.ts"}, _test_files(tmp_path, set(ids))) == ids
 
 
 # -- the launcher token ----------------------------------------------------------
@@ -304,7 +282,6 @@ def test_the_launcher_token_table_has_the_bare_and_the_venv_form():
     assert "{python}" in tokens and "{python:.venv}" in tokens, tokens
 
 
-@landed(_has_launcher_token(), "the launcher token")
 def test_each_launcher_token_row_is_what_the_loader_expands_on_each_os():
     for token, windows, posix in _token_rows():
         assert config.expand_launchers(token, windows=True) == windows, token
@@ -327,7 +304,6 @@ def test_the_upgrade_page_tells_an_0_8_0_config_to_swap_its_launcher_for_the_tok
 
 # -- lines the pages quote -------------------------------------------------------
 
-@landed(hasattr(doctor, "unmatched_globs"), "doctor's WARN on a glob that matches nothing")
 def test_the_exclude_section_quotes_doctor_s_warn_for_a_glob_that_matches_nothing():
     section = _section("docs/configuration.md", "## `[exclude]`")
 
@@ -336,7 +312,6 @@ def test_the_exclude_section_quotes_doctor_s_warn_for_a_glob_that_matches_nothin
     assert f"{finding.level} {finding.text}" in section, finding
 
 
-@landed(hasattr(doctor, "backslash_names"), "doctor's WARN on a tracked name holding a backslash")
 def test_the_file_paths_section_quotes_doctor_s_warn_for_a_name_holding_a_backslash():
     section = _section("docs/configuration.md", "## File paths and root discovery")
 
@@ -353,7 +328,6 @@ def _unmeasured_line(prefix: str) -> str:
     return lanes._unmeasured_message(lane, {"web/src/calc.py": []}, ["api"])
 
 
-@landed("which crapkit.toml sets" in _unmeasured_line("web"), "the path_prefix warning's value")
 def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_read():
     section = _prose(_section("docs/lanes.md", "### Running from a subdirectory"))
     line = _unmeasured_line("web")
@@ -365,7 +339,6 @@ def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_
     assert f"`{tail}`" in section, tail
 
 
-@landed(hasattr(procs, "_refuse_missing_cwd"), "the missing-cwd lane failure")
 def test_the_cwd_row_and_the_upgrade_page_quote_the_failure_of_a_cwd_that_names_nothing(tmp_path):
     row = _row(_section("docs/configuration.md", "## `[[lane]]`"), "cwd")
     upgrade = _prose(_section("docs/upgrading.md", "## Config paths that 0.8.1 reads on every OS"))
@@ -380,7 +353,6 @@ def test_the_cwd_row_and_the_upgrade_page_quote_the_failure_of_a_cwd_that_names_
 
 
 @only_windows
-@landed(hasattr(_shared, "_refuse_a_share"), "the network-share refusal")
 def test_the_file_paths_table_quotes_the_end_of_the_network_share_refusal():
     section = _prose(_section("docs/configuration.md", "## File paths and root discovery"))
 
