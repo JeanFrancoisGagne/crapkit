@@ -6,16 +6,21 @@ consumer finds out when the job exits 2 on their pull request. These read
 `action.yml` the way `test_cli_docs_contract.py` reads README's Subcommands
 table, and they read the dogfood job that runs the action on this repo.
 """
+import json
 import os
 import re
 import shutil
 import subprocess
+import threading
 from functools import lru_cache
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
 from crapkit.cli.parser import build_parser
+from hang_guard import HANG_SECONDS
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 ACTION = ROOT / "action.yml"
@@ -1058,3 +1063,95 @@ def test_the_post_step_reads_the_head_repository_off_the_event():
     env = _step_named("post the comment")["env"]
 
     assert env["HEAD_REPO"] == "${{ github.event.pull_request.head.repo.full_name }}"
+
+
+# --- the lookup, run under gh's own jq ----------------------------------------
+
+_MARKED = {"id": 2, "body": "<!-- crapkit-action -->\n## crapkit\nthe previous push"}
+_EDIT_IN_PLACE = ["PATCH /repos/owner/repo/issues/comments/2"]
+
+
+class _CommentsApi(BaseHTTPRequestHandler):
+    """The two endpoints the post step calls: the pull request's comment list,
+    answered from `server.comments`, and the writes, recorded in
+    `server.writes` as `METHOD path`."""
+
+    def do_GET(self):
+        self._answer(200, self.server.comments)
+
+    def do_PATCH(self):
+        self._write(200)
+
+    def do_POST(self):
+        self._write(201)
+
+    def _write(self, status: int):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.server.writes.append(f"{self.command} {urlsplit(self.path).path}")
+        self._answer(status, {"id": 99})
+
+    def _answer(self, status: int, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def _env_routing_gh_to(port: int) -> dict:
+    """gh sends a `github.localhost` host's calls over plain http, so
+    HTTP_PROXY routes them to the local API. Every other proxy variable goes:
+    a `no_proxy=localhost` on the machine would send them past it."""
+    env = {key: value for key, value in os.environ.items() if not key.lower().endswith("_proxy")}
+    env.update(HTTP_PROXY=f"http://127.0.0.1:{port}", GH_HOST="github.localhost", GH_TOKEN="x")
+    return env
+
+
+def _post_under_real_gh(tmp_path, comments: list) -> tuple:
+    """The post step under bash with the `gh` on PATH, whose built-in jq runs the
+    lookup, against a local API that lists `comments` on pull request 7.
+    Returns the step's result and the writes the API received."""
+    if shutil.which("gh") is None:
+        pytest.skip("no gh on PATH to run the lookup under")
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "crapkit-comment.json").write_text('{"body": "<!-- crapkit-action -->"}', encoding="utf-8")
+    script = tmp_path / "post-step.sh"
+    script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)
+    server.comments, server.writes = comments, []
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    env = {**_env_routing_gh_to(server.server_address[1]), "GH_CONFIG_DIR": str(tmp_path / "gh"),
+           "CRAPKIT_STATE": state.as_posix(), "PR": "7", "REPO": "owner/repo", "HEAD_REPO": "owner/repo"}
+    try:
+        result = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                                env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+    finally:
+        server.shutdown()
+        server.server_close()
+    return result, server.writes
+
+
+def test_the_lookup_edits_the_marked_comment_in_place(tmp_path):
+    result, writes = _post_under_real_gh(tmp_path, [{"id": 1, "body": "looks good"}, _MARKED])
+
+    assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("comments", [
+    [{"id": 1, "body": None}, _MARKED],
+    [{"id": 1}, _MARKED],
+    [_MARKED, {"id": 3, "body": None}],
+], ids=["null-body-before", "no-body-key", "null-body-after"])
+def test_a_comment_with_no_body_does_not_hide_the_marked_one(tmp_path, comments):
+    """The API schema does not require an issue comment's `body`. `contains` on
+    null is an error in gh's jq as in jq 1.7, so one such comment anywhere in the
+    list made gh exit 1, the lookup came back empty, and the step posted a second
+    crapkit comment instead of editing the first."""
+    result, writes = _post_under_real_gh(tmp_path, comments)
+
+    assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr

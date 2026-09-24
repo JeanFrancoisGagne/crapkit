@@ -234,6 +234,10 @@ runs:
     # A push event has no pull request to carry one: the text is in the log
     # above and nothing is posted.
     #
+    # The API does not require a comment's body, and `contains` on null is an
+    # error in gh's jq, so one comment without a body failed the whole lookup
+    # and a second crapkit comment was posted. `// ""` reads it as empty.
+    #
     # A pull request from a fork carries a read-only token, so both writes come
     # back 403. That is the consumer's permissions, not a finding, and the
     # comment is only ever this action's output: the step records the status the
@@ -254,7 +258,7 @@ runs:
           exit 0
         fi
         id="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-                --jq 'map(select(.body | contains("<!-- crapkit-action -->"))) | .[0].id // empty' \
+                --jq 'map(select((.body // "") | contains("<!-- crapkit-action -->"))) | .[0].id // empty' \
               | head -n 1)" || lookup=$?
         if [ "$lookup" != 0 ]; then
           echo "looking the existing comment up exited $lookup: posting a fresh one"
