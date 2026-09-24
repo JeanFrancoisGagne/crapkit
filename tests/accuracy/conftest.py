@@ -4,12 +4,13 @@ The hooks act on tests under tests/accuracy only: a session that also collects
 tests/unit leaves those items as it found them.
 """
 import itertools
+import os
 from pathlib import Path
 import sys
 
 import pytest
 
-from accuracy.kit import oracles, repos, runlog, tiers
+from accuracy.kit import corpus_run, oracles, repos, runlog, tiers
 
 HERE = Path(__file__).resolve().parent
 # Corpus files, probes and recordings are data: a test_*.py among them is a
@@ -82,3 +83,17 @@ def pytest_sessionfinish(session, exitstatus):
     drawn = sys.modules.get("accuracy.kit.strategies")
     if drawn is not None and drawn.EVENTS:
         runlog.note("events", counts=dict(drawn.EVENTS))
+
+
+def _shared_base(tmp_path_factory) -> Path:
+    """The session's temp root every xdist worker shares."""
+    base = tmp_path_factory.getbasetemp()
+    return base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
+
+
+@pytest.fixture(scope="session")
+def small_corpus(tmp_path_factory):
+    """The small corpus, measured once per session: read its outputs, and take
+    private_copy() before changing anything. See kit/corpus_run.py."""
+    return corpus_run.measure(corpus_run.SMALL, _shared_base(tmp_path_factory),
+                              corpus_run.date_now())
