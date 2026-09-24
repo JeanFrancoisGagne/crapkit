@@ -14,6 +14,7 @@ import pytest
 from crapkit import config as config_module
 from crapkit.config import load_config_text, pytest_testpaths_at
 from crapkit.errors import ConfigError
+from path_spellings import need_case_insensitive, need_case_sensitive
 
 PYPROJECT = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
 
@@ -202,3 +203,29 @@ def test_a_file_that_does_not_parse_reads_as_no_section(tmp_path):
 def test_a_directory_with_no_pytest_configuration_names_no_testpaths(tmp_path):
     assert pytest_testpaths_at(tmp_path) == ()
     assert pytest_testpaths_at(tmp_path / "missing") == ()
+
+
+# --- a positional in another letter case ------------------------------------------
+
+@pytest.mark.parametrize("positional, testpaths", [("Tests", "tests"), ("tests", "Tests"),
+                                                   ("TESTS", "tests")])
+def test_a_positional_naming_the_testpath_in_another_case_is_not_narrowing(tmp_path, positional,
+                                                                           testpaths):
+    """On NTFS `Tests` is the tests/ directory pytest collects; compared as
+    text, the lane that runs the whole suite was refused."""
+    need_case_insensitive(tmp_path)
+    (tmp_path / "tests").mkdir()
+    _write(tmp_path, "pyproject.toml", f'[tool.pytest.ini_options]\ntestpaths = ["{testpaths}"]\n')
+
+    cfg = load_config_text(_toml(f"python -m pytest {positional} --cov=app"), root=tmp_path)
+
+    assert cfg.lanes[0].name == "py"
+
+
+def test_a_case_sensitive_disk_reads_another_case_as_another_directory(tmp_path):
+    need_case_sensitive(tmp_path)
+    (tmp_path / "tests").mkdir()
+    _write(tmp_path, "pyproject.toml", PYPROJECT)
+
+    with pytest.raises(ConfigError, match="positional argument 'Tests' narrows"):
+        load_config_text(_toml("python -m pytest Tests --cov=app"), root=tmp_path)

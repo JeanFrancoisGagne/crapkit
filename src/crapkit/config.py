@@ -416,13 +416,16 @@ def pytest_testpaths_at(directory: str | os.PathLike) -> tuple[str, ...]:
     return _pytest_testpaths(lambda name: _pytest_text(directory, name))
 
 
-def _as_testpath(token: str) -> str:
+def _as_testpath(token: str, base: Path | None = None) -> str:
     """One spelling for the comparison: forward slashes, no leading `./`, no
-    trailing separator. `tests/`, `./tests` and `tests` name one directory."""
+    trailing separator. `tests/`, `./tests` and `tests` name one directory.
+    Given the directory it is read from, it takes the case that directory
+    lists: on NTFS `Tests` is tests/."""
     spelled = token.replace("\\", "/")
     if spelled.startswith("./"):
         spelled = spelled[2:]
-    return spelled.rstrip("/")
+    spelled = spelled.rstrip("/")
+    return disk_spelling(base, spelled) if base is not None and spelled else spelled
 
 
 def _declared_testpaths(positionals: list[str], lane_dir: Path | None) -> set[str]:
@@ -432,7 +435,7 @@ def _declared_testpaths(positionals: list[str], lane_dir: Path | None) -> set[st
     common lane costs a read-only command no file read."""
     if not positionals or lane_dir is None:
         return set()
-    return {_as_testpath(path) for path in pytest_testpaths_at(lane_dir)}
+    return {_as_testpath(path, lane_dir) for path in pytest_testpaths_at(lane_dir)}
 
 
 def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[str]:
@@ -445,10 +448,10 @@ def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[st
     of what a bare `pytest` does, which is the narrowing this guard exists to
     refuse, so one entry of several is not enough."""
     declared = _declared_testpaths(positionals, lane_dir)
-    if not declared <= {_as_testpath(tok) for tok in positionals}:
+    if not declared <= {_as_testpath(tok, lane_dir) for tok in positionals}:
         return positionals
     # An empty `declared` is a subset of anything and drops nothing below.
-    return [tok for tok in positionals if _as_testpath(tok) not in declared]
+    return [tok for tok in positionals if _as_testpath(tok, lane_dir) not in declared]
 
 
 def _validate_coveragepy_command(name: str, command: str, lane_dir: Path | None = None) -> None:
