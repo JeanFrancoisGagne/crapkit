@@ -23,6 +23,12 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   results this run, and the Action's comment says their new failures went unchecked. A
   lane with no `results_artifact` whose command exited nonzero gets a stderr line naming
   the exit code, which was the only sign a test failed.
+- `verify --reuse-artifacts` exits 5 when a lane's declared `results_artifact` is missing,
+  empty, malformed or says its run never finished, names each such lane and its file, and
+  stores no run. The refusal ends `run verify without --reuse-artifacts so the lane writes
+  it again`. verify read the absent failure list as no new failures: exit 0, `"ok": true`,
+  a passing Action comment, and a run that checked no test became the next trusted
+  baseline. `coverage --reuse-artifacts` over the same junit still warns and scores on.
 - A verify run that crapkit 0.7.x stored kept a failure that passed its flake retry in its
   failure list. Read as a baseline, it forgave a later real failure of that test. verify
   now reads such a run's failures from the newest trusted run behind it, and says so.
@@ -85,6 +91,54 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   function with no branch counts, which scored from its statements. A report with no `meta`
   is judged by the counts its functions carry, where it said its term was statement-based
   while scoring on branches.
+- `digest` lists an over-ceiling function in a scope the older run of its pair never
+  scored as `newly scored over ceiling in scope NAME`. A scope added to `crapkit.toml`
+  between two runs announced its old debt as `new over ceiling`, which now means only a
+  function added to a scope both runs scored.
+- `coverage --reuse-unchanged` says `junit.xml: missing` when a file a lane declares, its
+  `artifact` or `results_artifact`, is gone, and `junit.xml: unreadable (why)` when it
+  cannot be opened. The stderr line and the stored `rerun_reason` said the bytes of a file
+  that no longer exists differ from its stamp. The lane reran either way.
+
+### A value nobody measured is named, not printed as a fact
+
+The shallow-clone refusal and the mutate counts below, and the `verify --reuse-artifacts`
+refusal above, can change a CI job's exit code or a number a script reads; the [upgrade
+guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
+says what to change.
+
+- A depth-1 clone, the `actions/checkout` default, holds one commit, so every mark read 0
+  days old, nothing read as repaid and churn counted one commit per file. `ratchet report
+  --enforce` with `debt_max_age_months` or `repayment_min_per_30d` set now exits 4 there,
+  ending `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. It passed an
+  age limit a full clone fails and failed a repayment quota a full clone passes.
+  `worklist`, `next-item`, `brief` and `ratchet report` still answer, print one stderr
+  line such as `warning: churn counts read only the commits this clone holds`, and carry
+  `shallow` in their JSON, as do the MCP tools `list_worklist` and `get_next_item`. The
+  Action's comment repeats the line above its table. A marks file renamed with `git mv`
+  restarts its history at the rename, and `ratchet report` now names that commit.
+- A row no coverage measured carries `unmeasured: true` and its text says `not measured`:
+  a function in a `no-lane` or `cc-only` scope, or one `rescore` and `check_gate` find no
+  row for because it was added or renamed since the run. Such a row read as cov 0% and
+  untested, and `brief` and `next-item` multiplied that stand-in into
+  `est_uncovered_paths`. `cov`, `crap`, `flag`, `remedy` and `est_uncovered_paths` keep
+  their values until JSON schema 2.
+- `brief` and `next-item` give a function in a scope no lane covers its own dark-line
+  note, which says no lane covers the scope and to add it to a lane's `scopes`. A lane
+  whose artifact went stale, or was only ever reused and so never stamped, set its note
+  for every path, so such a function read `lane 'lib': files in its scopes changed since
+  cov.json was written`, and rerunning that lane measured nothing there.
+- `mutate` reports a mutant whose suite ran past `mutation_timeout_seconds` apart from a
+  kill: its progress line says `timed out, counted killed`, the summary says how many of
+  the killed timed out, and `--json` adds `timed_out`, a count inside `killed`. A mutant
+  whose suite exits 5, pytest's code for a run that collected no test, gets no verdict: it
+  counts in neither `killed` nor `survived`, the printed rate leaves it out, and `--json`
+  adds `no_verdict`. Both printed `mutation: 2/2 killed (100%)`, the output of real kills.
+  A script that divides `killed` by `mutants` now counts a no-verdict mutant as a survivor.
+- `doctor --tune` sums only the lanes that recorded a duration and names the others
+  (`130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; cost unknown for
+  'b'`). A lane with no duration was dropped from the sum, and one whose junit carries no
+  `time` attribute was summed as 0 s.
 
 ## 0.8.0 — 2026-09-23
 
