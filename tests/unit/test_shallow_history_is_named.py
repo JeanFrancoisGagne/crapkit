@@ -291,6 +291,8 @@ def test_a_brief_batch_says_it_once_and_carries_it_on_every_packet(checkouts, ca
 @pytest.mark.parametrize("tool, arguments", [
     ("get_ratchet_report", {}),
     ("get_function_brief", {"path": "src/a.py", "name": "old_debt"}),
+    ("list_worklist", {}),
+    ("get_next_item", {}),
 ])
 @pytest.mark.parametrize("checkout, shallow", [("full", False), ("shallow", True)])
 def test_the_mcp_tools_carry_shallow(checkouts, tool, arguments, checkout, shallow):
