@@ -1481,8 +1481,8 @@ colours pytest's usage error as well. The cause lines are found and pulled up fr
 whatever colour pytest wrote, the pytest-cov hint still fires, and the refusal on stderr,
 `lane_failures` under `--json`, the Action's pull-request comment and its base-run reason
 carry no escape byte. A junit report's error text gets the same treatment: pytest writes
-ESC there as the text `#x1B`, and a collection refusal from an xdist lane quotes it
-without. Tail the file, or open it in a CI viewer that renders colour, to see the
+ESC there as the text `#x1B`, and the collection refusal an xdist lane draws drops those
+sequences too. Tail the file, or open it in a CI viewer that renders colour, to see the
 original.
 
 ### A killed run leaves its coverage shards behind
