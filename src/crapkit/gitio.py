@@ -9,8 +9,8 @@ import subprocess
 import threading
 import time
 from collections.abc import Iterator
-from itertools import chain
 from contextlib import contextmanager
+from itertools import chain
 from pathlib import Path
 
 from .errors import GitError, ToolError
