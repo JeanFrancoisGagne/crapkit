@@ -328,15 +328,45 @@ def test_a_utf16_marks_file_is_rewritten_as_utf16_in_its_own_line_ending(scored_
     assert "999.0000" not in text, "the tighten reached the file"
 
 
-@pytest.mark.parametrize("body", [_utf16(PY_TOML), (PY_TOML + "# caf\xe9\n").encode("cp1252")],
-                         ids=["utf16", "cp1252"])
-def test_crapkit_toml_keeps_its_refusal_whatever_the_marks_rule(tmp_path: Path, body):
+@pytest.mark.parametrize("body, code", [
+    (_utf16(PY_TOML), 3),
+    ((PY_TOML + "# caf\xe9\n").encode("cp1252"), 3),
+    (PY_TOML.encode(), 0),
+    (PY_TOML.replace("\n", "\r\n").encode(), 0),
+], ids=["utf16", "cp1252", "utf8", "crlf"])
+def test_crapkit_toml_keeps_its_refusal_whatever_the_marks_rule(tmp_path: Path, body, code):
     """Q20 is the marks file's rule alone: crapkit.toml is parsed as TOML, and a
     byte read as U+FFFD there would be a setting nobody wrote."""
     res = _run(_py_repo(tmp_path, body), "inventory")
 
-    assert res.returncode == 3, res.stderr
-    assert "crapkit: crapkit.toml is not UTF-8 (" in res.stderr, res.stderr
+    assert res.returncode == code, res.stderr
+    assert ("crapkit: crapkit.toml is not UTF-8 (" in res.stderr) == (code == 3), res.stderr
+
+
+def test_a_portable_baseline_keeps_its_refusal_whatever_the_marks_rule(scored_repo: Path):
+    """`verify --baseline-tsv` reads numbers verify judges against, so a byte
+    that is not UTF-8 there is refused by name, as in crapkit.toml."""
+    emitted = _run(scored_repo, "verify", "--reuse-artifacts", "--emit-baseline", "base.tsv")
+    assert emitted.returncode == 0, emitted.stdout + emitted.stderr
+    base = scored_repo / "base.tsv"
+    base.write_bytes(base.read_bytes() + b"# caf\xe9\n")
+
+    res = _run(scored_repo, "verify", "--reuse-artifacts", "--baseline-tsv", "base.tsv")
+
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "crapkit: base.tsv is not UTF-8 (byte e9 at offset " in res.stderr, res.stderr
+
+
+def test_valid_emoji_and_cjk_in_a_configuration_note_reach_brief(scored_repo: Path):
+    toml = scored_repo / "crapkit.toml"
+    note = "gardez le café \U0001f600 李雷"
+    toml.write_text(TS_TOML.replace("[crapkit]\n", f'[crapkit]\nnotes = ["{note}"]\n', 1),
+                    encoding="utf-8")
+
+    res = _run(scored_repo, "brief", "src/tangled.ts", "tangled", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert note in json.dumps(json.loads(res.stdout)["notes"], ensure_ascii=False)
 
 
 def _hook_marks(shape: str) -> bytes:
@@ -435,6 +465,9 @@ def test_every_reader_of_the_marks_history_ages_a_mark_from_the_revision_that_br
         assert ages == {"src/tangled.ts": 2}, report
     assert brief.returncode == 0, brief.stdout + brief.stderr
     assert json.loads(brief.stdout)["gate_rule"]["mark_age_days"] == 2
+    for command in (("next-item",), ("worklist",)):
+        res = _run(scored_repo, *command)
+        assert res.returncode == 0, (command, res.stdout, res.stderr)
 
 
 # --- a byte cp1252 leaves undefined keeps a PowerShell name whole -----------------------
@@ -446,22 +479,33 @@ PS_SPRAWL = (b"function Write-Caf%s {\n  param($n)\n"
              + b"  return $n\n}\n")  # ccn 8, over the ceiling of 6
 
 
-@pytest.mark.parametrize("name", [b"\x81", b"\x9d", "é".encode(), b"\xe9"],
-                         ids=["byte-81", "byte-9d", "utf8-twin", "cp1252-e9"])
-def test_a_powershell_name_holding_a_byte_cp1252_leaves_undefined_is_scored_and_gated(
-        tmp_path: Path, name: bytes):
-    """Read as U+FFFD, the byte split the name and the declaration scored no
-    function: inventory counted 0 where the UTF-8 twin counts 1, and
-    hook-precommit passed a staged ccn-8 function at exit 0 that it blocks at
-    exit 6 in UTF-8."""
+PS_FILES = {
+    # id: the bytes of a .ps1 declaring one ccn-8 function
+    "byte-81-in-the-name": PS_SPRAWL % b"\x81",
+    "byte-9d-in-the-name": PS_SPRAWL % b"\x9d",
+    "utf8-twin": PS_SPRAWL % "é".encode(),
+    "cp1252": PS_SPRAWL % b"\xe9",
+    "utf16-le-bom": b"\xff\xfe" + (PS_SPRAWL % "é".encode()).decode().encode("utf-16-le"),
+    "utf16-be-bom": b"\xfe\xff" + (PS_SPRAWL % "é".encode()).decode().encode("utf-16-be"),
+    "utf8-bom": b"\xef\xbb\xbf" + PS_SPRAWL % "é".encode(),
+    "utf8-crlf": (PS_SPRAWL % "é".encode()).replace(b"\n", b"\r\n"),
+}
+
+
+@pytest.mark.parametrize("shape", PS_FILES)
+def test_a_powershell_file_in_any_encoding_is_scored_and_gated(tmp_path: Path, shape):
+    """Read as U+FFFD, a byte cp1252 leaves undefined split the name and the
+    declaration scored no function: inventory counted 0 where the UTF-8 twin
+    counts 1, and hook-precommit passed a staged ccn-8 function at exit 0 that
+    it blocks at exit 6 in UTF-8. A UTF-16 file did the same until 218679f."""
     (tmp_path / "crapkit.toml").write_text(PS_TOML, encoding="utf-8")
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "tool.ps1").write_bytes(PS_SPRAWL % name)
+    (tmp_path / "src" / "tool.ps1").write_bytes(PS_FILES[shape])
     git_init_repo(tmp_path)
     git_commit_all(tmp_path, "init")
 
     inventory = _run(tmp_path, "inventory", "--json")
-    (tmp_path / "src" / "gated.ps1").write_bytes(PS_SPRAWL % name)
+    (tmp_path / "src" / "gated.ps1").write_bytes(PS_FILES[shape])
     subprocess.run(["git", "add", "src/gated.ps1"], cwd=tmp_path, check=True, capture_output=True)
     gate = _run(tmp_path, "hook-precommit")
 

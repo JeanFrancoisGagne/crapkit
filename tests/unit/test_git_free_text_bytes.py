@@ -13,6 +13,7 @@ Every commit here comes from fast-import (raw_git.commit), which writes the
 bytes as given; `git commit` would re-encode them first.
 """
 import codecs
+import json
 import os
 import sys
 
@@ -286,6 +287,43 @@ def test_ratchet_report_reads_a_cp1252_marks_file_with_u_fffd(tmp_path, capsys):
     out, err = capsys.readouterr()
     assert "caf�( n )" in out
     assert "is not UTF-8" not in err
+
+
+def test_a_marks_commit_whose_author_and_subject_are_not_utf8_reads(tmp_path, capsys):
+    root = repository(tmp_path)
+    commit(root, files={b"crapkit.toml": CONFIG, MARKS.encode(): STAMPED + MARK}, age_days=2,
+           author=LATIN1, message=LATIN1 + b" marks\n\n\xff body\n")
+    commit(root, files={b"crapkit.toml": CONFIG, MARKS.encode(): STAMPED + MARK + b"# 2\n"})
+    checkout(root)
+
+    assert main(["ratchet", "report", "--repo", str(root)]) == 0
+    assert "      2d  src/app.py  f( x )" in capsys.readouterr().out
+
+
+CAFE_SOURCE = "def café(n):\n" + "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8)) \
+    + "    return n\n"
+
+
+def test_brief_ages_a_marked_function_whose_name_a_past_revision_saved_in_cp1252(tmp_path, capsys):
+    """brief died in the history read. The cp1252 revision's name reads as
+    `caf\\ufffd( n )`, which keys no function, so `café( n )`'s mark counts
+    from the UTF-8 revision that brought it."""
+    from crapkit.ratchet import metric_version
+
+    config = CONFIG + b"coverage_optional = true\n"
+    stamped = f"# {metric_version()}\n# crapkit-keys=1\npath\tlong_name\tcrap\n".encode()
+    root = repository(tmp_path)
+    commit(root, files={b"crapkit.toml": config, b"src/app.py": CAFE_SOURCE.encode()}, age_days=5)
+    commit(root, files={MARKS.encode(): stamped + b"src/app.py\tcaf\xe9( n )\t8.0000\n"}, age_days=3)
+    commit(root, files={MARKS.encode(): stamped + "src/app.py\tcafé( n )\t8.0000\n".encode()},
+           age_days=1)
+    commit(root, files={MARKS.encode(): stamped + "src/app.py\tcafé( n )\t8.0000\n# kept\n".encode()})
+    checkout(root)
+    assert main(["coverage", "--repo", str(root)]) == 0
+    capsys.readouterr()
+
+    assert main(["brief", "src/app.py", "café", "--json", "--repo", str(root)]) == 0
+    assert json.loads(capsys.readouterr().out)["gate_rule"]["mark_age_days"] == 1
 
 
 # --- answers that name a file or a ref: `config`, `rev-parse`, stderr echoes ----
