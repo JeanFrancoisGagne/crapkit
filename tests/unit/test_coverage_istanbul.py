@@ -173,6 +173,8 @@ _LOUD = {
     "decl-absent-as-istanbul-0x-wrote": lambda c: c["fnMap"]["0"].pop("decl"),
     "decl-start-line-null": lambda c: c["fnMap"]["0"]["decl"]["start"].update(line=None),
     "statement-start-null": lambda c: c["statementMap"]["0"].update(start=None),
+    "s-absent": lambda c: c.pop("s"),
+    "f-absent": lambda c: c.pop("f"),
 }
 
 
@@ -209,15 +211,13 @@ _READ_AS = {
     "path-field-absent": (lambda c: c.pop("path"), ("f", 1, 6, True, 2, 1, 3, 2)),
     "statement-start-empty": (lambda c: c["statementMap"]["0"].update(start={}),
                               ("f", 1, 6, True, 2, 1, 2, 1)),
-    "s-absent-no-statement-ran": (lambda c: c.pop("s"), ("f", 1, 6, True, 2, 1, 3, 0)),
-    "f-absent-no-function-ran": (lambda c: c.pop("f"), ("f", 1, 6, False, 2, 1, 3, 2)),
 }
 
 
 @pytest.mark.parametrize("shape", list(_READ_AS))
 def test_an_optional_or_absent_counter_reads_as_istanbul_means_it(shape):
-    """A missing counter object is zero hits, as istanbul starts every counter;
-    a statement with no line is left out, as a branch with no line is."""
+    """A statement with no line is left out, as a branch with no line is. A
+    missing counter object is refused: every mapped id needs its counter."""
     mutate, row = _READ_AS[shape]
 
     assert [tuple(fn) for fn in _read(mutate)] == [row]
@@ -232,3 +232,93 @@ def test_a_non_ascii_path_keys_its_file_as_written():
     art["/repo/src/café_世界.ts"] = art.pop(_APP)
 
     assert list(parse_istanbul(json.dumps(art), repo_root="/repo")) == ["src/café_世界.ts"]
+
+
+# --- a mapped id with no hit record ---------------------------------------------
+#
+# istanbul pairs every fnMap, statementMap and branchMap entry with a counter in
+# f, s and b. A salvage merged by hand, or a converter, can drop one, and each
+# read the absent counter as a zero: a statement never ran, a branch pair did not
+# exist, a function was never called. The score moved with nothing on stderr,
+# and a dropped branch record flipped add-tests to ok.
+
+STATEMENTS = {
+    "C:\\repo\\src\\hot.ts": {
+        "path": "C:\\repo\\src\\hot.ts",
+        "fnMap": {"0": {"name": "hot", "decl": {"start": {"line": 1}},
+                        "loc": {"start": {"line": 1}, "end": {"line": 6}}}},
+        "f": {"0": 1},
+        "branchMap": {"0": {"loc": {"start": {"line": 2}},
+                            "locations": [{"start": {"line": 2}}, {"start": {"line": 4}}]}},
+        "b": {"0": [1, 0]},
+        "statementMap": {str(i): {"start": {"line": i}, "end": {"line": i}} for i in (2, 3, 5)},
+        "s": {"2": 1, "3": 1, "5": 0},
+    }
+}
+KEY = "C:\\repo\\src\\hot.ts"
+
+
+def _without(group: str, key: str | None) -> dict:
+    artifact = copy.deepcopy(STATEMENTS)
+    if key is None:
+        del artifact[KEY][group]
+    else:
+        del artifact[KEY][group][key]
+    return artifact
+
+
+DROPPED = {
+    "statement-hit-record-missing": ("s", "3", "statement '3' has no hit count in `s`"),
+    "every-statement-hit-missing": ("s", None, "statement '2' has no hit count in `s`"),
+    "branch-hit-record-missing": ("b", "0", "branch '0' has no hit count in `b`"),
+    "function-hit-record-missing": ("f", None, "function '0' has no hit count in `f`"),
+}
+
+
+@pytest.mark.parametrize("form", sorted(DROPPED))
+def test_a_mapped_id_with_no_hit_record_refuses_the_artifact_and_names_it(form):
+    group, key, named = DROPPED[form]
+
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(json.dumps(_without(group, key)), repo_root="C:\\repo")
+
+    message = str(raised.value)
+    assert f"src/hot.ts: {named}, so crapkit cannot tell whether it ran" in message, message
+    assert "regenerate the artifact with the coverage tool" in message, message
+
+
+def test_the_dead_line_reader_refuses_the_same_artifact():
+    """The missing-lines read (explain, brief, diff coverage) holds the same rule,
+    or a dropped counter reads there as a line that never ran."""
+    from coverage_readers import parse_istanbul_missing
+
+    with pytest.raises(ToolError, match="statement '3' has no hit count"):
+        parse_istanbul_missing(json.dumps(_without("s", "3")), repo_root="C:\\repo")
+
+
+def test_every_counter_present_reads_as_before():
+    per_file = parse_istanbul(json.dumps(STATEMENTS), repo_root="C:\\repo")
+
+    (hot,) = per_file["src/hot.ts"]
+    assert (hot.invoked, hot.branches_total, hot.branches_covered) == (True, 2, 1)
+    assert (hot.statements_total, hot.statements_covered) == (3, 2)
+
+
+def test_a_file_that_maps_nothing_needs_no_counters():
+    """An empty map pairs with an absent counter group: nothing is missing."""
+    bare = {KEY: {"path": KEY, "fnMap": {}, "statementMap": {}, "branchMap": {}}}
+
+    assert parse_istanbul(json.dumps(bare), repo_root="C:\\repo") == {"src/hot.ts": []}
+
+
+def test_the_lanes_page_quotes_the_refusal_a_dropped_counter_draws():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    artifact = {"C:\\repo\\src\\hot.ts": _without("s", "3")[KEY]}
+
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(json.dumps(artifact), repo_root="C:\\repo")
+
+    reason = str(raised.value).split(": ", 1)[1]
+    assert f"coverage/ui.json: {reason}" in (root / "docs" / "lanes.md").read_text(encoding="utf-8")

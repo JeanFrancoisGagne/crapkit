@@ -229,6 +229,22 @@ booleans, fractions and non-finite values are refused. A coverage.py summary als
 cannot report more covered lines or branches than its declared total. A bad
 artifact fails its lane with the input named in the error.
 
+A count that is missing is refused the same way, never read as a zero. In istanbul every
+`fnMap`, `statementMap` and `branchMap` id needs its counter in `f`, `s` and `b`: a
+dropped counter read as a function never called, a statement that never ran or a branch
+pair that did not exist, and the score moved with nothing said. The refusal names the file
+and the first id:
+
+```
+crapkit: lane 'ui' FAILED: unparseable istanbul artifact coverage/ui.json: src/hot.ts: statement '3' has no hit count in `s`, so crapkit cannot tell whether it ran (1 such in this file); regenerate the artifact with the coverage tool, or merge shards with one that keeps every counter
+```
+
+A coverage.py function needs its `summary`, and each kind of count in it as a pair:
+`num_statements` with `covered_lines`, `num_branches` with `covered_branches`. A kind with
+neither count is one the report did not measure; a summary with neither kind, or one count
+without its partner, is refused, since each read as 0 of 0 and a function that ran scored
+cov 0.
+
 crapkit scores functions, so `fnMap` is the part that decides everything. Per file in the
 artifact:
 
@@ -570,6 +586,16 @@ $ crapkit coverage
 crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches
 ```
 
+The report measures branches when its `meta.branch_coverage` says so, or when any of its
+functions carries branch counts, so a report with no `meta` is judged by what it holds.
+In a report that measures branches, coverage.py writes `num_branches: 0` for a function
+with none, so a function with no branch counts at all was rewritten by something else.
+Read from its statements, its coverage moved with nothing said; the report is refused:
+
+```
+crapkit: lane 'py' FAILED: coverage.py report measures branches, but 1 function(s) carry no branch counts (api/views.py: render), so crapkit cannot tell how many of their branches ran; regenerate the report with the coverage tool
+```
+
 Every function in the model already falls back to statement coverage when it holds no
 branches, so refusing the report blocked arithmetic crapkit performs on every run, and
 `pytest --cov --cov-report=json` is the shape most existing CI artifacts have — which is
@@ -618,7 +644,7 @@ Every region in the report needs its `summary` object; coverage.py writes one on
 region without one exits 5, where it used to score the function as never run:
 
 ```
-crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: guarded: no summary object (coverage.py writes one on every region; regenerate the report with `coverage json`)
+crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: guarded: no summary object, so crapkit cannot tell how much of it ran; regenerate the report with `coverage json`
 ```
 
 ### `--continue-on-collection-errors`
