@@ -298,7 +298,7 @@ py.json
 | `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
 | `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
 | `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. Current and `.log.1` files each have a 16 MiB default bound; see [log policies](resources.md#logs-and-retained-evidence). | |
-| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
+| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`), a digest of each file under the lane's scopes as the run left it (`sources`), the untracked files the run itself wrote (`byproducts`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. | |
@@ -980,13 +980,23 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 | Flag | Behavior |
 |---|---|
 | `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
-| `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. Each lane prints one line saying which it did, and a rerun names the first condition that failed. |
+| `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment, crapkit version and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit in this clone, no change under those paths between that commit's tree and the working tree, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. Either way every file under its scopes has to hold the bytes it measured. A failed attempt that wrote no artifact always reruns. Each lane prints one line saying which it did, and a rerun names the first condition that failed. |
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
 shared helpers: any tracked or untracked change, or a new commit, reruns the lane.
 With [`inputs`](configuration.md#lane) it covers exactly those paths, literal paths
 from the root with no globs, so a docs commit or an untracked draft elsewhere reruns
-nothing, and a file the command reads that the list leaves out is never checked.
+nothing, and a file the command reads that the list leaves out is never checked. The
+inputs proof compares trees, not history: a message-only amend, a rebase onto a commit
+that touched nothing under the inputs, or a switch to a sibling branch with the same
+inputs reuses the lane. A clone that does not hold the stamp's commit, such as a
+shallow CI checkout with `.crapkit/` restored, reruns it and says so.
+
+git's own diff skips three kinds of edit, and reuse does not: a file flagged
+`--skip-worktree` or `--assume-unchanged` whose bytes differ from the index, and an
+edit inside a submodule whose `.gitmodules` entry says `ignore = dirty`. A same-size
+edit whose old modification time was put back (`cp -p`, `tar -x`, `rsync -t`) passes
+git's stat check, and the `sources` digests catch it.
 An entry that matches no tracked file, and no untracked file outside `.gitignore`,
 hides every change behind it, so `doctor` fails on it and names the entry.
 Measurements made while their proof did not hold (a dirty tree, or dirty inputs)
@@ -994,13 +1004,19 @@ and older stamps without this proof cannot be reused automatically.
 
 The declared `artifact` and `results_artifact` of every lane in `crapkit.toml` are not
 changes to the tree or to a lane's inputs, whether git ignores them or not: every run
-rewrites them, and each stamp proves its own by their digests. Any other file a lane
-writes that git does not ignore is a change, and the rerun line names it; ignore it.
+rewrites them, and each stamp proves its own by their digests. Neither is an untracked
+file a lane's own run wrote, such as `.coverage` at the root from pytest-cov or
+`__pycache__` under the scopes: the stamp lists it under `byproducts`, and no lane's
+proof counts it while it stays untracked. `crapkit init` ignores only `.crapkit/`, so
+without this the first run's own output voided its proof and the lane never reused.
+Any other file that git does not ignore is a change, and the rerun line names it.
 
 The environment half of the proof leaves out what a shell or terminal keeps for its
-own bookkeeping: `OLDPWD`, `PWD`, `SHLVL`, `_` and terminal session ids such as
-`WT_SESSION`, `TERM_SESSION_ID` and `SSH_CONNECTION`, so a `cd` between two runs reruns
-nothing. Every other inherited variable counts. The stamp keeps a
+own bookkeeping: `OLDPWD`, `PWD`, `SHLVL`, `_`, terminal session ids such as
+`WT_SESSION`, `TERM_SESSION_ID` and `SSH_CONNECTION`, and the agent and IPC sockets a
+login, tmux or an editor terminal opens, such as `SSH_AUTH_SOCK`, `SSH_AGENT_PID`,
+`TMUX` and `VSCODE_GIT_IPC_HANDLE`, so a `cd` or a new terminal between two runs
+reruns nothing. Every other inherited variable counts. The stamp keeps a
 16-hex digest of each value under `proof_parts`, never the value, so a rerun can
 name the variable that changed.
 
@@ -1015,9 +1031,12 @@ crapkit: lane 'web': rerunning: the working tree has 1 uncommitted change(s): we
 A rerun names the first condition that failed: `no artifact at PATH`, a last attempt
 that wrote none, `its stamp holds no proof` (measured with uncommitted changes, or by a
 crapkit that recorded none), uncommitted changes, `HEAD is X and its artifact was built
-at Y`, `crapkit.toml changed`, `its lane table changed`, `N environment variable(s)
-changed: NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that
-differ from the stamp. `coverage --json` carries the same sentence per lane as
+at Y`, `crapkit.toml changed`, `its lane table changed`, `the crapkit version changed`,
+`N environment variable(s) changed: NAME`, changes under a lane's `inputs` since its
+commit, a stamp commit this clone does not hold, artifact bytes that differ from the
+stamp, or files under its scopes that hold other bytes than it measured though git's
+index calls them unchanged. `crapkit.toml` is compared with CRLF read as LF, so a
+checkout under `core.autocrlf=true` is the file it was. `coverage --json` carries the same sentence per lane as
 `rerun_reason`, `""` for a lane it reused.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
@@ -1417,7 +1436,8 @@ Exit 5. The summary opens by saying the run is partial, counts `over` and the gr
 the measured scopes only (the failed lane's function is `scripts`' debt under
 `by_scope`, not this run's grade), and ends with the lanes to rerun. On a tree with
 uncommitted changes that last line adds ``(the working tree has uncommitted changes, so
-every lane that lists no `inputs` reruns)``. Four consequences:
+every lane that lists no `inputs` reruns)``, and when git cannot say whether the tree is
+clean it adds that instead, with git's error. Four consequences:
 
 1. **The failed lane's scopes fall back to `no-lane`, not `untested`.** The distinction is
    the point: `untested` means a working lane had nothing to say about this function,

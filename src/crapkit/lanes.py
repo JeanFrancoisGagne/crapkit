@@ -24,13 +24,14 @@ import time
 from pathlib import Path
 from typing import IO, NamedTuple
 
+from . import __version__
 from .config import Lane
 from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
-from .gitio import GitFacts, worktree_root
+from .gitio import GitFacts, untracked_files, worktree_root
 from .lane_command import launch_spec, pytest_python
-from .lane_sources import digests, moved, scope_files, settled
+from .lane_sources import digests, moved, normalized, scope_files, settled
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -410,8 +411,75 @@ def read_stamps(root: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict,
-                 sources: dict) -> dict:
+class _Before(NamedTuple):
+    """What a lane run reads off the tree before it starts: the proof key, the
+    digests of the files under its scopes, and the untracked files already there."""
+    measured: str
+    sources: dict
+    untracked: frozenset
+
+
+class _Trace(NamedTuple):
+    """What the run left: the proof key taken before it, the digests it can
+    vouch for, and the untracked files the run itself wrote (`byproducts`)."""
+    measured: str
+    sources: dict
+    byproducts: frozenset
+
+
+def _before_run(root: Path, lane: Lane, scope_paths: dict | None) -> _Before:
+    return _Before(_measurement_key(root, lane), _lane_sources(root, lane, scope_paths),
+                   _untracked(root))
+
+
+def _after_run(root: Path, lane: Lane, scope_paths: dict | None, coverage: dict,
+               before: _Before) -> _Trace:
+    return _Trace(before.measured,
+                  settled(before.sources, _lane_sources(root, lane, scope_paths, coverage)),
+                  _byproducts(root, lane, before.untracked))
+
+
+def _untracked(root: Path) -> frozenset[str]:
+    try:
+        return frozenset(untracked_files(root))
+    except GitError:
+        return frozenset()
+
+
+def _byproducts(root: Path, lane: Lane, before: frozenset) -> frozenset[str]:
+    """The untracked files this run wrote, plus the ones earlier runs of the
+    lane wrote that are still there. A pytest-cov lane leaves `.coverage` at the
+    root and a python lane with bytecode on leaves `__pycache__` under its
+    scopes; a repo whose .gitignore holds only `.crapkit/`, which is what
+    `crapkit init` writes, never had a clean tree to prove reuse on again."""
+    now = _untracked(root) - _declared_outputs(root, lane)
+    earlier = frozenset(_names_in(stamp_for(read_stamps(root), lane.artifact)))
+    return (now - before) | (now & earlier)
+
+
+def _declared_outputs(root: Path, lane: Lane, config: bytes | None = None) -> frozenset[str]:
+    """Every artifact and results file crapkit.toml declares, plus this lane's
+    own, as root-relative paths: outputs by name, never recorded as by-products."""
+    text = _config_bytes(root) if config is None else config
+    own = frozenset(_normalized(name) for name in _declared_files(lane))
+    return own | _configured_outputs(text)
+
+
+def _names_in(entry: dict) -> list[str]:
+    listed = entry.get("byproducts")
+    return [name for name in listed if isinstance(name, str)] if isinstance(listed, list) else []
+
+
+def _recorded_byproducts(root: Path) -> frozenset[str]:
+    """Every untracked file a stamp says its lane's own run wrote."""
+    found: set[str] = set()
+    for entry in read_stamps(root).values():
+        found.update(_names_in(entry) if isinstance(entry, dict) else ())
+    return frozenset(found)
+
+
+def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, provenance: dict,
+                 trace: _Trace) -> dict:
     """What produced this artifact: the commit reuse judges staleness against,
     plus the wall seconds the parallel scheduler starts the slowest lane on.
     `proof` is the measurement key when it held from start to finish, else "";
@@ -419,7 +487,8 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, prove
     `proof_parts` keeps the digests a lane without `inputs` was proved by, so a
     later rerun can say which of them moved. `sources` holds a digest of each
     file under the lane's scopes as the run left it: what its line numbers
-    point into (lane_sources).
+    point into (lane_sources). `byproducts` names the untracked files the run
+    wrote, which no later proof counts as a change.
 
     Empty in a non-git sandbox (unit tests), which records nothing. Lanes hand
     their stamp back rather than writing it, so N of them running at once cannot
@@ -429,11 +498,12 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, prove
         commit = git.head_commit()
     except GitError:
         return {}
-    proof = _measurement_proof(git.root, lane)
-    clean = bool(measured) and measured == proof.key
+    proof = _measurement_proof(git.root, lane, trace.byproducts)
+    clean = bool(trace.measured) and trace.measured == proof.key
     return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
-            "proof": measured if clean else "", "proof_parts": proof.parts if clean else {},
-            "artifacts": _artifact_digests(lane, provenance), "sources": sources}
+            "proof": trace.measured if clean else "", "proof_parts": proof.parts if clean else {},
+            "artifacts": _artifact_digests(lane, provenance), "sources": trace.sources,
+            "byproducts": sorted(trace.byproducts)}
 
 
 def _artifact_digests(lane: Lane, provenance: dict) -> dict:
@@ -461,11 +531,13 @@ def _measurement_key(root: Path, lane: Lane) -> str:
     return _measurement_proof(root, lane).key
 
 
-def _measurement_proof(root: Path, lane: Lane) -> _Proof:
+def _measurement_proof(root: Path, lane: Lane, byproducts: frozenset = frozenset()) -> _Proof:
+    """`byproducts` are untracked files the run being stamped wrote, which the
+    stamp does not record yet."""
     if lane.inputs:
-        key = _declared_inputs_key(root, lane)
+        key = _declared_inputs_key(root, lane, byproducts)
         return _Proof(key, {}, "" if key else "its inputs have uncommitted changes")
-    return _whole_tree_proof(root, lane)
+    return _whole_tree_proof(root, lane, byproducts)
 
 
 def _inputs_key(commit: str, lane: Lane) -> str:
@@ -475,14 +547,14 @@ def _inputs_key(commit: str, lane: Lane) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _declared_inputs_key(root: Path, lane: Lane) -> str:
+def _declared_inputs_key(root: Path, lane: Lane, byproducts: frozenset = frozenset()) -> str:
     """HEAD bound to the lane's config, or "" while an uncommitted change touches
     its inputs: the artifact would describe the edit, not the commit. A lane
     output under the inputs is not such a change."""
     from .lane_changes import ChangeReads
 
     try:
-        outputs = _output_names(root, lane)
+        outputs = _output_names(root, lane) | byproducts
         commit = GitFacts(root).head_commit()
         with ChangeReads(root, (), lane.inputs) as reads:
             dirty = _unless(reads.status_names(), outputs)
@@ -495,32 +567,39 @@ def _declared_inputs_key(root: Path, lane: Lane) -> str:
 # OLDPWD and each new terminal or SSH login gets its own session ids, and no
 # runner measures differently for them. Hashed, OLDPWD alone reran every lane of
 # a large consumer repo on a clean, unchanged tree.
+# The agent and IPC sockets a login, a tmux server or an editor terminal opens
+# are session ids too: each new one moved SSH_AUTH_SOCK, TMUX or
+# VSCODE_GIT_IPC_HANDLE and reran a lane on an unchanged tree.
 _SESSION_VARIABLES = frozenset({
     "OLDPWD", "PWD", "SHLVL", "_",
     "WT_SESSION", "TERM_SESSION_ID", "ITERM_SESSION_ID", "TMUX_PANE", "WINDOWID",
     "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "SECURITYSESSIONID", "XDG_SESSION_ID",
+    "SSH_AUTH_SOCK", "SSH_AGENT_PID", "TMUX", "VSCODE_GIT_IPC_HANDLE",
 })
 
 
-def _whole_tree_proof(root: Path, lane: Lane) -> _Proof:
-    """The clean worktree's HEAD, crapkit.toml's bytes, the lane's own table and
-    the inherited environment, each as a digest, hashed together.
+def _whole_tree_proof(root: Path, lane: Lane, byproducts: frozenset = frozenset()) -> _Proof:
+    """The clean worktree's HEAD, crapkit.toml's bytes, the lane's own table,
+    the inherited environment and the crapkit version, hashed together.
 
     Only a clean worktree qualifies, but the lanes' declared artifacts and
     results files do not count against it: every run rewrites them, and each
-    stamp proves its own by their digests. crapkit.toml is hashed apart from the
-    tree because callers can supply a lane without a tracked crapkit.toml.
-    External files and services remain outside this proof.
+    stamp proves its own by their digests. Nor do the untracked files a lane's
+    own run wrote. crapkit.toml is hashed apart from the tree because callers
+    can supply a lane without a tracked crapkit.toml, with CRLF read as LF, so a
+    checkout under core.autocrlf=true is the file it was. The version is there
+    because a crapkit that parses or scores an artifact differently must read
+    it fresh. External files and services remain outside this proof.
     """
     try:
         config = _config_bytes(root)
-        head, dirty = _worktree(root, _output_names(root, lane, config))
+        head, dirty = _worktree(root, _output_names(root, lane, config) | byproducts)
     except (GitError, OSError) as exc:
         return _Proof("", {}, f"nothing proves its inputs unchanged: {exc}")
     if dirty:
         return _Proof("", {}, f"the working tree has {len(dirty)} uncommitted change(s): {_sample(dirty)}")
-    parts = {"commit": head, "config": _digest(config), "lane": _digest(_lane_bytes(lane)),
-             "env": _environment_digests()}
+    parts = {"commit": head, "config": _digest(normalized(config)), "lane": _digest(_lane_bytes(lane)),
+             "env": _environment_digests(), "crapkit": __version__}
     return _Proof(_digest(json.dumps(parts, sort_keys=True).encode("utf-8")), parts, "")
 
 
@@ -556,11 +635,9 @@ def _worktree(root: Path, outputs: frozenset[str]) -> tuple[str, list[str]]:
 def uncommitted_changes(root: Path) -> list[str]:
     """The changes that keep every lane without `inputs` from reuse: each
     uncommitted change in the checkout but the lane outputs crapkit.toml
-    declares. Empty when git cannot say."""
-    try:
-        return _worktree(root, _configured_outputs(_config_bytes(root)))[1]
-    except (GitError, OSError):
-        return []
+    declares and the files the lanes' own runs wrote. Raises GitError when git
+    cannot say, which the caller must not read as a clean tree."""
+    return _worktree(root, _configured_outputs(_config_bytes(root)) | _recorded_byproducts(root))[1]
 
 
 def _unless(names, skip: frozenset[str]) -> list[str]:
@@ -578,10 +655,9 @@ def _from_top(root: Path, top: Path, names: frozenset[str]) -> frozenset[str]:
 
 def _output_names(root: Path, lane: Lane, config: bytes | None = None) -> frozenset[str]:
     """Every declared artifact and results file of the lanes crapkit.toml
-    configures, plus this lane's own, as root-relative paths."""
-    text = _config_bytes(root) if config is None else config
-    own = frozenset(_normalized(name) for name in _declared_files(lane))
-    return own | _configured_outputs(text)
+    configures, plus this lane's own, and every untracked file a stamp says its
+    lane's run wrote, as root-relative paths."""
+    return _declared_outputs(root, lane, config) | _recorded_byproducts(root)
 
 
 @lru_cache(maxsize=4)
@@ -912,9 +988,9 @@ def lane_reuse_verdict(root: Path, lane: Lane) -> ReuseVerdict:
     A lane command can read tests, configuration or any other repository input,
     and source ownership cannot prove that a changed path leaves its
     measurement intact. So a lane that declares nothing is reused only at the
-    same clean repository. A lane that declares `inputs` is reused while its
-    commit is behind HEAD and no committed, staged, unstaged or untracked
-    change touches those paths. Either way the stamp's `proof` has to equal the
+    same clean repository. A lane that declares `inputs` is reused while no
+    committed, staged, unstaged or untracked change touches those paths between
+    its commit's tree and the working tree. Either way the stamp's `proof` has to equal the
     key the lane would stamp now and the artifact bytes have to match the stamp.
     A stamp without a `proof` (one written before it had that name, or measured
     while it did not hold) is never reused automatically. Explicit artifact
@@ -923,7 +999,7 @@ def lane_reuse_verdict(root: Path, lane: Lane) -> ReuseVerdict:
     stamp = stamp_for(read_stamps(root), lane.artifact)
     commit = _artifact_commit(root, lane)
     reason = (_stamp_gap(root, lane, stamp, commit) or _proof_gap(root, lane, stamp, commit)
-              or _artifact_gap(root, lane, stamp))
+              or _artifact_gap(root, lane, stamp) or _sources_gap(root, lane, stamp))
     return ReuseVerdict("" if reason else commit, reason)
 
 
@@ -953,7 +1029,7 @@ def _proof_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
 
 
 def _inputs_gap(root: Path, lane: Lane, proof: str, commit: str) -> str:
-    """The stamp's commit is still behind HEAD and nothing under the inputs moved.
+    """Nothing under the inputs moved since the stamp's commit.
 
     git reads the inputs as a pathspec, so an untracked file outside them
     costs nothing and blocks nothing."""
@@ -963,18 +1039,29 @@ def _inputs_gap(root: Path, lane: Lane, proof: str, commit: str) -> str:
 
 
 def _inputs_moved(root: Path, lane: Lane, commit: str) -> str:
+    """The changes under the inputs between the stamp's commit and the working
+    tree, whatever the history between them. An amend, a rebase or a branch
+    switch that leaves the inputs' tree as it was reruns nothing; the commit
+    only has to be in this clone for git to compare its tree."""
+    from .gitio import has_commit
     from .lane_changes import ChangeReads
 
     try:
+        if not has_commit(root, commit):
+            return _commit_absent(root, commit)
         outputs = _output_names(root, lane)
-        with ChangeReads(root, (commit,), lane.inputs) as reads:
-            behind = reads.is_ancestor(commit)
-            moved = _unless(reads.changed_since(commit), outputs) if behind else []
+        with ChangeReads(root, (), lane.inputs) as reads:
+            moved = _unless(reads.changed_since(commit), outputs)
     except (GitError, OSError) as exc:
         return f"nothing proves its inputs unchanged: {exc}"
-    if not behind:
-        return f"its artifact was built at {commit[:11]}, which is not behind HEAD"
     return f"{len(moved)} change(s) under its inputs since {commit[:11]}: {_sample(moved)}" if moved else ""
+
+
+def _commit_absent(root: Path, commit: str) -> str:
+    from .gitio import _shallow_fix
+
+    return (f"its artifact was built at {commit[:11]}, which this clone does not hold, so git "
+            f"cannot compare its inputs{_shallow_fix(root)}")
 
 
 def _whole_tree_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
@@ -988,7 +1075,8 @@ def _whole_tree_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
     return _moved_parts(proof.parts, stamp.get("proof_parts"))
 
 
-_PART_NAMES = (("config", "crapkit.toml"), ("lane", "its lane table"))
+_PART_NAMES = (("config", "crapkit.toml"), ("lane", "its lane table"),
+               ("crapkit", "the crapkit version"))
 _UNNAMED_PART = ("crapkit.toml, its lane table or the environment changed, and its stamp "
                  "does not record which")
 
@@ -1016,6 +1104,33 @@ def _artifact_gap(root: Path, lane: Lane, stamp: dict) -> str:
         return "its stamp records no digest of its artifact"
     moved = [name for name in _declared_files(lane) if _file_digest(root / name) != expected.get(name)]
     return f"{_sample(moved)}: bytes differ from its stamp" if moved else ""
+
+
+def _sources_gap(root: Path, lane: Lane, stamp: dict) -> str:
+    """The files the stamp's digests say changed though git's index calls them
+    unchanged, under the lane's inputs when it declares them.
+
+    git decides a file unchanged from its size and modification time. A
+    same-size edit whose old time was put back (`cp -p`, `tar -x`, `rsync -t`)
+    passes that check, and reuse republished the old coverage. A stamp from
+    0.8.0 or older records no digests and is judged by git alone."""
+    recorded = stamp.get("sources")
+    if not isinstance(recorded, dict):
+        return ""
+    changed = moved(root, _under_inputs(lane, recorded))
+    if not changed:
+        return ""
+    return (f"{len(changed)} file(s) under its scopes hold other bytes than it measured, though "
+            f"git's index calls them unchanged: {_sample(changed)}")
+
+
+def _under_inputs(lane: Lane, recorded: dict) -> dict:
+    """The recorded digests a reuse decision may read: all of them for a lane
+    proved by the whole tree, the ones under its inputs for one that lists them."""
+    if not lane.inputs:
+        return recorded
+    matchers = path_matchers({"inputs": tuple(lane.inputs)})
+    return {path: digest for path, digest in recorded.items() if owning_scope(path, matchers)}
 
 
 def _file_digest(path: Path) -> str:
@@ -1417,8 +1532,7 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
 
 def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, owner) -> LaneOutcome:
     facts = _facts(root, git)
-    measured = "" if reuse_artifact else _measurement_key(root, lane)
-    before = {} if reuse_artifact else _lane_sources(root, lane, scope_paths)
+    before = None if reuse_artifact else _before_run(root, lane, scope_paths)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact, owner)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
     _judge_artifact_scope(lane, coverage, scope_paths, root)
@@ -1430,9 +1544,8 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
     }
     if lane.results_artifact:
         provenance.update(_results_provenance(root, lane, reuse_artifact=reuse_artifact))
-    stamp = {} if reuse_artifact else _stamp_entry(
-        facts, lane, seconds, measured, provenance,
-        settled(before, _lane_sources(root, lane, scope_paths, coverage)))
+    stamp = {} if before is None else _stamp_entry(
+        facts, lane, seconds, provenance, _after_run(root, lane, scope_paths, coverage, before))
     return LaneOutcome(coverage, provenance, stamp)
 
 

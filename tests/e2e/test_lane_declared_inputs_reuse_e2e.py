@@ -2,9 +2,10 @@
 
 Without `inputs` a lane is reused only at the same clean HEAD, so a docs commit
 or one untracked file anywhere reruns every lane. A lane that lists its inputs
-is reused while its stamp's commit is still behind HEAD, no committed, staged,
-unstaged or untracked change touches those paths, its artifact bytes still
-match, and its own config block, env included, is the one it was measured with.
+is reused while this clone holds its stamp's commit, no committed, staged,
+unstaged or untracked change touches those paths between that commit's tree and
+the working tree, its artifact bytes still match, and its own config block, env
+included, is the one it was measured with.
 
 The decision is observed as lane RERUNS: the lane command counts its own runs.
 """
@@ -207,29 +208,49 @@ def test_an_artifact_rewritten_since_its_stamp_reruns_the_lane(repo: Path):
     assert lane_reuse_verdict(repo, lane) == ("", "coverage/final.json: bytes differ from its stamp")
 
 
-def test_a_stamp_commit_that_left_history_reruns_the_lane(repo: Path):
+def _measured_then_reset(repo: Path) -> str:
+    """Measured on a commit that moved only docs/notes.md, then HEAD reset to
+    its parent: the stamp's commit is no longer behind HEAD."""
     first = _git(repo, "rev-parse", "HEAD").strip()
     _write(repo, "docs/notes.md", "second\n")
     _commit(repo, "second")
+    measured = _measure(repo)
+    _git(repo, "reset", "--hard", "-q", first)
+    return measured
+
+
+def test_a_stamp_commit_that_left_history_with_the_same_inputs_reuses_the_lane(repo: Path):
+    """The proof compares the tree under the inputs, not history: the reset
+    moved nothing the lane reads."""
+    measured = _measured_then_reset(repo)
+
+    assert lane_reuse_commit(repo, _lane(repo)) == measured
+
+
+def test_a_stamp_commit_that_left_history_with_other_inputs_reruns_the_lane(repo: Path):
+    first = _git(repo, "rev-parse", "HEAD").strip()
+    _write(repo, "src/app.ts", APP_TS + "// second\n")
+    measured = _commit(repo, "second")
     _measure(repo)
     _git(repo, "reset", "--hard", "-q", first)
 
-    assert lane_reuse_commit(repo, _lane(repo)) == ""
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
+        f"1 change(s) under its inputs since {measured[:11]}: src/app.ts")
 
 
 def _refuse_kill(self):
     raise AssertionError(f"a running git read was killed: {self.args}")
 
 
-def test_a_stamp_commit_that_left_history_kills_no_git_read(repo: Path, monkeypatch):
-    """Reuse stops at the ancestry answer and never needs the status reads. A
+def test_a_message_only_amend_reuses_the_lane_and_kills_no_git_read(repo: Path, monkeypatch):
+    """The amend moved no byte under the inputs, so the lane is reused. A
     worktree `git diff` killed while it refreshes the index leaves
-    .git/index.lock behind, so those reads are waited for, never killed."""
-    _measure(repo)
+    .git/index.lock behind, so every read is waited for, never killed."""
+    measured = _measure(repo)
     _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
     monkeypatch.setattr(subprocess.Popen, "kill", _refuse_kill)
 
-    assert lane_reuse_commit(repo, _lane(repo)) == ""
+    assert lane_reuse_commit(repo, _lane(repo)) == measured
     assert not (repo / ".git" / "index.lock").exists()
 
 
@@ -261,15 +282,14 @@ def test_a_changed_lane_table_is_named(repo: Path):
         "its lane table or env differs from the one it was measured with")
 
 
-def test_a_stamp_commit_off_history_is_named(repo: Path):
-    first = _git(repo, "rev-parse", "HEAD").strip()
-    _write(repo, "docs/notes.md", "second\n")
-    _commit(repo, "second")
-    measured = _measure(repo)
-    _git(repo, "reset", "--hard", "-q", first)
+def test_a_stamp_commit_this_clone_no_longer_holds_is_named(repo: Path):
+    measured = _measured_then_reset(repo)
+    _git(repo, "reflog", "expire", "--expire=now", "--all")
+    _git(repo, "gc", "-q", "--prune=now")
 
     assert lane_reuse_verdict(repo, _lane(repo)).reason == (
-        f"its artifact was built at {measured[:11]}, which is not behind HEAD")
+        f"its artifact was built at {measured[:11]}, which this clone does not hold, so git "
+        "cannot compare its inputs")
 
 
 def test_a_measurement_over_dirty_inputs_is_named_as_no_proof(repo: Path):

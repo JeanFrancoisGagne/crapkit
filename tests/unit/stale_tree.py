@@ -73,14 +73,17 @@ with open("coverage/coverage-final.json", "w", encoding="utf-8") as fh:
     json.dump({json.dumps(_ARTIFACT)}, fh)
 by = os.environ.get("BYPRODUCT")
 if by:
-    os.makedirs(os.path.dirname(by), exist_ok=True)
+    os.makedirs(os.path.dirname(by) or ".", exist_ok=True)
     with open(by, "wb") as fh:
         fh.write(b"bytecode")
 """
 
 
-def toml(byproduct: str = "") -> str:
+def toml(byproduct: str = "", inputs: tuple[str, ...] = ()) -> str:
+    """The lane runs make_cov.py over `src`. `inputs` makes it a lane that
+    lists the paths its command reads; `byproduct` names a file its run writes."""
     env = f'env = {{ BYPRODUCT = "{byproduct}" }}\n' if byproduct else ""
+    env += "inputs = [" + ", ".join(f'"{path}"' for path in inputs) + "]\n" if inputs else ""
     command = f'"{Path(sys.executable).as_posix()}" make_cov.py'
     return (f'[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
             f'languages = ["typescript"]\n\n[exclude]\nglobs = ["make_cov.py"]\n\n'
@@ -117,13 +120,14 @@ def touch(path: Path) -> None:
 
 
 def build(root: Path, *, gitcfg: dict | None = None, attrs: str = "", app: str = APP_TS,
-          extra: dict | None = None, byproduct: str = "") -> Path:
+          extra: dict | None = None, byproduct: str = "", inputs: tuple[str, ...] = (),
+          ignore: str = ".crapkit/\ncoverage/\n") -> Path:
     """A committed repo with one lane over `src`, not measured yet."""
     root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q", "-b", "main")
     for key, value in (gitcfg or {}).items():
         git(root, "config", key, value)
-    files = {".gitignore": ".crapkit/\ncoverage/\n", "crapkit.toml": toml(byproduct),
+    files = {".gitignore": ignore, "crapkit.toml": toml(byproduct, inputs),
              "make_cov.py": MAKE_COV, REL: app, **(extra or {})}
     if attrs:
         files[".gitattributes"] = attrs
@@ -188,10 +192,11 @@ class Event:
     attrs: str = ""
     app: str = APP_TS
 
-    def prepare(self, tmp: Path) -> Path:
+    def prepare(self, tmp: Path, **build_args) -> Path:
         """The measured repo with this event applied; the returned root is the
         one to read (a clone for the clone rows)."""
-        root = measure(build(tmp / "repo", gitcfg=self.gitcfg, attrs=self.attrs, app=self.app))
+        root = measure(build(tmp / "repo", gitcfg=self.gitcfg, attrs=self.attrs, app=self.app,
+                             **build_args))
         return self.act(root) or root
 
 

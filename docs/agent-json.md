@@ -964,7 +964,8 @@ lane named in it as `lane ui failed` and listed after the line as `  lane 'ui' F
 counts `over` and the grade over the measured scopes only, and ends with `-> rerun changed
 lanes: crapkit coverage --reuse-unchanged`. With uncommitted changes in the tree that line
 adds ``(the working tree has uncommitted changes, so every lane that lists no `inputs`
-reruns)``.
+reruns)``. When git cannot say whether the tree is clean, the line says so instead and
+quotes git's error, since no lane without `inputs` can be reused then either.
 
 ---
 

@@ -8,8 +8,11 @@ import json
 import subprocess
 from pathlib import Path
 
-from crapkit.cli.scoring import _DIRTY_TREE_NOTE
+import pytest
+
+from crapkit.cli.scoring import _DIRTY_TREE_NOTE, _dirty_note
 from crapkit.config import Lane
+from crapkit.errors import GitError
 from crapkit.lanes import (_SESSION_VARIABLES, _from_top, _output_names, lane_reuse_verdict,
                            read_stamps, run_lane, uncommitted_changes, write_stamps)
 
@@ -79,15 +82,26 @@ def test_the_measured_stamp_keeps_digests_never_environment_values(tmp_path, mon
     repo = _measured(tmp_path)
 
     stamp = read_stamps(repo)[_lane().artifact]
-    assert set(stamp["proof_parts"]) == {"commit", "config", "env", "lane"}
+    assert set(stamp["proof_parts"]) == {"commit", "config", "crapkit", "env", "lane"}
     assert len(stamp["proof_parts"]["env"]["CRAPKIT_REASON_SECRET"]) == 16
     assert "hunter2-value" not in json.dumps(stamp)
     assert "OLDPWD" not in stamp["proof_parts"]["env"]
     assert lane_reuse_verdict(repo, _lane()).reason == ""
 
 
-def test_outside_git_no_change_is_reported(tmp_path):
-    assert uncommitted_changes(tmp_path) == []
+def test_outside_git_the_dirty_tree_question_raises_rather_than_answering_clean(tmp_path):
+    with pytest.raises(GitError, match="not a git repository"):
+        uncommitted_changes(tmp_path)
+
+
+def test_the_partial_run_hint_quotes_git_when_git_cannot_read_the_tree(tmp_path):
+    """The hint read git's failure as a clean tree and said nothing, so a
+    reader expected every lane to reuse; none can, since nothing proves it."""
+    note = _dirty_note(tmp_path)
+
+    assert note.startswith(" (git cannot say whether the working tree is clean (git "), note
+    assert note.endswith("), so every lane that lists no `inputs` reruns)"), note
+    assert "not a git repository" in note, note
 
 
 def test_an_unparsable_crapkit_toml_leaves_only_the_lanes_own_outputs(tmp_path):

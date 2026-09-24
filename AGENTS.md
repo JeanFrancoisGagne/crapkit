@@ -39,7 +39,7 @@ there can reach the WindowsApps stub or the base interpreter the venv wraps.
 
 `commands.refresh` is the fourth string: it creates a `coverage` run.
 Automatic reuse requires the same clean HEAD and unchanged configuration,
-environment and coverage/JUnit bytes, or, for a lane that lists its `inputs`, no
+environment, crapkit version and coverage/JUnit bytes, or, for a lane that lists its `inputs`, no
 change under those paths, its lane table or its `env` since the artifact's commit;
 every other lane reruns. That is what
 `stale: true` asks for. Nothing else clears it, because nothing else lands a run on the

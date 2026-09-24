@@ -9,6 +9,13 @@ cost about the slowest one.
 Every read also takes the paths in question as a pathspec. `ls-files --others`
 over a large untracked tree that no lane reads (drafts, output nobody ignored)
 was most of the cost, and none of its answer could change a verdict.
+
+One read waits for another: the worktree `git diff` writes .git/index when it
+refreshes a stat-dirty entry, and on Windows a read that opens the index while
+that write swaps it in fails with `index file open failed: Permission denied`.
+A same-bytes touch was enough, and the failure read as a changed file. The
+staged diff and the untracked listing read the index, so they start once the
+worktree diff has finished.
 """
 from __future__ import annotations
 
@@ -17,7 +24,7 @@ from pathlib import Path
 
 from .errors import GitError
 
-_NAMES = ("--name-only", "--no-renames", "-z")
+_NAMES = ("--name-only", "--no-renames", "--ignore-submodules=none", "-z")
 
 
 def _start(root: Path, *args: str):
@@ -79,8 +86,14 @@ class ChangeReads:
             self._diff_read(commit)
         if not self._paths:
             return ()
+        return (self._begin("diff", *_NAMES, *self._spec),)
+
+    def _index_reads(self) -> tuple:
+        """The reads that open .git/index, started after the worktree diff that
+        may rewrite it has finished (see the module docstring)."""
+        if not self._paths:
+            return ()
         return (self._begin("diff", *_NAMES, "--cached", *self._spec),
-                self._begin("diff", *_NAMES, *self._spec),
                 self._begin("ls-files", "--others", "--exclude-standard", "-z", *self._spec))
 
     def _begin(self, *args: str):
@@ -126,8 +139,21 @@ class ChangeReads:
         return self._once(("diff", commit), lambda: _names(self._collect(read)) if read else ())
 
     def status_names(self) -> tuple[str, ...]:
-        return self._once("status", lambda: tuple(sorted(
-            {name for read in self._status for name in _names(self._collect(read))})))
+        return self._once("status", self._dirty)
+
+    def _dirty(self) -> tuple[str, ...]:
+        """Unstaged, then staged and untracked, and the edits git's diff never
+        compares. The worktree diff is collected before the index reads start."""
+        worktree = self._read_names(self._status)
+        return tuple(sorted(worktree | self._read_names(self._index_reads()) | self._hidden()))
+
+    def _read_names(self, reads) -> set[str]:
+        return {name for read in reads for name in _names(self._collect(read))}
+
+    def _hidden(self) -> set[str]:
+        from .gitio import hidden_edits
+
+        return set(hidden_edits(self._root, *self._spec[1:])) if self._paths else set()
 
     def changed_since(self, commit: str) -> tuple[str, ...]:
         """Committed, staged, unstaged or untracked: every change under the paths."""

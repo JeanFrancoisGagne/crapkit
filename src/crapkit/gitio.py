@@ -181,9 +181,15 @@ def unstaged_paths(root: Path) -> set[str]:
     return set(_diff_names(root))
 
 
+# --ignore-submodules=none: a `.gitmodules` entry with `ignore = dirty` hides
+# an edit inside the submodule from a plain `git diff`, and lane reuse then
+# republished a lane whose tests read that submodule.
+_NAME_DIFF = ("diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z")
+
+
 def _diff_names(root: Path, *args: str) -> list[str]:
     """One `git diff --name-only` answer with exact root-relative paths."""
-    return _git_paths(root, "diff", "--name-only", "--no-renames", "-z", *args)
+    return _git_paths(root, *_NAME_DIFF, *args)
 
 
 def diff_since(root: Path, commit: str) -> str:
@@ -241,10 +247,65 @@ def status_names(root: Path) -> list[str]:
     Untracked files are in the set because lane reuse reads it: a test file that
     exists and git has never seen still makes that lane's coverage stale. The
     dirty-file set verify builds from this only ever meets tracked rows, so the
-    wider answer cannot relabel a finding there.
+    wider answer cannot relabel a finding there. So are the edits git's diff
+    never compares (`hidden_edits`).
     """
     return sorted({*_diff_names(root, "--cached"), *_diff_names(root),
-                   *untracked_files(root)})
+                   *untracked_files(root), *hidden_edits(root)})
+
+
+def hidden_edits(root: Path, *paths: str) -> list[str]:
+    """Tracked files flagged skip-worktree or assume-unchanged whose bytes on
+    disk hold other content than the index, under `paths` (all when none).
+
+    `git diff` and `git status` never compare such a file, so an edit to one
+    was invisible: lane reuse republished coverage its tests no longer earn,
+    verify called the finding committed, and `mutate` judged every mutant with
+    the index's copy of the test. A flagged file that is not on disk (outside a
+    sparse checkout's cone) is not an edit. git hashes the disk bytes through
+    the repo's filters, so a CRLF checkout still matches its LF blob.
+    """
+    flagged = _on_disk(root, _flagged(root, paths))
+    if not flagged:
+        return []
+    index = _index_blobs(root, flagged)
+    return [path for path, blob in zip(flagged, _worktree_blobs(root, flagged))
+            if blob != index.get(path)]
+
+
+def _on_disk(root: Path, paths: list[str]) -> list[str]:
+    """The files present in the checkout. A name holding a line break cannot
+    ride hash-object's line-framed stdin, and is left to the index."""
+    return [path for path in paths if not _line_paths([path]) and (root / path).is_file()]
+
+
+def _flagged(root: Path, paths: tuple[str, ...]) -> list[str]:
+    """`ls-files -v` tags a skip-worktree file `S` and an assume-unchanged one
+    in lowercase."""
+    records = _git_paths(root, "--literal-pathspecs", "ls-files", "-v", "-z", "--", *paths)
+    return [record[2:] for record in records if record[:1] == "S" or record[:1].islower()]
+
+
+def _index_blobs(root: Path, paths: list[str]) -> dict[str, str]:
+    """path -> the blob id the index holds for it (`mode blob stage<TAB>path`)."""
+    blobs = {}
+    for record in _git_paths(root, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *paths):
+        meta, _, path = record.partition("\t")
+        blobs[path] = meta.split(" ")[1]
+    return blobs
+
+
+def _worktree_blobs(root: Path, paths: list[str]) -> list[str]:
+    """The blob id each file would get from `git add`, one process for all."""
+    read = _Started(root, ("hash-object", "--stdin-paths"), text=False, stdin=True)
+    out = read.result("".join(f"{path}\n" for path in paths).encode("utf-8"))
+    return out.decode("utf-8").split()
+
+
+def has_commit(root: Path, commit: str) -> bool:
+    """Whether this clone holds the commit: a shallow clone or a rewritten and
+    collected history does not."""
+    return _spawn(root, ("cat-file", "-e", f"{commit}^{{commit}}")).returncode == 0
 
 
 _SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth: 0 on the "

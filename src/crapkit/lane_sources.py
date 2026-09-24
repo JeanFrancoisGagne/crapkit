@@ -24,20 +24,22 @@ from .universe import owning_scope
 _IDENT = re.compile(rb"\$Id:[^$\n]*\$")
 
 
-def source_digest(path: Path) -> str:
-    """sha256 of the file's bytes as git's common filters store them, or ""
-    when it cannot be read.
+def normalized(data: bytes) -> bytes:
+    """The bytes as git's common filters store them: CRLF as LF, and an
+    expanded `$Id$` as the bare keyword. One blob checks out either way under
+    core.autocrlf, an eol attribute or the ident attribute, and none of them
+    moves a line number or changes what a config file says."""
+    return _IDENT.sub(b"$Id$", data.replace(b"\r\n", b"\n"))
 
-    CRLF reads as LF and an expanded `$Id$` as the bare keyword, because one
-    blob checks out either way under core.autocrlf, an eol attribute or the
-    ident attribute, and none of them moves a line number. A missing file reads
-    "", so a deleted source never matches the digest its lane recorded.
-    """
+
+def source_digest(path: Path) -> str:
+    """sha256 of the file's `normalized` bytes, or "" when it cannot be read,
+    so a deleted source never matches the digest its lane recorded."""
     try:
         data = path.read_bytes()
     except OSError:
         return ""
-    return hashlib.sha256(_IDENT.sub(b"$Id$", data.replace(b"\r\n", b"\n"))).hexdigest()
+    return hashlib.sha256(normalized(data)).hexdigest()
 
 
 def digests(root: Path, paths) -> dict[str, str]:

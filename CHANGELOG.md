@@ -37,6 +37,40 @@
   takes an optional third field, `drift`, and `uncovered.lane_views` returns each lane's
   note with `blackout`, whether it withholds every file's lines.
 
+### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
+
+- A lane that lists `inputs` is reused across a message-only amend, a rebase onto a
+  commit outside its inputs, or a switch to a sibling branch with the same inputs.
+  Reuse now compares the tree under the inputs at the stamp's commit with the working
+  tree, where it required that commit to be behind HEAD. A clone that does not hold the
+  commit reruns the lane and says so, with the fetch to run in a shallow clone.
+- The untracked files a lane's own run writes, such as `.coverage` from pytest-cov at
+  the root or `__pycache__` under its scopes, no longer void its proof. The stamp lists
+  them under `byproducts`. With the `.gitignore` that `crapkit init` writes, which holds
+  only `.crapkit/`, the first run's own output left its stamp without a proof, and the
+  lane never reused.
+- Reuse checks the `sources` digests as well, so a same-size edit whose old
+  modification time was put back (`cp -p`, `tar -x`, `rsync -t`) reruns the lane. git's
+  index called the file unchanged, and the old coverage was published again.
+- An edit git's own diff skips is a change: a file flagged `--skip-worktree` or
+  `--assume-unchanged` whose bytes differ from the index, and an edit inside a
+  submodule whose `.gitmodules` entry says `ignore = dirty`. Lane reuse, verify's split
+  of committed and dirty findings, and the working-tree copy `mutate` hands its workers
+  all read it; `mutate` judged every mutant against the index's copy of such a test.
+- The proof of a lane without `inputs` holds the crapkit version, so an upgrade reruns
+  those lanes once and says `the crapkit version changed`. It reads `crapkit.toml` with
+  CRLF as LF, so a checkout under `core.autocrlf=true` is no longer a config change.
+  `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `TMUX` and `VSCODE_GIT_IPC_HANDLE` join the session
+  variables it leaves out, so a new terminal or login reruns nothing.
+- On Windows a same-bytes touch could make a lane's change read fail with `index file
+  open failed: Permission denied`, which read as a changed file: 7 to 12 of 300 touches
+  on git's default config. The staged diff and the untracked listing now start after
+  the worktree diff, which can rewrite the index, has finished.
+- A partial run's `-> rerun changed lanes` line says when git cannot tell whether the
+  tree is clean, and quotes git's error. It printed nothing, as for a clean tree.
+- Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
+  where it returned `[]`.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

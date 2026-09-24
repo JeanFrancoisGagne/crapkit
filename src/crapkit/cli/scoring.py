@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 from .. import __version__
 from ..cache import merged_cache
-from ..errors import ConfigError, CrapkitError, ToolError
+from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import GitFacts, ls_files
 from ..invocation import _self
 from ..snapshot import build_inventory_rows, tsv_lines
@@ -550,12 +550,20 @@ def _next_command(kind: str, root: Path) -> str:
 # What the hinted run does on a dirty tree: reuse proves a lane without `inputs`
 # only at a clean HEAD, so every such lane runs again.
 _DIRTY_TREE_NOTE = "(the working tree has uncommitted changes, so every lane that lists no `inputs` reruns)"
+_UNREAD_TREE_NOTE = ("(git cannot say whether the working tree is clean ({error}), so every lane "
+                     "that lists no `inputs` reruns)")
 
 
 def _dirty_note(root: Path) -> str:
+    """The note for a dirty tree, and for a tree git cannot read: that one
+    proves no lane either, and reading the failure as clean hid the note."""
     from ..lanes import uncommitted_changes
 
-    return f" {_DIRTY_TREE_NOTE}" if uncommitted_changes(root) else ""
+    try:
+        dirty = uncommitted_changes(root)
+    except GitError as exc:
+        return f" {_UNREAD_TREE_NOTE.format(error=exc)}"
+    return f" {_DIRTY_TREE_NOTE}" if dirty else ""
 
 
 def _print_coverage(as_json: bool, summary: dict, shape: _RunShape, root: Path) -> None:

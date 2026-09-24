@@ -82,15 +82,31 @@ def _after(argv: list, word: str) -> list:
     return argv[argv.index(word) + 1:] if word in argv else []
 
 
-def test_every_staleness_read_starts_before_any_is_waited_on(repo, git_spawns):
+def _opens_the_index(argv: list) -> bool:
+    return "--cached" in argv or "ls-files" in argv or "hash-object" in argv
+
+
+def _starts(spawns: list) -> list:
+    return [argv for kind, argv in spawns if kind == "start"]
+
+
+def _starts_around_the_first_wait(spawns: list) -> tuple[list, list]:
+    """(what started before git was first waited on, what started after)."""
+    first = [kind for kind, _ in spawns].index("wait")
+    return _starts(spawns[:first]), _starts(spawns[first:])
+
+
+def test_every_read_that_leaves_the_index_alone_starts_before_any_is_waited_on(repo, git_spawns):
+    """The staged diff and the file listings open .git/index, which the
+    worktree diff rewrites when it refreshes a stat-dirty entry, so they start
+    once that diff is read (lane_changes). Every other read starts at once."""
     root, cfg = repo
 
     lane_states(root, cfg)
 
-    kinds = [kind for kind, _ in git_spawns]
-    assert kinds, "the staleness check asked git nothing"
-    first_wait = kinds.index("wait")
-    assert "start" not in kinds[first_wait:], kinds
+    early, late = _starts_around_the_first_wait(git_spawns)
+    assert early and not list(filter(_opens_the_index, early)), early
+    assert late and all(map(_opens_the_index, late)), late
 
 
 def test_diff_and_untracked_reads_ask_only_about_lane_scopes(repo, git_spawns):
