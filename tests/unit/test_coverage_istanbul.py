@@ -1,7 +1,11 @@
 """Istanbul parser seam: coverage-final.json content in, per-file function coverage out. Pure."""
+import copy
 import json
 
+import pytest
+
 from crapkit.coverage_istanbul import FnCoverage
+from crapkit.errors import ToolError
 from coverage_readers import parse_istanbul
 
 ARTIFACT = {
@@ -84,3 +88,50 @@ def test_branches_attach_to_the_innermost_containing_function():
         "nested cb owns line-22 branches; invoked-fallback 1.0 hides its untaken arms"
     assert by_name["handler"].branches_total == 2 and by_name["handler"].coverage == 0.5, \
         "the handler keeps only its own branches, not the callback's"
+
+
+# --- fnMap and branchMap entries with no loc ----------------------------------
+#
+# `fn.get("loc", {})` read a function with no loc as a span of one line, its
+# declaration's, so the branches in its body attached to nothing and an invoked
+# function scored as covered. A loc that was null refused the artifact with an
+# AttributeError. Every istanbul producer writes loc.end.line, so both now
+# refuse the artifact naming the entry. A branch with no loc attached to no
+# function; it now sits on the `line` producers write beside loc. A branch with
+# neither is still left out:
+# tests/e2e/test_explain_gaps.py::test_istanbul_branches_without_a_loc_line_and_outside_every_span_are_ignored
+
+def _with(mutate) -> str:
+    art = copy.deepcopy(ARTIFACT)
+    mutate(art["C:\\repo\\src\\app.ts"])
+    return json.dumps(art)
+
+
+def _set(entry: dict, key: str, value) -> None:
+    if value == "absent":
+        entry.pop(key, None)
+    else:
+        entry[key] = value
+
+
+@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": {"line": 1}},
+                                 {"end": {"line": None}}, {"end": {"line": "13"}}],
+                         ids=["loc-absent", "loc-null", "loc-empty", "end-absent",
+                              "end-line-null", "end-line-a-string"])
+def test_a_function_with_no_end_line_refuses_the_artifact_naming_the_entry(loc):
+    text = _with(lambda cov: _set(cov["fnMap"]["0"], "loc", loc))
+
+    with pytest.raises(ToolError, match=r"istanbul artifact .*fnMap\['0'\] has no loc\.end\.line"):
+        parse_istanbul(text, repo_root="C:\\repo")
+
+
+@pytest.mark.parametrize("loc", ["absent", None, {"end": {"line": 2}}],
+                         ids=["loc-absent", "loc-null", "start-absent"])
+def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
+    def mutate(cov):
+        cov["branchMap"]["0"]["line"] = 2
+        _set(cov["branchMap"]["0"], "loc", loc)
+
+    per_file = parse_istanbul(_with(mutate), repo_root="C:\\repo")
+
+    assert per_file == parse_istanbul(json.dumps(ARTIFACT), repo_root="C:\\repo")

@@ -111,11 +111,25 @@ def _admit_hits(cov: dict) -> int:
     return clamped
 
 
+def _fn_end(fid: str, fn: dict) -> int:
+    """The line a function's span ends on: loc.end.line, which every istanbul
+    producer writes. Read as the declaration line when it was missing, the span
+    shrank to one line, the body's branches attached to nothing, and an invoked
+    function scored as covered."""
+    loc = fn.get("loc")
+    end = loc.get("end") if isinstance(loc, dict) else None
+    line = end.get("line") if isinstance(end, dict) else None
+    if type(line) is not int:
+        raise ValueError(f"fnMap[{fid!r}] has no loc.end.line (every istanbul reporter "
+                         "writes one; regenerate the artifact with the runner's reporter)")
+    return line
+
+
 def _fn_spans(cov: dict) -> list[list]:
     spans = []
     for fid, fn in cov.get("fnMap", {}).items():
         start = fn["decl"]["start"]["line"]
-        end = fn.get("loc", {}).get("end", {}).get("line") or start
+        end = _fn_end(fid, fn)
         invoked = cov.get("f", {}).get(fid, 0) > 0
         spans.append([fn.get("name") or "(anonymous)", start, end, invoked, 0, 0, 0, 0])
     spans.sort(key=lambda s: s[1])
@@ -123,7 +137,13 @@ def _fn_spans(cov: dict) -> list[list]:
 
 
 def _branch_line(branch: dict) -> int | None:
-    return branch.get("loc", {}).get("start", {}).get("line")
+    """Where a branch sits: loc.start.line, else the `line` producers write
+    beside it. Without the fallback a branch with no loc attached to no
+    function. A branch with neither is left out, as one outside every span is."""
+    loc = branch.get("loc")
+    start = loc.get("start") if isinstance(loc, dict) else None
+    line = start.get("line") if isinstance(start, dict) else None
+    return branch.get("line") if line is None else line
 
 
 def _stmt_line(stmt: dict) -> int | None:

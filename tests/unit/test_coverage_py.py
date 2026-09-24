@@ -160,3 +160,87 @@ def test_qualname_collapse_fails_conservative_never_confident():
     executed_twin = InventoryRow("py", "m.py", "make( x )", 9, 11, 3, 3, 3, 3, 1, 1)
     (scored,) = score_rows([executed_twin], per_file, lane_scopes={"py"})
     assert scored.cov == 0.0 and scored.flag == "untested"
+
+
+# --- a region with no start_line ----------------------------------------------
+#
+# coverage.py writes start_line from 7.13.1; 7.6.0 to 7.13.0 write the regions
+# without it. The reader took the region's first line instead, which is the
+# first line of the body, and that is the line a nested function's def
+# statement sits on in its encloser's region: `outer.inner` never ran, yet it
+# joined `outer`'s region by exact start and scored as half covered. Regions
+# below are coverage 7.12.0's report on this source, recorded, with the file's
+# statement lines beside them; 7.13.2 writes start_line 1, 2, 11 and 17.
+
+MOD_SOURCE = (
+    "def outer(x):\n    def inner(y):\n        if y > 0:\n            return y + 1\n"
+    "        return y - 1\n    if x:\n        return inner(x)\n    return 0\n\n\n"
+    "def documented(a):\n    \"\"\"Doc.\"\"\"\n    return a\n\n\n"
+    "@staticmethod\ndef deco(\n    a,\n    b,\n):\n    return a + b\n")
+
+
+def _region(executed, missing, statements, covered, branches=0, covered_branches=0):
+    return {"executed_lines": executed, "missing_lines": missing,
+            "summary": {"num_statements": statements, "covered_lines": covered,
+                        "num_branches": branches, "covered_branches": covered_branches}}
+
+
+def _report_7_12(start_lines: dict) -> dict:
+    regions = {"outer": _region([2, 6, 8], [7], 4, 3, 2, 1),
+               "outer.inner": _region([], [3, 4, 5], 3, 0, 2, 0),
+               "documented": _region([13], [], 1, 1),
+               "deco": _region([], [21], 1, 0),
+               "": _region([1, 11, 16, 17], [], 4, 4)}
+    for name, start in start_lines.items():
+        regions[name]["start_line"] = start
+    return {"meta": {"branch_coverage": True, "version": "7.12.0"},
+            "files": {"pkg\\mod.py": {"executed_lines": [1, 2, 6, 8, 11, 13, 16, 17],
+                                      "missing_lines": [3, 4, 5, 7, 21],
+                                      "functions": regions}}}
+
+
+STARTS_7_13 = {"outer": 1, "outer.inner": 2, "documented": 11, "deco": 17}
+
+
+@pytest.mark.parametrize("start_lines", [{}, dict.fromkeys(STARTS_7_13), STARTS_7_13],
+                         ids=["absent-coverage-7.12", "null", "present-coverage-7.13"])
+def test_a_region_starts_on_its_def_statement_whatever_coverage_wrote(start_lines):
+    per_file = parse_coveragepy(json.dumps(_report_7_12(start_lines)), path_prefix="")
+
+    assert {fn.name: fn.start for fn in per_file["pkg/mod.py"]} == STARTS_7_13
+
+
+@pytest.mark.parametrize("start_lines", [{}, STARTS_7_13], ids=["coverage-7.12", "coverage-7.13"])
+def test_a_nested_function_that_never_ran_scores_its_own_coverage(start_lines):
+    from crapkit.analyze import analyze_source
+    from crapkit.score import score_rows
+    from crapkit.snapshot import build_inventory_rows
+
+    per_file = parse_coveragepy(json.dumps(_report_7_12(start_lines)), path_prefix="")
+    rows = build_inventory_rows({"py": analyze_source("pkg/mod.py", MOD_SOURCE)})
+
+    scored = {row.long_name: row.cov for row in score_rows(rows, per_file, lane_scopes={"py"})}
+
+    assert scored["outer.inner( y )"] == 0.0
+    assert scored["outer( x )"] == 0.5
+
+
+# --- a function region with no summary ----------------------------------------
+#
+# coverage.py writes a summary on every region. `.get("summary", {})` read an
+# absent one as zero statements and zero branches, so the function scored as
+# never run, while a null one refused the report with an AttributeError.
+# Both now refuse the report with a line naming the function.
+
+@pytest.mark.parametrize("summary", ["absent", None, [], "4 of 4"],
+                         ids=["absent", "null", "a-list", "a-string"])
+def test_a_region_without_a_summary_object_refuses_the_report_naming_the_function(summary):
+    report = json.loads(json.dumps(REPORT))
+    guarded = report["files"]["pylib\\mod.py"]["functions"]["guarded"]
+    if summary == "absent":
+        del guarded["summary"]
+    else:
+        guarded["summary"] = summary
+
+    with pytest.raises(ToolError, match=r"coverage\.py report .*guarded: no summary object"):
+        parse_coveragepy(json.dumps(report), path_prefix="")

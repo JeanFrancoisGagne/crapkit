@@ -77,6 +77,22 @@
   `method` that is not a string answers `-32601 unknown method`, where it answered
   `-32603`.
 
+### The coverage readers stop reading an absent field as a value
+
+- A coverage.py report from 7.6 to 7.13.0, which writes no `start_line`, scores a nested
+  function by its own region. The reader took the body's first line as the start, which
+  is the line of the `def inner` statement in the encloser's region, so a nested function
+  that never ran scored as half covered. It now reads the `def` line as the last statement
+  line above the body, which is where 7.13.1 puts `start_line`. A null `start_line` reads
+  the same way.
+- A coverage.py region without a `summary` object exits 5 naming the function, where it
+  scored the function as never run. A null one exits 5 with the same line, where it
+  printed a Python `AttributeError`.
+- An istanbul `fnMap` entry without `loc.end.line` exits 5 naming the entry. The span fell
+  back to the declaration line, the body's branches attached to nothing, and a function
+  that was called scored as covered. A `branchMap` entry without `loc` counts against the
+  function that holds its `line`, where it attached to none.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

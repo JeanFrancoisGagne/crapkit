@@ -234,9 +234,9 @@ artifact:
 
 | Key | What crapkit does with it |
 |---|---|
-| `fnMap` | The function list. Every entry needs `decl.start.line`. `loc.end.line` closes the span and falls back to the start line. A missing `name` reads as `(anonymous)`. |
+| `fnMap` | The function list. Every entry needs `decl.start.line`, and `loc.end.line` to close the span. A missing `name` reads as `(anonymous)`. |
 | `f` | Call counts per `fnMap` id. |
-| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`. This is the function's coverage whenever it has one branch. |
+| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`, or the `line` beside it when `loc` is missing. A branch with neither is left out. This is the function's coverage whenever it has one branch. |
 | `statementMap` and `s` | The fallback for a function with no branch in its span, and the only source of the uncovered lines `verify` measures a diff against. |
 
 A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
@@ -263,10 +263,18 @@ Both exit 0. That is the [wrong `path_prefix`](#running-from-a-subdirectory) fai
 other side: the lane ran, the artifact parsed, and the score is wrong. `0 measured` on a lane
 that ran is the number to read.
 
-One shape does fail loudly. An `fnMap` entry with no `decl` exits 5:
+Two shapes do fail loudly, both in `fnMap`. An entry with no `decl` exits 5:
 
 ```
 crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: 'decl'
+```
+
+So does an entry with no `loc.end.line`. Read as the declaration line, as it was before
+0.8.1, the span shrank to one line, the body's branches attached to nothing, and a function
+that was called scored as covered:
+
+```
+crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: fnMap['0'] has no loc.end.line (every istanbul reporter writes one; regenerate the artifact with the runner's reporter)
 ```
 
 ### What else lives in .crapkit/
@@ -596,6 +604,21 @@ case the message was written for: `coverage.py report has no function regions fo
 its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
 a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
 which a coverage that old would not fix.
+
+### A report from coverage 7.6 to 7.13.0
+
+coverage.py names each region's `def` line as `start_line` from 7.13.1. An older report
+carries none, and crapkit reads the `def` line as the last statement line above the region's
+body, which is where coverage 7.13.1 puts it. Before 0.8.1 it took the body's first line, and
+a nested function that never ran joined its encloser's region and scored as half covered.
+
+Every region in the report needs its `summary` object; coverage.py writes one on each. A
+region without one exits 5, where it used to score the function as never run:
+
+```
+crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: guarded: no summary object (coverage.py writes one on every region; regenerate the report with `coverage json`)
+```
+
 ### `--continue-on-collection-errors`
 
 This is pytest's `reportOnFailure`, and it is the flag people leave out. pytest raises
