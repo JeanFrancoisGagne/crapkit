@@ -5,6 +5,9 @@ check fails on an AssertionError, a pin_ruling mismatch included; any other
 failure is `not replayable`; the fix must pass. The planted repo below has a
 `crapkit` whose `double` answers 3n at its first commit and 2n at its second,
 so the expected verdicts are known before anything runs.
+
+The planted replays build two worktrees and two venvs each (about 10 s), so
+they run nightly; the verdict, digest and slicing rules run on every push.
 """
 from __future__ import annotations
 
@@ -169,6 +172,7 @@ def _bug(planted, test_name: str):
     return retro.Bug("R0", f"{planted.check}::{test_name}", planted.before, planted.fix)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_planted_bug_reads_red_before_and_passes_after(planted):
     before, fix = retro.replay(_bug(planted, "test_double_doubles"), retro.CURRENT, planted.site)
@@ -177,6 +181,7 @@ def test_a_planted_bug_reads_red_before_and_passes_after(planted):
     assert "12" in before.evidence
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_usage_error_reads_not_replayable(planted):
     before, _ = retro.replay(_bug(planted, "test_an_unknown_command"), retro.CURRENT, planted.site)

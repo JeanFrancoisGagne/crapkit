@@ -17,7 +17,9 @@ Each fixture says, beside its source, which mutants each line grows and which
 line of its suite kills each one. Nothing here reads crapkit's output to learn
 what to expect.
 
-Every run spawns crapkit through kit.drive, so tools/accuracy/retro.py can point
+The push tier runs the known kills, the broken runner and the diff that
+touches a test (about 9 s serial); the other fixtures spawn a mutate run each
+and run nightly. Every run spawns crapkit through kit.drive, so tools/accuracy/retro.py can point
 CRAPKIT_ACCURACY_PYTHON at an older wheel and replay a past bug's check on its
 before commit. A run that older crapkit cannot read (a refused config, no JSON
 on stdout) raises Unreadable, which retro records as not replayable, never red.
@@ -172,6 +174,7 @@ def test_back_to_back_same_size_mutants_both_die(kk_run):
     assert kk_run.survivors("src/kk/same.py") == []
 
 
+@pytest.mark.nightly
 def test_shard_split_merges_to_mutant_order(kk_run, repo_templates, tmp_path):
     """Three workers take the four mutants round-robin; the merged payload is
     the one-worker payload, survivors in mutant order."""
@@ -227,6 +230,7 @@ def test_diff_touching_tests_mutates_only_source(repo_templates, tmp_path):
 
 # --- nested: a crapkit root one directory below the git top ------------------------------------
 
+@pytest.mark.nightly
 def test_nested_root_finds_targets(repo_templates, tmp_path):
     """R75: before dfb6c36 git named the diff's files from the repo top
     (app/src/n/calc.py) and mutate, reading them from the crapkit root, found
@@ -283,6 +287,7 @@ def gen_run(repo_templates, tmp_path_factory) -> Mutated:
     return _mutate(root, "--files", *sorted(path for path in GEN_FILES if path.startswith("src/")))
 
 
+@pytest.mark.nightly
 def test_a_swift_half_open_range_is_not_mutated(gen_run):
     """R183: before c4a6716 `0..<b` grew `0..<=b` and `0..>=b`, which do not
     compile, die on the compiler and read as kills."""
@@ -290,6 +295,7 @@ def test_a_swift_half_open_range_is_not_mutated(gen_run):
                                                             "if i <= 2 { n += 1 }"]
 
 
+@pytest.mark.nightly
 def test_type_argument_angles_are_not_mutated(gen_run):
     """R185: before c24e6a4 the < and > of Map<string, number> and Array<number>
     grew mutants that do not compile."""
@@ -297,6 +303,7 @@ def test_type_argument_angles_are_not_mutated(gen_run):
                                                         "return m.size <= limit;"]
 
 
+@pytest.mark.nightly
 def test_text_inside_strings_and_comments_is_not_mutated(gen_run):
     """R186: before c24e6a4 a docstring's second line and a trailing comment
     were mutated as code: survivors no test can kill."""
@@ -318,6 +325,7 @@ W_FILES = {"src/w/__init__.py": "", "src/w/calc.py": "def positive(x):\n    retu
            "tests/w_check.py": W_CHECK, "crapkit.toml": _toml("python tests/w_check.py")}
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("workers", [1, 2])
 def test_an_uncommitted_test_kills_at_any_worker_count(repo_templates, tmp_path, workers):
     """R187: before c24e6a4 a worker's worktree held HEAD plus the mutated file

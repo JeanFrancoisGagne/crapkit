@@ -9,15 +9,15 @@ whose tests run only nightly or at release declares 0.
 SHARD = "verdict-score"
 _SS = "tests/accuracy/suite_strength/"
 CHECKS = [
-    {"name": "retro ledger and triage", "seconds": 2,
+    {"name": "retro ledger and triage", "seconds": 1,
      "pytest": [_SS + "test_retro_ledger.py"]},
     {"name": "retro tool", "seconds": 2,
      "pytest": [_SS + "test_retro_tool.py"]},
-    {"name": "mutation tool and floors", "seconds": 1,
+    {"name": "mutation tool and floors", "seconds": 2,
      "pytest": [_SS + "test_mutation_tool.py", _SS + "test_mutation_floors.py"]},
-    {"name": "crapkit mutate verdicts", "seconds": 8,
+    {"name": "crapkit mutate verdicts", "seconds": 9,
      "pytest": [_SS + "test_mutate_results.py"]},
-    {"name": "self-measurement floor", "seconds": 1,
+    {"name": "self-measurement floor", "seconds": 0,
      "pytest": [_SS + "test_self_measure_floor.py"]},
     {"name": "release gate model", "seconds": 1,
      "pytest": [_SS + "test_release_gate_model.py"]},
