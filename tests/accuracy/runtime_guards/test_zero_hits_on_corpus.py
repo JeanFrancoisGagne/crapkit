@@ -125,9 +125,10 @@ def test_zero_stops_on_every_full_corpus_member(tmp_path):
     members = corpora.members(root)
     assert members, (f"no full corpus at {root}: set {corpora.CORPUS_ENV}, or restore the "
                      "corpus-<digest> asset tools/accuracy/corpus.py publishes")
-    found = [stop for member in members
-             for stop in repo_stops(corpora.member_repo(member, tmp_path / member.name),
-                                    member.name)]
+    found = []
+    for member in members:
+        root = corpora.member_repo(member, tmp_path / member.name)
+        found += repo_stops(root, member.name, corpora.day_after_head(root))
     assert found == []
 
 
@@ -136,7 +137,8 @@ def test_zero_stops_on_every_full_corpus_member(tmp_path):
 def test_zero_stops_on_every_member_history(tmp_path):
     bundles = corpora.histories(corpora.full_corpus())
     assert bundles, f"no history bundles under {corpora.full_corpus()}: set {corpora.CORPUS_ENV}"
-    found = [stop for bundle in bundles
-             for stop in repo_stops(corpora.history_repo(bundle, tmp_path / bundle.stem),
-                                    bundle.stem)]
+    found = []
+    for bundle in bundles:
+        root = corpora.history_repo(bundle, tmp_path / bundle.stem)
+        found += repo_stops(root, bundle.stem, corpora.day_after_head(root))
     assert found == []

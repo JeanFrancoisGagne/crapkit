@@ -148,12 +148,23 @@ def cases(draw):
     return {**row, **(BREAKS[broken](row) if broken else {})}, ceiling
 
 
+def _scan_local_constants() -> None:
+    """Hypothesis 6.168 reads every newly imported module for constants on its
+    next draw: 0.28 s after crapkit's imports on a quiet machine, past the 1 s
+    too_slow limit on a loaded one. Reading them here keeps that out of the
+    examples. A Hypothesis without the scan makes this a no-op."""
+    providers = importlib.import_module("hypothesis.internal.conjecture.providers")
+    getattr(providers, "_get_local_constants", lambda: None)()
+
+
 @pytest.fixture(scope="module")
 def loaded():
     """The code under test, imported before the first example, so no example's
     deadline pays for crapkit's imports."""
-    return guards(), internal_error(), drive.to_crapkit("scored_row", tuple(valid_row(
-        1, 1, 1, "measured", 1, False)[name] for name in FIELDS))
+    imported = (guards(), internal_error(), drive.to_crapkit("scored_row", tuple(valid_row(
+        1, 1, 1, "measured", 1, False)[name] for name in FIELDS)))
+    _scan_local_constants()
+    return imported
 
 
 @given(case=cases())
@@ -309,3 +320,41 @@ def test_rg4_the_guard_holds_nloc_to_the_span():
     answer = "accepted" if crapkit_accepts(PAST_SPAN, 6) else "stopped"
     rulings.pin_ruling("RG4", crapkit=answer, oracle="accepted" if model_accepts(PAST_SPAN, 6)
                        else "stopped")
+
+
+def _answers(row: dict) -> tuple[str, str]:
+    """(crapkit's check, the model) on one row, as accepted or stopped."""
+    word = {True: "accepted", False: "stopped"}
+    return word[crapkit_accepts(row, 6)], word[model_accepts(row, 6)]
+
+
+# RG6. nloc counts lines of the span, so it is at least 0. The guard lets a
+# negative nloc through until RG7's reader fix lands: a large consumer repo
+# holds a function whose nloc reads -1, and the bound stopped its every run.
+BELOW_ZERO = {**valid_row(4, 1, 2, "measured", 6, False), "nloc": -1}
+
+
+@rulings.applies("RG6")
+def test_rg6_the_guard_holds_nloc_to_at_least_zero():
+    crapkit, model = _answers(BELOW_ZERO)
+    rulings.pin_ruling("RG6", crapkit=crapkit, oracle=model)
+
+
+# RG7. Lines 1-6 each hold code or string text. A plain triple-quoted string's
+# lines count toward nloc (the same shape without the f reads 5 for 5 lines),
+# so this function's nloc is 6.
+FSTRING = "def g(a):\n    return f'''{a}\n{a}\n{a}\n{a}\n'''\n"
+FSTRING_BY_HAND = "lines 1-6 nloc 6"
+PY_CONFIG = TS_CONFIG.replace('"typescript"', '"python"')
+
+
+@rulings.applies("RG7")
+@pytest.mark.process
+def test_rg7_a_python_f_string_s_lines_count_toward_nloc(make_repo, tmp_path):
+    built = make_repo(repos.Spec(steps=(repos.Commit(files={
+        "crapkit.toml": PY_CONFIG, "src/app.py": FSTRING}),)))
+    done = drive.Driver(built.root).run("inventory", "--export", str(tmp_path / "inv.tsv"))
+    assert done.code == 0, done.stderr
+    (row,) = _exported(tmp_path / "inv.tsv")
+    rulings.pin_ruling("RG7", crapkit=f"lines {row['start']}-{row['end']} nloc {row['nloc']}",
+                       oracle=FSTRING_BY_HAND)

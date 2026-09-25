@@ -81,10 +81,17 @@ def member_repo(member: Path, work: Path) -> Path:
 
 def history_repo(bundle: Path, work: Path) -> Path:
     """The bundle's history cloned at `work`, scored under the cc-only config.
-    The config stays out of the log, so every commit keeps the member's own date."""
+    The config stays out of the log, so every commit keeps the member's own date.
+    tools/accuracy/corpus.py bundles one branch, main, and no HEAD to follow."""
     work.parent.mkdir(parents=True, exist_ok=True)
-    repos.git(work.parent, "clone", "-q", str(bundle), work.name)
+    repos.git(work.parent, "clone", "-q", "--branch", "main", str(bundle), work.name)
     (work / "crapkit.toml").write_text(cc_only_config(), encoding="utf-8", newline="\n")
     with open(work / ".git" / "info" / "exclude", "a", encoding="utf-8") as exclude:
         exclude.write("/crapkit.toml\n")
     return work
+
+
+def day_after_head(root: Path) -> int:
+    """A clock one day past the repo's newest commit: the churn window then
+    holds the member's recent history whatever day the run happens on."""
+    return int(repos.git(root, "log", "-1", "--format=%ct").strip()) + 86_400

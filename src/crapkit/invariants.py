@@ -23,17 +23,18 @@ caught, and what the stop kept from happening. No flag or variable turns the
 checks off.
 
 Each check adds its calls and nanoseconds to COST under its site's name. When
-CRAPKIT_INVARIANT_RECEIPT names a file, each process appends that tally to it
-as one JSON line when it exits, so a harness can set it against the command's
-own wall time.
+CRAPKIT_INVARIANT_RECEIPT names a directory, each process, the command and
+every analysis-pool worker alike, writes its own tally there as one JSON file
+when it exits, so a harness can set their sum against the command's wall time.
 """
 from __future__ import annotations
 
-import atexit
 from itertools import chain
 import json
 import math
+from multiprocessing import util as _mp_util
 import os
+import tempfile
 from time import perf_counter_ns
 from typing import NoReturn
 
@@ -86,18 +87,37 @@ def _spent(site: str, began: int) -> None:
     tally[1] += perf_counter_ns() - began
 
 
-def _write_receipt(path: str) -> None:
-    line = {"pid": os.getpid(), "sites": {site: {"calls": calls, "ns": ns}
-                                          for site, (calls, ns) in sorted(COST.items())}}
+def _write_receipt(directory: str) -> None:
+    """This process's tally, in a file no other process writes: processes that
+    exit together would interleave appends to one shared file."""
+    tally = {"pid": os.getpid(), "sites": {site: {"calls": calls, "ns": ns}
+                                           for site, (calls, ns) in sorted(COST.items())}}
     try:
-        with open(path, "a", encoding="utf-8") as receipt:
-            receipt.write(json.dumps(line, sort_keys=True) + "\n")
+        handle, _ = tempfile.mkstemp(suffix=".json", prefix=f"{os.getpid()}-", dir=directory)
+        with open(handle, "w", encoding="utf-8") as receipt:
+            receipt.write(json.dumps(tally, sort_keys=True))
     except OSError:
         pass  # a receipt is a measurement aid; it never changes a verdict
 
 
-if os.environ.get(RECEIPT_ENV):
-    atexit.register(_write_receipt, os.environ[RECEIPT_ENV])
+def _watch_receipt() -> None:
+    """Write the tally at exit. A multiprocessing finalizer runs both at the
+    command's exit and at a pool worker's, which skips atexit."""
+    directory = os.environ.get(RECEIPT_ENV)
+    if directory:
+        _mp_util.Finalize(None, _write_receipt, args=(directory,), exitpriority=0)
+
+
+def _forked() -> None:
+    """A forked worker starts from a copy of the command's tally, which the
+    command reports itself."""
+    COST.clear()
+    _watch_receipt()
+
+
+_watch_receipt()
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_forked)
 
 
 # --- one function's measured shape ----------------------------------------------------
@@ -112,15 +132,17 @@ def _ccn_problem(r) -> str | None:
 
 
 def _span_problem(r) -> str | None:
-    """nloc also cannot pass the span's line count, but the TypeScript
-    expression-arrow reader ends an arrow whose body starts on the next line at
-    the arrow's own line while nloc counts the body (calc-bug runtime-guards-1,
-    pinned by tests/accuracy/runtime_guards/test_invariant_verdict.py). That
-    bound joins this check when the reader's span reaches its body."""
+    """nloc also lies in 0 to the span's line count, but two readers break that
+    today, and a stop there would refuse every run of a repo holding one such
+    function. The TypeScript expression-arrow reader ends an arrow whose body
+    starts on the next line at the arrow's own line while nloc counts the body
+    (calc-bug runtime-guards-1). The Python reader subtracts each line of a
+    triple-quoted f-string that follows an interpolation, as if the text were a
+    comment string, so nloc falls below 0 (calc-bug runtime-guards-3). Both are
+    pinned by tests/accuracy/runtime_guards/test_invariant_verdict.py, and each
+    bound joins this check when its reader is fixed."""
     if not 1 <= r.start <= r.end:
         return "a span must satisfy 1 <= start <= end"
-    if r.nloc < 0:
-        return "nloc must be at least 0"
     return None
 
 

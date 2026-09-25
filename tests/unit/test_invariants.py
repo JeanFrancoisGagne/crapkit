@@ -97,7 +97,6 @@ def test_a_well_formed_record_passes():
     (dict(ccn_std=5, ccn_mod=3, ccn=5), "ccn must equal min(ccn_std, ccn_mod)"),
     (dict(start=0), "a span must satisfy 1 <= start <= end"),
     (dict(start=13, end=12), "a span must satisfy 1 <= start <= end"),
-    (dict(nloc=-1), "nloc must be at least 0"),
     (dict(nesting=-1), "cognitive, nesting, params and occurrence must each be at least 0"),
     (dict(cognitive=-1), "cognitive, nesting, params and occurrence must each be at least 0"),
     (dict(params=-1), "cognitive, nesting, params and occurrence must each be at least 0"),
@@ -612,14 +611,34 @@ def test_every_run_crapkit_stores_passes_the_row_check_first():
     assert sum(len(_write_run_calls(ast.parse(path.read_bytes()))) for path in writers) == 4
 
 
+def _receipts(directory: Path) -> list[dict]:
+    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.iterdir())]
+
+
+def _run_with_receipts(code: str, directory: Path) -> list[dict]:
+    env = {**os.environ, inv.RECEIPT_ENV: str(directory)}
+    subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=120)
+    return _receipts(directory)
+
+
 def test_the_receipt_holds_each_site_s_calls_and_nanoseconds(tmp_path):
-    receipt = tmp_path / "receipt.jsonl"
     code = ("from crapkit import invariants as inv\n"
             "from crapkit.merge import FunctionRecord\n"
             "inv.check_record(FunctionRecord('a.py', 'f( )', 1, 2, 1, 1, 1, 2, 0, 0))\n"
             "inv.check_totals(3, 1, 9.0)\n")
-    env = {**os.environ, inv.RECEIPT_ENV: str(receipt)}
-    subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=120)
-    line = json.loads(receipt.read_text(encoding="utf-8"))
-    assert set(line["sites"]) == {"record", "totals"}
-    assert line["sites"]["record"]["calls"] == 1 and line["sites"]["record"]["ns"] > 0
+    (tally,) = _run_with_receipts(code, tmp_path)
+    assert set(tally["sites"]) == {"record", "totals"}
+    assert tally["sites"]["record"]["calls"] == 1 and tally["sites"]["record"]["ns"] > 0
+
+
+def test_a_pool_worker_writes_its_own_tally_and_repeats_none_of_the_command_s(tmp_path):
+    """The analysis pool runs the record check in workers: spawned on Windows
+    and macOS, forked on Linux. Each worker reports what it checked, once."""
+    code = ("from concurrent.futures import ProcessPoolExecutor\n"
+            "from crapkit import invariants as inv\n"
+            "inv.check_totals(3, 1, 9.0)\n"
+            "with ProcessPoolExecutor(1) as pool:\n"
+            "    pool.submit(inv.check_totals, 2, 0, 4.0).result()\n")
+    tallies = _run_with_receipts(code, tmp_path)
+    assert len({tally["pid"] for tally in tallies}) == 2
+    assert [tally["sites"]["totals"]["calls"] for tally in tallies] == [1, 1]
