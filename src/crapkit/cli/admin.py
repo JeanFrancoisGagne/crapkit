@@ -1096,6 +1096,71 @@ def _doctor_commit_graph(root: Path) -> list[Finding]:
                             "--reachable --changed-paths`")]
 
 
+def _doctor_container(cfg) -> list[Finding]:
+    """A coverage.py lane `crapkit coverage` refuses in this container (WARN)."""
+    from ..doctor import container_lane_findings, container_marker
+
+    marker = container_marker(os.environ, Path("/.dockerenv").exists())
+    return list(container_lane_findings(cfg.lanes, marker))
+
+
+def _text_at(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _hooks_path_setting(root: Path) -> tuple[str, str]:
+    """(scope, value) of core.hooksPath, or ("", "") when unset."""
+    try:
+        answer = _git(root, "config", "--show-scope", "--get", "core.hooksPath")
+    except GitError:
+        return "", ""
+    scope, _, value = answer.strip().partition("\t")
+    return scope, value
+
+
+def _absolute(root: Path, *rev_parse: str) -> Path:
+    return Path(_git(root, "rev-parse", "--path-format=absolute", *rev_parse).strip()).resolve()
+
+
+def _hook_route(root: Path):
+    """Where git spawns pre-commit for this checkout and where it would with no
+    core.hooksPath, with what each file says. Raises GitError outside a
+    repository."""
+    from ..doctor import HookRoute
+
+    default = _absolute(root, "--git-common-dir") / "hooks" / "pre-commit"
+    effective = _absolute(root, "--git-path", "hooks/pre-commit")
+    return HookRoute(default.as_posix(), _text_at(default), effective.as_posix(),
+                     _text_at(effective), *_hooks_path_setting(root))
+
+
+# The CI files doctor reads for a pre-commit step, relative to the git top.
+_CI_FILES = (".github/workflows/*.yml", ".github/workflows/*.yaml", ".gitlab-ci.yml",
+             ".circleci/config.yml", "azure-pipelines.yml", "bitbucket-pipelines.yml")
+
+
+def _ci_files(top: Path) -> dict[str, str]:
+    return {path.relative_to(top).as_posix(): _text_at(path)
+            for pattern in _CI_FILES for path in sorted(top.glob(pattern))}
+
+
+def _doctor_silent_gates(root: Path) -> list[Finding]:
+    """A gate that is set up and never judges anything (WARN): a crapkit hook
+    git is sent away from, and pre-commit run in CI on an empty index."""
+    from ..doctor import ci_precommit_passes, skipped_hook
+
+    try:
+        route = _hook_route(root)
+        top = Path(_git(root, "rev-parse", "--show-toplevel").strip())
+    except GitError:
+        return []
+    return list(skipped_hook(route)) + list(ci_precommit_passes(
+        _text_at(top / ".pre-commit-config.yaml"), _ci_files(top)))
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     return (_doctor_keys(raw)
@@ -1108,6 +1173,8 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_hook_modes(root)
             + _doctor_hook_encoding(root)
             + _doctor_commit_graph(root)
+            + _doctor_container(cfg)
+            + _doctor_silent_gates(root)
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))
@@ -1478,6 +1545,33 @@ def _name_found_root(root: Path, looked_in: str) -> None:
         print(f"crapkit doctor: checking {root}")
 
 
+@lru_cache(maxsize=None)
+def _claude_code_version() -> tuple[str, str] | None:
+    """The `claude` on PATH and what its `--version` printed, or None when
+    PATH holds none or it cannot answer. Memoized: one machine fact."""
+    import shutil
+    import subprocess
+
+    executable = shutil.which("claude")
+    if executable is None:
+        return None
+    try:
+        done = subprocess.run([executable, "--version"], capture_output=True, encoding="utf-8",
+                              errors="replace", timeout=_PROBE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return executable, done.stdout.strip()
+
+
+def _claude_code_floor() -> list[str]:
+    """The line for a Claude Code on PATH too old to pass the plugin's hook args."""
+    from ..doctor import claude_code_floor_gap
+
+    found = _claude_code_version()
+    line = claude_code_floor_gap(*found) if found else None
+    return [line] if line else []
+
+
 def _doctor_plugin(plugin_root: str) -> int:
     """`--plugin-root [PATH]`: the installed plugin against this CLI.
 
@@ -1512,6 +1606,7 @@ def _doctor_plugin(plugin_root: str) -> int:
     lines = plugin_handshake(where=str(root), version=_manifest_version(root),
                              cli_version=cli_version, cli_where=executable,
                              protocols=_hook_protocols(root), supported=PROTOCOL)
+    lines += _claude_code_floor()
     for line in lines:
         print(line)
     return 1 if lines else 0

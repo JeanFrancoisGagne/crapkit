@@ -537,3 +537,122 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
         return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
     return [line for line in (_version_gap(where, version, cli_version, cli_where),
                               _protocol_gap(where, protocols, supported)) if line]
+
+
+# --- where a check passes without judging anything ------------------------------
+#
+# Each finding below is a place the gate or a lane is set up and does not run,
+# and nothing else says so: the coverage guard refuses only when `coverage`
+# starts, git skips a hook it was sent away from, and pre-commit in CI judges
+# an index nobody staged. Pure: the caller reads the environment and the files.
+
+_CONTAINER_LANE = (
+    "lane {name!r} runs a coverage.py suite and this is a container ({marker}): "
+    "`crapkit coverage` refuses it with exit 5; if the container is sized for the suite, "
+    "set container_ok = true on the lane (docs/lanes.md#containers)"
+)
+
+
+def container_marker(environ, dockerenv: bool) -> str | None:
+    """What makes lanes.py's guard read this machine as a container, in the
+    words a user can check, or None. Same two triggers as the guard."""
+    if environ.get("CRAPKIT_INSIDE_CONTAINER") == "1":
+        return "CRAPKIT_INSIDE_CONTAINER=1"
+    return "/.dockerenv exists" if dockerenv else None
+
+
+def _refused_in_container(lane) -> bool:
+    return lane.parser == "coveragepy" and not lane.container_ok
+
+
+def container_lane_findings(lanes, marker: str | None) -> tuple[Finding, ...]:
+    """The coverage.py lanes `crapkit coverage` will refuse here, one WARN each.
+
+    A devcontainer, Codespaces, Codex cloud or a CI job in a container passed
+    doctor and then refused its first coverage run; the refusal is right, and
+    doctor is where a user asks whether the setup will run."""
+    if marker is None:
+        return ()
+    return tuple(Finding("WARN", _CONTAINER_LANE.format(name=lane.name, marker=marker))
+                 for lane in lanes if _refused_in_container(lane))
+
+
+_SKIPPED_HOOK = (
+    "{default} runs crapkit's gate, but core.hooksPath ({scope} config: {value}) sends git "
+    "to {effective}, so every commit here skips the gate without a word; run "
+    "`git config --local core.hooksPath {default_dir}` in this repo, or call crapkit "
+    "hook-precommit from {effective}"
+)
+
+
+class HookRoute(NamedTuple):
+    """Where git looks for pre-commit, where it would look with no core.hooksPath,
+    and what each file says ("" when it does not exist)."""
+    default: str
+    default_text: str
+    effective: str
+    effective_text: str
+    scope: str
+    value: str
+
+
+def skipped_hook(route: HookRoute) -> tuple[Finding, ...]:
+    """A crapkit hook in the repo's own hooks directory that git never runs,
+    because a core.hooksPath (a global one, or husky's) points elsewhere and
+    the file there does not call crapkit. WARN: the commit still succeeds, it
+    is just not gated."""
+    if route.default == route.effective or "crapkit" not in route.default_text:
+        return ()
+    if "crapkit" in route.effective_text:
+        return ()
+    return (Finding("WARN", _SKIPPED_HOOK.format(
+        default=route.default, default_dir=route.default.rpartition("/")[0], **{
+            key: getattr(route, key) for key in ("scope", "value", "effective")})),)
+
+
+_RUNS_PRECOMMIT = re.compile(r"\b(?:pre-commit|prek) run\b|pre-commit/action@")
+_CI_PRECOMMIT = (
+    "{path} runs pre-commit, and the crapkit-gate hook judges the staged index, which a CI "
+    "checkout leaves empty: it passes every run whatever the branch holds; gate CI with "
+    "`crapkit verify` instead (README, Route 4: CI)"
+)
+
+
+def ci_precommit_passes(precommit_config: str, ci_files: dict[str, str]) -> tuple[Finding, ...]:
+    """CI files that run pre-commit over a config naming crapkit-gate, one WARN
+    each, in path order. `pre-commit run --all-files` on a fresh checkout
+    reported the gate Passed on a branch holding a function far over its
+    ceiling."""
+    if "crapkit-gate" not in precommit_config:
+        return ()
+    return tuple(Finding("WARN", _CI_PRECOMMIT.format(path=path))
+                 for path, text in sorted(ci_files.items()) if _RUNS_PRECOMMIT.search(text))
+
+
+# --- the harness floor ------------------------------------------------------------
+#
+# Claude Code passes a hook handler's `args` from 2.1.139 on. An older release
+# runs the handler's bare `command`, so each of the plugin's PostToolUse hooks
+# starts `crapkit` with no subcommand: argparse exits 2 with its usage on every
+# edit, and asyncRewake hands that usage to the model.
+
+CLAUDE_CODE_ARGS_FLOOR = "2.1.139"
+_LEADING_RELEASE = re.compile(r"\s*(\d+)\.(\d+)\.(\d+)")
+
+
+def _release(text: str) -> tuple[int, ...] | None:
+    match = _LEADING_RELEASE.match(text)
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def claude_code_floor_gap(where: str, answer: str) -> str | None:
+    """One line when the Claude Code at `where` answered `--version` with a
+    release below the floor; None at or past it, or for an answer that names
+    no version."""
+    found = _release(answer)
+    if found is None or found >= _release(CLAUDE_CODE_ARGS_FLOOR):
+        return None
+    return (f"crapkit doctor: Claude Code {'.'.join(map(str, found))} ({where}) predates "
+            f"{CLAUDE_CODE_ARGS_FLOOR}, the first release that passes a hook's args, so each of "
+            "the plugin's hooks starts a bare `crapkit`, which exits 2 with its usage on every "
+            "edit. Update Claude Code (`claude update`), then restart its sessions.")
