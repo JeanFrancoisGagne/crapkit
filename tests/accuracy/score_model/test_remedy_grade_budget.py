@@ -118,22 +118,26 @@ def test_raising_the_ceiling_never_worsens_the_remedy(ccn, pair, ceiling, more):
 
 
 def _scored(rows, lane_scopes: set, **kwargs):
-    return production.load("score:score_rows")(rows, {}, lane_scopes=lane_scopes, **kwargs)
+    return production.call("score:score_rows", rows, {}, lane_scopes=lane_scopes, **kwargs)
+
+
+def _covered_ccn_8_remedy(**ceilings) -> list[str]:
+    """A fully covered ccn-8 function: CRAP 8, decompose at 6, ok at 12."""
+    fn = production.fn_coverage("f", 1, 9, invoked=True, branches=(8, 8))
+    row = production.inventory_row("src", "src/a.ts", "f( )", 1, 9, 8)
+    return [r.remedy for r in production.call("score:score_rows", [row], {"src/a.ts": [fn]},
+                                              lane_scopes={"src"}, **ceilings)]
 
 
 def test_remedy_reads_the_configured_ceiling():
-    """R03: a ccn-8 function is decompose at the default 6 and ok, fully covered,
-    under `target = 12`, scope ceiling or repo ceiling alike."""
-    fn = production.fn_coverage("f", 1, 9, invoked=True, branches=(8, 8))
-    row = production.inventory_row("src", "src/a.ts", "f( )", 1, 9, 8)
-    score_rows = production.load("score:score_rows")
+    """R03: the remedy reads `target`, not a hard-coded 6 (README.md#remedy)."""
+    assert _covered_ccn_8_remedy() == ["decompose"]
+    assert _covered_ccn_8_remedy(target=12) == ["ok"]
 
-    assert [r.remedy for r in score_rows([row], {"src/a.ts": [fn]}, lane_scopes={"src"})] == [
-        "decompose"]
-    assert [r.remedy for r in score_rows([row], {"src/a.ts": [fn]}, lane_scopes={"src"},
-                                         target=12)] == ["ok"]
-    assert [r.remedy for r in score_rows([row], {"src/a.ts": [fn]}, lane_scopes={"src"},
-                                         target=6, scope_targets={"src": 12})] == ["ok"]
+
+def test_remedy_reads_the_scope_ceiling():
+    """A scope's own `target` overrides the repo's (configuration.md:147)."""
+    assert _covered_ccn_8_remedy(target=6, scope_targets={"src": 12}) == ["ok"]
 
 
 def test_shared_span_reads_split_lines():

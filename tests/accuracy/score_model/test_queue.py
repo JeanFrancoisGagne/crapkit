@@ -8,12 +8,13 @@ agent-json.md's rules through model_score, and the hand rows.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 
 from hypothesis import given, strategies as st
 import numpy
 import pytest
 
-from accuracy.kit import drive, repos, rulings
+from accuracy.kit import drive, exact, repos, rulings
 from accuracy.kit.settings import pure
 from accuracy.score_model import cases, cli_repo, model_score, production
 
@@ -131,15 +132,18 @@ def _cov(fn: Fn) -> float:
     return 0.0 if fn.flag != "measured" else fn.twelfths / 12
 
 
+def _input_remedy(ccn: int, cov: float) -> str:
+    """The remedy an input row carries: the README table on the exact CRAP, so
+    building a row reaches no crapkit function a retro replay's version lacks."""
+    return model_score.remedy(ccn, exact.crap(ccn, Fraction(cov)), CEILING)
+
+
 def scored_rows(fns: list[Fn]) -> list:
-    crap, remedy = production.load("score:crap"), production.load("score:remedy")
-    rows = []
-    for fn in fns:
-        value = crap(fn.ccn, _cov(fn))
-        rows.append(production.scored_row("src", fn.path, fn.name, fn.start, fn.start + 9, fn.ccn,
-                                          _cov(fn), fn.flag, value,
-                                          remedy(fn.ccn, value, CEILING)))
-    return rows
+    crap = production.load("score:crap")
+    return [production.scored_row("src", fn.path, fn.name, fn.start, fn.start + 9, fn.ccn,
+                                  _cov(fn), fn.flag, crap(fn.ccn, _cov(fn)),
+                                  _input_remedy(fn.ccn, _cov(fn)))
+            for fn in fns]
 
 
 def _marks(rows):
@@ -313,9 +317,8 @@ def _next_row(name: str, ccn: str, cov: str, flag: str):
     """A scored row at ceiling 6; a row no lane measures scores cov 0."""
     cov_value = float(cases.fraction(cov)) if flag == "measured" else 0.0
     value = production.load("score:crap")(int(ccn), cov_value)
-    remedy = production.load("score:remedy")(int(ccn), value, CEILING)
     return production.scored_row("src", f"src/{name}.py", f"{name}( x )", 1, 10, int(ccn),
-                                 cov_value, flag, value, remedy)
+                                 cov_value, flag, value, _input_remedy(int(ccn), cov_value))
 
 
 def _next_rows(text: str) -> tuple[dict, list]:
@@ -369,6 +372,65 @@ def test_worklist_and_next_item_read_the_same_run(make_repo):
 
     assert cli.json("worklist")["run_id"] == 1
     assert cli.run("next-item").json()["run_id"] == 1
+
+
+def _cli(make_repo, layout):
+    built = make_repo(cli_repo.spec(layout))
+    return drive.Driver(built.root, date_now=repos.EPOCH + 86_400)
+
+
+def _starts_to_crap(entries) -> dict[int, float]:
+    return {entry["start"]: entry["crap"] for entry in entries}
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_an_over_ceiling_row_under_the_floor_is_listed_and_handed_out(make_repo):
+    """R09: with worklist_floor = 5, `small` (ccn 3, no branch taken: CRAP 9 * 1
+    + 3 = 12) is over the ceiling of 6, so both views take it
+    (docs/agent-json.md:210: an over-target row is queued whatever its ccn);
+    `tidy` (ccn 2, both branches taken: CRAP 2) is under the floor and the
+    ceiling, so neither view takes it."""
+    layout = cli_repo.Layout(floor=5, modules=(cli_repo.Module("a", "src/a/mod.py", (
+        cli_repo.Fn("small", 3, 0), cli_repo.Fn("tidy", 2, 2))),))
+    cli = _cli(make_repo, layout)
+    assert cli.run("coverage").code == 0
+
+    assert [e["function"] for e in cli.json("worklist")["active"]] == ["small( x )"]
+    assert cli.run("next-item").json()["item"]["function"] == "small( x )"
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_next_item_never_hands_out_a_no_lane_row(make_repo):
+    """R05: scope c has no lane, so `dark` (ccn 9, CRAP 90 at cov 0) is a wiring
+    gap: next-item hands out `lit` (ccn 4, no branch taken: CRAP 20) and counts
+    `dark` in skipped_no_lane (README.md:796)."""
+    layout = cli_repo.Layout(no_lane=("c",), modules=(
+        cli_repo.Module("a", "src/a/mod.py", (cli_repo.Fn("lit", 4, 0),)),
+        cli_repo.Module("c", "src/c/mod.py", (cli_repo.Fn("dark", 9, 0),))))
+    cli = _cli(make_repo, layout)
+    assert cli.run("coverage").code == 0
+    payload = cli.run("next-item").json()
+
+    assert (payload["item"]["function"], payload["skipped_no_lane"]) == ("lit( x )", 1)
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_each_twin_s_worklist_row_prints_its_own_score(make_repo):
+    """R95: two `twin` defs in one file. coverage.py keys its functions by name,
+    so the report holds one entry, for the later def (every branch of ccn 7
+    taken: CRAP 7); the earlier def has none and scores cov 0, CRAP 7^2 + 7 = 56.
+    Each worklist row prints its own CRAP, never its twin's."""
+    layout = cli_repo.Layout(modules=(cli_repo.Module("a", "src/a/mod.py", (
+        cli_repo.Fn("twin", 7, 0), cli_repo.Fn("twin", 7, 12))),))
+    cli = _cli(make_repo, layout)
+    assert cli.run("coverage").code == 0
+    craps = sorted(_starts_to_crap(cli.json("worklist")["active"]).items())
+
+    assert [crap for _, crap in craps] == [
+        float(exact.crap(7, 0)), float(exact.crap(7, Fraction(12, 12)))]
 
 
 def test_worklist_twin_equals_brief_twin():

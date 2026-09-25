@@ -7,6 +7,7 @@ table, and agent-json.md:920-929 for the summary, through model_score.
 from __future__ import annotations
 
 from fractions import Fraction
+import re
 import tomllib
 
 from hypothesis import assume, event, given, strategies as st
@@ -268,17 +269,29 @@ def test_digest_refuses_mismatched_lane_sets(make_repo):
 @pytest.mark.nightly
 @pytest.mark.process
 def test_trend_after_prune_equals_cold(make_repo):
-    """R81: after `runs prune --keep 1`, trend names only runs the store still
-    holds, each at its rows recomputed."""
+    """R81: after `runs prune --keep 1`, trend answers for each run it kept as it
+    did before the prune, and no cached rollup row outlives its run (read with
+    sqlite3): a rollup that survives keeps answering for a run the store no
+    longer holds."""
     cli = _cli(make_repo)
     for _ in range(3):
         assert cli.run("coverage").code == 0
-        assert cli.run("trend", "--json").code == 0
+    before = _trend_by_run(cli)
     assert cli.run("runs", "prune", "--keep", "1").code == 0
-    trend = cli.json("trend")
-    held = {row["id"] for row in cli.store("SELECT id FROM runs")}
+    after = _trend_by_run(cli)
+    held = _ids(cli.store("SELECT id AS run_id FROM runs"))
 
-    assert {run["run_id"] for run in trend["runs"]} <= held
+    assert {run_id: before[run_id] for run_id in after} == after
+    assert set(after) <= held
+    assert _ids(cli.store("SELECT DISTINCT run_id FROM run_rollup")) <= held
+
+
+def _trend_by_run(cli) -> dict[int, dict]:
+    return {run["run_id"]: run for run in cli.json("trend")["runs"]}
+
+
+def _ids(rows: list[dict]) -> set[int]:
+    return {row["run_id"] for row in rows}
 
 
 @pytest.mark.nightly
@@ -296,3 +309,29 @@ def test_digest_trend_and_summary_agree_per_scope_ceiling(make_repo):
     assert {scope: block["over_target"] for scope, block in summary["by_scope"].items()} == want
     assert {scope: block["over_target"] for scope, block in trend["by_scope"].items()} == want
     assert summary["over_target"] == trend["over_target"] == 1
+
+
+GROWN = cli_repo.Layout(modules=(
+    TWO_SCOPES.modules[0],
+    cli_repo.Module("b", "src/b/mod.py", (cli_repo.Fn("wide", 8, 14), cli_repo.Fn("tangled", 8, 0)))),
+    scope_targets={"b": 12})
+DIGEST_OVER = re.compile(r"over (?:target|ceiling) (\d+) -> (\d+)")
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_the_digest_counts_each_scope_against_its_own_ceiling(make_repo):
+    """R96: between two full runs scope b gains `tangled` (ccn 8, no branch
+    taken: CRAP 72, over b's ceiling of 12). Counted per scope, over target
+    goes 1 -> 2 (a's `hot` at CRAP 15.55 both times; b's `wide` at CRAP 8 is
+    under 12), and the digest's line says what trend says."""
+    cli = _cli(make_repo)
+    assert cli.run("coverage").code == 0
+    for path, text in cli_repo.files(GROWN).items():
+        (cli.root / path).write_bytes(text.encode("utf-8"))
+    assert cli.run("coverage").code == 0
+    trend = [run["over_target"] for run in cli.json("trend")["runs"]][-2:]
+    said = DIGEST_OVER.search(cli.run("digest").stdout)
+
+    assert trend == [1, 2]
+    assert said is not None and [int(said[1]), int(said[2])] == trend

@@ -37,6 +37,7 @@ class Layout:
     target: int = 6
     scope_targets: dict = field(default_factory=dict)
     floor: int = 1
+    no_lane: tuple[str, ...] = ()  # scopes declared with no lane measuring them
 
 
 def _body(fn: Fn) -> list[str]:
@@ -94,7 +95,7 @@ def config(layout: Layout) -> str:
     head = f"[crapkit]\ntarget = {layout.target}\nworklist_floor = {layout.floor}\n\n"
     blocks = [_scope_block(scope, layout.scope_targets.get(scope)) for scope in scopes]
     lanes = [repos.lane_toml(scope, f".crapkit/cov/{scope}.json", "coveragepy", [scope],
-                             f"recorded/{scope}.json") for scope in scopes]
+                             f"recorded/{scope}.json") for scope in _laned(layout)]
     exclude = '[exclude]\nglobs = ["recorded/**"]\n'
     return head + "\n".join(blocks) + "\n" + exclude + "\n" + "\n".join(lanes)
 
@@ -104,8 +105,12 @@ def files(layout: Layout) -> dict[str, str]:
     found = {"crapkit.toml": config(layout), "src/__init__.py": ""}
     found.update({module.path: source(module)[0] for module in layout.modules})
     found.update({f"recorded/{scope}.json": artifact(_in_scope(layout, scope))
-                  for scope in sorted({module.scope for module in layout.modules})})
+                  for scope in _laned(layout)})
     return found
+
+
+def _laned(layout: Layout) -> list[str]:
+    return sorted({module.scope for module in layout.modules} - set(layout.no_lane))
 
 
 def _in_scope(layout: Layout, scope: str) -> list[Module]:

@@ -25,8 +25,8 @@ def _baseline_row(path: str, name: str, start: int, end: int, ccn: int, cov: flo
 
 
 def crapkit_overlay(fresh, baseline, lane_scopes=frozenset({"src"}), target: int = 6):
-    return production.load("score:overlay_stale_coverage")(
-        list(fresh), list(baseline), lane_scopes=set(lane_scopes), target=target)
+    return production.call("score:overlay_stale_coverage", list(fresh), list(baseline),
+                           lane_scopes=set(lane_scopes), target=target)
 
 
 def _covs(rows) -> dict[str, tuple[float, str]]:
@@ -65,23 +65,35 @@ def test_overlay_hand_rows(given_, expected):
 
 
 def test_renamed_function_gets_no_neighbour_coverage():
-    """R04: a name the baseline never measured joins nothing, whatever sits on its lines."""
-    baseline = [_baseline_row("src/a.ts", "f( )", 1, 9, 4, 0.8)]
-    fresh = [production.inventory_row("src", "src/a.ts", "g( )", 1, 9, 4)]
+    """R04: h, nested in f, is renamed g. A name the baseline never measured
+    joins nothing, even inside a function whose own name still joins
+    (README.md:800: joined by name)."""
+    baseline = [_baseline_row("src/a.ts", "f( )", 1, 20, 4, 0.8),
+                _baseline_row("src/a.ts", "h( )", 5, 8, 2, 0.5)]
+    fresh = [production.inventory_row("src", "src/a.ts", "f( )", 1, 20, 4),
+             production.inventory_row("src", "src/a.ts", "g( )", 5, 8, 2)]
 
-    assert _covs(crapkit_overlay(fresh, baseline)) == {"g( )": (0.0, "untested")}
+    assert _covs(crapkit_overlay(fresh, baseline)) == {"f( )": (0.8, "measured"),
+                                                        "g( )": (0.0, "untested")}
+
+
+def _shifted(cov_f: float, cov_g: float) -> dict[str, tuple[float, str]]:
+    """Nine lines inserted above both functions move f onto g's old span."""
+    baseline = [_baseline_row("src/a.ts", "f( )", 1, 9, 4, cov_f),
+                _baseline_row("src/a.ts", "g( )", 11, 19, 4, cov_g)]
+    fresh = [production.inventory_row("src", "src/a.ts", "f( )", 10, 18, 4),
+             production.inventory_row("src", "src/a.ts", "g( )", 20, 28, 4)]
+    return _covs(crapkit_overlay(fresh, baseline))
 
 
 def test_shifted_functions_keep_their_own_numbers():
-    """R05: nine lines inserted above both functions move f onto g's old span.
-    Each keeps its own baseline cov, bit for bit (2/3 stays 2/3, never 0.667)."""
-    baseline = [_baseline_row("src/a.ts", "f( )", 1, 9, 4, 2 / 3),
-                _baseline_row("src/a.ts", "g( )", 11, 19, 4, 0.25)]
-    fresh = [production.inventory_row("src", "src/a.ts", "f( )", 10, 18, 4),
-             production.inventory_row("src", "src/a.ts", "g( )", 20, 28, 4)]
+    """R05: each keeps its own baseline cov, never the one its new span held."""
+    assert _shifted(0.75, 0.25) == {"f( )": (0.75, "measured"), "g( )": (0.25, "measured")}
 
-    assert _covs(crapkit_overlay(fresh, baseline)) == {"f( )": (2 / 3, "measured"),
-                                                        "g( )": (0.25, "measured")}
+
+def test_the_overlay_carries_the_baseline_cov_bit_for_bit():
+    """2/3 stays the double 2/3, never 0.667: the overlay copies the stored cov."""
+    assert _shifted(2 / 3, 0.25) == {"f( )": (2 / 3, "measured"), "g( )": (0.25, "measured")}
 
 
 def test_a_shared_span_reads_untested():

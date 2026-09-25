@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import importlib
+import inspect
 
 
 @lru_cache(maxsize=None)
@@ -24,6 +25,22 @@ def load(name: str):
     for part in attribute.split("."):
         found = getattr(found, part)
     return found
+
+
+def _takes(function, keyword: str) -> bool:
+    parameters = inspect.signature(function).parameters.values()
+    return any(p.name == keyword or p.kind is p.VAR_KEYWORD for p in parameters)
+
+
+def call(name: str, *args, **keywords):
+    """Call `module:attribute` with the keywords its crapkit version takes.
+
+    A retro replay reaches a crapkit whose function predates a keyword: the
+    call then runs without it, as that version's CLI called it, and the check
+    reads what that version computes."""
+    function = load(name)
+    return function(*args, **{key: value for key, value in keywords.items()
+                              if _takes(function, key)})
 
 
 def make(type_name: str, **fields):
