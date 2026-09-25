@@ -607,7 +607,10 @@ than the CLI command behind it (`get_function_brief needs name (see inputSchema.
 not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `wait_for_previous`,
 which Gemini CLI adds to every call for its own scheduler, is dropped rather than refused.
 `ping` answers `{}`.
-An exception escaping the server answers `-32603` and the loop continues.
+An exception escaping the server answers `-32603` and the loop continues. After a
+`pip install -U` under a running server, every call answers a tool result that names both
+versions and says to restart the server, instead of loading the new files into the old
+process.
 `structuredContent` rides beside the text whenever the CLI exited 0; a `doctor` that finds
 a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`.
 `check_gate` is the one tool whose non-zero exit is an answer: exit 6 (a breach) comes

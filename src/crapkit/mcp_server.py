@@ -7,6 +7,7 @@ in the CLI.
 from __future__ import annotations
 
 import json
+import re
 from .procs import run_owned
 import sys
 from pathlib import Path
@@ -1687,14 +1688,54 @@ def _own_arguments(arguments: dict) -> dict:
     return {key: value for key, value in arguments.items() if key not in CLIENT_KEYS}
 
 
-def _call_tool(root: Path, name: str, arguments: dict, run_cli=None) -> dict:
-    """Name lookup, then the arguments against the table, then the repo the
-    call names, then the run. Every refusal is decided before a CLI spawns."""
-    tool = _tool_named(name)
+# The package directory this server was imported from. An upgrade rewrites it
+# under a running server, which keeps the old code in memory.
+_PACKAGE_INIT = Path(__file__).with_name("__init__.py")
+_VERSION_LINE = re.compile(r'^__version__ = "([^"]+)"', re.MULTILINE)
+
+
+def _installed_version() -> str | None:
+    """The version the package directory holds now, or None when it cannot be
+    read (a zip import, a directory mid-install): no evidence of an upgrade."""
+    try:
+        found = _VERSION_LINE.search(_PACKAGE_INIT.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        return None
+    return found[1] if found else None
+
+
+def _upgraded_under_us(name: str) -> str | None:
+    """The restart the caller needs when the package on disk is no longer the
+    one this process loaded, else None.
+
+    The server imports some modules only at its first tools/call: the Windows
+    Job, the process family, and the measurement owner it starts with runpy
+    from the package directory. After `pip install -U` those are the new
+    release's files, and the old process answered JSON-RPC -32603 with a
+    TypeError between two releases' signatures, which named no restart and
+    looked random because a session that had already served a call kept
+    working. Checked before anything is imported or spawned."""
+    installed, loaded = _installed_version(), _version()
+    if installed in (None, loaded):
+        return None
+    return (f"crapkit was upgraded from {loaded} to {installed} while this MCP server ran, and "
+            f"the server still runs {loaded}'s code, which cannot load the new files. Restart the "
+            f"crapkit MCP server (reconnect it in your client, or start a new session), then call "
+            f"{name} again.")
+
+
+def _table_refusal(tool: dict | None, name: str, arguments: dict) -> str | None:
     if tool is None:
-        return _result(_unknown_tool(name), is_error=True)
-    arguments = _own_arguments(arguments)
-    refusal = _argument_error(tool, arguments)
+        return _unknown_tool(name)
+    return _argument_error(tool, arguments)
+
+
+def _call_tool(root: Path, name: str, arguments: dict, run_cli=None) -> dict:
+    """The package on disk, then name lookup, then the arguments against the
+    table, then the repo the call names, then the run. Every refusal is decided
+    before a CLI spawns."""
+    tool, arguments = _tool_named(name), _own_arguments(arguments)
+    refusal = _upgraded_under_us(name) or _table_refusal(tool, name, arguments)
     if refusal:
         return _result(refusal, is_error=True)
     repo, found = _served_root(root, arguments)

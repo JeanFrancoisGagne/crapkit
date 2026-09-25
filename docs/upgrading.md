@@ -77,7 +77,15 @@ first `inventory` or `coverage` after it analyzes every file again. That run's
 [twin-key note](ratchet.md#twins-one-name-several-functions) names the first five
 files that give one name to several functions and ends with `... and N more file(s)
 define a name more than once`. Restart each client's MCP session after upgrading so
-its running server uses the new code.
+its running server uses the new code. A server that outlived the upgrade answers every
+tool call with that instruction instead of running it:
+
+    crapkit was upgraded from 0.8.0 to 0.8.1 while this MCP server ran, and the server still runs 0.8.0's code, which cannot load the new files. Restart the crapkit MCP server (reconnect it in your client, or start a new session), then call list_runs again.
+
+A server from 0.8.0 or earlier does not check, and its first call after the upgrade can
+fail with a JSON-RPC `-32603` error such as `TypeError: _operation() takes 2 positional
+arguments but 3 were given` or `ToolError: measurement owner stopped before confirming
+ownership`. The restart fixes that too.
 
 Keep a copy of the committed ratchet and its diff before an upgrade. In each repo:
 

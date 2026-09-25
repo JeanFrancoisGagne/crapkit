@@ -1608,7 +1608,13 @@ true in the cases where no CLI call runs at all: the missing-config result above
 unknown tool name, and an argument the tool's own table refuses. A 0.5.x tool name is
 unknown too, and its answer names the tool 0.6.0 renamed it to:
 `unknown tool 'worklist': renamed list_worklist in 0.6.0, with the same arguments and
-result; call list_worklist`.
+result; call list_worklist`. The last case is an upgrade under a running server. Each
+call first reads the version in the package directory the server was imported from, and
+when `pip install -U` has replaced it, every call answers the restart instead of loading
+the new release's files into the old process:
+`crapkit was upgraded from 0.8.0 to 0.8.1 while this MCP server ran, and the server still
+runs 0.8.0's code, which cannot load the new files. Restart the crapkit MCP server
+(reconnect it in your client, or start a new session), then call list_runs again.`
 
 Arguments are checked against the served schema before anything is spawned. `tools/list`
 declares `required` from each tool's positionals (`get_function_brief` and
