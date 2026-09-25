@@ -12,9 +12,10 @@ Nothing here imports crapkit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from fractions import Fraction
 import json
 
-from accuracy.kit import repos
+from accuracy.kit import drive, repos
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class Layout:
     scope_targets: dict = field(default_factory=dict)
     floor: int = 1
     no_lane: tuple[str, ...] = ()  # scopes declared with no lane measuring them
+    parallel_lanes: int | None = None  # [crapkit] max_parallel_lanes, when set
 
 
 def _body(fn: Fn) -> list[str]:
@@ -92,7 +94,8 @@ def _scope_block(scope: str, own: int | None) -> str:
 
 def config(layout: Layout) -> str:
     scopes = sorted({module.scope for module in layout.modules})
-    head = f"[crapkit]\ntarget = {layout.target}\nworklist_floor = {layout.floor}\n\n"
+    knob = "" if layout.parallel_lanes is None else f"max_parallel_lanes = {layout.parallel_lanes}\n"
+    head = f"[crapkit]\ntarget = {layout.target}\nworklist_floor = {layout.floor}\n{knob}\n"
     blocks = [_scope_block(scope, layout.scope_targets.get(scope)) for scope in scopes]
     lanes = [repos.lane_toml(scope, f".crapkit/cov/{scope}.json", "coveragepy", [scope],
                              f"recorded/{scope}.json") for scope in _laned(layout)]
@@ -102,7 +105,7 @@ def config(layout: Layout) -> str:
 
 def files(layout: Layout) -> dict[str, str]:
     """Every file of the repo: crapkit.toml, the modules and one recording per scope."""
-    found = {"crapkit.toml": config(layout), "src/__init__.py": ""}
+    found = {"crapkit.toml": config(layout)}
     found.update({module.path: source(module)[0] for module in layout.modules})
     found.update({f"recorded/{scope}.json": artifact(_in_scope(layout, scope))
                   for scope in _laned(layout)})
@@ -119,3 +122,48 @@ def _in_scope(layout: Layout, scope: str) -> list[Module]:
 
 def spec(layout: Layout, date: int = repos.EPOCH) -> repos.Spec:
     return repos.Spec(steps=(repos.Commit(files=files(layout), message="seed", date=date),))
+
+
+def driver(make_repo, layout: Layout) -> drive.Driver:
+    """A Driver on a fresh copy of the layout's repo, its clock a day past the commit."""
+    built = make_repo(spec(layout))
+    return drive.Driver(built.root, date_now=repos.EPOCH + 86_400)
+
+
+@dataclass(frozen=True)
+class Expected:
+    """One function as this module wrote it: the numbers a check expects."""
+    scope: str
+    path: str
+    name: str
+    start: int
+    ccn: int
+    cov: Fraction
+    ceiling: int
+
+
+def _cov(fn: Fn) -> Fraction:
+    """Branch coverage (README.md:22-31): covered of 2 * (ccn - 1) arms; a
+    branchless function runs every statement, so 1."""
+    return Fraction(fn.covered, 2 * (fn.ccn - 1)) if fn.ccn > 1 else Fraction(1)
+
+
+def expected(layout: Layout) -> list[Expected]:
+    """Every function of a layout with no two functions of one name in a file."""
+    rows = []
+    for module in layout.modules:
+        spans = source(module)[1]
+        ceiling = layout.scope_targets.get(module.scope, layout.target)
+        rows += [Expected(module.scope, module.path, f"{fn.name}( x )", spans[fn.name][0], fn.ccn,
+                          _cov(fn), ceiling) for fn in module.functions]
+    return rows
+
+
+# Three scopes for the cross-surface checks: a at the repo ceiling of 6 with
+# decompose, add-tests and ok rows; b at its own ceiling of 12, where a ccn-8
+# function is ok fully covered and add-tests at 3 of 14 arms; c all ok (grade A+).
+SURFACES = Layout(modules=(
+    Module("a", "src/a/mod.py", (Fn("hot", 5, 2), Fn("cool", 2, 2), Fn("deep", 14, 6))),
+    Module("b", "src/b/mod.py", (Fn("wide", 8, 14), Fn("tangled", 8, 3))),
+    Module("c", "src/c/mod.py", (Fn("flat", 3, 4),))),
+    scope_targets={"b": 12})

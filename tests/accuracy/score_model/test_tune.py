@@ -10,6 +10,7 @@ from __future__ import annotations
 from fractions import Fraction
 import json
 from pathlib import Path
+import re
 
 from hypothesis import given, strategies as st
 import junitparser
@@ -17,7 +18,7 @@ import pytest
 
 from accuracy.kit import drive, repos, rulings
 from accuracy.kit.settings import pure
-from accuracy.score_model import cases, model_score, production
+from accuracy.score_model import cases, cli_repo, model_score, production
 from accuracy.score_model.oracles import makespan
 
 TUNE_ROWS = cases.hand("doctor --tune knobs and lane cost")
@@ -241,3 +242,24 @@ def test_fix_a6d8ce7(make_repo):
     out = _doctor_tune(make_repo, [("base", ".", None), ("side", ".", ".coverage.b")])
 
     assert "# held at 1: lanes 'base', 'side'" in out
+
+
+RESOURCES_LINE = re.compile(r"resources: up to (\d+) analysis worker\(s\) per pool, (\d+) shared "
+                            r"slot\(s\); lane log limit (\d+) bytes per file")
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.cross_surface
+def test_doctor_text_json_and_check_config_print_one_resource_policy(make_repo):
+    """doctor's resources line, `doctor --json` resources and check_config's
+    structuredContent resources name the same pool limits."""
+    cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
+    printed = RESOURCES_LINE.search(cli.run("doctor").stdout)
+    as_json = cli.json("doctor")["resources"]
+    (mcp,) = cli.mcp([("check_config", {})])
+
+    assert printed is not None
+    assert [int(value) for value in printed.groups()] == [
+        as_json["pool_worker_limit"], as_json["shared_pool_limit"], as_json["log_max_bytes"]]
+    assert mcp["structuredContent"]["resources"] == as_json

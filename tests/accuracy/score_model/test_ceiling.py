@@ -10,7 +10,7 @@ from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.kit.settings import pure
-from accuracy.score_model import cases, model_score, production
+from accuracy.score_model import cases, cli_repo, model_score, production
 
 CEILING_ROWS = cases.hand("Ceiling per row")
 
@@ -80,3 +80,37 @@ def test_a_new_scope_moves_only_its_own_ceiling(repo_target, scopes, new_target)
     assert {name: after.ceiling_of(name) for name in scopes} == {
         name: before.ceiling_of(name) for name in scopes}
     assert after.ceiling_of("fresh") == new_target
+
+
+# --- the same ceiling on every surface (CLI) ---------------------------------------------------
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.cross_surface
+def test_the_ceiling_reads_alike_on_the_summary_brief_and_next_item(make_repo):
+    """Scope b sets target = 12 and a and c take the repo's 6: the summary's
+    `ceilings` label, every brief's target and gate_rule.ceiling, and every
+    next-item target name that ceiling (configuration.md:72 and :147)."""
+    cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
+    summary = cli.json("coverage")
+    want = _surfaces_ceilings()
+    items = cli.run("next-item", "--top", "20").json()["items"]
+
+    assert summary["ceilings"] == {"b": 12, "default": 6}
+    assert _brief_ceilings(cli, want) == {key: (value, value) for key, value in want.items()}
+    assert _targets(items) == {(i["path"], i["start"]): want[(i["path"], i["start"])] for i in items}
+
+
+def _surfaces_ceilings() -> dict:
+    return {(row.path, row.start): model_score.ceiling(row.scope, 6, {"b": 12})
+            for row in cli_repo.expected(cli_repo.SURFACES)}
+
+
+def _brief_ceilings(cli, keys) -> dict:
+    """(target, gate_rule.ceiling) off each function's brief."""
+    briefs = {key: cli.json("brief", key[0], str(key[1])) for key in keys}
+    return {key: (brief["target"], brief["gate_rule"]["ceiling"]) for key, brief in briefs.items()}
+
+
+def _targets(items: list[dict]) -> dict:
+    return {(item["path"], item["start"]): item["target"] for item in items}

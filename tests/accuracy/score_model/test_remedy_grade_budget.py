@@ -5,21 +5,24 @@ formulas, all in exact arithmetic (model_score, kit.exact), and the hand rows.
 """
 from __future__ import annotations
 
+from collections import Counter
 from fractions import Fraction
 import math
 
+import html5lib
 from hypothesis import assume, event, given, strategies as st
 import pytest
 
 from accuracy.kit import exact, rulings, strategies
 from accuracy.kit.settings import pure
-from accuracy.score_model import cases, model_score, production
+from accuracy.score_model import cases, cli_repo, model_score, production
 
 REMEDY_ROWS = cases.hand("Remedy label")
 GRADE_ROWS = cases.hand("Grade letter")
 BUDGET_ROWS = cases.hand("Work budget estimates")
 SEVERITY = {"ok": 0, "add-tests": 1, "split-lines": 1, "decompose": 2}
 LETTERS = ("A+", "A", "B", "C", "D", "F")
+XHTML = "{http://www.w3.org/1999/xhtml}"
 
 
 def crapkit_crap(ccn: int, covered: int, total: int) -> float:
@@ -256,3 +259,85 @@ def test_uncovered_paths_round_the_exact_product():
     rulings.pin_ruling("SM-BUDGET-TIE", crapkit=crapkit_budget(6, 5, 12, 6)["est_uncovered_paths"],
                        oracle=model_score.est_uncovered_paths(6, Fraction(5, 12)))
     assert wrong == []
+
+
+# --- the same numbers on every surface (CLI) ---------------------------------------------------
+
+def _model_fields(row) -> tuple:
+    """remedy, est_splits, est_uncovered_paths and target for one written function."""
+    crap = exact.crap(row.ccn, row.cov)
+    return (model_score.remedy(row.ccn, crap, row.ceiling),
+            model_score.est_splits(row.ccn, row.ceiling),
+            model_score.est_uncovered_paths(row.ccn, row.cov), row.ceiling)
+
+
+def _fields(payload: dict) -> tuple:
+    return (payload["remedy"], payload["est_splits"], payload["est_uncovered_paths"],
+            payload["target"])
+
+
+def _by_start(items: list[dict]) -> dict:
+    return {(item["path"], item["start"]): _fields(item) for item in items}
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.cross_surface
+def test_remedy_and_budget_read_alike_on_next_item_brief_worklist_and_mcp(make_repo):
+    """Every function next-item hands out carries the README remedy and the
+    agent-json.md:134-135 budget, and next-item, brief, get_next_item and the
+    worklist's remedy all print the same four values."""
+    cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
+    assert cli.run("coverage").code == 0
+    want = {(row.path, row.start): _model_fields(row) for row in cli_repo.expected(cli_repo.SURFACES)}
+    handed = _by_start(cli.run("next-item", "--top", "20").json()["items"])
+    (mcp,) = cli.mcp([("get_next_item", {"top": 20})])
+    briefs = {key: _fields(cli.json("brief", key[0], str(key[1]))) for key in handed}
+
+    assert handed == _not_ok(want)
+    assert _by_start(mcp["structuredContent"]["items"]) == handed == briefs
+    assert _worklist_remedies(cli) == {key: value[0] for key, value in want.items()}
+
+
+def _not_ok(fields: dict) -> dict:
+    """The rows next-item hands out: every remedy but ok (agent-json.md:55)."""
+    return {key: value for key, value in fields.items() if value[0] != "ok"}
+
+
+def _worklist_remedies(cli) -> dict:
+    return {(e["path"], e["start"]): e["remedy"] for e in cli.json("worklist")["active"]}
+
+
+def _html_grades(text: str) -> dict[str, str]:
+    """The report's `Grades by scope` table: scope -> the grade chip's text."""
+    rows = html5lib.parse(text).iter(f"{XHTML}tr")
+    return {row.get("data-scope"): _last_cell(row) for row in rows if row.get("data-scope")}
+
+
+def _last_cell(row) -> str:
+    return "".join(row.findall(f"{XHTML}td")[-1].itertext()).strip()
+
+
+def _model_grades(rows) -> dict[str, str]:
+    functions = Counter(row.scope for row in rows)
+    over = Counter(row.scope for row in rows if exact.crap(row.ccn, row.cov) > row.ceiling)
+    return {scope: model_score.grade(over[scope], count) for scope, count in functions.items()}
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.cross_surface
+def test_grades_read_alike_on_the_summary_trend_and_report(make_repo, tmp_path):
+    """Scope a holds 2 of 3 functions over 6 (F), b 1 of 2 over 12 (F), c none
+    (A+): the coverage summary, trend and the HTML report print those letters."""
+    cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
+    summary = cli.json("coverage")
+    trend = cli.json("trend")["runs"][-1]
+    assert cli.run("report", "--out", str(tmp_path / "report.html")).code == 0
+    page = _html_grades((tmp_path / "report.html").read_text(encoding="utf-8"))
+    want = _model_grades(cli_repo.expected(cli_repo.SURFACES))
+
+    assert want == {"a": "F", "b": "F", "c": "A+"}
+    assert {scope: block["grade"] for scope, block in summary["by_scope"].items()} == want
+    assert {scope: block["grade"] for scope, block in trend["by_scope"].items()} == want
+    assert page == want and summary["grade"] == model_score.grade(3, 6)

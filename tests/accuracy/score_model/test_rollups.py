@@ -6,6 +6,7 @@ table, and agent-json.md:920-929 for the summary, through model_score.
 """
 from __future__ import annotations
 
+import dataclasses
 from fractions import Fraction
 import re
 import tomllib
@@ -335,3 +336,26 @@ def test_the_digest_counts_each_scope_against_its_own_ceiling(make_repo):
 
     assert trend == [1, 2]
     assert said is not None and [int(said[1]), int(said[2])] == trend
+
+
+def _summary_without_run_identity(cli) -> dict:
+    """The coverage summary less the fields that name the run, not its numbers."""
+    summary = cli.json("coverage")
+    return {key: value for key, value in summary.items() if key not in ("commit", "db")}
+
+
+def _scored_rows(cli) -> dict:
+    return {key: {k: v for k, v in row.items() if k not in ("run_id", "id")}
+            for key, row in surfaces.from_store(cli.root / drive.STORE, 1).items()}
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_parallel_lanes_score_what_serial_lanes_score(make_repo):
+    """max_parallel_lanes = 3 runs the three lanes at once and 1 runs them in
+    turn: the summary and every stored row come out the same."""
+    serial = cli_repo.driver(make_repo, dataclasses.replace(cli_repo.SURFACES, parallel_lanes=1))
+    parallel = cli_repo.driver(make_repo, dataclasses.replace(cli_repo.SURFACES, parallel_lanes=3))
+
+    assert _summary_without_run_identity(serial) == _summary_without_run_identity(parallel)
+    assert _scored_rows(serial) == _scored_rows(parallel)

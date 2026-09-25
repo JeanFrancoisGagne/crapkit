@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fractions import Fraction
 
+import html5lib
 from hypothesis import given, strategies as st
 import numpy
 import pytest
@@ -442,3 +443,63 @@ def test_worklist_twin_equals_brief_twin():
     listed = {e.start: (e.crap, e.cov) for e in crapkit_worklist(churn, fns, floor=1).active}
 
     assert listed == rows == {1: (42.0, 0.0), 21: (6.0, 1.0)}
+
+
+# --- the same order on every surface (CLI) -----------------------------------------------------
+
+XHTML = "{http://www.w3.org/1999/xhtml}"
+
+
+def _html_order(text: str) -> list[tuple[str, int]]:
+    """The report's worklist rows (tr.wl) as (path, start), top to bottom."""
+    rows = html5lib.parse(text).iter(f"{XHTML}tr")
+    return [_location(row) for row in rows if row.get("class") == "wl"]
+
+
+def _location(row) -> tuple[str, int]:
+    """A worklist row's `path:start` cell (div.loc)."""
+    loc = next(div.text for div in row.iter(f"{XHTML}div") if div.get("class") == "loc")
+    path, _, line = loc.rpartition(":")
+    return path, int(line)
+
+
+def _surfaces_entries() -> list[model_score.Entry]:
+    """One commit, so every file weighs 1.0 and has one commit (agent-json.md:707)."""
+    return [model_score.Entry(row.path, row.start, 1, row.ccn, 1, 1.0)
+            for row in cli_repo.expected(cli_repo.SURFACES)]
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.cross_surface
+def test_the_worklist_order_reads_alike_on_json_mcp_and_the_report(make_repo, tmp_path):
+    cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
+    assert cli.run("coverage").code == 0
+    listed = [(e["path"], e["start"]) for e in cli.json("worklist")["active"]]
+    (mcp,) = cli.mcp([("list_worklist", {})])
+    assert cli.run("report", "--out", str(tmp_path / "report.html")).code == 0
+    page = _html_order((tmp_path / "report.html").read_text(encoding="utf-8"))
+
+    assert listed == _keys(model_score.split_active(_surfaces_entries())[0])
+    assert [(e["path"], e["start"]) for e in mcp["structuredContent"]["active"]] == listed == page
+
+
+def _model_queue() -> list[tuple[str, int]]:
+    rows = [model_score.Row(r.scope, r.path, r.name, r.start, r.ccn, exact.crap(r.ccn, r.cov))
+            for r in cli_repo.expected(cli_repo.SURFACES)
+            if model_score.remedy(r.ccn, exact.crap(r.ccn, r.cov), r.ceiling) != "ok"]
+    return [(row.path, row.start) for row in model_score.next_item_order(rows, {})]
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.cross_surface
+def test_brief_batch_takes_next_item_s_order(make_repo):
+    """agent-json.md:599: `brief --batch N` packets come in next-item order,
+    crap descending: deep (CRAP 103.2), tangled (39.0), hot (15.5)."""
+    cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
+    assert cli.run("coverage").code == 0
+    items = [(i["path"], i["start"]) for i in cli.run("next-item", "--top", "3").json()["items"]]
+    packets = [(p["path"], p["scored"]["start"]) for p in cli.json("brief", "--batch", "3")["packets"]]
+
+    assert items == packets == _model_queue()
