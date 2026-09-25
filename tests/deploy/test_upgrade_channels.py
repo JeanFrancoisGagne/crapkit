@@ -169,7 +169,7 @@ def reconcile_marks(candidate):
         path = re.search(r"anonymous function ordinals in (\S+?);", output(refusal))[1]
         rows = [row for row in state.export_rows(state.export_path(repo)) if row["path"] == path]
         lines = state.mark_rows(repo)
-        stamp = f"# crapkit-analysis={state.analysis_version(candidate)} lizard=1.24.0\n# crapkit-keys=1\n"
+        stamp = f"# {state.metric(state.analysis_version(candidate))}\n# crapkit-keys=1\n"
         body = "".join(_mapped(line, path, rows) + "\n" for line in lines)
         state.rewrite(repo / "crapkit-ratchet.tsv", lambda _text: stamp + "path\tlong_name\tcrap\n" + body)
         box.transcript.note(f"user edit: the reviewed mapping for {path}, per docs/ratchet.md#reconcile-saved-marks")

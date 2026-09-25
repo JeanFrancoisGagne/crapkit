@@ -340,6 +340,7 @@ class Gaps:
     own command in their place, finishes every other check, and raises the
     gaps last, so a strict xfail(raises=GuideGap) holds only the doc gap."""
     found: list[str] = field(default_factory=list)
+    error = GuideGap
 
     def command(self, prefix: str, fallback: str) -> str:
         try:
@@ -354,7 +355,7 @@ class Gaps:
 
     def raise_any(self) -> None:
         if self.found:
-            raise GuideGap("\n".join(self.found))
+            raise self.error("\n".join(self.found))
 
 
 def guide_commands(heading: str, *, contains: str | None = None) -> list[str]:
@@ -365,6 +366,13 @@ def guide_span(text: str, body: str | None = None) -> str:
     """`text` as the guide's prose names it in a code span; GuideGap when it does not."""
     if f"`{text}`" not in (body if body is not None else page()):
         raise GuideGap(f"{GUIDE}: the page never names `{text}`")
+    return text
+
+
+def guide_says(text: str) -> str:
+    """A sentence the guide's prose or tables must carry; GuideGap when it does not."""
+    if text not in page():
+        raise GuideGap(f"{GUIDE}: the page never says {text!r}")
     return text
 
 
@@ -538,8 +546,18 @@ def analysis_of(stamp: str) -> int:
     return int(re.search(r"crapkit-analysis=(\d+)", stamp)[1])
 
 
-def stamp_refusal(old: int, new: int) -> str:
-    return f"[crapkit-analysis={old} lizard=1.24.0] but this run measures [crapkit-analysis={new} lizard=1.24.0]"
+def lizard_version() -> str:
+    """The lizard the wheelhouse installs: what every stamp here names."""
+    return wheels.lock()["newest"]["lizard"]
+
+
+def metric(analysis: int, lizard: str | None = None) -> str:
+    return f"crapkit-analysis={analysis} lizard={lizard or lizard_version()}"
+
+
+def stamp_refusal(old: int, new: int, *, old_lizard: str | None = None, new_lizard: str | None = None) -> str:
+    """The part of verify's refusal that names both metric stamps."""
+    return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
 
 
 def upgrade_to(box, repo: Path, candidate, line: str) -> None:
@@ -560,11 +578,11 @@ def refused_until_reseed(box, repo: Path, candidate) -> None:
     assert stamp_refusal(old, new) in output(refusal), box.transcript.text()
 
 
-def reseed_and_verify(box, repo: Path, candidate, reconcile=None) -> Reseed:
+def reseed_and_verify(box, repo: Path, candidate, reconcile=None, lizard: str | None = None) -> Reseed:
     """The guide's reseed fence, the review, a commit, then verify."""
     done = reseed(box, repo, reconcile)
     review(box, repo, done, export_path(repo))
-    assert stamp_of(repo) == f"# crapkit-analysis={analysis_version(candidate)} lizard=1.24.0", done.diff
+    assert stamp_of(repo) == f"# {metric(analysis_version(candidate), lizard)}", done.diff
     commit(box, repo, "reseed the marks under the candidate")
     verify(box, repo)
     return done
@@ -691,6 +709,12 @@ class KnownBug(AssertionError):
 def known_bug(holds: bool, bug: str, message: str) -> None:
     if not holds:
         raise KnownBug(f"{bug}: {message}")
+
+
+class Bugs(Gaps):
+    """Reported deploy bugs a cell met; raised last, as KnownBug, so every
+    other check in the cell still ran."""
+    error = KnownBug
 
 
 def handed_out(box, repo: Path) -> dict:

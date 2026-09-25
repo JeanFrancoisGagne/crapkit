@@ -170,7 +170,7 @@ def test_lin_up_pip_0_4_0(box, templates, candidate):
     repo = source.checkout(box)
     install_old(box, source, "3.12", f"crapkit=={source.version}")
     assert LEGACY_CHURN in state_manifest.files(repo)
-    assert state.stamp_of(repo) == "# crapkit-analysis=6 lizard=1.24.0"
+    assert state.stamp_of(repo) == f"# {state.metric(6)}"
 
     state.walk(box, repo, candidate, source, state.upgrade_line(PIP))
     churn_adopted(box, repo)
