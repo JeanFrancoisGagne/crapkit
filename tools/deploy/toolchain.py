@@ -196,19 +196,25 @@ def install_runner(uv: Path, python: str, root: Path) -> str:
     return str(runner)
 
 
+def readme_install_lines(pinned: dict[str, str]) -> list[list[str]]:
+    """The `npm i -D` arguments the npm-fixtures stage runs, in its order: the
+    pinned vitest alone, with --legacy-peer-deps (npm 10.9.9 crashed resolving
+    the optional peers of vitest 5.0.1 once 5.0.2 was out), then the README's
+    and docs/lanes.md's provider lines as a user runs them, then jest."""
+    vitest = pinned["vitest"]
+    return [["--legacy-peer-deps", "vitest@" + vitest], ["@vitest/coverage-v8@" + vitest.split(".")[0]],
+            ["@vitest/coverage-v8"], ["jest@" + pinned["jest"], "jest-junit", "husky"]]
+
+
 def cache_readme_installs(npm: str, root: Path, cache: Path, env: dict) -> None:
     """The README's `npm i -D` lines, run once in throwaway repos so the packuments
     an offline install reads are in the cache (the Dockerfile's npm-fixtures stage)."""
     fixtures = json.loads((DOCKER / "npm-fixtures" / "package.json").read_text(encoding="utf-8"))
-    pinned = fixtures["devDependencies"]
-    vitest = pinned["vitest"]
-    lines = [["vitest@" + vitest], ["@vitest/coverage-v8@" + vitest.split(".")[0]], ["@vitest/coverage-v8"],
-             ["jest@" + pinned["jest"], "jest-junit", "husky"]]
     scratch = root / "readme-installs"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir()
     (scratch / "package.json").write_text('{"name": "scratch", "private": true}\n', encoding="utf-8")
-    for packages in lines:
+    for packages in readme_install_lines(fixtures["devDependencies"]):
         run_step([npm, "i", "-D", "--ignore-scripts", f"--cache={cache}", *packages], cwd=scratch, env=env)
     shutil.rmtree(scratch)
 

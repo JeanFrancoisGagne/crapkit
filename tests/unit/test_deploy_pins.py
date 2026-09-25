@@ -802,3 +802,15 @@ def test_the_version_listing_takes_the_first_line_that_carries_a_version():
 
     assert listed("Package extraction took 7426ms\n1.0.88\n") == "1.0.88\n"
     assert listed("no version here\nnor here\n") == "no version here\n"
+
+
+def test_the_vitest_setup_install_skips_peer_resolution_on_both_paths():
+    """npm 10.9.9 crashed with "Cannot read properties of null (reading
+    'edgesOut')" on `npm i -D vitest@5.0.1` once vitest 5.0.2 was out, which
+    stopped a native Linux toolchain and would stop a cold image build."""
+    lines = toolchain.readme_install_lines({"vitest": "5.0.1", "jest": "30.5.2"})
+
+    assert lines[0] == ["--legacy-peer-deps", "vitest@5.0.1"]
+    assert 'npm i -D --ignore-scripts --legacy-peer-deps "vitest@$vitest"' in DOCKERFILE
+    assert lines[1:3] == [["@vitest/coverage-v8@5"], ["@vitest/coverage-v8"]]
+    assert "--legacy-peer-deps" not in " ".join(sum(lines[1:], []))

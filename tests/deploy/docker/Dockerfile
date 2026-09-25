@@ -118,6 +118,10 @@ RUN uv venv -q --python "$PYTHON_RUNNER" /opt/runner; \
 # ------------------------------------------------------- npm fixtures -------
 # `npm ci` fills the cache from the lock; the README's install lines, run in a
 # repo that holds only vitest, cache the packuments an offline `npm i -D` reads.
+# That repo gets its vitest with --legacy-peer-deps: once vitest 5.0.2 was out,
+# npm 10.9.9 crashed resolving the optional peers of the pinned 5.0.1 ("Cannot
+# read properties of null (reading 'edgesOut')"). The README lines themselves
+# run as a user runs them.
 FROM base AS npm-fixtures
 COPY tests/deploy/docker/npm-fixtures/ /opt/npm-fixtures/
 RUN export npm_config_cache=/opt/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false; \
@@ -125,7 +129,7 @@ RUN export npm_config_cache=/opt/npm-cache npm_config_update_notifier=false npm_
     vitest=$(node -p "require('./package.json').devDependencies.vitest"); \
     jest=$(node -p "require('./package.json').devDependencies.jest"); \
     mkdir /tmp/vitest-only; cd /tmp/vitest-only; npm init -y >/dev/null; \
-    npm i -D --ignore-scripts "vitest@$vitest"; \
+    npm i -D --ignore-scripts --legacy-peer-deps "vitest@$vitest"; \
     npm i -D --ignore-scripts "@vitest/coverage-v8@${vitest%%.*}"; \
     npm i -D --ignore-scripts @vitest/coverage-v8; \
     mkdir /tmp/jest-only; cd /tmp/jest-only; npm init -y >/dev/null; \
