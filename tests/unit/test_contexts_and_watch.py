@@ -1,6 +1,7 @@
 """Per-test coverage contexts (coverage.py --show-contexts) and the watch
 loop's core: which files a poll finds changed. The transport shells stay
 thin; the logic lives here."""
+import hashlib
 import json
 import os
 
@@ -100,3 +101,15 @@ def test_a_file_unreadable_at_the_start_is_judged_once_it_reads(tmp_path, monkey
 
     assert before.mtimes == {} and moved == ["a.py"], "nothing was recorded, so its bytes are new"
     assert poll(root, ["a.py"], after)[1] == []
+
+
+def test_digests_hash_the_raw_bytes_and_leave_out_a_path_with_none(tmp_path):
+    """A poll reads no git: the content record is the sha256 of the bytes on
+    disk. A path that is gone or is a directory has none, so it is left out
+    and the next poll reads it again."""
+    (tmp_path / "a.py").write_bytes(b"a = 1\n")
+    (tmp_path / "pkg").mkdir()
+
+    found = watch.digests(tmp_path, ["a.py", "gone.py", "pkg"])
+
+    assert found == {"a.py": hashlib.sha256(b"a = 1\n").hexdigest()}

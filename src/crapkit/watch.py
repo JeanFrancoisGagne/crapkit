@@ -2,10 +2,10 @@
 
 An mtime is the fast path and content is the verdict. A file whose mtime did not
 move is taken as unchanged without being read. A file whose mtime moved, or
-that appeared, has changed only when its bytes differ from the ones recorded
-for it, through the content record lane staleness uses (lane_sources.digests).
-So a touch, an editor saving the same bytes, or a checkout rewriting a file
-with its own bytes rescores nothing, and a deleted file counts as changed.
+that appeared, has changed only when the sha256 of its bytes differs from the
+one recorded for it (`digests`). So a touch, an editor saving the same bytes,
+or a checkout rewriting a file with its own bytes rescores nothing, and a
+deleted file counts as changed.
 
 The one change a poll cannot see is new content written under the file's old
 mtime (cp -p, touch -r, robocopy, tar -x): the named limit the analysis stat
@@ -22,7 +22,14 @@ import stat
 from pathlib import Path
 from typing import NamedTuple
 
-from .lane_sources import digests
+from .lane_stamps import file_sha256
+
+
+def digests(root: Path, paths) -> dict[str, str]:
+    """path -> the sha256 of its bytes, for each of `paths` that reads as a
+    file now. One that cannot be read is left out, so a poll reads it again."""
+    found = {path: file_sha256(root / path) for path in paths}
+    return {path: digest for path, digest in found.items() if digest}
 
 
 def _stat_mtime(path: Path) -> float | None:
