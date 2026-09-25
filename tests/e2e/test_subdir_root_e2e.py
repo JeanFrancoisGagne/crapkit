@@ -8,12 +8,16 @@ against rows saying `src/x.py`. Every lookup missed, every file read as
 zero-churn, and worklist filed the whole corpus under dormant.
 """
 import json
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from conftest import cli_runner
+import hang_guard
+from conftest import child_env, cli_runner
+
+README = Path(__file__).resolve().parents[2] / "README.md"
 
 MAKE_COV = ('import json\n'
             'json.dump({"meta": {"branch_coverage": True}, "files": {}},'
@@ -238,3 +242,42 @@ def test_a_subdir_root_mutates_the_lines_it_changed(nested: Path):
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert json.loads(res.stdout)["mutants"] > 0
+
+
+# --- the repository top, where git starts a hook and CI starts a step ---------
+#
+# The walk for a root goes up from where a command stands, never down. The
+# commit gate finds the roots below that own staged files; any other command
+# run at the top, such as Route 4's verify, refused with `no crapkit.toml at
+# <top> - nothing to analyze`: the directory crapkit looked in, and nothing
+# about the one it wanted. README also gives a hook line that pins the gate to
+# one root.
+
+def _readme_hook_line(root_below: str) -> str:
+    """README's hook line for a crapkit root below the git top, pointed at
+    `root_below` in place of the page's packages/api."""
+    found = re.search(r"`(exec python -m crapkit hook-precommit --repo packages/api)`",
+                      README.read_text(encoding="utf-8"))
+    assert found, "README names no hook line for a crapkit root below the git top"
+    return found.group(1).replace("packages/api", root_below)
+
+
+def test_verify_at_the_git_top_names_the_root_below_it(nested: Path):
+    res = run_cli(nested, "verify")
+
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "app/crapkit.toml sits below it: pass --repo app" in res.stderr
+
+
+def test_readmes_hook_line_gates_a_root_below_the_top_through_git_commit(nested: Path):
+    """The hook as git runs it: from the top, through `git commit`."""
+    _stage_breach(nested)
+    hook = nested / ".git" / "hooks" / "pre-commit"
+    hook.write_text(f"#!/bin/sh\n{_readme_hook_line('app')}\n", encoding="utf-8", newline="\n")
+    hook.chmod(0o755)
+
+    commit = hang_guard.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "breach"],
+                            cwd=nested, env=child_env(), text=True)
+
+    assert commit.returncode == 1, commit.stdout + commit.stderr
+    assert "core/hot.py:1" in commit.stdout + commit.stderr

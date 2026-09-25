@@ -518,6 +518,21 @@ nothing. Each of these now gets a line naming the object and the next step:
   what to do about it: the no-verdict line ends ``set the action's `working-directory`
   input to the directory that holds crapkit.toml`` after the directory coverage looked in.
 
+### A command at the repository top is told which root to name
+
+- A CI step starts at the repository top, and crapkit finds its root by walking up from
+  where it stands, never down. In a monorepo whose `crapkit.toml` sits in
+  `packages/api`, `crapkit verify` there refused with `no crapkit.toml at <top> -
+  nothing to analyze`. The refusal now names each tracked `crapkit.toml` below that
+  directory and the flag that reaches it: `...; packages/api/crapkit.toml sits below it:
+  pass --repo packages/api`. Several are listed, three by name. The lookup reads the git
+  index, only on the way to the refusal. With none below, the refusal names `crapkit
+  init` and `--repo DIR` instead, and any configuration elsewhere in the checkout.
+- README's gate section and the lanes page give the spelling for each route:
+  `working-directory: packages/api` for a CI step and the Action, and, to pin the commit
+  gate to one root, `--repo packages/api` on the hook line or `args: [--repo,
+  packages/api]` for the pre-commit framework.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

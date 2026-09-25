@@ -484,15 +484,26 @@ about a staged file no `[[scope]]` claims, so a new top-level directory cannot g
 in silence.
 
 **The Crapkit root can sit below the Git top.** A config in `packages/api` gates
-that package's staged files as project-relative paths such as `app/m.py`.
+that package's staged files as project-relative paths such as `app/m.py`. A CI step
+starts at the top, where no `crapkit.toml` is, so Route 4 and
+[the GitHub Action](#the-github-action) take `working-directory: packages/api`. Any
+command other than the hook that runs at the top exits 3, and the refusal names the root
+below it:
+
+```
+crapkit: no crapkit.toml at /repo - nothing to analyze; packages/api/crapkit.toml sits below it: pass --repo packages/api
+```
+
 [Path and root rules](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery)
 also cover absolute arguments, literal filenames and Git diff settings. Routes 1 to 3
 below need no `--repo` in such a monorepo when you run them at the git top. Git runs the
 hook there, and with no `crapkit.toml` at the top the gate runs in each crapkit root below
 that owns a staged file and names paths from the top (`packages/api/app/m.py`). A commit
 that stages nothing under any `crapkit.toml`, a docs-only commit or any commit in a repo
-armed before `crapkit init`, passes with one note on stderr. Route 4's `crapkit verify`
-takes `--repo packages/api`.
+armed before `crapkit init`, passes with one note on stderr. To pin the gate to one root
+instead, the hook line is `exec python -m crapkit hook-precommit --repo packages/api` and
+Route 3 adds `args: [--repo, packages/api]` under `id: crapkit-gate`. Route 4's
+`crapkit verify` takes `--repo packages/api`.
 
 The hook runs the first of three that git's PATH offers: the `crapkit` command (pipx, uv
 tool, or a venv whose `bin` is on PATH), then `uvx crapkit`, then `python -m crapkit`. Git

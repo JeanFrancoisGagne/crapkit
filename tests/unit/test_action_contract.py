@@ -162,18 +162,7 @@ def test_the_inputs_carry_the_defaults_the_readme_documents():
     assert inputs["python-version"]["default"] == "3.12"
 
 
-_UNDOCUMENTED = {
-    "working-directory": "doc gap: README's GitHub Action section does not name the "
-                         "working-directory input a monorepo needs yet",
-}
-
-
-def _inputs_with_doc_gaps() -> list:
-    return [pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_UNDOCUMENTED[name]))
-            if name in _UNDOCUMENTED else name for name in _action()["inputs"]]
-
-
-@pytest.mark.parametrize("name", _inputs_with_doc_gaps())
+@pytest.mark.parametrize("name", list(_action()["inputs"]))
 def test_every_input_is_named_in_the_readme_section(name):
     assert f"`{name}`" in _readme_section(), f"the action takes {name} and the README never says so"
 

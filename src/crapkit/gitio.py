@@ -179,6 +179,12 @@ def _nul_records(out: str) -> list[str]:
     return [record for record in out.split("\0") if record]
 
 
+def tracked_named(root: Path, name: str) -> list[str]:
+    """Every tracked file called `name` at or below root, root-relative. It
+    reads the index alone, so it costs no walk of the working tree."""
+    return _git_paths(root, "ls-files", "-z", "--", f":(glob)**/{name}")
+
+
 def untracked_files(root: Path) -> list[str]:
     """Paths `git add` would pick up: untracked and not ignored.
 

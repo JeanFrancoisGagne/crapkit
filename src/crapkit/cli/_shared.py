@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from ..config import load_config_text
-from ..errors import ConfigError, CrapkitError, ToolError
+from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..invocation import _self
 from ..repotext import repo_text
 from ..rootfind import find_root
@@ -215,18 +215,75 @@ def _load_repo_config(root: Path):
 
 
 def no_config(root: Path) -> str:
-    """The refusal for a directory with no crapkit.toml, with both ways forward.
+    """The refusal for a directory with no crapkit.toml, with the way forward.
 
-    It named neither, so a monorepo command run one package over, or a hook
-    armed before `init`, left the reader to guess. The configurations the
-    checkout holds are spelled from `root`, the way `--repo` takes them.
+    It named none, so a monorepo command run one package over, or a hook armed
+    before `init`, left the reader to guess. A crapkit.toml git tracks below
+    `root` gets the --repo that reaches it. With none below, the line names both
+    ways forward and the configurations elsewhere in the checkout, spelled from
+    `root` the way `--repo` takes them. A root that is not a directory gets the
+    bare line: there is nothing to adopt or list there.
     """
+    refusal = f"no crapkit.toml at {root} - nothing to analyze"
+    if not root.is_dir():
+        return refusal
+    return refusal + (_roots_below_hint(root) or _init_or_repo(root))
+
+
+def _init_or_repo(root: Path) -> str:
     from ..gitio import tracked_configs
 
     held = tracked_configs(root)
     nearby = f"; this checkout holds {', '.join(held[:3])}" if held else ""
-    return (f"no crapkit.toml at {root} - nothing to analyze; run `{_self()} init` there to "
-            f"adopt it, or pass --repo DIR to name a directory that holds one{nearby}")
+    return (f"; run `{_self()} init` there to adopt it, or pass --repo DIR to name a "
+            f"directory that holds one{nearby}")
+
+
+# How many crapkit roots below a refusal names before it counts the rest.
+_NAMED_ROOTS = 3
+
+
+def _from_cwd(path: Path) -> str:
+    """`path` the way the caller types it: relative when it sits under the
+    working directory, absolute otherwise."""
+    try:
+        return path.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _roots_below(root: Path) -> list[str]:
+    """Each directory below `root` whose crapkit.toml git tracks, spelled from
+    the working directory. Empty outside a repository and for a root that is
+    not a directory, which has nothing below it to list."""
+    if not root.is_dir():
+        return []
+    from ..gitio import tracked_named
+
+    try:
+        found = tracked_named(root, "crapkit.toml")
+    except GitError:
+        return []
+    return sorted(_from_cwd(root / Path(path).parent) for path in found if "/" in path)
+
+
+def _roots_below_hint(root: Path) -> str:
+    """The next step when crapkit.toml sits below where crapkit looked.
+
+    Git runs a pre-commit hook from the repository top and CI starts a step
+    there, and the walk goes up from where it stands (ADR 0002), never down. A
+    monorepo whose crapkit.toml sits in packages/api refused every commit with
+    the directory it looked in and no word about the one it wanted. The listing
+    runs on the way to this refusal and nowhere else.
+    """
+    roots = _roots_below(root)
+    if not roots:
+        return ""
+    if len(roots) == 1:
+        return f"; {roots[0]}/crapkit.toml sits below it: pass --repo {roots[0]}"
+    more = f" and {len(roots) - _NAMED_ROOTS} more" if len(roots) > _NAMED_ROOTS else ""
+    return (f"; crapkit.toml sits below it in {', '.join(roots[:_NAMED_ROOTS])}{more}: "
+            "pass --repo with the one to score")
 
 
 def _file_sizer(root: Path):
