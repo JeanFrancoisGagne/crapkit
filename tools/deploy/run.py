@@ -3,7 +3,7 @@ laptop and in CI.
 
     python tools/deploy/run.py [--cadence push|nightly|weekly|release|published]
         [--cell ID ...] [--packet KEY] [--os linux|windows|macos]
-        [--image cells|core|full|ci|gui] [--native] [--build-only] [--bake]
+        [--image cells|core|full|ci|gui|cells-arm64] [--native] [--build-only] [--bake]
         [--online] [--repeat N] [--no-cache] [--cache local|gha] [--builder NAME]
         [-n N] [--out DIR]
 
@@ -13,7 +13,10 @@ The build runs on the daemon's own builder when it runs the pinned BuildKit
 version, else on a docker-container builder running the pinned BuildKit image
 (always with `--cache gha`, which reads and writes the GitHub Actions cache).
 An image whose label says it was built from the same Dockerfile, context files
-and pins is not rebuilt; `--no-cache` rebuilds cold. The tree under test is
+and pins is not rebuilt; `--no-cache` rebuilds cold. Every image targets
+linux/amd64 except cells-arm64, the cells target built for linux/arm64 (the
+weekly lin-arm64 job; an x86_64 host builds and runs it under emulation). The
+tree under test is
 never in an image, so a crapkit source change rebuilds nothing:
 
     docker run --rm --network none --user 1000:1000 -v <out>:/out -e CRAPKIT_DEPLOY=1 \\
@@ -49,10 +52,18 @@ DOCKERFILE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile"
 ENTRY = ROOT / "tests" / "deploy" / "docker" / "entry.sh"
 DOCKERIGNORE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile.dockerignore"
 INPUTS_LABEL = "org.crapkit.deploy.inputs"
+# The repository every image is tagged under. A second checkout building other
+# pins on the same daemon names its own, so neither replaces the other's tags.
+REPO_ENV = "CRAPKIT_DEPLOY_REPO"
 CONTAINER_BUILDER = "crapkit-deploy"
 DEFAULT_OUT = ROOT / ".crapkit" / "deploy-out"
 CADENCES = {"push": "push", "nightly": "nightly", "weekly": "weekly", "published": "published",
             "release": "(push or nightly or weekly or online)"}
+
+
+def image_tag(image: str) -> str:
+    """crapkit-deploy:<image>, under $CRAPKIT_DEPLOY_REPO when set."""
+    return f"{os.environ.get(REPO_ENV) or 'crapkit-deploy'}:{image}"
 
 
 # --- what to run ----------------------------------------------------------------
@@ -147,8 +158,8 @@ def choose_builder(pins: dict, requested: str | None, cache: str) -> str:
 def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: str = CONTAINER_BUILDER,
                   inputs: str = "") -> list[str]:
     argv = ["docker", "buildx", "build", "--builder", builder, "--progress", "plain",
-            "--platform", pins["images"]["platform"], "--target", image, "-f", str(DOCKERFILE),
-            "-t", f"crapkit-deploy:{image}", "--load"]
+            "--platform", pinsfile.platform(pins, image), "--target", pinsfile.target(image), "-f", str(DOCKERFILE),
+            "-t", image_tag(image), "--load"]
     argv += [f"--build-arg={key}={value}" for key, value in build_args(pins).items()]
     argv += [f"--label={INPUTS_LABEL}={inputs}"] if inputs else []
     argv += cache_flags(cache, image) + (["--no-cache"] if no_cache else [])
@@ -203,7 +214,7 @@ def inputs_fingerprint(pins: dict, image: str, root: Path = ROOT) -> str:
     files = [[path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()]
              for path in context_files(root)]
     inputs = {"image": image, "args": build_args(pins), "buildkit": pins["images"]["buildkit"],
-              "platform": pins["images"]["platform"], "files": files}
+              "platform": pinsfile.platform(pins, image), "files": files}
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -233,7 +244,7 @@ def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, request
     """Build one target and record its time, its size, the builder and
     `docker system df` before and after in <out>/build.json. An image already
     built from the same inputs is kept, and the record says so."""
-    started, tag = time.monotonic(), f"crapkit-deploy:{image}"
+    started, tag = time.monotonic(), image_tag(image)
     inputs = inputs_fingerprint(pins, image)
     if unchanged(tag, inputs, no_cache):
         return _record(out, {"image": image, "skipped": "inputs unchanged", "size_bytes": image_size(tag),
@@ -254,7 +265,8 @@ def _record(out: Path, record: dict) -> dict:
 
 
 def versions_command(image: str) -> list[str]:
-    return ["docker", "run", "--rm", "--network", "none", f"crapkit-deploy:{image}", "versions"]
+    tag = image_tag(image)
+    return ["docker", "run", "--rm", "--network", "none", *pinsfile.platform_flags(tag), tag, "versions"]
 
 
 def check_versions(pins: dict, image: str, out: Path) -> list[str]:
@@ -272,9 +284,9 @@ def _append_json(path: Path, record: dict) -> None:
 
 def bake(image: str, out: Path) -> str:
     """crapkit-deploy:<image>-baked: the image plus <out>/in, for a run with no mount."""
-    tag = f"crapkit-deploy:{image}-baked"
-    dockerfile = f"FROM crapkit-deploy:{image}\nCOPY --chown=1000:1000 . /opt/deploy/in/\n"
-    subprocess.run(["docker", "build", "-q", "-t", tag, "-f", "-", str(out / "in")],
+    tag = image_tag(f"{image}-baked")
+    dockerfile = f"FROM {image_tag(image)}\nCOPY --chown=1000:1000 . /opt/deploy/in/\n"
+    subprocess.run(["docker", "build", "-q", *pinsfile.platform_flags(tag), "-t", tag, "-f", "-", str(out / "in")],
                    input=dockerfile, text=True, check=True, capture_output=True)
     return tag
 
@@ -326,7 +338,7 @@ def container_command(tag: str, out: Path, selected: list[str], online: bool, ru
     argv = ["docker", "run", "--rm", "--user", "1000:1000", "-v", f"{out.resolve()}:/out",
             "-e", "CRAPKIT_DEPLOY=1", "-e", f"CRAPKIT_DEPLOY_IMAGE={tag}",
             "-e", f"CRAPKIT_DEPLOY_IMAGE_DIGEST={image_digest(tag)}", "-e", f"CRAPKIT_DEPLOY_IN={inside}"]
-    argv += [] if online else ["--network", "none"]
+    argv += pinsfile.platform_flags(tag) + ([] if online else ["--network", "none"])
     return argv + [tag, "sh", f"{inside}/entry.sh", *selected, f"--junitxml=/out/junit-{run_index}.xml"]
 
 
@@ -442,8 +454,8 @@ def hold_to_pins(pins: dict, image: str, out: Path) -> None:
     for problem in problems:
         print(f"run: {problem}", file=sys.stderr)
     if problems:
-        subprocess.run(["docker", "image", "rm", f"crapkit-deploy:{image}"], capture_output=True)
-        raise SystemExit(f"run: crapkit-deploy:{image} does not match pins.toml; the tag is removed")
+        subprocess.run(["docker", "image", "rm", image_tag(image)], capture_output=True)
+        raise SystemExit(f"run: {image_tag(image)} does not match pins.toml; the tag is removed")
 
 
 def _build(args, out: Path) -> bool:
@@ -457,7 +469,7 @@ def _build(args, out: Path) -> bool:
 
 
 def _image_tag(args, out: Path) -> str:
-    return bake(args.image, out) if args.bake else f"crapkit-deploy:{args.image}"
+    return bake(args.image, out) if args.bake else image_tag(args.image)
 
 
 def _verdict(out: Path, repeat: int, codes: list[int]) -> int:

@@ -371,3 +371,174 @@ def test_a_manifest_is_read_as_utf8_whatever_the_host_code_page(monkeypatch):
     monkeypatch.setattr(lock.subprocess, "run", lambda *a, **k: lock.subprocess.CompletedProcess(a, 0, printed, b""))
 
     assert lock.manifest("crapkit-deploy:gui") == "zed Zed 1.21.0 \u2013 /opt/zed\n"
+
+
+# --- the arm64 cells image (lin-arm64) ---------------------------------------------
+
+def test_the_arm64_image_builds_the_cells_target_for_linux_arm64():
+    argv = run.build_command(PINS, "cells-arm64", "local", no_cache=False)
+
+    assert argv[argv.index("--platform") + 1] == "linux/arm64"
+    assert argv[argv.index("--target") + 1] == "cells"
+    assert argv[argv.index("-t") + 1] == "crapkit-deploy:cells-arm64"
+    assert pinsfile.expected_versions(PINS, "cells-arm64") == pinsfile.expected_versions(PINS, "cells")
+
+
+def test_every_other_image_keeps_the_pinned_platform():
+    assert {pinsfile.platform(PINS, image) for image in pinsfile.IMAGE_CHAIN if image != "cells-arm64"} == {
+        PINS["images"]["platform"]}
+    assert run.inputs_fingerprint(PINS, "cells-arm64") != run.inputs_fingerprint(PINS, "cells")
+
+
+def test_an_arm64_tag_runs_under_its_own_platform_and_an_amd64_one_under_the_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(run, "image_digest", lambda tag: "")
+    arm = run.container_command("crapkit-deploy:cells-arm64", tmp_path, [], online=False, run_index=0)
+    amd = run.container_command("crapkit-deploy:cells", tmp_path, [], online=False, run_index=0)
+
+    assert arm[arm.index("--platform") + 1] == "linux/arm64" and "--platform" not in amd
+    assert run.versions_command("cells-arm64")[-3:] == ["linux/arm64", "crapkit-deploy:cells-arm64", "versions"]
+    assert pinsfile.platform_flags("crapkit-deploy:cells-arm64-baked") == ["--platform", "linux/arm64"]
+
+
+def test_the_arm64_manifest_is_read_under_its_platform(monkeypatch):
+    calls = []
+    monkeypatch.setattr(lock.subprocess, "run",
+                        lambda argv, **k: calls.append(argv) or lock.subprocess.CompletedProcess(argv, 0, b"", b""))
+    lock.manifest("crapkit-deploy:cells-arm64")
+
+    assert calls[0][-4:] == ["--platform", "linux/arm64", "crapkit-deploy:cells-arm64", "manifest"]
+
+
+# --- the prerelease and the Cursor agent's alias -----------------------------------
+
+def test_every_image_holds_the_prerelease_python():
+    assert run.build_args(PINS)["PYTHON_PRERELEASE"] == PINS["python"]["prerelease"]
+    assert pinsfile.expected_versions(PINS, "cells")["python3.15"] == PINS["python"]["prerelease"]
+
+
+def test_the_cursor_agent_answers_to_the_name_cursors_docs_use():
+    core = pinsfile.expected_versions(PINS, "core")
+
+    assert core["agent"] == core["cursor-agent"] == PINS["harness"]["cursor-agent"]["version"]
+    assert "/opt/harness-core/bin/agent" in DOCKERFILE
+
+
+def test_a_native_install_copies_each_launcher_under_the_alias(tmp_path):
+    for name in ("cursor-agent.cmd", "cursor-agent.ps1", "cursor-agent-sea", "node.exe"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    made = toolchain.alias_launchers(tmp_path, toolchain.harness_spec(PINS, "cursor-agent-windows-x64"))
+
+    assert sorted(path.name for path in made) == ["agent.cmd", "agent.ps1"]
+    assert (tmp_path / "agent.cmd").read_text(encoding="utf-8") == "cursor-agent.cmd"
+    assert toolchain.alias_launchers(tmp_path, toolchain.harness_spec(PINS, "goose-windows-x64")) == []
+
+
+# --- the README's npm lines the fixture stage caches --------------------------------
+
+# page, the fenced line a user runs, the line the npm-fixtures stage runs for it
+DOCUMENTED_NPM = [
+    ("README.md", 'npm i -D "@vitest/coverage-v8@<your vitest major>"',
+     'npm i -D --ignore-scripts "@vitest/coverage-v8@${vitest%%.*}"'),
+    ("docs/lanes.md", "npm i -D @vitest/coverage-v8", "npm i -D --ignore-scripts @vitest/coverage-v8;"),
+]
+
+
+@pytest.mark.parametrize("page, documented, cached", DOCUMENTED_NPM)
+def test_the_npm_fixture_stage_caches_what_each_documented_install_line_fetches(page, documented, cached):
+    """An offline cell runs the docs' line against the image's npm cache, so the
+    stage runs that same line at build time; a moved line fails here first."""
+    lines = {line.strip() for line in (ROOT / page).read_text(encoding="utf-8").splitlines()}
+
+    assert documented in lines
+    assert cached in DOCKERFILE
+
+
+def test_the_manifest_lists_the_npm_cache_the_unlocked_lines_filled():
+    entry = (DOCKER / "entry.sh").read_text(encoding="utf-8")
+
+    assert 'echo "## npm-cache"' in entry and "npm cache ls --cache /opt/npm-cache" in entry
+
+
+# --- two checkouts on one machine ---------------------------------------------------
+
+def test_the_toolchain_root_and_basetemp_can_be_named(monkeypatch, tmp_path):
+    """pytest empties its basetemp when a run starts, and a toolchain refresh
+    prunes wheels an older lock named, so a second checkout running native cells
+    beside the first names its own of both."""
+    monkeypatch.setenv(toolchain.ROOT_ENV, str(tmp_path / "chain"))
+    monkeypatch.setenv(toolchain.BASETEMP_ENV, str(tmp_path / "dt"))
+
+    assert toolchain.default_root() == tmp_path / "chain"
+    assert toolchain.basetemp() == toolchain.long_path((tmp_path / "dt").resolve())
+    assert (tmp_path / "dt").is_dir()
+
+
+def test_without_a_name_the_toolchain_uses_the_os_cache(monkeypatch):
+    monkeypatch.delenv(toolchain.ROOT_ENV, raising=False)
+    monkeypatch.delenv(toolchain.BASETEMP_ENV, raising=False)
+
+    assert toolchain.default_root().name == "crapkit-deploy"
+    assert toolchain.basetemp().name in ("dt", "crapkit-deploy-tmp")
+
+
+# --- build args and the layer cache -------------------------------------------------
+
+def _instructions(text):
+    """Dockerfile instructions with continuation lines joined, comments and heredoc bodies dropped."""
+    joined = re.sub(r"\\\n", " ", re.sub(r"<<'EOF'.*?\nEOF\n", "<<EOF\n", text, flags=re.S))
+    return [line for line in joined.splitlines() if line and not line.startswith("#") and not line[0].isspace()]
+
+
+def _stage_pairs(lines):
+    pairs, pending = [], []
+    for line in lines:
+        keyword, _, rest = line.partition(" ")
+        if keyword == "ARG":
+            pending.append(rest)
+        elif keyword == "RUN":
+            pairs, pending = pairs + [(name, rest) for name in pending], []
+    return pairs
+
+
+def _first_run_after_each_arg(text):
+    """(arg, the first RUN after it in the same stage), for every stage ARG; the
+    global ARGs above the first FROM feed FROM lines and are left out."""
+    stages = "".join("\n" + line for line in _instructions(text)).split("\nFROM ")[1:]
+    return [pair for stage in stages for pair in _stage_pairs(stage.splitlines())]
+
+
+def test_each_build_arg_sits_just_above_the_run_that_reads_it():
+    """An ARG joins the cache key of every RUN after it, used or not: a Goose pin
+    declared above the full image's npm ci reran it, and a Python pin above the
+    apt step reran apt."""
+    stray = [(name, run_line[:40]) for name, run_line in _first_run_after_each_arg(DOCKERFILE)
+             if f"${name}" not in run_line and "${" + name not in run_line]
+
+    assert stray == []
+
+
+def test_a_stray_arg_above_an_unrelated_run_is_caught():
+    text = "FROM a AS b\nARG PIN\nARG OTHER\nRUN apt-get install x\nRUN echo $PIN $OTHER\n"
+
+    assert [name for name, line in _first_run_after_each_arg(text) if f"${name}" not in line] == ["PIN", "OTHER"]
+
+
+def test_a_second_checkout_tags_its_images_under_its_own_repository(monkeypatch):
+    """Two checkouts building different pins on one daemon would each replace
+    the other's crapkit-deploy:<image>, and each run would rebuild."""
+    monkeypatch.setenv(run.REPO_ENV, "crapkit-deploy-next")
+    argv = run.build_command(PINS, "core", "local", no_cache=False)
+
+    assert argv[argv.index("-t") + 1] == "crapkit-deploy-next:core"
+    assert run.versions_command("core")[-2] == "crapkit-deploy-next:core"
+    monkeypatch.delenv(run.REPO_ENV)
+    assert run.image_tag("core") == "crapkit-deploy:core"
+
+
+def test_a_manifest_records_under_the_images_own_name_whatever_its_repository(tmp_path, monkeypatch):
+    path = tmp_path / "image-manifest.lock"
+    monkeypatch.setattr(lock, "manifest", lambda image: "uv 1\n")
+
+    assert lock.main(["manifest", "--image", "crapkit-deploy-next:cells-arm64", "--manifest", str(path)]) == 0
+    assert lock.manifest_blocks(path.read_text(encoding="utf-8")) == {"crapkit-deploy:cells-arm64": "uv 1\n"}
+    assert lock.main(["manifest", "--check", "--image", "other:cells-arm64", "--manifest", str(path)]) == 0

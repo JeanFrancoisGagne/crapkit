@@ -11,13 +11,31 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PINS = HERE / "pins.toml"
-# Each image holds the tools of the images it is built on.
+# Each image holds the tools of the images it is built on. cells-arm64 is the
+# cells target built for linux/arm64, for the weekly lin-arm64 job; the other
+# images hold harness binaries pinned for x86_64 only.
 IMAGE_CHAIN = {"cells": ["cells"], "core": ["cells", "core"], "full": ["cells", "core", "full"],
-               "ci": ["cells", "ci"], "gui": ["cells", "core", "full", "gui"]}
+               "ci": ["cells", "ci"], "gui": ["cells", "core", "full", "gui"], "cells-arm64": ["cells"]}
+ARM64 = "-arm64"
 
 
 def load(path: Path = PINS) -> dict:
     return tomllib.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def target(image: str) -> str:
+    """The Dockerfile target an image is built from: cells-arm64 -> cells."""
+    return image.removesuffix(ARM64)
+
+
+def platform(pins: dict, image: str) -> str:
+    return "linux/arm64" if image.endswith(ARM64) else pins["images"]["platform"]
+
+
+def platform_flags(tag: str) -> list[str]:
+    """`docker run` / `docker build` flags for a tag: an arm64 image names its
+    platform, so an x86_64 host runs it under emulation without a warning."""
+    return ["--platform", "linux/arm64"] if ARM64 in tag else []
 
 
 def arg_name(key: str) -> str:
@@ -44,7 +62,7 @@ def build_args(pins: dict) -> dict[str, str]:
     return {"DEBIAN_IMAGE": images["debian"], "UV_IMAGE": images["uv"], "NODE_IMAGE": images["node"],
             "SNAPSHOT": images["snapshot"], "PYTHONS": " ".join(python["versions"]),
             "PYTHON_OLD": python["old"], "PYTHON_RUNNER": python["runner"],
-            "PYTHON_PRERELEASE": "", **_binary_args(pins)}
+            "PYTHON_PRERELEASE": python["prerelease"], **_binary_args(pins)}
 
 
 def _minor(version: str) -> str:
@@ -55,7 +73,7 @@ def _base_versions(pins: dict) -> dict[str, str]:
     tools, python = pins["toolchain"], pins["python"]
     expected = {"uv": tools["uv"], "node": "v" + tools["node"], "git": tools["git_linux"],
                 "pipx": tools["pipx"], "prek": tools["prek"]}
-    for version in [python["old"], *python["versions"]]:
+    for version in [python["old"], *python["versions"], python["prerelease"]]:
         expected["python" + _minor(version)] = version
     return expected
 
@@ -64,8 +82,8 @@ def _harness_lines(spec: dict) -> dict[str, str]:
     """A harness and each floor, which the image links as <command>-<floor>.
     `prints` is the version text a binary prints when it differs from the
     package version (Junie's npm 1468.30.0 installs release 1468.30)."""
-    command = spec["command"]
-    return {command: spec.get("prints", spec["version"]),
+    command, prints = spec["command"], spec.get("prints", spec["version"])
+    return {command: prints, **{alias: prints for alias in spec.get("aliases", [])},
             **{f"{command}-{floor}": floor for floor in spec.get("floors", [])}}
 
 

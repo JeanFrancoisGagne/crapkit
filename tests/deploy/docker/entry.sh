@@ -58,6 +58,12 @@ manifest() {
         node -e 'const l=require(process.argv[1]); for (const [k,v] of Object.entries(l.packages)) if (k) console.log(k.replace(/^node_modules\//,""), v.version||"", v.integrity||"")' \
             "$prefix/package-lock.json"
     done
+    # The README's `npm i -D` lines run unlocked at build time; the tarballs they
+    # cached are what an offline install in a cell gets, so a cold rebuild that
+    # cached a newer release shows here.
+    echo "## npm-cache"
+    npm cache ls --cache /opt/npm-cache 2>/dev/null | sed -n 's#^make-fetch-happen:request-cache:https://registry.npmjs.org/##p' \
+        | grep '\.tgz$' | LC_ALL=C sort
     echo "## runner"; "$RUNNER" -m pip freeze 2>/dev/null || uv pip freeze --python "$RUNNER"
     echo "## wheelhouse"; (cd /opt/wheelhouse && sha256sum -- * )
     echo "## binaries"

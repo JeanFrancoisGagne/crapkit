@@ -9,7 +9,9 @@
 
 image-manifest.lock holds one block per image, headed `# image: <tag>`. A
 refresh replaces the blocks of the images it names and keeps the rest; a
-check prints the diff between an image and its block and writes nothing.
+check prints the diff between an image and its block and writes nothing. A
+block is named crapkit-deploy:<image> whatever repository the image was
+tagged under ($CRAPKIT_DEPLOY_REPO in run.py).
 
 Resolution runs `uv pip compile` once per requirement set and wheelhouse row,
 so environment markers are read for the target platform, not the host. Each
@@ -240,7 +242,7 @@ def manifest(image: str) -> str:
     """What `entry.sh manifest` prints inside `image`, offline: tool versions,
     dpkg-query -W, npm ls per prefix, the runner's pip freeze and the sha256 of
     every wheel and fetched binary."""
-    argv = ["docker", "run", "--rm", "--network", "none", image, "manifest"]
+    argv = ["docker", "run", "--rm", "--network", "none", *pinsfile.platform_flags(image), image, "manifest"]
     # UTF-8 whatever this host's code page is, so Windows records what Linux does.
     return subprocess.run(argv, capture_output=True, check=True).stdout.decode("utf-8")
 
@@ -273,6 +275,11 @@ def _recorded(path: Path) -> dict[str, str]:
     return manifest_blocks(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
+def block_name(tag: str) -> str:
+    """The manifest block an image tag records into: <any repo>:core -> crapkit-deploy:core."""
+    return "crapkit-deploy:" + tag.rsplit(":", 1)[1]
+
+
 def _check_manifest(recorded: dict[str, str], built: dict[str, str]) -> int:
     diff = [line for image, text in built.items() for line in manifest_diff(image, recorded.get(image, ""), text)]
     print("\n".join(diff), file=sys.stderr)
@@ -281,7 +288,7 @@ def _check_manifest(recorded: dict[str, str], built: dict[str, str]) -> int:
 
 def _do_manifest(args) -> int:
     recorded = _recorded(args.manifest)
-    built = {image: manifest(image) for image in args.image or ["crapkit-deploy:core"]}
+    built = {block_name(image): manifest(image) for image in args.image or ["crapkit-deploy:core"]}
     if args.check:
         return _check_manifest(recorded, built)
     args.manifest.write_text(manifest_text({**recorded, **built}), encoding="utf-8", newline="\n")

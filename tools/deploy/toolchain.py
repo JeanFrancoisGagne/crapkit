@@ -17,7 +17,8 @@ kit reads:
   `npm ci` of the npm fixtures and the harness locks, into <root>/npm-cache
 
 The root is %LOCALAPPDATA%\\crapkit-deploy on Windows and
-~/Library/Caches/crapkit-deploy on macOS. Every path is resolved before a
+~/Library/Caches/crapkit-deploy on macOS, or $CRAPKIT_DEPLOY_TOOLCHAIN_ROOT,
+which `run.py --native` reads as well. Every path is resolved before a
 sandbox rewrites LOCALAPPDATA, and each step is skipped when its output
 already exists, so a warm rerun costs seconds.
 """
@@ -47,6 +48,8 @@ WINDOWS = os.name == "nt"
 # harness binaries come on top, chosen by their `image`.
 BASE_TOOLS = {"windows": ("uv", "node", "portable-git", "pwsh", "prek"), "macos": ("uv", "node", "pwsh")}
 HARNESS_LEVELS = {"core": ["core"], "full": ["core", "full"], "none": []}
+ROOT_ENV = "CRAPKIT_DEPLOY_TOOLCHAIN_ROOT"
+BASETEMP_ENV = "CRAPKIT_DEPLOY_BASETEMP"
 SYSTEM_DIRS = ["System32", "", r"System32\Wbem", r"System32\WindowsPowerShell\v1.0"]
 
 
@@ -67,6 +70,10 @@ def long_path(path: Path) -> Path:
 
 
 def default_root() -> Path:
+    """$CRAPKIT_DEPLOY_TOOLCHAIN_ROOT when set, so two checkouts on one machine
+    each keep their own pins, else the OS's cache directory."""
+    if os.environ.get(ROOT_ENV):
+        return Path(os.environ[ROOT_ENV])
     if WINDOWS:
         return long_path(Path(os.environ["LOCALAPPDATA"])) / "crapkit-deploy"
     if sys.platform == "darwin":
@@ -76,12 +83,15 @@ def default_root() -> Path:
 
 def basetemp() -> Path:
     """pytest's --basetemp for native runs: C:\\dt on Windows, a path with no
-    8.3 component a tool could print back in another spelling."""
-    if WINDOWS:
-        base = Path("C:/dt")
-        base.mkdir(exist_ok=True)
-        return long_path(base.resolve())
-    return Path(os.environ.get("TMPDIR", "/tmp")) / "crapkit-deploy-tmp"
+    8.3 component a tool could print back in another spelling, or
+    $CRAPKIT_DEPLOY_BASETEMP. pytest empties its basetemp when it starts, so
+    two native runs at once each need their own."""
+    chosen = os.environ.get(BASETEMP_ENV) or ("C:/dt" if WINDOWS else None)
+    if chosen is None:
+        return Path(os.environ.get("TMPDIR", "/tmp")) / "crapkit-deploy-tmp"
+    base = Path(chosen)
+    base.mkdir(parents=True, exist_ok=True)
+    return long_path(base.resolve())
 
 
 # --- downloads -------------------------------------------------------------------
@@ -232,9 +242,27 @@ def harness_downloads(pins: dict, os_name: str, harness: list[str]) -> list[str]
     return sorted(key for key, spec in pinsfile.binaries(pins, os_name).items() if spec.get("image") in harness)
 
 
+def harness_spec(pins: dict, key: str) -> dict:
+    """The [harness] entry a download belongs to: cursor-agent-windows-x64 -> cursor-agent."""
+    return next(spec for name, spec in pins["harness"].items() if key.startswith(name + "-"))
+
+
+def alias_launchers(directory: Path, spec: dict) -> list[Path]:
+    """Copy each launcher named after the harness command under each alias, as
+    Cursor's installers copy cursor-agent.cmd to agent.cmd."""
+    launchers = [path for path in directory.iterdir() if path.stem == spec["command"]]
+    return [Path(shutil.copy2(launcher, directory / (alias + launcher.suffix)))
+            for alias in spec.get("aliases", []) for launcher in launchers]
+
+
 def install_harness_binaries(pins: dict, os_name: str, root: Path, harness: list[str]) -> list[str]:
     """Each harness binary unpacked once; the directories that go on harness_bin."""
-    return [str(install_archive(pins, key, os_name, root)) for key in harness_downloads(pins, os_name, harness)]
+    directories = []
+    for key in harness_downloads(pins, os_name, harness):
+        directory = install_archive(pins, key, os_name, root)
+        alias_launchers(directory, harness_spec(pins, key))
+        directories.append(str(directory))
+    return directories
 
 
 def _windows_tools(pins: dict, root: Path) -> dict:

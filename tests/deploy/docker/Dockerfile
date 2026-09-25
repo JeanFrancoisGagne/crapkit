@@ -26,23 +26,16 @@ FROM ${NODE_IMAGE} AS node
 
 # ---------------------------------------------------------------- base ------
 FROM ${DEBIAN_IMAGE} AS base
-ARG SNAPSHOT
-ARG PYTHONS
-ARG PYTHON_OLD
-ARG PYTHON_PRERELEASE
-ARG TARGETARCH
-ARG PREK_LINUX_X64_URL
-ARG PREK_LINUX_X64_SHA256
-ARG PREK_LINUX_ARM64_URL
-ARG PREK_LINUX_ARM64_SHA256
-ARG PIPX_PYZ_URL
-ARG PIPX_PYZ_SHA256
+# A build arg is part of the cache key of every RUN after its ARG line, used or
+# not, so each ARG sits just above the first RUN that reads it: a new Python
+# or prek pin reruns what follows it and never the apt step.
 ENV TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive \
     UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_DOWNLOADS=never UV_NO_PROGRESS=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1 \
     CRAPKIT_DEPLOY_TOOLCHAIN=/opt/deploy/toolchain.json \
     PATH=/opt/runner/bin:/opt/toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL ["/bin/sh", "-eu", "-c"]
+ARG SNAPSHOT
 RUN rm -f /etc/apt/sources.list.d/debian.sources; \
     printf 'deb http://snapshot.debian.org/archive/debian/%s trixie main\ndeb http://snapshot.debian.org/archive/debian-security/%s trixie-security main\n' \
       "$SNAPSHOT" "$SNAPSHOT" > /etc/apt/sources.list; \
@@ -59,6 +52,9 @@ curl -fsSL --retry 5 --retry-all-errors -o "$3" "$1"
 echo "$2  $3" | sha256sum -c --quiet || { echo "fetch: $1 does not match its pins.toml sha256" >&2; exit 1; }
 EOF
 COPY --from=uv /uv /uvx /opt/toolchain/bin/
+ARG PYTHONS
+ARG PYTHON_OLD
+ARG PYTHON_PRERELEASE
 RUN UV_PYTHON_DOWNLOADS=automatic /opt/toolchain/bin/uv python install $PYTHON_OLD $PYTHONS $PYTHON_PRERELEASE; \
     for version in $PYTHON_OLD $PYTHONS $PYTHON_PRERELEASE; do \
       minor=$(echo "$version" | cut -d. -f1,2 | sed 's/rc.*//'); \
@@ -69,6 +65,13 @@ COPY --from=node /usr/local/lib/node_modules/npm /opt/node/lib/node_modules/npm
 RUN ln -s /opt/node/bin/node /opt/toolchain/bin/node; \
     ln -s /opt/node/lib/node_modules/npm/bin/npm-cli.js /opt/toolchain/bin/npm; \
     ln -s /opt/node/lib/node_modules/npm/bin/npx-cli.js /opt/toolchain/bin/npx
+ARG TARGETARCH
+ARG PREK_LINUX_X64_URL
+ARG PREK_LINUX_X64_SHA256
+ARG PREK_LINUX_ARM64_URL
+ARG PREK_LINUX_ARM64_SHA256
+ARG PIPX_PYZ_URL
+ARG PIPX_PYZ_SHA256
 RUN fetch "$PIPX_PYZ_URL" "$PIPX_PYZ_SHA256" /opt/toolchain/bin/pipx; chmod 755 /opt/toolchain/bin/pipx; \
     case "$TARGETARCH" in \
       arm64) fetch "$PREK_LINUX_ARM64_URL" "$PREK_LINUX_ARM64_SHA256" /tmp/prek.tar.gz ;; \
@@ -139,8 +142,6 @@ RUN arch=$([ "$TARGETARCH" = arm64 ] && echo aarch64 || echo x86_64); \
 
 # ------------------------------------------------------ harness-core -------
 FROM base AS harness-core
-ARG CURSOR_AGENT_LINUX_X64_URL
-ARG CURSOR_AGENT_LINUX_X64_SHA256
 COPY tests/deploy/docker/harness-core/ /opt/harness-core/
 RUN cd /opt/harness-core; \
     npm ci --no-audit --no-fund --cache /tmp/npm-cache; rm -rf /tmp/npm-cache; \
@@ -150,18 +151,17 @@ RUN cd /opt/harness-core; \
       case "$tool" in claude-code) target=bin/claude.exe;; codex) target=bin/codex.js;; esac; \
       ln -s "../$alias/$target" "bin/$(echo "$tool" | sed 's/-code//')-${name##*-}"; \
     done
+ARG CURSOR_AGENT_LINUX_X64_URL
+ARG CURSOR_AGENT_LINUX_X64_SHA256
 RUN fetch "$CURSOR_AGENT_LINUX_X64_URL" "$CURSOR_AGENT_LINUX_X64_SHA256" /tmp/cursor.tar.gz; \
     mkdir -p /opt/cursor-agent; tar -xzf /tmp/cursor.tar.gz -C /opt/cursor-agent; rm /tmp/cursor.tar.gz; \
-    ln -s /opt/cursor-agent/dist-package/cursor-agent /opt/harness-core/bin/cursor-agent
+    ln -s /opt/cursor-agent/dist-package/cursor-agent /opt/harness-core/bin/cursor-agent; \
+    ln -s /opt/cursor-agent/dist-package/cursor-agent /opt/harness-core/bin/agent
 
 # ------------------------------------------------------ harness-full -------
 FROM base AS harness-full
 ARG JUNIE_LINUX_X64_URL
 ARG JUNIE_LINUX_X64_SHA256
-ARG GOOSE_LINUX_X64_URL
-ARG GOOSE_LINUX_X64_SHA256
-ARG BUN_LINUX_X64_URL
-ARG BUN_LINUX_X64_SHA256
 COPY tests/deploy/docker/harness-full/ /opt/harness-full/
 COPY tests/deploy/docker/aider-requirements.txt tests/deploy/docker/agent-sdk-requirements.txt /tmp/req/
 # Junie's postinstall downloads its release into $HOME. Unpacking the pinned,
@@ -172,6 +172,8 @@ RUN version=$(node -p "require('/opt/harness-full/package-lock.json').packages['
     unzip -q /tmp/junie.zip -d "$home/versions/$version"; rm /tmp/junie.zip; \
     chmod -R a+rX,u+w /opt/junie-home; chmod -R a+x "$home/versions/$version"; \
     ln -s "$home/versions/$version" "$home/current"
+ARG BUN_LINUX_X64_URL
+ARG BUN_LINUX_X64_SHA256
 RUN fetch "$BUN_LINUX_X64_URL" "$BUN_LINUX_X64_SHA256" /tmp/bun.zip; \
     unzip -q /tmp/bun.zip -d /tmp/bun; install -D -m 755 /tmp/bun/*/bun /opt/bun/bin/bun; rm -rf /tmp/bun*; \
     ln -s bun /opt/bun/bin/bunx
@@ -188,6 +190,8 @@ RUN cd /opt/harness-full; mkdir bin; \
     ln -s ../node_modules/cline/bin/cline bin/cline; ln -s /opt/bun/bin/bun bin/bun; \
     printf '#!/bin/sh\nexport JUNIE_DATA="${JUNIE_DATA:-/opt/junie-home/.local/share/junie}"\nexec /opt/junie-home/.local/bin/junie "$@"\n' \
       > bin/junie; chmod 755 bin/junie
+ARG GOOSE_LINUX_X64_URL
+ARG GOOSE_LINUX_X64_SHA256
 RUN fetch "$GOOSE_LINUX_X64_URL" "$GOOSE_LINUX_X64_SHA256" /tmp/goose.tar.bz2; \
     mkdir -p /opt/goose; tar -xjf /tmp/goose.tar.bz2 -C /opt/goose; rm /tmp/goose.tar.bz2; \
     ln -s "$(find /opt/goose -type f -name goose | head -1)" /opt/harness-full/bin/goose
