@@ -475,11 +475,9 @@ def taint_runs(runs: list[Run]) -> set[int]:
     that dropped them would move the baseline past the findings the rule
     protects, so they are the doc gap ruling V1 records."""
     picked = baseline(runs)
-    cutoff = picked.id if picked else 0
-    after = [run for run in runs if run.id > cutoff]
-    passed_over = [run.id for run in after if trusted(run)][-1:]
-    failed = [run.id for run in after if _failed(run)]
-    return set(chain([picked.id] if picked else [], passed_over, failed))
+    after = runs[runs.index(picked) + 1:] if picked else runs
+    named = chain([picked] if picked else [], list(filter(trusted, after))[-1:], filter(_failed, after))
+    return {run.id for run in named}
 
 
 def _newest_trusted(runs: list[Run], keep: int) -> list[int]:

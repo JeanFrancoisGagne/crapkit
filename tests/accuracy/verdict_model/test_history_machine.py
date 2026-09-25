@@ -112,12 +112,20 @@ def expected_verdict(world, base: Measured, tree: vw.World, marks: dict,
     that measured uncommitted edits stores HEAD, and git can only diff from a
     commit (README, What the verdict line covers: verify measures the diff from
     the baseline's commit)."""
-    fresh, touched = scores(world), changed(tree, world)
-    gate = {key for key, crap in fresh.items()
-            if model.verify_gate(model.Row(*key, 0, crap), key in touched, vw.TARGET, marks.get(key))}
-    ratchet = {key for key, crap in fresh.items() if model.regression(crap, marks.get(key))}
+    fresh = scores(world)
     base_failed = base.failures if forgive else frozenset()
-    return Verdict(frozenset(gate), frozenset(ratchet), failed_tests(world) - base_failed)
+    return Verdict(_gated(fresh, changed(tree, world), marks), _regressed(fresh, marks),
+                   failed_tests(world) - base_failed)
+
+
+def _gated(fresh: dict, touched: set, marks: dict) -> frozenset:
+    return frozenset(key for key, crap in fresh.items()
+                     if model.verify_gate(model.Row(*key, 0, crap), key in touched, vw.TARGET,
+                                          marks.get(key)))
+
+
+def _regressed(fresh: dict, marks: dict) -> frozenset:
+    return frozenset(key for key, crap in fresh.items() if model.regression(crap, marks.get(key)))
 
 
 def json_verdict(payload: dict) -> Verdict:
@@ -208,10 +216,11 @@ class History(RuleBasedStateMachine):
             self.running = f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
             self.history[-1].run = replace(self.history[-1].run, metric=self.running)
 
-    def _baseline(self, before: int | None = None) -> Measured | None:
-        runs = [m.run for m in self.history if before is None or m.id < before]
-        picked = model.baseline(runs)
-        return next((m for m in self.history if picked and m.id == picked.id), None)
+    def _baseline(self) -> Measured | None:
+        return self._measured(model.baseline([m.run for m in self.history]))
+
+    def _measured(self, run: model.Run | None) -> Measured | None:
+        return next((m for m in self.history if run and m.id == run.id), None)
 
     def _marks(self) -> dict:
         return dict(self.marks or {})
@@ -313,15 +322,19 @@ class History(RuleBasedStateMachine):
         if after != before:
             self.marks, self.stamp = after, self.running
 
-    def override(self):
+    def _expected_now(self) -> Verdict | None:
         base = self._baseline()
-        expected = (expected_verdict(self.sc.world, base, self._tree(base), self._marks())
-                    if self._verdict_possible() else None)
+        if not self._verdict_possible():
+            return None
+        return expected_verdict(self.sc.world, base, self._tree(base), self._marks())
+
+    def override(self):
+        expected = self._expected_now()
         if expected is None or not expected.gate:
             return self.verify()
         result = self.sc.run("verify", "--override", "accepted by the machine", "--json")
         granted = not (expected.ratchet or expected.new_failures)
-        assert result.code == (0 if granted else expected.exit), result.stdout + result.stderr
+        assert result.code == _override_exit(expected, granted), result.stdout + result.stderr
         measured = self._append(model.VERIFY, granted, self.sc.world, self._lanes())
         if granted:
             self._grant(measured, expected.gate)
@@ -332,14 +345,18 @@ class History(RuleBasedStateMachine):
         self.stamp = self.running
         self.overrides.add(measured.id)
 
+    def _staged_violations(self, ccn: dict) -> set:
+        return {key for key in changed(self.head, self.sc.world)
+                if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
+
     def hook(self, grant: bool = False):
         repos.git(self.sc.top, "add", "-A")
         ccn = _each(self.sc.world, lambda fn: fn.ccn)
-        violations = {key for key in changed(self.head, self.sc.world)
-                      if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
-        env = {"CRAPKIT_OVERRIDE_REASON": "the machine accepts it" if grant else None}
-        result = vw.drive.Driver(self.sc.root, env=env).run("hook-precommit")
-        assert result.code == (6 if violations and not grant else 0), result.stdout + result.stderr
+        violations = self._staged_violations(ccn)
+        reason = "the machine accepts it" if grant else None
+        result = vw.drive.Driver(self.sc.root, env={"CRAPKIT_OVERRIDE_REASON": reason}).run(
+            "hook-precommit")
+        assert result.code == _hook_exit(violations, grant), result.stdout + result.stderr
         if violations and grant:
             self._hook_grant(violations, ccn)
 
@@ -429,12 +446,25 @@ class History(RuleBasedStateMachine):
         self.last_marks = now
 
     def _check_listing(self) -> None:
-        listed = self.sc.json("runs", "list")["runs"]
         base = self._baseline()
+        listed = self.sc.json("runs", "list")["runs"]
         assert [run["id"] for run in listed if run["baseline"]] == ([base.id] if base else [])
+        self._check_trend(base)
+
+    def _check_trend(self, base) -> None:
         trend = self.sc.json("trend")["runs"] if base else []
         assert [run["run_id"] for run in trend] == \
             [m.id for m in self.history if model.trusted(m.run)]
+
+
+def _override_exit(expected: Verdict, granted: bool) -> int:
+    """A granted override exits 0; a refused one keeps the verdict's exit."""
+    return 0 if granted else expected.exit
+
+
+def _hook_exit(violations: set, grant: bool) -> int:
+    """The hook refuses a staged violation with 6 unless the override reason grants it."""
+    return 6 if violations and not grant else 0
 
 
 def _machine(tmp_path, templates):
