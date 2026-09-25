@@ -95,6 +95,17 @@ def test_filesystem_paths_are_creatable_everywhere_and_a_twin_differs_only_in_ca
     for segment in _segments(paths):
         assert not set(segment) & strategies.WINDOWS_INVALID
         assert segment.split(".", 1)[0].upper() not in strategies.RESERVED
+        assert segment.rstrip(" .") == segment
+
+
+# Microsoft's "Naming Files, Paths, and Namespaces" reserves CON, PRN, AUX, NUL,
+# COM0 to COM9, LPT0 to LPT9 and COM or LPT with a superscript 1, 2 or 3.
+@pytest.mark.parametrize("segment, safe", [
+    ("CON", "CON_"), ("nul", "nul_"), ("COM0", "COM0_"), ("lpt³", "lpt³_"),
+    ("Com9", "Com9_"), ("console", "console"), ("COM10", "COM10"), ("LPT⁴", "LPT⁴"),
+])
+def test_a_windows_device_name_gets_a_suffix_and_nothing_else_changes(segment, safe):
+    assert strategies._unreserved(segment) == safe
 
 
 def test_draws_are_counted_for_the_run_log():

@@ -30,8 +30,10 @@ from . import exact
 EVENTS: Counter = Counter()
 CCN_MAX = 5000
 WINDOWS_INVALID = set('<>:"/\\|?*') | {chr(code) for code in range(32)}
-RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)),
-            *(f"LPT{n}" for n in range(1, 10))}
+# Windows reserves these device names as a file's stem, in any case, with the
+# superscript digits (category No, so a letters-and-digits draw can spell them).
+RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"{port}{n}" for port in ("COM", "LPT")
+                                          for n in "0123456789¹²³")}
 
 
 def _emit(names, value):
@@ -287,24 +289,24 @@ def path_text():
     return _tagged(st.one_of(joined, st.sampled_from(PATH_EXAMPLES)), _path_shapes)
 
 
-def _fs_safe(segment: str) -> bool:
-    stem = segment.split(".", 1)[0].upper()
-    return (not set(segment) & WINDOWS_INVALID and stem not in RESERVED
-            and segment.rstrip(" .") == segment)
-
-
-def _unique_casefold(paths: list[str]) -> bool:
-    return len({path.casefold() for path in paths}) == len(paths)
+def _unreserved(segment: str) -> str:
+    """A letters-and-digits segment, with `_` appended when Windows reserves it."""
+    return segment + "_" if segment.upper() in RESERVED else segment
 
 
 def fs_paths(case_twins: bool = sys.platform.startswith("linux")):
-    """Relative paths every OS can create: no Windows-invalid character or
-    reserved name, unique under casefold. `case_twins` adds a case-only twin,
-    which only a case-sensitive filesystem holds apart."""
+    """Relative paths every OS can create: letters and digits only, so no
+    Windows-invalid character, no dot or trailing space; no reserved name;
+    unique under casefold. `case_twins` adds a case-only twin, which only a
+    case-sensitive filesystem holds apart.
+
+    It is built without .filter(): Hypothesis 6.168 validates a filtered
+    strategy again on every draw and reads the predicate's source file each
+    time, which cost 40 to 80 ms a draw on a bind-mounted checkout."""
     segment = st.text(st.characters(codec="utf-8", categories=("L", "N")), min_size=1,
-                      max_size=8).filter(_fs_safe)
+                      max_size=8).map(_unreserved)
     path = st.lists(segment, min_size=1, max_size=3).map("/".join).map(lambda p: p + ".py")
-    unique = st.lists(path, min_size=1, max_size=6).filter(_unique_casefold)
+    unique = st.lists(path, min_size=1, max_size=6, unique_by=str.casefold)
     if not case_twins:
         return unique
     return unique.map(lambda paths: [*paths, paths[0].swapcase()]
