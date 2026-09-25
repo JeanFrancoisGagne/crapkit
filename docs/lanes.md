@@ -1618,10 +1618,13 @@ tuning per repo; zero has no reading under which the join was going to work.
 The two tests run on different spellings of the path, which is what keeps
 [`path_prefix`](#running-from-a-subdirectory) out of the other two verdicts. The reach test
 runs after the prefix is applied, so a prefix that already fixes the join is never
-mentioned at all. The escape test runs on the path the runner wrote, with the prefix taken
-back off: gluing `backend/` onto `/other/checkout/a.py` would otherwise make another tree's
-path read as an in-tree one. `path_prefix` is a coveragepy key, and the istanbul reader
-never reads it.
+mentioned at all, and it asks only the keys the runner wrote relative to this checkout.
+The escape test runs on the path the runner wrote, with the prefix taken back off. Gluing
+`backend/` onto `/other/checkout/a.py` gives `backend//other/checkout/a.py`, a path under
+a `backend` scope, and a root scope (`.`) claims any key. Before 0.8.1 the reach test asked
+such keys, so a lane with `path_prefix`, or scoped to the root, scored every function
+untested with exit 0 on another tree's report; it now gets the refusal above.
+`path_prefix` is a coveragepy key, and the istanbul reader never reads it.
 
 The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
 that assigns files to scopes, so a scope declaring individual files rather than

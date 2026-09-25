@@ -206,13 +206,17 @@ the venv launcher for `{python:.venv}`, with the venv's own directory in place o
 each OS. [The launcher token](configuration.md#the-launcher-token) lists what each
 token becomes.
 
-Two exit codes change for scripts that read them. A root on a Windows network share
+Three exit codes change for scripts that read them. A root on a Windows network share
 (`--repo \\server\share\repo`, or a working directory there) exits 3 before any lane
 starts, where 0.8.0 ran every lane in `C:\Windows`; the refusal gives the `net use`
 line that maps the share to a drive letter. A lane whose `cwd` names no directory
 fails as a lane, `cwd <path> is not a directory, so the command never ran; fix cwd =
 'nope' for this lane in crapkit.toml, or create that directory`, and a run with no lane
-left exits 5, where 0.8.0 ended in a Python traceback and exit 1.
+left exits 5, where 0.8.0 ended in a Python traceback and exit 1. A lane with
+`path_prefix`, or one whose scope is the root (`.`), fed a coverage.py report from
+another checkout fails with the wrong-tree refusal ([another
+tree](lanes.md#an-artifact-that-measured-a-different-tree)), and a run with no lane left
+exits 5, where 0.8.0 scored every function in its scopes untested and exited 0.
 
 ## Plugin and MCP clients
 

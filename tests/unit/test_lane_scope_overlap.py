@@ -167,6 +167,81 @@ def test_a_path_prefix_cannot_hide_an_artifact_from_another_tree(tmp_path, elsew
     assert "backend/" + elsewhere not in str(raised.value)
 
 
+# A key from another checkout, in each spelling a runner or a report written on
+# another OS carries. `//localhost/...` stands for any share: asking Windows
+# about a server it cannot find takes seconds a key.
+ANOTHER_TREE = {
+    "posix": "/other/checkout/backend/a.py",
+    "drive": "C:/other/checkout/backend/a.py",
+    "drive-backslash": "C:\\other\\checkout\\backend\\a.py",
+    "lower-drive": "c:/other/checkout/backend/a.py",
+    "unc": "//localhost/nosuch/checkout/backend/a.py",
+    "unc-backslash": "\\\\localhost\\nosuch\\checkout\\backend\\a.py",
+    "msys": "/c/other/checkout/backend/a.py",
+    "wsl": "/mnt/c/other/checkout/backend/a.py",
+    "climb": "../sibling/backend/a.py",
+}
+
+# (scope paths, path_prefix): a scope the glued key lands in. The prefix equal
+# to the scope is the monorepo lane path_prefix is for; a root scope claims
+# every key, glued or not.
+REACHED_BY_GLUE = {
+    "prefix-is-the-scope": (("backend",), "backend"),
+    "prefix-with-slash": (("backend",), "backend/"),
+    "root-scope": ((".",), ""),
+    "root-scope-with-prefix": ((".",), "backend"),
+}
+
+
+@pytest.mark.parametrize("which", REACHED_BY_GLUE)
+@pytest.mark.parametrize("spelling", ANOTHER_TREE)
+def test_a_key_from_another_tree_reaches_no_scope_whatever_the_prefix(tmp_path, which,
+                                                                        spelling):
+    """PC8. The reader glues path_prefix onto an absolute key too, and
+    `backend/` + `/other/checkout/a.py` is a path under the `backend` scope, so
+    the reach check said the artifact reached its scope. Every function in it
+    scored untested with exit 0, and the same report without path_prefix was
+    refused. A root scope claimed the key with no prefix at all. The reach
+    check now asks only keys the runner wrote relative to this checkout."""
+    paths, prefix = REACHED_BY_GLUE[which]
+    elsewhere = ANOTHER_TREE[spelling]
+    _artifact(tmp_path, elsewhere)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(scopes=("backend",), path_prefix=prefix), {"backend": paths})
+
+    message = str(raised.value)
+    assert "describes a different tree" in message
+    assert elsewhere.replace("\\", "/") in message, "quoted as the runner wrote it"
+
+
+@pytest.mark.parametrize("which", REACHED_BY_GLUE)
+def test_an_absolute_key_under_this_checkout_is_refused_under_any_prefix(tmp_path, which):
+    """The same glue hid the absolute-path refusal: this tree, spelled
+    absolutely, reached the scope as `backend/C:/.../backend/a.py` and scored
+    untested, where the lane without the prefix names relative_files."""
+    paths, prefix = REACHED_BY_GLUE[which]
+    _artifact(tmp_path, _inside(tmp_path, "backend/a.py"))
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(scopes=("backend",), path_prefix=prefix), {"backend": paths})
+
+    assert "under this checkout" in str(raised.value)
+    assert "relative_files = true" in str(raised.value)
+
+
+def test_a_relative_key_beside_one_from_another_tree_still_joins(tmp_path):
+    """The reach check skips an escaping key; it does not refuse on one. A
+    report that reaches the scope with any relative key keeps the join, as it
+    did before, glue or no glue."""
+    _artifact(tmp_path, "a.py", "/other/checkout/backend/a.py")
+
+    coverage, _, _ = _run(tmp_path, _lane(scopes=("backend",), path_prefix="backend"),
+                          {"backend": ("backend",)})
+
+    assert "backend/a.py" in coverage
+
+
 def test_in_tree_paths_that_miss_the_scope_warn_rather_than_fail(tmp_path, capsys):
     """The greenfield shape: a suite that imports none of the scoped source yet.
     `untested` is the right answer there, and refusing it would exit 5 on exactly

@@ -350,6 +350,25 @@ def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_
     assert f"`{tail}`" in section, tail
 
 
+@pytest.mark.parametrize("scope, prefix", [("backend", "backend"), (".", "")])
+def test_the_lanes_page_says_a_prefixed_or_root_lane_is_refused_another_tree(tmp_path, scope,
+                                                                             prefix):
+    """The reach test asks only the keys the runner wrote relative to this
+    checkout, so the glued `backend//other/checkout/a.py` reaches no scope."""
+    section = _prose(_section("docs/lanes.md", "### In-tree paths that miss every scope"))
+    upgrade = _prose(_section("docs/upgrading.md", "## Config paths that 0.8.1 reads on every OS"))
+    lane = config.Lane(name="py", command="true", artifact="cov.json", parser="coveragepy",
+                       scopes=("backend",), path_prefix=prefix)
+    glued = f"{prefix}/" * bool(prefix) + "/other/checkout/a.py"
+
+    with pytest.raises(ToolError, match="describes a different tree"):
+        lanes._judge_artifact_scope(lane, {glued: []}, {"backend": (scope,)}, tmp_path)
+    assert "it asks only the keys the runner wrote relative to this checkout" in section
+    assert "`backend//other/checkout/a.py`, a path under a `backend` scope" in section
+    assert "a root scope (`.`) claims any key" in section
+    assert "`path_prefix`, or one whose scope is the root (`.`)" in upgrade
+
+
 def test_the_cwd_row_and_the_upgrade_page_quote_the_failure_of_a_cwd_that_names_nothing(tmp_path):
     """Through the lane layer's own start, which adds the lane's fix to the
     start failure procs raises."""

@@ -1014,21 +1014,35 @@ def _escapes_repo(path: str) -> bool:
     return _is_absolute(path) or path.startswith("../")
 
 
-def _unreached_paths(matchers: tuple[ScopeMatch, ...], coverage: dict) -> tuple[str, ...]:
+def _unreached_paths(lane: Lane, matchers: tuple[ScopeMatch, ...],
+                     coverage: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
     path at all: nothing to compare against is not evidence.
 
     `owning_scope` is the reach test, so "could a scope claim this path?" can
-    never drift from the rule that assigns files to scopes.
+    never drift from the rule that assigns files to scopes. It is asked only of
+    keys the runner wrote relative to this checkout (`_relative_keys`).
 
     The DECLARED path, not the matcher's directory prefix: a scope may name an
     individual file, and the prefix half of that is `src/faro/core.py/`, a path
     that exists neither in the config the reader is about to open nor on disk.
     """
-    if not matchers or any(owning_scope(path, matchers) for path in coverage):
+    relative = _relative_keys(lane, coverage)
+    if not matchers or any(owning_scope(path, matchers) for path in relative):
         return ()
     return tuple(dict.fromkeys(m.path for m in matchers))
+
+
+def _relative_keys(lane: Lane, coverage: dict):
+    """The measured keys the runner wrote relative to this checkout, the only
+    ones a scope can claim. The coverage.py reader glues path_prefix onto every
+    key, and `backend/` + `/other/checkout/a.py` is a path under a `backend`
+    scope, as any key is under a root scope; asked of such keys, the check
+    found the scope reached and every function in it scored untested with
+    exit 0. A key that escapes the repo goes to the refusals instead."""
+    as_reported = lane_format(lane).as_reported
+    return (key for key in coverage if not _escapes_repo(as_reported(lane, key)))
 
 
 def _escaped_paths(lane: Lane, coverage: dict) -> list[str]:
@@ -1181,7 +1195,7 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     wrong run reports about the files it did reach.
     """
     matchers = _lane_matchers(lane, scope_paths or {})
-    declared = _unreached_paths(matchers, coverage)
+    declared = _unreached_paths(lane, matchers, coverage)
     if not declared:
         return
     elsewhere, inside = _split_escaped(root, _escaped_paths(lane, coverage))
