@@ -184,7 +184,7 @@ error: externally-managed-environment
 
 Give crapkit an environment of its own. Either line installs it into one and puts a
 `crapkit` command in `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows), the
-command the commit gate and the agent plugins run:
+command the agent plugins start:
 
 ```
 pipx install crapkit
@@ -192,7 +192,10 @@ uv tool install crapkit
 ```
 
 When that directory is not on PATH yet, the installer says so and names the fix:
-`pipx ensurepath`, or `uv tool update-shell`. Open a new shell after either.
+`pipx ensurepath`, or `uv tool update-shell`. Open a new shell after either. The
+`python` on PATH does not hold this install, so a [commit hook](#the-gate) calls the
+command itself: `exec crapkit hook-precommit` in place of
+`exec python -m crapkit hook-precommit`.
 
 A Python repo can carry crapkit in its own venv instead, beside the test dependencies
 its lane runs:

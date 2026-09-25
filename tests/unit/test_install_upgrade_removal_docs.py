@@ -260,3 +260,12 @@ def test_the_handbook_install_links_the_upgrade_table_the_refusal_and_the_remova
     install = page[page.index('<h2 id="install">'):page.index('<h2 id="uses">')]
 
     assert link in install, link
+
+
+def test_the_tool_install_routes_say_how_the_commit_hook_reaches_them():
+    """pipx and uv tool keep crapkit out of the `python` on PATH, so the Route 1
+    body `exec python -m crapkit hook-precommit` stops every commit on
+    `No module named crapkit` for a user who took either route."""
+    refuses = _prose(_section("README.md", "### When pip refuses"))
+
+    assert "`exec crapkit hook-precommit`" in refuses

@@ -537,7 +537,9 @@ nothing. Each of these now gets a line naming the object and the next step:
 
 - README Install says what to run when pip stops with `error: externally-managed-environment`,
   which Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons print: `pipx install
-  crapkit`, `uv tool install crapkit`, or a venv. It also tells a Python 3.10 user that pip
+  crapkit`, `uv tool install crapkit`, or a venv, and that a commit hook for either tool
+  install runs `exec crapkit hook-precommit`, since the `python` on PATH does not hold
+  it. It also tells a Python 3.10 user that pip
   ends with `No matching distribution found for crapkit` and that `uvx crapkit` runs crapkit
   on a Python uv finds or downloads.
 - README Install and the [upgrade
