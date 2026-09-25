@@ -94,3 +94,10 @@ c-fact	Constructs.swift	fact	params	1	The Swift Programming Language (5.10), Fun
 s-closure-if	Shapes.swift	closureIf	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
 s-closure-if	Shapes.swift	closureIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
 s-closure-if	Shapes.swift	closureIf	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+s-if-case	Shapes.swift	ifCase	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; The Swift Programming Language (5.10), Statements (If Statement, Case pattern): `if case let` is one condition, so one if	AO-SWIFT-IF-CASE
+s-if-case	Shapes.swift	ifCase	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: one if, so its body sits one level deep	AO-SWIFT-IF-CASE-ND
+s-if-case	Shapes.swift	ifCase	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1: one if +1 at nesting 0	
+s-coalesce	Shapes.swift	coalesce	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; The Swift Programming Language (5.10), Basic Operators (Nil-Coalescing Operator): a ?? b picks one of two values, one binary decision	AO-SWIFT-COALESCE
+s-coalesce	Shapes.swift	coalesce	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) sec. Ignore shorthand: a null-coalescing operator adds nothing	AO-SWIFT-COALESCE-COG
+s-super-init	SuperInit.swift	init	rows	1	The Swift Programming Language (5.10), Initialization (Initializer Delegation for Class Types): super.init(...) is a call, so the file declares one init	AO-SWIFT-SUPER-INIT
+s-super-init	SuperInit.swift	reset	start	8	The Swift Programming Language (5.10), Declarations (Function Declaration): reset starts on its defining line	AO-SWIFT-SUPER-INIT-NEXT

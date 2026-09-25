@@ -6,3 +6,15 @@ func closureIf(v: [Int]) {
         }
     }
 }
+
+// An if with a case pattern: one condition.
+func ifCase(r: Outcome) {
+    if case let .failure(e) = r {
+        show(e)
+    }
+}
+
+// A nil-coalescing pick: one binary decision.
+func coalesce(a: Int?) -> Int {
+    return a ?? 0
+}

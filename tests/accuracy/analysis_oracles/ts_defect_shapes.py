@@ -604,6 +604,50 @@ def struct_return(fn, context: Context) -> bool:
     return any(child.type == "struct_declaration" for child in fn.children)
 
 
+# --- Swift ----------------------------------------------------------------------------------------
+
+CASE_CONDITIONS = frozenset({"if_statement", "guard_statement", "while_statement", "pattern"})
+
+
+def case_condition(fn, context: Context) -> bool:
+    """AO-SWIFT-IF-CASE: an if, guard, while or for whose condition is a case pattern
+    (a `case` keyword outside a switch entry)."""
+    return any(node.type == "case" and node.parent.type in CASE_CONDITIONS
+               for node in own(fn, context))
+
+
+def init_expressions(context: Context) -> list:
+    """The byte spans of every `init` a Swift file uses as an expression (super.init,
+    self.init, Foo.init, .init), cached per file."""
+    if "init" not in context.facts:
+        context.facts["init"] = [(node.start_byte, node.end_byte)
+                                 for node in walk(context.tree.root_node)
+                                 if node.type == "simple_identifier"
+                                 and context.text(node) == b"init"]
+    return context.facts["init"]
+
+
+def _after_init(context: Context) -> set:
+    """The start byte of the first function after each init expression, cached per file."""
+    if "after-init" not in context.facts:
+        starts = sorted(f.start_byte for f in counters.functions(context.tree, context.spec))
+        context.facts["after-init"] = {_first_after(starts, end)
+                                       for _, end in init_expressions(context)}
+    return context.facts["after-init"]
+
+
+def near_init_expression(fn, context: Context) -> bool:
+    """AO-SWIFT-SUPER-INIT: fn holds an init expression, or is the first function after one."""
+    holds = any(fn.start_byte <= start < fn.end_byte for start, _ in init_expressions(context))
+    return holds or fn.start_byte in _after_init(context)
+
+
+def init_expression_line(context: Context, start: int) -> bool:
+    """crapkit's phantom row for an init expression starts on that expression's line."""
+    return any(context.data[:first].count(b"\n") + 1 == start
+               for first, _ in init_expressions(context))
+
+
 def _all(*languages: str) -> frozenset:
     return frozenset(languages)
 
@@ -803,6 +847,14 @@ SHAPES = [
     Shape("AO-COG-RECURSION-NAME-C", C_FAMILY, COGNITIVE, name_not_called),
     Shape("AO-C-DIRECTIVE-NLOC", C_FAMILY, NLOC, lambda fn, c: has_type(fn, c, {"preproc_call"})),
     Shape("AO-CPP-TEMPLATE-DEFAULT-LESS", _all("cpp"), EVERY, after_template_less),
+    # Swift
+    Shape("AO-SWIFT-IF-CASE", _all("swift"), ("ccn_std",), case_condition),
+    Shape("AO-SWIFT-IF-CASE-ND", _all("swift"), NESTING, case_condition),
+    Shape("AO-SWIFT-COALESCE", _all("swift"), CCN,
+          lambda fn, c: has_type(fn, c, {"nil_coalescing_expression"})),
+    Shape("AO-SWIFT-COALESCE-COG", _all("swift"), COGNITIVE,
+          lambda fn, c: has_type(fn, c, {"nil_coalescing_expression"})),
+    Shape("AO-SWIFT-SUPER-INIT", _all("swift"), EVERY, near_init_expression),
 ]
 
 
@@ -828,4 +880,4 @@ def _loose_line(context: Context, start: int) -> bool:
 
 
 EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line,
-              "objc": ivar_block_line}
+              "objc": ivar_block_line, "swift": init_expression_line}
