@@ -204,7 +204,7 @@ def test_the_described_system_python_is_the_oss_own_else_the_pinned_one(tmp_path
 @pytest.mark.parametrize("os_name, level, keys", [
     ("windows", "none", set()),
     ("windows", "core", {"cursor-agent-windows-x64"}),
-    ("windows", "full", {"cursor-agent-windows-x64", "goose-windows-x64"}),
+    ("windows", "full", {"cursor-agent-windows-x64", "goose-windows-x64", "bun-windows-x64"}),
     ("macos", "core", {"cursor-agent-macos-arm64"}),
     ("linux", "none", set()),
 ])
@@ -814,3 +814,35 @@ def test_the_vitest_setup_install_skips_peer_resolution_on_both_paths():
     assert 'npm i -D --ignore-scripts --legacy-peer-deps "vitest@$vitest"' in DOCKERFILE
     assert lines[1:3] == [["@vitest/coverage-v8@5"], ["@vitest/coverage-v8"]]
     assert "--legacy-peer-deps" not in " ".join(sum(lines[1:], []))
+
+
+# --- native harness launchers ---------------------------------------------------------------
+
+def test_each_os_that_installs_the_full_npm_set_gets_bun_for_omp():
+    """omp's npm launcher runs `bun`; on a native Windows toolchain it found none
+    and `omp --version` failed."""
+    for os_name in ("windows", "macos"):
+        full = toolchain.harness_downloads(PINS, os_name, toolchain.HARNESS_LEVELS["full"])
+        assert [key for key in full if key.startswith("bun-")], os_name
+    assert toolchain.harness_spec(PINS, "bun-windows-x64") == {}
+    assert toolchain.harness_spec(PINS, "goose-windows-x64")["command"] == "goose"
+
+
+def test_a_harness_that_cannot_start_in_a_native_sandbox_leaves_no_launcher(tmp_path):
+    """Junie's launcher looks for its release under $HOME, which a sandbox
+    replaces, and its npm postinstall maps linux and darwin only."""
+    bin_dir = tmp_path / "harness-full" / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    for name in ("junie", "junie.cmd", "junie.ps1", "gemini", "gemini.cmd"):
+        (bin_dir / name).write_text("", encoding="utf-8")
+    dropped = toolchain.drop_native_less_launchers(PINS, tmp_path / "harness-full")
+
+    assert sorted(path.name for path in dropped) == ["junie", "junie.cmd", "junie.ps1"]
+    assert sorted(path.name for path in bin_dir.iterdir()) == ["gemini", "gemini.cmd"]
+
+
+def test_harness_postinstalls_write_under_the_toolchain_not_the_users_home(tmp_path):
+    env = toolchain.npm_env({"HOME": "/home/me", "PATH": "/bin"}, tmp_path)
+
+    assert {env[name] for name in toolchain.HOME_VARS} == {str(tmp_path / "npm-home")}
+    assert env["PATH"] == "/bin" and (tmp_path / "npm-home").is_dir()

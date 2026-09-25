@@ -219,12 +219,40 @@ def cache_readme_installs(npm: str, root: Path, cache: Path, env: dict) -> None:
     shutil.rmtree(scratch)
 
 
+HOME_VARS = ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+             "XDG_CACHE_HOME")
+
+
+def npm_env(env: dict, root: Path) -> dict:
+    """env with every home directory under <root>/npm-home: harness postinstalls
+    write caches and whole releases (Junie's 180 MB) under $HOME, and a toolchain
+    install must not fill the user's own."""
+    home = root / "npm-home"
+    home.mkdir(parents=True, exist_ok=True)
+    return {**env, **{name: str(home) for name in HOME_VARS}}
+
+
 def npm_ci(npm: str, source: Path, dest: Path, cache: Path, env: dict) -> Path:
     """`npm ci` of one locked package set into dest, filling the shared cache."""
     def make():
         shutil.copytree(source, dest)
-        run_step([npm, "ci", "--no-audit", "--no-fund", f"--cache={cache}"], cwd=dest, env=env)
+        run_step([npm, "ci", "--no-audit", "--no-fund", f"--cache={cache}"], cwd=dest,
+                 env=npm_env(env, cache.parent))
     return _once(dest / "node_modules", make)
+
+
+def native_less_commands(pins: dict) -> set[str]:
+    return {spec["command"] for spec in pins["harness"].values() if spec.get("native", True) is False}
+
+
+def drop_native_less_launchers(pins: dict, harness_dir: Path) -> list[Path]:
+    """Remove the npm launchers of harnesses marked `native = false`, so the kit
+    finds none rather than one that cannot start in a sandbox."""
+    commands = native_less_commands(pins)
+    launchers = [path for path in (harness_dir / "node_modules" / ".bin").glob("*") if path.stem in commands]
+    for path in launchers:
+        path.unlink()
+    return launchers
 
 
 # --- toolchain.json ---------------------------------------------------------------
@@ -265,14 +293,15 @@ def harness_downloads(pins: dict, os_name: str, harness: list[str], arch: str | 
 
 
 def harness_spec(pins: dict, key: str) -> dict:
-    """The [harness] entry a download belongs to: cursor-agent-windows-x64 -> cursor-agent."""
-    return next(spec for name, spec in pins["harness"].items() if key.startswith(name + "-"))
+    """The [harness] entry a download belongs to (cursor-agent-windows-x64 ->
+    cursor-agent), or {} for a tool a harness needs (Bun, for omp)."""
+    return next((spec for name, spec in pins["harness"].items() if key.startswith(name + "-")), {})
 
 
 def alias_launchers(directory: Path, spec: dict) -> list[Path]:
     """Copy each launcher named after the harness command under each alias, as
     Cursor's installers copy cursor-agent.cmd to agent.cmd."""
-    launchers = [path for path in directory.iterdir() if path.stem == spec["command"]]
+    launchers = [path for path in directory.iterdir() if path.stem == spec.get("command")]
     return [Path(shutil.copy2(launcher, directory / (alias + launcher.suffix)))
             for alias in spec.get("aliases", []) for launcher in launchers]
 
@@ -332,6 +361,7 @@ def install(pins: dict, root: Path, harness: list[str]) -> dict:
     npm_ci(tools["npm"], DOCKER / "npm-fixtures", root / "npm-fixtures", root / "npm-cache", env)
     for name in harness:
         npm_ci(tools["npm"], DOCKER / f"harness-{name}", root / f"harness-{name}", root / "npm-cache", env)
+        drop_native_less_launchers(pins, root / f"harness-{name}")
     described = describe(root, tools, pythons, harness)
     (root / "toolchain.json").write_text(json.dumps(described, indent=2) + "\n", encoding="utf-8")
     return described

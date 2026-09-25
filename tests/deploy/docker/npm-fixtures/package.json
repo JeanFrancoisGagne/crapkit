@@ -3,7 +3,7 @@
   "private": true,
   "description": "Every npm package a deploy cell installs offline: the fixture test runners and the MCP TypeScript SDK at each minor a harness profile ships. The image runs `npm ci` here and the README's `npm i -D` line in a vitest-only repo, so both land in the npm cache the sandbox reads.",
   "devDependencies": {
-    "@vitest/coverage-v8": "5.0.1",
+    "@vitest/coverage-v8": "5.0.2",
     "husky": "9.1.7",
     "jest": "30.5.2",
     "jest-junit": "17.0.0",
@@ -11,6 +11,6 @@
     "sdk-1-23": "npm:@modelcontextprotocol/sdk@1.23.1",
     "sdk-1-25": "npm:@modelcontextprotocol/sdk@1.25.3",
     "sdk-1-29": "npm:@modelcontextprotocol/sdk@1.29.0",
-    "vitest": "5.0.1"
+    "vitest": "5.0.2"
   }
 }
