@@ -5,13 +5,17 @@ lands its half-finished functions in this verdict. The finding still fires — e
 codes are unchanged — but it is tagged, and the summary splits the two counts, so
 nobody spends an afternoon on 377 regressions that belong to somebody else.
 """
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 from crapkit.verify import dirty_counts, dirty_failure_ids, evaluate
 
 
 def scored(path="src/a.ts", name="f( )", start=1, end=9, ccn=5, cov=1.0, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     remedy = "decompose" if ccn > 6 else ("ok" if c <= 6 else "add-tests")
     return ScoredRow(scope, path, name, start, end, ccn + 1, ccn, ccn, 5, 1, 1, cov, "measured", c, remedy)
 

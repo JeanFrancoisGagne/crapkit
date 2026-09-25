@@ -1,4 +1,8 @@
 """Store seam: rows + run metadata in, identical rows and queryable runs out. SQLite on disk."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
 
@@ -227,7 +231,7 @@ def test_function_history_reads_a_trajectory(tmp_path):
     from crapkit.score import ScoredRow
     for commit, cov in (("c1", 0.0), ("c2", 0.5)):
         row = ScoredRow("src", "src/a.ts", "f( )", 1, 9, 7, 7, 7, 5, 1, 1, cov, "measured",
-                        7 * 7 * (1 - cov) ** 3 + 7, "add-tests")
+                        float(exact.crap(7, Fraction(cov))), "add-tests")
         store.write_run(commit=commit, tool_versions={}, rows=[row], lanes={"py": {}}, kind="coverage")
     hist = store.function_history("src/a.ts", "f( )")
     assert [h["commit"] for h in hist] == ["c1", "c2"]

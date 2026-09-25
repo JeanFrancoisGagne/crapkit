@@ -1,11 +1,15 @@
 """Verify seam: fresh scored rows + baseline + ratchet + changed ranges in, Verdict out. Pure."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 from crapkit.verify import Verdict, evaluate
 
 
 def scored(path="src/a.ts", name="f( )", start=1, end=9, ccn=5, cov=1.0, crap=None, scope="src", flag="measured"):
-    c = crap if crap is not None else ccn * ccn * (1 - cov) ** 3 + ccn
+    c = crap if crap is not None else float(exact.crap(ccn, Fraction(cov)))
     remedy = "decompose" if ccn > 6 else ("ok" if c <= 6 else "add-tests")
     return ScoredRow(scope, path, name, start, end, ccn + 1, ccn, ccn, 5, 1, 1, cov, flag, c, remedy)
 
@@ -85,11 +89,11 @@ def test_twin_functions_regression_cannot_hide_behind_its_sibling():
 
 
 def test_gate_uses_the_scope_ceiling():
-    from crapkit.score import ScoredRow, crap
+    from crapkit.score import ScoredRow
     from crapkit.verify import evaluate
     rows = [
-        ScoredRow("src", "src/a.ts", "f( )", 1, 9, 8, 8, 8, 5, 1, 1, 1.0, "measured", crap(8, 1.0), "decompose"),
-        ScoredRow("legacy", "old/b.py", "g( )", 1, 9, 8, 8, 8, 5, 1, 1, 1.0, "measured", crap(8, 1.0), "ok"),
+        ScoredRow("src", "src/a.ts", "f( )", 1, 9, 8, 8, 8, 5, 1, 1, 1.0, "measured", 8.0, "decompose"),
+        ScoredRow("legacy", "old/b.py", "g( )", 1, 9, 8, 8, 8, 5, 1, 1, 1.0, "measured", 8.0, "ok"),
     ]
     changed = {"src/a.ts": [(1, 9)], "old/b.py": [(1, 9)]}
     v = evaluate(fresh=rows, changed_ranges=changed, ratchet=[], baseline_failures=set(),

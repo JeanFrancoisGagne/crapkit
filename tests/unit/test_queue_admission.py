@@ -5,18 +5,22 @@ floor, next-item did not, and neither admitted a function whose CRAP was over
 target but whose ccn sat under the floor. A ccn-4 function at 0% coverage
 scores CRAP 20 against a ceiling of 6, and the queue reported empty.
 """
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 import pytest
 
 from crapkit.churn import FileChurn
 from crapkit.cli.queue import _no_lane_gap, _rankable, _skip_reason
-from crapkit.score import ScoredRow, crap
+from crapkit.score import ScoredRow
 from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, sql_floor
 
 
 def scored(path="util/stats.py", ccn=4, remedy="add-tests", flag="untested",
            name="dark( a , b , c )", scope="util"):
     return ScoredRow(scope, path, name, 1, 9, ccn, ccn, ccn, 8, 3, 2,
-                     0.0, flag, crap(ccn, 0.0), remedy)
+                     0.0, flag, float(ccn * ccn + ccn), remedy)
 
 
 CHURN = {"util/stats.py": FileChurn(commits=3, authors=1, weight=0.9)}
@@ -117,14 +121,14 @@ def test_the_pushdown_floor_never_hides_a_row_that_could_be_over_target():
     score can clear the smallest ceiling has to leave SQLite."""
     for ceiling in (6, 4, 1, 20):
         for ccn in range(1, sql_floor(99, ceiling)):
-            assert crap(ccn, 0.0) <= ceiling, \
-                f"ccn {ccn} can reach CRAP {crap(ccn, 0.0)} over ceiling {ceiling}"
+            worst = exact.crap(ccn, 0)
+            assert worst <= ceiling, f"ccn {ccn} can reach CRAP {worst} over ceiling {ceiling}"
 
 
 def test_the_pushdown_floor_is_tight_at_the_configured_ceilings():
     assert over_target_floor(6) == 3, "ccn 2 tops out at CRAP 6, ccn 3 at 12"
     assert over_target_floor(4) == 2, "a per-scope ceiling of 4 reaches ccn 2"
-    assert crap(over_target_floor(4), 0.0) > 4
+    assert exact.crap(over_target_floor(4), 0) > 4
 
 
 def test_the_pushdown_floor_never_rises_above_the_rules_it_serves():

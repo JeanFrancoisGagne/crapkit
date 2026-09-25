@@ -11,11 +11,9 @@ def row(path="src/a.ts", name="f( )", start=1, end=13, ccn=7, scope="src"):
 
 
 def test_crap_formula_exact_values():
-    assert crap(5, 1.0) == 5
-    assert crap(5, 0.0) == 30
-    assert crap(1, 0.0) == 2
-    assert round(crap(6, 1.0), 6) == 6
-    assert crap(7, 1.0) == 7, "cc 7 at full coverage still exceeds a target of 6"
+    got = {case: crap(*case) for case in ((5, 1.0), (5, 0.0), (1, 0.0), (6, 1.0), (7, 1.0))}
+    # README.md#crapkit: ccn^2 * (1 - cov)^3 + ccn; ccn 7 at full coverage still scores 7
+    assert got == {(5, 1.0): 5, (5, 0.0): 30, (1, 0.0): 2, (6, 1.0): 6, (7, 1.0): 7}
 
 
 def test_join_by_span_overlap_flags_measured():
@@ -23,14 +21,14 @@ def test_join_by_span_overlap_flags_measured():
     (scored,) = score_rows([row()], cov, lane_scopes={"src"})
     assert scored.flag == "measured"
     assert scored.cov == 0.75
-    assert scored.crap == crap(7, 0.75)
+    assert scored.crap == 7.765625  # 49 / 64 + 7, exact in binary
 
 
 def test_function_absent_from_artifact_scores_zero_untested():
     (scored,) = score_rows([row()], {"src/a.ts": []}, lane_scopes={"src"})
     assert scored.flag == "untested"
     assert scored.cov == 0.0
-    assert scored.crap == crap(7, 0.0)
+    assert scored.crap == 56.0  # 7^2 + 7
 
 
 def test_scope_with_no_lane_flags_no_lane_never_conflated():

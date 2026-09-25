@@ -1,5 +1,9 @@
 """SARIF 2.1.0 emission: code-scanning UIs and PR annotation bots read this,
 so ruleIds, levels, and locations are contract, not decoration."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 import json
 from types import SimpleNamespace
 
@@ -10,7 +14,7 @@ from crapkit.verify import GateViolation
 
 
 def scored(path="src/a.ts", name="f( )", ccn=8, cov=0.0, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     return ScoredRow(scope, path, name, 3, 9, ccn, ccn, ccn, 5, 1, 1, cov, "measured", c, "decompose")
 
 

@@ -1,11 +1,15 @@
 """Marks follow code that moved: the explicit `ratchet move` re-path, and the
 rename detection prune consults before it calls a function gone. Pure."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.ratchet import RatchetEntry, follow_renames, move_marks
 from crapkit.score import ScoredRow
 
 
 def scored(path, name="hot( )", ccn=8, cov=0.0, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     return ScoredRow(scope, path, name, 1, 9, ccn, ccn, ccn, 5, 1, 1, cov, "measured", c, "decompose")
 
 

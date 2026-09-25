@@ -1,11 +1,15 @@
 """Digest seam: two scored row sets in, totals + delta out; silence when unchanged. Pure."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.digest import build_digest, totals
 from crapkit.config import Config, load_config_text
 from crapkit.score import ScoredRow
 
 
 def scored(path, name, ccn, cov, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     remedy = "decompose" if ccn > 6 else ("ok" if c <= 6 else "add-tests")
     return ScoredRow(scope, path, name, 1, 9, ccn, ccn, ccn, 5, 1, 1, cov, "measured", c, remedy)
 

@@ -6,6 +6,10 @@ seeded at the pessimistic value is pulled down by the lucky run and fails the
 unlucky one, so an unstable input became an unstable gate. These pin the damping
 seam: a measurement that jumped between two runs of one commit holds its mark.
 """
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 import pytest
 
 from crapkit.ratchet import RatchetEntry, unstable_marks, update_ratchet
@@ -143,9 +147,7 @@ def test_the_refusal_line_names_the_function_and_both_values():
 def test_marks_are_compared_at_the_precision_they_are_stored_at():
     """cov is a division, so a fresh score carries long decimals. Comparing the
     unrounded value against a 4dp mark is what wedges an unchanged tree."""
-    from crapkit.score import crap
-
-    row = scored(crap(10, 2 / 3))
+    row = scored(float(exact.crap(10, Fraction(2, 3))))
     (refusal,) = unstable_marks([RatchetEntry(JUDGE, NAME, 90.0)], [row],
                                 {(JUDGE, NAME): 3.0}, max_jump=2.0)
 
