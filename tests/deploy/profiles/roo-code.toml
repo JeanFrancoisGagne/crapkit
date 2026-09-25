@@ -1,0 +1,91 @@
+# Roo Code: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Roo Code"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Roo Code"
+format = "mcpservers-json"
+scope = "project"
+path = ".roo/mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "root"
+env = "sdk-default"
+resolve = "execvp"
+windows = "shell"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "ts-sdk"
+sdk = "sdk-1-23"
+protocol = "2025-06-18"
+discover_first = false
+client_name = "Roo Code"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 60
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = ""
+version = ""
+command = ""
+image = ""
+floor = ""
+headless = ""
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "the MCP view's restart button"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "inferred"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "inferred"
+"initialize.discover_first" = "inferred"
+"initialize.client_name" = "inferred"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "inferred"
+"hooks.manifest" = "inferred"
+"hooks.fields" = "inferred"
+"hooks.events" = "inferred"
+"hooks.matcher" = "inferred"
+"hooks.exit2" = "inferred"
+sources = ["archived at 3.54.0: simulated only, no recurring job", "https://docs.roocode.com/features/mcp/using-mcp-in-roo (.roo/mcp.json)"]

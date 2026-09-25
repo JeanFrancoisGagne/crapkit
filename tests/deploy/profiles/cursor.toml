@@ -1,0 +1,96 @@
+# Cursor: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Cursor"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Cursor"
+format = "mcpservers-json"
+scope = "project"
+path = ".cursor/mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "allowlist"
+resolve = "execvp"
+windows = "cross-spawn"
+env_allow = ["HOME", "LC_CTYPE", "PATH"]
+env_allow_windows = ["USERPROFILE", "PATH", "PATHEXT", "SYSTEMROOT"]
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = false
+client_name = "Cursor"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "import-claude"
+manifest = ""
+fields = ["type", "command", "timeout", "matcher"]
+events = ["PostToolUse"]
+matcher = "mapped"
+exit2 = "deny"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "cursor-agent"
+version = "2026.09.23-86fc751"
+command = "cursor-agent"
+image = "core"
+floor = ""
+headless = "cursor-agent mcp list-tools crapkit"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "reload the window, or `agent mcp disable` then `enable`"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"spawn.env_allow" = "observed"
+"spawn.env_allow_windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "inferred"
+"hooks.manifest" = "source"
+"hooks.fields" = "source"
+"hooks.events" = "source"
+"hooks.matcher" = "source"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of `cursor-agent mcp list-tools` in crapkit-deploy:core (env: HOME LC_CTYPE PATH)", "cursor-agent dist-package/index.js: the Claude hook converter keeps type, command, matcher and timeout; Edit maps to Write", "https://cursor.com/docs/agent/hooks (exit 2 denies)"]
+manual = ["lin-cursor-claude-import settles whether the agent imports an installed Claude plugin by default"]

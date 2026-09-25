@@ -1,0 +1,83 @@
+# Aider: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Aider"
+kind = "cli"
+mode = "lint"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Aider"
+format = "aider-yaml"
+scope = "project"
+path = ".aider.conf.yml"
+config = '''
+lint-cmd:
+  - "python: crapkit rescore --gate"
+auto-lint: true
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "shell"
+windows = "shell"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "none"
+sdk = ""
+protocol = ""
+discover_first = false
+client_name = ""
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "aider"
+version = "0.86.2"
+command = "aider"
+image = "full"
+floor = ""
+headless = "aider --lint --file <clean file> (no model call)"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "none: each lint runs the installed crapkit"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "docs"
+"spawn.env" = "inferred"
+"spawn.resolve" = "docs"
+"spawn.windows" = "inferred"
+"initialize.client" = "docs"
+"initialize.sdk" = "docs"
+"initialize.protocol" = "docs"
+"initialize.discover_first" = "docs"
+"initialize.client_name" = "docs"
+"limits.output_tokens" = "docs"
+"limits.tool_prefix" = "docs"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["https://aider.chat/docs/usage/lint-test.html (lint-cmd, every non-zero exit reads as lint errors)", "Aider has no MCP client; crapkit reaches it as the lint command"]

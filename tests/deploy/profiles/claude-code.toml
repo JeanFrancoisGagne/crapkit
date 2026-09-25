@@ -1,0 +1,91 @@
+# Claude Code: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Claude Code"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Claude Code"
+format = "mcpservers-json"
+scope = "project"
+path = ".mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "ts-sdk"
+sdk = "sdk-1-29"
+protocol = "2025-11-25"
+discover_first = false
+client_name = "claude-code"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 25000
+tool_prefix = "mcp__crapkit__"
+startup_seconds = 30
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "plugin"
+manifest = ""
+fields = ["type", "command", "args", "timeout", "statusMessage", "async", "asyncRewake", "if", "matcher"]
+events = ["PostToolUse"]
+matcher = "kept"
+exit2 = "feedback"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "claude-code"
+version = "2.1.281"
+command = "claude"
+image = "core"
+floor = "2.1.139"
+headless = "claude mcp list"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "start a new session; `/mcp` reconnects a running one"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "docs"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of `claude mcp list` in crapkit-deploy:core", "https://code.claude.com/docs/en/hooks (exit 2, asyncRewake, args since 2.1.139, if since 2.1.85)", "https://code.claude.com/docs/en/mcp (MAX_MCP_OUTPUT_TOKENS default 25000, MCP_TIMEOUT)"]

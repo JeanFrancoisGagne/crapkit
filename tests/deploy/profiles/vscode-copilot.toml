@@ -1,0 +1,93 @@
+# VS Code with GitHub Copilot: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "VS Code with GitHub Copilot"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "VS Code with GitHub Copilot"
+format = "vscode-json"
+scope = "project"
+path = ".vscode/mcp.json"
+config = '''
+{
+  "servers": {
+    "crapkit": {
+      "type": "stdio",
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "config"
+env = "inherit"
+resolve = "execvp"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = false
+client_name = "Visual Studio Code"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "plugin"
+manifest = ""
+fields = ["type", "command", "timeout", "env", "cwd"]
+events = ["PostToolUse"]
+matcher = "dropped"
+exit2 = "block"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "vscode"
+version = "1.139.0"
+command = "code"
+image = "gui"
+floor = ""
+headless = "a probe extension reads vscode.lm.tools under xvfb"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "MCP: List Servers > Restart; a changed server hash re-reads the tool list"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "docs"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "inferred"
+"initialize.discover_first" = "inferred"
+"initialize.client_name" = "inferred"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "source"
+"hooks.manifest" = "source"
+"hooks.fields" = "source"
+"hooks.events" = "source"
+"hooks.matcher" = "source"
+"hooks.exit2" = "docs"
+sources = ["VS Code 1.139.0 workbench.desktop.main.js: Claude plugin format 1 reads hooks/hooks.json; the converter keeps command, windows/linux/osx, env, timeout and cwd, and runs every handler of a matcher group", "https://code.visualstudio.com/docs/copilot/customization/hooks (exit 2 is a blocking error)", "https://code.visualstudio.com/docs/copilot/customization/mcp-servers (servers, cwd, ${workspaceFolder})"]

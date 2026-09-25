@@ -1,0 +1,91 @@
+# Junie: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Junie"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Junie"
+format = "mcpservers-json"
+scope = "project"
+path = ".junie/mcp/mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "createprocess"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-03-26"
+discover_first = false
+client_name = "junie-client"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = "mcp_crapkit_"
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "junie"
+version = "1468.30.0"
+command = "junie"
+image = "full"
+floor = ""
+headless = "junie --model custom:<profile> on the OpenAI stub"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "`/mcp` > restart, or a new session"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "source"
+"initialize.sdk" = "source"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of a junie task on the OpenAI stub: initialize offers 2025-03-26", "Junie 1468.30 docs (bundled Junie-CLI-MCP-configuration.md): .junie/mcp/mcp.json and ~/.junie/mcp/mcp.json", "Junie is a JVM app: it reads JUNIE_HOME, else the account's home from the OS, never $HOME"]
