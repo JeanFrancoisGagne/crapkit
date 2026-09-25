@@ -190,7 +190,10 @@ crapkit 0.8.0
 source checkout. A next step crapkit prints names `crapkit` when PATH finds this
 installation's console script, and otherwise the interpreter running it, spelled with
 forward slashes (`C:/venv/Scripts/python.exe -m crapkit coverage`) so Git Bash, cmd.exe
-and PowerShell all run it as printed. Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
+and PowerShell all run it as printed. A path that holds a space is quoted
+(`"C:/Program Files/Python312/python.exe" -m crapkit coverage`): Git Bash and cmd.exe run
+that as printed, and PowerShell runs it with the call operator `& ` typed in front.
+Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
 at or above the current directory, so a monorepo workspace finds the root's), and with it
 you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
 where the flag goes.

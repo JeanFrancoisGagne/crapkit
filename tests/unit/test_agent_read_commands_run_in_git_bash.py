@@ -144,3 +144,92 @@ def test_a_console_script_on_path_is_named_and_runs_in_every_shell(unmeasured_re
     result = _run_in(shell, "crapkit --version", tmp_path, env)
 
     assert result.returncode == 0, f"{shell}\n{result.stdout}{result.stderr}"
+
+
+# --- an interpreter path that holds a space -----------------------------------
+#
+# A venv under C:\Users\Jane Doe or an install under C:\Program Files puts a
+# space in the interpreter path, and the next step quotes it. Git Bash, cmd.exe,
+# bash and sh run the quoted line as printed. PowerShell reads a line that opens
+# with a quoted string as an expression and refuses the arguments after it, so
+# there the reader types the call operator `& ` first. No one spelling runs
+# unchanged in all of them, and README.md and CONTEXT.md say so.
+
+def _link_directory(link: Path, target: Path) -> None:
+    """`link` reaches `target`: a junction on Windows, which needs no
+    privilege, and a symlink elsewhere."""
+    if os.name == "nt":
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                       check=True, capture_output=True)
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+@pytest.fixture(scope="module")
+def spaced_interpreter(tmp_path_factory):
+    """This interpreter reached through a directory named `my python`, so the
+    child's sys.executable holds a space."""
+    try:
+        inside = Path(sys.executable).relative_to(sys.prefix)
+    except ValueError:
+        pytest.skip("this interpreter lives outside sys.prefix, so no link reaches it")
+    link = tmp_path_factory.mktemp("spaced") / "my python"
+    _link_directory(link, Path(sys.prefix))
+    yield link / inside
+    # rmdir removes a junction and unlink a symlink, never what either reaches.
+    (os.rmdir if os.name == "nt" else os.unlink)(link)
+
+
+def _advised_by(interpreter: Path, repo: Path, env: dict) -> str:
+    result = hang_guard.run([str(interpreter), "-m", "crapkit", "worklist"], cwd=repo, env=env,
+                            text=True, encoding="utf-8", errors="replace")
+    found = ADVICE.search(result.stderr)
+    assert found, result.stdout + result.stderr
+    return found.group(1)
+
+
+def _typed_in(shell: str, advised: str) -> str:
+    """The line a reader types in `shell` for a next step: the call operator in
+    front of a quoted interpreter in PowerShell, the line as printed elsewhere."""
+    if shell == "powershell" and advised.startswith('"'):
+        return f"& {advised}"
+    return advised
+
+
+@pytest.mark.parametrize("shell", _shells())
+def test_a_quoted_interpreter_runs_in_every_shell_as_the_docs_say(unmeasured_repo, tmp_path,
+                                                                  spaced_interpreter, shell):
+    env = _environment(console_script=False)
+    advised = _advised_by(spaced_interpreter, unmeasured_repo, env)
+    assert advised.startswith('"') and "my python" in advised, advised
+
+    result = _run_in(shell, f"{_typed_in(shell, advised)} --version", tmp_path, env)
+
+    assert result.returncode == 0, f"{shell}: {advised}\n{result.stdout}{result.stderr}"
+    assert result.stdout.startswith("crapkit "), result.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs on Windows only")
+def test_powershell_refuses_a_quoted_interpreter_without_the_call_operator(unmeasured_repo, tmp_path,
+                                                                           spaced_interpreter):
+    """The `& ` the docs ask for is needed only while this refusal holds."""
+    env = _environment(console_script=False)
+    advised = _advised_by(spaced_interpreter, unmeasured_repo, env)
+
+    result = _run_in("powershell", f"{advised} --version", tmp_path, env)
+
+    assert result.returncode != 0 and "UnexpectedToken" in result.stderr, result.stdout + result.stderr
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("page", ["README.md", "CONTEXT.md"])
+def test_a_page_that_says_powershell_runs_the_next_step_names_the_call_operator(page):
+    """Each paragraph that tells a reader PowerShell runs the interpreter
+    spelling also tells them to put `& ` before it when it is quoted."""
+    paragraphs = (ROOT / page).read_text(encoding="utf-8").split("\n\n")
+    promising = [p for p in paragraphs if "next step" in p.lower() and "PowerShell" in p]
+
+    assert promising, f"{page} no longer says which shells run the next step"
+    assert all("`& `" in p for p in promising), promising

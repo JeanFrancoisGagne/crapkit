@@ -17,7 +17,9 @@ that has no crapkit, or the base interpreter a venv wraps.
 The interpreter is spelled with forward slashes. An agent's Bash tool on
 Windows is Git Bash, which drops every backslash of `C:\\venv\\Scripts\\python.exe`
 and answers 127; `C:/venv/Scripts/python.exe` runs in Git Bash, cmd.exe and
-PowerShell alike. The MCP server's children run as `python -m crapkit`, so
+PowerShell alike. A path that holds a space is quoted, and PowerShell reads a
+line that opens with a quoted string as an expression: there the reader types
+`& ` first (README). The MCP server's children run as `python -m crapkit`, so
 every next step an agent reads from a tool result goes through here.
 
 Not everything crapkit prints goes through here. The brief packet's `commands.*`
@@ -68,7 +70,9 @@ def _forward(path: str, sep: str = os.sep) -> str:
 def _quoted(interpreter: str) -> str:
     r"""`C:/Program Files/Python311/python.exe` is an ordinary Windows install,
     and unquoted it reaches cmd.exe as `C:/Program` plus two arguments. Double
-    quotes are the one form cmd, bash and zsh all read."""
+    quotes are the one form cmd, bash and zsh all read. PowerShell runs the
+    quoted line only with `& ` in front, and no spelling runs unchanged in
+    all four."""
     return f'"{interpreter}"' if " " in interpreter else interpreter
 
 
