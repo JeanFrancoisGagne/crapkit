@@ -21,7 +21,7 @@ import pytest
 from accuracy.kit import exact, rulings, strategies
 from accuracy.kit.settings import pure
 from accuracy.score_model import cases, production
-from accuracy.score_model.oracles import phpunit_crap_index as phpunit
+from accuracy.score_model.oracles import crap_typescript, phpunit_crap_index as phpunit
 
 ULPS = 8
 PLACES = (1, 2, 4)
@@ -217,6 +217,43 @@ def test_after_d13_every_other_string_rounds_half_even():
         keys = [(places, ccn, cov.numerator, cov.denominator) for places in PLACES]
         problems += [line for key in keys if (line := _after_d13_problem(key, want, ties))]
     assert problems[:20] == []
+
+
+# --- crap-typescript-core ---------------------------------------------------------------------
+
+def _is_exact_tie(ccn: int, covered: int, total: int, places: int) -> bool:
+    doubled = exact.crap(ccn, Fraction(covered, total)) * 10 ** places * 2
+    return doubled.denominator == 1 and doubled.numerator % 2 == 1
+
+
+def _typescript_problems(case: tuple, theirs: float) -> list[str]:
+    ccn, covered, total = case
+    far = [] if within_ulps(theirs, exact.crap(ccn, Fraction(covered, total))) else [
+        f"crap-typescript CRAP{case} = {theirs!r} strays from the exact value"]
+    ours = crapkit_crap(ccn, covered, total)
+    split = [f"CRAP{case} at {places} dp: {ours:.{places}f} against {theirs:.{places}f}"
+             for places in PLACES if f"{ours:.{places}f}" != f"{theirs:.{places}f}"
+             and not _is_exact_tie(ccn, covered, total, places)]
+    return far + split
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.platform("linux")
+def test_crap_typescript_agrees_at_identical_inputs(oracle):
+    """crap-typescript-core 0.5.2 scores the reduced grid with its own
+    calculateCrapScore, from the percent (covered / total) * 100 it computes.
+    Its double stays within ULPS of the exact CRAP, and crapkit prints its 1, 2
+    and 4 dp strings everywhere but at exact ties, where each tool's double
+    picks the side (rulings D5 and SM-CRAPTS-TIE)."""
+    oracle("@barney-media/crap-typescript-core")
+    grid = list(cases.reduced_grid())
+    theirs = crap_typescript.scores(grid)
+    tie = theirs[grid.index((9, 5, 6))]
+
+    assert [line for case, value in zip(grid, theirs)
+            for line in _typescript_problems(case, value)][:20] == []
+    rulings.pin_ruling("SM-CRAPTS-TIE", crapkit=f"{crapkit_crap(9, 5, 6):.2f}", oracle=f"{tie:.2f}")
 
 
 # --- PHPUnit's CrapIndex --------------------------------------------------------------------
