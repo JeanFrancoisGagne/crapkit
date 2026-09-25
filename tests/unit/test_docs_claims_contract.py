@@ -456,6 +456,37 @@ def test_the_gate_section_names_the_order_the_hook_tries():
     assert "then `uvx crapkit`, then `python -m crapkit`" in gate
 
 
+# What each line of the hook body runs, as the prose names it.
+BODY_LAUNCHERS = {"crapkit hook-precommit": "`crapkit`", "uvx crapkit": "`uvx`", "python -m crapkit": "`python`"}
+
+
+def test_every_line_of_the_hook_body_has_a_launcher_the_prose_names():
+    assert all(any(run in line for run in BODY_LAUNCHERS) for line in HOOK_BODY)
+
+
+def test_the_gate_section_names_every_launcher_where_it_says_git_refuses_every_commit():
+    """With uv installed, the uvx line runs the gate, so a PATH with no
+    `crapkit` command and no `python` that imports it still commits through
+    the gate. The sentence that says git refuses every commit named only
+    those two."""
+    intro = " ".join(_section(_doc("README.md"), "## The gate").split("\n### Route 1")[0].split())
+    (refusal,) = [s for s in re.split(r"(?<=\.)\s+", intro) if "refuses every commit" in s]
+
+    assert [name for name in BODY_LAUNCHERS.values() if name not in refusal] == [], refusal
+
+
+def test_the_handbook_callout_names_every_line_the_hook_tries():
+    """The Enforcement callout told a reader the hook runs `crapkit`, then
+    `python -m crapkit`; the block above it writes a uvx line between them."""
+    import html
+
+    page = _doc("docs/handbook.html")
+    section = page.split("<h3>Enforcement: seed the ratchet, then arm the hook</h3>", 1)[1].split("<h3", 1)[0]
+    callout = " ".join(html.unescape(re.sub(r"<[^>]+>", "", section.split('class="callout', 1)[1])).split())
+
+    assert [run for run in BODY_LAUNCHERS if run.split(" hook")[0] not in callout] == [], callout
+
+
 def test_the_install_section_says_what_to_run_when_pip_refuses():
     """PEP 668 Pythons (Debian 12, Ubuntu 23.04+, Homebrew, uv) refuse the
     Install line with externally-managed-environment. The section names the

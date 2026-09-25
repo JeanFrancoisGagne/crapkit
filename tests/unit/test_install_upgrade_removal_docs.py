@@ -263,9 +263,14 @@ def test_the_handbook_install_links_the_upgrade_table_the_refusal_and_the_remova
 
 
 def test_the_tool_install_routes_say_how_the_commit_hook_reaches_them():
-    """pipx and uv tool keep crapkit out of the `python` on PATH, so the Route 1
-    body `exec python -m crapkit hook-precommit` stops every commit on
-    `No module named crapkit` for a user who took either route."""
+    """pipx and uv tool keep crapkit out of the `python` on PATH. The hook body
+    README prints runs the `crapkit` command before it tries `python`, so the
+    section tells the reader the hook reaches either install as printed, and
+    names no line to swap in: it told them to put `exec crapkit
+    hook-precommit` in place of a line the body no longer starts with."""
     refuses = _prose(_section("README.md", "### When pip refuses"))
+    body = _fenced_lines(_section("README.md", "### Route 1: `.git/hooks/pre-commit` (local, not committed)"))
 
-    assert "`exec crapkit hook-precommit`" in refuses
+    assert body[body.index("#!/bin/sh") + 1].startswith("command -v crapkit "), body
+    assert "(#the-gate)" in refuses and "the `crapkit` command" in refuses, refuses
+    assert "in place of" not in refuses, refuses

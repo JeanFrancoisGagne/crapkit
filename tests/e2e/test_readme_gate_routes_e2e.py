@@ -99,14 +99,17 @@ PYTHONS = {"missing": 'echo "python: not found" >&2\nexit 127',
            "bare": 'exec "{exe}" -I -S "$@"'}
 
 
-def shims(tmp_path: Path, *, crapkit: bool = True, python: str = "missing") -> Path:
+def shims(tmp_path: Path, *, crapkit: bool = True, python: str = "missing", uvx: bool = False) -> Path:
     """A PATH directory holding `crapkit`, which runs this crapkit, when
-    `crapkit`, and the `python` PYTHONS names."""
+    `crapkit`, the `python` PYTHONS names, and with `uvx` a uvx that runs this
+    crapkit for `uvx crapkit ARGS`, the way uv runs the release it fetched."""
     here, exe = tmp_path / "bin", Path(sys.executable).as_posix()
     here.mkdir()
     if crapkit:
         _script(here, "crapkit", f'exec "{exe}" -m crapkit "$@"')
         (here / "crapkit.cmd").write_text(f'@"{sys.executable}" -m crapkit %*\r\n', encoding="ascii")
+    if uvx:
+        _script(here, "uvx", f'[ "$1" = crapkit ] || exit 2\nshift\nexec "{exe}" -m crapkit "$@"')
     _script(here, "python", PYTHONS[python].format(exe=exe))
     return here
 
@@ -263,6 +266,59 @@ def test_the_pages_name_what_a_hook_that_reaches_no_crapkit_prints(tmp_path, pyt
     assert committed.returncode != 0 and said in committed.stderr, committed.stderr
     assert hook.returncode == readme_exit_code(said), hook.stderr
     assert said in handbook_callout(ENFORCE), "the handbook names the line the reader sees"
+
+
+def test_the_hook_body_reaches_the_gate_through_uvx(tmp_path):
+    """uvx puts no `crapkit` on PATH. On a machine with uv and no `python`, the
+    uvx-only start README gives a repo that is not Python, the body's uvx line
+    is what runs the gate."""
+    env = machine(tmp_path, shims(tmp_path, crapkit=False, uvx=True))
+    repo = adopted(tmp_path, env)
+
+    assert_gated(repo, env, paste([sh()], readme_fence(ROUTE_ONE, "sh"), repo, env))
+
+
+REMOVAL_PAGES = [("README.md", "### Removing crapkit"), ("docs/upgrading.md", "## Removing crapkit"),
+                 ("docs/handbook.html", "Removing crapkit")]
+
+
+def removal_prose(page: str, heading: str) -> str:
+    """The text under a removal heading, down to the next heading, as a reader
+    reads it: fences cut out, tags dropped with <code> read as backticks."""
+    text = (ROOT / page).read_text(encoding="utf-8")
+    if page.endswith(".html"):
+        body = text.split(f"<h3>{heading}</h3>", 1)[1].split("<h3", 1)[0]
+        return " ".join(html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"</?code>", "`", body))).split())
+    body = re.split(r"^#{1,6} ", text.split(f"\n{heading}\n", 1)[1], maxsplit=1, flags=re.M)[0]
+    return " ".join(re.sub(r"^```.*?^```", "", body, flags=re.M | re.S).split())
+
+
+def removal_claim(page: str, heading: str) -> str:
+    """The sentences under a removal heading that say what `pip uninstall
+    crapkit` alone leaves."""
+    sentences = re.split(r"(?<=\.)\s+", removal_prose(page, heading))
+    return " ".join(sentence for sentence in sentences if "pip uninstall crapkit" in sentence)
+
+
+@pytest.mark.parametrize("page, heading", REMOVAL_PAGES)
+@pytest.mark.parametrize("uv, said, named", [(True, "crapkit gate:", "`uvx crapkit`"),
+                                             (False, "No module named crapkit", "`No module named crapkit`")],
+                         ids=["uv", "no-uv"])
+def test_the_removal_text_says_what_the_hook_does_once_the_package_is_gone(tmp_path, page, heading, uv, said,
+                                                                          named):
+    """After `pip uninstall crapkit` the hook finds no `crapkit` command and a
+    python that no longer imports it. Where uv is installed, the body's uvx
+    line fetches crapkit and the gate keeps judging every commit; without uv,
+    every commit stops on `No module named crapkit`. The removal text said
+    every commit stops, which a team with uv never saw."""
+    env = machine(tmp_path, shims(tmp_path, crapkit=False, python="bare", uvx=uv))
+    repo = adopted(tmp_path, env)
+    paste([sh()], readme_fence(ROUTE_ONE, "sh"), repo, env)
+
+    committed = commit_breach(repo, env)
+
+    assert committed.returncode != 0 and said in committed.stderr, committed.stderr
+    assert named in removal_claim(page, heading), removal_claim(page, heading)
 
 
 def test_route_two_gates_a_commit_where_crapkit_is_on_path_and_python_is_not(tmp_path):

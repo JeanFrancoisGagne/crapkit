@@ -72,7 +72,10 @@ version stays 11, so no repo re-seeds.
 - The commit-gate hook README Route 1 and Route 2 and the handbook write calls the
   `crapkit` launcher first, then `uvx crapkit`, then `python -m crapkit`, so it reaches a
   pipx, uv tool or uvx install. The old hook ran `python -m crapkit`, which none of those
-  installs can import.
+  installs can import. The gate section says the uvx line runs the release uv fetched
+  first, which need not be the one your team runs, and keeps the gate running after
+  `pip uninstall crapkit` on any machine with uv; Route 2's PowerShell form and the
+  handbook's callout name the uvx line too.
 - [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
   says what a downgrade keeps and what it refuses, and that a merge driver and Route 2's
   hooks path are set per clone.
@@ -567,8 +570,9 @@ nothing. Each of these now gets a line naming the object and the next step:
 
 - README Install says what to run when pip stops with `error: externally-managed-environment`,
   which Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons print: `pipx install
-  crapkit`, `uv tool install crapkit`, or a venv. A commit hook for either tool install runs
-  `exec crapkit hook-precommit`, since the `python` on PATH does not hold it. The section
+  crapkit`, `uv tool install crapkit`, or a venv. The commit hook README prints reaches
+  either tool install, since it runs the `crapkit` command before the `python` on PATH,
+  which does not hold it. The section
   also tells a Python 3.10 user that pip ends with `No matching distribution found for
   crapkit` and that `uvx crapkit` runs crapkit on a Python uv finds or downloads.
 - README Install and the [upgrade
@@ -597,11 +601,13 @@ nothing. Each of these now gets a line naming the object and the next step:
   runs again. The page named only error 32, which pip did not print.
 - New section: [Removing
   crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit).
-  After `pip uninstall crapkit` alone, every commit stopped on the hook's `No module named
-  crapkit` and every merge of `crapkit-ratchet.tsv` conflicted after the driver's
-  `crapkit: not found`. The section takes out the hook and the merge driver first, then the
-  files crapkit wrote, then the package and the plugins, with each gate route's pieces and
-  each installer's removal line.
+  The section takes out the hook and the merge driver first, then the files crapkit
+  wrote, then the package and the plugins, with each gate route's pieces and each
+  installer's removal line. After `pip uninstall crapkit` alone, the hook keeps judging
+  every commit through `uvx crapkit` on a machine with uv, with whatever release uv has
+  cached or can download, and stops every commit on `No module named crapkit` without
+  uv; every merge of `crapkit-ratchet.tsv` conflicts after the driver's `crapkit: not
+  found`. README and the handbook say the same where they point at the section.
 - The handbook's Install section names the PEP 668 refusal, the 3.10 route through
   `uvx crapkit`, what each Windows installer does under a live session, and links the
   upgrade table and the removal steps. Its Windows paragraph had named only `os error 32`.

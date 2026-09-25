@@ -193,9 +193,8 @@ uv tool install crapkit
 
 When that directory is not on PATH yet, the installer says so and names the fix:
 `pipx ensurepath`, or `uv tool update-shell`. Open a new shell after either. The
-`python` on PATH does not hold this install, so a [commit hook](#the-gate) calls the
-command itself: `exec crapkit hook-precommit` in place of
-`exec python -m crapkit hook-precommit`.
+`python` on PATH does not hold this install, and the [commit hook](#the-gate) runs the
+`crapkit` command before it tries `python`, so it reaches either install as printed.
 
 A Python repo can carry crapkit in its own venv instead, beside the test dependencies
 its lane runs:
@@ -331,9 +330,11 @@ lists what each installer printed.
 ### Removing crapkit
 
 Take the commit hook and the merge driver out before the package: both call crapkit.
-After `pip uninstall crapkit` alone, every commit stops on the hook's
-`No module named crapkit`, and every merge that touches `crapkit-ratchet.tsv` conflicts
-after the driver's `crapkit: not found`. The upgrade guide's
+After `pip uninstall crapkit` alone, the hook keeps judging every commit through
+`uvx crapkit` on a machine with uv, with whichever crapkit release uv has cached or can
+download, and stops every commit on `No module named crapkit` on a machine without uv.
+Every merge that touches `crapkit-ratchet.tsv` conflicts after the driver's
+`crapkit: not found`. The upgrade guide's
 [Removing crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit)
 lists each piece, in a repo and on the machine.
 

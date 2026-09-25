@@ -380,9 +380,11 @@ environments. The CLI version alone does not prove an interrupted install finish
 ## Removing crapkit
 
 Take out what calls crapkit before the package. The commit hook and the merge driver
-both run it: after `pip uninstall crapkit` alone, every commit stops on the hook's
-`No module named crapkit`, and every merge that touches `crapkit-ratchet.tsv` conflicts
-after the driver's `crapkit: not found`.
+both run it. After `pip uninstall crapkit` alone, the hook README prints keeps judging
+every commit through `uvx crapkit` on a machine with uv, with whichever crapkit release
+uv has cached or can download, and stops every commit on `No module named crapkit` on a
+machine without uv. Every merge that touches `crapkit-ratchet.tsv` conflicts after the
+driver's `crapkit: not found`.
 
 ### From a repo
 
@@ -427,7 +429,7 @@ The other routes leave their own pieces:
 | pip, pip --user or pip from the git URL | `python -m pip uninstall crapkit`, which leaves lizard installed |
 | pipx | `pipx uninstall crapkit`, which deletes crapkit's venv and its command |
 | uv tool | `uv tool uninstall crapkit`, which deletes the tool's environment and its command |
-| uvx | `uv cache clean crapkit`, which drops the releases uvx cached |
+| uvx | `uv cache clean crapkit`, which drops the releases uvx cached; a Route 1 or Route 2 hook left in place fetches crapkit again at the next commit |
 | the Claude Code plugin | `claude plugin uninstall crapkit@crapkit`, then `claude plugin marketplace remove crapkit` |
 | the Codex plugin | `codex plugin remove crapkit@crapkit`, then `codex plugin marketplace remove crapkit` |
 | another MCP client | delete the `crapkit` server entry from its config ([stdio setup](agent-json.md#mcp-server)) |

@@ -49,7 +49,7 @@ kitcells = _load("deploy_map_cells", DEPLOY / "kit" / "cells.py")
 LAUNCH = r"(?:(?:python(?:\d(?:\.\d+)?)?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+)?"
 SURFACE_LINE = re.compile(rf"^(?:sudo\s+)?{LAUNCH}(?:pip3?|pipx|uvx?)\s|^(?:claude|codex)\s+plugin\b|^git\s+config\b")
 HOOK_WRITE = re.compile(r"(?:>|\bSet-Content\b|\bOut-File\b|\btee\b|\bcp\b|\binstall\b).*"
-                        r"(?:\.git/hooks/|githooks/|git-hooks/)|chmod\s+\+x\s+\S*hooks/", re.I)
+                        r"(?:\.git/hooks/|githooks/|git-hooks/)|chmod\s+\+x\s+\S*hooks/|--git-common-dir\)/hooks/", re.I)
 CRAPKIT_LINE = re.compile(rf"^{LAUNCH}crapkit(?:$|\s+(?:-|[a-z][a-z-]*(?:\s|$)))")
 ENV_PREFIX = re.compile(r"^(?:[A-Za-z_]\w*=\S*\s+)+")
 CONFIG_LANGS = {"json", "jsonc", "toml", "yaml", "yml"}
@@ -117,6 +117,10 @@ def _fence(text, lang=""):
     ("claude plugin marketplace add JeanFrancoisGagne/crapkit", "", "surface"),
     ('git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"', "", "surface"),
     ("cat > .git/hooks/pre-commit <<'EOF'\n#!/bin/sh\nexec crapkit hook-precommit\nEOF", "sh", "surface"),
+    ('hook="$(git rev-parse --git-common-dir)/hooks/pre-commit"\ncat > "$hook" <<\'EOF\'\n#!/bin/sh\nEOF', "sh",
+     "surface"),
+    ('$hook = "$(git rev-parse --git-common-dir)/hooks/pre-commit"\nSet-Content -Path $hook -Value x', "powershell",
+     "surface"),
     ('{"mcpServers": {"crapkit": {"command": "crapkit", "args": ["mcp"]}}}', "json", "surface"),
     ("$ crapkit doctor\ncrapkit: lane 'py': positional argument narrows", "", "crapkit"),
     ("CRAPKIT_OVERRIDE_REASON=hotfix python -m crapkit verify", "", "crapkit"),
