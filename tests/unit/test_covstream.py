@@ -1,8 +1,9 @@
 """Streaming artifact readers: the same answer as the whole-document parsers,
 without the whole document ever being in memory.
 
-Every test here diffs a file reader against an independent whole-document oracle
-on the same bytes. The chunk size is a parameter so the refill boundary lands
+Every test here diffs a file reader against a whole-document oracle on the same
+bytes: json.loads splits the document, and its canonical form is read in one
+window (coverage_oracles.py). The chunk size is a parameter so the refill boundary lands
 in the middle of a key, a value and a separator — a 1 MiB default hides those
 seams on any fixture small enough to keep in a test.
 """
