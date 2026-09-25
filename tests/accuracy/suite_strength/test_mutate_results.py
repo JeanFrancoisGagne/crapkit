@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -357,9 +358,13 @@ def test_an_uncommitted_test_kills_at_any_worker_count(repo_templates, tmp_path,
 # least every test tests/unit collects on its own, and it takes at most a
 # third of mutation_timeout_seconds, the headroom that deadline was set with.
 #
-# The command runs as written. PYTEST_ADDOPTS adds a JUnit file, which counts
-# what ran whatever verbosity the repo's addopts set; the tests the run names
-# FAILED or ERROR come from its short summary, which pytest prints at any -q.
+# The command runs as written, inside a container as accuracy.yml's jobs run it,
+# with --maxfail after it to undo its -x: a clean tree passes either way, and a
+# failing one names every failing test, so each run reads the same set.
+# PYTEST_ADDOPTS adds a JUnit file, which counts what ran whatever verbosity the
+# repo's addopts set; the tests the run names FAILED or ERROR come from its
+# short summary, which pytest prints at any -q. A failing test no open ruling
+# records (SS3, SS4) fails the check.
 
 REPO = Path(__file__).resolve().parents[3]
 _COLLECTED = re.compile(r"(\d+) tests? collected")
@@ -409,31 +414,74 @@ def clean_tree(tmp_path):
     hang_guard.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(tree)])
 
 
-def _in_tree(argv: list[str], tree: Path, timeout: float, extra: dict | None = None):
+def _in_tree(argv: list[str], tree: Path, timeout: float | None, extra: dict | None = None):
     env = drive.child_env({"PYTHONDONTWRITEBYTECODE": "1", **(extra or {})})
     return hang_guard.run(argv, cwd=tree, env=env, timeout=timeout, text=True,
                           encoding="utf-8", errors="replace")
 
 
-@rulings.applies("SS3")
+INSIDE_CONTAINER = {"CRAPKIT_INSIDE_CONTAINER": "1"}  # crapkit/lanes.py's own switch
+CLEAN_RUN_RULINGS = ("SS3", "SS4")
+
+
+def _open_failures() -> set[str]:
+    """The tests the open clean-run rulings record as failing on an unmutated tree."""
+    rows = rulings.load()
+    return {test for ruling in CLEAN_RUN_RULINGS if rows[ruling].ruling == "defect"
+            for test in rows[ruling].crapkit_value.split(",")}
+
+
+def _pytest_in(tree: Path, targets: list[str], extra: dict | None = None):
+    """pytest over `targets` in `tree`, with the killer's import paths."""
+    paths = {"PYTHONPATH": os.pathsep.join([str(tree / "src"), str(tree / "tests")])}
+    return _in_tree([sys.executable, "-m", "pytest", *targets, "-q", "-p", "no:cacheprovider",
+                     "-p", "no:randomly"], tree, None, {**paths, **(extra or {})})
+
+
 @pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.platform("linux")
 def test_mutation_command_is_sound(clean_tree, tmp_path):
     """Linux only: the jobs that run this command (accuracy.yml's mutation jobs
-    and the `accuracy` label's crapkit mutate) run in the accuracy image."""
+    and the `accuracy` label's crapkit mutate) run in the accuracy image. The run
+    fails only on tests an open clean-run ruling records; SS3 and SS4 are the
+    strict xfails that turn when those tests pass, and with no ruling open the
+    run must pass outright."""
     config = tomllib.loads((REPO / "crapkit.toml").read_text(encoding="utf-8"))["crapkit"]
     deadline, junit = config["mutation_timeout_seconds"], tmp_path / "killer.xml"
     started = time.monotonic()
-    killer = _in_tree(shlex.split(config["mutation_command"]), clean_tree, deadline,
-                      {"PYTEST_ADDOPTS": f"--junitxml={junit}"})
+    killer = _in_tree([*shlex.split(config["mutation_command"]), "--maxfail=1000000"], clean_tree,
+                      deadline, {"PYTEST_ADDOPTS": f"--junitxml={junit}", **INSIDE_CONTAINER})
     seconds = time.monotonic() - started
     unit = _in_tree([sys.executable, "-m", "pytest", "tests/unit", "-o", "addopts=",
                      "--collect-only", "-q", "-p", "no:cacheprovider"], clean_tree, deadline)
+    failed = set(_FAILED.findall(killer.stdout))
 
-    rulings.pin_ruling("SS3", crapkit=failing(killer.stdout), oracle="none")
-    assert killer.returncode == 0, killer.stdout[-3000:] + killer.stderr[-3000:]
+    assert failed <= _open_failures(), f"no open ruling records {sorted(failed - _open_failures())}"
+    assert (killer.returncode == 0) == (not failed), killer.stdout[-3000:] + killer.stderr[-3000:]
     assert ran(junit.read_text(encoding="utf-8")) >= collected(unit.stdout) > 0
     assert seconds <= deadline / 3, (
         f"the clean run took {seconds:.0f} s, over a third of mutation_timeout_seconds "
         f"({deadline}); set it to three times the clean run")
+
+
+@rulings.applies("SS3")
+@pytest.mark.nightly
+@pytest.mark.process
+def test_ss3_the_hang_bound_guard_passes_on_a_clean_tree(clean_tree):
+    run = _pytest_in(clean_tree, ["tests/unit/test_one_hang_bound.py"])
+
+    rulings.pin_ruling("SS3", crapkit=failing(run.stdout), oracle="none")
+
+
+LANE_TESTS = ["tests/unit/test_lanes_infra.py", "tests/unit/test_lane_reuse_refusal.py",
+              "tests/unit/test_lane_starts_through_its_launch_spec.py"]
+
+
+@rulings.applies("SS4")
+@pytest.mark.nightly
+@pytest.mark.process
+def test_ss4_the_lane_tests_pass_inside_a_container(clean_tree):
+    run = _pytest_in(clean_tree, LANE_TESTS, INSIDE_CONTAINER)
+
+    rulings.pin_ruling("SS4", crapkit=failing(run.stdout), oracle="none")
