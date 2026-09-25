@@ -132,28 +132,40 @@ def crapkit_accepts(row: dict, ceiling: int) -> bool:
     return True
 
 
+# Built once: a strategy made inside the draw is built, and its lambdas' source
+# read, on every example.
+CCN, COUNTS = strategies.ccn(), strategies.counts()
+FLAG, CEILING, BREAK = st.sampled_from(FLAGS), st.integers(1, 60), st.sampled_from([None, *BREAKS])
+
+
 @st.composite
 def cases(draw):
-    ccn = draw(strategies.ccn())
-    covered, total = draw(strategies.counts())
-    flag = draw(st.sampled_from(FLAGS))
-    ceiling = draw(st.integers(1, 60))
-    row = valid_row(ccn, covered, total, flag, ceiling, draw(st.booleans()))
-    broken = draw(st.sampled_from([None, *BREAKS]))
+    covered, total = draw(COUNTS)
+    flag, ceiling = draw(FLAG), draw(CEILING)
+    row = valid_row(draw(CCN), covered, total, flag, ceiling, draw(st.booleans()))
+    broken = draw(BREAK)
     event(f"break:{broken}")
     return {**row, **(BREAKS[broken](row) if broken else {})}, ceiling
 
 
-@given(cases())
+@pytest.fixture(scope="module")
+def loaded():
+    """The code under test, imported before the first example, so no example's
+    deadline pays for crapkit's imports."""
+    return guards(), internal_error(), drive.to_crapkit("scored_row", tuple(valid_row(
+        1, 1, 1, "measured", 1, False)[name] for name in FIELDS))
+
+
+@given(case=cases())
 @pure
-def test_crapkit_stops_exactly_where_the_documented_bounds_do(case):
+def test_crapkit_stops_exactly_where_the_documented_bounds_do(loaded, case):
     row, ceiling = case
     assert crapkit_accepts(row, ceiling) == model_accepts(row, ceiling), (row, ceiling)
 
 
-@given(strategies.crap_case(), st.integers(1, 60))
+@given(case=strategies.crap_case(), ceiling=CEILING)
 @pure
-def test_no_row_the_formula_produces_is_a_false_alarm(case, ceiling):
+def test_no_row_the_formula_produces_is_a_false_alarm(loaded, case, ceiling):
     """No false alarm: every (ccn, covered, total) the strategy draws, scored by
     the exact formula, passes, under every flag the formula applies to."""
     for twin in (False, True):

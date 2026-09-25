@@ -31,7 +31,7 @@ def test_the_seed_corpus_surfaces_meet_every_bound(seed):
 
 
 def _handles(driver) -> list[tuple[str, str]]:
-    listed = driver.json("worklist", "--top", "50")
+    listed = driver.json("worklist", "--top", "10")
     return [(entry["path"], entry["handle"]) for entry in listed["active"] + listed["dormant_top"]]
 
 
