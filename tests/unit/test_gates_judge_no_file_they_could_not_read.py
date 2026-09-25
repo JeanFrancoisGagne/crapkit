@@ -295,6 +295,24 @@ def test_doctor_is_quiet_about_files_every_reader_read(scored, capsys):
     assert doctor_warnings(scored, capsys) == []
 
 
+def test_hook_precommit_help_names_the_unread_refusal_and_its_fix(capsys):
+    """`crapkit hook-precommit --help` is where a user looks after the hook
+    refuses a commit; the parent listing's one line is not on that screen."""
+    import pytest
+
+    from crapkit.cli import main
+    from crapkit.merge import UNREAD_ADVICE
+
+    with pytest.raises(SystemExit) as stop:
+        main(["hook-precommit", "--help"])
+
+    assert stop.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    assert "Exit 6 on a staged function over its ceiling or a staged file no reader could " \
+           "read" in text, text
+    assert UNREAD_ADVICE in text, text
+
+
 def test_the_onboarding_pages_say_what_to_do_about_an_unread_file():
     """PRD signal-1: the user meets the refusal before the first refused commit.
     The upgrade guide says to run coverage and fix or exclude each file, the
