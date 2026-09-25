@@ -195,6 +195,26 @@ def test_the_stamp_records_the_blob_id_of_each_file_under_the_lane_scope(tmp_pat
     assert blobs == {REL: stale_tree.git(root, "rev-parse", f"HEAD:{REL}").strip()}
 
 
+def test_a_run_before_the_first_commit_writes_no_stamp_and_the_note_says_so(tmp_path):
+    """No HEAD, no commit to stamp: the run records nothing rather than a
+    stamp git could not fill, and the dark-line note withholds the artifact's
+    lines, naming the missing stamp. The reuse warning stays quiet, since no
+    stamp means nothing to compare against."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    stale_tree.git(root, "init", "-q", "-b", "main")
+    for rel, text in {".gitignore": ".crapkit/\ncoverage/\n", "crapkit.toml": stale_tree.toml(),
+                      "make_cov.py": stale_tree.MAKE_COV, REL: stale_tree.APP_TS}.items():
+        stale_tree.write(root / rel, text)
+    stale_tree.git(root, "add", "-A")
+    stale_tree.measure(root)
+
+    note, lines = _explained(root)
+
+    assert not (root / ".crapkit" / "artifacts.json").exists()
+    assert lines == [] and "no stamp records the commit coverage/coverage-final.json was built at" in note
+
+
 def test_a_file_the_lane_itself_writes_under_its_scope_is_not_a_change(tmp_path):
     """crapkit init ignores only .crapkit/, and a python lane with bytecode on
     writes src/__pycache__ as it runs. That by-product is recorded as the run
