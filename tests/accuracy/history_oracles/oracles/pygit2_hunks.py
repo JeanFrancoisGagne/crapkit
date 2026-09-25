@@ -25,6 +25,15 @@ def _kept(patch) -> bool:
     return patch.delta.status != pygit2.enums.DeltaStatus.DELETED and bool(patch.hunks)
 
 
+def patch(old: str, new: str, path: str) -> tuple[str, dict[str, list[tuple[int, int]]]]:
+    """(the patch text libgit2 writes from `old` to `new` with no context lines,
+    {path: hunk spans}) for one file's two texts; no spans when they are equal."""
+    import pygit2
+
+    made = pygit2.Patch.create_from(old, new, path, path, context_lines=0, interhunk_lines=0)
+    return made.text or "", ({path: [_span(hunk) for hunk in made.hunks]} if made.hunks else {})
+
+
 def ranges(root: Path, base: str, head: str = "HEAD") -> dict[str, list[tuple[int, int]]]:
     """{top-relative path: hunk spans} from `base` to `head`."""
     import pygit2

@@ -12,6 +12,7 @@ Real diffs: a commit that edits a CRLF file, drops a final newline, edits a
 file with a non-ASCII name, adds a '++ ' line and removes a '-- ' line, and
 moves a file, read the way crapkit reads them (gitio.diff_since), against the
 hand table hand_ranges.tsv, unidiff over `git diff`, and nightly pygit2's own diff.
+Nightly, libgit2 also diffs the random edits itself, and crapkit reads its patch.
 """
 from __future__ import annotations
 
@@ -53,6 +54,28 @@ def test_random_edits_match_the_opcodes_and_unidiff(old, new):
 
     assert changed_ranges(text) == expected
     assert unidiff_ranges.ranges(text + "\n") == expected
+
+
+def _text(lines: list[str]) -> str:
+    return "".join(line + "\n" for line in lines)
+
+
+@given(st.lists(LINES, max_size=12), st.lists(LINES, max_size=12))
+@pure
+def _pygit2_reads_as_crapkit_does(old, new):
+    text, spans = pygit2_hunks.patch(_text(old), _text(new), "f.py")
+
+    assert changed_ranges(text) == spans
+
+
+@pytest.mark.nightly
+def test_random_edits_match_pygit2(oracle):
+    """libgit2 diffs two random texts with no context lines and writes the patch;
+    crapkit's reading of that text names the new-side lines libgit2's own hunks
+    do, a '++ ' or '-- ' content line (R03) and a pure deletion (H9) included."""
+    oracle("pygit2")
+
+    _pygit2_reads_as_crapkit_does()
 
 
 @pytest.fixture
