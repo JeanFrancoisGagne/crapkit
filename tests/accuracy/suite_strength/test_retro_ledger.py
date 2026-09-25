@@ -240,3 +240,19 @@ def test_every_packet_retro_row_is_a_bugs_row():
     known = {_key(row) for row in BUGS}
 
     assert [row for row in _retro_rows() if row not in known] == []
+
+
+def _top_level_names(tree: ast.Module) -> list[str]:
+    names = [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
+    assigned = [node.targets for node in tree.body if isinstance(node, ast.Assign)]
+    return names + [target.id for targets in assigned for target in targets
+                    if isinstance(target, ast.Name)]
+
+
+@pytest.mark.parametrize("path", sorted(HERE.glob("test_*.py")), ids=lambda path: path.name)
+def test_no_test_module_here_defines_a_top_level_name_twice(path):
+    """A second CHECK and a second _bug in test_retro_tool.py each replaced the
+    planted replay's own, and only the nightly replay noticed."""
+    names = _top_level_names(ast.parse(path.read_text(encoding="utf-8")))
+
+    assert sorted({name for name in names if names.count(name) > 1}) == []

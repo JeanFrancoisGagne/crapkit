@@ -406,18 +406,18 @@ def test_a_bug_s_replayed_fix_is_its_last_fix_commit():
 
 # --- sync: bugs.tsv follows the check names each packet landed -----------------------------------
 
-def _bug(bug_id, packet, test, **fields):
+def _sync_row(bug_id, packet, test, **fields):
     row = {**_bug_row(bug_id), "packet": packet, "test": test, "calc": f"calc {bug_id}",
            "symptom": f"symptom {bug_id}"}
     return {**row, **fields}
 
 
 BUGS_BEFORE = [
-    _bug("R1", "p1", "tests/accuracy/p1/test_a.py::test_proposed"),
-    _bug("R1", "p2", "tests/accuracy/p2/test_b.py::test_kept", calc="calc R1 in p2"),
-    _bug("R2", "p1", "tests/accuracy/p1/test_a.py::test_probe", probe="R2.py", method="model"),
-    _bug("R3", "p3", "tests/accuracy/p3/test_c.py::test_not_landed"),
-    _bug("R4", "p1", "tests/accuracy/p1/test_a.py::test_open", replay="open"),
+    _sync_row("R1", "p1", "tests/accuracy/p1/test_a.py::test_proposed"),
+    _sync_row("R1", "p2", "tests/accuracy/p2/test_b.py::test_kept", calc="calc R1 in p2"),
+    _sync_row("R2", "p1", "tests/accuracy/p1/test_a.py::test_probe", probe="R2.py", method="model"),
+    _sync_row("R3", "p3", "tests/accuracy/p3/test_c.py::test_not_landed"),
+    _sync_row("R4", "p1", "tests/accuracy/p1/test_a.py::test_open", replay="open"),
 ]
 P1_RETRO = ("id\tfix_commit\ttest\tplatform\n"
             "R1\tbbb\ttests/accuracy/p1/test_a.py::test_confirmed[x]\twindows\n"
