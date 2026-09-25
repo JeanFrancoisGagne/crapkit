@@ -60,6 +60,10 @@ MID_TOKEN = [("mid-quote", g.Lane(py('--cov-report=json:"cov/py 1.json"')), OK, 
 CARET = [
     ("caret", g.Lane(py('-k ^"not slow^"')), OK, OK, "lanes.md:72 cmd.exe drops the caret outside quotes"),
     ("caret-in-quotes", g.Lane(py('-k "a^b"')), OK, OK, "lanes.md:72 inside a quoted run the caret stays"),
+    ("caret-positional", g.Lane(py('^"pylib/unit^"')), "^pylib/unit^", "pylib/unit",
+     "lanes.md:72 cmd.exe hands on the quote behind the caret; sh keeps the caret"),
+    ("caret-vitest", g.Lane(vitest('^"web/grade.ts^"'), parser="istanbul"), OK, "web/grade.ts",
+     "lanes.md:72 and 458-459 on cmd.exe the filter reaches vitest as web/grade.ts"),
 ]
 TESTPATHS_FILE = [
     ("ini-decides", g.Lane(py("more"), testpaths={"pytest.ini": ("more",), "pyproject.toml": ("tests",)}),
