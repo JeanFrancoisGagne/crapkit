@@ -1568,6 +1568,13 @@ oh-my-pi. Every other agent names its file and format differently, and
 [Wiring crapkit into your agent](harnesses.md) gives the block for each one, with where it
 starts the server and what environment it passes.
 
+A client that expands variables in this file can pass one, such as Cursor's
+`${workspaceFolder}`. A client that does not passes the variable itself: the Cursor agent
+CLI expands only `${NAME}` and `${env:NAME}`. A `--repo` that still holds `${...}` is
+ignored, the server serves as if none was given, and it says so on stderr:
+
+    crapkit mcp: --repo '${workspaceFolder}' holds a variable the MCP client did not expand; serving the crapkit.toml at or above the directory the client started this server in (/home/me/repo) instead. Give --repo an absolute path, or drop it from the client's config.
+
 Every tool also accepts a `repo` argument that overrides the server's default, so one server
 can serve several checkouts.
 

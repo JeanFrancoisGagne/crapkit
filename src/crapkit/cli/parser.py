@@ -439,7 +439,10 @@ def build_parser() -> argparse.ArgumentParser:
     wat.set_defaults(func=_Handler("admin", "cmd_watch"))
 
     srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)")
-    srv.add_argument("--repo", **_REPO_FLAG)
+    srv.add_argument("--repo", default=None,
+                     help="crapkit root (default: the nearest crapkit.toml at or above cwd); a value "
+                          "holding a ${...} variable the client did not expand is ignored, with a "
+                          "warning on stderr")
     srv.set_defaults(func=_Handler("analyses", "cmd_mcp"))
 
     mut = sub.add_parser("mutate", help="diff-scoped mutation testing: flip operators on changed lines, run the suite per mutant")

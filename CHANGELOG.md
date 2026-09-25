@@ -333,6 +333,12 @@ nothing. Each of these now gets a line naming the object and the next step:
   not take 'wait_for_previous'`. The server now drops it before checking the call; every
   other undeclared key is still refused
   ([ADR 0001](docs/adr/0001-mcp-invalid-arguments-are-tool-results.md)).
+- `crapkit mcp --repo ${workspaceFolder}` from a client that does not expand the variable
+  serves where the client started it. Cursor's docs wire a server that way and the Cursor
+  agent CLI passes `${workspaceFolder}` through, so the server read it as a directory
+  below its own and answered every call `no crapkit.toml in <cwd>/${workspaceFolder}`
+  while the client listed it as ready. A `--repo` that holds `${...}` is now ignored and
+  stderr names it; `crapkit mcp --help` says so.
 
 ## 0.8.0 — 2026-09-23
 
