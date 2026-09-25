@@ -61,7 +61,7 @@ const arrow = (value) => value * 2;
 
 /* istanbul ignore next */
 function ignoredIstanbul(flag) {
-  if (flag) {
+  if (flag && flag > 0) {
     return 1;
   }
   return 0;
@@ -69,7 +69,7 @@ function ignoredIstanbul(flag) {
 
 /* v8 ignore next */
 function ignoredV8(flag) {
-  if (flag) {
+  if (flag && flag > 0) {
     return 1;
   }
   return 0;

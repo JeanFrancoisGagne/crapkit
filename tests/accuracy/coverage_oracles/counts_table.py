@@ -80,8 +80,11 @@ def _region_start(region: dict) -> int:
 
 
 def _region(path: str, name: str, region: dict) -> Counts:
-    executed = tuple(sorted(region.get("executed_lines", ())))
-    lines = tuple(sorted(executed + tuple(region.get("missing_lines", ()))))
+    """An excluded line is no statement, even where a report before 7.16 also
+    lists it as executed."""
+    excluded = set(region.get("excluded_lines", ()))
+    executed = tuple(sorted(set(region.get("executed_lines", ())) - excluded))
+    lines = tuple(sorted((set(executed) | set(region.get("missing_lines", ()))) - excluded))
     taken = tuple(sorted(map(_arc, region.get("executed_branches", ()))))
     arms = tuple(sorted(taken + tuple(map(_arc, region.get("missing_branches", ())))))
     start = _region_start(region)

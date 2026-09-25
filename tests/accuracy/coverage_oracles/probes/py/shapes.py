@@ -90,7 +90,7 @@ def body_on_signature(left,
 
 
 def excluded(value):  # pragma: no cover
-    if value:
+    if value and value > 0:
         return 1
     return 0
 

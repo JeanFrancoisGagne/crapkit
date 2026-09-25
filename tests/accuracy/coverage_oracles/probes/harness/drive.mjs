@@ -11,8 +11,8 @@ export async function call(m) {
   m.optionalChain({ name: "n" });
   m.oneLine(1);
   m.arrow(2);
-  m.ignoredIstanbul(true);
-  m.ignoredV8(true);
+  m.ignoredIstanbul(1);
+  m.ignoredV8(1);
   await m.asyncIf(true);
   new m.Box().method(5);
   if (m.badge) {

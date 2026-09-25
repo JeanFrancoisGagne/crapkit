@@ -29,8 +29,8 @@ py/shapes.py	one_line	85	85	one-line	call	85>88 85>-85	85>88 85>-85	85	85	https:
 py/shapes.py	one_line	85	85	one-line	idle	85>88 85>-85	85>88	85	85	https://github.com/coveragepy/coveragepy/blob/7.16.1/coverage/parser.py#L814 (the import runs the def statement); README.md#remedy-what-to-do-about-it (split-lines)
 py/shapes.py	body_on_signature	88	89	body-on-signature	call	n/a	n/a	n/a	n/a	README.md#remedy-what-to-do-about-it (a body on the last line of a multi-line signature: coverage.py cannot show a call, so the producer counts are asserted only as equal across call and idle)
 py/shapes.py	body_on_signature	88	89	body-on-signature	idle	n/a	n/a	n/a	n/a	README.md#remedy-what-to-do-about-it
-py/shapes.py	excluded	92	95	own-lines	call	-	-	-	-	https://coverage.readthedocs.io/en/7.16.1/excluding.html#excluding-code (a pragma on a def line excludes the whole function); drive.py call() passes 1
-py/shapes.py	excluded	92	95	own-lines	idle	-	-	-	-	https://coverage.readthedocs.io/en/7.16.1/excluding.html#excluding-code; drive.py idle imports only
+py/shapes.py	excluded	92	95	own-lines	call	excluded	excluded	excluded	excluded	https://coverage.readthedocs.io/en/7.16.1/excluding.html#excluding-code (a pragma on a def line excludes the whole function); drive.py call() passes 1
+py/shapes.py	excluded	92	95	own-lines	idle	excluded	excluded	excluded	excluded	https://coverage.readthedocs.io/en/7.16.1/excluding.html#excluding-code; drive.py idle imports only
 py/shapes.py	exclude_also	98	101	own-lines	call	-	-	99 101	99 101	https://coverage.readthedocs.io/en/7.16.1/excluding.html#advanced-exclusion (exclude_also drops line 100, so line 99 keeps one exit and is no branch); drive.py call() passes 3
 py/shapes.py	exclude_also	98	101	own-lines	idle	-	-	99 101	-	https://coverage.readthedocs.io/en/7.16.1/excluding.html#advanced-exclusion; drive.py idle imports only
 py/shapes.py	run_async	104	105	own-lines	call	-	-	105	105	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting; drive.py call() calls it once

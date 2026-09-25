@@ -60,16 +60,16 @@ function oneLine(value: number): number { return value + 1; }
 const arrow = (value: number): number => value * 2;
 
 /* istanbul ignore next */
-function ignoredIstanbul(flag: boolean): number {
-  if (flag) {
+function ignoredIstanbul(flag: number): number {
+  if (flag && flag > 0) {
     return 1;
   }
   return 0;
 }
 
 /* v8 ignore next */
-function ignoredV8(flag: boolean): number {
-  if (flag) {
+function ignoredV8(flag: number): number {
+  if (flag && flag > 0) {
     return 1;
   }
   return 0;
