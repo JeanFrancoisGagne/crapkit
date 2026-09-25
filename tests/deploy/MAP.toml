@@ -278,10 +278,10 @@ gha-act-monorepo-workdir = { packet = "deploy-fixes", cadence = "nightly", os = 
 lin-vscode-electron = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "gui", nonblocking = true }
 lin-zed-xvfb = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "gui", nonblocking = true }
 # nightly, next to the host's Docker daemon
-lin-host-docker-product = { packet = "deploy-channels", cadence = "nightly", os = "linux", docker_host = true, online = true, blocked = "linux-toolchain" }
-docs-docker-user = { packet = "deploy-docs", cadence = "nightly", os = ["linux", "windows"], docker_host = true, online = true, blocked = "linux-toolchain" }
-"lin-host-up-docker-0.7.6" = { packet = "unowned", cadence = "nightly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
-lin-devcontainer = { packet = "unowned", cadence = "nightly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
+lin-host-docker-product = { packet = "deploy-channels", cadence = "nightly", os = "linux", docker_host = true, online = true }
+docs-docker-user = { packet = "deploy-docs", cadence = "nightly", os = ["linux", "windows"], docker_host = true, online = true, blocked = { windows = "windows-linux-containers" } }
+"lin-host-up-docker-0.7.6" = { packet = "unowned", cadence = "nightly", os = "linux", docker_host = true, blocked = "host-cells-unwritten" }
+lin-devcontainer = { packet = "unowned", cadence = "nightly", os = "linux", docker_host = true, blocked = "host-cells-unwritten" }
 # nightly, Windows, native
 win-pipuser-path = { packet = "deploy-channels", cadence = "nightly", os = "windows" }
 win-py-only-path = { packet = "deploy-channels", cadence = "nightly", os = "windows" }
@@ -314,12 +314,12 @@ lin-clock = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lin-c
 
 # weekly
 mac-core = { packet = "unowned", cadence = "weekly", os = "macos" }
-lin-arm64 = { packet = "deploy-channels", cadence = "weekly", os = "linux", image = "cells", nonblocking = true, blocked = "arm64" }
-lin-py315-start = { packet = "deploy-channels", cadence = "weekly", os = "linux", image = "core", nonblocking = true, blocked = "prerelease-python" }
-lin-codex-cloud-sim = { packet = "unowned", cadence = "weekly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
-lin-podman = { packet = "unowned", cadence = "weekly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
+lin-arm64 = { packet = "deploy-channels", cadence = "weekly", os = "linux", image = "cells", nonblocking = true }
+lin-py315-start = { packet = "deploy-channels", cadence = "weekly", os = "linux", image = "core", nonblocking = true }
+lin-codex-cloud-sim = { packet = "unowned", cadence = "weekly", os = "linux", docker_host = true, blocked = "host-cells-unwritten" }
+lin-podman = { packet = "unowned", cadence = "weekly", os = "linux", docker_host = true, blocked = "host-cells-unwritten" }
 calibrate-all = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:calibrate-all", os = "linux", image = "full" }
-latest-harnesses = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:latest-harnesses", os = "linux", image = "full", online = true, blocked = "latest-mode" }
+latest-harnesses = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:latest-harnesses", os = "linux", image = "full", online = true }
 # weekly and after each publish, with the network on
 lin-online-pypi = { packet = "deploy-channels", cadence = "weekly+published", os = "linux", image = "core", online = true }
 lin-online-pipgit = { packet = "deploy-channels", cadence = "weekly+published", os = "linux", image = "core", online = true }
@@ -330,24 +330,27 @@ published-registry = { packet = "unowned", cadence = "published", os = "linux", 
 published-action-tag = { packet = "deploy-action", cadence = "published", job = "deploy.yml:published-action-tag" }
 
 # --- what blocks a cell or a job -------------------------------------------------
-# Each is a kit change outside this packet. Delete the entry, and the `blocked`
-# keys that name it, once the gap closes.
+# Each is work outside this packet (the kit, a cell no packet writes yet) or a
+# runner that cannot take the cell. Delete the entry, and the `blocked` keys
+# that name it, once the gap closes.
 
 [gaps]
-linux-toolchain = "tools/deploy/toolchain.py has no Linux uv or Node pin (pins.toml [binary] holds Windows and macOS rows only), so a native run on the ubuntu runner stops before any cell"
-faketime = "the images hold no libfaketime, and neither run.py nor the sandbox passes FAKETIME or LD_PRELOAD to a cell"
-arm64 = "run.py builds linux/amd64 only, and the Dockerfile downloads x86_64 binaries only"
-prerelease-python = "run.py passes PYTHON_PRERELEASE empty, so no image holds CPython 3.15"
-latest-mode = "run.py has no switch that installs each harness at its latest release in place of its pin"
+faketime = "under run.py --faketime +400d the push set in :core fails ten tests that pass on the real clock: the Claude Code, Codex and Cursor cells (lin-claude-plugin-fresh, lin-claude-mcp-scopes, lin-codex-mcp-add, lin-cursor-cli, lin-up-claude-plugin-0.7.6, lin-plugin-floor-doctor-silent, lin-plugin-validate-strict) and three kit isolation checks"
+host-cells-unwritten = "no packet writes lin-host-up-docker-0.7.6, lin-devcontainer, lin-codex-cloud-sim or lin-podman yet; weekly-host names only the last two, and a run whose cells do not exist collects nothing, so pytest exits 5"
+windows-linux-containers = "the windows-2025 runner's Docker runs Windows containers only, so no CI job can build the Linux product image docs-docker-user serves; its Windows half runs on a Windows machine with Docker Desktop"
 
 # --- deploy.yml's work ------------------------------------------------------------
 # The scope job turns the event into a cadence and schedules every entry whose
 # `when` holds it and that is not blocked. `runner` names the deploy.yml job
-# that runs the entry: linux (containers), windows, macos and host (native
-# runs), tool (one command) or action (a job of the entry's own name). `runs`
-# are run.py argument strings, one invocation each, {cadence} filled in.
-# `timeout` is in minutes. Once a first run is measured, `measured` holds its
-# minutes and the timeout is 1.5 times that, rounded up.
+# that runs the entry: linux (containers), arm (containers on the arm64
+# runner), windows, macos and host (native runs), tool (one command) or action
+# (a job of the entry's own name). `runs` are run.py argument strings, one
+# invocation each, {cadence} filled in; one that names cells or a packet must
+# select a cell the tree holds, or pytest collects nothing and exits 5.
+# `free_disk` deletes the runner's preinstalled SDKs first: an entry that
+# builds on the full image needs it. `timeout` is in minutes. No deploy.yml
+# run has been measured yet; once one is, `measured` holds its minutes and the
+# timeout is 1.5 times that, rounded up.
 
 [jobs.nightly-linux-core]
 runner = "linux"
@@ -407,19 +410,25 @@ runs = ["--online --cadence published --os linux --image core -n 4"]
 timeout = 30
 measured = 0
 
+# The push set 400 days ahead: every process in the container reads the
+# moved clock through libfaketime (run.py --faketime).
 [jobs.lin-clock]
 runner = "linux"
 when = ["nightly", "release"]
-runs = ["--cadence push --os linux --image core -n 4"]
+runs = ["--cadence push --os linux --image core --faketime +400d -n 4"]
 blocked = "faketime"
 timeout = 30
 measured = 0
 
+# full-latest is full with every harness at its newest release, rebuilt once
+# an ISO week (22.1 GB unpacked); run.py writes latest-drift.txt beside the
+# JUnit. A release runs it too: the docs must hold for the harnesses a user
+# installs that day.
 [jobs.latest-harnesses]
 runner = "linux"
-when = ["weekly"]
-runs = ["--online --cadence {cadence} --os linux --image full -n 4"]
-blocked = "latest-mode"
+when = ["weekly", "release"]
+runs = ["--online --cadence {cadence} --os linux --image full-latest -n 4"]
+free_disk = true
 timeout = 60
 measured = 0
 
@@ -427,16 +436,16 @@ measured = 0
 runner = "linux"
 when = ["weekly", "release"]
 runs = ["--cadence {cadence} --os linux --image core --cell lin-py315-start"]
-blocked = "prerelease-python"
 nonblocking = true
 timeout = 20
 measured = 0
 
+# The cells image built for linux/arm64 on an arm64 runner, so nothing is
+# emulated; lin-arm64 skips on an x86_64 machine.
 [jobs.weekly-arm64]
-runner = "linux"
+runner = "arm"
 when = ["weekly", "release"]
-runs = ["--cadence {cadence} --os linux --image cells --cell lin-arm64"]
-blocked = "arm64"
+runs = ["--cadence {cadence} --os linux --image cells-arm64 --cell lin-arm64"]
 nonblocking = true
 timeout = 40
 measured = 0
@@ -481,11 +490,12 @@ runs = ["--native --os macos --cadence {cadence} -n 3"]
 timeout = 45
 measured = 0
 
+# Both cells build an image from the root Dockerfile, which pulls its base
+# over the network. Add each host cell here once a packet writes it.
 [jobs.nightly-host]
 runner = "host"
 when = ["nightly", "release"]
-runs = ["--native --os linux --cadence {cadence} --cell lin-host-docker-product --cell lin-host-up-docker-0.7.6 --cell lin-devcontainer"]
-blocked = "linux-toolchain"
+runs = ["--native --os linux --online --cadence {cadence} --cell lin-host-docker-product --cell docs-docker-user"]
 timeout = 30
 measured = 0
 
@@ -493,7 +503,7 @@ measured = 0
 runner = "host"
 when = ["weekly", "release"]
 runs = ["--native --os linux --cadence {cadence} --cell lin-codex-cloud-sim --cell lin-podman"]
-blocked = "linux-toolchain"
+blocked = "host-cells-unwritten"
 timeout = 30
 measured = 0
 
@@ -504,10 +514,12 @@ command = "python tools/deploy/lock.py --check"
 timeout = 10
 measured = 0
 
+# calibrate.py builds crapkit-deploy:full and runs the calibrate-all cell in it.
 [jobs.calibrate-all]
 runner = "tool"
 when = ["weekly", "release"]
 command = "python tools/deploy/calibrate.py --all"
+free_disk = true
 timeout = 30
 measured = 0
 
@@ -547,8 +559,11 @@ measured = 0
 timeout = 15
 measured = 0
 
-# Unmeasured on the windows-2025 runner. The first run's minutes go in
-# `measured`, and the timeout becomes 1.5 times that.
+# Unmeasured on the windows-2025 runner: no deploy run has reached GitHub
+# yet. On a loaded 24-core Windows machine the push set's `npm ci` of the 420
+# fixture packages took 2 to 3 minutes, once per session, so the first run
+# may need more than 20. Its minutes go in `measured`, and the timeout becomes
+# 1.5 times that.
 [budget.deploy-windows]
 timeout = 20
 measured = 0

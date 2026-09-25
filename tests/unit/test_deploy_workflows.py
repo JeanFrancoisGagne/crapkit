@@ -29,6 +29,7 @@ from hang_guard import HANG_SECONDS
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "tools" / "deploy"))
 
+import calibrate  # noqa: E402
 import pins as pinsfile  # noqa: E402
 import run  # noqa: E402
 
@@ -40,7 +41,10 @@ DEPLOY = yaml.safe_load((WORKFLOWS / "deploy.yml").read_text(encoding="utf-8"))
 PUSH_JOBS = {"deploy-linux": "linux", "deploy-linux-native": "linux", "deploy-windows": "windows",
              "deploy-action": "linux"}
 # deploy.yml's jobs that take their matrix from the scope job, by MAP [jobs] runner.
-MATRIX_RUNNERS = {"linux": "linux", "windows": "windows", "macos": "macos", "host": "linux", "tool": "linux"}
+MATRIX_RUNNERS = {"linux": "linux", "arm": "arm", "windows": "windows", "macos": "macos", "host": "linux",
+                  "tool": "linux"}
+# The jobs that build images and run cells in containers.
+CONTAINER_JOBS = [CI["jobs"]["deploy-linux"], DEPLOY["jobs"]["linux"], DEPLOY["jobs"]["arm"]]
 
 
 def triggers(workflow):
@@ -82,6 +86,14 @@ def test_every_deploy_yml_job_runs_on_its_pinned_label():
     assert wrong == {}
 
 
+def test_every_runner_pins_toml_names_runs_a_job():
+    """A pinned runner no job names is a platform nothing tests: pins.toml's
+    arm runner sat unread while lin-arm64 skipped on x86_64."""
+    used = {job["runs-on"] for workflow in (CI, DEPLOY) for job in workflow["jobs"].values()}
+
+    assert sorted(set(PINS["runners"].values()) - used) == []
+
+
 def buildx_options():
     return [step["with"] for workflow in (CI, DEPLOY) for _, step in steps(workflow)
             if _uses(step, "docker/setup-buildx-action")]
@@ -91,7 +103,7 @@ def test_every_buildx_step_installs_the_pinned_buildx_with_the_pinned_buildkit()
     wanted = {"version": PINS["images"]["buildx"], "driver-opts": f"image={PINS['images']['buildkit']}",
               "name": run.CONTAINER_BUILDER, "driver": "docker-container"}
 
-    assert [{key: option.get(key) for key in wanted} for option in buildx_options()] == [wanted, wanted]
+    assert [{key: option.get(key) for key in wanted} for option in buildx_options()] == [wanted] * len(CONTAINER_JOBS)
 
 
 def _step_index(job, predicate):
@@ -104,7 +116,7 @@ def _runs_containers(step):
 
 
 def test_a_container_run_comes_after_the_buildx_and_runtime_steps():
-    for job in (CI["jobs"]["deploy-linux"], DEPLOY["jobs"]["linux"]):
+    for job in CONTAINER_JOBS:
         buildx = _step_index(job, lambda step: _uses(step, "docker/setup-buildx-action"))
         runtime = _step_index(job, lambda step: _uses(step, "crazy-max/ghaction-github-runtime"))
         cells = _step_index(job, lambda step: _runs_containers(step) or step.get("name") == "run the cells")
@@ -200,16 +212,17 @@ def test_the_nightly_schedule_runs_the_nightly_set_and_no_blocked_job(tmp_path):
     assert plan["cadence"] == "nightly" and set(plan["jobs"]) == scheduled("nightly")
     assert {"nightly-linux-core", "nightly-linux-full", "nightly-act", "lin-repeat"} <= _names(plan, "linux")
     assert {"win-repeat", "nightly-windows-a", "nightly-windows-b"} == _names(plan, "windows")
-    assert "lin-clock" not in plan["jobs"] and plan["host"] == []
+    assert "lin-clock" not in plan["jobs"] and _names(plan, "host") == {"nightly-host"}
     assert plan["linux"][0]["runs"] == ["--cadence nightly --os linux --image core --cache gha -n 4"]
 
 
-def test_the_weekly_schedule_runs_macos_the_network_cells_and_calibration(tmp_path):
+def test_the_weekly_schedule_runs_macos_arm64_the_network_cells_and_calibration(tmp_path):
     plan = scope(tmp_path, EVENT_NAME="schedule", SCHEDULE="17 7 * * 1")
 
     assert plan["cadence"] == "weekly" and set(plan["jobs"]) == scheduled("weekly")
-    assert _names(plan, "linux") == {"weekly-online"} and _names(plan, "macos") == {"weekly-macos"}
-    assert _names(plan, "tool") == {"calibrate-all"}
+    assert _names(plan, "linux") == {"weekly-online", "weekly-py315", "latest-harnesses"}
+    assert _names(plan, "macos") == {"weekly-macos"} and _names(plan, "arm") == {"weekly-arm64"}
+    assert _names(plan, "tool") == {"calibrate-all"} and "weekly-host" not in plan["jobs"]
 
 
 def test_a_release_dispatch_runs_nightly_and_weekly_entries_with_the_release_cadence(tmp_path):
@@ -365,6 +378,35 @@ def test_every_run_py_call_parses_and_names_its_os():
     assert [argv for argv in all_argvs() if "--os" not in argv] == []
 
 
+RUN_LINE = re.compile(r"`python tools/deploy/run\.py ([^`]*)`")
+
+
+def skip_lines(root=ROOT / "tests" / "deploy"):
+    """(test file, argv) for each run.py line a deploy test prints for its reader to run."""
+    return [(path.name, shlex.split(found)) for path in sorted(root.glob("test_*.py"))
+            for found in RUN_LINE.findall(path.read_text(encoding="utf-8"))]
+
+
+def test_every_run_py_line_a_deploy_test_prints_runs_the_cells_it_names():
+    """lin-arm64 skipped on x86_64 saying run.py built amd64 only, long after run.py
+    gained cells-arm64: the line a skip prints must be one run.py takes and that selects the cell."""
+    lines = skip_lines()
+
+    assert lines and [(name, argv) for name, argv in lines if not runs_its_cells(argv)] == []
+
+
+def runs_its_cells(argv):
+    """argv parses, and selects each cell it names on the OS it runs."""
+    args = run.parse(argv)
+    return all(cell in MAP["cell"] and selects(argv, cell, {**MAP["cell"][cell], "os": args.os}) for cell in args.cell)
+
+
+def test_a_printed_run_py_line_that_misses_its_cell_is_caught():
+    assert runs_its_cells(["--image", "cells-arm64", "--cadence", "weekly", "--cell", "lin-arm64"])
+    assert not runs_its_cells(["--image", "cells-arm64", "--cadence", "push", "--cell", "lin-arm64"])
+    assert not runs_its_cells(["--cell", "lin-no-such-cell"])
+
+
 def test_every_cell_and_packet_a_run_py_call_names_is_in_the_map():
     parsed = [run.parse(argv) for argv in all_argvs()]
     cells = {cell for args in parsed for cell in args.cell}
@@ -500,9 +542,9 @@ def test_a_cell_no_job_selects_is_caught():
 def test_a_cell_on_two_oses_reaches_a_job_on_each():
     """The nightly Windows jobs run one packet each, so a packet they leave out
     runs its Windows half nowhere while a Linux job still selects its Linux half."""
-    cells = {"docs-odd-cell": {"packet": "deploy-ci", "cadence": "nightly", "os": ["linux", "windows"], "image": "core"}}
+    cell = {"packet": "deploy-ci", "cadence": "nightly", "os": ["linux", "windows"], "image": "core"}
 
-    assert unreached(cells, CALLS) == ["docs-odd-cell on nightly, windows"]
+    assert unreached({"docs-odd-cell": cell}, CALLS) == ["docs-odd-cell on nightly, windows"]
 
 
 def test_the_one_os_a_gap_blocks_needs_no_job():
@@ -518,6 +560,91 @@ def test_a_container_run_never_selects_a_host_cell():
     assert not selects(["--cadence", "push", "--os", "linux", "--image", "core"], "lin-native-start", host)
     assert selects(["--native", "--os", "linux", "--cadence", "push", "--cell", "lin-native-start"],
                    "lin-native-start", host)
+
+
+def _args(job):
+    return [run.parse(argv) for _, argv in _job_invocations(job)]
+
+
+def narrowed(args):
+    """A run that names cells, or a packet other than the kit's, collects only those."""
+    return bool(args.cell) or args.packet not in (None, "deploy-kit")
+
+
+def pytest_halves(cells):
+    """(cell, one OS of it) for every cell pytest runs that a job must select."""
+    return [(cell_id, half) for cell_id, half in waiting(cells) if "job" not in half]
+
+
+def _selects_nothing(argv, written):
+    return narrowed(run.parse(argv)) and not any(selects(argv, cell_id, cell) for cell_id, cell in written)
+
+
+def unblocked_calls(jobs):
+    """(entry, argv) for every run.py call an entry no gap blocks makes."""
+    return [(name, argv) for name, job in jobs.items() if not job.get("blocked") for _, argv in _job_invocations(job)]
+
+
+def empty_runs(jobs=MAP["jobs"], cells=MAP["cell"]):
+    """Each run of an unblocked entry that names cells or a packet and selects
+    no cell a packet writes: pytest collects nothing there and exits 5."""
+    written = pytest_halves(cells)
+    return [f"{name}: {' '.join(argv)}" for name, argv in unblocked_calls(jobs) if _selects_nothing(argv, written)]
+
+
+def test_every_run_that_names_cells_or_a_packet_selects_a_cell_the_tree_holds():
+    assert empty_runs() == []
+
+
+def test_a_run_that_names_only_cells_no_packet_writes_is_caught():
+    jobs = {"host-x": {"runner": "host", "when": ["weekly"], "runs": ["--native --os linux --cadence {cadence} "
+                                                                       "--cell lin-podman"]}}
+
+    assert empty_runs(jobs) == ["host-x: --native --os linux --cadence weekly --cell lin-podman"]
+    assert empty_runs({"host-x": {**jobs["host-x"], "blocked": "a-gap"}}) == []
+
+
+def entry_images(job):
+    """The images an entry builds: each container run's, and calibrate.py's for its command."""
+    images = {args.image for args in _args(job) if not args.native}
+    return images | ({calibrate.IMAGE} if "tools/deploy/calibrate.py" in job.get("command", "") else set())
+
+
+def test_an_entry_that_builds_on_the_full_image_frees_the_runners_disk_first():
+    """full is 13.6 GB on disk and full-latest 22.1 GB; the runner's own tools leave less than that free."""
+    crowded = [name for name, job in MAP["jobs"].items() if not job.get("free_disk")
+               and any("full" in pinsfile.IMAGE_CHAIN[image] for image in entry_images(job))]
+
+    assert crowded == []
+
+
+def frees_disk(kind):
+    return any(step.get("if") == "matrix.free_disk" for step in DEPLOY["jobs"][kind]["steps"])
+
+
+def test_every_runner_kind_given_a_free_disk_entry_has_the_step_that_frees_it():
+    kinds = {job["runner"] for job in MAP["jobs"].values() if job.get("free_disk")}
+
+    assert sorted(kind for kind in kinds if not frees_disk(kind)) == []
+
+
+def placed_by_arch(job):
+    """An arm entry builds arm64 images only, and no other entry builds one."""
+    arm64 = [image.endswith(pinsfile.ARM64) for image in entry_images(job)]
+    return bool(arm64) and all(arm64) if job["runner"] == "arm" else not any(arm64)
+
+
+def test_the_arm_runner_builds_the_arm64_images_and_no_other_runner_does():
+    assert [name for name, job in MAP["jobs"].items() if not placed_by_arch(job)] == []
+    assert not placed_by_arch({"runner": "linux", "runs": ["--cadence weekly --os linux --image cells-arm64"],
+                               "when": ["weekly"]})
+
+
+def test_lin_arm64_runs_on_the_arm_runner():
+    """On the x86_64 runner, with --image cells, the cell skipped and the job passed."""
+    runners = [job["runner"] for job in MAP["jobs"].values() if any("lin-arm64" in args.cell for args in _args(job))]
+
+    assert runners == ["arm"]
 
 
 def job_defined(job):

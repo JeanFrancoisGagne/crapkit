@@ -468,7 +468,9 @@ def test_the_readme_sends_a_python_310_user_to_uvx(box):
       use_cases="60-second start", os="linux", image="core", cadence="weekly", nonblocking=True)
 def test_the_readme_start_on_the_315_prerelease(box, templates, candidate):
     if "3.15" not in box.toolchain.pythons():
-        pytest.skip("no CPython 3.15 in this toolchain: pins.py passes PYTHON_PRERELEASE empty to every build")
+        pytest.skip("no CPython 3.15 in this toolchain: the images hold the prerelease and native toolchains "
+                    "leave it out; run it in an image with "
+                    "`python tools/deploy/run.py --cadence weekly --cell lin-py315-start`")
     pip_start(box, templates, candidate, "3.15")
 
 
@@ -476,7 +478,8 @@ def test_the_readme_start_on_the_315_prerelease(box, templates, candidate):
       use_cases="start, gate", os="linux", image="cells", cadence="weekly", nonblocking=True)
 def test_the_readme_start_and_route_1_on_arm64(box, templates, candidate):
     if platform.machine().lower() not in ("aarch64", "arm64"):
-        pytest.skip(f"an arm64 cell on {platform.machine()}: run.py builds linux/amd64 only (pins.toml platform)")
+        pytest.skip(f"an arm64 cell on {platform.machine()}: run it in the arm64 image (under QEMU on an x86_64 "
+                    "host) with `python tools/deploy/run.py --image cells-arm64 --cadence weekly --cell lin-arm64`")
     pip_start(box, templates, candidate, "3.12")
     route_1(box, box.root / "py-pytest")
 

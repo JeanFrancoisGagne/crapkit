@@ -3,7 +3,9 @@
 #
 #   nightly    the other harnesses, older upgrade sources, rarer channels,
 #              repo shapes, version skew, act, the repeat runs and lock drift
-#   weekly     macOS, the cells that need the network, harness calibration
+#   weekly     macOS, arm64 on an arm64 runner, the 3.15 prerelease, the
+#              cells that need the network, the harnesses at their newest
+#              release, harness calibration
 #   release    push, nightly, weekly and the network cells together, on the
 #              release commit; `release.py check` wants this run green
 #   published  after a version is on PyPI: the real surfaces at that version
@@ -54,6 +56,7 @@ jobs:
       linux: ${{ steps.plan.outputs.linux }}
       windows: ${{ steps.plan.outputs.windows }}
       macos: ${{ steps.plan.outputs.macos }}
+      arm: ${{ steps.plan.outputs.arm }}
       host: ${{ steps.plan.outputs.host }}
       tool: ${{ steps.plan.outputs.tool }}
     steps:
@@ -85,7 +88,7 @@ jobs:
 
           MAP = tomllib.loads(Path("tests/deploy/MAP.toml").read_text(encoding="utf-8"))
           SCOPE, JOBS = MAP["scope"], MAP["jobs"]
-          RUNNERS = ("linux", "windows", "macos", "host", "tool", "action")
+          RUNNERS = ("linux", "arm", "windows", "macos", "host", "tool", "action")
 
 
           def surface_changes():
@@ -160,6 +163,105 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.scope.outputs.linux) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - name: free the runner's disk for the large images
+        if: matrix.free_disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: pull Docker Hub images through mirror.gcr.io
+        run: |
+          conf=/etc/docker/daemon.json
+          { sudo cat "$conf" 2>/dev/null || echo '{}'; } | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' > /tmp/daemon.json
+          sudo mv /tmp/daemon.json "$conf"
+          sudo systemctl restart docker
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          version: v0.37.1
+          name: crapkit-deploy
+          driver: docker-container
+          driver-opts: image=moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487  # v4.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: run the cells
+        shell: python
+        env:
+          RUNS: ${{ toJSON(matrix.runs) }}
+        run: |
+          import json
+          import os
+          import shlex
+          import subprocess
+          import sys
+
+          codes = [subprocess.run([sys.executable, "tools/deploy/run.py", *shlex.split(args),
+                                   "--out", f".crapkit/deploy-out/{index}"]).returncode
+                   for index, args in enumerate(json.loads(os.environ["RUNS"]))]
+          print(f"run.py exit codes: {codes}")
+          sys.exit(max(codes, default=0))
+      - name: then
+        if: matrix.then != ''
+        env:
+          THEN: ${{ matrix.then }}
+        run: bash -c "$THEN"
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-${{ matrix.name }}
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # Container cells on the arm64 runner: the linux job's steps, with images
+  # built for linux/arm64 natively instead of under emulation.
+  arm:
+    name: ${{ matrix.name }}
+    needs: scope
+    if: needs.scope.outputs.arm != '[]'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.nonblocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.arm) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -403,8 +505,8 @@ jobs:
           if-no-files-found: warn
 
   # Native Linux cells beside the host's Docker daemon (the product image, a
-  # devcontainer, podman). Every entry is blocked on the Linux toolchain gap
-  # in MAP.toml [gaps] until toolchain.py can install on this runner.
+  # devcontainer, podman), after toolchain.py installs the Linux pins as it
+  # does for ci.yml's deploy-linux-native.
   host:
     name: ${{ matrix.name }}
     needs: scope
@@ -483,7 +585,8 @@ jobs:
           if-no-files-found: warn
 
   # One command each: lock drift (a newer crapkit or lizard on PyPI than
-  # wheelhouse.lock names fails; a newer harness is reported) and calibration.
+  # wheelhouse.lock names fails; a newer harness is reported) and calibration,
+  # which builds the full image.
   tool:
     name: ${{ matrix.name }}
     needs: scope
@@ -500,6 +603,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref }}
+      - name: free the runner's disk for the large images
+        if: matrix.free_disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
