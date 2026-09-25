@@ -116,10 +116,19 @@ def git(cwd: Path, *args: str) -> str:
     return done.stdout
 
 
-def _fetch(work: Path, member: dict) -> None:
+def _init(work: Path, url: str) -> None:
+    """A fresh repository that checks files out with the bytes git stores: Git
+    for Windows turns core.autocrlf on system-wide, and a corpus built there
+    would otherwise hold CRLF files a Linux build does not."""
     work.mkdir(parents=True)
     git(work, "init", "-q")
-    git(work, "remote", "add", "origin", member["url"])
+    git(work, "config", "core.autocrlf", "false")
+    git(work, "config", "core.eol", "lf")
+    git(work, "remote", "add", "origin", url)
+
+
+def _fetch(work: Path, member: dict) -> None:
+    _init(work, member["url"])
     git(work, "fetch", "-q", "--filter=blob:none", "--depth", "1", "origin", member["commit"])
 
 
@@ -194,9 +203,7 @@ def build_member(scratch: Path, out: Path, name: str, member: dict) -> None:
 def history_bundle(work: Path, bundle: Path, member: dict) -> None:
     """The member's history since `history_since`, replayed into a fresh repo so
     the bundle has a root instead of a shallow boundary."""
-    work.mkdir(parents=True)
-    git(work, "init", "-q")
-    git(work, "remote", "add", "origin", member["url"])
+    _init(work, member["url"])
     git(work, "fetch", "-q", f"--shallow-since={member['history_since']}", "origin",
         member["commit"])
     git(work, "branch", "-f", "main", member["commit"])
@@ -205,6 +212,7 @@ def history_bundle(work: Path, bundle: Path, member: dict) -> None:
     fresh = work / "fresh"
     fresh.mkdir()
     git(fresh, "init", "-q")
+    git(fresh, "config", "core.autocrlf", "false")
     subprocess.run(["git", "fast-import", "--quiet"], cwd=fresh, input=exported, check=True)
     bundle.parent.mkdir(parents=True, exist_ok=True)
     git(fresh, "checkout", "-q", "main")

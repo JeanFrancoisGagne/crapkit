@@ -117,6 +117,21 @@ def test_a_member_holds_its_pinned_paths_and_license_and_nothing_else(source, tm
 
 
 @pytest.mark.process
+def test_every_built_file_holds_the_bytes_git_stores(source, tmp_path):
+    """A built file hashes to the blob its pin names, on every OS: Git for Windows
+    turns core.autocrlf on system-wide, and a checkout that honours it writes
+    CRLF files that a Linux build does not."""
+    member = _pinned(source, ["lib/c.py", "src/a.py"])
+
+    corpus.build(tmp_path / "out", {"member": {"m": member}})
+    built = [repos.git(tmp_path, "hash-object", "--no-filters",
+                       str(tmp_path / "out" / "m" / path)).strip()
+             for path in member["paths"]]
+
+    assert built == member["trees"]
+
+
+@pytest.mark.process
 def test_a_moved_pin_exits_1_naming_the_path(source, tmp_path, capsys):
     member = _pinned(source, ["src", "lib/c.py"])
     member["trees"][1] = "0" * 40
