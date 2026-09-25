@@ -910,3 +910,12 @@ def test_the_changelog_says_the_dead_line_fold_keys_on_the_artifact_s_sha256(tmp
 
     assert hashlib.sha256(b"{}").hexdigest() in key
     assert "cached by the artifact's sha256" in _prose(_release())
+
+
+@landed(hasattr(_admin(), "_first_few"), "init naming the untracked source")
+def test_the_onboard_skill_quotes_what_init_says_when_no_source_is_tracked(tmp_path):
+    reason = _untracked_repo(tmp_path, ["src/app.ts", "lib/util.py"])
+    skill = _prose(_page("plugin/skills/crapkit-onboard/SKILL.md"))
+
+    assert f"``{reason[reason.index('run `git add` first'):]}``" in skill
+    assert "`init` exits 3 and names up to three of the files it found" in skill

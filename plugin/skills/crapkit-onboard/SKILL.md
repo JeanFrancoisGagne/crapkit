@@ -113,6 +113,11 @@ reads `.venv\\Scripts\\python.exe` on Windows because crapkit.toml is TOML; the 
 hands the lane the single-backslash path. With no venv either, it falls back to `python`,
 `python3`, or `py`.
 
+Only git-tracked files are scored. On a repo whose source nobody has added, `init`
+exits 3 and names up to three of the files it found, ending
+``run `git add` first (2 untracked source file(s) found: lib/util.py, src/app.ts)``.
+`git add` them and run `init` again.
+
 Read init's notes before the first `crapkit coverage`. Two of them are about the
 interpreter, and they are different problems. One says the shell cannot run the word the
 lane starts with, naming the exit code; on Windows that is usually the Store `python.exe`
