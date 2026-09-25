@@ -175,7 +175,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   "already at the latest version" and the install keeps the release's files.
 - Run under uvx or `pipx run`, it looks past the environment that runner built for this
   one command. `uvx crapkit doctor --plugin-root` found crapkit there and exited 0 while
-  `claude mcp list` failed with ENOENT; it now FAILs naming `uv tool install crapkit`.
+  `claude mcp list` failed with ENOENT; it now FAILs naming the install that stays: `uv
+  tool install crapkit`, or `pipx install crapkit` if `pipx run` started it (pipx 1.17 on
+  its uv backend runs the command through `uv tool run`, in uv's cache).
 - With no PATH it looks in Codex's plugin cache when Claude Code has no install, checks a
   marketplace added from a local directory in that directory (Claude Code loads it in
   place), and the no-install line names both harnesses' install commands.

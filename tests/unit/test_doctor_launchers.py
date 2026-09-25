@@ -125,11 +125,24 @@ def test_under_uvx_plugin_root_fails_naming_uvx_and_the_install_that_stays(tmp_p
     assert main(["doctor", "--plugin-root", str(PLUGIN)]) == 1
     (line,) = capsys.readouterr().out.splitlines()
     assert line == (
-        "crapkit doctor: FAIL no `crapkit` on PATH outside the environment uvx built for this "
+        "crapkit doctor: FAIL no `crapkit` on PATH outside the environment uv built for this "
         f"one command ({cached}), and the plugin's hooks never inherit that one: its "
         "hooks/hooks.json and .mcp.json both spawn the bare name, so every PostToolUse edit "
         "fires a command that cannot start and the MCP server never comes up. Install crapkit "
-        "where the hook's PATH can see it (`uv tool install crapkit`), then run this check again.")
+        "where the hook's PATH can see it (`uv tool install crapkit`, or `pipx install crapkit` "
+        "if you ran doctor through `pipx run`), then run this check again.")
+
+
+def test_under_pipx_run_on_its_pip_backend_the_fail_names_pipx(tmp_path, monkeypatch, capsys):
+    cached = tmp_path / ".cache" / "pipx" / "7200333e4116883"
+    shim(cached / BIN, admin.__version__)
+    monkeypatch.setattr(sys, "prefix", str(cached))
+    monkeypatch.setenv("PATH", joined(cached / BIN))
+
+    assert main(["doctor", "--plugin-root", str(PLUGIN)]) == 1
+    (line,) = capsys.readouterr().out.splitlines()
+    assert f"outside the environment pipx built for this one command ({cached})" in line
+    assert line.endswith("(`pipx install crapkit`), then run this check again."), line
 
 
 def test_under_uvx_an_install_further_down_path_is_the_one_checked(tmp_path, monkeypatch):

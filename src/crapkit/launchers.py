@@ -8,6 +8,10 @@ places, and which one a program gets depends on the order its PATH lists them.
 A runner that builds an environment for one command (uvx, pipx run) puts that
 environment first on the PATH it hands its child. The plugin's hooks never
 inherit it, so a caller asking what those hooks start leaves it out.
+
+pipx 1.17 on its uv backend hands `pipx run crapkit ...` to `uv tool run`, so
+that environment is uv's, in uv's cache like uvx's, and nothing in it says pipx
+started it. Such an environment is named by the tool that built it.
 """
 from __future__ import annotations
 
@@ -23,23 +27,27 @@ _OWNERS = (("/uv/tools/crapkit/", "uv tool upgrade crapkit"),
            ("/pipx/venvs/crapkit/", "pipx upgrade crapkit"))
 _READ_LIMIT = 1 << 20  # a Windows launcher embeds its interpreter path near its end
 _PYTHONS = ("python.exe",) if os.name == "nt" else ("python3", "python")
-_INSTALL = {"uvx": "uv tool install crapkit", "pipx run": "pipx install crapkit"}
+_INSTALL = {"uv": "`uv tool install crapkit`, or `pipx install crapkit` if you ran doctor "
+                  "through `pipx run`",
+            "pipx": "`pipx install crapkit`"}
 
 
 def ephemeral_runner(prefix: str) -> str | None:
-    """`uvx` or `pipx run` when `prefix` is an environment one of them built in
-    its cache for a single command, else None. uv keeps those under its cache's
-    archive-v0 bucket; pipx under a cache directory of its own."""
+    """"uv" or "pipx" when `prefix` is an environment that tool built in its
+    cache for a single command, else None. uv keeps those under its cache's
+    archive-v0 bucket (uvx, `uv tool run`, and `pipx run` on pipx's uv
+    backend); pipx's pip backend under a cache directory of pipx's own."""
     parts = {part.lower() for part in PurePath(prefix).parts}
     if "archive-v0" in parts:
-        return "uvx"
-    return "pipx run" if "pipx" in parts and parts & {".cache", "cache"} else None
+        return "uv"
+    return "pipx" if "pipx" in parts and parts & {".cache", "cache"} else None
 
 
-def install_line(runner: str) -> str:
-    """The command that keeps crapkit on PATH for a user who ran it through
-    `runner`."""
-    return _INSTALL[runner]
+def install_line(builder: str) -> str:
+    """The install that keeps crapkit on PATH for a user whose command ran in
+    an environment `builder` made, each command in backticks. A uv-built one
+    may have come through `pipx run`, so it names pipx's install too."""
+    return _INSTALL[builder]
 
 
 def _names() -> tuple[str, ...]:

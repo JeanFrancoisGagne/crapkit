@@ -1775,18 +1775,18 @@ def _no_crapkit_on_path() -> str:
     """The FAIL for a machine where nothing the plugin declares can start. It
     names both files that spawn the bare name, because the reader is about to
     look for a plugin problem and the problem is an install location. Under a
-    one-command runner it names that runner's environment, the one crapkit this
-    process did find, and the install that stays."""
+    one-command runner it names the environment that runner's tool built, the
+    one crapkit this process did find, and the install that stays."""
     from ..launchers import ephemeral_runner, install_line
 
-    runner = ephemeral_runner(sys.prefix)
-    if runner:
-        return (f"crapkit doctor: FAIL no `crapkit` on PATH outside the environment {runner} "
+    builder = ephemeral_runner(sys.prefix)
+    if builder:
+        return (f"crapkit doctor: FAIL no `crapkit` on PATH outside the environment {builder} "
                 f"built for this one command ({sys.prefix}), and the plugin's hooks never "
                 "inherit that one: its hooks/hooks.json and .mcp.json both spawn the bare name, "
                 "so every PostToolUse edit fires a command that cannot start and the MCP server "
                 "never comes up. Install crapkit where the hook's PATH can see it "
-                f"(`{install_line(runner)}`), then run this check again.")
+                f"({install_line(builder)}), then run this check again.")
     return ("crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and "
             ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
             "that cannot start and the MCP server never comes up. Install it where the "

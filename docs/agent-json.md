@@ -1118,8 +1118,11 @@ crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
 script goes into that venv's `Scripts` and nothing else on the machine sees it. Under
 `uvx crapkit doctor --plugin-root` (or `pipx run`) the PATH doctor inherits starts with the
-environment uvx built for that one command, which the plugin's hooks never inherit, so the
-lookup leaves it out and the FAIL names it with `uv tool install crapkit`.
+environment built for that one command, which the plugin's hooks never inherit, so the
+lookup leaves it out and the FAIL names it. An environment in uv's cache gets `uv tool
+install crapkit`, or `pipx install crapkit` for a `pipx run`: pipx 1.17 on its uv backend
+hands the command to `uv tool run`, so nothing in that environment says pipx started it.
+One in pipx's own cache (its pip backend) gets `pipx install crapkit`.
 
 A root doctor found rather than one you typed gets a `crapkit doctor: checking <that root>`
 line first, naming the install the verdict is about: the search reaches three levels under

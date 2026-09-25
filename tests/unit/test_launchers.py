@@ -78,24 +78,31 @@ def test_a_quoted_entry_is_read_without_its_quotes(tmp_path):
 
 
 # --- environments a runner builds for one command ---------------------------------
+#
+# pipx 1.17 on its uv backend hands `pipx run crapkit ...` to `uv tool run`, so
+# that environment sits in uv's archive-v0 like uvx's, and nothing in it says
+# pipx started it. It is named by the tool that built it.
 
 @pytest.mark.parametrize("prefix, runner", [
-    ("/home/u/.cache/uv/archive-v0/ePz6wC7FqYPz2zfC", "uvx"),
-    (r"C:\Users\u\AppData\Local\uv\cache\archive-v0\ePz6wC7F", "uvx"),
-    ("/home/u/.cache/pipx/3c2c1d4e", "pipx run"),
-    ("/home/u/.local/pipx/.cache/3c2c1d4e", "pipx run"),
-    (r"C:\Users\u\AppData\Local\pipx\pipx\Cache\3c2c1d4e", "pipx run"),
+    ("/home/u/.cache/uv/archive-v0/ePz6wC7FqYPz2zfC", "uv"),
+    (r"C:\Users\u\AppData\Local\uv\cache\archive-v0\ePz6wC7F", "uv"),
+    ("/home/u/.cache/pipx/3c2c1d4e", "pipx"),
+    ("/home/u/.local/pipx/.cache/3c2c1d4e", "pipx"),
+    (r"C:\Users\u\AppData\Local\pipx\pipx\Cache\3c2c1d4e", "pipx"),
     ("/home/u/.local/share/uv/tools/crapkit", None),
     ("/home/u/.local/share/pipx/venvs/crapkit", None),
     ("/home/u/repo/.venv", None),
 ])
-def test_an_environment_built_for_one_command_is_named_by_its_runner(prefix, runner):
+def test_an_environment_built_for_one_command_is_named_by_the_tool_that_built_it(prefix, runner):
     assert ephemeral_runner(prefix) == runner
 
 
-def test_each_runner_names_the_install_that_stays():
-    assert install_line("uvx") == "uv tool install crapkit"
-    assert install_line("pipx run") == "pipx install crapkit"
+def test_each_builder_names_the_install_that_stays():
+    """A uv-built environment came from uvx, `uv tool run`, or `pipx run` on
+    pipx's uv backend, so its line names both installs."""
+    assert install_line("uv") == ("`uv tool install crapkit`, or `pipx install crapkit` if you "
+                                  "ran doctor through `pipx run`")
+    assert install_line("pipx") == "`pipx install crapkit`"
 
 
 # --- the installer that owns a launcher --------------------------------------------
