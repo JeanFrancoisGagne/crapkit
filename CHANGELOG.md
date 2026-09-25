@@ -96,7 +96,7 @@ version stays 11, so no repo re-seeds.
   then `claude plugin update crapkit@crapkit --scope user`, then
   `crapkit doctor --plugin-root`, and restart open sessions.
 
-### The plugin's skills in Codex
+### The plugin in each agent
 
 - Codex no longer offers `crapkit-onboard` to the model on its own. The skill's
   `disable-model-invocation: true` is a Claude Code key, and Codex 0.156.1 ignored it
