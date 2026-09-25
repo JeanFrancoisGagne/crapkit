@@ -33,4 +33,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_universe_layouts.py"]},
     {"name": "unanalyzable files and twin-name notes", "seconds": 3,
      "pytest": [_PACKET + "test_notes.py"]},
+    {"name": "a warm analysis cache reads what a cold run reads", "seconds": 8,
+     "pytest": [_PACKET + "test_cache_identity.py"]},
 ]
