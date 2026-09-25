@@ -40,6 +40,10 @@ versions() {
         [ -d "$dir" ] || continue
         for tool in "$dir"/*; do echo "$(basename "$tool") $(first_line "$tool" --version)"; done
     done
+    # full-latest: the same commands at their newest releases.
+    for tool in /opt/harness-latest/bin/*; do
+        [ -e "$tool" ] && echo "$(basename "$tool")@latest $(first_line "$tool" --version)"
+    done
     [ -x /opt/vscode/bin/code ] && echo "vscode $(first_line /opt/vscode/bin/code --version --no-sandbox)"
     [ -x /opt/zed/bin/zed ] && echo "zed $(first_line /opt/zed/bin/zed --version)"
     rm -rf "$VERSION_HOME"

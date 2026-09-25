@@ -36,7 +36,21 @@ PLATFORMS = {"linux-x64": r"linux-x64", "win32-x64": r"(win32|windows)-x64", "da
 def test_every_dockerfile_arg_is_a_pin_and_every_pin_an_arg():
     declared = set(re.findall(r"^ARG (\w+)", DOCKERFILE, re.M)) - BUILDKIT_ARGS
 
-    assert declared == set(run.build_args(PINS))
+    assert declared == set(run.build_args(PINS, "full-latest"))
+
+
+def _final_instructions(text):
+    """target -> its last instruction, for every stage of the Dockerfile."""
+    stages = "".join("\n" + line for line in _instructions(text)).split("\nFROM ")[1:]
+    return {stage.splitlines()[0].rsplit(" AS ", 1)[-1]: stage.splitlines()[-1] for stage in stages}
+
+
+def test_every_image_ends_with_the_wheelhouse_so_a_release_rebuilds_one_layer():
+    finals = _final_instructions(DOCKERFILE)
+
+    assert {pinsfile.target(image): finals[pinsfile.target(image)] for image in pinsfile.IMAGE_CHAIN} == {
+        pinsfile.target(image): "COPY --from=wheelhouse /opt/wheelhouse /opt/wheelhouse"
+        for image in pinsfile.IMAGE_CHAIN}
 
 
 def test_the_syntax_line_is_the_pinned_digest():
@@ -698,3 +712,78 @@ def test_a_native_run_refuses_faketime(capsys):
 
 def test_every_image_holds_libfaketime():
     assert re.search(r"apt-get install [^;]*\bfaketime\b", DOCKERFILE)
+
+
+# --- full-latest (the weekly latest-harnesses job) ------------------------------------
+
+def test_only_full_latest_takes_the_weekly_args():
+    """A pinned image whose inputs moved with the calendar would rebuild every week."""
+    weekly = {image for image in pinsfile.IMAGE_CHAIN if "LATEST_WEEK" in run.build_args(PINS, image)}
+
+    assert weekly == {"full-latest"}
+    assert run.build_args(PINS, "full-latest")["LATEST_WEEK"] == run.iso_week()
+    assert run.iso_week(datetime.date(2026, 9, 25)) == "2026-W39"
+
+
+def test_full_latest_installs_every_npm_harness_and_the_pip_cli_at_latest():
+    args = pinsfile.latest_args(PINS, "2026-W39")
+    npm = {spec["npm"] for spec in PINS["harness"].values() if "npm" in spec}
+
+    assert set(args["LATEST_NPM"].split()) == {f"{name}@latest" for name in npm}
+    assert args["LATEST_PIP"] == "aider-chat"
+    assert args["LATEST_GOOSE_URL"].endswith("/releases/latest/download/goose-x86_64-unknown-linux-gnu.tar.bz2")
+
+
+def test_full_latest_is_held_to_the_pins_of_full_and_puts_its_own_bin_first():
+    assert pinsfile.expected_versions(PINS, "full-latest") == pinsfile.expected_versions(PINS, "full")
+    assert 'd["harness_bin"].insert(0, "/opt/harness-latest/bin")' in DOCKERFILE
+    assert 'echo "$(basename "$tool")@latest' in (DOCKER / "entry.sh").read_text(encoding="utf-8")
+
+
+LATEST_PINS = {"harness": {"claude-code": {"command": "claude", "version": "2.1.281"},
+                           "codex": {"command": "codex", "version": "0.156.1"},
+                           "junie": {"command": "junie", "version": "1468.30.0", "prints": "1468.30"},
+                           "claude-agent-sdk": {"version": "0.3.281"}}}
+
+
+def test_the_latest_drift_names_each_command_whose_newest_release_is_not_its_pin():
+    printed = ("claude 2.1.281 (Claude Code)\nclaude@latest 2.1.282 (Claude Code)\n"
+               "codex@latest codex-cli 0.156.1\njunie@latest Junie version: 1468.30\n")
+
+    assert pinsfile.latest_drift(LATEST_PINS, printed) == ["claude: pinned 2.1.281, latest prints '2.1.282 (Claude Code)'"]
+    assert pinsfile.latest_drift(LATEST_PINS, "") == [
+        "claude: pinned 2.1.281, latest prints 'nothing'", "codex: pinned 0.156.1, latest prints 'nothing'",
+        "junie: pinned 1468.30, latest prints 'nothing'"]
+
+
+def test_a_latest_run_writes_the_drift_for_the_job_summary(tmp_path, capsys):
+    (tmp_path / "versions-full-latest.txt").write_text("claude@latest 2.1.282 (Claude Code)\n", encoding="utf-8")
+    drift = run.report_latest(LATEST_PINS, "full-latest", tmp_path)
+
+    assert (tmp_path / "latest-drift.txt").read_text(encoding="utf-8") == "".join(line + "\n" for line in drift)
+    assert "run: latest: claude: pinned 2.1.281" in capsys.readouterr().out
+    assert run.report_latest(LATEST_PINS, "full", tmp_path / "other") == []
+
+
+def test_full_latest_reports_its_drift_even_when_its_image_is_this_weeks(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(run, "build", lambda *a: {"skipped": "inputs unchanged"})
+    monkeypatch.setattr(run, "hold_to_pins", lambda pins, image, out: calls.append(("hold", image)))
+    monkeypatch.setattr(run, "report_latest", lambda pins, image, out: calls.append(("report", image)))
+
+    assert run._build(run.parse(["--image", "full-latest", "--build-only"]), tmp_path) is True
+    assert run._build(run.parse(["--image", "core", "--build-only"]), tmp_path) is True
+    assert calls == [("hold", "full-latest"), ("report", "full-latest"), ("report", "core")]
+
+
+# --- a failing toolchain step ------------------------------------------------------------
+
+def test_a_failing_toolchain_step_shows_the_command_and_what_it_printed():
+    """A native Linux toolchain stopped at `npm i -D vitest@5.0.1` with a bare
+    CalledProcessError and nothing of what npm said."""
+    fail = [sys.executable, "-c", "import sys; print('npm error code ENOTFOUND'); sys.exit(3)"]
+
+    with pytest.raises(SystemExit) as stopped:
+        toolchain.run_step(fail)
+    assert "exited 3" in str(stopped.value) and "npm error code ENOTFOUND" in str(stopped.value)
+    assert toolchain.run_step([sys.executable, "-c", "print('ok')"]).stdout == "ok\n"

@@ -1,8 +1,8 @@
 # Every version and hash the deploy suite installs.
 #
 # tools/deploy/run.py turns this file into the Dockerfile's build args, and
-# tools/deploy/toolchain.py installs the same pins natively on Windows and
-# macOS. Nothing else feeds either one. tests/unit/test_deploy_pins.py holds
+# tools/deploy/toolchain.py installs the same pins natively on Windows, macOS
+# and the bare Linux runner. Nothing else feeds either one. tests/unit/test_deploy_pins.py holds
 # the Dockerfile, both harness package.json files and the npm fixtures to it.
 #
 # Change a pin here, then run `python tools/deploy/lock.py` to refresh
@@ -349,7 +349,7 @@ arch = "x86_64"
 image = "full"
 
 [binary.goose-linux-x64]
-url = "https://github.com/block/goose/releases/download/v1.52.0/goose-x86_64-unknown-linux-gnu.tar.bz2"
+url = "https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-x86_64-unknown-linux-gnu.tar.bz2"
 sha256 = "2609109a43012ddece0f78e1e4a179b82749c424f2164b97186d3ad38518d262"
 os = "linux"
 arch = "x86_64"
@@ -470,8 +470,18 @@ os = "windows"
 arch = "x86_64"
 
 [binary.goose-windows-x64]
-url = "https://github.com/block/goose/releases/download/v1.52.0/goose-x86_64-pc-windows-msvc.zip"
+url = "https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-x86_64-pc-windows-msvc.zip"
 sha256 = "13f51e2294a8c92ce440988beb1873ed688e33d8fc72c0f75755b2ed5b3d54bc"
 os = "windows"
 arch = "x86_64"
 image = "full"
+
+# --- the weekly latest-harnesses job --------------------------------------------
+# `run.py --image full-latest` installs every harness at its newest release over
+# the full image: each [harness] npm and pip package at @latest, the Cursor agent
+# through Cursor's own installer and Goose from its latest release. These are
+# the sources it reads, not pins; the job exists to meet releases no pin names.
+
+[latest]
+cursor_install = "https://cursor.com/install"
+goose = "https://github.com/aaif-goose/goose/releases/latest/download/goose-x86_64-unknown-linux-gnu.tar.bz2"

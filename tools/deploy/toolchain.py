@@ -121,6 +121,17 @@ def only_child(directory: Path) -> Path:
     return children[0] if len(children) == 1 and children[0].is_dir() else directory
 
 
+def run_step(argv: list, **kwargs) -> subprocess.CompletedProcess:
+    """One install command, quiet when it works. When it fails, the command and
+    the end of what it printed, which a bare CalledProcessError leaves out."""
+    done = subprocess.run([str(part) for part in argv], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", **kwargs)
+    if done.returncode != 0:
+        said = (done.stdout + done.stderr).strip().splitlines()[-20:]
+        raise SystemExit("\n".join([f"toolchain: {' '.join(map(str, argv))} exited {done.returncode}", *said]))
+    return done
+
+
 def _once(target: Path, make) -> Path:
     if not target.exists():
         make()
@@ -144,7 +155,7 @@ def install_archive(pins: dict, stem: str, os_name: str, root: Path, arch: str |
     def make():
         archive = download(binary(pins, stem, os_name, arch), root / "downloads")
         if archive.name.endswith(".7z.exe"):
-            subprocess.run([str(archive), "-y", f"-o{target}"], check=True, capture_output=True)
+            run_step([archive, "-y", f"-o{target}"])
         else:
             unpack(archive, target)
     return only_child(_once(target, make))
@@ -157,12 +168,10 @@ def exe(name: str) -> str:
 def install_pythons(pins: dict, uv: Path, root: Path) -> dict[str, str]:
     versions = [pins["python"]["old"], *pins["python"]["versions"]]
     env = dict(os.environ, UV_PYTHON_INSTALL_DIR=str(root / "python"), UV_PYTHON_DOWNLOADS="automatic")
-    subprocess.run([str(uv), "python", "install", *versions], check=True, env=env, capture_output=True)
+    run_step([uv, "python", "install", *versions], env=env)
     found = {}
     for version in versions:
-        done = subprocess.run([str(uv), "python", "find", version], check=True, env=env, capture_output=True,
-                              text=True)
-        found[".".join(version.split(".")[:2])] = done.stdout.strip()
+        found[".".join(version.split(".")[:2])] = run_step([uv, "python", "find", version], env=env).stdout.strip()
     return found
 
 
@@ -200,8 +209,7 @@ def cache_readme_installs(npm: str, root: Path, cache: Path, env: dict) -> None:
     scratch.mkdir()
     (scratch / "package.json").write_text('{"name": "scratch", "private": true}\n', encoding="utf-8")
     for packages in lines:
-        subprocess.run([npm, "i", "-D", "--ignore-scripts", f"--cache={cache}", *packages], cwd=scratch,
-                       check=True, env=env, capture_output=True)
+        run_step([npm, "i", "-D", "--ignore-scripts", f"--cache={cache}", *packages], cwd=scratch, env=env)
     shutil.rmtree(scratch)
 
 
@@ -209,8 +217,7 @@ def npm_ci(npm: str, source: Path, dest: Path, cache: Path, env: dict) -> Path:
     """`npm ci` of one locked package set into dest, filling the shared cache."""
     def make():
         shutil.copytree(source, dest)
-        subprocess.run([npm, "ci", "--no-audit", "--no-fund", f"--cache={cache}"], cwd=dest, check=True,
-                       env=env, capture_output=True)
+        run_step([npm, "ci", "--no-audit", "--no-fund", f"--cache={cache}"], cwd=dest, env=env)
     return _once(dest / "node_modules", make)
 
 

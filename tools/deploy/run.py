@@ -15,9 +15,11 @@ version, else on a docker-container builder running the pinned BuildKit image
 An image whose label says it was built from the same Dockerfile, context files
 and pins is not rebuilt; `--no-cache` rebuilds cold. Every image targets
 linux/amd64 except cells-arm64, the cells target built for linux/arm64 (the
-weekly lin-arm64 job; an x86_64 host builds and runs it under emulation). The
-tree under test is never in an image, so a crapkit source change rebuilds
-nothing:
+weekly lin-arm64 job; an x86_64 host builds and runs it under emulation).
+full-latest (the weekly latest-harnesses job, with --online) adds every
+harness at its newest release over full, rebuilt once an ISO week, and
+writes <out>/latest-drift.txt. The tree under test is never in an image, so
+a crapkit source change rebuilds nothing:
 
     docker run --rm --network none --user 1000:1000 -v <out>:/out -e CRAPKIT_DEPLOY=1 \\
         crapkit-deploy:<image> sh /out/in/entry.sh -m '<expr>' -n <N>
@@ -101,9 +103,18 @@ def pytest_args(args) -> list[str]:
 
 # --- building -----------------------------------------------------------------
 
-def build_args(pins: dict) -> dict[str, str]:
+def iso_week(today: datetime.date | None = None) -> str:
+    year, week, _ = (today or datetime.datetime.now(datetime.timezone.utc).date()).isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def build_args(pins: dict, image: str = "") -> dict[str, str]:
+    """Every build arg an image's build passes. Only full-latest gets the
+    weekly @latest args, so no pinned image's inputs move with the calendar."""
     args = pinsfile.build_args(pins)
     args["ACTIONS"] = " ".join([pins["actions"]["checkout"], pins["actions"]["setup_python"]])
+    if image.endswith(pinsfile.LATEST):
+        args.update(pinsfile.latest_args(pins, iso_week()))
     return args
 
 
@@ -164,7 +175,7 @@ def build_command(pins: dict, image: str, cache: str, no_cache: bool, builder: s
     argv = ["docker", "buildx", "build", "--builder", builder, "--progress", "plain",
             "--platform", pinsfile.platform(pins, image), "--target", pinsfile.target(image), "-f", str(DOCKERFILE),
             "-t", image_tag(image), "--load"]
-    argv += [f"--build-arg={key}={value}" for key, value in build_args(pins).items()]
+    argv += [f"--build-arg={key}={value}" for key, value in build_args(pins, image).items()]
     argv += [f"--label={INPUTS_LABEL}={inputs}"] if inputs else []
     argv += cache_flags(cache, image) + (["--no-cache"] if no_cache else [])
     return argv + [str(ROOT)]
@@ -217,7 +228,7 @@ def inputs_fingerprint(pins: dict, image: str, root: Path = ROOT) -> str:
     BuildKit and platform, and the bytes of each file in the build context."""
     files = [[path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()]
              for path in context_files(root)]
-    inputs = {"image": image, "args": build_args(pins), "buildkit": pins["images"]["buildkit"],
+    inputs = {"image": image, "args": build_args(pins, image), "buildkit": pins["images"]["buildkit"],
               "platform": pinsfile.platform(pins, image), "files": files}
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -532,13 +543,27 @@ def hold_to_pins(pins: dict, image: str, out: Path) -> None:
         raise SystemExit(f"run: {image_tag(image)} does not match pins.toml; the tag is removed")
 
 
+def report_latest(pins: dict, image: str, out: Path) -> list[str]:
+    """For full-latest, each harness whose newest release prints other than its
+    pin, printed and written to <out>/latest-drift.txt for the job summary."""
+    if not image.endswith(pinsfile.LATEST):
+        return []
+    drift = pinsfile.latest_drift(pins, (out / f"versions-{image}.txt").read_text(encoding="utf-8"))
+    (out / "latest-drift.txt").write_text("".join(line + "\n" for line in drift), encoding="utf-8")
+    for line in drift or ["every harness's newest release is its pin"]:
+        print(f"run: latest: {line}")
+    return drift
+
+
 def _build(args, out: Path) -> bool:
     """Build the image and hold a new one to the pins; True when the
-    invocation asked for nothing more."""
+    invocation asked for nothing more. full-latest is held to its pinned
+    tools and reports what its @latest ones print, built or not."""
     pins = pinsfile.load()
     record = build(pins, args.image, args.cache, args.no_cache, out, args.builder)
-    if not record.get("skipped"):
+    if not record.get("skipped") or args.image.endswith(pinsfile.LATEST):
         hold_to_pins(pins, args.image, out)
+    report_latest(pins, args.image, out)
     return args.build_only
 
 

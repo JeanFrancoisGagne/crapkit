@@ -11,6 +11,7 @@
 #   full   core + every other pinned harness CLI
 #   ci     cells + act, pre-fetched actions and a runner tool-cache Python
 #   gui    full + xvfb, VS Code and Zed
+#   full-latest  full + every harness at its newest release, first on PATH
 #
 # The wheelhouse layer is the last instruction of every target, so a new crapkit
 # release rebuilds one small layer and nothing under it. Nothing here writes
@@ -290,5 +291,46 @@ ENV DONT_PROMPT_WSL_INSTALL=1
 USER 1000:1000
 
 FROM gui-pre AS gui
+COPY --chmod=755 tests/deploy/docker/entry.sh /usr/local/bin/deploy-entry
+COPY --from=wheelhouse /opt/wheelhouse /opt/wheelhouse
+
+# ------------------------------------------------------- full-latest -------
+# The weekly latest-harnesses job (`run.py --image full-latest --online`): every
+# harness again at its newest release under /opt/harness-latest, whose bin dir
+# goes first in toolchain.json's harness_bin, so the kit puts it first on PATH;
+# the pinned ones stay under it for the floor cells. LATEST_WEEK changes once
+# an ISO week, so BuildKit resolves @latest again each week. Nothing here is
+# hash-checked: the job exists to meet releases no pin names yet.
+FROM full-pre AS latest-pre
+USER root
+ARG LATEST_NPM
+ARG LATEST_PIP
+ARG LATEST_CURSOR_INSTALL_URL
+ARG LATEST_GOOSE_URL
+ARG LATEST_WEEK
+RUN echo "every harness at its newest release, week $LATEST_WEEK"; \
+    mkdir -p /opt/harness-latest/bin /opt/harness-latest/home; cd /opt/harness-latest; \
+    export PATH=/opt/bun/bin:$PATH HOME=/opt/harness-latest/home; \
+    printf '{"name": "harness-latest", "private": true}\n' > package.json; \
+    for try in 1 2 3; do npm install --no-audit --no-fund --cache /tmp/npm-cache $LATEST_NPM && break; \
+      [ "$try" != 3 ]; done; \
+    rm -rf /tmp/npm-cache; \
+    for tool in claude codex gemini opencode copilot cn crush amp omp; do ln -s "../node_modules/.bin/$tool" bin/; done; \
+    ln -s ../node_modules/cline/bin/cline bin/cline; \
+    printf '#!/bin/sh\nexport JUNIE_DATA="${JUNIE_DATA:-/opt/harness-latest/home/.local/share/junie}"\nexec /opt/harness-latest/home/.local/bin/junie "$@"\n' \
+      > bin/junie; chmod 755 bin/junie; \
+    curl -fsSL --retry 5 --retry-all-errors -o /tmp/cursor-install.sh "$LATEST_CURSOR_INSTALL_URL"; \
+    bash /tmp/cursor-install.sh >/dev/null; rm /tmp/cursor-install.sh; \
+    ln -s /opt/harness-latest/home/.local/bin/cursor-agent /opt/harness-latest/home/.local/bin/agent bin/; \
+    curl -fsSL --retry 5 --retry-all-errors -o /tmp/goose.tar.bz2 "$LATEST_GOOSE_URL"; \
+    mkdir goose; tar -xjf /tmp/goose.tar.bz2 -C goose; rm /tmp/goose.tar.bz2; \
+    ln -s "$(find /opt/harness-latest/goose -type f -name goose | head -1)" bin/goose; \
+    uv venv -q --python 3.12 /opt/harness-latest/aider; \
+    VIRTUAL_ENV=/opt/harness-latest/aider uv pip install -q --no-cache $LATEST_PIP; ln -s ../aider/bin/aider bin/aider; \
+    cd home; rm -rf .bun .cache .config .local/state .local/share/opencode; chmod -R a+rX /opt/harness-latest; \
+    /opt/runner/bin/python -c 'import json; p = "/opt/deploy/toolchain.json"; d = json.load(open(p)); d["harness_bin"].insert(0, "/opt/harness-latest/bin"); open(p, "w").write(json.dumps(d, indent=2) + "\n")'
+USER 1000:1000
+
+FROM latest-pre AS full-latest
 COPY --chmod=755 tests/deploy/docker/entry.sh /usr/local/bin/deploy-entry
 COPY --from=wheelhouse /opt/wheelhouse /opt/wheelhouse

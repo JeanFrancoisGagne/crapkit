@@ -13,10 +13,14 @@ HERE = Path(__file__).resolve().parent
 PINS = HERE / "pins.toml"
 # Each image holds the tools of the images it is built on. cells-arm64 is the
 # cells target built for linux/arm64, for the weekly lin-arm64 job; the other
-# images hold harness binaries pinned for x86_64 only.
+# images hold harness binaries pinned for x86_64 only. full-latest is full with
+# every harness also installed at its newest release, first on the kit's PATH,
+# for the weekly latest-harnesses job.
 IMAGE_CHAIN = {"cells": ["cells"], "core": ["cells", "core"], "full": ["cells", "core", "full"],
-               "ci": ["cells", "ci"], "gui": ["cells", "core", "full", "gui"], "cells-arm64": ["cells"]}
+               "ci": ["cells", "ci"], "gui": ["cells", "core", "full", "gui"], "cells-arm64": ["cells"],
+               "full-latest": ["cells", "core", "full"]}
 ARM64 = "-arm64"
+LATEST = "-latest"
 
 
 def load(path: Path = PINS) -> dict:
@@ -66,6 +70,34 @@ def build_args(pins: dict) -> dict[str, str]:
             "SNAPSHOT": images["snapshot"], "PYTHONS": " ".join(python["versions"]),
             "PYTHON_OLD": python["old"], "PYTHON_RUNNER": python["runner"],
             "PYTHON_PRERELEASE": python["prerelease"], **_binary_args(pins)}
+
+
+def _harness_packages(pins: dict, manager: str, clis_only: bool = False) -> list[str]:
+    """The [harness] packages one manager installs; clis_only leaves out the
+    libraries (the Python Agent SDK), whose entries name no command."""
+    return [spec[manager] for spec in pins["harness"].values()
+            if manager in spec and ("command" in spec or not clis_only)]
+
+
+def latest_args(pins: dict, week: str) -> dict[str, str]:
+    """The full-latest target's build args. LATEST_WEEK changes once an ISO week,
+    so BuildKit resolves @latest again each week and never serves an older one."""
+    return {"LATEST_NPM": " ".join(f"{name}@latest" for name in _harness_packages(pins, "npm")),
+            "LATEST_PIP": " ".join(_harness_packages(pins, "pip", clis_only=True)),
+            "LATEST_CURSOR_INSTALL_URL": pins["latest"]["cursor_install"],
+            "LATEST_GOOSE_URL": pins["latest"]["goose"], "LATEST_WEEK": week}
+
+
+def latest_drift(pins: dict, text: str) -> list[str]:
+    """One line per harness command whose @latest build prints something other
+    than its pin: what the weekly latest-harnesses job puts in its summary."""
+    printed = _printed(text)
+    lines = []
+    for spec in pins["harness"].values():
+        pinned, latest = spec.get("prints", spec["version"]), printed.get(f"{spec.get('command')}@latest", "")
+        if "command" in spec and pinned not in latest:
+            lines.append(f"{spec['command']}: pinned {pinned}, latest prints {latest or 'nothing'!r}")
+    return lines
 
 
 def _minor(version: str) -> str:
