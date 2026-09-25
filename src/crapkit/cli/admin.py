@@ -1615,7 +1615,8 @@ def _relisted(root: Path, cfg, state: _Watching) -> tuple[list[str], str]:
         fault = str(exc)
     if fault != state.fault:
         print(f"crapkit watch: could not list the files your scopes claim ({fault}); "
-              "polling the last list, and listing again next poll", flush=True)
+              "fix what git reports. Until git lists them, each poll reads the last list "
+              "and asks git again", flush=True)
     return state.files, fault
 
 

@@ -189,7 +189,8 @@
   an empty list. A span with no line in HEAD, every span before the first commit included,
   answers `commits: null` with `commits_note` `pkg/m.py:9-10 holds only uncommitted lines,
   so no commit has touched it yet`, and a git failure quotes git's error in `commits_note`
-  instead of answering `[]`.
+  instead of answering `[]`, then says ``fix what git reports, then run `crapkit explain
+  --history` again``.
 
 ### A git question that fails is named, and a count names its files
 
@@ -268,10 +269,12 @@
   with the content recorded for it, and nothing prints. Each poll lists the files your
   scopes claim again, tracked or not yet added, so a file created while `watch` runs is
   rescored; the list used to come from `git ls-files` once, at start. When git cannot
-  list them, `watch` keeps polling the last list and says so once. New bytes written
-  under the file's old mtime (`cp -p`, `touch -r`) are not seen, the same limit the
-  analysis cache has. The first line reads `watching 12 file(s) in scope`, where it
-  said `tracked files`, because the count now holds the files not yet added too.
+  list them, `watch` keeps polling the last list and says so once, quoting git and ending
+  `fix what git reports. Until git lists them, each poll reads the last list and asks git
+  again`. New bytes written under the file's old mtime (`cp -p`, `touch -r`) are not
+  seen, the same limit the analysis cache has. The first line reads `watching 12 file(s)
+  in scope`, where it said `tracked files`, because the count now holds the files not yet
+  added too.
 - After `git fetch --unshallow` or `--deepen` at an unmoved HEAD, the churn map, the churn
   log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
   how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit

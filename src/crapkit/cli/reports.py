@@ -468,7 +468,8 @@ def _commits_fields(root: Path, path: str, span) -> dict:
         return _span_commits(root, path, span)
     except GitError as exc:
         return {"commits": None,
-                "commits_note": f"git cannot read the history of {path}:{span[0]}-{span[1]} ({exc})"}
+                "commits_note": (f"git cannot read the history of {path}:{span[0]}-{span[1]} ({exc}); "
+                                 "fix what git reports, then run `crapkit explain --history` again")}
 
 
 def _span_commits(root: Path, path: str, span) -> dict:

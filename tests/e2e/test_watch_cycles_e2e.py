@@ -202,6 +202,9 @@ def test_a_relisting_git_refuses_keeps_the_last_list_and_names_the_error_once(
 
     out = capfd.readouterr().out
     assert out.count("index file corrupt") == 1, out
+    assert ("crapkit watch: could not list the files your scopes claim (git ls-files failed "
+            "in repo: fatal: index file corrupt); fix what git reports. Until git lists them, "
+            "each poll reads the last list and asks git again") in out.splitlines(), out
     assert "--- changed: src/app.py" in out, "the edit on the kept list is still rescored"
 
 

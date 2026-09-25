@@ -400,7 +400,8 @@ def test_a_span_git_refuses_to_log_names_git_s_error_instead_of_an_empty_list(
 
     assert entry["commits"] is None
     assert entry["commits_note"] == ("git cannot read the history of pylib/mod.py:1-4 "
-                                     "(git log failed: fatal: bad object deadbeef)")
+                                     "(git log failed: fatal: bad object deadbeef); fix what "
+                                     "git reports, then run `crapkit explain --history` again")
 
 
 def test_a_function_the_latest_run_dropped_reports_null_commits(tmp_path, capsys):
