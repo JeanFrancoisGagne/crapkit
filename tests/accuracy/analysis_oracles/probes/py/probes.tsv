@@ -1,0 +1,334 @@
+id	file	function	metric	expected	source	ruling
+sum-of-primes	sonar.py	sum_of_primes	start	6	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+sum-of-primes	sonar.py	sum_of_primes	end	13	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+sum-of-primes	sonar.py	sum_of_primes	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; paper Figure: sumOfPrimes has Cyclomatic Complexity 4	
+sum-of-primes	sonar.py	sum_of_primes	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+sum-of-primes	sonar.py	sum_of_primes	ccn	4	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+sum-of-primes	sonar.py	sum_of_primes	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper sumOfPrimes scores 7 with continue OUT (+1), an unlabeled continue adds nothing (Jumps to labels): for +1, for +2, if +3	
+sum-of-primes	sonar.py	sum_of_primes	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+sum-of-primes	sonar.py	sum_of_primes	nloc	8	lizard 1.24.0 README: nloc counts lines of code without comments	
+sum-of-primes	sonar.py	sum_of_primes	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+get-words	sonar.py	get_words	start	16	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+get-words	sonar.py	get_words	end	25	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+get-words	sonar.py	get_words	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; paper Figure: getWords has Cyclomatic Complexity 4 (three cases, default not counted)	AO-PY-CCN-WILDCARD
+get-words	sonar.py	get_words	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+get-words	sonar.py	get_words	ccn	2	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+get-words	sonar.py	get_words	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper getWords: a switch and all its cases is one increment	D4
+get-words	sonar.py	get_words	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; a switch increments the nesting level	AO-N-PY-MATCH
+get-words	sonar.py	get_words	nloc	10	lizard 1.24.0 README: nloc counts lines of code without comments	
+get-words	sonar.py	get_words	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+my-method	sonar.py	my_method	start	28	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+my-method	sonar.py	my_method	end	36	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+my-method	sonar.py	my_method	ccn_std	6	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if, for, while, except, if	
+my-method	sonar.py	my_method	ccn_mod	6	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+my-method	sonar.py	my_method	cognitive	9	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper myMethod scores 9, try adds nothing	
+my-method	sonar.py	my_method	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; while in for in if, try is not a nesting structure	
+my-method	sonar.py	my_method	nloc	9	lizard 1.24.0 README: nloc counts lines of code without comments	
+my-method	sonar.py	my_method	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+my-method2	sonar.py	my_method2	start	39	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+my-method2	sonar.py	my_method2	end	41	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+my-method2	sonar.py	my_method2	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a conditional expression is one binary decision	
+my-method2	sonar.py	my_method2	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper myMethod2: a lambda raises the nesting level to 1, so the ternary inside scores +1 and +1 nesting	AO-PY-COG-LAMBDA
+my-method2	sonar.py	my_method2	nesting	2	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; the ternary sits in a lambda	AO-N-PY-LAMBDA
+my-method2	sonar.py	my_method2	nloc	3	lizard 1.24.0 README: nloc counts lines of code without comments	
+my-method2	sonar.py	my_method2	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+logical-mix	sonar.py	logical_mix	start	44	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+logical-mix	sonar.py	logical_mix	end	47	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+logical-mix	sonar.py	logical_mix	ccn_std	7	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1, the if and five short-circuit operators	
+logical-mix	sonar.py	logical_mix	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper Sequences of logical operators: if +1, and-and +1, or-or +1, and +1	
+logical-mix	sonar.py	logical_mix	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+logical-mix	sonar.py	logical_mix	nloc	4	lizard 1.24.0 README: nloc counts lines of code without comments	
+logical-mix	sonar.py	logical_mix	params	6	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+logical-not	sonar.py	logical_not	start	50	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+logical-not	sonar.py	logical_not	end	53	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+logical-not	sonar.py	logical_not	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1, the if and two short-circuit operators	
+logical-not	sonar.py	logical_not	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper: if (a && !(b && c)) scores 3	AO-PY-COG-RUNS-NOT
+logical-not	sonar.py	logical_not	nloc	4	lizard 1.24.0 README: nloc counts lines of code without comments	
+logical-not	sonar.py	logical_not	params	3	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+factorial	sonar.py	factorial	start	56	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+factorial	sonar.py	factorial	end	59	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+factorial	sonar.py	factorial	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+factorial	sonar.py	factorial	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1 and one method in a recursion cycle +1 (B1)	
+factorial	sonar.py	factorial	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+factorial	sonar.py	factorial	nloc	4	lizard 1.24.0 README: nloc counts lines of code without comments	
+factorial	sonar.py	factorial	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+a-decorator	sonar.py	a_decorator	start	62	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+a-decorator	sonar.py	a_decorator	end	67	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+a-decorator	sonar.py	a_decorator	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper App. A Python decorators: a_decorator totals 1, the inner if counted at nesting 0	AO-PY-NESTED-ROW-A
+a-decorator	sonar.py	a_decorator	nloc	6	lizard 1.24.0 README: nloc counts lines of code without comments	AO-PY-NLOC-NESTED-A
+a-decorator	sonar.py	a_decorator	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+inner	sonar.py	inner	start	63	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+inner	sonar.py	inner	end	66	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+inner	sonar.py	inner	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+inner	sonar.py	inner	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper App. A: the decorator's inner if at nesting 0 scores +1	
+inner	sonar.py	inner	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+inner	sonar.py	inner	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+not-a-decorator	sonar.py	not_a_decorator	start	70	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+not-a-decorator	sonar.py	not_a_decorator	end	76	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+not-a-decorator	sonar.py	not_a_decorator	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper App. A: not_a_decorator totals 2, its inner if at nesting 1	AO-PY-NESTED-ROW-B
+not-a-decorator	sonar.py	not_a_decorator	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	AO-PY-NLOC-NESTED-B
+not-a-decorator	sonar.py	not_a_decorator	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+inner2	sonar.py	inner2	start	72	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+inner2	sonar.py	inner2	end	75	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+inner2	sonar.py	inner2	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper App. A not_a_decorator: the nested function raises nesting to 1, so its if scores +1 and +1 nesting	AO-PY-NESTED-ROW-C
+inner2	sonar.py	inner2	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+straight	flow.py	straight	start	1	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+straight	flow.py	straight	end	4	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+straight	flow.py	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+straight	flow.py	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+straight	flow.py	straight	ccn	1	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+straight	flow.py	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+straight	flow.py	straight	nesting	0	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+straight	flow.py	straight	nloc	4	lizard 1.24.0 README: nloc counts lines of code without comments	
+straight	flow.py	straight	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+one-if	flow.py	one_if	start	7	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+one-if	flow.py	one_if	end	10	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+one-if	flow.py	one_if	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+one-if	flow.py	one_if	ccn	2	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+one-if	flow.py	one_if	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+one-if	flow.py	one_if	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+one-if	flow.py	one_if	nloc	4	lizard 1.24.0 README: nloc counts lines of code without comments	
+if-elif-else	flow.py	if_elif_else	start	13	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+if-elif-else	flow.py	if_elif_else	end	19	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+if-elif-else	flow.py	if_elif_else	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and elif, else adds no decision	
+if-elif-else	flow.py	if_elif_else	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+if-elif-else	flow.py	if_elif_else	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, elif +1, else +1 (hybrid increments)	
+if-elif-else	flow.py	if_elif_else	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+if-elif-else	flow.py	if_elif_else	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+nested-in-else	flow.py	nested_in_else	start	22	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+nested-in-else	flow.py	nested_in_else	end	28	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+nested-in-else	flow.py	nested_in_else	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+nested-in-else	flow.py	nested_in_else	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else +1, the if inside else +1 and +1 nesting (else raises the nesting level)	
+nested-in-else	flow.py	nested_in_else	nesting	2	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+nested-in-else	flow.py	nested_in_else	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+nested-in-else	flow.py	nested_in_else	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+four-deep	flow.py	four_deep	start	31	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+four-deep	flow.py	four_deep	end	37	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+four-deep	flow.py	four_deep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+four-deep	flow.py	four_deep	ccn	5	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+four-deep	flow.py	four_deep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, for +2, while +3, if +4	
+four-deep	flow.py	four_deep	nesting	4	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+four-deep	flow.py	four_deep	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+four-deep	flow.py	four_deep	params	4	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+flat-seven	flow.py	flat_seven	start	40	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+flat-seven	flow.py	flat_seven	end	55	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+flat-seven	flow.py	flat_seven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+flat-seven	flow.py	flat_seven	ccn	8	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+flat-seven	flow.py	flat_seven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0	
+flat-seven	flow.py	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+flat-seven	flow.py	flat_seven	nloc	16	lizard 1.24.0 README: nloc counts lines of code without comments	
+flat-seven	flow.py	flat_seven	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+three-loops	flow.py	three_loops	start	58	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+three-loops	flow.py	three_loops	end	64	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+three-loops	flow.py	three_loops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+three-loops	flow.py	three_loops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, for +2, for +3	
+three-loops	flow.py	three_loops	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+three-loops	flow.py	three_loops	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+first-negative	flow.py	first_negative	start	67	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+first-negative	flow.py	first_negative	end	73	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+first-negative	flow.py	first_negative	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+first-negative	flow.py	first_negative	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; while +1, if +2, an unlabeled break adds nothing (Jumps to labels)	
+first-negative	flow.py	first_negative	nesting	2	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+first-negative	flow.py	first_negative	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+ternary	flow.py	ternary	start	76	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+ternary	flow.py	ternary	end	77	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+ternary	flow.py	ternary	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+ternary	flow.py	ternary	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary operator +1	
+ternary	flow.py	ternary	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; a ternary increments the nesting level	AO-N-PY-TERNARY
+ternary	flow.py	ternary	nloc	2	lizard 1.24.0 README: nloc counts lines of code without comments	
+ternary	flow.py	ternary	params	3	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+boolean-return	flow.py	boolean_return	start	80	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+boolean-return	flow.py	boolean_return	end	81	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+boolean-return	flow.py	boolean_return	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one short-circuit operator	
+boolean-return	flow.py	boolean_return	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a sequence of binary logical operators in a return statement +1	
+boolean-return	flow.py	boolean_return	nesting	0	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+boolean-return	flow.py	boolean_return	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+one-except	flow.py	one_except	start	84	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+one-except	flow.py	one_except	end	90	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+one-except	flow.py	one_except	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the except clause is one branch	AO-PY-FINALLY
+one-except	flow.py	one_except	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; catch +1, try and finally are ignored	
+one-except	flow.py	one_except	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; catch increments the nesting level	
+one-except	flow.py	one_except	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+two-excepts	flow.py	two_excepts	start	93	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+two-excepts	flow.py	two_excepts	end	99	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+two-excepts	flow.py	two_excepts	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+two-excepts	flow.py	two_excepts	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; each catch clause +1	
+two-excepts	flow.py	two_excepts	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+two-excepts	flow.py	two_excepts	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+with-block	flow.py	with_block	start	102	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+with-block	flow.py	with_block	end	104	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+with-block	flow.py	with_block	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+with-block	flow.py	with_block	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a with statement is not listed in App. B	
+with-block	flow.py	with_block	nesting	0	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; with is not a nesting-level structure	
+with-block	flow.py	with_block	nloc	3	lizard 1.24.0 README: nloc counts lines of code without comments	
+comprehension	flow.py	comprehension	start	107	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+comprehension	flow.py	comprehension	end	108	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+comprehension	flow.py	comprehension	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the comprehension's for and its if are one binary decision each	
+comprehension	flow.py	comprehension	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the if nested in it +1 and +1 nesting	
+comprehension	flow.py	comprehension	nloc	2	lizard 1.24.0 README: nloc counts lines of code without comments	
+async-loop	flow.py	async_loop	start	111	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+async-loop	flow.py	async_loop	end	115	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+async-loop	flow.py	async_loop	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; async for is a loop	
+async-loop	flow.py	async_loop	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+async-loop	flow.py	async_loop	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+async-loop	flow.py	async_loop	nloc	5	lizard 1.24.0 README: nloc counts lines of code without comments	
+documented	shapes.py	documented	start	1	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+documented	shapes.py	documented	end	6	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+documented	shapes.py	documented	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+documented	shapes.py	documented	nloc	4	lizard 1.24.0 README: nloc counts lines of code without comments; the docstring is code, the comment and blank lines are not	AO-PY-NLOC-DOCSTRING
+documented	shapes.py	documented	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+keyword-params	shapes.py	keyword_params	start	9	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+keyword-params	shapes.py	keyword_params	end	10	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+keyword-params	shapes.py	keyword_params	params	6	Python 3 reference 8.7 Function definitions: the parameters a function declares; *args and **kwargs are parameters	
+positional-only	shapes.py	positional_only	start	13	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+positional-only	shapes.py	positional_only	end	14	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+positional-only	shapes.py	positional_only	params	4	Python 3 reference 8.7 Function definitions: the parameters a function declares; the / and bare * markers are not parameters	
+no-params	shapes.py	no_params	start	17	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+no-params	shapes.py	no_params	end	18	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+no-params	shapes.py	no_params	params	0	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+method	shapes.py	method	start	22	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+method	shapes.py	method	end	25	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+method	shapes.py	method	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+method	shapes.py	method	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares; self is a declared parameter	
+helper	shapes.py	helper	start	28	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+helper	shapes.py	helper	end	29	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+helper	shapes.py	helper	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+decorated	shapes.py	decorated	start	33	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+decorated	shapes.py	decorated	end	34	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+decorated	shapes.py	decorated	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+one-liner	shapes.py	one_liner	start	37	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+one-liner	shapes.py	one_liner	end	37	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+one-liner	shapes.py	one_liner	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+one-liner	shapes.py	one_liner	nloc	1	lizard 1.24.0 README: nloc counts lines of code without comments	
+one-liner	shapes.py	one_liner	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+one-liner	shapes.py	one_liner	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+outer	shapes.py	outer	start	40	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+outer	shapes.py	outer	end	45	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+outer	shapes.py	outer	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+outer	shapes.py	outer	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+middle	shapes.py	middle	start	41	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+middle	shapes.py	middle	end	44	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+middle	shapes.py	middle	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+innermost	shapes.py	innermost	start	42	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+innermost	shapes.py	innermost	end	43	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+innermost	shapes.py	innermost	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+wrapped-signature	shapes.py	wrapped_signature	start	48	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+wrapped-signature	shapes.py	wrapped_signature	end	54	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+wrapped-signature	shapes.py	wrapped_signature	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+wrapped-signature	shapes.py	wrapped_signature	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments	
+wrapped-signature	shapes.py	wrapped_signature	params	2	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+annotated	readers.py	annotated	start	1	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+annotated	readers.py	annotated	end	5	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+annotated	readers.py	annotated	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+annotated	readers.py	annotated	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+annotated	readers.py	annotated	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+defaults	readers.py	defaults	start	8	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+defaults	readers.py	defaults	end	12	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+defaults	readers.py	defaults	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+defaults	readers.py	defaults	params	3	Python 3 reference 8.7 Function definitions: the parameters a function declares	AO-PY-PARAMS-DEFAULTS
+continued	readers.py	continued	start	15	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+continued	readers.py	continued	end	19	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+continued	readers.py	continued	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+fill-spec	readers.py	fill_spec	start	22	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+fill-spec	readers.py	fill_spec	end	22	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+fill-spec	readers.py	fill_spec	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+after-fill-spec	readers.py	after_fill_spec	start	25	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+after-fill-spec	readers.py	after_fill_spec	end	28	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+after-fill-spec	readers.py	after_fill_spec	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+after-fill-spec	readers.py	after_fill_spec	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+three	readers.py	three	start	31	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+three	readers.py	three	end	36	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+three	readers.py	three	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+two	readers.py	two	start	32	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+two	readers.py	two	end	35	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+two	readers.py	two	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+one	readers.py	one	start	33	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+one	readers.py	one	end	34	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+one	readers.py	one	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+parent	readers.py	parent	start	39	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+parent	readers.py	parent	end	43	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+parent	readers.py	parent	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if after the one-line helper is the parent's	
+parent	readers.py	parent	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+helper	readers.py	helper	start	40	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+helper	readers.py	helper	end	40	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+helper	readers.py	helper	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+helper	readers.py	helper	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+one-line-comp	readers.py	one_line_comp	start	46	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+one-line-comp	readers.py	one_line_comp	end	46	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+one-line-comp	readers.py	one_line_comp	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the comprehension's for and if and one or	
+one-line-comp	readers.py	one_line_comp	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the if nested in it +1 and +1 nesting, one or sequence +1	
+one-line-comp	readers.py	one_line_comp	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+two-line-comp	readers.py	two_line_comp	start	49	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+two-line-comp	readers.py	two_line_comp	end	50	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+two-line-comp	readers.py	two_line_comp	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+two-line-comp	readers.py	two_line_comp	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the if nested in it +1 and +1 nesting, one or sequence +1	
+two-line-comp	readers.py	two_line_comp	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+last-before-main	readers.py	last_before_main	start	53	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+last-before-main	readers.py	last_before_main	end	56	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+last-before-main	readers.py	last_before_main	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+last-before-main	readers.py	last_before_main	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the module-level if after it is not its code	
+last-before-main	readers.py	last_before_main	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+pep695-first	pep695.py	first	start	1	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+pep695-first	pep695.py	first	end	4	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+pep695-first	pep695.py	first	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+pep695-first	pep695.py	first	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+pep695-first	pep695.py	first	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+pep695-second	pep695.py	second	start	7	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+pep695-second	pep695.py	second	end	8	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+pep695-second	pep695.py	second	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+pep695-second	pep695.py	second	params	1	Python 3 reference 8.7 Function definitions: the parameters a function declares	
+pep695-bounded	pep695.py	bounded	start	11	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+pep695-bounded	pep695.py	bounded	end	15	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+pep695-bounded	pep695.py	bounded	rows	1	Python 3 reference 8.7 Function definitions: each function definition is one function	
+pep695-bounded	pep695.py	bounded	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+pep695-bounded	pep695.py	bounded	params	3	Python 3 reference 8.7 Function definitions: the parameters a function declares	AO-PY-PARAMS-DEFAULTS-B
+floor-split	defects.py	floor_split	start	1	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+floor-split	defects.py	floor_split	end	3	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+floor-split	defects.py	floor_split	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a conditional expression is one binary decision, // is division	AO-PY-FLOORDIV
+floor-split	defects.py	floor_split	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary operator +1	AO-PY-FLOORDIV-COG
+close	defects.py	close	start	6	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+close	defects.py	close	end	7	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+close	defects.py	close	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: a method in a recursion cycle; self.inner.close() calls another object's method	AO-PY-COG-RECURSION
+comma-run	defects.py	comma_run	start	10	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+comma-run	defects.py	comma_run	end	13	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+comma-run	defects.py	comma_run	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1 and one or sequence +1: the comma separates pick's arguments, not the sequence	AO-PY-COG-RUNS-COMMA
+run-over-lines	defects.py	run_over_lines	start	16	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+run-over-lines	defects.py	run_over_lines	end	18	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+run-over-lines	defects.py	run_over_lines	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; one or sequence, whatever lines it spans	AO-PY-COG-LAYOUT
+two-comprehensions	defects.py	two_comprehensions	start	21	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+two-comprehensions	defects.py	two_comprehensions	end	22	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+two-comprehensions	defects.py	two_comprehensions	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two comprehension loops, each foreach +1 at nesting 0	AO-PY-COG-COMP-SCOPE
+two-comprehensions	defects.py	two_comprehensions	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-PY-NEST-COMP-SCOPE
+fstring-operator	defects.py	fstring_operator	start	25	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+fstring-operator	defects.py	fstring_operator	end	26	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+fstring-operator	defects.py	fstring_operator	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the or inside the replacement field is a sequence of logical operators +1	
+dict-then-while	defects.py	dict_then_while	start	29	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+dict-then-while	defects.py	dict_then_while	end	33	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+dict-then-while	defects.py	dict_then_while	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; while +1	AO-COG-WHILE-AFTER-BRACE-PY
+dict-then-while	defects.py	dict_then_while	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-NEST-WHILE-AFTER-BRACE-PY
+keyword-named	defects.py	keyword_named	start	36	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+keyword-named	defects.py	keyword_named	end	37	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+keyword-named	defects.py	keyword_named	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; cmd.do(1) is a method call, not a loop	AO-PY-COG-KEYWORD-NAMES
+keyword-named	defects.py	keyword_named	nesting	0	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-PY-NEST-KEYWORD-NAMES
+countdown	defects.py	countdown	start	41	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+countdown	defects.py	countdown	end	44	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+countdown	defects.py	countdown	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1 and one method in a recursion cycle +1 (B1)	AO-PY-COG-NESTED-RECURSION
+condition-comprehension	defects.py	condition_comprehension	start	48	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+condition-comprehension	defects.py	condition_comprehension	end	51	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+condition-comprehension	defects.py	condition_comprehension	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the generator's loop in the if's condition +1: a condition is assessed at its structure's own level	AO-PY-COG-CONDITION
+condition-comprehension	defects.py	condition_comprehension	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-N-PY-CONDITION
+element-ternary	defects.py	element_ternary	start	54	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+element-ternary	defects.py	element_ternary	end	55	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+element-ternary	defects.py	element_ternary	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the element runs inside the loop: ternary +1 and +1 nesting	AO-PY-COG-ELEMENT
+filter-then-for	defects.py	filter_then_for	start	58	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+filter-then-for	defects.py	filter_then_for	end	59	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+filter-then-for	defects.py	filter_then_for	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the if nested in it +2, the second foreach nested in both +3 (B2 lists if)	AO-PY-COG-FILTER
+ternary-iterable	defects.py	ternary_iterable	start	62	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+ternary-iterable	defects.py	ternary_iterable	end	63	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+ternary-iterable	defects.py	ternary_iterable	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the iterable is evaluated before the loop: ternary +1	AO-PY-COG-ITER
+is-even	defects.py	is_even	start	66	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+is-even	defects.py	is_even	end	67	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+is-even	defects.py	is_even	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1 and one method in a recursion cycle +1 (B1: each method in a cycle, direct or indirect)	AO-PY-COG-INDIRECT-A
+is-odd	defects.py	is_odd	start	70	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+is-odd	defects.py	is_odd	end	71	Python 3 reference 8.7 Function definitions: a function ends on the last line of its body	
+is-odd	defects.py	is_odd	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1 and one method in a recursion cycle +1	AO-PY-COG-INDIRECT-B

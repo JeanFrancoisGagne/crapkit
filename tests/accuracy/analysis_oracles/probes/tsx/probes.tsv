@@ -1,0 +1,6 @@
+id	file	function	metric	expected	source	ruling
+badge	badge.tsx	Badge	start	1	TypeScript handbook (JSX) and ECMA-262 sec. 15: a function starts on its defining line	
+badge	badge.tsx	Badge	end	6	TypeScript handbook (JSX) and ECMA-262 sec. 15: a function ends on the last line of its body	
+badge	badge.tsx	Badge	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and a conditional expression	
+badge	badge.tsx	Badge	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, ternary +1	
+badge	badge.tsx	Badge	params	1	TypeScript handbook (JSX) and ECMA-262 sec. 15: the parameters a function declares	

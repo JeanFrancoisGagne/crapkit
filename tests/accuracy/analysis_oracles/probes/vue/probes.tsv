@@ -1,0 +1,5 @@
+id	file	function	metric	expected	source	ruling
+label	label.vue	label	start	9	Vue 3 SFC spec (script block) and ECMA-262 sec. 15.4 Method Definitions: a function starts on its defining line	AO-VUE-LINES
+label	label.vue	label	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+label	label.vue	label	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+label	label.vue	label	rows	1	Vue 3 SFC spec (script block) and ECMA-262 sec. 15.4 Method Definitions: each function definition is one function	
