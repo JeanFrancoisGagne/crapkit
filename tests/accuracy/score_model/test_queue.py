@@ -19,6 +19,7 @@ from accuracy.score_model import cases, cli_repo, model_score, production
 
 ADMISSION_ROWS = cases.hand("Queue admission and floors")
 RANKING_ROWS = cases.hand("Worklist ranking and dormant list")
+NEXT_ROWS = cases.hand("next-item ranking and empty-queue reasons")
 CEILING = 6
 
 
@@ -306,6 +307,37 @@ def test_worklist_and_next_item_take_the_same_rows(scenario):
 
 def _queue_view(entry) -> bool:
     return entry.flag != "no-lane" and (entry.commits > 0 or entry.remedy != "ok")
+
+
+def _next_row(name: str, ccn: str, cov: str, flag: str):
+    """A scored row at ceiling 6; a row no lane measures scores cov 0."""
+    cov_value = float(cases.fraction(cov)) if flag == "measured" else 0.0
+    value = production.load("score:crap")(int(ccn), cov_value)
+    remedy = production.load("score:remedy")(int(ccn), value, CEILING)
+    return production.scored_row("src", f"src/{name}.py", f"{name}( x )", 1, 10, int(ccn),
+                                 cov_value, flag, value, remedy)
+
+
+def _next_rows(text: str) -> tuple[dict, list]:
+    """name:ccn:cov:commits:flag items, one function per file src/NAME.py."""
+    specs = [item.split(":") for item in text.split(",")]
+    churn = {f"src/{name}.py": production.file_churn(int(commits), 1, 0.5)
+             for name, _, _, commits, _ in specs if int(commits) > 0}
+    return churn, [_next_row(name, ccn, cov, flag) for name, ccn, cov, _, flag in specs]
+
+
+@pytest.mark.parametrize("given_,expected", [row[1:] for row in NEXT_ROWS],
+                         ids=[row[0] for row in NEXT_ROWS])
+def test_next_item_hand_rows(given_, expected):
+    churn, rows = _next_rows(given_["fns"])
+    adm = production.load("worklist:admission")(churn, int(given_["floor"]))
+    ranked, skipped = production.load("cli.queue:_next_ranked")(rows, adm)
+    items = production.load("cli.queue:_actionable")(ranked)
+    order = ",".join(row.path[4:-3] for row in items)
+
+    if "ruling" in given_:
+        rulings.pin_ruling(given_["ruling"], crapkit=order.split(",")[0], oracle=given_["doc_says"])
+    assert (order, skipped) == (expected["order"], int(expected["skipped_no_lane"]))
 
 
 def test_equal_crap_ranks_by_commits_then_path():

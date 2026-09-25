@@ -9,12 +9,14 @@ from fractions import Fraction
 import math
 
 from hypothesis import given, strategies as st
+import pytest
 
 from accuracy.kit import exact, rulings
 from accuracy.kit.settings import pure
-from accuracy.score_model import model_score, production
+from accuracy.score_model import cases, model_score, production
 
 ULPS = 8
+OVERLAY_ROWS = cases.hand("Rescore overlay")
 
 
 def _baseline_row(path: str, name: str, start: int, end: int, ccn: int, cov: float):
@@ -29,6 +31,37 @@ def crapkit_overlay(fresh, baseline, lane_scopes=frozenset({"src"}), target: int
 
 def _covs(rows) -> dict[str, tuple[float, str]]:
     return {row.long_name: (row.cov, row.flag) for row in rows}
+
+
+def _specs(text: str) -> list[list[str]]:
+    return [item.split(":") for item in text.split(",")]
+
+
+def _hand_fresh(path: str, text: str) -> list:
+    """name:start:end items; occurrence counts the functions before it on its start line."""
+    specs, rows = _specs(text), []
+    for number, (name, start, end) in enumerate(specs):
+        before = sum(1 for other in specs[:number] if other[1] == start)
+        rows.append(production.inventory_row("src", path, f"{name}( )", int(start), int(end), 3,
+                                             occurrence=before + 1))
+    return rows
+
+
+def _hand_expected(expected: dict) -> dict[str, tuple[float, str]]:
+    return {f"{name}( )": (float(cases.fraction(value.split(":")[0])), value.split(":")[1])
+            for name, value in expected.items()}
+
+
+@pytest.mark.parametrize("given_,expected", [row[1:] for row in OVERLAY_ROWS],
+                         ids=[row[0] for row in OVERLAY_ROWS])
+def test_overlay_hand_rows(given_, expected):
+    """file=PATH baseline=name:start:end:cov,... fresh=name:start:end,..."""
+    path = given_["file"]
+    baseline = [_baseline_row(path, f"{name}( )", int(start), int(end), 3,
+                              float(cases.fraction(cov)))
+                for name, start, end, cov in _specs(given_["baseline"])]
+
+    assert _covs(crapkit_overlay(_hand_fresh(path, given_["fresh"]), baseline)) ==         _hand_expected(expected)
 
 
 def test_renamed_function_gets_no_neighbour_coverage():
