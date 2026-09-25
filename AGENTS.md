@@ -584,9 +584,10 @@ walked the same way (ADR 0002). A server started in its plugin's install directo
 client's `PLUGIN_ROOT`, `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT`) never walks up from
 there, and one whose start serves nothing asks a client that declares `roots` for its
 workspace folders and serves the first one a `crapkit.toml` claims: VS Code starts
-user-level servers in the home directory and plugin servers in the plugin directory. `initialize` negotiates the protocol revision (a client's
-`2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
-`2025-06-18`) and reports server name `crapkit`.
+user-level servers in the home directory and plugin servers in the plugin directory.
+`initialize` negotiates the protocol revision (a client's `2025-06-18`, `2025-03-26` or
+`2024-11-05` is echoed back; anything else is answered with `2025-06-18`) and reports
+server name `crapkit`.
 
 Twelve tools, every one the CLI command's `--json` form:
 
