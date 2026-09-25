@@ -95,7 +95,10 @@ it (git mv) to a UTF-8 name` means a scope takes a file whose name git holds in 
 encoding, a Latin-1 name made on Linux, so no row can be keyed on it and no gate may pass it
 unread. Rename it and commit: on Linux `git mv $'src/caf\xe9.py' src/café.py`; on Windows,
 where Git for Windows checked the file out as `src/café.py`, `git add -A` stages that rename.
-`left out docs/r\xe9sum\xe9.txt: git names it in
+`crapkit claude-hook` says the same about a file an agent just wrote under such a name, as an
+advisory at exit 2 (`crapkit advisory: src/caf\xe9.py is in scope 'src', but git names it in
+bytes that are not UTF-8 ...`): the edit landed, no function in it was judged, and the rename is
+the fix. `left out docs/r\xe9sum\xe9.txt: git names it in
 bytes that are not UTF-8` is a warning for a tracked name no scope takes, and the command's
 own exit stands; `--json` lists the same names in `unreadable_names`:
 [docs: file paths](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery).

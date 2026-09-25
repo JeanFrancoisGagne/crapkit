@@ -190,6 +190,15 @@ def test_a_name_is_refused_only_when_the_scope_assignment_takes_it(channel, raw,
     assert "rename it (git mv) to a UTF-8 name" in message and "\n" not in message
 
 
+@pytest.mark.parametrize("raw, claimed", [row[1:] for row in CLAIM_RULE], ids=[row[0] for row in CLAIM_RULE])
+def test_claiming_scope_answers_one_name_by_the_rule_the_refusal_uses(raw, claimed):
+    """claude-hook answers for one file and must not raise: it asks this, and
+    names the scope where the scan would refuse the file."""
+    from crapkit.universe import claiming_scope
+
+    assert claiming_scope(raw.decode("utf-8", "surrogateescape"), SCOPED) == ("src" if claimed else None)
+
+
 def test_a_name_no_scope_path_owns_is_not_reported_as_unclaimed_source():
     """`unclaimed` lists source a scope should own. A name crapkit cannot read
     is listed in `unreadable`, which the command names, and not a second time."""

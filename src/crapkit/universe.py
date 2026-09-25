@@ -294,6 +294,14 @@ def _claimed_text(claimed: list[tuple[str, str]]) -> str:
             "left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name")
 
 
+def claiming_scope(path: str, cfg: Config) -> str | None:
+    """The scope the scan's rule gives one path (excludes, extension, deepest
+    declared path), whether or not its name is UTF-8, or None when none takes
+    it. For a caller that answers for one name without refusing it."""
+    found = _candidates([path], cfg, scope_matchers(cfg.scopes))
+    return found[0][1] if found else None
+
+
 def _refuse_claimed(names: list[str], cfg: Config, matchers: tuple[ScopeMatch, ...]) -> None:
     """Exit 3 when the scope assignment takes a name crapkit cannot read."""
     claimed = sorted((path, owner) for path, owner in _candidates(names, cfg, matchers)

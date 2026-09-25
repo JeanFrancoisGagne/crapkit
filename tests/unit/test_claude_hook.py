@@ -442,3 +442,50 @@ def test_a_configuration_saved_with_a_bom_reads_as_the_same_configuration(tmp_pa
     err = capsys.readouterr().err
     assert code == 2, err
     assert "crapkit advisory" in err, err
+
+
+# --- a Bash-written file whose name git gives in bytes that are not UTF-8 ------
+#
+# The Bash fallback read `git status --porcelain -z` as lenient text, so a name
+# in Latin-1 bytes came back holding U+FFFD, named no file on disk, and the hook
+# passed the breach in silence. Names now keep their bytes, and a file a scope
+# takes whose name crapkit cannot read gets an advisory naming it and the
+# rename: no function in it can be keyed, and the commit gate refuses it.
+
+POSIX_NAMES = pytest.mark.skipif(os.name == "nt", reason="NTFS stores names as UTF-16, so a "
+                                                         "name that is not UTF-8 exists only on POSIX")
+CLEAN = "def fine(n):\n    return n\n"
+UNREAD = ("crapkit advisory: calc/caf\\xe9.py is in scope 'calc', but git names it in bytes that "
+          "are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was judged "
+          "(the edit landed; nothing was blocked)")
+RENAME = "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"
+BASH_WRITTEN = [
+    # id, the name as bytes, its source, the exit, a line stderr must hold ("" = silent)
+    pytest.param(b"calc/caf\xe9.py", BREACH, 2, UNREAD, marks=POSIX_NAMES, id="latin1-scoped-breach"),
+    pytest.param(b"calc/caf\xe9.py", CLEAN, 2, UNREAD, marks=POSIX_NAMES, id="latin1-scoped-clean"),
+    pytest.param(b"tools/caf\xe9.py", BREACH, 0, "", marks=POSIX_NAMES, id="latin1-unscoped"),
+    pytest.param("calc/café.py".encode(), BREACH, 2, "in calc/café.py (the edit landed", id="utf8-scoped-breach"),
+    pytest.param("calc/李.py".encode(), CLEAN, 0, "", id="utf8-cjk-scoped-clean"),
+    pytest.param(b"calc/plain.py", BREACH, 2, "in calc/plain.py (the edit landed", id="ascii-scoped-breach"),
+]
+
+
+@pytest.mark.parametrize("name, source, code, line", BASH_WRITTEN)
+def test_a_bash_written_file_is_judged_by_the_name_git_gives_it(tmp_path, capsys, monkeypatch,
+                                                              name, source, code, line):
+    from raw_git import repository
+
+    root = repository(tmp_path / "repo")
+    (root / "crapkit.toml").write_text(TOML, encoding="utf-8")
+    written = Path(os.fsdecode(os.fsencode(root) + b"/" + name))
+    written.parent.mkdir(parents=True, exist_ok=True)
+    written.write_text(source, encoding="utf-8")
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(dict(BASH_EVENT, cwd=str(root)))))
+
+    exit_code = main(["claude-hook", "--protocol", "1"])
+
+    err = capsys.readouterr().err
+    assert exit_code == code, err
+    assert (line in err) if line else err == "", err
+    assert (RENAME in err) is (line == UNREAD), err
+    assert "gate:" not in err and "crapkit gate" not in err, err

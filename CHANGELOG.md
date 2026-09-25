@@ -34,7 +34,9 @@ Two of the source reads below move function keys and scores, so the analysis ver
   in the new `unreadable_names` field. An untracked one is a change like any other:
   `coverage --reuse-unchanged` reused a lane whose `inputs` held a new or edited
   Latin-1 file with `measurement inputs unchanged`, where the same file under a UTF-8
-  name reran it.
+  name reran it. `claude-hook` read the working tree's names leniently, so a Bash-written
+  file named in Latin-1 under a scope named no file on disk and its breach passed with no
+  advisory; it now exits 2 with an advisory naming the file and the rename.
 - Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
   so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
   `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX

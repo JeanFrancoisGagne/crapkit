@@ -162,13 +162,14 @@ def _advise_command(payload: dict) -> int:
 def _repo_top(cwd: Path) -> Path | None:
     """The git working-tree top above the command's own cwd, or None outside any
     repo. The event's `cwd` is where the command ran, and `status --porcelain`
-    names every file relative to this top whatever directory asks."""
-    from ..repotext import lenient
+    names every file relative to this top whatever directory asks. A directory
+    named in bytes that are not UTF-8 keeps them, as every path git names does."""
+    from ..repotext import escaped
 
     if not cwd.is_dir():
         return None
     res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True)
-    top = lenient(res.stdout).strip()
+    top = escaped(res.stdout).strip()
     return Path(top) if res.returncode == 0 and top else None
 
 
@@ -188,11 +189,13 @@ def _fresh_python(top: Path) -> list[Path]:
 def _porcelain(top: Path) -> str:
     """`git status --porcelain -z` over the whole tree, or "" when git cannot
     answer. -uall, because a heredoc that creates a new DIRECTORY of source
-    would otherwise arrive as one collapsed `?? newdir/` row naming no file."""
-    from ..repotext import lenient
+    would otherwise arrive as one collapsed `?? newdir/` row naming no file.
+    Each name keeps its bytes: read leniently, a Latin-1 name held U+FFFD,
+    named no file on disk, and a breach written under it passed in silence."""
+    from ..repotext import escaped
 
     res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top, capture_output=True)
-    return lenient(res.stdout) if res.returncode == 0 else ""
+    return escaped(res.stdout) if res.returncode == 0 else ""
 
 
 def _status_records(text: str) -> Iterator[tuple[str, str]]:
@@ -260,7 +263,11 @@ def _judge(root: Path, rel: str) -> int:
     31.4 ms and importing lizard costs 38.1, so the diff is started first and
     finishes inside the import that follows it.
     """
+    from ..gitpaths import readable
+
     cfg = _config(root)
+    if not readable(rel):
+        return _unreadable(cfg, rel)
     in_scope = _scoped(cfg, rel)
     if in_scope is None:
         return 0
@@ -272,6 +279,25 @@ def _judge(root: Path, rel: str) -> int:
         diff.close()
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
     return _report(root, cfg, rel, breaches, ceiling, records)
+
+
+def _unreadable(cfg, rel: str) -> int:
+    """Exit 2 for a file a scope takes whose name git gives in bytes that are
+    not UTF-8. No function in it can be keyed, so none is judged, and the
+    commit gate refuses the file at exit 3 (Q17); saying nothing here would
+    pass it unread. Advisory wording, as rung 9's: the edit landed. A name no
+    scope takes stays silent, like any unscoped edit."""
+    from ..gitpaths import shown
+    from ..universe import claiming_scope
+
+    scope = claiming_scope(rel, cfg)
+    if scope is None:
+        return 0
+    print(f"crapkit advisory: {shown(rel)} is in scope {scope!r}, but git names it in bytes that "
+          "are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was judged "
+          "(the edit landed; nothing was blocked)", file=sys.stderr)
+    print("the commit gate refuses such a file (exit 3); rename it to a UTF-8 name", file=sys.stderr)
+    return 2
 
 
 def _config(root: Path):
