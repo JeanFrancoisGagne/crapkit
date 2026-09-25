@@ -118,10 +118,10 @@ RUN uv venv -q --python "$PYTHON_RUNNER" /opt/runner; \
 # ------------------------------------------------------- npm fixtures -------
 # `npm ci` fills the cache from the lock; the README's install lines, run in a
 # repo that holds only vitest, cache the packuments an offline `npm i -D` reads.
-# That repo gets its vitest with --legacy-peer-deps: once vitest 5.0.2 was out,
-# npm 10.9.9 crashed resolving the optional peers of the pinned 5.0.1 ("Cannot
-# read properties of null (reading 'edgesOut')"). The README lines themselves
-# run as a user runs them.
+# That repo gets its vitest with --legacy-peer-deps: once a newer vitest is out,
+# npm 10.9.9 crashes resolving the optional peers of an older pinned one ("Cannot
+# read properties of null (reading 'edgesOut')"), as it did for 5.0.1 when 5.0.2
+# shipped. The README lines themselves run as a user runs them.
 FROM base AS npm-fixtures
 COPY tests/deploy/docker/npm-fixtures/ /opt/npm-fixtures/
 RUN export npm_config_cache=/opt/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false; \
