@@ -1,7 +1,7 @@
-"""The in-tree change-control rules on this checkout (T1 to T6).
+"""The in-tree change-control rules on this checkout (T2 to T6, and where T1 lives).
 
-These compare crapkit's committed goldens, lock and tables with each other and
-with crapkit's current output, so they carry the change_control marker: they
+These compare the committed goldens, lock and tables with each other and with
+the collected tests, so they carry the change_control marker: they
 guard against an unannounced move and are not an independent method. Until
 kit-close runs `python tools/accuracy/change_control.py lock --initial`, the
 lock, CHANGES.tsv, metric-digests.tsv and test-counts.tsv hold headers only,
@@ -13,8 +13,6 @@ from pathlib import Path
 import sys
 
 import pytest
-
-from accuracy.kit import corpus_run, goldens
 
 REPO = Path(__file__).resolve().parents[3]
 TOOLS = REPO / "tools" / "accuracy"
@@ -38,43 +36,19 @@ def test_the_lock_the_changes_the_changelog_and_the_metric_digests_agree():
     assert problems == [], _report(problems)
 
 
-def _stored(directory: Path) -> dict[str, str]:
-    return {path.name: path.read_bytes().decode("utf-8") for path in directory.iterdir()
-            if path.is_file()}
+T1 = "tests/accuracy/corpus_goldens/test_goldens.py"
 
 
-def _differences(directory: Path, now: dict[str, str]) -> list[str]:
-    stored = _stored(directory)
-    return [f"{directory.relative_to(REPO).as_posix()}/{name}: differs from crapkit's output"
-            for name in sorted({*stored, *now}) if stored.get(name) != now.get(name)]
+def test_golden_sets_come_with_the_test_that_measures_them_and_a_regenerator():
+    """T1 lives with the goldens: test_goldens.py measures every set and compares
+    it with the committed files, and regenerate.py is what `declare` runs."""
+    tree = cc.DirTree(REPO)
+    has_goldens = bool(cc.golden_tables(tree))
 
+    assert not has_goldens or [T1, cc.REGENERATE] == [
+        path for path in (T1, cc.REGENERATE) if (REPO / path).is_file()]
+    assert not has_goldens or cc.small_goldens(tree) is not None
 
-def _measured(request, corpus: str):
-    """The session's shared run of the small corpus, or a run of its own."""
-    if corpus == cc.SMALL_CORPUS:
-        return request.getfixturevalue("small_corpus")
-    base = request.getfixturevalue("tmp_path_factory").mktemp("golden-set")
-    return corpus_run.measure(REPO / corpus, base, corpus_run.date_now())
-
-
-@pytest.mark.golden
-@pytest.mark.process
-def test_every_golden_set_equals_crapkit_output(request):
-    """T1, for every golden set whose corpus is in the tree; the full corpus's sets
-    are compared where the full corpus is (the nightly image)."""
-    sets = cc._in_tree_sets(cc.DirTree(REPO))
-
-    found = [line for directory, corpus in sets for line in _differences(
-        REPO / directory, goldens.goldens_of(_measured(request, corpus)))]
-
-    assert found == [], "\n".join(found + [cc.declare_command("<id>", "<kind>", ())])
-
-
-def test_a_small_corpus_has_its_golden_set():
-    corpus = cc.DirTree(REPO)
-    has_corpus = any(path.startswith(cc.SMALL_CORPUS + "/") for path in corpus.paths())
-
-    assert not has_corpus or cc.small_goldens(corpus) is not None
 
 
 @pytest.mark.process

@@ -109,6 +109,10 @@ FAILING = {
     "a dropped test count": (BASE, lambda tree: seeds.replace(tree, seeds.COUNTS, "\t3", "\t2"),
                              {"B4"}),
     "a calc-module diff with no change row": (BASE, seeds.module_changed, {"B6"}),
+    "a calc-module diff under a change naming another module's calc": (
+        BASE_CCN8, lambda tree: seeds.module_changed(seeds.fixed_ccn(tree)), {"B6"}),
+    "an analyze.py edit beyond the version bump under a CRAP fix": (
+        BASE, lambda tree: seeds.reader_changed(seeds.fixed_crap(tree)), {"B6"}),
 }
 CLEAN = {
     "a declared fix": (BASE, seeds.fixed_crap),
@@ -116,7 +120,14 @@ CLEAN = {
     "a declared definition": (BASE, _declared_definition),
     "a module refactor declared as none": (BASE, lambda tree: seeds.change(
         seeds.module_changed(tree), "C3", "none", "", reason="a comment, nothing moves")),
+    "a CRAP fix in score.py with the ANALYSIS_VERSION bump": (
+        BASE, lambda tree: seeds.module_changed(seeds.fixed_crap(tree))),
+    "a fix of a calc no golden shows": (BASE, seeds.fixed_gate),
+    "a none change next to a fix": (BASE_CCN8, lambda tree: seeds.change(
+        seeds.module_changed(seeds.fixed_ccn(tree)), "C4", "none", "",
+        reason="a comment in score.py")),
 }
+
 
 
 # --- hand: each scenario on a real two-commit repo ------------------------------------------
@@ -334,7 +345,20 @@ def test_each_further_break_fails_its_rule_in_memory(name):
     assert pure_rules(BASE, edit(BASE)) == expected
 
 
+def test_before_the_first_lock_only_the_in_tree_rules_hold():
+    """Neither side locked: a calc-module diff passes, a lockable file waits for
+    the lock (T2); an emptied CHANGES.tsv on a locked base still fails B2."""
+    bare = seeds.uninitialized()
+    no_goldens = {path: text for path, text in bare.items() if path not in seeds.LOCKED}
+    emptied = {**BASE, seeds.CHANGES: BASE[seeds.CHANGES].splitlines()[0] + "\n"}
+
+    assert pure_rules(no_goldens, seeds.module_changed(no_goldens)) == set()
+    assert pure_rules(bare, seeds.module_changed(bare)) == {"T2"}
+    assert {"B2"} <= pure_rules(BASE, emptied)
+
+
 def test_a_survivor_with_evidence_passes_and_is_printed(capsys):
+
     head = seeds.append(BASE, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "cd" * 32,
                         "10,000 examples equal (mutation.py run 7)")
 
@@ -342,7 +366,112 @@ def test_a_survivor_with_evidence_passes_and_is_printed(capsys):
     assert "survivors.tsv adds src/crapkit/score.py/crap/cdcd" in capsys.readouterr().out
 
 
+# --- golden sets, surfaces and the corpus each set measures -------------------------------------
+
+SESSION = "tests/accuracy/corpus_goldens/goldens/session"
+CLAIMS = f"{SESSION}/claims.json"
+HISTORY = "tests/accuracy/corpus_goldens/goldens/history/scored.tsv"
+
+
+def _with_claims(tree: dict, text: str, change: str) -> dict:
+    return seeds.relock({**tree, CLAIMS: text}, change, CLAIMS)
+
+
+def _problem_texts(base: dict, head: dict) -> list[str]:
+    problems, _ = cc.verdict(_tree(base), _tree(head), cc.running(_tree(head), LIZARD))
+    return [f"{problem.rule} {problem.text}" for problem in problems]
+
+
+def test_a_session_file_that_moves_alone_needs_its_own_calc():
+    """claims.json moves under a CRAP fix whose goldens did not move."""
+    base = _with_claims(BASE, '{"claims": []}\n', "C1")
+    head = seeds.with_bug(seeds.changelog(seeds.change(
+        _with_claims(base, '{"claims": [1]}\n', "C3"), "C3", "fix", "CRAP score"), "C3"))
+
+    assert sorted(_problem_texts(base, head)) == [
+        "B10 declared calc did not move: CRAP score",
+        "B10 moved calc not declared: Claim ownership and closing"]
+
+
+def test_a_session_file_moves_with_a_small_corpus_row_and_needs_nothing_more():
+    """The session set measures the small corpus, so f1's moved CRAP explains it."""
+    base = _with_claims(BASE, '{"claims": []}\n', "C1")
+    head = _with_claims(seeds.fixed_crap(base), '{"claims": [1]}\n', "C3")
+
+    assert _problem_texts(base, head) == []
+
+
+@pytest.mark.parametrize("path, calcs", [
+    (CLAIMS, ("Claim ownership and closing",)),
+    (f"{SESSION}/verify.json.stderr", ("verify gate violations",
+                                       "Verdict exit code and dirty split")),
+    (f"{SESSION}/worklist-batches.json", ("Batch split",)),
+    (f"{SESSION}/mcp-get_trend.json", ("MCP tool results",)),
+    (f"{SESSION}/something-new.bin", ("Inventory rows and TSV exports",)),
+])
+def test_each_surface_maps_to_its_calc(path, calcs):
+    assert cc.surface_calcs(path)[:len(calcs)] == calcs
+
+
+def test_a_history_row_is_judged_on_the_small_corpus_source():
+    """The history bundle's last commit is the small corpus, so radon reads parse there."""
+    tree = _tree({**BASE, HISTORY: seeds.scored(seeds.ccn8())})
+    cell = cc.Cell(HISTORY, "src/a.py", "parse", "ccn", "7", "8")
+
+    judged = cc.judge(tree, cell)
+
+    assert (judged.oracle, judged.value, judged.agrees) == ("radon", "7", False)
+
+
+def test_a_member_set_reads_the_full_corpus(tmp_path, monkeypatch):
+    member = tmp_path / "requests" / "src" / "a.py"
+    member.parent.mkdir(parents=True)
+    member.write_text(seeds.PARSE.replace("    return text\n", ""), encoding="utf-8")
+    monkeypatch.setenv(cc.CORPUS_ENV, str(tmp_path))
+    golden = "tests/accuracy/corpus_goldens/goldens/requests/scored.tsv"
+    tree = _tree({cc.CORPUS_TOML: '[small]\n\n[member.requests]\ncommit = "x"\n',
+                  golden: seeds.scored(seeds.scored_rows())})
+
+    judged = cc.judge(tree, cc.Cell(golden, "src/a.py", "parse", "ccn", "8", "7"))
+
+    assert (cc.corpus_name(tree, golden), judged.oracle, judged.value) == ("requests", "radon", "7")
+    assert cc.corpus_name(tree, "tests/accuracy/corpus_goldens/goldens/history/x") == "small"
+
+
+def test_an_oracle_that_finds_no_function_at_the_start_line_answers_nothing():
+    tree = _tree(BASE)
+    cell = cc.Cell(seeds.SCORED, "src/a.py", "parse", "ccn", "8", "7")
+    moved = cc.Cell(seeds.SCORED, "src/a.py", "f1", "cognitive", "0", "1")
+
+    assert cc.radon_ccn({"start": "2"}, seeds.SMALL) is None
+    assert cc.radon_ccn({"start": "1"}, "def parse(:\n") is None
+    assert cc.complexipy_cognitive({"start": "1"}, "def parse(:\n") is None
+    assert cc.judge(tree, cell).value == "7"
+    assert cc.judge(tree, moved).value == "0"
+
+
+@pytest.mark.parametrize("text, oracle, hit", [
+    ("radon", "radon", True), ("radon 6.0.1 cc_visit", "radon", True),
+    ("kit.exact half-even", "kit.exact", True), ("Radon 6.0.1", "radon", True),
+    ("radon_mccabe", "radon", False), ("hand: NIST SP 500-235", "radon", False),
+    ("kit.exactly", "kit.exact", False), ("", "radon", False), ("radon", "", False),
+])
+def test_a_rulings_oracle_cell_names_the_oracle_as_a_word(text, oracle, hit):
+    assert cc.names_oracle(text, oracle) is hit
+
+
+def test_a_version_only_analyze_edit_touches_no_calc():
+    bumped = seeds.bump(BASE, "12")
+    rows = cc.calcs_of(_tree(BASE))
+
+    assert cc.touched_calcs(rows, {seeds.ANALYZE}, _tree(BASE), _tree(bumped)) == {}
+    assert cc.touched_calcs(rows, {seeds.ANALYZE}, _tree(BASE),
+                            _tree(seeds.reader_changed(bumped))) == {
+        seeds.ANALYZE: ["Cognitive complexity", seeds.CCN]}
+
+
 # --- pieces the verdict rests on -----------------------------------------------------------------
+
 
 def test_the_metric_digest_is_the_documented_fields_hashed():
     """One scored row, its digest line written out from the docstring's field order:

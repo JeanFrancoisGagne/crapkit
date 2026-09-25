@@ -40,6 +40,7 @@ WORKLIST = f"{GOLDENS}/worklist.json"
 SOURCE = "tests/accuracy/corpus_goldens/small/src/a.py"
 ANALYZE = "src/crapkit/analyze.py"
 MODULE = "src/crapkit/score.py"
+HOOK = "src/crapkit/hook.py"
 LOCKED = (SCORED, INVENTORY, WORKLIST, RULINGS, HAND)
 CCN = "ccn_std, ccn_mod and gated ccn"
 
@@ -116,6 +117,7 @@ def base(rows: list[dict] | None = None) -> dict[str, str]:
                         "C2)\n",
         ANALYZE: "import lizard\n\nANALYSIS_VERSION = 11  # the reader's version\n",
         MODULE: "def crap(ccn, cov):\n    return ccn * ccn * (1 - cov) ** 3 + ccn\n",
+        HOOK: "def violations(rows, marks):\n    return [row for row in rows if row not in marks]\n",
         SOURCE: SMALL,
         SCORED: scored(rows),
         INVENTORY: inventory(rows),
@@ -124,7 +126,8 @@ def base(rows: list[dict] | None = None) -> dict[str, str]:
             ("CRAP score", f"{SEED_TEST}::test_crap", MODULE, f"{MODULE}:crap"),
             (CCN, f"{SEED_TEST}::test_ccn", ANALYZE, f"{ANALYZE}:record"),
             ("Cognitive complexity", f"{SEED_TEST}::test_cognitive", ANALYZE,
-             f"{ANALYZE}:record")]),
+             f"{ANALYZE}:record"),
+            ("Pre-commit gate", f"{SEED_TEST}::test_crap", HOOK, f"{HOOK}:violations")]),
         SEED_TEST: "def test_crap():\n    assert 7 * 7 * 0.125 + 7 == 13.125\n\n\n"
                    "def test_ccn():\n    assert 1 + 6 == 7\n\n\ndef test_cognitive():\n"
                    "    assert 8 == 8\n",
@@ -284,6 +287,19 @@ def ccn_cells() -> list[tuple]:
 def module_changed(tree: dict[str, str]) -> dict[str, str]:
     """A comment added to the CRAP module: a calc-module diff that moves nothing."""
     return replace(tree, MODULE, "** 3 + ccn", "** 3 + ccn  # the README formula")
+
+
+def reader_changed(tree: dict[str, str]) -> dict[str, str]:
+    """An edit to analyze.py beyond its ANALYSIS_VERSION line."""
+    return replace(tree, ANALYZE, "import lizard\n", "import lizard  # the reader\n")
+
+
+def fixed_gate(tree: dict[str, str], key: str = "C3") -> dict[str, str]:
+    """A fix to the pre-commit gate, a calc no golden shows: hook.py changes and
+    nothing in the goldens moves."""
+    head = replace(tree, HOOK, "row not in marks", "row.key not in marks")
+    return with_bug(changelog(change(head, key, "fix", "Pre-commit gate"), key))
+
 
 
 # --- the trees as git repos ---------------------------------------------------------------

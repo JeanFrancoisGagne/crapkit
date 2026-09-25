@@ -110,7 +110,7 @@ def test_the_first_lock_covers_every_lockable_file_and_its_commit_passes(make_re
 
     code = cc.main(["lock", "--initial", "--repo", str(top)])
 
-    after = _files(top)
+    after = {**before, **_files(top)}
     assert (code, capsys.readouterr().out.strip()) == (
         0, "locked 5 files under C1; metric-digests and test counts written")
     assert cc.lock_of(cc.DirTree(top)) == {
@@ -258,24 +258,40 @@ def test_the_hook_script_stops_a_real_push_within_a_minute(make_repo, tmp_path):
 
 SMALL = "tests/accuracy/corpus_goldens/small"
 GOLDENS = "tests/accuracy/corpus_goldens/goldens/small"
+# A stand-in for the corpus packet's tools/accuracy/regenerate.py: `goldens`
+# measures the small corpus with kit.corpus_run and rewrites goldens/small.
+REGENERATOR = f'''import sys
+import tempfile
+from pathlib import Path
+sys.path.insert(0, {str(REPO / "tests")!r})
+from accuracy.kit import corpus_run, goldens
+root = Path(__file__).resolve().parents[2]
+assert sys.argv[1:] == ["goldens"], sys.argv
+with tempfile.TemporaryDirectory() as work:
+    clock = corpus_run.date_now(root / "tests/accuracy/corpus_goldens/corpus.toml")
+    run = corpus_run.measure(root / "{SMALL}", Path(work), clock)
+    for name, text in goldens.goldens_of(run).items():
+        (root / "{GOLDENS}" / name).write_bytes(text.encode("utf-8"))
+'''
 
 
 def _seed_tree() -> dict[str, str]:
-    """An initialized tree whose small corpus and goldens are the kit's seed ones."""
+    """An initialized tree whose small corpus and goldens are the kit's seed ones,
+    with a regenerator that remeasures them."""
     corpus = {f"{SMALL}/{path}": data.decode("utf-8")
               for path, data in repos.tree(corpus_run.SEED).items()}
     goldens = {f"{GOLDENS}/{path.name}": path.read_text(encoding="utf-8")
                for path in sorted((corpus_run.SEED.parent / "seed-goldens").iterdir())}
     tree = {path: text for path, text in seeds.uninitialized().items()
             if not path.startswith("tests/accuracy/corpus_goldens/")}
-    return {**tree, **corpus, **goldens}
+    return {**tree, **corpus, **goldens, cc.REGENERATE: REGENERATOR}
 
 
 def _initialized(make_repo) -> tuple[Path, dict]:
     before = _seed_tree()
     top = seeds.seeded(make_repo, before)
     cc.lock_initial(top, cc.running(cc.DirTree(top)), "2026-09-24", {"score_model": 3})
-    after = _files(top)
+    after = {**before, **_files(top)}
     seeds.commit(top, before, after, 1)
     return top, after
 
@@ -302,8 +318,9 @@ def test_regenerated_moves_are_judged_against_radon_complexipy_and_the_formula(m
                                                  "    if flag:\n        return 1\n"
                                                  "    if flag is None:\n        return 2\n"))
 
-    cc.regenerate(top)
+    assert cc.regenerate(top) == ""
     head = cc.DirTree(top)
+
     judged = [cc.judge(head, cell) for cell in cc.moved_cells(cc.GitTree(top, "HEAD"), head)]
 
     assert {("unused", "ccn"), ("unused", "cognitive"), ("unused", "crap")} <= _answered(judged)
@@ -317,3 +334,90 @@ def _answered(judged: list) -> set[tuple[str, str]]:
 
 def _disagrees(judgement) -> bool:
     return not judgement.agrees
+
+
+@pytest.mark.process
+def test_declare_stops_when_the_regenerator_fails(make_repo):
+    top = seeds.seeded(make_repo, {**BASE, cc.REGENERATE: "import sys\nsys.exit('no corpus')\n"})
+
+    with pytest.raises(cc.ChangeControlError, match=r"regenerate.py goldens exited 1:\n.*no corpus"):
+        cc.declare(top, cc.Request("C3", "none", (), "a refactor"), lizard="1.24.0")
+
+
+@pytest.mark.process
+def test_declare_without_a_regenerator_says_it_judged_the_goldens_as_they_are(make_repo):
+    top = seeds.seeded(make_repo, BASE)
+    seeds.write(top, BASE, seeds.module_changed(BASE))
+
+    text = cc.declare(top, cc.Request("C3", "none", (), "a comment"), lizard="1.24.0")
+
+    assert text.splitlines()[:2] == [
+        "tools/accuracy/regenerate.py is not in this tree; the goldens are judged as they are",
+        "declared C3 (none: no calc): 0 locked files relocked, 0 golden cells moved, 0 judged by "
+        "an oracle"]
+
+
+# --- declare in a diff with more than one change -------------------------------------------------
+
+@pytest.mark.process
+def test_the_working_tree_changes_are_edits_deletions_and_new_files(make_repo):
+    top = seeds.seeded(make_repo, {**BASE, ".gitignore": "*.log\n"})
+    (top / seeds.MODULE).write_text("changed\n", encoding="utf-8")
+    (top / seeds.HOOK).unlink()
+    (top / "src/crapkit/new.py").write_text("x = 1\n", encoding="utf-8")
+    (top / "run.log").write_text("ignored\n", encoding="utf-8")
+
+    assert cc.worktree_changes(top, "HEAD") == {seeds.MODULE, seeds.HOOK, "src/crapkit/new.py"}
+
+
+def _write_back(top: Path, tree: dict, *paths: str) -> None:
+    for path in paths:
+        (top / path).write_bytes(tree[path].encode("utf-8"))
+
+
+@pytest.mark.process
+def test_a_none_change_declared_after_a_fix_answers_only_for_what_is_left(make_repo):
+    """parse's ccn goes from 8 to 7 and score.py gains a comment: the fix declares
+    the move, then a kind none change covers score.py, and the commit passes."""
+    base = seeds.base(seeds.ccn8())
+    top = seeds.seeded(make_repo, base)
+    head = seeds.module_changed(seeds.bump({**base, seeds.SCORED: BASE[seeds.SCORED],
+                                            seeds.INVENTORY: BASE[seeds.INVENTORY]}, "12"))
+    seeds.write(top, base, head)
+
+    cc.declare(top, cc.Request("C3", "fix", (seeds.CCN,), "parse's ccn"), regenerate_goldens=False,
+               lizard="1.24.0")
+    text = cc.declare(top, cc.Request("C4", "none", (), "a comment in score.py"),
+                      regenerate_goldens=False, lizard="1.24.0")
+    tree = seeds.with_bug(seeds.changelog(_files(top), "C3"))
+    _write_back(top, tree, seeds.BUGS, seeds.RETRO, "CHANGELOG.md")
+    repos.git(top, "add", "-A")
+    repos.git(top, "commit", "-q", "-m", "fix parse's ccn", date=repos.EPOCH + 120)
+
+    code, verdict = cc.check(top, "HEAD~1", lizard="1.24.0")
+    assert text.startswith("declared C4 (none: no calc): 0 locked files relocked, 0 golden cells")
+    assert code == 0, verdict
+
+
+@pytest.mark.process
+def test_a_fix_of_a_calc_no_golden_shows_is_declared_with_nothing_moved(make_repo):
+    top = seeds.seeded(make_repo, BASE)
+    seeds.write(top, BASE, seeds.replace(BASE, seeds.HOOK, "row not in marks",
+                                         "row.key not in marks"))
+
+    text = cc.declare(top, cc.Request("C3", "fix", ("Pre-commit gate",), "the gate reads keys"),
+                      regenerate_goldens=False, lizard="1.24.0")
+
+    assert text.startswith("declared C3 (fix: Pre-commit gate): 0 locked files relocked")
+
+
+@pytest.mark.process
+def test_a_fix_of_a_calc_no_golden_shows_needs_its_module_changed(make_repo):
+    top = seeds.seeded(make_repo, BASE)
+
+    with pytest.raises(cc.ChangeControlError) as refused:
+        cc.declare(top, cc.Request("C3", "fix", ("Pre-commit gate",), "the gate reads keys"),
+                   regenerate_goldens=False, lizard="1.24.0")
+
+    assert "declared calc did not move: Pre-commit gate" in str(refused.value)
+    assert "nothing moved since the lock" in str(refused.value)

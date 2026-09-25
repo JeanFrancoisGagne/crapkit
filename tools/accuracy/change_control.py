@@ -30,7 +30,8 @@ The files it keeps, under tests/accuracy/change_control/:
 In-tree rules hold on any one tree (test_change_control.py, and on the head of
 every base-aware run):
 
-- T1 every golden equals crapkit's current output after normalization (pytest only).
+- T1 every golden equals crapkit's current output after normalization: the corpus
+  packet's tests/accuracy/corpus_goldens/test_goldens.py, which measures each set.
 - T2 every locked file's sha256 equals its lock row, and every lockable file has one.
 - T3 each lock row names a CHANGES id; CHANGES ids are unique and their kinds known.
 - T4 each CHANGES id other than kind none appears in CHANGELOG.md.
@@ -40,7 +41,10 @@ every base-aware run):
 
 Base-aware rules compare a head commit with the merge base of a base ref (pre-push:
 origin/main; the CI verdict job: refs/accuracy/green; a release: the previous tag).
-A change is fresh when its CHANGES id is not in the base.
+A change is fresh when its CHANGES id is not in the base. The base-aware rules
+hold once either side has the first lock (kit-close runs `lock --initial`);
+before it only the in-tree rules do, since no change can be declared yet.
+
 
 - B1 the base's metric-digests.tsv is a prefix of the head's.
 - B2 every row of CHANGES.tsv, bugs.tsv, ledger.tsv, triage.tsv, every retro.tsv
@@ -51,8 +55,10 @@ A change is fresh when its CHANGES id is not in the base.
 - B4 no packet's collected test count drops.
 - B5 a locked file that moved names a fresh change in its lock row, and a fresh
   change of another kind than none names a calc of the file's packet.
-- B6 a diff that touches a module a calcs.tsv row names needs a fresh change; when
-  every fresh change is kind none, each gives a reason and no golden cell moved.
+- B6 a diff that touches a module a calcs.tsv row names needs a fresh change naming
+  one of that module's calcs, or a fresh kind none change; each kind none change
+  gives a reason, and when every fresh change is kind none no golden cell moved.
+  An analyze.py whose only edit is the ANALYSIS_VERSION line touches no calc.
 - B7 each fresh fix change comes with a fresh bugs.tsv row, and each fresh bug id
   has a retro.tsv row naming its test.
 - B8 a fresh definition change edits a docs file (DOCS), each of its moved.tsv
@@ -60,7 +66,8 @@ A change is fresh when its CHANGES id is not in the base.
   hand or probe row with an outside source in the packet that owns the calc.
 - B9 a rulings row that changes needs a fresh fix or definition change naming its calc.
 - B10 the fresh changes' calcs equal the moved calcs: every moved cell's calc is
-  declared, and nothing is declared that did not move.
+  declared, and nothing is declared that did not move. A calc no golden shows
+  (the pre-commit gate, say) counts as moved when the diff touches its module.
 - B11 each fresh change's moved.tsv lists exactly the cells it moved, each
   oracle value is what the oracle says now, and each disagreement names a
   ruling of that calc and oracle.
@@ -70,16 +77,25 @@ between base and head, read by (path, handle); a golden table that is new or gon
 moves nothing (B5 still needs a change for it). A CRAP cell whose row's ccn or
 cov moved, and a remedy cell whose row's ccn, cov, crap or flag moved, follow
 from those and need no calc of their own. Another golden file that moved
-(a surface) needs its own calc only when no table cell of its golden set moved.
+(a surface, mapped to its calcs by SURFACES) needs its own calc only when no
+table cell of a set measured from the same corpus moved: the small, history
+and session sets all measure the small corpus, and a set named after a
+[member.*] of corpus.toml measures that member.
 
-`declare` judges each moved cell against an outside oracle before it records
-anything: radon for Python ccn, complexipy for Python cognitive, and kit.exact
-for CRAP from the row's own ccn and cov. A cell the oracle disagrees with stops
-the declare ("crapkit now says 9, radon says 7 at src/a.py:parse"), unless
---against-oracle names a rulings row of that calc and oracle. A cell no oracle
-here answers is recorded with no oracle, and its packet's oracle checks judge
-it. When the metric digest moves, the running ANALYSIS_VERSION must be new to
-metric-digests.tsv (default A1: a move bumps it).
+`declare` first rewrites the goldens with `python tools/accuracy/regenerate.py
+goldens` (the corpus packet's regenerator), then judges each moved cell against
+an outside oracle before it records anything: radon for Python ccn, complexipy
+for Python cognitive, and kit.exact for CRAP from the row's own ccn and cov. A
+cell the oracle disagrees with stops the declare ("crapkit now says 9, radon
+says 7 at src/a.py:parse"), unless --against-oracle names a rulings row of that
+calc whose oracle cell names that oracle. A cell no oracle here answers (another
+language, or a start line the oracle finds no function at) is recorded with no
+oracle, and its packet's oracle checks judge it. When the metric digest moves,
+the running ANALYSIS_VERSION must be new to metric-digests.tsv (default A1: a
+move bumps it). A golden a fresh change already relocked belongs to that
+change, so a second declare in the same diff (a kind none for a refactor next
+to a fix) answers only for what is left.
+
 
 Exit codes: 0 when every rule holds, or with one skip line when --measured
 holds a failure.json from a measurement that stopped; 1 when a rule fails or a
@@ -92,6 +108,7 @@ import ast
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import fnmatch
 from fractions import Fraction
 from functools import lru_cache
 import hashlib
@@ -103,7 +120,7 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
-import tempfile
+import tomllib
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests"))
@@ -120,10 +137,12 @@ MOVED = f"{HOME}/changes"
 SEED_LOCK = "tests/accuracy/kit/fixtures/seed-goldens.lock"
 SEED_CHANGES = "tests/accuracy/kit/fixtures/seed-changes.tsv"
 SMALL_CORPUS = "tests/accuracy/corpus_goldens/small"
+CORPUS_TOML = "tests/accuracy/corpus_goldens/corpus.toml"
 # The small golden set: its own directory under goldens/, or goldens/ itself.
 SMALL_GOLDENS = ("tests/accuracy/corpus_goldens/goldens/small",
                  "tests/accuracy/corpus_goldens/goldens")
 CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
+REGENERATE = "tools/accuracy/regenerate.py"
 ANALYZE = "src/crapkit/analyze.py"
 CHANGELOG = "CHANGELOG.md"
 DOCS = ("README.md", "CONTEXT.md", "docs/agent-json.md", "docs/accuracy.md")
@@ -180,17 +199,44 @@ READERS = {".py": "Python reader: spans, names, inline_body, unread-def net", ".
            ".ps1": "PowerShell reader", ".psm1": "PowerShell reader"}
 # README: crap is ccn^2 (1 - cov)^3 + ccn; the remedy reads ccn, crap and the flag.
 DERIVED = {"crap": ("ccn", "cov"), "remedy": ("ccn", "cov", "crap", "flag")}
-SURFACE_CALCS = {
-    "coverage.json": "Coverage run summary", "coverage.sarif": "SARIF and GitHub annotations",
-    "doctor.json": "Doctor findings (unmeasured directories, nearby test)",
-    "duplication.json": "Near-duplicate functions",
-    "inventory.txt": "Inventory rows and TSV exports",
-    "next-item.json": "next-item ranking and empty-queue reasons",
-    "report.html": "HTML report", "report.txt": "HTML report",
-    "runs.json": "Run totals and trend rollup", "trend.json": "Run totals and trend rollup",
-    "worklist.json": "Worklist ranking and dormant list",
-    "worklist.txt": "Worklist ranking and dormant list",
-}
+_VERDICT = ("verify gate violations", "Verdict exit code and dirty split", "Ratchet regressions",
+            "Test failure classes", "Standing unmarked debt", "Baseline and run trust selection")
+# A golden file other than the row tables, by name (a `.stderr` file goes with its
+# output): the calcs any one of which declares its move, the first being its own.
+# The first pattern that matches wins.
+SURFACES = (
+    ("coverage*.json", ("Coverage run summary",)),
+    ("*.sarif", ("SARIF and GitHub annotations",)),
+    ("verify-github.txt", ("SARIF and GitHub annotations",)),
+    ("doctor.json", ("Doctor findings (unmeasured directories, nearby test)",
+                     "doctor --tune knobs and lane cost")),
+    ("duplication.json", ("Near-duplicate functions",)),
+    ("inventory.txt", ("Inventory rows and TSV exports", "Unanalyzable files and twin-name notes")),
+    ("next-item*", ("next-item ranking and empty-queue reasons", "Queue admission and floors")),
+    ("report.*", ("HTML report",)),
+    ("runs*.json", ("Run totals and trend rollup", "Run retention keep set")),
+    ("trend*.json", ("Run totals and trend rollup",)),
+    ("digest*", ("Digest deltas",)),
+    ("worklist-batches.json", ("Batch split",)),
+    ("worklist*", ("Worklist ranking and dormant list", "Queue admission and floors")),
+    ("brief*.json", ("Brief packet fields and regrowth", "Handles and NAME resolution")),
+    ("coupling.json", ("Change coupling",)),
+    ("baseline.tsv", ("Baseline and run trust selection",)),
+    ("changed.z", ("Changed line ranges",)),
+    ("claims.json", ("Claim ownership and closing",)),
+    ("cli-*.json", ("MCP tool results",)),
+    ("mcp-*.json", ("MCP tool results",)),
+    ("explain*.json", ("Explain history",)),
+    ("gate.json", ("rescore --gate verdict",)),
+    ("overrides.json", ("Audited override grant",)),
+    ("pr-comment*", ("PR comment",)),
+    ("ratchet-report.json", ("Burn-down, mark age and debt policy",)),
+    ("refusal-name.json", ("Handles and NAME resolution",)),
+    ("refusal-scope.json", ("File universe and scope ownership",)),
+    ("rescore.json", ("Rescore overlay",)),
+    ("seed.txt", ("Ratchet seed and prune", "Metric stamp guard")),
+    ("verify*", _VERDICT),
+)
 
 
 class ChangeControlError(ValueError):
@@ -445,12 +491,15 @@ def calcs_of(tree) -> list[CalcRow]:
     return found
 
 
+# The calcs a golden can show: those this tool maps moved cells and surfaces to.
+GOLDEN_CALCS = frozenset({calc for names in COLUMN_CALCS.values() for calc in names}
+                         | {calc for _, names in SURFACES for calc in names}
+                         | set(READERS.values()) | set(OTHER_COLUMN))
+
+
 def known_calcs(tree) -> set[str]:
-    """Every calc name a declaration may use: the calcs.tsv rows and the names
-    this tool maps moved cells and surfaces to."""
-    mapped = {calc for names in COLUMN_CALCS.values() for calc in names}
-    return ({row.calc for row in calcs_of(tree)} | mapped | set(SURFACE_CALCS.values())
-            | set(READERS.values()) | set(OTHER_COLUMN))
+    """Every calc name a declaration may use: the calcs.tsv rows and the golden calcs."""
+    return {row.calc for row in calcs_of(tree)} | GOLDEN_CALCS
 
 
 def raw_rows(data: bytes | None) -> list[tuple[dict, str]]:
@@ -567,32 +616,55 @@ def _follows(cell: Cell, columns: dict) -> bool:
     return bool(moved.intersection(DERIVED.get(cell.column, ())))
 
 
-def _set_of(path: str) -> str:
-    return str(PurePosixPath(path).parent)
+def golden_set(path: str) -> str:
+    """The set a golden file belongs to: the directory right under goldens/, or ''
+    for a file directly in goldens/."""
+    parts = PurePosixPath(path).parts
+    after = parts[parts.index("goldens") + 1:] if "goldens" in parts else ()
+    return after[0] if len(after) > 1 else ""
 
 
-def _surface_calc(path: str) -> str:
-    return SURFACE_CALCS.get(PurePosixPath(path).name, OTHER_COLUMN[0])
+@lru_cache(maxsize=16)
+def _members(data: bytes | None) -> frozenset[str]:
+    return frozenset(tomllib.loads(data.decode("utf-8")).get("member", {})) if data else frozenset()
 
 
-def _surface_needs(cells: list[Cell], moved_surfaces_: list[str]) -> set[frozenset[str]]:
-    """A moved surface's calc, where no table cell of its golden set moved."""
-    sets_moved = {_set_of(cell.golden) for cell in cells}
-    return {frozenset({_surface_calc(path)}) for path in moved_surfaces_
-            if _set_of(path) not in sets_moved}
+def corpus_name(tree, golden: str) -> str:
+    """The corpus a golden file was measured from: the full-corpus member its set is
+    named after ([member.<name>] in corpus.toml), else the small corpus, which the
+    small, history and session sets all measure."""
+    name = golden_set(golden)
+    return name if name in _members(tree.read(CORPUS_TOML)) else "small"
 
 
-def required(cells: list[Cell], moved_surfaces_: list[str]) -> list[frozenset[str]]:
+def surface_calcs(path: str) -> tuple[str, ...]:
+    """The calcs any one of which declares a moved golden file other than a row table."""
+    name = PurePosixPath(path).name.removesuffix(".stderr")
+    return next((calcs for pattern, calcs in SURFACES if fnmatch.fnmatchcase(name, pattern)),
+                OTHER_COLUMN)
+
+
+def unexplained(tree, cells: list[Cell], moved_surfaces_: list[str]) -> list[str]:
+    """The moved surfaces of a corpus none of whose row-table cells moved: a
+    moved row explains every surface measured from the same corpus."""
+    explained = {corpus_name(tree, cell.golden) for cell in cells}
+    return [path for path in moved_surfaces_ if corpus_name(tree, path) not in explained]
+
+
+def required(tree, cells: list[Cell], moved_surfaces_: list[str]) -> list[frozenset[str]]:
     """One set of acceptable calcs per move that needs its own declaration."""
     columns = _moved_columns(cells)
     needed = {acceptable(cell) for cell in cells if not _follows(cell, columns)}
-    return sorted(needed | _surface_needs(cells, moved_surfaces_), key=sorted)
+    files = {frozenset(surface_calcs(path)) for path in unexplained(tree, cells, moved_surfaces_)}
+    return sorted(needed | files, key=sorted)
 
 
-def allowed(cells: list[Cell], moved_surfaces_: list[str], rulings: set[str]) -> set[str]:
-    """Every calc a declaration of this diff may name."""
+def allowed(cells: list[Cell], moved_surfaces_: list[str], more: set[str]) -> set[str]:
+    """Every calc a declaration of this diff may name: the calcs of the moved cells
+    and files, and `more` (the calcs of changed rulings rows, and the calcs no
+    golden shows whose module the diff touches)."""
     found = {calc for cell in cells for calc in acceptable(cell)}
-    return found | {_surface_calc(path) for path in moved_surfaces_} | rulings
+    return found | {calc for path in moved_surfaces_ for calc in surface_calcs(path)} | more
 
 
 # --- oracles -----------------------------------------------------------------------------
@@ -607,21 +679,41 @@ def _functions(blocks) -> list:
     return found
 
 
-def radon_ccn(row: dict, source: str | None) -> str | None:
+def _one(values: list[int]) -> str | None:
+    """The oracle's value at one start line; None when it finds no function there,
+    or two that disagree, so it cannot say which one the row is."""
+    return str(values[0]) if values and len(set(values)) == 1 else None
+
+
+def _radon_blocks(source: str) -> list:
     from radon.complexity import cc_visit
-    if source is None:
-        return None
-    hits = [block for block in _functions(cc_visit(source)) if block.lineno == int(row["start"])]
-    return str(hits[0].complexity) if hits else "no function"
+    try:
+        return _functions(cc_visit(source))
+    except SyntaxError:
+        return []
+
+
+def radon_ccn(row: dict, source: str | None) -> str | None:
+    """radon's McCabe number for the function at the row's start line: its ast
+    reads the source with this interpreter, so a newer syntax answers nothing."""
+    blocks = _radon_blocks(source) if source is not None else []
+    return _one([block.complexity for block in blocks if block.lineno == int(row["start"])])
+
+
+def _complexipy_functions(source: str) -> list:
+    from complexipy import code_complexity
+    try:
+        return code_complexity(source).functions
+    except ValueError:
+        return []
 
 
 def complexipy_cognitive(row: dict, source: str | None) -> str | None:
-    from complexipy import code_complexity
-    if source is None:
-        return None
-    hits = [function for function in code_complexity(source).functions
-            if function.line_start == int(row["start"])]
-    return str(hits[0].complexity) if hits else "no function"
+    """complexipy's cognitive complexity for the function at the row's start line."""
+    found = _complexipy_functions(source) if source is not None else []
+    return _one([function.complexity for function in found
+                 if function.line_start == int(row["start"])])
+
 
 
 def exact_crap(row: dict, source: str | None) -> str | None:
@@ -665,15 +757,6 @@ class Judgement:
         return not self.oracle or _close(self.cell.new, self.value)
 
 
-def corpus_of(golden: str) -> tuple[str, str]:
-    """(the corpus directory in the tree, the corpus name) a golden file was made
-    from: goldens/<name>/ holds member <name>, goldens/ itself the small corpus."""
-    set_dir = PurePosixPath(golden).parent
-    if set_dir.name == "goldens":
-        return f"{set_dir.parent}/small", "small"
-    return f"{set_dir.parent.parent}/{set_dir.name}", set_dir.name
-
-
 def _outside(name: str, path: str) -> bytes | None:
     root = os.environ.get(CORPUS_ENV)
     target = Path(root) / name / path if root else None
@@ -681,11 +764,11 @@ def _outside(name: str, path: str) -> bytes | None:
 
 
 def corpus_source(tree, cell: Cell) -> str | None:
-    """The source text of the cell's file: the in-tree corpus beside the goldens,
-    or the full corpus under CRAPKIT_ACCURACY_CORPUS."""
-    directory, name = corpus_of(cell.golden)
-    data = tree.read(f"{directory}/{cell.path}")
-    data = _outside(name, cell.path) if data is None else data
+    """The source text of the cell's file: the small corpus in the tree, or a
+    full-corpus member under CRAPKIT_ACCURACY_CORPUS."""
+    name = corpus_name(tree, cell.golden)
+    small = name == "small"
+    data = tree.read(f"{SMALL_CORPUS}/{cell.path}") if small else _outside(name, cell.path)
     return None if data is None else data.decode("utf-8", "replace")
 
 
@@ -710,9 +793,11 @@ def primary(cell: Cell) -> str:
     return COLUMN_CALCS.get(cell.column, OTHER_COLUMN)[0]
 
 
-def _count(cells: list[Cell]) -> str:
+def _count(cells: list[Cell], files: list[str]) -> str:
     counts = Counter(map(primary, cells))
-    return ", ".join(f"{calc} ({count} cells)" for calc, count in sorted(counts.items()))
+    moved = Counter(surface_calcs(path)[0] for path in files)
+    return ", ".join([f"{calc} ({count} cells)" for calc, count in sorted(counts.items())]
+                     + [f"{calc} ({count} files)" for calc, count in sorted(moved.items())])
 
 
 def _moved_line(judgement: Judgement) -> str:
@@ -721,13 +806,26 @@ def _moved_line(judgement: Judgement) -> str:
     return "\t".join((cell.golden, cell.path, cell.handle, cell.column, cell.old, cell.new, oracle))
 
 
-def moved_block(tree, cells: list[Cell]) -> list[str]:
-    """The moved calcs and the first 10 moved rows, each with its oracle's value."""
-    if not cells:
-        return ["moved calcs: none (no golden cell moved)"]
+def _row_lines(tree, cells: list[Cell]) -> list[str]:
     shown = [_moved_line(judge(tree, cell)) for cell in cells[:10]]
-    return ([f"moved calcs: {_count(cells)}", f"moved rows (first {len(shown)} of {len(cells)}):",
-             "  golden\tpath\thandle\tcolumn\told\tnew\toracle"] + [f"  {line}" for line in shown])
+    return ([f"moved rows (first {len(shown)} of {len(cells)}):",
+             "  golden\tpath\thandle\tcolumn\told\tnew\toracle"]
+            + [f"  {line}" for line in shown]) if shown else []
+
+
+def _file_lines(files: list[str]) -> list[str]:
+    shown = [f"  {path}\t{surface_calcs(path)[0]}" for path in files[:10]]
+    return ([f"moved golden files no moved row explains (first {len(shown)} of {len(files)}):"]
+            + shown) if shown else []
+
+
+def moved_block(tree, cells: list[Cell], moved_surfaces_: list[str] = ()) -> list[str]:
+    """The moved calcs, the first 10 moved rows with each one's oracle value, and
+    the first 10 moved golden files no moved row explains."""
+    files = unexplained(tree, cells, list(moved_surfaces_))
+    if not cells and not files:
+        return ["moved calcs: none (no golden cell or file moved)"]
+    return [f"moved calcs: {_count(cells, files)}", *_row_lines(tree, cells), *_file_lines(files)]
 
 
 def next_id(changes: dict) -> str:
@@ -736,8 +834,8 @@ def next_id(changes: dict) -> str:
 
 
 def declare_command(change_id: str, kind: str, calcs) -> str:
-    named = ", ".join(sorted(calcs)) or "<calc>"
-    return f'{TOOL} declare {change_id} --kind {kind} --calcs "{named}" --reason "<why>"'
+    named = "" if kind == "none" else f' --calcs "{", ".join(sorted(calcs)) or "<calc>"}"'
+    return f'{TOOL} declare {change_id} --kind {kind}{named} --reason "<why>"'
 
 
 def report(problems: list[Problem], block: list[str], label: str) -> str:
@@ -931,6 +1029,7 @@ class Diff:
         self.surfaces = moved_surfaces(self.base, self.head, self.changed)
         self.base_rulings, self.head_rulings = rulings_of(self.base), rulings_of(self.head)
         self.calc_rows = calcs_of(self.head)
+        self.touched = touched_calcs(self.calc_rows, self.changed, self.base, self.head)
 
     def fresh_of(self, *kinds: str) -> dict[str, dict]:
         return {key: row for key, row in self.fresh.items() if row.get("kind") in kinds}
@@ -1090,16 +1189,34 @@ def rule_b5(diff: Diff) -> list[Problem]:
     return _lock_rule(diff, LOCK, CHANGES) + _lock_rule(diff, SEED_LOCK, SEED_CHANGES)
 
 
-def touched_calcs(calc_rows: list[CalcRow], changed) -> dict[str, list[str]]:
-    """{changed module: the calcs it holds}."""
+def _unversioned(data: bytes | None) -> bytes:
+    return re.sub(rb"(?m)^ANALYSIS_VERSION\s*=.*$", b"", data or b"")
+
+
+def _version_only(module: str, base, head) -> bool:
+    """analyze.py with only its ANALYSIS_VERSION line moved: the bump A1 asks of any
+    change that moves a metric, which changes no calc that module holds."""
+    return module == ANALYZE and _unversioned(base.read(module)) == _unversioned(head.read(module))
+
+
+def touched_calcs(calc_rows: list[CalcRow], changed, base, head) -> dict[str, list[str]]:
+    """{changed module: the calcs it holds}, leaving out a version-only analyze.py."""
     touched: dict[str, list[str]] = {}
     for row in calc_rows:
         for module in set(row.modules) & set(changed):
             touched.setdefault(module, []).append(row.calc)
-    return touched
+    return {module: sorted(calcs) for module, calcs in touched.items()
+            if not _version_only(module, base, head)}
 
 
-PRIMARIES = frozenset(names[0] for names in COLUMN_CALCS.values()) | set(SURFACE_CALCS.values())
+def unshown(touched: dict[str, list[str]]) -> set[str]:
+    """The calcs of the touched modules that no golden can show: a declaration may
+    name them with nothing moved."""
+    return {calc for calcs in touched.values() for calc in calcs if calc not in GOLDEN_CALCS}
+
+
+PRIMARIES = (frozenset(names[0] for names in COLUMN_CALCS.values())
+             | {names[0] for _, names in SURFACES})
 
 
 def _preferred(options: frozenset[str]) -> str:
@@ -1113,7 +1230,7 @@ def _names(needed: list[frozenset[str]]) -> set[str]:
 
 def _suggestion(diff: Diff) -> str:
     """The declare command this diff's moves call for."""
-    calcs = _names(required(diff.cells, diff.surfaces))
+    calcs = _names(required(diff.head, diff.cells, diff.surfaces))
     return declare_command(next_id(diff.head_changes), "fix" if calcs else "none", calcs)
 
 
@@ -1130,15 +1247,26 @@ def _none_problems(diff: Diff) -> list[Problem]:
                                       _suggestion(diff))] if moved else [])
 
 
-def rule_b6(diff: Diff) -> list[Problem]:
-    touched = touched_calcs(diff.calc_rows, diff.changed)
-    if not touched:
+def _unnamed(diff: Diff) -> list[str]:
+    """The touched modules no fresh change names a calc of, with no fresh kind
+    none change to cover them."""
+    if diff.fresh_of("none"):
         return []
-    if diff.fresh:
-        return _none_problems(diff)
-    module = sorted(touched)[0]
-    return [Problem("B6", f"{module} holds {', '.join(sorted(touched[module]))} and changed "
-                          "with no declared change", _suggestion(diff))]
+    named = diff.declared()
+    return [module for module, calcs in sorted(diff.touched.items()) if not named & set(calcs)]
+
+
+def _module_problem(diff: Diff, module: str) -> Problem:
+    fix = (f"name one of them in the change's calcs, or declare the edit as a change that moves "
+           f"nothing: {declare_command(next_id(diff.head_changes), 'none', ())}")
+    return Problem("B6", f"{module} holds {', '.join(diff.touched[module])} and changed with no "
+                         "declared change naming one of them", fix)
+
+
+def rule_b6(diff: Diff) -> list[Problem]:
+    nones = _none_problems(diff) if diff.fresh else []
+
+    return nones + [_module_problem(diff, module) for module in _unnamed(diff)]
 
 
 def _retro_ids(tree) -> dict[str, str]:
@@ -1247,26 +1375,34 @@ def _ruling_calcs(diff: Diff) -> set[str]:
     return {new.get("calc", "") for _, new in diff.changed_rulings().values()}
 
 
-def undeclared(declared: set[str], cells: list[Cell], moved_surfaces_: list[str]) -> list:
+def undeclared(tree, declared: set[str], cells: list[Cell], moved_surfaces_: list[str]) -> list:
     """Each move that needs a calc no declaration names."""
-    return [options for options in required(cells, moved_surfaces_) if not options & declared]
+    return [options for options in required(tree, cells, moved_surfaces_)
+            if not options & declared]
 
 
 def overdeclared(declared: set[str], cells: list[Cell], moved_surfaces_: list[str],
-                 rulings: set[str]) -> list[str]:
+                 more: set[str]) -> list[str]:
     """Each declared calc that nothing in the diff moved."""
-    return sorted(declared - allowed(cells, moved_surfaces_, rulings))
+    return sorted(declared - allowed(cells, moved_surfaces_, more))
+
+
+def _drop(calc: str) -> str:
+    """How to fix a calc declared with nothing moved."""
+    if calc in GOLDEN_CALCS:
+        return (f"drop {calc} from the change's calcs column; a fix the goldens can show moves "
+                "a golden row, so add the fixed shape to the small corpus if it is missing")
+    return f"drop {calc} from the change's calcs column, or change the module that holds it"
 
 
 def rule_b10(diff: Diff) -> list[Problem]:
     declared = diff.declared()
     missing = [Problem("B10", f"moved calc not declared: {' or '.join(sorted(options))}",
                        _suggestion(diff))
-               for options in undeclared(declared, diff.cells, diff.surfaces)]
-    return missing + [Problem("B10", f"declared calc did not move: {calc}",
-                              f"drop {calc} from the change's calcs column")
-                      for calc in overdeclared(declared, diff.cells, diff.surfaces,
-                                               _ruling_calcs(diff))]
+               for options in undeclared(diff.head, declared, diff.cells, diff.surfaces)]
+    more = _ruling_calcs(diff) | unshown(diff.touched)
+    return missing + [Problem("B10", f"declared calc did not move: {calc}", _drop(calc))
+                      for calc in overdeclared(declared, diff.cells, diff.surfaces, more)]
 
 
 def _attributed(diff: Diff) -> dict[str, list[Cell]]:
@@ -1294,9 +1430,21 @@ def _listing_problems(key: str, cells: list[Cell], listed: list[dict]) -> list[P
                     f"rerun the declare: {TOOL} declare {key} ... writes it")]
 
 
+def names_oracle(text: str, oracle: str) -> bool:
+    """Whether a rulings row's oracle cell names this oracle as a word: "radon 6.0.1"
+    names radon and "kit.exact half-even" names kit.exact."""
+    pattern = rf"(?<![\w.]){re.escape(oracle)}(?![\w.])"
+    return bool(oracle) and re.search(pattern, text or "", re.IGNORECASE) is not None
+
+
+def covers(ruling: dict, cell: Cell, oracle: str) -> bool:
+    """A rulings row covers a disagreement when it is of the cell's calc and names the oracle."""
+    return ruling.get("calc") in acceptable(cell) and names_oracle(ruling.get("oracle", ""), oracle)
+
+
 def _ruling_problem(diff: Diff, key: str, row: dict, cell: Cell) -> Problem | None:
     ruling = diff.head_rulings.get(row.get("ruling", ""), ("", {}, ""))[1]
-    if ruling.get("calc") in acceptable(cell) and ruling.get("oracle") == row.get("oracle"):
+    if covers(ruling, cell, row.get("oracle", "")):
         return None
     return Problem("B11", f"changes/{key}.moved.tsv: {cell.path}:{cell.handle} {cell.column} "
                           f"{cell.new} disagrees with {row.get('oracle')} "
@@ -1338,11 +1486,20 @@ RULES = (rule_b1, rule_b2, rule_b3, rule_b4, rule_b5, rule_b6, rule_b7, rule_b8,
          rule_b10, rule_b11)
 
 
+def base_aware(base, head) -> bool:
+    """The base-aware rules hold once either side has the first lock. Before it
+    (kit-close runs `lock --initial`) no change can be declared, so a calc-module
+    diff has nothing to name; an emptied CHANGES.tsv on a locked base is B2's."""
+    return _initialized(base) or _initialized(head)
+
+
 def verdict(base, head, now: Running, changed: frozenset[str] | None = None,
             extra: list[Cell] = ()) -> tuple[list[Problem], Diff]:
     """Every problem between two trees: the in-tree rules on the head, then B1 to B11."""
     diff = Diff(base, head, changed_paths(base, head) if changed is None else changed, list(extra))
-    return in_tree(head, now) + [problem for rule in RULES for problem in rule(diff)], diff
+    rules = RULES if base_aware(base, head) else ()
+    return in_tree(head, now) + [problem for rule in rules for problem in rule(diff)], diff
+
 
 
 # --- check -------------------------------------------------------------------------------------
@@ -1373,7 +1530,8 @@ def check(repo: Path, base: str, head: str = "HEAD", moved: Path | None = None,
     base_tree.label = f"{base} at {base_tree.commit[:12]}"
     problems, diff = verdict(base_tree, head_tree, running(head_tree, lizard),
                              extra=read_moved(moved))
-    text = report(problems, moved_block(head_tree, diff.cells),
+    text = report(problems, moved_block(head_tree, diff.cells, diff.surfaces),
+
                   f"{base_tree.label} to {head_tree.label}")
     return (1 if problems else 0), text
 
@@ -1427,9 +1585,8 @@ def _ruling_row(rulings: dict, key: str) -> dict:
 
 def _covering(rulings: dict, judgement: Judgement, against: tuple[str, ...]) -> str:
     """The first named ruling of this cell's calc and oracle, or ''."""
-    return next((key for key in against if _ruling_row(rulings, key).get("calc")
-                 in acceptable(judgement.cell)
-                 and _ruling_row(rulings, key).get("oracle") == judgement.oracle), "")
+    return next((key for key in against
+                 if covers(_ruling_row(rulings, key), judgement.cell, judgement.oracle)), "")
 
 
 def _definition_ruling(rulings: dict, cell: Cell, request: Request) -> str:
@@ -1472,18 +1629,27 @@ def _none_moves(cells: list[Cell], moved_surfaces_: list[str]) -> list[str]:
             "nothing"] if moved else []
 
 
-def _calc_texts(declared: set[str], cells: list[Cell], moved_surfaces_: list[str],
-                rulings: set[str]) -> list[str]:
-    missing = undeclared(declared, cells, moved_surfaces_)
-    extra = overdeclared(declared, cells, moved_surfaces_, rulings)
+@dataclass(frozen=True)
+class Moves:
+    """What a declaration answers for: the moved cells and files no fresh change
+    declared yet, and the calcs it may name with nothing moved (changed rulings
+    rows, and calcs no golden shows whose module the working tree changed)."""
+    cells: list[Cell]
+    surfaces: list[str]
+    more: set[str]
+
+
+def _calc_texts(head, declared: set[str], moves: Moves) -> list[str]:
+    missing = undeclared(head, declared, moves.cells, moves.surfaces)
+    extra = overdeclared(declared, moves.cells, moves.surfaces, moves.more)
     return ([f"moved calc not declared: {' or '.join(sorted(options))}" for options in missing]
             + [f"declared calc did not move: {calc}" for calc in extra])
 
 
-def _declaration_problems(request: Request, cells, moved_surfaces_, rulings: set) -> list[str]:
+def _declaration_problems(request: Request, head, moves: Moves) -> list[str]:
     if request.kind == "none":
-        return _none_moves(cells, moved_surfaces_)
-    return _calc_texts(set(request.calcs), cells, moved_surfaces_, rulings)
+        return _none_moves(moves.cells, moves.surfaces)
+    return _calc_texts(head, set(request.calcs), moves)
 
 
 def _moved_locks(lock: dict, now: dict) -> list[str]:
@@ -1560,10 +1726,34 @@ def _changed_rulings(base, head) -> dict:
             if before[key][2] != after[key][2]}
 
 
-def _nothing_moved(request: Request, cells: list, relocked: list[str]) -> list[str]:
-    if request.kind == "none" or cells or relocked:
+def _nothing_moved(request: Request, moves: Moves, relocked: list[str]) -> list[str]:
+    if request.kind == "none" or moves.cells or relocked or set(request.calcs) & moves.more:
         return []
     return ["nothing moved since the lock; a change that moves nothing is kind none"]
+
+
+def _owned(head, lock: dict, path: str, fresh: set[str]) -> bool:
+    """A golden already relocked under a fresh change and unchanged since."""
+    digest, owner = lock.get(path, ("", ""))
+    return owner in fresh and digest == hashlib.sha256(head.read(path) or b"").hexdigest()
+
+
+def moves_of(base, head, changed: frozenset[str]) -> Moves:
+    """The moves a declaration of `head` against `base` answers for: a golden a
+    fresh change already relocked belongs to that change, so a kind none change
+    can follow a fix in the same diff."""
+    fresh, lock = set(changes_of(head)) - set(changes_of(base)), lock_of(head)
+    cells = [cell for cell in moved_cells(base, head)
+             if not _owned(head, lock, cell.golden, fresh)]
+    files = [path for path in moved_surfaces(base, head, _changed_goldens(base, head))
+             if not _owned(head, lock, path, fresh)]
+    return Moves(cells, files, _more(base, head, changed))
+
+
+def _more(base, head, changed: frozenset[str]) -> set[str]:
+    rulings = {new.get("calc", "") for _, new in _changed_rulings(base, head).values()}
+    return rulings | unshown(touched_calcs(calcs_of(head), changed, base, head))
+
 
 
 def _uninitialized_refusal(head) -> list[str]:
@@ -1571,23 +1761,24 @@ def _uninitialized_refusal(head) -> list[str]:
                                           "--initial first"]
 
 
-def plan_declare(base, head, request: Request, now: Running) -> Plan:
-    """Judge a declaration of every move between base and head; refuse with
-    every reason at once, or return what to write."""
+def plan_declare(base, head, request: Request, now: Running,
+                 changed: frozenset[str] = frozenset()) -> Plan:
+    """Judge a declaration of every move between base and head (`changed` holds
+    the paths the working tree changed); refuse with every reason at once, or
+    return what to write."""
     refusals = (_request_problems(request, changes_of(head), known_calcs(head))
                 + _uninitialized_refusal(head))
-    cells = moved_cells(base, head)
-    surfaces_ = moved_surfaces(base, head, _changed_goldens(base, head))
-    judged, bad = _judged(head, cells, request)
-    rulings = {new.get("calc", "") for _, new in _changed_rulings(base, head).values()}
+    moves = moves_of(base, head, changed)
+    judged, bad = _judged(head, moves.cells, request)
     lock, relocked = _relock(head, request.id)
     digest, stale = _digest_row(head, now, request.id)
-    refusals += (bad + _declaration_problems(request, cells, surfaces_, rulings)
-                 + _nothing_moved(request, cells, relocked) + stale)
+    refusals += (bad + _declaration_problems(request, head, moves)
+                 + _nothing_moved(request, moves, relocked) + stale)
     if refusals:
         raise ChangeControlError("declare refused:\n" + "\n".join(f"  {text}" for text in refusals)
-                                 + "\n" + "\n".join(moved_block(head, cells)))
+                                 + "\n" + "\n".join(moved_block(head, moves.cells, moves.surfaces)))
     return Plan(request, judged, lock, relocked, digest, analysis_version(base))
+
 
 
 def _append(path: Path, columns, record) -> None:
@@ -1661,55 +1852,39 @@ def summary(plan: Plan, now: Running) -> str:
                       *_changelog_lines(plan.request)])
 
 
-def _golden_dirs(tree) -> list[str]:
-    return sorted({str(PurePosixPath(path).parent) for path in golden_tables(tree)})
+def regenerate(root: Path) -> str:
+    """Rewrite the goldens with the corpus packet's regenerator, `python
+    tools/accuracy/regenerate.py goldens`; a note when this tree has none."""
+    script = root / REGENERATE
+    if not script.is_file():
+        return f"{REGENERATE} is not in this tree; the goldens are judged as they are"
+    tiers.require_process("regenerate.py")
+    done = subprocess.run([sys.executable, str(script), "goldens"], cwd=root,
+                          env=_tests_env(root, {}), capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=GIT_SECONDS * 15)
+    if done.returncode != 0:
+        raise ChangeControlError(f"{REGENERATE} goldens exited {done.returncode}:\n"
+                                 f"{(done.stdout + done.stderr)[-3000:]}")
+    return ""
 
 
-def _in_tree_sets(tree) -> list[tuple[str, str]]:
-    """(golden directory, corpus directory) for each golden set whose corpus is in the tree."""
-    pairs = [(directory, corpus_of(f"{directory}/scored.tsv")[0])
-             for directory in _golden_dirs(tree)]
-    paths = tree.paths()
-    return [(directory, corpus) for directory, corpus in pairs
-            if any(path.startswith(corpus + "/") for path in paths)]
-
-
-def _remove_stale(directory: Path, texts: dict[str, str]) -> None:
-    for stale in (path for path in directory.iterdir() if path.is_file()):
-        if stale.name not in texts:
-            stale.unlink()
-
-
-def _write_goldens(directory: Path, texts: dict[str, str]) -> None:
-    """The directory's top-level files become exactly these; subdirectories stay."""
-    _remove_stale(directory, texts)
-    for name, text in texts.items():
-        (directory / name).write_bytes(text.encode("utf-8"))
-
-
-def regenerate(root: Path) -> list[str]:
-    """Remeasure every golden set whose corpus is in the tree and rewrite its goldens."""
-    from accuracy.kit import corpus_run
-    done = []
-    with tempfile.TemporaryDirectory(prefix="crapkit-declare-", ignore_cleanup_errors=True) as work:
-        for directory, corpus in _in_tree_sets(DirTree(root)):
-            clock = corpus_run.date_now(root / PurePosixPath(corpus).parent / "corpus.toml")
-            run = corpus_run.measure(root / corpus, Path(work), clock)
-            _write_goldens(root / directory, goldens.goldens_of(run))
-            done.append(directory)
-    return done
+def worktree_changes(root: Path, base: str) -> frozenset[str]:
+    """Every path the working tree changed since `base`: edits, deletions and new files."""
+    tracked = git(root, "diff", "--name-only", "-z", resolve(root, base), "--")
+    new = git(root, "ls-files", "--others", "--exclude-standard", "-z")
+    return frozenset(name for name in (tracked + new).decode("utf-8").split("\0") if name)
 
 
 def declare(root: Path, request: Request, base: str = "HEAD", regenerate_goldens: bool = True,
             lizard: str | None = None) -> str:
     """Regenerate, judge and record one change; the summary, or ChangeControlError."""
-    if regenerate_goldens:
-        regenerate(root)
+    note = regenerate(root) if regenerate_goldens else ""
     head = DirTree(root)
     now = running(head, lizard)
-    plan = plan_declare(GitTree(root, base), head, request, now)
+    plan = plan_declare(GitTree(root, base), head, request, now, worktree_changes(root, base))
     write_plan(root, plan, now)
-    return summary(plan, now)
+    return "\n".join(filter(None, (note, summary(plan, now))))
+
 
 
 def _today() -> str:
