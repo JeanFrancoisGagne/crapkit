@@ -881,3 +881,32 @@ def test_both_lane_kinds_prove_the_crapkit_version(tmp_path, inputs):
 def test_the_changelog_names_the_0_8_0_library_name_that_is_gone():
     assert not hasattr(lanes, "staleness_reads") and hasattr(_FRESHNESS, "Freshness")
     assert "`lanes.staleness_reads`, which 0.8.0 exported, is gone" in _prose(_release())
+
+
+@pytest.mark.parametrize("page", ["CHANGELOG.md", "docs/upgrading.md"])
+def test_the_limit_names_each_reader_that_trusts_git_s_stat_cache(page):
+    text = _prose(_release() if page == "CHANGELOG.md" else _upgrading_freshness())
+
+    for reader in ("lane reuse", "verify's changed files and its split of committed and dirty findings",
+                   "`rescore --gate`", "the commit hook's note that a staged file differs from the working tree",
+                   "the files `mutate` copies into its workers"):
+        assert reader in text, (page, reader)
+
+
+def _fold_keys_on_content() -> bool:
+    import inspect
+
+    return "digest" in inspect.signature(_module("uncovered")._artifact_key).parameters
+
+
+@landed(_fold_keys_on_content(), "the dead-line fold keyed on the artifact's sha256")
+def test_the_changelog_says_the_dead_line_fold_keys_on_the_artifact_s_sha256(tmp_path):
+    import hashlib
+
+    artifact = tmp_path / "py.json"
+    artifact.write_text("{}", encoding="utf-8")
+
+    key = _module("uncovered")._artifact_key(artifact)
+
+    assert hashlib.sha256(b"{}").hexdigest() in key
+    assert "cached by the artifact's sha256" in _prose(_release())

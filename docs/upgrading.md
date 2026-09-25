@@ -200,8 +200,9 @@ each run.
 `cp -p`, `tar -x`, `rsync -t` and `touch -r` write new bytes under the file's old
 mtime. crapkit's analysis cache and `watch` compare the mtime and size before they
 read a file, and git answers "unchanged" from its index's stat data for lane reuse,
-verify's split of committed and dirty findings, the commit hook's stale-staged note
-and `mutate`'s input snapshot. `touch` the files after restoring them that way, and
+verify's changed files and its split of committed and dirty findings, `rescore --gate`,
+the commit hook's note that a staged file differs from the working tree, and the files
+`mutate` copies into its workers. `touch` the files after restoring them that way, and
 every reader compares their content. 0.9.0 measures what hashing every file costs
 before it changes this.
 

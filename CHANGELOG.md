@@ -23,6 +23,10 @@
   they no longer do. An artifact measured on an uncommitted edit is fresh at once, and
   reverting that edit now withholds the lines, where git called the tree clean and the
   old lines were served against the reverted file.
+- The dead lines crapkit folds out of a lane's artifact for diff coverage are cached by the
+  artifact's sha256. The key was its path, modification time and size, so an artifact
+  rewritten with the same size under its old time served the lines of bytes it no longer
+  held.
 - A stale file withholds its own dark lines and no others. One edit used to black out
   line-level coverage for every file in the repo. The note names the file and says to
   rerun `crapkit coverage`, since committing changes nothing.
@@ -60,9 +64,12 @@
   lane never reused.
 - A same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
   `rsync -t`, `touch -r`), or a second same-size write inside one clock tick, is still not
-  seen, by reuse or by any other reader: git's index answers "unchanged" from its stat
-  data, and crapkit trusts that answer rather than read every file on every run. The
-  analysis cache and `watch` compare the modification time and size the same way, and
+  seen by any reader that asks git: lane reuse and the dark-line note, verify's changed
+  files and its split of committed and dirty findings, `rescore --gate`, the commit
+  hook's note that a staged file differs from the working tree, and the files `mutate`
+  copies into its workers. git answers "unchanged" from its index's stat data, as
+  `git status` and `git add` do, and crapkit trusts that answer rather than read every
+  file on every run. The analysis cache and `watch` compare the modification time and size the same way, and
   the analysis cache also misses a symlink re-pointed to a same-size target with the same
   time. `touch` the files after restoring them, and every reader compares their content.
   The cost of hashing every source is measured for 0.9.0 before that changes.
