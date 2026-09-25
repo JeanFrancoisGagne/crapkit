@@ -150,18 +150,18 @@ def test_codec_produced_nul_name_is_not_a_git_history_record(source_repo):
 
 @pytest.mark.parametrize("header", ["+++ b/src/bad\udcff.py", '+++ "b/src/bad\\377.py"'],
                          ids=["raw-byte", "octal-escape"])
-def test_opaque_patch_bodies_do_not_relax_path_identity(header, capsys, monkeypatch):
+def test_opaque_patch_bodies_do_not_relax_path_identity(header, capsys):
     """A header naming a file in bytes that are not UTF-8 never becomes a keyed
     path. Its ranges keep the bytes as surrogates, and the scope assignment the
     gate runs next refuses the file by name with the rename, where it used to
-    end the gate with a traceback."""
-    monkeypatch.setattr("crapkit.gitpaths._left_out", set(), raising=False)
+    end the gate with a traceback. The refusal is the one line: nothing names
+    the file left out beside it."""
     ranges = changed_ranges(f"{header}\n@@ -1 +1 @@\n-old\n+new\n")
 
     assert ranges == {"src/bad\udcff.py": [(1, 1)]}
     with pytest.raises(ConfigError, match=r"^src/bad\\xff\.py is in scope 'src', .*\(git mv\)"):
         assign_files(sorted(ranges), CONFIG)
-    assert "crapkit: left out src/bad\\xff.py" in capsys.readouterr().err
+    assert capsys.readouterr().err == ""
 
 
 def test_opaque_source_body_cannot_introduce_a_header(source_repo):

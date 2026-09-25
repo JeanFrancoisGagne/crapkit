@@ -17,7 +17,8 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
+                      _ratchet_key_version, _repo_out_path, _repo_relative, _say_left_out, _stand,
+                      _unreadable_json, _write_tsv, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -732,7 +733,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, saved.sha256, changes)},
+                    **_receipt(tool_versions, saved.sha256, changes),
+                    "unreadable_names": _unreadable_json(run.corpus.unreadable)},
                    verdict, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
@@ -1048,6 +1050,7 @@ def cmd_hook_precommit(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     gate = _staged_gate(root, cfg, getattr(args, "base", None))
+    _say_left_out(gate.unreadable)
     _warn_unscoped_staged(gate.unscoped)
     violations = _gated_violations(root, cfg, gate.violations, gate.records)
     if not violations:

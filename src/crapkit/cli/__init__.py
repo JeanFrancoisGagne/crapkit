@@ -9,17 +9,13 @@ __all__ = ["main"]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Load the parser only when a caller starts the CLI. Each call is one
-    command, and names again every file it leaves out: a process that runs
-    several, the test suite's in-process runner among them, keeps no names
-    from the last one. A process started from the command line first makes
-    sure it spells paths in UTF-8 (_restart_in_utf8_mode)."""
+    """Load the parser only when a caller starts the CLI. A process started
+    from the command line first makes sure it spells paths in UTF-8
+    (_restart_in_utf8_mode)."""
     if argv is None:
         _restart_in_utf8_mode()
-    from ..gitpaths import reset_left_out
     from .parser import main as dispatch
 
-    reset_left_out()
     return dispatch(argv)
 
 

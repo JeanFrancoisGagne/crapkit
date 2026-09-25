@@ -21,8 +21,9 @@ from ..invocation import _self
 from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
-from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
-from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, repo_text
+from ..gitpaths import readable
+from ..universe import overlapping_scope, path_matchers, scan_files
+from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, _say_left_out, repo_text
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -182,8 +183,13 @@ def _package_json(root: Path) -> dict[str, str]:
 
 
 def _package_files(root: Path) -> list[str]:
-    return [path for path in ls_files(root) if path.rpartition("/")[2] == "package.json"
-            and "node_modules/" not in path and (root / path).is_file()]
+    return [path for path in ls_files(root) if _tracked_manifest(path) and (root / path).is_file()]
+
+
+def _tracked_manifest(path: str) -> bool:
+    """A tracked package.json outside node_modules. One under a directory whose
+    name is not UTF-8 has no cwd a lane can spell; init named it left out."""
+    return path.rpartition("/")[2] == "package.json" and "node_modules/" not in path and readable(path)
 
 
 def _package_text(root: Path, rel: str) -> str | None:
@@ -597,7 +603,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if toml_path.is_file():
         return _finish_init(root)
     _refuse_claimed_by_ancestor(root)
-    files = ls_files(root)
+    files = _init_files(root)
     scopes = sniff_scopes(files)
     if not scopes:
         raise ConfigError(_no_scopes_reason(root))
@@ -731,8 +737,18 @@ def _doctor_utf16_sources(root: Path, by_scope: dict) -> list[Finding]:
                             "(PowerShell: Set-Content -Encoding utf8) to diff them as text")]
 
 
+def _init_files(root: Path) -> list[str]:
+    """The tracked files init sniffs scopes from. No scope exists yet to take
+    an unreadable name, so each one is named left out and the config is still
+    written; the first command that loads it decides the claim."""
+    files = ls_files(root)
+    _say_left_out(tuple(sorted({path for path in files if not readable(path)})))
+    return [path for path in files if readable(path)]
+
+
 def _doctor_scopes(root: Path, cfg, files: list[str], show_files: bool) -> list[Finding]:
     universe = scan_files(files, cfg, size_of=_file_sizer(root))
+    _say_left_out(universe.unreadable)
     return (_doctor_scope_files(universe.by_scope, cfg, show_files)
             + _doctor_unclaimed(universe.unclaimed)
             + _doctor_uncovered(cfg)
@@ -1230,8 +1246,8 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_commit_graph(root)
             + _doctor_commit_encoding(root)
             + _doctor_tools()
-            + _doctor_scoped_tests(cfg, files)
-            + _doctor_unmeasured(root, cfg, files))
+            + _doctor_scoped_tests(cfg, [f for f in files if readable(f)])
+            + _doctor_unmeasured(root, cfg, [f for f in files if readable(f)]))
 
 
 def _doctor_inputs(root: Path, lanes) -> list[Finding]:
@@ -1697,9 +1713,11 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
 
 
 def _watched_files(root: Path, cfg) -> list[str]:
-    """Every tracked file a scope claims, flat — the whole subject of one poll."""
-    by_scope = assign_files(ls_files(root), cfg, size_of=_file_sizer(root))
-    return [f for files in by_scope.values() for f in files]
+    """Every tracked file a scope claims, flat — the whole subject of one poll.
+    Read once per watch, so each unreadable name is named once."""
+    universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
+    _say_left_out(universe.unreadable)
+    return [f for files in universe.by_scope.values() for f in files]
 
 
 def _watch_cycles(cycles: int | None):

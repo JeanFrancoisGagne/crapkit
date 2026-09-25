@@ -19,6 +19,7 @@ from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
 from ..textcodec import marks_text, os_text
+from ..universe import left_out_lines
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
@@ -148,6 +149,20 @@ def _readable_argument(rel: str, root: Path) -> str:
         raise ConfigError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit reads "
                           "every path as UTF-8: rename it (git mv) to a UTF-8 name")
     return os_text(rel)
+
+
+def _say_left_out(names: tuple[str, ...]) -> None:
+    """The stderr lines for the unreadable names a command's scan left out:
+    one per name, the first five, then a count of the rest. Each command
+    calls this at its one scan, so it names each name once."""
+    for line in left_out_lines(names):
+        print(line, file=sys.stderr)
+
+
+def _unreadable_json(names: tuple[str, ...]) -> list[str]:
+    r"""The `unreadable_names` field: each name with its bytes that are not
+    UTF-8 as `\xNN`, the spelling the stderr line uses."""
+    return [shown(name) for name in names]
 
 
 def _below(cwd: Path | None, root: Path) -> bool:

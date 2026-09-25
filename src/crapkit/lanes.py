@@ -29,6 +29,7 @@ from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
+from .gitpaths import shown
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .textcodec import os_bytes
@@ -1071,13 +1072,14 @@ def _split_escaped(root: Path, escaped: list[str]) -> tuple[list[str], list[str]
 
 
 def _sample(paths) -> str:
-    """A few of them and a count of the rest. A lane scoped to forty declared
+    r"""A few of them and a count of the rest. A lane scoped to forty declared
     paths listed all forty, which pushed the sentence saying what to do off the
-    end of a line nobody reads that far into."""
+    end of a line nobody reads that far into. A name that is not UTF-8 shows
+    each such byte as `\xNN`, as every other line naming it does."""
     ordered = sorted(paths)
-    shown = ", ".join(ordered[:_SAMPLE_PATHS])
+    listed = ", ".join(shown(path) for path in ordered[:_SAMPLE_PATHS])
     rest = len(ordered) - _SAMPLE_PATHS
-    return f"{shown} and {rest} more" if rest > 0 else shown
+    return f"{listed} and {rest} more" if rest > 0 else listed
 
 
 def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:

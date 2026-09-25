@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from itertools import combinations
 
-from .gitpaths import history_line, unquote_path
+from .gitpaths import readable, unquote_path
 
 MAX_COMMIT_FILES = 30
 # The thresholds the ranking answers when nobody names one. Named because
@@ -32,22 +32,25 @@ def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
     files: set[str] = set()
     past_header = False
     for raw in lines:
-        line = history_line(raw)
+        line = raw.removesuffix("\n").removesuffix("\r")  # spaces and separators that end a name stay
         if line.startswith("\x01"):
             yield files
             files, past_header = set(), True
             continue
         if past_header and line:
-            files.add(_path(line))
+            _add_path(files, line)
         past_header = True  # a log starting mid-commit opens on a severed header
     yield files
 
 
-def _path(line: str) -> str:
+def _add_path(files: set[str], line: str) -> None:
     """Only a quoted line goes through the unquoter: git quotes a path only for
     a double quote or a control character, and every other line already is the
-    path. The call on every line cost more than the rest of the loop."""
-    return unquote_path(line) if line[0] == '"' else line
+    path. The call on every line cost more than the rest of the loop. A name
+    that is not UTF-8 keys no row, so it couples with nothing."""
+    path = unquote_path(line) if line[0] == '"' else line
+    if readable(path):
+        files.add(path)
 
 
 def _tracked_pairs(pair_counts: dict, tracked: set[str] | None) -> dict:

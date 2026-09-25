@@ -14,7 +14,7 @@ from itertools import chain
 from pathlib import Path
 
 from .errors import GitError, ToolError
-from .gitpaths import nul_paths, nul_records, split_record
+from .gitpaths import nul_paths, readable, split_record
 from .records import record_lines
 from .textcodec import lenient, marks_text
 
@@ -123,8 +123,8 @@ def _git_bytes(root: Path, *args: str) -> bytes:
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
-    """NUL path records, each name that is not UTF-8 left out and named on
-    stderr (gitpaths.nul_paths)."""
+    """NUL path records, each name that is not UTF-8 in its surrogateescape
+    spelling (gitpaths.nul_paths): the caller decides what such a name means."""
     return nul_paths(_git_bytes(root, *args))
 
 
@@ -199,7 +199,7 @@ def index_modes(root: Path, pathspec: str) -> dict[str, str]:
     modes = {}
     for record in _git_bytes(root, "ls-files", "-s", "-z", "--", pathspec).split(b"\0"):
         meta, path = split_record(record, 1)
-        if path:
+        if path and readable(path):  # git runs hooks by ASCII names; no other name is one
             modes[path] = meta.split(" ", 1)[0]
     return modes
 
@@ -264,9 +264,9 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
     so only renames wholly inside the root pair up here; a mark on a file moved
     in from above the root reads as new.
     """
-    fields = nul_records(_git_bytes(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD"))
-    # A name that is not UTF-8 holds its record's place as None and pairs with nothing.
-    return {old: new for old, new in _rename_pairs(fields).items() if old is not None and new is not None}
+    fields = nul_paths(_git_bytes(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD"))
+    # A name that is not UTF-8 keys no mark, so a rename to or from one pairs with nothing.
+    return {old: new for old, new in _rename_pairs(fields).items() if readable(old) and readable(new)}
 
 
 def status_names(root: Path) -> list[str]:

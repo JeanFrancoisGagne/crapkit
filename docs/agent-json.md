@@ -778,7 +778,8 @@ $ crapkit verify --json
   "run_id": 9,
   "schema": 1,
   "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
-  "unmarked_over_target": 0
+  "unmarked_over_target": 0,
+  "unreadable_names": []
 }
 ```
 
@@ -791,6 +792,7 @@ $ crapkit verify --json
 | `baseline_run`, `baseline_commit` | int, string | What it was measured against. |
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
+| `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A scope that takes such a name never gets here: the command exits 3 first. |
 
 ### Findings
 
@@ -907,6 +909,7 @@ $ crapkit coverage --json
   "schema": 1,
   "skipped_max_bytes": 0,
   "unmeasured_scopes": [],
+  "unreadable_names": [],
   "untested": 1
 }
 ```
@@ -917,6 +920,7 @@ $ crapkit coverage --json
 | `files`, `functions` | Corpus size. |
 | `cache_hits` | Files served from the content-hash analysis cache. |
 | `skipped_max_bytes` | Files dropped by `[exclude] max_file_bytes`. |
+| `unreadable_names` | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`. The `crapkit: left out` lines on stderr name the same files. `[]` when every name is UTF-8. |
 | `measured`, `untested`, `no_lane`, `cc_only` | The four flags, counted. They sum to `functions`. |
 | `over_target` | Functions whose `crap` exceeds their scope ceiling, counted over the measured scopes: on a `partial` run the scopes in `unmeasured_scopes` are left out, since a skipped lane's functions score at cov 0 and would read as this run's debt. On a full run that is every function. The key keeps its name; the ceiling is what the config's `target` sets. |
 | `crap_load` | Sum of every function's CRAP, rounded to 2dp. |
@@ -929,7 +933,7 @@ $ crapkit coverage --json
 | `ceilings` | The ceilings in force: `default` (the `[crapkit] target`) and every scope whose own `target` differs from it, `{"default": 6, "reports": 12}`. Scopes at the default are not listed. |
 
 `inventory --json` is the same run summary minus everything coverage adds: `run_id`,
-`commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `db`.
+`commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `unreadable_names`, `db`.
 
 Coverage attribution uses line spans. When distinct functions share the same path,
 start line and end line, an artifact that overlaps that span cannot distinguish their

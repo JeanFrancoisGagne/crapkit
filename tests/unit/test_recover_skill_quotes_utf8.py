@@ -27,7 +27,7 @@ def _strings(module: str) -> list[str]:
 
 
 @pytest.mark.parametrize("quote, module", [
-    ("in bytes that are not UTF-8", "crapkit.gitpaths"),
+    ("in bytes that are not UTF-8", "crapkit.universe"),
     ("measurement owner stopped", "crapkit._process_owner"),
 ])
 def test_the_recover_description_quotes_a_line_crapkit_prints(quote, module):

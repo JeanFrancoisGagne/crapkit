@@ -21,8 +21,8 @@ from ..universe import assign_files, scan_files
 from ..uncovered import DeadLineFold
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _load_sources, _print_json,
-                      _ratchet_entries, _repo_out_path, _repo_relative, _stand,
-                      _write_tsv)
+                      _ratchet_entries, _repo_out_path, _repo_relative, _say_left_out, _stand,
+                      _unreadable_json, _write_tsv)
 
 
 def _tracked_files(files_by_scope: dict) -> list[str]:
@@ -75,9 +75,11 @@ def _analyzed_corpus(root: Path, cache_path: Path, flat: list,
 
 
 class _Corpus(NamedTuple):
-    """What the analyzed file list came to: files in, files the byte ceiling cut."""
+    """What the analyzed file list came to: files in, files the byte ceiling
+    cut, and the unreadable names no scope takes, left out."""
     files: int
     skipped_max_bytes: int
+    unreadable: tuple[str, ...] = ()
 
 
 def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int, dict]:
@@ -86,13 +88,15 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     from ..analyze import ANALYSIS_VERSION
     commit = (git or GitFacts(root)).head_commit()
     universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
+    _say_left_out(universe.unreadable)
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
     records_by_path, cache_hits = _analyzed_corpus(
         root, root / ".crapkit" / "cache.json", flat, _analysis_workers(cfg), cfg.analysis_worker_budget)
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
     tool_versions = {"crapkit": __version__, "lizard": lizard.version,
                      "analysis_version": str(ANALYSIS_VERSION)}
-    return commit, rows, _Corpus(len(flat), len(universe.oversized)), cache_hits, tool_versions
+    corpus = _Corpus(len(flat), len(universe.oversized), universe.unreadable)
+    return commit, rows, corpus, cache_hits, tool_versions
 
 
 def _record_twin_index(root: Path, store: SnapshotStore, run_id: int) -> None:
@@ -130,6 +134,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
         "functions": len(rows),
         "cache_hits": cache_hits,
         "skipped_max_bytes": corpus.skipped_max_bytes,
+        "unreadable_names": _unreadable_json(corpus.unreadable),
         "db": str(db_path),
     }
     if args.json:
@@ -390,7 +395,7 @@ def _run_kind(lanes, cfg, failures) -> str:
     """A --lane subset or a run with failed lanes must never serve as the
     verify baseline: its lane set differs from what verify runs, so every
     pre-existing failure in the missing lanes would read as NEW forever."""
-    full = not failures and {l.name for l in lanes} == {l.name for l in cfg.lanes}
+    full = not failures and {lane.name for lane in lanes} == {lane.name for lane in cfg.lanes}
     return "coverage" if full else "partial"
 
 
@@ -443,7 +448,7 @@ def _refuse_empty_lane_run(cfg, requested) -> None:
 
 def _select_lanes(cfg, requested):
     """The lanes this run executes; an empty list is a legitimate answer."""
-    lanes = [l for l in cfg.lanes if requested is None or l.name == requested]
+    lanes = [lane for lane in cfg.lanes if requested is None or lane.name == requested]
     if not lanes:
         _refuse_empty_lane_run(cfg, requested)
     return lanes
@@ -490,6 +495,7 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
         "measured": flags["measured"], "untested": flags["untested"],
         "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
         "skipped_max_bytes": run.corpus.skipped_max_bytes,
+        "unreadable_names": _unreadable_json(run.corpus.unreadable),
         "over_target": over, "grade": grade(over, len(judged)),
         "by_scope": _by_scope(run.scored, cfg),
         "crap_load": round(sum(r.crap for r in run.scored), 2), "lanes": run.provenance,

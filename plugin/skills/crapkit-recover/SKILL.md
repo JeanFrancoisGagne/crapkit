@@ -96,8 +96,8 @@ encoding, a Latin-1 name made on Linux, so no row can be keyed on it and no gate
 unread. Rename it and commit: on Linux `git mv $'src/caf\xe9.py' src/café.py`; on Windows,
 where Git for Windows checked the file out as `src/café.py`, `git add -A` stages that rename.
 `left out docs/r\xe9sum\xe9.txt: git names it in
-bytes that are not UTF-8` is a warning for a name no scope takes, and the command's own exit
-stands:
+bytes that are not UTF-8` is a warning for a tracked name no scope takes, and the command's
+own exit stands; `--json` lists the same names in `unreadable_names`:
 [docs: file paths](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery).
 
 ## a lane that wrote no artifact: seven causes

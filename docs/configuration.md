@@ -65,11 +65,15 @@ and the answer decides what happens:
 
 | The name | What crapkit does |
 |---|---|
-| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 with one line naming the path and `git mv`, before any lane runs. Left out, it would be a source file no reader read, and the gate would pass it. |
-| No scope takes it, or it is untracked | Left out of every command. stderr names it once, and the command keeps its own exit code. |
+| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 with one line naming the path and `git mv`, before any lane runs, and print nothing else about it. Left out, it would be a source file no reader read, and the gate would pass it. |
+| No scope takes it: tracked or staged | Left out of the run. stderr names it once, the first five such names one by one and then a count of the rest, and the command keeps its own exit code. `inventory --json`, `coverage --json` and `verify --json` list it in `unreadable_names`. |
+| It is untracked | A change like any other. A lane whose `inputs` hold it, or a lane with no `inputs` at all, reruns under `--reuse-unchanged`, and the rerun reason names the file. Nothing leaves it out, so no line names it. |
 
     crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
     crapkit: left out docs/r\xe9sum\xe9.txt: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename it (git mv) to have it read
+
+A commit that adds, edits or removes such a name also counts as a change to a lane
+whose `inputs` hold it, so `coverage --reuse-unchanged` reruns that lane.
 
 On Linux, `git mv $'src/caf\xe9.py' src/café.py` renames such a file. Git for Windows
 checks it out as `src/café.py` already, so there `git add -A` stages the rename.

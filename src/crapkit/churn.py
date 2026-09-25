@@ -16,7 +16,7 @@ import math
 from collections.abc import Callable, Iterable, Iterator
 from typing import NamedTuple
 
-from .gitpaths import history_line, unquote_path
+from .gitpaths import readable, unquote_path
 
 
 class FileChurn(NamedTuple):
@@ -64,16 +64,26 @@ def _blocks(lines: Iterable[str]) -> Iterator[tuple[str | None, list[str]]]:
     ahead of the first header arrive under a None header.
 
     Only a quoted path goes through the unquoter: every other line already is
-    the path, and the call cost more than the rest of the loop."""
+    the path, and the call cost more than the rest of the loop. The strip keeps
+    the spaces and Unicode separators that end a name."""
     header, paths = None, []
     for raw in lines:
-        line = history_line(raw)
+        line = raw.removesuffix("\n").removesuffix("\r")
         if line.startswith("\x01"):
             yield header, paths
             header, paths = line, []
         elif line:
-            paths.append(unquote_path(line) if line[0] == '"' else line)
+            _add_path(paths, line)
     yield header, paths
+
+
+def _add_path(paths: list[str], line: str) -> None:
+    """A name that is not UTF-8 keys no row, so churn skips it. git quotes one
+    whatever core.quotePath says only when it holds a quote or a control byte;
+    an unquoted one reaches here read with U+FFFD and keys no row either."""
+    path = unquote_path(line) if line[0] == '"' else line
+    if readable(path):
+        paths.append(path)
 
 
 def _weight(seqs: list[int], weights: dict[int, float]) -> float:

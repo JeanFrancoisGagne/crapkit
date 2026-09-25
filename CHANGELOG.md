@@ -25,8 +25,13 @@ A commit, file name, report or MCP frame that is not UTF-8 no longer ends a comm
   was in a Windows clone's index) no longer ends every command with a traceback. When a
   scope takes it, `inventory`, `coverage`, `verify`, `doctor`, `watch` and
   `hook-precommit` exit 3 before any lane runs, with one line naming the file and
-  `git mv`, so no gate passes a source file no reader read. Any other such name, an
-  untracked one included, is left out and named once on stderr.
+  `git mv`, so no gate passes a source file no reader read; no second line calls the
+  same file left out. A tracked or staged name no scope takes is left out and named
+  once on stderr, and `inventory --json`, `coverage --json` and `verify --json` list it
+  in the new `unreadable_names` field. An untracked one is a change like any other:
+  `coverage --reuse-unchanged` reused a lane whose `inputs` held a new or edited
+  Latin-1 file with `measurement inputs unchanged`, where the same file under a UTF-8
+  name reran it.
 - Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
   so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
   `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX

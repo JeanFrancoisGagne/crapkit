@@ -5,11 +5,11 @@ always fed these explicit lists because its own directory walking descends
 nested node_modules (measured hang).
 
 A name git gives in bytes that are not UTF-8 has no spelling a row can be keyed
-on. It arrives as a raw name a listing left out (gitpaths.PathList) or as a
-surrogateescape spelling in the list (a diff header). When the scope assignment
-below takes that spelling, the assignment refuses with exit 3 and names the
-rename: left out, a scoped file nothing read would pass every gate. Any other
-such name stays left out, named once on stderr by the reader.
+on. It arrives in the list in its surrogateescape spelling (gitpaths), and the
+scope assignment below judges it by claim (Q17). When a scope takes it, the
+assignment refuses with exit 3 and names the rename: left out, a scoped file
+nothing read would pass every gate. Any other such name is left out, and the
+verdict lists it (`Universe.unreadable`) for the command to name once.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from typing import NamedTuple
 
 from .config import Config, Scope
 from .errors import ConfigError
-from .gitpaths import readable, shown, spelled
+from .gitpaths import readable, shown
 
 LANGUAGE_EXTENSIONS = {
     "typescript": (".ts",),
@@ -215,11 +215,14 @@ class Universe(NamedTuple):
     extension. `unclaimed` is the set that used to vanish here: source in a
     declared language that no scope PATH owns, which then commits with zero
     gating. `oversized` names what the byte ceiling cut, with the sizes, so
-    the skip is reported rather than silent.
+    the skip is reported rather than silent. `unreadable` holds each name git
+    gave in bytes that are not UTF-8 and no scope takes, left out and never
+    keyed; one a scope takes never gets here, because the scan refuses it.
     """
     by_scope: dict[str, list[str]]
     unclaimed: tuple[str, ...]
     oversized: tuple[tuple[str, int], ...]
+    unreadable: tuple[str, ...] = ()
 
 
 def _candidate(path: str, matchers: tuple[ScopeMatch, ...]) -> tuple[str | None, bool]:
@@ -270,11 +273,17 @@ def _partition(candidates: list[tuple[str, str | None]], scopes: tuple[Scope, ..
     return assigned, unclaimed, oversized
 
 
-def _unreadable(files: list[str]) -> list[str]:
-    """The names git gave in bytes that are not UTF-8, spelled with surrogates:
-    those the listing left out, then any the list holds, each once."""
-    left_out = [spelled(raw) for raw in getattr(files, "left_out", ())]
-    return list(dict.fromkeys(left_out + [path for path in files if not readable(path)]))
+_NAMED = 5  # left-out names a command names one by one before it counts the rest
+
+
+def left_out_lines(names: tuple[str, ...]) -> list[str]:
+    """The lines a command prints for the names its scan left out: one per
+    name, the first five, then one line with the count of the rest."""
+    lines = [f"crapkit: left out {shown(name)}: git names it in bytes that are not UTF-8, and crapkit "
+             "reads every path as UTF-8; rename it (git mv) to have it read" for name in names[:_NAMED]]
+    if len(names) > _NAMED:
+        lines.append(f"crapkit: left out {len(names) - _NAMED} more name(s) that are not UTF-8")
+    return lines
 
 
 def _claimed_text(claimed: list[tuple[str, str]]) -> str:
@@ -297,16 +306,27 @@ def scan_files(files: list[str], cfg: Config, *,
                size_of: Callable[[str], int] | None = None) -> Universe:
     """The whole verdict. `size_of` is injected so this stays pure; the shell
     layer passes a working-tree stat, and callers with no tree pass nothing.
-    A name that is not UTF-8 is refused when a scope takes it and left out
-    otherwise; it is never keyed, and never listed as unclaimed."""
+    A name that is not UTF-8 is refused when a scope takes it and listed in
+    `unreadable` otherwise; it is never keyed, and never listed as unclaimed."""
     matchers = scope_matchers(cfg.scopes)
-    unreadable = _unreadable(files)
-    _refuse_claimed(unreadable, cfg, matchers)
-    keyed = [path for path in files if readable(path)] if unreadable else files
+    keyed, unreadable = _split_readable(files)
+    _refuse_claimed(list(unreadable), cfg, matchers)
     assigned, unclaimed, oversized = _partition(
         _candidates(keyed, cfg, matchers), cfg.scopes, cfg.max_file_bytes, size_of)
     return Universe({name: sorted(paths) for name, paths in assigned.items()},
-                    tuple(sorted(unclaimed)), tuple(sorted(oversized)))
+                    tuple(sorted(unclaimed)), tuple(sorted(oversized)), unreadable)
+
+
+def _split_readable(files: list[str]) -> tuple[list[str], tuple[str, ...]]:
+    """The names a row can key, in their order, and the unreadable ones,
+    sorted and each once."""
+    keyed, unreadable = [], set()
+    for path in files:
+        if readable(path):
+            keyed.append(path)
+        else:
+            unreadable.add(path)
+    return keyed, tuple(sorted(unreadable))
 
 
 def assign_files(files: list[str], cfg: Config, *,

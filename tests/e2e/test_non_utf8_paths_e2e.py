@@ -8,9 +8,11 @@ three ways:
 
 - a name the scope's own assignment takes (scope path, language extension,
   exclude) refuses with exit 3, in one line naming the escaped path and git mv,
-  in every command that assigns files to scopes;
-- a name no scope takes, and an untracked one, is left out with one warning
-  line, and the command goes on;
+  and no other line about it, in every command that assigns files to scopes;
+- a tracked or staged name no scope takes is left out with one warning line,
+  listed in `unreadable_names` under --json, and the command goes on;
+- an untracked one is a change like any other: lane reuse reruns for it and
+  nothing is left out;
 - a UTF-8 name, accented, CJK, emoji, quoted by git or not, reads as itself.
 
 Repos are built through `git update-index --index-info`, the one route that puts
@@ -80,6 +82,7 @@ WHOLE_TREE_LANE_CONFIG = LANE_CONFIG.replace('inputs = ["src", "make_cov.py"]\n'
 # so the lane runs in milliseconds and needs no test runner.
 MAKE_COV = (
     "import json\n"
+    "open('runs.log', 'a', encoding='ascii').write('run\\n')\n"
     "report = {'meta': {'branch_coverage': True}, 'files': {'src/app.py': {'functions': {\n"
     "    'f': {'start_line': 1, 'executed_lines': [1, 2], 'missing_lines': [],\n"
     "          'summary': {'covered_lines': 2, 'num_statements': 2,\n"
@@ -160,7 +163,7 @@ def _repo(tmp_path: Path, config: str = CONFIG, files: dict[bytes, bytes] | None
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "core.autocrlf", "false")
-    _commit(repo, {b"crapkit.toml": config.encode(), b".gitignore": b".crapkit/\ncov.json\n",
+    _commit(repo, {b"crapkit.toml": config.encode(), b".gitignore": b".crapkit/\ncov.json\nruns.log\n",
                    b"src/app.py": SOURCE, b"make_cov.py": MAKE_COV, **(files or {})}, "base")
     return repo
 
@@ -170,12 +173,13 @@ def _shown(name: bytes) -> str:
 
 
 def _refused(result, name: bytes) -> None:
-    """Exit 3, and one line naming the escaped path and git mv."""
+    """Exit 3, one line naming the escaped path and git mv, and no left-out
+    line beside it that says the opposite."""
     assert result.returncode == 3, result.stdout + result.stderr
-    fixes = [line for line in result.stderr.splitlines() if FIX in line]
-    assert len(fixes) == 1, result.stderr
-    assert fixes[0].startswith(f"crapkit: {_shown(name)} {REFUSAL}"), result.stderr
-    assert "Traceback" not in result.stderr
+    named = [line for line in result.stderr.splitlines() if _shown(name) in line]
+    assert len(named) == 1, result.stderr
+    assert named[0].startswith(f"crapkit: {_shown(name)} {REFUSAL}") and FIX in named[0], result.stderr
+    assert LEFT_OUT not in result.stderr and "Traceback" not in result.stderr
 
 
 def _left_out(result, name: bytes, codes=(0,)) -> None:
@@ -313,42 +317,115 @@ def test_init_leaves_a_name_out_and_writes_the_config(tmp_path, name, then):
     assert run_cli(repo, "inventory").returncode == then
 
 
-# --- untracked names: left out, one line (POSIX) --------------------------------------
+@pytest.mark.parametrize("command", [("inventory", "--json"), ("coverage", "--json"), ("verify", "--json")],
+                         ids=["inventory", "coverage", "verify"])
+def test_a_left_out_name_is_listed_in_the_json_payload(tmp_path, command):
+    """`unreadable_names` lists what the stderr line names, escaped the same
+    way, so a wrapper reading --json sees the skip."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    _commit(repo, {b"docs/caf\xe9.md": SOURCE, b"tools/r\xe9sum\xe9.txt": SOURCE}, "add two Latin-1 names")
+
+    result = run_cli(repo, *command)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["unreadable_names"] == ["docs/caf\\xe9.md", "tools/r\\xe9sum\\xe9.txt"]
+
+
+@pytest.mark.parametrize("command", [("inventory", "--json"), ("coverage", "--json"), ("verify", "--json")],
+                         ids=["inventory", "coverage", "verify"])
+def test_a_readable_tree_lists_no_unreadable_name(tmp_path, command):
+    repo = _repo(tmp_path, files={"docs/café.md".encode(): SOURCE})
+    assert run_cli(repo, "coverage").returncode == 0
+
+    result = run_cli(repo, *command)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["unreadable_names"] == []
+
+
+# --- untracked names: a change, never left out (POSIX) --------------------------------
+
+def _runs(repo: Path) -> int:
+    return (repo / "runs.log").read_text(encoding="ascii").count("run")
+
 
 @POSIX_NAME
 @pytest.mark.parametrize("name", [b"caf\xe9.log", b"src/caf\xe9.py", b"src/caf\xe9.txt"],
                          ids=["repo-root-log", "would-be-scoped-py", "scope-txt"])
 @pytest.mark.parametrize("command", ["coverage", "verify"])
-def test_an_untracked_name_is_left_out_whatever_a_scope_would_take(tmp_path, name, command):
+def test_an_untracked_name_is_neither_left_out_nor_refused(tmp_path, name, command):
     """git lists untracked files for the lane's whole-tree reuse proof and for
-    verify's dirty set; no scope assignment ever takes an untracked file."""
+    verify's dirty set; no scope assignment takes an untracked file, and
+    nothing drops one, so no line names it."""
     repo = _repo(tmp_path, WHOLE_TREE_LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0
     _on_disk(repo, name, SOURCE)
 
-    _left_out(run_cli(repo, command), name)
+    result = run_cli(repo, command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert LEFT_OUT not in result.stderr and REFUSAL not in result.stderr and "Traceback" not in result.stderr
 
 
 @POSIX_NAME
-@pytest.mark.parametrize("command", ["coverage", "doctor"])
-def test_an_untracked_name_under_a_lanes_inputs_is_left_out(tmp_path, command):
+def test_an_untracked_name_reruns_a_whole_tree_lane_and_the_reason_names_it(tmp_path):
+    """The whole-tree proof read the tree as clean and reused the lane."""
+    repo = _repo(tmp_path, WHOLE_TREE_LANE_CONFIG)
+    assert run_cli(repo, "coverage").returncode == 0
+    _on_disk(repo, b"caf\xe9.log", b"x")
+
+    result = run_cli(repo, "coverage", "--reuse-unchanged")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _runs(repo) == 2, result.stderr
+    assert "the working tree has 1 uncommitted change(s): caf\\xe9.log" in result.stderr, result.stderr
+
+
+# Where a lane's input comes from: untracked on disk (POSIX), or committed since
+# the lane's stamp (every OS, through the index), each beside its controls.
+INPUT_CHANGES = [
+    ("untracked-latin1", "untracked", b"src/caf\xe9.txt"),
+    ("untracked-ascii", "untracked", b"src/cafe.txt"),
+    ("untracked-utf8", "untracked", "src/café.txt".encode()),
+    ("committed-latin1", "committed", b"src/caf\xe9.txt"),
+    ("committed-ascii", "committed", b"src/cafe.txt"),
+    ("committed-utf8", "committed", "src/café.txt".encode()),
+]
+
+
+@pytest.mark.parametrize("how, name", [row[1:] for row in INPUT_CHANGES], ids=[row[0] for row in INPUT_CHANGES])
+def test_a_new_file_under_a_lanes_inputs_reruns_the_lane(tmp_path, how, name):
+    """PRD U6: the Latin-1 name read as no change, and the lane was reused
+    with 'measurement inputs unchanged', where its ASCII and UTF-8 twins rerun."""
+    if how == "untracked" and sys.platform == "win32" and name == b"src/caf\xe9.txt":
+        pytest.skip("needs a POSIX file system that stores a name whose bytes are not UTF-8")
     repo = _repo(tmp_path, LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0
-    _on_disk(repo, b"src/caf\xe9.txt", b"x")
+    if how == "untracked":
+        _on_disk(repo, name, b"x")
+    else:
+        _commit(repo, {name: b"x"}, "add an input")
 
-    _left_out(run_cli(repo, command, "--reuse-unchanged") if command == "coverage"
-              else run_cli(repo, command), b"src/caf\xe9.txt")
+    result = run_cli(repo, "coverage", "--reuse-unchanged")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _runs(repo) == 2, result.stderr
+    assert "reusing without rerun" not in result.stderr, result.stderr
+    assert REFUSAL not in result.stderr and "Traceback" not in result.stderr
 
 
-@pytest.mark.parametrize("command", ["coverage", "doctor"])
-def test_an_untracked_utf8_name_under_a_lanes_inputs_reads_as_itself(tmp_path, command):
+@pytest.mark.parametrize("name", [b"src/caf\xe9.txt", "src/café.txt".encode()], ids=["latin1", "utf8"])
+def test_doctor_reads_an_input_under_any_name_without_a_word(tmp_path, name):
+    """doctor's inputs check lists the files under a lane's inputs; a name
+    that is not UTF-8 there matches the entry like any other."""
     repo = _repo(tmp_path, LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0
-    (repo / "src" / "café.txt").write_bytes(b"x")
+    _commit(repo, {name: b"x"}, "add an input")
 
-    result = run_cli(repo, command)
-    assert result.returncode == 0, result.stderr
-    assert LEFT_OUT not in result.stderr and "Traceback" not in result.stderr
+    result = run_cli(repo, "doctor")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stderr.count(LEFT_OUT) == (1 if name == b"src/caf\xe9.txt" else 0), result.stderr
+    assert REFUSAL not in result.stderr and "Traceback" not in result.stderr
 
 
 # --- UTF-8 names: read as themselves ---------------------------------------------------
