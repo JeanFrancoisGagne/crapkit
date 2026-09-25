@@ -1,12 +1,14 @@
 """The scoring pipeline and the commands built on it: `inventory` (complexity
 snapshot), `coverage` (lanes run, coverage joined onto a fresh inventory, scored
 run written) and `rescore` (fresh complexity for named files over the latest
-run's coverage, plus its --gate policy). The lane runner lives here because
-scoring is what lanes exist to feed; `verify` borrows _scored_run from it."""
+run's coverage or a coverage artifact the caller names, plus its --gate
+policy). The lane runner lives here because scoring is what lanes exist to
+feed; `verify` borrows _scored_run from it."""
 from __future__ import annotations
 
 import argparse
 import sys
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
 
@@ -739,28 +741,114 @@ def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list,
                                   baseline_run_id=latest["id"])
 
 
-def _rescore_json(overlay, latest: dict, gate: dict | None = None) -> None:
+def _artifact_lanes(cfg, scopes: set) -> list:
+    """The lanes measuring these scopes, which must all read an artifact one
+    way: an artifact has one format, and a coveragepy reader rebases by its
+    lane's path_prefix. Files whose lanes read two ways need one --coverage each."""
+    lanes = [lane for lane in cfg.lanes if scopes.intersection(lane.scopes)]
+    if len({(lane.parser, lane.path_prefix) for lane in lanes}) != 1:
+        raise ConfigError(_artifact_lanes_refusal(scopes, lanes))
+    return lanes
+
+
+def _artifact_lanes_refusal(scopes: set, lanes: list) -> str:
+    named = ", ".join(sorted(scopes)) or "the named files' scope"
+    if not lanes:
+        return (f"--coverage: no lane measures {named}, so no lane parser can read the "
+                f"artifact; rescore without --coverage, or declare a [[lane]] for it")
+    readers = ", ".join(f"{lane.name} ({lane.parser})" for lane in lanes)
+    return (f"--coverage: {named} are measured by lanes that read an artifact differently "
+            f"({readers}, path_prefix included); rescore one lane's files per --coverage")
+
+
+def _rescore_on_artifact(root: Path, cfg, rows: list, artifact: Path) -> list:
+    """Fresh complexity joined onto a coverage artifact the caller names, read
+    as `coverage` reads the lane that measures these rows' scopes, and scored
+    by the same join a coverage run uses: by span, not by name."""
+    from ..lanes import read_artifact
+    from ..score import score_rows
+
+    lanes = _artifact_lanes(cfg, {r.scope for r in rows})
+    coverage = read_artifact(root, lanes[0]._replace(artifact=str(artifact)), cfg.scope_paths)
+    return score_rows(rows, coverage, lane_scopes={s for lane in lanes for s in lane.scopes},
+                      target=cfg.target, scope_targets=cfg.scope_targets,
+                      cc_only_scopes=cfg.coverage_optional_scopes)
+
+
+def _coverage_path(root: Path, raw: str, cwd: Path | None) -> Path:
+    """The --coverage artifact, read from where FILE arguments are read. A path
+    that names no file exits 3, as a FILE that does not exist does."""
+    path = (cwd or root) / raw
+    if not path.is_file():
+        raise ConfigError(f"--coverage {raw}: no such file ({path})")
+    return path
+
+
+class _Source(NamedTuple):
+    """Where a rescore's coverage came from: the payload keys and the table line
+    that name it, and what `--gate` holds to the ceiling. The latest run knows
+    nothing of a function the branch wrote, so its gate reads ccn alone; an
+    artifact the caller measured on this tree lets the gate read CRAP, as
+    verify does."""
+    header: dict
+    heading: str
+    stale: bool
+    metric: str
+
+
+def _latest_source(latest: dict) -> _Source:
+    return _Source(
+        {"baseline_run": latest["id"], "baseline_commit": latest["commit"],
+         "note": "coverage is the baseline run's; complexity is the working tree's. "
+                 "Run verify for the real verdict."},
+        f"rescore vs run {latest['id']} @ {latest['commit'][:11]} (coverage STALE, complexity fresh)",
+        True, "ccn")
+
+
+def _artifact_source(artifact: Path) -> _Source:
+    return _Source(
+        {"coverage_artifact": str(artifact),
+         "note": "coverage is the named artifact's; complexity is the working tree's. A run "
+                 "of part of the suite covers no more than the whole, so crap here is at or "
+                 "above verify's."},
+        f"rescore vs {artifact} (coverage from the artifact, complexity fresh)",
+        False, "crap")
+
+
+def _coverage_source(root: Path, args: argparse.Namespace):
+    """The source and the join that goes with it, settled before any analysis
+    so a refusal (no run, no artifact) costs nothing."""
+    if args.coverage is None:
+        store, latest = _rescore_baseline(root)
+        return _latest_source(latest), partial(_rescore_overlay, store, latest)
+    artifact = _coverage_path(root, args.coverage, _stand(args.repo))
+    return (_artifact_source(artifact),
+            lambda rows, _flat, cfg: _rescore_on_artifact(root, cfg, rows, artifact))
+
+
+def _rescore_json(overlay, source: _Source, gate: dict | None = None) -> None:
     """The functions, and under --gate the verdict beside them: one object,
     so an agent reading the payload never has to read stderr for the finding."""
     payload = {
-        "baseline_run": latest["id"], "baseline_commit": latest["commit"],
+        **source.header,
         "functions": [{
             "scope": r.scope, "path": r.path, "function": r.long_name, "start": r.start,
             "occurrence": r.occurrence,
             "end": r.end, "ccn": r.ccn, "cov": r.cov, "flag": r.flag, "crap": r.crap,
-            "remedy": r.remedy, "stale_coverage": True,
+            "remedy": r.remedy, "stale_coverage": source.stale,
         } for r in overlay],
-        "note": "coverage is the baseline run's; complexity is the working tree's. Run verify for the real verdict.",
     }
     if gate is not None:
         payload["gate"] = gate
     _print_json(payload)
 
 
-def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) -> list:
+def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None,
+                      metric: str = "ccn") -> list:
     """The pre-commit hook's policy over already-scored rows: ccn against the
     file's ceiling, coverage ignored. Shaped as gate violations so verify's
-    printer serves this verdict too.
+    printer serves this verdict too. `metric="crap"` is verify's policy
+    instead, for rows whose coverage this tree measured.
 
     `keys` is the ratchet key map over the WHOLE file, because `rows` here is
     the touched subset: counting ordinals over it would call an untouched
@@ -774,8 +862,8 @@ def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) 
     names = key_names(rows) if keys is None else keys
     breaches = [GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
                               False, key_of(names, r)[1])
-                for r in rows if r.ccn > ceilings[r.path]]
-    breaches.sort(key=lambda v: (-v.ccn, v.path, v.start))
+                for r in rows if getattr(r, metric) > ceilings[r.path]]
+    breaches.sort(key=lambda v: (-getattr(v, metric), v.path, v.start))
     return breaches
 
 
@@ -853,12 +941,13 @@ def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
     return _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
 
 
-def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int]) -> _GateVerdict:
+def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
+                  metric: str = "ccn") -> _GateVerdict:
     from ..keys import key_names
 
     untracked = _untracked_of(root, overlay)
     candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
-    touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
+    touched = _ceiling_breaches(candidates, ceilings, key_names(overlay), metric)
     breaches = _unpardoned_breaches(root, cfg, overlay, touched)
     return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked))
 
@@ -917,21 +1006,21 @@ def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
 def cmd_rescore(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
-    store, latest = _rescore_baseline(root)
+    source, join = _coverage_source(root, args)
 
     rows, flat, ceilings = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
-    overlay = _rescore_overlay(store, latest, rows, flat, cfg)
-    verdict = _gate_verdict(root, cfg, overlay, ceilings) if args.gate else None
+    overlay = join(rows, flat, cfg)
+    verdict = _gate_verdict(root, cfg, overlay, ceilings, source.metric) if args.gate else None
     if args.json:
-        _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict))
+        _rescore_json(overlay, source, None if verdict is None else _gate_json(verdict))
     else:
-        _print_rescore_table(overlay, latest)
+        _print_rescore_table(overlay, source)
     return 0 if verdict is None else _report_gate(verdict, args.json)
 
 
-def _print_rescore_table(overlay, latest: dict) -> None:
-    """The refactor loop's view: fresh ccn, worst first, stale cov labeled."""
-    print(f"rescore vs run {latest['id']} @ {latest['commit'][:11]} (coverage STALE, complexity fresh)")
+def _print_rescore_table(overlay, source: _Source) -> None:
+    """The refactor loop's view: fresh ccn, worst first, the coverage's source named."""
+    print(source.heading)
     print(f"  {'ccn':>4} {'cov':>5} {'crap':>8}  {'remedy':11} function")
     for r in sorted(overlay, key=lambda x: (-x.ccn, x.path, x.start)):
         print(f"  {r.ccn:>4} {r.cov:>5.0%} {r.crap:>8.1f}  {r.remedy:11} {r.path}:{r.start}  {r.long_name}")
