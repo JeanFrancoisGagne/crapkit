@@ -165,6 +165,41 @@ def test_an_absolute_path_elsewhere_lands_nowhere(tmp_path):
     assert inside(tmp_path / "other" / "mod.py", root) is None
 
 
+@pytest.mark.parametrize("raw", ["src/pkg/mod.py", "C:/repo/src/pkg/mod.py"])
+def test_a_path_with_no_root_this_os_reads_lands_nowhere(tmp_path, monkeypatch, raw):
+    """Standing in the checkout, a relative name resolves into it. On POSIX
+    `C:/repo/...` is such a name, and a report written on Windows would have
+    been scored as this tree."""
+    if os.name == "nt" and raw.startswith("C:"):
+        pytest.skip("needs POSIX path rules")
+    root = _tree(tmp_path)
+    (root / "C:" / "repo" / "src" / "pkg").mkdir(parents=True)
+    monkeypatch.chdir(root)
+
+    assert inside(raw, root) is None
+
+
+def test_placing_places_each_folder_once_and_keeps_the_name_as_written(tmp_path, monkeypatch):
+    """A report names thousands of files in a few hundred folders."""
+    import crapkit.repopath as repopath
+
+    root = _tree(tmp_path / "repo").resolve()
+    asked: list[str] = []
+    real = repopath.inside
+
+    def counted(path, top):
+        asked.append(str(path))
+        return real(path, top)
+
+    monkeypatch.setattr(repopath, "inside", counted)
+    placing = repopath.Placing(root)
+    names = [placing(str(root / "src" / "pkg" / f"m{i}.py")) for i in range(5)]
+
+    assert names == [f"src/pkg/m{i}.py" for i in range(5)]
+    assert len(asked) == 1
+    assert placing(str(tmp_path / "other" / "m.py")) is None
+
+
 @only_windows
 @pytest.mark.parametrize("spell", [lower_drive, lambda p: str(p.resolve()).upper()])
 def test_windows_places_a_root_spelled_in_another_case(tmp_path, spell):

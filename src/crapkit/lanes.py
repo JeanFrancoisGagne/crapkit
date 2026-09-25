@@ -31,6 +31,7 @@ from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
+from .repopath import Placing
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
@@ -1000,34 +1001,6 @@ def _escapes_repo(path: str) -> bool:
     return _is_absolute(path) or path.startswith("../")
 
 
-def _resolved(path: str) -> str:
-    """One spelling, so both sides of the root comparison can be compared at
-    all: symlinks followed, separators normalized, and the case folded where the
-    filesystem folds it (`normcase` is identity on POSIX, which does not).
-
-    A path whose tail does not exist still normalizes; only a name the platform
-    cannot express at all raises, and that is answered as written."""
-    try:
-        resolved = str(Path(path).resolve())
-    except (OSError, ValueError):
-        return os.path.normcase(path)
-    return os.path.normcase(resolved)
-
-
-def _under(root: str, path: str) -> bool:
-    """Both already `_resolved`. The root itself counts as under itself."""
-    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
-
-
-def _lands_in_checkout(root: str, path: str) -> bool:
-    """An absolute path naming a file this checkout holds after all.
-
-    `../` is excluded on purpose: it is relative to the runner's working
-    directory, which the artifact never records, so there is nothing to resolve
-    it against and no honest way to place it."""
-    return _is_absolute(path) and _under(root, _resolved(path))
-
-
 def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
@@ -1059,14 +1032,19 @@ def _escaped_paths(lane: Lane, coverage: dict) -> list[str]:
 def _split_escaped(root: Path, escaped: list[str]) -> tuple[list[str], list[str]]:
     """(paths from another tree, absolute paths that land under this root).
 
-    The root resolves once, and every path resolves the same way, or a symlinked
-    or short-name checkout compares unequal to its own files."""
-    resolved_root = _resolved(str(root))
+    An absolute path is placed by the rule the istanbul reader rebases its keys
+    with (repopath.Placing), so a junction, a symlink, a lower-case drive, a
+    `\\\\?\\` prefix or the admin share naming this checkout lands in it, and the
+    reader and this check cannot disagree about a key. `../` stays elsewhere
+    on purpose: it is relative to the runner's working directory, which the
+    artifact never records, so there is nothing to place it against."""
+    placing = Placing(root)
     elsewhere: list[str] = []
-    inside: list[str] = []
+    within: list[str] = []
     for path in escaped:
-        (inside if _lands_in_checkout(resolved_root, path) else elsewhere).append(path)
-    return elsewhere, inside
+        lands = _is_absolute(path) and placing(path) is not None
+        (within if lands else elsewhere).append(path)
+    return elsewhere, within
 
 
 def _sample(paths) -> str:

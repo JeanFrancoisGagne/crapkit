@@ -351,3 +351,72 @@ def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path)
     assert "under this checkout" in message
     assert "relative_files" not in message, "a coverage.py key a JS reporter never reads"
     assert "rerun the lane on this machine" in message
+
+
+# --- one placing rule --------------------------------------------------------
+# The wrong-tree check and istanbul's rebase answer one question, "is this
+# absolute path in this checkout?". Each used to answer it its own way: lanes
+# compared resolved text, the reader asked the disk which directory is the root.
+# A key the reader could not rebase then reached a check that called the same
+# checkout another tree, or the other way round.
+
+import os  # noqa: E402
+
+from crapkit.coverage_istanbul import _Keys  # noqa: E402
+from crapkit.lanes import _split_escaped  # noqa: E402
+
+from path_spellings import (admin_share, lower_drive, link_directory,  # noqa: E402
+                            need_case_insensitive)
+
+
+def _placed_tree(tmp_path):
+    root = tmp_path / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "app.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    link_directory(tmp_path / "alias", root)
+    return root.resolve()
+
+
+def _checkout_case(root) -> str:
+    return str(root.parent / root.name.swapcase() / "src" / "app.ts")
+
+
+# id -> (what the host needs, an absolute spelling of src/app.ts in this checkout)
+PLACED = {
+    "native": ("", lambda root, tmp: str(root / "src" / "app.ts")),
+    "forward-slashes": ("", lambda root, tmp: (root / "src" / "app.ts").as_posix()),
+    "linked-checkout": ("", lambda root, tmp: str(tmp / "alias" / "src" / "app.ts")),
+    "lower-drive": ("windows", lambda root, tmp: lower_drive(root / "src" / "app.ts")),
+    "upper-cased": ("windows", lambda root, tmp: str(root / "src" / "app.ts").upper()),
+    "extended-length": ("windows", lambda root, tmp: "\\\\?\\" + str(root / "src" / "app.ts")),
+    "admin-share": ("windows", lambda root, tmp: admin_share(root / "src" / "app.ts")),
+    "directory-case": ("case", lambda root, tmp: str(root / "SRC" / "app.ts")),
+    "checkout-case": ("case", lambda root, tmp: _checkout_case(root)),
+}
+
+
+@pytest.mark.parametrize("which", PLACED)
+def test_the_wrong_tree_check_places_a_key_where_the_istanbul_reader_does(tmp_path, which):
+    need, spell = PLACED[which]
+    if need == "windows" and os.name != "nt":
+        pytest.skip("needs Windows path rules")
+    if need == "case":
+        need_case_insensitive(tmp_path)
+    root = _placed_tree(tmp_path)
+    key = spell(root, tmp_path)
+
+    assert _Keys(str(root)).rel(key) == "src/app.ts"
+    assert _split_escaped(root, [key.replace("\\", "/")]) == ([], [key.replace("\\", "/")])
+
+
+def test_a_drive_letter_path_is_another_tree_where_the_os_has_no_drives(tmp_path, monkeypatch):
+    """On POSIX `C:/repo/src/app.ts` is a relative name. Read against the
+    working directory it could land in the checkout crapkit stands in, and a
+    report written on Windows would be scored as this tree."""
+    if os.name == "nt":
+        pytest.skip("needs POSIX path rules")
+    root = _placed_tree(tmp_path)
+    (root / "C:" / "repo" / "src").mkdir(parents=True)
+    monkeypatch.chdir(root)
+
+    assert _split_escaped(root, ["C:/repo/src/app.ts"]) == (["C:/repo/src/app.ts"], [])

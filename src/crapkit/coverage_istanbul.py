@@ -17,14 +17,13 @@ from __future__ import annotations
 import functools
 import heapq
 import os
-import posixpath
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
-from .repopath import disk_spelling, entries, file_separators, inside
+from .repopath import Placing, disk_spelling, entries, file_separators
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -54,20 +53,19 @@ class _Keys:
 
     A key that starts with this checkout's root, spelled as crapkit spells it,
     loses the root as text: the common case, and the cheap one. Any other
-    absolute key is placed by the file it names (repopath.inside), so a report
-    made from a shell standing in `c:\\...`, through a junction or a symlink,
-    or keyed `\\\\?\\C:\\...` is still this checkout. The literal strip alone
-    left each of those absolute, and the lane failed over its own checkout.
-    Folders are placed once each: a report from another tree names thousands
-    of files in a few hundred folders. Every root-relative key then takes the
-    letter case its directories list (repopath.disk_spelling), since a runner
-    can name `SRC/app.ts` under the root as crapkit spells it; each folder is
-    listed once."""
+    absolute key is placed by the one placing rule (repopath.Placing), which
+    lanes' wrong-tree check asks too, so a report made from a shell standing
+    in `c:\\...`, through a junction or a symlink, or keyed `\\\\?\\C:\\...` is
+    still this checkout. The literal strip alone left each of those absolute,
+    and the lane failed over its own checkout. Every root-relative key then
+    takes the letter case its directories list (repopath.disk_spelling), since
+    a runner can name `SRC/app.ts` under the root as crapkit spells it; each
+    folder is listed once."""
 
     def __init__(self, repo_root: str) -> None:
         self._root = Path(repo_root)
         self._prefix = file_separators(repo_root).rstrip("/") + "/"
-        self._folders: dict[str, str | None] = {}
+        self._placing = Placing(repo_root)
         self._listing = functools.cache(entries)
 
     def rel(self, key: str) -> str:
@@ -77,13 +75,8 @@ class _Keys:
         return self._placed(norm) if os.path.isabs(norm) else self._spelled(norm)
 
     def _placed(self, key: str) -> str:
-        folder, _, name = key.rpartition("/")
-        if folder not in self._folders:
-            self._folders[folder] = inside(folder + "/", self._root)
-        base = self._folders[folder]
-        if base is None:
-            return key
-        return self._spelled(posixpath.normpath(posixpath.join(base, name)))
+        rel = self._placing(key)
+        return key if rel is None else self._spelled(rel)
 
     def _spelled(self, rel: str) -> str:
         return disk_spelling(self._root, rel, self._listing)

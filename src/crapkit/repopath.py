@@ -30,6 +30,7 @@ Stdlib only: the advisory hook imports this on every edit.
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -160,21 +161,50 @@ def entries(folder: Path) -> set[str]:
 
 def inside(path: str | os.PathLike, root: str | os.PathLike) -> str | None:
     """`path`, an absolute path, as the root-relative path git spells, or None
-    when it names nothing under `root`.
+    when it names nothing under `root`. The one placing rule: the istanbul
+    reader's rebase, lanes' wrong-tree check and every typed or declared
+    absolute path ask it.
 
     Text says too little here. `c:\\repo`, `C:\\REPO`, a junction or symlink to
     the checkout and `\\\\localhost\\C$\\repo` all name one directory, so each
     side is resolved, and when the two still differ, each directory above
-    `path` is asked whether it is the root itself. A name this platform cannot
-    express lands nowhere."""
+    `path` is asked whether it is the root itself. A path with no root or drive
+    this OS reads (`C:/repo/a.ts` on POSIX) and a name this platform cannot
+    express land nowhere: resolved against the working directory, the first
+    could land in the checkout crapkit stands in."""
     try:
-        resolved, top = Path(path).resolve(), Path(root).resolve()
+        resolved, top = _anchored(path).resolve(), Path(root).resolve()
     except (OSError, ValueError):
         return None
     rel = _relative(resolved, top)
     if rel is None:
         rel = _relative_by_identity(resolved, top)
     return None if rel is None else disk_spelling(top, rel)
+
+
+def _anchored(path: str | os.PathLike) -> Path:
+    named = Path(path)
+    if not named.anchor:
+        raise ValueError(f"{path} names no root")
+    return named
+
+
+class Placing:
+    """`inside`, asked of every absolute path one report names. A report
+    names thousands of files in a few hundred folders, so each folder is placed
+    once, and a path comes back relative to the root with its own name as the
+    report wrote it, or None when its folder is not in the checkout."""
+
+    def __init__(self, root: str | os.PathLike) -> None:
+        self._root = Path(root)
+        self._folders: dict[str, str | None] = {}
+
+    def __call__(self, path: str) -> str | None:
+        folder, _, name = file_separators(path).rpartition("/")
+        if folder not in self._folders:
+            self._folders[folder] = inside(folder + "/", self._root)
+        base = self._folders[folder]
+        return None if base is None else posixpath.normpath(posixpath.join(base, name))
 
 
 def _relative(path: Path, top: Path) -> str | None:
