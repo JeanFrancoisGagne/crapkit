@@ -349,6 +349,27 @@ nothing. Each of these now gets a line naming the object and the next step:
   process, so it helps from the next upgrade on: a 0.8.0 server upgraded to 0.8.1 can
   still answer the old error once, and the restart fixes it the same way.
 
+### The MCP server finds the workspace when the client starts it elsewhere
+
+- A server whose start directory serves nothing asks a client that declares the `roots`
+  capability for its workspace folders and serves the first one a `crapkit.toml` claims.
+  VS Code starts a server from the user profile's `mcp.json` in the home directory and a
+  plugin's server in the plugin directory, so every call from a VS Code user answered `no
+  crapkit.toml in <home>` inside a measured repo. The server asks after
+  `notifications/initialized` and again after `notifications/roots/list_changed`, and a
+  call that arrives before the answer waits for it, up to 10 seconds. A response the
+  server never asked for gets no reply; it used to get a `-32601` error.
+- A server started at or below the plugin directory the client names in `PLUGIN_ROOT`,
+  `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` no longer walks up from there. A plugin
+  loaded from a crapkit checkout found crapkit's own `crapkit.toml` above the plugin
+  directory and served crapkit's repo, answering `no snapshot in <checkout>`.
+- GitHub Copilot CLI starts a plugin's server in `~/.copilot/installed-plugins/...` and
+  declares no roots, so nothing on the wire names the workspace. The `initialize`
+  instructions and each tool result there now say the server started in the plugin's
+  install directory and ask the model to pass the workspace as the `repo` argument.
+- The MCP page drops the claim that a globally registered server serves the workspace it
+  starts in, and says where each client starts it.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

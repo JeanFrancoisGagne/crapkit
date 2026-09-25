@@ -7,10 +7,14 @@ in the CLI.
 from __future__ import annotations
 
 import json
+import os
 import re
-from .procs import run_owned
+from .procs import CommandCancelled, run_owned
 import sys
+import threading
+import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .invocation import _self
 from .rootfind import CONFIG_NAME, find_root
@@ -1570,7 +1574,10 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     schema. A command that printed nothing answers with its stderr, so a
     refusal reaches the caller as text. An exit the tool declares in
     `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
-    and its payload says so in `gate.ok`."""
+    and its payload says so in `gate.ok`. A call that came before the client
+    named its workspace folders waits for them here, in the worker."""
+    if isinstance(repo, _Workspace):
+        return repo.run(tool, arguments, owner)
     argv = build_argv(tool, arguments) + ["--repo", repo]
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
@@ -1665,15 +1672,167 @@ def _config_root(repo: str) -> Path | None:
     return find_root(start) if start.is_dir() else None
 
 
-def _served_root(root: Path, arguments: dict) -> tuple[str, Path | None]:
-    """The repo a call names and the crapkit root that serves it. A call's own
-    `repo` argument is walked up to the nearest crapkit.toml; the server's
-    root was settled once at start, where `crapkit mcp` walks without `--repo`
-    and a given `--repo` names an exact root, as on every subcommand."""
+# How long a call waits for the client to answer roots/list before it is
+# answered as if the client named no folder, and how often the wait looks at a
+# cancellation meanwhile.
+ROOTS_SECONDS = 10
+_ROOTS_SLICE = .05
+
+# The variables a client names its plugin's install directory in, on the
+# plugin's MCP server: GitHub Copilot CLI sets all three, VS Code the first and
+# the last, Claude Code the last.
+PLUGIN_ROOT_VARS = ("PLUGIN_ROOT", "COPILOT_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT")
+
+# VS Code writes a drive's colon encoded (file:///c%3A/...), and url2pathname
+# reads that as a directory named `c:` below the current drive's root.
+_ENCODED_DRIVE = re.compile(r"^/([A-Za-z])%3[Aa]")
+
+
+def started_in_plugin(start: Path) -> bool:
+    """True when the client started the server at or below its plugin's own
+    install directory: that directory is never the workspace, and walking up
+    from a plugin loaded out of a crapkit checkout finds crapkit's own repo."""
+    return any(start.is_relative_to(Path(root).resolve())
+               for root in filter(None, map(os.environ.get, PLUGIN_ROOT_VARS)))
+
+
+def _folder_path(uri) -> Path | None:
+    """A `file:` URI from roots/list as a local path, None for anything else."""
+    if not isinstance(uri, str) or not uri.startswith("file:"):
+        return None
+    from urllib.request import url2pathname
+    parts = urlsplit(uri)
+    host = "" if parts.netloc in ("", "localhost") else f"//{parts.netloc}"
+    return Path(url2pathname(host + _ENCODED_DRIVE.sub(r"/\1:", parts.path)))
+
+
+def _uris(result) -> list:
+    roots = result.get("roots") if isinstance(result, dict) else None
+    return [root.get("uri") for root in roots if isinstance(root, dict)] if isinstance(roots, list) else []
+
+
+def _folder_root(folder: Path) -> Path | None:
+    return find_root(folder.resolve()) if folder.is_dir() else None
+
+
+def _cancelled(owner) -> None:
+    if getattr(owner, "cancelled", False):
+        raise CommandCancelled("request was cancelled while it waited for the client's roots")
+
+
+class _Workspace:
+    """Where a call without a `repo` argument is served, for one session.
+
+    A crapkit.toml at or above the directory the server started in settles it
+    (ADR 0002). Clients do not all start the server in the workspace: VS Code
+    starts a user-level server in the home directory and a plugin's server in
+    the plugin directory, and every call there answered `no crapkit.toml`
+    inside a measured repo. A client that declares the `roots` capability names
+    its workspace folders on request, so a server whose start directory serves
+    nothing asks once the client says it is initialized, and again whenever
+    the client says they changed, and serves the first folder a crapkit.toml
+    claims. A call that arrives before the answer waits for it in the worker
+    thread, never in the loop that reads the answer."""
+
+    def __init__(self, start: Path, *, plugin: bool = False):
+        self.start, self.plugin = start, plugin
+        self.capable = self.timed_out = False
+        self.asked, self.pending, self.folders = 0, None, None
+        self.answered = threading.Event()
+
+    def greet(self, params: dict) -> None:
+        capabilities = params.get("capabilities")
+        self.capable = isinstance(capabilities, dict) and "roots" in capabilities
+
+    def hint(self) -> str:
+        """What the instructions add when nothing on the wire can name the
+        workspace: GitHub Copilot CLI starts a plugin's server in the plugin's
+        install directory and declares no roots."""
+        if self.plugin and not self.capable:
+            return (" This server started in its plugin's install directory, not in your "
+                    "workspace, and the client names no workspace folders: pass a `repo` "
+                    "argument with the absolute path of the repo you want scored on every call.")
+        return ""
+
+    def claims_start(self) -> bool:
+        return not self.plugin and (self.start / CONFIG_NAME).is_file()
+
+    def ask(self) -> dict | None:
+        """The roots/list request to send, or None when nothing needs it."""
+        if not self.capable or self.claims_start():
+            return None
+        self.asked += 1
+        self.pending, self.folders, self.timed_out = f"crapkit-roots-{self.asked}", None, False
+        self.answered.clear()
+        return {"jsonrpc": "2.0", "id": self.pending, "method": "roots/list"}
+
+    def take(self, message: dict) -> None:
+        """The client's answer to the newest roots/list; any other response is
+        dropped, since a response never gets a reply."""
+        if self.pending is None or message.get("id") != self.pending:
+            return None
+        self.folders = [path for path in map(_folder_path, _uris(message.get("result"))) if path]
+        self.pending, self.timed_out = None, False
+        self.answered.set()
+        return None
+
+    def served(self):
+        """The root a call runs at: a path, this workspace while the client's
+        answer is still out, or None when nothing is measured."""
+        if self.claims_start():
+            return str(self.start)
+        if self.pending is not None and not self.timed_out:
+            return self
+        return self._claimed_folder()
+
+    def _claimed_folder(self) -> str | None:
+        found = next(filter(None, map(_folder_root, self.folders or ())), None)
+        return str(found) if found else None
+
+    def run(self, tool: dict, arguments: dict, owner=None) -> dict:
+        """A call that arrived before the answer, in the worker thread."""
+        deadline = time.monotonic() + ROOTS_SECONDS
+        while not self.answered.wait(_ROOTS_SLICE):
+            _cancelled(owner)
+            self.timed_out = time.monotonic() >= deadline
+            if self.timed_out:
+                break
+        root = self.served()
+        return _run_cli(tool, arguments, root, owner=owner) if isinstance(root, str) else self.missing()
+
+    def missing(self) -> dict:
+        if self.plugin and not self.folders:
+            return _result(f"this crapkit MCP server started in {self.start}, the plugin's install "
+                           "directory, not in your workspace, and the client names no workspace "
+                           "folders. Pass this tool a `repo` argument with the absolute path of "
+                           "the repo you want scored.", is_error=True)
+        return _no_config_result(self._searched())
+
+    def _searched(self) -> str:
+        if self.timed_out:
+            return (f"{self.start}, and the client did not name its workspace folders within "
+                    f"{ROOTS_SECONDS} s")
+        if self.folders is None:
+            return str(self.start)
+        if not self.folders:
+            return f"{self.start}, and the client named no workspace folder"
+        named = ", ".join(map(str, self.folders))
+        return f"{self.start} or in the workspace folders the client named ({named})"
+
+
+def _workspace(root) -> _Workspace:
+    return root if isinstance(root, _Workspace) else _Workspace(root)
+
+
+def _call_root(workspace: _Workspace, arguments: dict):
+    """The root a call runs at, or None. A call's own `repo` argument is walked
+    up to the nearest crapkit.toml; without one the session's workspace
+    answers."""
     repo = arguments.get("repo")
-    if repo:
-        return repo, _config_root(repo)
-    return str(root), root if (root / CONFIG_NAME).is_file() else None
+    if not repo:
+        return workspace.served()
+    found = _config_root(repo)
+    return str(found) if found else None
 
 
 # Keys a client adds to every tool's input schema for its own use and then
@@ -1730,18 +1889,24 @@ def _table_refusal(tool: dict | None, name: str, arguments: dict) -> str | None:
     return _argument_error(tool, arguments)
 
 
-def _call_tool(root: Path, name: str, arguments: dict, run_cli=None) -> dict:
+def _missing(workspace: _Workspace, repo: str | None) -> dict:
+    return _no_config_result(repo) if repo else workspace.missing()
+
+
+def _call_tool(root, name: str, arguments: dict, run_cli=None) -> dict:
     """The package on disk, then name lookup, then the arguments against the
     table, then the repo the call names, then the run. Every refusal is decided
-    before a CLI spawns."""
+    before a CLI spawns. `root` is the session's workspace, or a plain start
+    directory."""
     tool, arguments = _tool_named(name), _own_arguments(arguments)
     refusal = _upgraded_under_us(name) or _table_refusal(tool, name, arguments)
     if refusal:
         return _result(refusal, is_error=True)
-    repo, found = _served_root(root, arguments)
-    if found is None:
-        return _no_config_result(repo)
-    return (run_cli or _run_cli)(tool, arguments, str(found))
+    workspace = _workspace(root)
+    served = _call_root(workspace, arguments)
+    if served is None:
+        return _missing(workspace, arguments.get("repo"))
+    return (run_cli or _run_cli)(tool, arguments, served)
 
 
 # What a connected model needs before its first call, in the one field the
@@ -1790,36 +1955,56 @@ def _respond(msg_id, result=None, error=None) -> dict:
     return resp
 
 
-def _initialize_result(params: dict) -> dict:
+def _initialize_result(params: dict, workspace: _Workspace) -> dict:
+    workspace.greet(params)
     return {"protocolVersion": _negotiated(params),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "crapkit", "version": _version()},
-            "instructions": _INSTRUCTIONS}
+            "instructions": _INSTRUCTIONS + workspace.hint()}
 
 
 # The methods that need no repo, keyed as the wire spells them. ping answers
 # the empty object the spec asks for, so a client's keepalive is not -32601.
 _METHODS = {"initialize": _initialize_result,
-            "tools/list": lambda params: {"tools": tool_listing()},
-            "ping": lambda params: {}}
+            "tools/list": lambda params, workspace: {"tools": tool_listing()},
+            "ping": lambda params, workspace: {}}
+
+# The notifications on which a server whose start directory serves nothing
+# asks the client for its workspace folders.
+_ASK_ROOTS_ON = ("notifications/initialized", "notifications/roots/list_changed")
 
 
-def _tools_call(root: Path, params: dict, run_cli=None) -> dict:
+def _tools_call(root, params: dict, run_cli=None) -> dict:
     return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
 
 
-def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:
-    if "id" not in msg:
-        return None  # a notification (e.g. notifications/initialized) needs no reply
-    method = msg.get("method", "")
-    params = msg.get("params") or {}
+def _notified(workspace: _Workspace, method) -> dict | None:
+    """A notification gets no reply. Two of them are when the server asks the
+    client for its roots, and that request is what goes out instead."""
+    return workspace.ask() if method in _ASK_ROOTS_ON else None
+
+
+def _request(workspace: _Workspace, msg: dict, run_cli=None) -> dict:
+    method, params = msg["method"], msg.get("params") or {}
     if method == "tools/call":
-        return _respond(msg["id"], _tools_call(root, params, run_cli))
-    handler = _METHODS.get(method)
+        return _respond(msg["id"], _tools_call(workspace, params, run_cli))
+    handler = _METHODS.get(method) if isinstance(method, str) else None
     if handler is None:
         return _respond(msg["id"], error={"code": -32601,
                                           "message": f"unknown method {method!r}"})
-    return _respond(msg["id"], handler(params))
+    return _respond(msg["id"], handler(params, workspace))
+
+
+def _handle(root, msg: dict, run_cli=None) -> dict | None:
+    """A response to the server's own request, a notification, or a request.
+    Only a request gets a reply; `root` is the session's workspace, or a plain
+    start directory."""
+    workspace = _workspace(root)
+    if "method" not in msg:
+        return workspace.take(msg)
+    if "id" not in msg:
+        return _notified(workspace, msg["method"])
+    return _request(workspace, msg, run_cli)
 
 
 def _version() -> str:
@@ -1837,18 +2022,23 @@ def _parse(line: str) -> dict | None:
     return msg if isinstance(msg, dict) else None
 
 
-def _reply(root: Path, msg: dict, run_cli=None) -> dict | None:
+def _reply(root, msg: dict, run_cli=None) -> dict | None:
     """The reply to one message. An exception escaping a handler becomes the
-    JSON-RPC -32603 reply instead of the end of the session. Dispatch returns
-    before invoking a handler when the message is a notification."""
+    JSON-RPC -32603 reply instead of the end of the session; a notification or
+    a response gets no reply even then."""
     try:
         return _handle(root, msg, run_cli)
     except Exception as exc:  # noqa: BLE001 - the loop must outlive any one call
+        if "id" not in msg or "method" not in msg:
+            return None
         return _respond(msg["id"], error={"code": -32603,
                                           "message": f"{type(exc).__name__}: {exc}"})
 
 
-def serve(root: Path) -> int:
-    """Newline-delimited JSON-RPC; EOF cancels active work and closes the session."""
+def serve(root: Path, *, plugin: bool = False) -> int:
+    """Newline-delimited JSON-RPC; EOF cancels active work and closes the session.
+    `plugin` says the client started the server in its plugin's install
+    directory, which serves nothing whatever lies above it."""
     from ._mcp_stdio import serve as stdio
-    return stdio(sys.stdin, sys.stdout, lambda msg, run: _reply(root, msg, run), _run_cli)
+    workspace = _Workspace(root, plugin=plugin)
+    return stdio(sys.stdin, sys.stdout, lambda msg, run: _reply(workspace, msg, run), _run_cli)

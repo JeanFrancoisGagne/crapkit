@@ -161,7 +161,10 @@ def _print_mutation(as_json: bool, survivors: list, total: int, outside: list[st
 
 def cmd_mcp(args: argparse.Namespace) -> int:
     """Serve stdio from `--repo`, an exact root, or from the nearest crapkit.toml
-    at or above the directory the client started in (ADR 0002).
+    at or above the directory the client started in (ADR 0002). A client that
+    started the server in its plugin's install directory gets no walk from
+    there, and a server whose start serves nothing asks a roots-capable client
+    for its workspace folders.
 
     A client registered globally opens the server in every project, most of
     which have no crapkit.toml. Refusing to start there gave the client a server
@@ -169,12 +172,14 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     A config that EXISTS and is broken still fails fast, before any client
     connects, because every tool would fail the same way anyway.
     """
-    from ..mcp_server import serve
+    from ..mcp_server import serve, started_in_plugin
 
-    root = _command_root(_expanded_repo(args.repo))
-    if (root / "crapkit.toml").is_file():
+    repo = _expanded_repo(args.repo)
+    plugin = repo is None and started_in_plugin(Path.cwd().resolve())
+    root = Path.cwd().resolve() if plugin else _command_root(repo)
+    if not plugin and (root / "crapkit.toml").is_file():
         _load_repo_config(root)
-    return serve(root)
+    return serve(root, plugin=plugin)
 
 
 # `${workspaceFolder}`, `${userHome}`, `${env:NAME}`: the variables MCP client

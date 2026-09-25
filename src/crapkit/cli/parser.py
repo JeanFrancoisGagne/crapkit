@@ -440,7 +440,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)")
     srv.add_argument("--repo", default=None,
-                     help="crapkit root (default: the nearest crapkit.toml at or above cwd); a value "
+                     help="crapkit root (default: the nearest crapkit.toml at or above cwd, else "
+                          "the first workspace folder a client that declares roots names; a cwd "
+                          "inside the client's plugin directory is never walked up from); a value "
                           "holding a ${...} variable the client did not expand is ignored, with a "
                           "warning on stderr")
     srv.set_defaults(func=_Handler("analyses", "cmd_mcp"))

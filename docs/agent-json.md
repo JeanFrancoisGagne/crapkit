@@ -1532,15 +1532,42 @@ rejected. A kept process serves a `source` the session has already edited, and a
 
 With no `--repo`, the server serves the nearest `crapkit.toml` at or above the directory the
 client started it in ([ADR 0002](adr/0002-configuration-is-found-upward-nearest-wins.md)),
-so a globally registered server started in a monorepo workspace serves the root
-configuration that claims the workspace; a tool's `repo` argument is walked the same way,
-and a `.git` entry without a configuration stops the walk. A given `--repo` names an exact
-root, as on every subcommand, and each tool's command runs at the root the server found, so
-`path` stays repo-relative wherever the server was started. In a directory with no
-`crapkit.toml` at or above it the server still starts and answers `initialize` and
-`tools/list`. Each `tools/call` there comes
+so a server started in a monorepo workspace serves the root configuration that claims the
+workspace; a tool's `repo` argument is walked the same way, and a `.git` entry without a
+configuration stops the walk. A given `--repo` names an exact root, as on every
+subcommand, and each tool's command runs at the root the server found, so `path` stays
+repo-relative wherever the server was started.
+
+Not every client starts the server in the workspace. VS Code starts a server from the
+user profile's `mcp.json` in the home directory and a plugin's server in the plugin's
+directory, and GitHub Copilot CLI starts a plugin's server in
+`~/.copilot/installed-plugins/<marketplace>/<plugin>`. Two rules cover them:
+
+- A start directory at or below the plugin directory the client names in `PLUGIN_ROOT`,
+  `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` serves nothing, and the server does not
+  walk up from it. A plugin loaded from a crapkit checkout would otherwise find crapkit's
+  own `crapkit.toml` above it and serve crapkit's repo.
+- When the start directory serves nothing and the client declares the `roots`
+  capability, the server asks it for `roots/list` once the client sends
+  `notifications/initialized`, and again after `notifications/roots/list_changed`. It
+  serves the first workspace folder a `crapkit.toml` at or above it claims. A call that
+  arrives before the answer waits for it, up to 10 seconds. VS Code answers with the open
+  folders.
+
+Copilot CLI declares no roots, so nothing on the wire names the workspace. There the
+`initialize` instructions and each tool result ask the model to pass the workspace's
+absolute path as the tool's `repo` argument:
+
+```
+this crapkit MCP server started in /home/me/.copilot/installed-plugins/crapkit/crapkit, the plugin's install directory, not in your workspace, and the client names no workspace folders. Pass this tool a `repo` argument with the absolute path of the repo you want scored.
+```
+
+Where nothing claims the start directory or any folder, the server still starts and
+answers `initialize` and `tools/list`. Each `tools/call` there comes
 back as a tool result, not a JSON-RPC error, and that result carries `isError: true` with
-text naming the missing config and `crapkit init`:
+text naming the missing config and `crapkit init`. When the client named folders, the
+text names them after the start directory
+(`no crapkit.toml in /home/me or in the workspace folders the client named (/home/me/notes) - nothing measured here. ...`):
 
 ```json
 {"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "no crapkit.toml in .../noconfig - nothing measured here. Run `crapkit init` in the repo you want scored, or pass this tool a `repo` argument (or start the server with --repo) pointing at one."}], "isError": true}}

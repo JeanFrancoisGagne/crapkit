@@ -193,7 +193,7 @@ def test_a_synchronous_dispatch_error_replies_once_and_keeps_the_session(monkeyp
     _no_cli(monkeypatch)
     calls = []
 
-    def _dispatch_fault(arguments):
+    def _dispatch_fault(arguments, workspace):
         calls.append(arguments)
         raise RuntimeError("dispatch-fault")
 
