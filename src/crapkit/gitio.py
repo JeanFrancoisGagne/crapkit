@@ -323,23 +323,38 @@ def index_blobs(root: Path, paths=()) -> dict[str, str]:
 def worktree_blobs(root: Path, paths) -> dict[str, str]:
     """path -> the blob id `git add` would give each file on disk, through the
     repo's filters: one process for every name that can ride hash-object's
-    line-framed stdin, and one each for a name holding a line break."""
-    framed = [path for path in paths if not _line_paths([path])]
-    blobs = dict(zip(framed, _hashed(root, framed)))
-    return {**blobs, **{path: _hashed_alone(root, path) for path in paths if path not in blobs}}
+    line-framed stdin, and one each for a name holding a line break.
+
+    hash-object reads a `--stdin-paths` name from the checkout's top, not from
+    the cwd as it reads a file argument, so under a root one directory down (a
+    monorepo member) each name carries the root's prefix. Without it every
+    edited file there came back `could not open`, and each lane read "git
+    cannot say" where it should have named the file."""
+    paths = list(paths)
+    prefix = _show_prefix(root) if paths else ""
+    framed = [path for path in paths if not _line_paths([prefix + path])]
+    blobs = _hashed(root, prefix, framed)
+    return {**blobs, **_hashed_alone(root, set(paths) - blobs.keys())}
 
 
-def _hashed(root: Path, paths: list[str]) -> list[str]:
+def _show_prefix(root: Path) -> str:
+    """The root's path below the checkout's top, ending in `/`, or "" at the top."""
+    return _git(root, "rev-parse", "--show-prefix").removesuffix("\n")
+
+
+def _hashed(root: Path, prefix: str, paths: list[str]) -> dict[str, str]:
     if not paths:
-        return []
+        return {}
     read = _Started(root, ("hash-object", "--stdin-paths"), stdin=True)
-    out = read.result("".join(f"{path}\n" for path in paths).encode("utf-8"))
-    return out.decode("utf-8").split()
+    out = read.result("".join(f"{prefix}{path}\n" for path in paths).encode("utf-8"))
+    return dict(zip(paths, out.decode("utf-8").split()))
 
 
-def _hashed_alone(root: Path, path: str) -> str:
-    """A name holding a line break, hashed as a file argument."""
-    return _Started(root, ("hash-object", "--", path), stdin=False).result().decode("utf-8").strip()
+def _hashed_alone(root: Path, paths) -> dict[str, str]:
+    """Names holding a line break, each hashed as a file argument, which git
+    reads from the cwd."""
+    return {path: _Started(root, ("hash-object", "--", path), stdin=False).result().decode("utf-8").strip()
+            for path in sorted(paths)}
 
 
 def has_commit(root: Path, commit: str) -> bool:

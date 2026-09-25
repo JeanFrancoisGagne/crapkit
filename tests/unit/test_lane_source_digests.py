@@ -26,14 +26,18 @@ from stale_tree import DARK, EVENTS, REL
 
 MOVED = sorted(name for name, event in EVENTS.items() if event.moved)
 KEPT = sorted(name for name, event in EVENTS.items() if not event.moved)
+# A monorepo member keeps crapkit.toml one directory below the checkout's top.
+PLACES = pytest.mark.parametrize("nested", [False, True], ids=["root-at-top", "root-below-top"])
 
 
 # --- the root: one content rule, one comparison ------------------------------
 
-def _repo(tmp_path: Path, files: dict, gitcfg: dict | None = None) -> Path:
-    root = tmp_path / "rec"
-    root.mkdir()
-    stale_tree.git(root, "init", "-q", "-b", "main")
+def _repo(tmp_path: Path, files: dict, gitcfg: dict | None = None, nested: bool = False) -> Path:
+    """A committed repo holding `files`, rooted one directory below the
+    checkout's top when `nested`."""
+    root = tmp_path / "rec" / "member" if nested else tmp_path / "rec"
+    root.mkdir(parents=True)
+    stale_tree.git(tmp_path / "rec", "init", "-q", "-b", "main")
     for key, value in (gitcfg or {}).items():
         stale_tree.git(root, "config", key, value)
     for rel, data in files.items():
@@ -86,22 +90,24 @@ def test_an_expanded_ident_keyword_holds_the_stored_blob(tmp_path):
         "src/a.ts": stale_tree.git(root, "rev-parse", "HEAD:src/a.ts").strip()}
 
 
-def test_an_untracked_file_and_a_path_outside_the_reads_are_hashed(tmp_path):
+@PLACES
+def test_an_untracked_file_and_a_path_outside_the_reads_are_hashed(tmp_path, nested):
     from crapkit.lane_sources import record
 
-    root = _repo(tmp_path, {"src/a.ts": "a\n", "lib/b.ts": "b\n"})
+    root = _repo(tmp_path, {"src/a.ts": "a\n", "lib/b.ts": "b\n"}, nested=nested)
     stale_tree.write(root / "src/new.ts", "new\n")
 
     assert record(root, ["src/new.ts", "lib/b.ts"], ("src",)) == {
         "src/new.ts": _blob(root, "src/new.ts"), "lib/b.ts": _blob(root, "lib/b.ts")}
 
 
-def test_a_flagged_file_edited_on_disk_is_hashed_not_read_from_the_index(tmp_path):
+@PLACES
+def test_a_flagged_file_edited_on_disk_is_hashed_not_read_from_the_index(tmp_path, nested):
     """skip-worktree and assume-unchanged hide an edit from git's diff; the
     index's id would vouch for bytes that are not on disk."""
     from crapkit.lane_sources import record
 
-    root = _repo(tmp_path, {"src/a.ts": "a\n", "src/b.ts": "b\n"})
+    root = _repo(tmp_path, {"src/a.ts": "a\n", "src/b.ts": "b\n"}, nested=nested)
     stale_tree.git(root, "update-index", "--skip-worktree", "src/a.ts")
     stale_tree.git(root, "update-index", "--assume-unchanged", "src/b.ts")
     stale_tree.write(root / "src/a.ts", "edited a\n")
@@ -263,12 +269,13 @@ def test_a_tracked_file_deleted_before_the_run_is_not_a_change_after_it(tmp_path
 
 # --- the readers, one matrix row at a time -----------------------------------
 
-def _prepared(name: str, tmp_path: Path, monkeypatch) -> tuple[Path, tuple[str, ...]]:
+def _prepared(name: str, tmp_path: Path, monkeypatch,
+              nested: bool = False) -> tuple[Path, tuple[str, ...]]:
     """The repo after the event, and the paths that moved in it."""
     if name == "symlink-add" and not stale_tree.symlinks_work(tmp_path):
         pytest.skip("needs os.symlink: developer mode or elevation on Windows (runs on ubuntu CI)")
     event = EVENTS[name]
-    root = event.prepare(tmp_path)
+    root = event.prepare(tmp_path, nested=nested)
     if name == "git-missing":
         monkeypatch.setenv("PATH", str(tmp_path))
     return root, _truth(name, root, event.moved)
@@ -301,8 +308,22 @@ def test_the_reuse_warning_names_exactly_the_files_whose_bytes_moved(name, tmp_p
                                                                      capsys):
     root, truth = _prepared(name, tmp_path, monkeypatch)
 
-    warning = _reuse_warning(root, capsys)
+    _assert_the_warning_names(name, _reuse_warning(root, capsys), truth)
 
+
+@pytest.mark.parametrize("name", stale_tree.NESTED)
+def test_under_a_root_below_the_checkout_top_the_warning_names_the_files_that_moved(
+        name, tmp_path, monkeypatch, capsys):
+    """A monorepo member keeps crapkit.toml one directory below .git. git
+    hash-object reads `--stdin-paths` from the checkout's top, so every file
+    the index could not vouch for came back `could not open`, and the warning
+    said git could not answer where it should have named the file."""
+    root, truth = _prepared(name, tmp_path, monkeypatch, nested=True)
+
+    _assert_the_warning_names(name, _reuse_warning(root, capsys), truth)
+
+
+def _assert_the_warning_names(name: str, warning: str, truth) -> None:
     if not truth:
         assert warning == "", warning
         return
@@ -375,19 +396,24 @@ def _explained(root: Path) -> tuple[str, list[int]]:
     return lines.note_for(REL), lines.in_span(REL, 1, 20)
 
 
-def test_a_measurement_of_an_uncommitted_edit_is_fresh_at_once(tmp_path):
-    root = stale_tree.build(tmp_path / "repo")
+@PLACES
+def test_a_measurement_of_an_uncommitted_edit_is_fresh_at_once(tmp_path, nested):
+    """Below the checkout's top, the run's own record of the edited file
+    failed, so the stamp held no blob ids and its commit judged it stale."""
+    root = stale_tree.build(**stale_tree.placed(tmp_path, nested))
     stale_tree.write(root / REL, stale_tree.APP_TS + "\nexport const more = 1;\n")
     stale_tree.measure(root)
 
     assert _explained(root) == ("", sorted(DARK))
+    assert REL in stale_tree.stamp(root)["coverage/coverage-final.json"]["blobs"]
 
 
-def test_reverting_the_edit_a_lane_measured_withholds_its_lines(tmp_path):
+@PLACES
+def test_reverting_the_edit_a_lane_measured_withholds_its_lines(tmp_path, nested):
     """The artifact measured an edit that pushed every line down by two. git
     calls the reverted tree clean, and the old verdict served the shifted lines
     against it with no note."""
-    root = stale_tree.build(tmp_path / "repo")
+    root = stale_tree.build(**stale_tree.placed(tmp_path, nested))
     stale_tree.write(root / REL, "// one\n// two\n" + stale_tree.APP_TS)
     stale_tree.measure(root)
     stale_tree.git(root, "checkout", "--", REL)
@@ -397,11 +423,12 @@ def test_reverting_the_edit_a_lane_measured_withholds_its_lines(tmp_path):
     assert lines == [] and "changed since coverage/coverage-final.json measured it" in note
 
 
-def test_the_reuse_warning_judges_the_bytes_the_run_measured(tmp_path, capsys):
+@PLACES
+def test_the_reuse_warning_judges_the_bytes_the_run_measured(tmp_path, capsys, nested):
     """The warning compared the stamp's commit with the tree: it fired right
     after a run on an uncommitted edit, and went quiet once that edit was
     reverted, while the artifact still described the edit."""
-    root = stale_tree.build(tmp_path / "repo")
+    root = stale_tree.build(**stale_tree.placed(tmp_path, nested))
     stale_tree.write(root / REL, "// one\n// two\n" + stale_tree.APP_TS)
     stale_tree.measure(root)
 

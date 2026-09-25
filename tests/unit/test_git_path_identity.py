@@ -65,6 +65,24 @@ def test_dirty_history_and_diff_keys_equal_tracked_paths(repository, name, neste
     assert gitio.renamed_paths(root, before_rename) == {name: moved}
 
 
+@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("nested", [False, True])
+def test_the_index_blob_reader_keys_each_name_as_the_mode_reader_does(repository, name, nested):
+    """A lane's stamp keys each file's blob id by the path index_blobs splits
+    out of an `ls-files -s -z` record, and the hook check reads index_modes from
+    the same records: a name holding a tab, a line break or a leading space
+    keeps one spelling in both, and its id is the one `git add` gave the bytes."""
+    root = repository / "app" if nested else repository
+    root.mkdir(exist_ok=True)
+    (root / name).write_text("def f():\n    return 1\n", encoding="utf-8")
+    git(repository, "add", ".")
+
+    blobs = gitio.index_blobs(root)
+
+    assert set(blobs) == set(gitio.index_modes(root, ".")) == {name}
+    assert blobs == gitio.worktree_blobs(root, [name])
+
+
 @pytest.mark.parametrize("workers", [1, 2])
 def test_mutation_workers_receive_dirty_leading_space_dependency(repository, workers):
     source = "def enabled():\n    return True\n"

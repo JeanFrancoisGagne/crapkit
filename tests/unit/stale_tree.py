@@ -121,10 +121,12 @@ def touch(path: Path) -> None:
 
 def build(root: Path, *, gitcfg: dict | None = None, attrs: str = "", app: str = APP_TS,
           extra: dict | None = None, byproduct: str = "", inputs: tuple[str, ...] = (),
-          ignore: str = ".crapkit/\ncoverage/\n") -> Path:
-    """A committed repo with one lane over `src`, not measured yet."""
+          ignore: str = ".crapkit/\ncoverage/\n", top: Path | None = None) -> Path:
+    """A committed repo with one lane over `src`, not measured yet. `top` is
+    the checkout's top when the crapkit root sits below it, as a monorepo
+    member does."""
     root.mkdir(parents=True, exist_ok=True)
-    git(root, "init", "-q", "-b", "main")
+    git(top or root, "init", "-q", "-b", "main")
     for key, value in (gitcfg or {}).items():
         git(root, "config", key, value)
     files = {".gitignore": ignore, "crapkit.toml": toml(byproduct, inputs),
@@ -137,6 +139,14 @@ def build(root: Path, *, gitcfg: dict | None = None, attrs: str = "", app: str =
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "init")
     return root
+
+
+def placed(tmp: Path, nested: bool = False) -> dict:
+    """build()'s root, and the checkout's top when `nested` puts the crapkit
+    root one directory below it."""
+    if nested:
+        return {"root": tmp / "top" / "member", "top": tmp / "top"}
+    return {"root": tmp / "repo"}
 
 
 def config(root: Path):
@@ -194,11 +204,12 @@ class Event:
     app: str = APP_TS
     unknown: bool = False
 
-    def prepare(self, tmp: Path, **build_args) -> Path:
+    def prepare(self, tmp: Path, *, nested: bool = False, **build_args) -> Path:
         """The measured repo with this event applied; the returned root is the
-        one to read (a clone for the clone rows)."""
-        root = measure(build(tmp / "repo", gitcfg=self.gitcfg, attrs=self.attrs, app=self.app,
-                             **build_args))
+        one to read (a clone for the clone rows). `nested` puts the crapkit
+        root one directory below the checkout's top."""
+        root = measure(build(**placed(tmp, nested), gitcfg=self.gitcfg, attrs=self.attrs,
+                             app=self.app, **build_args))
         return self.act(root) or root
 
 
@@ -326,6 +337,11 @@ EVENTS = {event.name: event for event in (
           moved=(REL,)),
     Event("git-missing", _without_git, moved=(REL,), unknown=True),
 )}
+
+
+# The rows a crapkit root one directory below the checkout's top can take: a
+# clone copies the whole checkout, so the clone rows stay at the top.
+NESTED = sorted(name for name in EVENTS if "clone" not in name)
 
 
 def symlinks_work(tmp: Path) -> bool:
