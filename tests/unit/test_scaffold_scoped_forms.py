@@ -7,10 +7,9 @@ the repo's test directory named unless pytest's testpaths already covers it;
 by the runner package.json names, never by the language, and an npm workspace
 runs its own script. One comment line above each entry names the form chosen.
 """
-import json
-
 from crapkit.config import load_config_text
-from crapkit.scaffold import LaneSpec, detect_lanes, runner_workspaces, starter_toml
+from crapkit.scaffold import (LaneSpec, NpmPackage, detect_lanes, npm_package,
+                              runner_workspaces, starter_toml)
 from crapkit.universe import is_test_file, scopes_with_tests
 
 PY = {"pkg": ("python",)}
@@ -29,8 +28,8 @@ def _comment_above(text: str, scope: str) -> str:
     return lines[lines.index(_entry(text, scope)) - 1]
 
 
-def _package(**payload) -> str:
-    return json.dumps(payload)
+def _package(**payload) -> NpmPackage:
+    return npm_package(payload)
 
 
 # --- the predicate both init and doctor read -----------------------------------

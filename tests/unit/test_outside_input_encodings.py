@@ -9,8 +9,8 @@ handed to alert_command, and Claude Code's plugin record under non-ASCII
 directories.
 
 package.json follows one rule. A UTF-8 BOM is read past, as npm reads it. A
-root package.json in UTF-16 or holding a byte that is not UTF-8 is refused by
-name, because the js lane comes from it. Any other package.json that cannot be
+root package.json in UTF-16, holding a byte that is not UTF-8, or not one JSON
+object is refused by name, because the js lane comes from it. Any other package.json that cannot be
 read is skipped with one warning naming it, because a fixture that init never
 needed must not stop init.
 """
@@ -93,6 +93,10 @@ SKIPPED = [
     pytest.param(_json(WORKSPACES), "web/package.json", LATIN1_RUNNER, id="workspace-latin1"),
     pytest.param(_json(RUNNER), "tests/fixtures/old/package.json", LATIN1_RUNNER,
                  id="latin1-fixture-beside-a-good-root"),
+    pytest.param(_json(RUNNER), "tests/fixtures/old/package.json", b"{ not json",
+                 id="not-json-fixture-beside-a-good-root"),
+    pytest.param(_json(WORKSPACES), "web/package.json", b"[]", id="workspace-top-level-list"),
+    pytest.param(_json(WORKSPACES), "web/package.json", b"", id="workspace-empty-file"),
 ]
 
 
@@ -120,6 +124,31 @@ def test_init_refuses_a_root_package_json_it_cannot_read_by_name(tmp_path, capsy
     assert code == 3, err
     assert not (root / "crapkit.toml").exists()
     assert "package.json" in err and err.startswith("crapkit: ")
+
+
+NOT_ONE_OBJECT = [
+    # id, root package.json bytes, what the refusal says after "package.json "
+    ("not-json", b"{ not json", "is not valid JSON (Expecting property name enclosed in double "
+                                "quotes at line 1 column 3); fix that line"),
+    ("empty-file", b"", "is not valid JSON (Expecting value at line 1 column 1); fix that line"),
+    ("top-level-list", b"[]", "holds an array, not a JSON object; save one object there"),
+    ("null", b"null", "holds null, not a JSON object; save one object there"),
+]
+
+
+@pytest.mark.parametrize("body, said", [row[1:] for row in NOT_ONE_OBJECT],
+                         ids=[row[0] for row in NOT_ONE_OBJECT])
+def test_init_refuses_a_root_package_json_that_is_not_one_json_object(tmp_path, capsys, body,
+                                                                       said):
+    """npm refuses each of these with EJSONPARSE. init read them as an empty
+    object and wrote a config with no js lane and no word about why."""
+    root, code, err = _init(tmp_path, {b"package.json": body, b".gitignore": b"build/\n"},
+                            capsys)
+
+    assert code == 3, err
+    assert err == f"crapkit: init wrote no file: package.json {said}\n"
+    assert not (root / "crapkit.toml").exists()
+    assert (root / ".gitignore").read_bytes() == b"build/\n"
 
 
 # --- .gitignore ------------------------------------------------------------------------

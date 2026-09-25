@@ -74,7 +74,7 @@
   string`; both end `reinstall the plugin or repair that file`. A number or a list there
   also ended a search over several installs in a traceback.
 
-### `init` reads a package.json whose fields are null or of another type
+### `init` reads package.json and .gitignore the way npm and git do, and finishes a half-done init
 
 - `init` no longer ends in a TypeError, before it writes `crapkit.toml`, on a
   `package.json` whose `scripts` or `devDependencies` is null or a number, at the root or in
@@ -83,6 +83,23 @@
   the strings in it.
 - A `scripts` list such as `["test"]`, or a string such as `"vitest run"`, no longer writes
   an `npm run test` lane: npm has no such script, and the lane failed on its first run.
+- `init` reads each `package.json` past a UTF-8 byte-order mark, as npm does; a BOM cost the
+  js lane in silence. A root `package.json` npm could not read either stops `init` at exit 3
+  before it writes any file, naming the file and the fix: one in UTF-16 or holding a byte
+  that is not UTF-8 (`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36);
+  save it as UTF-8`), where 0.8.0 ended in a traceback after `crapkit.toml` was written, and
+  one that does not parse or holds something other than a JSON object (`package.json holds
+  an array, not a JSON object; save one object there`), which 0.8.0 read as a package.json
+  naming no runner, so the js lane went missing without a word. A nested one, a test
+  fixture say, is skipped with one line naming it.
+- `init` appends to `.gitignore` as git reads it, as bytes: a cp1252 comment, CRLF lines and
+  a byte-order mark stay byte for byte, and the new entries take the file's own line
+  ending, where a CRLF `.gitignore` came back all LF and a cp1252 comment ended `init` after
+  `crapkit.toml` was written. A UTF-16 `.gitignore` is named with the fix and left as it was.
+- `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
+  left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
+  `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so
+  `.crapkit/` was never ignored.
 
 ### The MCP server refuses `params` and `arguments` that are not objects in words an agent can act on
 

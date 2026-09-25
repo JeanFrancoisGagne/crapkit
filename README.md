@@ -1021,11 +1021,20 @@ carry the same launcher, so uncommenting one cannot hand the bare `python` back.
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live).
 
-`init` reads `package.json` the way npm does, a UTF-8 byte-order mark dropped and a stray
-cp1252 byte read as U+FFFD, and appends to `.gitignore` in that file's own line ending without
-touching a byte already there. A UTF-16 `package.json` or `.gitignore` (what PowerShell 5.1's
-`Out-File` writes), which npm and git cannot read either, is named on stderr with the fix and
-left as it was.
+`init` reads each `package.json` past a UTF-8 byte-order mark, as npm does. A root
+`package.json` that npm could not read either stops `init` at exit 3 before it writes any
+file, naming the file and the fix, since a lane read off such a file would be a guess: one in
+UTF-16 (what PowerShell 5.1's `Out-File` writes), one holding a byte that is not UTF-8, one that
+does not parse and one that holds something other than a JSON object, as in
+`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36); save it as UTF-8`. A
+nested one, a test fixture say, is skipped with one warning line naming it.
+
+`init` writes `.gitignore` before `crapkit.toml`, and appends in that file's own line ending
+without touching a byte already there. A UTF-16 `.gitignore`, which git cannot read either, is
+named on stderr with the fix and left as it was. Run `init` again over an existing
+`crapkit.toml` and it adds the `.gitignore` entries its lanes need, says what it finished,
+exits 0 and leaves `crapkit.toml` byte for byte; with nothing missing it refuses with
+`already exists`.
 
 ```toml
 [crapkit]

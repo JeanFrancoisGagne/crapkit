@@ -164,20 +164,23 @@ def _marker_texts(root: Path) -> dict[str, str]:
 
 
 
-def _package_json(root: Path) -> dict[str, str]:
-    """Every tracked package.json's text, keyed by the directory holding it and
-    "" for the root one.
+def _package_json(root: Path) -> dict:
+    """Every tracked package.json, parsed once here into the fields init reads
+    (scaffold.NpmPackage), keyed by the directory holding it and "" for the
+    root one. No other module parses the file.
 
     A monorepo names its test runner in the workspace that owns the tests. Read
     from the root alone, init bound the js lane to a root script that only
     chains the workspaces and produces no coverage of its own. A vendored
     node_modules is skipped: its packages describe somebody else's tests.
     """
-    found: dict[str, str] = {}
+    from ..scaffold import npm_package
+
+    found = {}
     for path in _package_files(root):
-        text = _package_text(root, path)
-        if text is not None:
-            found[path.rpartition("/")[0]] = text
+        data = _package_object(root, path)
+        if data is not None:
+            found[path.rpartition("/")[0]] = npm_package(data)
     return found
 
 
@@ -186,22 +189,24 @@ def _package_files(root: Path) -> list[str]:
             and "node_modules/" not in path and (root / path).is_file()]
 
 
-def _package_text(root: Path, rel: str) -> str | None:
-    """A package.json read by the JSON rule: UTF-8, a byte-order mark read past
-    as npm reads past it. A BOM used to cost the js lane in silence, and one é
-    ended init with a traceback after crapkit.toml was written.
+def _package_object(root: Path, rel: str) -> dict | None:
+    """A package.json read by repotext's JSON kind: UTF-8, a byte-order mark read
+    past as npm reads past it, one JSON object. A BOM used to cost the js lane
+    in silence, one é ended init with a traceback after crapkit.toml was
+    written, and a file that did not parse read as an empty one.
 
-    A root package.json in UTF-16 or holding a byte that is not UTF-8 stops init
-    before it writes anything: the lane comes from that file, and a lane read
-    off a guess is worse than none. A nested one, a test fixture say, is
-    skipped with one line naming it."""
+    A root package.json init cannot read stops init before it writes anything:
+    the lane comes from that file, and a lane read off a guess is worse than
+    none. A nested one, a test fixture say, is skipped with one line naming it."""
+    from ..repotext import repo_json
+
     if "/" not in rel:
         try:
-            return repo_text(root / rel, rel)
+            return repo_json(root / rel, rel)
         except ConfigError as exc:
             raise ConfigError(f"init wrote no file: {exc}") from None
     try:
-        return repo_text(root / rel, "it")
+        return repo_json(root / rel, "it")
     except ConfigError as exc:
         print(f"crapkit: init skipped {rel}: {exc}", file=sys.stderr)
         return None
@@ -242,7 +247,7 @@ def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
             "template, each with its own cwd and artifact")
 
 
-def _print_init_summary(scopes: dict, lanes: tuple, package_json="") -> None:
+def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
     from ..scaffold import live_lanes
 
     print(f"wrote crapkit.toml with {len(scopes)} scope(s): {', '.join(scopes)}")
