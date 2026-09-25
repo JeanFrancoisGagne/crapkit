@@ -10,16 +10,14 @@ and the lockable files wait for the lock.
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 
 import pytest
 
+from accuracy.change_control import cc_seeds
+from accuracy.kit.test_kit_contract import KIT_CLOSED
+
 REPO = Path(__file__).resolve().parents[3]
-TOOLS = REPO / "tools" / "accuracy"
-if str(TOOLS) not in sys.path:
-    sys.path.append(str(TOOLS))
-import change_control as cc  # noqa: E402
-from accuracy.kit.test_kit_contract import KIT_CLOSED  # noqa: E402
+cc = cc_seeds.tool()
 
 
 pytestmark = pytest.mark.change_control

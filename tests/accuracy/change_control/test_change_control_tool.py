@@ -21,10 +21,7 @@ from accuracy.change_control import cc_seeds as seeds
 from accuracy.kit import corpus_run, repos
 
 REPO = Path(__file__).resolve().parents[3]
-TOOLS = REPO / "tools" / "accuracy"
-if str(TOOLS) not in sys.path:
-    sys.path.append(str(TOOLS))
-import change_control as cc  # noqa: E402
+cc = seeds.tool()
 
 BASE = seeds.base()
 

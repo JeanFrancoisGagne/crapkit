@@ -18,6 +18,9 @@ define rather than compute: the metric digest (metric_digest, corpus_digest).
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+from pathlib import Path
+import sys
 
 HOME = "tests/accuracy/change_control"
 CHANGES = f"{HOME}/CHANGES.tsv"
@@ -38,6 +41,24 @@ SCORED = f"{GOLDENS}/scored.tsv"
 INVENTORY = f"{GOLDENS}/inventory.tsv"
 WORKLIST = f"{GOLDENS}/worklist.json"
 SOURCE = "tests/accuracy/corpus_goldens/small/src/a.py"
+TOOL = Path(__file__).resolve().parents[3] / "tools" / "accuracy" / "change_control.py"
+TOOL_NAME = "accuracy_change_control_tool"
+
+
+def tool():
+    """tools/accuracy/change_control.py, loaded by path once per session.
+
+    Every test takes the tool from here and never imports it by module name: a
+    module loaded by path is one the mutation stage renames to the name its
+    mutants are keyed by (tools/accuracy/mutation.py), so a mutant is live
+    inside these tests."""
+    loaded = sys.modules.get(TOOL_NAME)
+    if loaded is None:
+        spec = importlib.util.spec_from_file_location(TOOL_NAME, TOOL)
+        loaded = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = sys.modules[TOOL_NAME] = loaded
+        spec.loader.exec_module(loaded)
+    return loaded
 ANALYZE = "src/crapkit/analyze.py"
 MODULE = "src/crapkit/score.py"
 HOOK = "src/crapkit/hook.py"
@@ -186,19 +207,16 @@ def replace(tree: dict[str, str], path: str, old: str, new: str) -> dict[str, st
 
 
 def _tree_bytes(tree: dict[str, str]):
-    import change_control
-    return change_control.DictTree({path: text.encode("utf-8") for path, text in tree.items()})
+    return tool().DictTree({path: text.encode("utf-8") for path, text in tree.items()})
 
 
 def corpus_digest(tree: dict[str, str]) -> str:
-    import change_control
-    return change_control.corpus_digest(_tree_bytes(tree))
+    return tool().corpus_digest(_tree_bytes(tree))
 
 
 def with_digest(tree: dict[str, str], analysis: str, change: str) -> dict[str, str]:
     """A metric-digests row for the tree's goldens under this analysis version."""
-    import change_control
-    digest = change_control.metric_digest(_tree_bytes(tree))
+    digest = tool().metric_digest(_tree_bytes(tree))
     return append(tree, DIGESTS, analysis, "1.24.0", corpus_digest(tree), digest, change)
 
 

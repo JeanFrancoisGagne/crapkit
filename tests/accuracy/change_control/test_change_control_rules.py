@@ -19,7 +19,6 @@ from fractions import Fraction
 import hashlib
 from pathlib import Path
 import re
-import sys
 
 from hypothesis import given, strategies as st
 import pytest
@@ -29,10 +28,7 @@ from accuracy.kit import repos
 from accuracy.kit.settings import pure
 
 REPO = Path(__file__).resolve().parents[3]
-TOOLS = REPO / "tools" / "accuracy"
-if str(TOOLS) not in sys.path:
-    sys.path.append(str(TOOLS))
-import change_control as cc  # noqa: E402
+cc = seeds.tool()
 
 LIZARD = "1.24.0"
 BASE = seeds.base()
