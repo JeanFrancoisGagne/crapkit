@@ -68,7 +68,11 @@ A commit, file name, report or MCP frame that is not UTF-8 no longer ends a comm
   version bump. `mutate` writes a mutant back in the file's own encoding: in a cp1252 or
   Latin-1 file every accented byte outside the mutated line became EF BF BD, and 2 of 2
   mutants read killed where the UTF-8 twin kills 0. `brief --json`'s `source` reads the
-  file the way the scorer does. The analysis cache version moves, so the first run reads
+  file the way the scorer does. An edit to a UTF-16 file is judged on the line it is on:
+  git counts a line at every 0A byte of such a file, and one character such as 上
+  (U+4E0A) above a ccn-8 function moved an edit on its last line below the function, so
+  `hook-precommit` exited 0 and `verify`, `claude-hook` and `mutate` read the edit as
+  touching nothing. The analysis cache version moves, so the first run reads
   every file again.
 - Every reader of the marks file (`verify`, `ratchet report`, `brief`, the advisory hook,
   the override grant and the merge driver) reads it by one rule: UTF-16 by its byte-order

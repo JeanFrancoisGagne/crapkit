@@ -99,3 +99,82 @@ def changed_ranges(diff_text: str) -> dict[str, list[tuple[int, int]]]:
         if m:
             rem_old, rem_new = _record_hunk(m, current, ranges)
     return _files_with_hunks(ranges)
+
+
+# --- a UTF-16 file's lines ------------------------------------------------------------
+#
+# git summarizes a UTF-16 file as binary, and its `--text` patch counts a line at
+# every 0A byte. A code unit holding one that is not U+000A (上 is U+4E0A, 0A 4E in
+# UTF-16LE; U+0A0A holds two) adds a line the text does not have, so each hunk
+# below it lands late. These map git's lines onto the text lines the scorer counts
+# (analyze.decode_source: CRLF, a lone CR and LF each end one line).
+
+_BOM_LENGTH = 2
+
+
+def utf16_line_spans(raw: bytes) -> list[tuple[int, int]]:
+    """For each line git counts in a UTF-16 file that opens with its byte-order
+    mark, the first and last text line it covers."""
+    starts = [0] + [m.end() for m in re.finditer(b"\n", raw) if m.end() < len(raw)]
+    ends = [start - 1 for start in starts[1:]] + [len(raw) - 1]
+    lines = _unit_lines(_code_units(raw))
+    return [(_line_at(lines, -(-(start - _BOM_LENGTH) // 2)), _line_at(lines, (end - _BOM_LENGTH) // 2))
+            for start, end in zip(starts, ends)]
+
+
+def _code_units(raw: bytes) -> list[int]:
+    """The 16-bit code units after the byte-order mark; a last odd byte is one
+    more unit, as the decoder reads it as one more character."""
+    body = raw[_BOM_LENGTH:] + b"\0" * (len(raw) % 2)
+    order = "little" if raw.startswith(b"\xff\xfe") else "big"
+    return [int.from_bytes(body[i:i + 2], order) for i in range(0, len(body), 2)]
+
+
+def _unit_lines(units: list[int]) -> list[int]:
+    """The text line each code unit sits on."""
+    lines, line = [], 1
+    for i, unit in enumerate(units):
+        lines.append(line)
+        line += _ends_line(unit, units[i + 1] if i + 1 < len(units) else None)
+    return lines
+
+
+def _ends_line(unit: int, following: int | None) -> int:
+    """1 when this code unit ends a text line: LF, or a CR no LF follows."""
+    return int(unit == 0x0A or (unit == 0x0D and following != 0x0A))
+
+
+def _line_at(lines: list[int], unit: int) -> int:
+    """The line of a code unit, the nearest one when the index runs off either end."""
+    if not lines:
+        return 1
+    return lines[min(max(unit, 0), len(lines) - 1)]
+
+
+def text_line_ranges(ranges: list[tuple[int, int]], spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Ranges in git's lines, moved onto text lines by `utf16_line_spans`."""
+    def span(line: int) -> tuple[int, int]:
+        return spans[min(max(line, 1), len(spans)) - 1]
+    return [(span(first)[0], span(last)[1]) for first, last in ranges]
+
+
+def rendered_ranges(ranges_by_path: dict[str, list[tuple[int, int]]]) -> str:
+    """A `-U0` patch whose hunks cover exactly these new-side ranges, which
+    changed_ranges reads back unchanged. Each path is C-quoted."""
+    return "".join(f"+++ {_quoted('b/' + path)}\n" + "".join(_hunk(first, last) for first, last in ranges)
+                   for path, ranges in ranges_by_path.items())
+
+
+def _hunk(first: int, last: int) -> str:
+    count = last - first + 1
+    return f"@@ -0,0 +{first},{count} @@\n" + "+\n" * count
+
+
+def _quoted(path: str) -> str:
+    """git's C quoting, every byte outside printable ASCII in octal, so a name
+    with a newline, a quote or a byte that is not UTF-8 reads back as itself."""
+    return '"' + "".join(_quoted_byte(b) for b in path.encode("utf-8", "surrogateescape")) + '"'
+
+
+def _quoted_byte(b: int) -> str:
+    return chr(b) if 0x20 <= b < 0x7F and b not in (0x22, 0x5C) else "\\" + format(b, "03o")

@@ -121,7 +121,10 @@ does. No cp1252 file can spell those five letters, so no name read this way coll
 with one a file wrote.
 Inventory, the pre-commit gate, the advisory hook and `brief --json`'s `source` all
 read it that way. `mutate` writes a mutant back in the file's own encoding and
-changes no byte outside the mutated line.
+changes no byte outside the mutated line. git's text fallback for a UTF-16 file
+counts a line at every 0A byte, and a character such as 上 (U+4E0A) holds one, so
+crapkit moves each changed range onto the text lines the scorer counts: an edit
+lands on the function it is in, whatever characters sit above it.
 
 ## `[crapkit]`
 

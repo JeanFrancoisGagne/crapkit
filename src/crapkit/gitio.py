@@ -13,10 +13,11 @@ from contextlib import contextmanager
 from itertools import chain
 from pathlib import Path
 
+from .diffparse import changed_ranges, rendered_ranges, text_line_ranges, utf16_line_spans
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, readable, split_record
 from .records import record_lines
-from .textcodec import lenient, marks_text
+from .textcodec import lenient, marks_text, utf16_marked
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(rb"^\0(-?\d+)\n", re.MULTILINE)
@@ -485,7 +486,7 @@ class SourcePatch:
 
     UTF-8 surrogateescape preserves opaque body bytes, including admitted cp1252
     source. It does not replace bytes or relax path decoding: a header or NUL
-    record that names a file in bytes that are not UTF-8 leaves that file out
+    record keeps a name that is not UTF-8 in its surrogateescape spelling
     (gitpaths), and every other path keeps its exact spelling.
     """
 
@@ -498,16 +499,43 @@ class SourcePatch:
         if "\nBinary files " not in patch:
             return patch
         paths = _binary_source_paths(self._root, self._basis, self._paths)
-        if not paths:
-            return patch
-        forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True), stdin=False)
-        try:
-            return patch + forced.result().decode("utf-8", "surrogateescape")
-        finally:
-            forced.close()
+        return patch + _forced_patch(self._root, self._basis, paths) if paths else patch
 
     def close(self) -> None:
         self._read.close()
+
+
+def _forced_patch(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> str:
+    """The `--text` patch of the source paths git summarized as binary. A UTF-16
+    one among them gets its ranges on its text lines: git counts a line at every
+    0A byte, and a character such as 上 (U+4E0A) holds one (PRD U29)."""
+    utf16 = {path: raw for path, raw in _new_sides(root, basis, paths).items() if utf16_marked(raw)}
+    plain = tuple(path for path in paths if path not in utf16)
+    return _text_patch(root, basis, plain) + _utf16_patch(root, basis, utf16)
+
+
+def _new_sides(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> dict[str, bytes]:
+    """What each path holds on the new side of the diff `basis` names: the
+    index under --cached, else the working tree. A path that side does not
+    hold, a deletion, has no entry."""
+    if "--cached" in basis:
+        return staged_blobs(root, _git_paths(root, "--literal-pathspecs", "ls-files", "-z", "--", *paths))
+    return {path: (root / path).read_bytes() for path in paths if (root / path).is_file()}
+
+
+def _text_patch(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> str:
+    if not paths:
+        return ""
+    raw = _git_bytes(root, *_source_diff_args(basis, paths, force_text=True))
+    return raw.decode("utf-8", "surrogateescape")
+
+
+def _utf16_patch(root: Path, basis: tuple[str, ...], sides: dict[str, bytes]) -> str:
+    """The UTF-16 files' ranges, git's lines moved onto text lines and rendered
+    back as a patch (diffparse), so every reader of the patch sees text lines."""
+    found = changed_ranges(_text_patch(root, basis, tuple(sides)))
+    return rendered_ranges({path: text_line_ranges(ranges, utf16_line_spans(sides[path]))
+                            for path, ranges in found.items() if path in sides})
 
 
 def _read_source_patch(root: Path, *basis: str) -> str:
