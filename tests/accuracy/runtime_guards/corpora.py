@@ -2,10 +2,15 @@
 
 The full corpus is a directory of member directories: CRAPKIT_ACCURACY_CORPUS
 when set, else %LOCALAPPDATA%/crapkit-accuracy/corpus when it exists, else
-/corpus, where the accuracy image bakes it. Each member is copied into a fresh
-one-commit repo and scored with one root scope that asks for no coverage, so
-every function it holds reaches the store, the worklist, the queue, the digest,
-the marks and verify without a suite to run.
+/corpus, where the accuracy image bakes it. A member is a directory holding the
+crapkit.toml tools/accuracy/corpus.py generates. Each member is copied into a
+fresh one-commit repo and scored with one root scope that asks for no coverage,
+so every function it holds reaches the store, the worklist, the queue, the
+digest, the marks and verify without a suite to run.
+
+A one-commit repo weighs every commit 1.0, so the churn bound's other half (a
+commit weighs at most 0.5 once the log has a range) needs real history: each
+history/<member>.bundle is cloned and scored the same way over its own log.
 """
 from __future__ import annotations
 
@@ -41,7 +46,13 @@ def full_corpus() -> Path:
 
 
 def members(root: Path) -> list[Path]:
-    return sorted(path for path in root.iterdir() if path.is_dir()) if root.is_dir() else []
+    """The member directories, each holding its generated crapkit.toml."""
+    return sorted(path.parent for path in root.glob("*/crapkit.toml"))
+
+
+def histories(root: Path) -> list[Path]:
+    """The members' history bundles."""
+    return sorted(root.glob("history/*.bundle"))
 
 
 def _languages() -> list[str]:
@@ -65,4 +76,15 @@ def member_repo(member: Path, work: Path) -> Path:
         repos.git(work, "config", key, value)
     repos.git(work, "add", "-A")
     repos.git(work, "commit", "-q", "-m", "corpus", date=repos.EPOCH)
+    return work
+
+
+def history_repo(bundle: Path, work: Path) -> Path:
+    """The bundle's history cloned at `work`, scored under the cc-only config.
+    The config stays out of the log, so every commit keeps the member's own date."""
+    work.parent.mkdir(parents=True, exist_ok=True)
+    repos.git(work.parent, "clone", "-q", str(bundle), work.name)
+    (work / "crapkit.toml").write_text(cc_only_config(), encoding="utf-8", newline="\n")
+    with open(work / ".git" / "info" / "exclude", "a", encoding="utf-8") as exclude:
+        exclude.write("/crapkit.toml\n")
     return work
