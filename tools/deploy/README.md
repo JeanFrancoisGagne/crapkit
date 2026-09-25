@@ -141,11 +141,11 @@ rebuilds on the first run of each week, and every run writes
 ### cells-arm64 on an x86_64 machine
 
 An x86_64 Docker host builds and runs `cells-arm64` under QEMU, which needs a
-binfmt handler for arm64. Before it builds `cells-arm64`, run.py starts the
-pinned Debian image for linux/arm64 once. When that fails it builds nothing
-and prints the fix:
+binfmt handler for arm64. Before it builds `cells-arm64` or runs a cell in
+it, run.py starts the pinned Debian image for linux/arm64 once, which takes
+about 3 s. When that fails it stops there and prints the fix:
 
-    run: this Docker host cannot run linux/arm64 containers (<docker's last line>); register QEMU once with `docker run --privileged --rm tonistiigi/binfmt --install arm64`, or build cells-arm64 on an arm64 host
+    run: this Docker host cannot run linux/arm64 containers (<docker's last line>); register QEMU once with `docker run --privileged --rm tonistiigi/binfmt --install arm64`, or build and run cells-arm64 on an arm64 host
 
 Run the `docker run --privileged --rm tonistiigi/binfmt --install arm64` line
 and start run.py again. Docker Desktop dropped the handler twice in one day on
@@ -167,7 +167,7 @@ content a registry or the GitHub Actions cache would hold.
 | Image | On disk | Compressed | Cold (`--no-cache`) | Warm | No change |
 |---|---|---|---|---|---|
 | `cells` | 2.01 GB | 494 MB | 356 s | 22.5 s | 0.9 s |
-| `cells-arm64` | 1.90 GB | 508 MB | 1028 s | 27.8 s | 0.3 s |
+| `cells-arm64` | 1.90 GB | 508 MB | 1028 s | 27.8 s | 3.4 s |
 | `core` | 5.46 GB | 1.40 GB | 455 s | 26.3 s | 1.2 s |
 | `full` | 13.8 GB | 3.71 GB | 1178 s | 22.3 s | 0.8 s |
 | `full-latest` | 22.1 GB | not measured | 3553 s | not measured | not measured |
@@ -175,8 +175,8 @@ content a registry or the GitHub Actions cache would hold.
 | `gui` | 16.1 GB | 4.31 GB | 1402 s | 41.8 s | 1.1 s |
 
 The `cells-arm64` and `full-latest` rows are from 2026-09-25. The
-`cells-arm64` cold build is its first build under QEMU, and its warm build
-followed a wheel lock change. The `full-latest` 3553 s is a weekly rebuild:
+`cells-arm64` cold build is its first build under QEMU, its warm build
+followed a wheel lock change, and its no-change time is the QEMU check. The `full-latest` 3553 s is a weekly rebuild:
 every `@latest` layer over a cached `full`, with other builds running on the
 machine.
 

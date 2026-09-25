@@ -518,6 +518,19 @@ def test_a_host_that_cannot_run_arm64_is_told_the_fix_before_the_build(monkeypat
         run.build(PINS, "cells-arm64", "local", False, tmp_path)
 
 
+def test_a_host_that_lost_its_handler_is_told_the_fix_before_cells_run_in_a_built_arm64_image(monkeypatch, tmp_path):
+    """With cells-arm64 already built, run.py skipped the build and the check
+    with it: the cells' container stopped at `exec /usr/bin/sh: exec format
+    error`, and run.py printed nothing that named QEMU."""
+    problem = run.emulation_problem(PINS, "cells-arm64", _docker(1, "exec /usr/bin/true: exec format error\n")[0])
+    monkeypatch.setattr(run, "unchanged", lambda *a: True)
+    monkeypatch.setattr(run, "emulation_problem", lambda pins, image: problem)
+    monkeypatch.setattr(run, "image_size", lambda tag: pytest.fail("kept an image this host cannot run"))
+
+    with pytest.raises(SystemExit, match="tonistiigi/binfmt"):
+        run.build(PINS, "cells-arm64", "local", False, tmp_path)
+
+
 def test_a_host_that_runs_arm64_goes_on_to_build():
     runner, _ = _docker(0)
 

@@ -39,7 +39,8 @@ at that step. Output: <out>/junit*.xml, <out>/transcripts/, <out>/build.json
 (build times and image sizes).
 
 An x86_64 host builds and runs cells-arm64 under QEMU. When it cannot run an
-arm64 container, run.py stops before the build; register the handler with
+arm64 container, run.py stops before it builds or runs anything; register the
+handler with
 
     docker run --privileged --rm tonistiigi/binfmt --install arm64
 
@@ -308,7 +309,7 @@ def emulation_problem(pins: dict, image: str, runner=subprocess.run) -> str | No
         return None
     said = (done.stderr.strip().splitlines() or ["no output"])[-1]
     return (f"run: this Docker host cannot run {platform} containers ({said}); register QEMU once with "
-            f"`{QEMU_FIX}`, or build {image} on an arm64 host")
+            f"`{QEMU_FIX}`, or build and run {image} on an arm64 host")
 
 
 BUILD_TAIL = 30
@@ -328,15 +329,17 @@ def build_failure(pins: dict, image: str, log: Path, code: int) -> str:
 def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, requested: str | None = None) -> dict:
     """Build one target and record its time, its size, the builder and
     `docker system df` before and after in <out>/build.json. An image already
-    built from the same inputs is kept, and the record says so."""
+    built from the same inputs is kept, and the record says so. A host that
+    cannot run the image's platform stops here either way: with the build
+    skipped, its cells stopped at `exec format error` and nothing named QEMU."""
     started, tag = time.monotonic(), image_tag(image)
+    problem = emulation_problem(pins, image)
+    if problem:
+        raise SystemExit(problem)
     inputs = inputs_fingerprint(pins, image)
     if unchanged(tag, inputs, no_cache):
         return _record(out, {"image": image, "skipped": "inputs unchanged", "size_bytes": image_size(tag),
                              "seconds": round(time.monotonic() - started, 1)})
-    problem = emulation_problem(pins, image)
-    if problem:
-        raise SystemExit(problem)
     builder = choose_builder(pins, requested, cache)
     before = disk_usage()
     with (out / f"build-{image}.log").open("w", encoding="utf-8") as stream:
