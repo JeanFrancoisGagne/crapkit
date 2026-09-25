@@ -361,6 +361,9 @@ MORE_FAILING = {
         tree, seeds.COUNTS, "score_model\t3\n", ""), {"B4"}),
     "the first bugs.tsv row deleted": (lambda tree: seeds.without_line(
         tree, seeds.BUGS, "R01\t"), {"B2"}),
+    "a golden cell moved with no change": (lambda tree: {
+        **tree, seeds.SCORED: seeds.scored(seeds.scored_rows(f_crap={1: "1.0"}))},
+        {"T2", "T5", "B10"}),
     "a metric-digests row written twice": (lambda tree: seeds.append(
         tree, seeds.DIGESTS, *tree[seeds.DIGESTS].splitlines()[-1].split("\t")), {"T5"}),
 }
@@ -534,6 +537,13 @@ def _facts(name: str, head: dict) -> list[tuple]:
             "B2", f"{seeds.BUGS} lost or changed 1 row(s) the base had, the first being R01",
             f"restore them from the base (git checkout <base> -- {seeds.BUGS}) and add new rows "
             "below them")],
+        "a golden cell moved with no change": [
+            ("T2", f"{seeds.SCORED} changed with no declared change (lock "
+                   f"{_sha12(BASE[seeds.SCORED])}, now {_sha12(head[seeds.SCORED])})",
+             ANY_DECLARE)] + _t5(
+                head, f"the last row has digest {_last_digest(BASE)}, the tree gives {digest}") + [
+            ("B10", "moved calc not declared: CRAP score",
+             f'{DECLARE} C3 --kind fix --calcs "CRAP score" --reason "<why>"')],
         "a metric-digests row written twice": _t5(
             head, f"row 11/1.24.0/{seeds.corpus_digest(head)} appears 2 times"),
     }[name]
@@ -1388,3 +1398,73 @@ def test_the_first_ten_refusals_and_a_count_of_the_rest():
     assert cc._first_ten([f"r{k}" for k in range(10)]) == [f"r{k}" for k in range(10)]
     assert cc._first_ten([f"r{k}" for k in range(12)])[10:] == [
         "... and 2 more moved cells an oracle disagrees with"]
+
+
+@pytest.mark.parametrize("path, compiled", [
+    ("tests/accuracy/kit/__pycache__/goldens.cpython-312.pyc", True),
+    ("tests/accuracy/kit/goldens.pyc", True),
+    ("tests/accuracy/kit/__pycache__/notes.txt", True),
+    ("tests/accuracy/kit/goldens.py", False),
+])
+def test_bytecode_is_anything_under_pycache_or_ending_pyc(path, compiled):
+    assert cc._bytecode(path) is compiled
+
+
+def test_a_cell_whose_row_the_tree_lacks_or_whose_column_has_no_oracle_gets_none():
+    tree = _tree(BASE)
+    nesting = cc.Cell(seeds.SCORED, "src/a.py", "f1", "nesting", "0", "1")
+
+    gone = cc.judge(tree, cc.Cell(seeds.SCORED, "src/a.py", "nope", "crap", "1.0", "2.0"))
+    unjudged = cc.judge(tree, nesting)
+
+    assert (gone.oracle, gone.value, unjudged.cell, unjudged.oracle) == ("", "", nesting, "")
+
+
+def test_table_lines_drop_a_carriage_return_and_blank_lines():
+    assert cc.lines(b"a\tb\r\n\r\nc\td\r\n") == ["a\tb", "c\td"]
+
+
+def test_a_golden_table_on_one_side_only_moves_no_cell():
+    history = "tests/accuracy/corpus_goldens/goldens/history/scored.tsv"
+    head = {**BASE, history: BASE[seeds.SCORED]}
+
+    assert cc.moved_cells(_tree(BASE), _tree(head)) == []
+    assert cc.moved_cells(_tree(head), _tree(BASE)) == []
+
+
+def test_every_fresh_change_keeps_its_listing_problem():
+    """C3 relocks scored.tsv and C4 relocks inventory.tsv; C3's moved.tsv lists
+    nothing, C4's lists its cells. C3's problem stays reported after C4 is read."""
+    head = seeds.fixed_ccn(BASE_CCN8)
+    head = seeds.relock(seeds.change(head, "C4", "fix", seeds.CCN), "C4", seeds.INVENTORY)
+    inventory = [cell for cell in seeds.ccn_cells() if cell[0] == seeds.INVENTORY]
+    head = seeds.moved(seeds.moved(head, "C3", []), "C4", inventory)
+
+    texts = [problem.text for problem in cc.verdict(
+        _tree(BASE_CCN8), _tree(head), cc.running(_tree(head), LIZARD))[0]
+        if problem.rule == "B11"]
+
+    assert texts == ["changes/C3.moved.tsv lists 0 cells that did not move and misses 4 that did"]
+
+
+def test_a_packet_of_one_test_gone_from_the_counts_drops():
+    base = seeds.append(BASE, seeds.COUNTS, "kit", 1)
+
+    assert pure_rules(base, BASE) == {"B4"}
+
+
+def test_a_tree_with_no_small_goldens_digests_nothing():
+    assert cc.metric_digest(seeds.tool().DictTree({})) == "e3b0c44298fc1c14"
+
+
+def test_corpus_source_reads_a_byte_that_is_not_utf8_as_a_replacement():
+    tree = seeds.tool().DictTree({f"{cc.SMALL_CORPUS}/src/a.py": b"x = '\xff'\n"})
+    cell = cc.Cell(seeds.SCORED, "src/a.py", "f", "ccn", "1", "2")
+
+    assert cc.corpus_source(tree, cell) == "x = '\ufffd'\n"
+
+
+def test_the_analysis_version_is_read_past_a_tuple_assignment():
+    tree = seeds.tool().DictTree({cc.ANALYZE: b"a, b = 1, 2\nANALYSIS_VERSION = 12\n"})
+
+    assert cc.analysis_version(tree) == "12"

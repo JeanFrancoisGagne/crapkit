@@ -1076,7 +1076,7 @@ def _initialized(tree) -> bool:
     return bool(changes_of(tree)) or bool(lock_of(tree))
 
 
-def _uninitialized(tree, now: dict) -> list[Problem]:
+def _uninitialized(now: dict) -> list[Problem]:
     if not now:
         return []
     return [Problem("T2", f"{len(now)} locked files wait for the first lock, the first being "
@@ -1095,7 +1095,7 @@ def lock_problems(tree) -> list[Problem]:
     """T2 and T3: the lock and the files it covers agree."""
     now = lockable(tree)
     if not _initialized(tree):
-        return _uninitialized(tree, now)
+        return _uninitialized(now)
     lock, changes = lock_of(tree), changes_of(tree)
     found = (_lock_problem(path, lock.get(path), now.get(path), changes)
              for path in sorted({*lock, *now}))
@@ -1717,10 +1717,9 @@ def base_aware(base, head) -> bool:
     return _initialized(base) or _initialized(head)
 
 
-def verdict(base, head, now: Running, changed: frozenset[str] | None = None,
-            extra: list[Cell] = ()) -> tuple[list[Problem], Diff]:
+def verdict(base, head, now: Running, extra: list[Cell] = ()) -> tuple[list[Problem], Diff]:
     """Every problem between two trees: the in-tree rules on the head, then B1 to B11."""
-    diff = Diff(base, head, changed_paths(base, head) if changed is None else changed, list(extra))
+    diff = Diff(base, head, changed_paths(base, head), list(extra))
     rules = RULES if base_aware(base, head) else ()
     return in_tree(head, now) + [problem for rule in rules for problem in rule(diff)], diff
 
