@@ -396,8 +396,6 @@ def test_an_untracked_file_no_scope_would_score_is_not_named(baselined, capsys):
 # often a verify. The record lives in the store (`write_run(sources=)`, read back
 # through `run_sources`); verify passes its run's `sources` to that write.
 
-@pytest.mark.xfail(not hasattr(SnapshotStore, "run_sources"), strict=True,
-                   reason="this store keeps no per-run content record yet")
 def test_a_verify_run_records_what_each_file_it_scored_held(baselined, capsys):
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
 

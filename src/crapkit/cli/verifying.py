@@ -771,7 +771,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
-                             lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
+                             lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify",
+                             sources=run.sources)
     verdict = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
                                      key_version=key_version, identity_rows=scored,
                                      ratchet_input=saved)

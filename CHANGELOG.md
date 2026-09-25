@@ -150,8 +150,8 @@
   handed out the pre-edit ccn and span, a run measured on an edit that was later reverted
   read fresh, and an amend, an empty commit or a README-only commit set it `true` over an
   identical tree. 0.9.0's schema 2 redefines `stale` as a content difference. Each
-  coverage run now records the blob id of every file it scored in the store; a store 0.8.0
-  wrote opens as before, and its runs read `null`.
+  coverage and verify run now records the blob id of every file it scored in the store; a
+  store 0.8.0 wrote opens as before, and its runs read `null`.
 - Every payload that carries `stale` carries `commands.refresh`, the one call that answers
   both fields.
 - The stop rule in AGENTS.md, `docs/agent-json.md` and the crapkit skill gains a fourth
