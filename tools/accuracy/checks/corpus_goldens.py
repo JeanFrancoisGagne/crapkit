@@ -25,6 +25,10 @@ CHECKS = [
      "pytest": [_PACKET + "test_printed_commands.py"]},
     {"name": "the Action's verdict and comment on three pull requests", "seconds": 10,
      "pytest": [_PACKET + "test_action_scenarios.py"]},
+    {"name": "the store-upgrade rules on hand inputs", "seconds": 1,
+     "pytest": [_PACKET + "test_upgrade_diff.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
+    {"name": "the last five releases' stores read by this crapkit", "seconds": 420,
+     "tiers": ["nightly", "release"], "pytest": [_PACKET + "test_store_upgrade.py"]},
 ]
