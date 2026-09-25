@@ -141,11 +141,14 @@ def report(files: dict) -> dict:
 class Fn:
     """One function: `decisions` ifs, `covered` branch arms ran (or, with no
     decision, whether its one statement ran). A `tag` is a comment on the def
-    line: changing it touches the function and moves no number."""
+    line: changing it touches the function and moves no number. A `one_line`
+    function is `def NAME(x): return ...` with its decisions as chained
+    conditional expressions, all on the def line."""
     name: str
     decisions: int = 0
     covered: int = 0
     tag: str = ""
+    one_line: bool = False
 
     @property
     def ccn(self) -> int:
@@ -153,7 +156,11 @@ class Fn:
 
     @property
     def cov(self) -> Fraction:
-        """README: branch coverage in the span; with no branches, statement coverage."""
+        """README: branch coverage in the span; with no branches, statement
+        coverage. A Python def whose body starts on the line its signature ends
+        scores untested, cov 0 (README, Commands: rescore)."""
+        if self.one_line:
+            return Fraction(0)
         if self.decisions:
             return exact.ratio(self.covered, 2 * self.decisions)
         return exact.ratio(self.covered, 1)
@@ -230,11 +237,19 @@ def fn_lines(fn: Fn) -> list[str]:
     return line its decision count, so no two lines of a file are equal and any
     edit to a function rewrites a line inside it: whichever diff algorithm reads
     two versions, the changed lines are the edited functions' own."""
+    if fn.one_line:
+        return [_one_line(fn)]
     lines = [f"def {fn.name}(x):" + (f"  # {fn.tag}" if fn.tag else "")]
     for number in range(fn.decisions):
         lines += [f"    if x > {number}:  # {fn.name} {number}",
                   f"        x += {number + 1}  # {fn.name} {number}"]
     return lines + [f"    return x  # {fn.name} {fn.decisions}"]
+
+
+def _one_line(fn: Fn) -> str:
+    """def NAME(x): return 0 if x > 0 else 1 if x > 1 else ... D: one decision per `if`."""
+    arms = "".join(f"{number} if x > {number} else " for number in range(fn.decisions))
+    return f"def {fn.name}(x): return {arms}{fn.decisions}  # {fn.name} {fn.tag}".rstrip()
 
 
 def source(fns) -> tuple[str, list[tuple[Fn, int, int]]]:
@@ -256,7 +271,12 @@ def spans(world: World, scope: str) -> dict[str, tuple[int, int]]:
 
 def _region(fn: Fn, start: int, end: int) -> dict:
     """coverage.py's view of one function: the true arm of the first `covered`
-    ifs ran (their body lines executed), the rest did not."""
+    ifs ran (their body lines executed), the rest did not. A one-line def's
+    only line runs when its module is imported, and coverage.py measures no
+    branch inside one line."""
+    if fn.one_line:
+        return {"name": fn.name, "start": start, "executed": [start], "missing": [],
+                "branches": 0, "covered_branches": 0, "statements": 1, "covered_lines": 1}
     body = list(range(start + 1, end + 1))
     missing = _missing(fn, start, body)
     executed = [line for line in body if line not in missing]

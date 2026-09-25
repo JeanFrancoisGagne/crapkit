@@ -29,6 +29,7 @@ doc: docs/agent-json.md:492-512 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c96
 doc: docs/lanes.md:971-1064 sha256=3c57130ad9b165d9c7fe529e2a608886e4e96fbd3fcb72e04d3efc8e2a8ab234
 doc: docs/lanes.md:1066-1099 sha256=962c85888f0e3ea1c87c13cdedc39fabd7a99ddcd3a65bf18e3d1fd8d0e67ef0
 doc: docs/lanes.md:1503-1598 sha256=bc5c956cef7f1a51e1f067320a3f3625987d4696c141f55b46c1e6c843df3db4
+doc: README.md:830-837 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
@@ -262,6 +263,19 @@ def dump_marks(marks: MarksFile) -> list:
     head += [f"# crapkit-keys={marks.keys_version}"] if marks.keys_version else []
     rows = [mark_line(path, key, marks.marks[(path, key)]) for path, key in sorted(marks.marks)]
     return head + ["\t".join(HEADER)] + rows
+
+
+# --- remedy (README.md:830-837) --------------------------------------------------------------
+
+def remedy(ccn: int, crap, ceiling: int, shares_line: bool) -> str:
+    """decompose past the ceiling on ccn; ok at or under it on CRAP; else
+    split-lines when another function shares the lines or a Python def's body
+    starts on its signature's last line; else add-tests."""
+    if ccn > ceiling:
+        return "decompose"
+    if crap <= ceiling:
+        return "ok"
+    return "split-lines" if shares_line else "add-tests"
 
 
 # --- the three gates and verify (docs/ratchet.md:87-111, 626-676) --------------------------
