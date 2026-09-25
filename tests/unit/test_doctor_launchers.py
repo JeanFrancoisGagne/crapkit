@@ -19,7 +19,7 @@ import pytest
 
 from cli_inproc_repo import repo, template_repo  # noqa: F401
 from crapkit.cli import admin, main
-from test_launchers import joined, shim
+from test_launchers import joined, shim, uv_cache
 
 PLUGIN = Path(__file__).resolve().parents[2] / "plugin"
 BIN = "Scripts" if os.name == "nt" else "bin"
@@ -104,10 +104,21 @@ def test_doctor_reports_the_skew_among_its_warnings(repo, tmp_path, monkeypatch,
 def _under_uvx(tmp_path: Path, monkeypatch) -> Path:
     """This process running from a uvx cache environment whose launcher sits
     first on PATH, the way uvx starts its command."""
-    cached = tmp_path / "cache" / "uv" / "archive-v0" / "ePz6wC7F"
+    cached = uv_cache(tmp_path / "cache" / "uv") / "archive-v0" / "ePz6wC7F"
     shim(cached / BIN, admin.__version__)
     monkeypatch.setattr(sys, "prefix", str(cached))
     return cached
+
+
+def _under_uv_run_with(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """`uv run --with crapkit crapkit doctor`: this process runs from the
+    environment uv built for the run, in its cache's builds-v0, and PATH lists
+    that environment's launcher, then the `--with` layer's from archive-v0."""
+    cache = uv_cache(tmp_path / "cache" / "uv")
+    run, layer = cache / "builds-v0" / ".tmp4THQRy", cache / "archive-v0" / "Pfax6h9m"
+    shim(run / BIN, admin.__version__), shim(layer / BIN, admin.__version__)
+    monkeypatch.setattr(sys, "prefix", str(run))
+    return run, layer
 
 
 def test_under_uvx_the_launcher_uvx_put_on_path_is_not_the_plugin_s(tmp_path, monkeypatch):
@@ -150,4 +161,30 @@ def test_under_uvx_an_install_further_down_path_is_the_one_checked(tmp_path, mon
     kept = shim(tmp_path / "tools", "0.7.6")
     monkeypatch.setenv("PATH", joined(cached / BIN, tmp_path / "tools"))
 
+    assert admin._spawned_cli() == (str(kept), "0.7.6")
+
+
+def test_under_uv_run_with_neither_environment_uv_put_on_path_is_the_plugin_s(tmp_path, monkeypatch,
+                                                                             capsys):
+    """`uv run --with crapkit crapkit doctor --plugin-root` exited 0 while
+    `claude mcp list` failed with ENOENT: doctor knew uvx's archive-v0 only, and
+    this run's environment sits in builds-v0 with the `--with` layer behind it."""
+    run, layer = _under_uv_run_with(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", joined(run / BIN, layer / BIN))
+
+    assert main(["doctor", "--plugin-root", str(PLUGIN)]) == 1
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.startswith("crapkit doctor: FAIL no `crapkit` on PATH outside the environment uv "
+                           f"built for this one command ({run}), "), line
+
+
+def test_under_uv_run_with_the_launcher_count_leaves_uv_s_environments_out(tmp_path, monkeypatch):
+    """The repo doctor counted both cache environments as installs beside the
+    uv tool one. At another version that WARN told the reader to uninstall or
+    upgrade environments uv deletes or rebuilds on its own."""
+    run, layer = _under_uv_run_with(tmp_path, monkeypatch)
+    kept = shim(tmp_path / "tools", "0.7.6")
+    monkeypatch.setenv("PATH", joined(run / BIN, layer / BIN, tmp_path / "tools"))
+
+    assert admin._doctor_launchers() == []
     assert admin._spawned_cli() == (str(kept), "0.7.6")

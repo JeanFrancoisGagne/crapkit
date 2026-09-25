@@ -1741,21 +1741,13 @@ def _probed_cli_version(executable: str) -> str | None:
     return answer[1] if len(answer) == 2 and answer[0] == "crapkit" else None
 
 
-def _ephemeral_prefix() -> str | None:
-    """This interpreter's environment when uvx or `pipx run` built it for this
-    one command, else None. Such a runner puts the environment first on the PATH
-    it hands doctor, and nothing else on the machine inherits it."""
-    from ..launchers import ephemeral_runner
-
-    return sys.prefix if ephemeral_runner(sys.prefix) else None
-
-
 def _path_launchers() -> list[str]:
-    """Every crapkit launcher on this PATH, in order, less the environment a
-    one-command runner built for doctor itself."""
+    """Every crapkit launcher on this PATH, in order, less any environment a
+    one-command runner (uvx, `uv run --with`, `pipx run`) built, which that
+    runner put on doctor's PATH and nothing else on the machine inherits."""
     from ..launchers import path_launchers
 
-    return path_launchers(os.environ.get("PATH", ""), _ephemeral_prefix())
+    return path_launchers(os.environ.get("PATH", ""))
 
 
 @lru_cache(maxsize=None)
@@ -1789,10 +1781,11 @@ def _spawned_cli() -> tuple[str, str | None] | None:
     an older pipx copy it called the two versions equal while the hook spawned
     the older one.
 
-    Under uvx or `pipx run` the PATH doctor inherits starts with the environment
-    that runner built for this one command. The plugin's hooks never see it, so
-    it is left out: `uvx crapkit doctor --plugin-root` found crapkit there and
-    passed while `claude mcp list` failed with ENOENT.
+    Under uvx, `uv run --with` or `pipx run` the PATH doctor inherits starts with
+    the environments that runner built for this one command. The plugin's hooks
+    never see them, so they are left out: `uvx crapkit doctor --plugin-root`
+    found crapkit there and passed while `claude mcp list` failed with ENOENT,
+    and `uv run --with crapkit` did the same from uv's builds-v0 bucket.
 
     Memoized because the answer is one machine fact and `doctor --plugin-root`
     would otherwise spawn it once per call.

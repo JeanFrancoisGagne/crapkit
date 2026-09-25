@@ -5,13 +5,17 @@ name `crapkit` from the PATH they inherit, and the first launcher on that PATH i
 the crapkit they run. Two installs on one PATH run two versions from two
 places, and which one a program gets depends on the order its PATH lists them.
 
-A runner that builds an environment for one command (uvx, pipx run) puts that
-environment first on the PATH it hands its child. The plugin's hooks never
-inherit it, so a caller asking what those hooks start leaves it out.
+A runner that builds an environment for one command (uvx, `uv run --with`,
+pipx run) puts that environment first on the PATH it hands its child. The
+plugin's hooks never inherit it, so the launchers counted here leave it out.
 
-pipx 1.17 on its uv backend hands `pipx run crapkit ...` to `uv tool run`, so
-that environment is uv's, in uv's cache like uvx's, and nothing in it says pipx
-started it. Such an environment is named by the tool that built it.
+uv keeps each such environment in a bucket of its cache (archive-v0 for uvx
+and `uv tool run`, builds-v0 for the environment `uv run --with` runs in, whose
+`--with` layer sits in archive-v0 behind it on PATH). uv tags the cache root
+with CACHEDIR.TAG wherever UV_CACHE_DIR puts it, so the tag marks the cache,
+not the name of one bucket. pipx 1.17 on its uv backend hands `pipx run
+crapkit ...` to `uv tool run`, so that environment is uv's too, and nothing in
+it says pipx started it. Such an environment is named by the tool that built it.
 """
 from __future__ import annotations
 
@@ -32,14 +36,22 @@ _INSTALL = {"uv": "`uv tool install crapkit`, or `pipx install crapkit` if you r
             "pipx": "`pipx install crapkit`"}
 
 
+def _in_uv_cache(prefix: str) -> bool:
+    """Is `prefix` an environment in a bucket of uv's cache, CACHE/BUCKET/ENV,
+    the tag on CACHE saying it is a cache? uv's tool and python directories
+    carry no tag."""
+    cache = os.path.dirname(os.path.dirname(os.path.abspath(prefix)))
+    return os.path.isfile(os.path.join(cache, "CACHEDIR.TAG"))
+
+
 def ephemeral_runner(prefix: str) -> str | None:
     """"uv" or "pipx" when `prefix` is an environment that tool built in its
-    cache for a single command, else None. uv keeps those under its cache's
-    archive-v0 bucket (uvx, `uv tool run`, and `pipx run` on pipx's uv
+    cache for a single command, else None. uv keeps those in any bucket of its
+    cache (uvx, `uv tool run`, `uv run --with`, and `pipx run` on pipx's uv
     backend); pipx's pip backend under a cache directory of pipx's own."""
-    parts = {part.lower() for part in PurePath(prefix).parts}
-    if "archive-v0" in parts:
+    if _in_uv_cache(prefix):
         return "uv"
+    parts = {part.lower() for part in PurePath(prefix).parts}
     return "pipx" if "pipx" in parts and parts & {".cache", "cache"} else None
 
 
@@ -66,24 +78,23 @@ def _key(path: str) -> str:
     return os.path.normcase(os.path.realpath(path))
 
 
-def _outside(entry: str, skip: str | None) -> bool:
-    if not skip:
-        return True
-    held, under = _key(entry), _key(skip)
-    return held != under and not held.startswith(under.rstrip(os.sep) + os.sep)
+def _lasting(entry: str) -> bool:
+    """False for the bin directory of an environment a runner built for one
+    command, which only that command's PATH lists."""
+    return ephemeral_runner(os.path.dirname(os.path.abspath(entry))) is None
 
 
-def _entries(path: str, skip: str | None) -> list[str]:
+def _entries(path: str) -> list[str]:
     entries = (entry.strip('"') for entry in path.split(os.pathsep))
-    return [entry for entry in entries if entry and _outside(entry, skip)]
+    return [entry for entry in entries if entry and _lasting(entry)]
 
 
-def path_launchers(path: str, skip: str | None = None) -> list[str]:
-    """Every crapkit launcher on `path`, in PATH order, one per file: a
-    directory listed twice, or linked to another, counts once. Entries under
-    `skip` are left out."""
+def path_launchers(path: str) -> list[str]:
+    """Every crapkit launcher on `path` that outlives the command running now,
+    in PATH order, one per file: a directory listed twice, or linked to
+    another, counts once."""
     first: dict[str, str] = {}
-    for launcher in filter(None, map(_launcher_in, _entries(path, skip))):
+    for launcher in filter(None, map(_launcher_in, _entries(path))):
         first.setdefault(_key(launcher), launcher)
     return list(first.values())
 

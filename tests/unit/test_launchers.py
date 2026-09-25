@@ -16,6 +16,7 @@ import pytest
 from crapkit.launchers import ephemeral_runner, install_line, path_launchers, upgrade_command
 
 WINDOWS = os.name == "nt"
+BIN = "Scripts" if WINDOWS else "bin"
 
 
 def shim(directory: Path, version: str = "0.8.0") -> Path:
@@ -34,6 +35,14 @@ def shim(directory: Path, version: str = "0.8.0") -> Path:
 
 def joined(*dirs) -> str:
     return os.pathsep.join(str(d) for d in dirs)
+
+
+def uv_cache(root: Path) -> Path:
+    """A uv cache directory, tagged the way uv tags its root."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55",
+                                       encoding="ascii")
+    return root
 
 
 # --- every launcher on PATH, once, in order ---------------------------------------
@@ -61,14 +70,18 @@ def test_a_directory_linked_to_another_counts_once(tmp_path):
     assert path_launchers(joined(tmp_path / "usr" / "bin", tmp_path / "bin")) == [str(real)]
 
 
-def test_entries_under_the_skipped_environment_are_left_out(tmp_path):
-    cached = tmp_path / "cache" / "uv" / "archive-v0" / "abc"
-    shim(cached / ("Scripts" if WINDOWS else "bin"))
+def test_entries_in_an_environment_built_for_one_command_are_left_out(tmp_path):
+    """`uv run --with crapkit crapkit doctor` puts two environments from uv's
+    cache on PATH: the one uv built for the run (builds-v0, this process's
+    sys.prefix) and the `--with` layer (archive-v0). The plugin's hooks inherit
+    neither. Only the launcher that outlives the command is counted."""
+    cache = uv_cache(tmp_path / "uv-cache")
+    run, layer = cache / "builds-v0" / ".tmp4THQRy" / BIN, cache / "archive-v0" / "JLLMYkrV" / BIN
+    shim(run), shim(layer)
+    pipx_run = shim(tmp_path / ".local" / "pipx" / ".cache" / "3c2c1d4e" / BIN).parent
     kept = shim(tmp_path / "tools")
 
-    path = joined(cached / ("Scripts" if WINDOWS else "bin"), tmp_path / "tools")
-    assert path_launchers(path, skip=str(cached)) == [str(kept)]
-    assert len(path_launchers(path)) == 2
+    assert path_launchers(joined(run, layer, pipx_run, tmp_path / "tools")) == [str(kept)]
 
 
 def test_a_quoted_entry_is_read_without_its_quotes(tmp_path):
@@ -79,22 +92,30 @@ def test_a_quoted_entry_is_read_without_its_quotes(tmp_path):
 
 # --- environments a runner builds for one command ---------------------------------
 #
-# pipx 1.17 on its uv backend hands `pipx run crapkit ...` to `uv tool run`, so
-# that environment sits in uv's archive-v0 like uvx's, and nothing in it says
-# pipx started it. It is named by the tool that built it.
+# uv keeps every environment it builds for one command in a bucket of its cache:
+# archive-v0 for uvx and `uv tool run`, builds-v0 for the environment `uv run
+# --with` runs in. uv tags the cache root with CACHEDIR.TAG wherever UV_CACHE_DIR
+# puts it, so the tag, not a bucket's name, marks the environment. pipx 1.17 on
+# its uv backend hands `pipx run crapkit ...` to `uv tool run`, so nothing in
+# that environment says pipx started it. It is named by the tool that built it.
 
-@pytest.mark.parametrize("prefix, runner", [
-    ("/home/u/.cache/uv/archive-v0/ePz6wC7FqYPz2zfC", "uv"),
-    (r"C:\Users\u\AppData\Local\uv\cache\archive-v0\ePz6wC7F", "uv"),
-    ("/home/u/.cache/pipx/3c2c1d4e", "pipx"),
-    ("/home/u/.local/pipx/.cache/3c2c1d4e", "pipx"),
-    (r"C:\Users\u\AppData\Local\pipx\pipx\Cache\3c2c1d4e", "pipx"),
-    ("/home/u/.local/share/uv/tools/crapkit", None),
-    ("/home/u/.local/share/pipx/venvs/crapkit", None),
-    ("/home/u/repo/.venv", None),
+@pytest.mark.parametrize("parts, runner", [
+    (("custom-uv-cache", "archive-v0", "ePz6wC7F"), "uv"),
+    (("custom-uv-cache", "builds-v0", ".tmp4THQRy"), "uv"),
+    (("custom-uv-cache", "environments-v2", "crapkit-8a9f0c"), "uv"),
+    ((".cache", "pipx", "3c2c1d4e"), "pipx"),
+    ((".local", "pipx", ".cache", "3c2c1d4e"), "pipx"),
+    (("AppData", "Local", "pipx", "pipx", "Cache", "3c2c1d4e"), "pipx"),
+    ((".local", "share", "uv", "tools", "crapkit"), None),
+    ((".local", "share", "pipx", "venvs", "crapkit"), None),
+    (("repo", ".venv"), None),
 ])
-def test_an_environment_built_for_one_command_is_named_by_the_tool_that_built_it(prefix, runner):
-    assert ephemeral_runner(prefix) == runner
+def test_an_environment_built_for_one_command_is_named_by_the_tool_that_built_it(tmp_path, parts,
+                                                                                runner):
+    uv_cache(tmp_path / "custom-uv-cache")
+    (tmp_path / ".local" / "share" / "uv" / "tools").mkdir(parents=True)
+
+    assert ephemeral_runner(str(tmp_path.joinpath(*parts))) == runner
 
 
 def test_each_builder_names_the_install_that_stays():

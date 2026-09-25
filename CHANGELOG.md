@@ -182,11 +182,17 @@ nothing. Each of these now gets a line naming the object and the next step:
   holds it, run in its project for a project or local install. Between
   releases main keeps the release's version string, so `claude plugin update` answers
   "already at the latest version" and the install keeps the release's files.
-- Run under uvx or `pipx run`, it looks past the environment that runner built for this
-  one command. `uvx crapkit doctor --plugin-root` found crapkit there and exited 0 while
-  `claude mcp list` failed with ENOENT; it now FAILs naming the install that stays: `uv
-  tool install crapkit`, or `pipx install crapkit` if `pipx run` started it (pipx 1.17 on
-  its uv backend runs the command through `uv tool run`, in uv's cache).
+- Run under uvx, `uv run --with` or `pipx run`, it looks past every environment that
+  runner built for this one command, which is any environment in uv's cache (the tagged
+  cache root, wherever `UV_CACHE_DIR` puts it) or in pipx's. `uvx crapkit doctor
+  --plugin-root` found crapkit there and exited 0 while `claude mcp list` failed with
+  ENOENT, and `uv run --with crapkit crapkit doctor --plugin-root` did the same from uv's
+  builds-v0 bucket, with the `--with` layer in archive-v0 behind it. It now FAILs naming
+  the install that stays: `uv tool install crapkit`, or `pipx install crapkit` if `pipx
+  run` started it (pipx 1.17 on its uv backend runs the command through `uv tool run`, in
+  uv's cache). The launcher count in `crapkit doctor` leaves those environments out too,
+  so it no longer asks you to upgrade or uninstall an environment uv rebuilds or deletes
+  on its own.
 - With no PATH it checks every install `installed_plugins.json` records, not only the
   newest: with a user install at 0.8.0 and a project install at 0.8.1 it checked the 0.8.1
   copy and exited 0 while every session outside that project ran 0.8.0. It looks in
