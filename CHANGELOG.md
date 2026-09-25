@@ -77,12 +77,13 @@
   `--help` for each file argument and for `--exclude` names the spellings it reads.
 - On Windows a root on a network share exits 3 before crapkit starts any child: `--repo
   \\server\share\repo`, a session standing in a share, and a `\\wsl.localhost\...`
-  checkout, `init` included. The line says to map the share to a drive letter (`net use Z: \\server\share`)
-  and run crapkit from `Z:\repo`. cmd.exe cannot start a command in a UNC directory and
-  ran every lane in `C:\Windows` instead: a real pytest lane collected `C:\Windows` for
-  42 s of CPU before it was killed. A root on a mapped drive keeps its letter, for
-  `--repo`, the working directory and an MCP call's `repo`: `resolve()` turned `Z:\repo`
-  into the share behind it, so its lanes started in `C:\Windows` too.
+  checkout, `init` included. The line says to map the share to a drive letter
+  (`net use Z: \\server\share`) and run crapkit from `Z:\repo`. cmd.exe cannot start a
+  command in a UNC directory and ran every lane in `C:\Windows` instead: a real pytest
+  lane collected `C:\Windows` for 42 s of CPU before it was killed. A root on a mapped
+  drive keeps its letter, for `--repo`, the working directory and an MCP call's `repo`:
+  `resolve()` turned `Z:\repo` into the share behind it, so its lanes started in
+  `C:\Windows` too.
 - The advisory hook reads a payload's `file_path` and `cwd` the way the edited file's disk
   does: `C:\`, `c:\`, `C:/` and `/c/` paths, another letter case on a case-insensitive
   disk, and a Bash event's `/c/...` cwd. On Windows an Edit breach and every
