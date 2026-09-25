@@ -43,7 +43,7 @@ def test_the_one_below_is_named_with_the_flag_that_reaches_it(tmp_path, monkeypa
     message = _refusal(top)
 
     assert message == (f"no crapkit.toml at {top} - nothing to analyze; "
-                       "packages/api/crapkit.toml sits below it: pass --repo packages/api")
+                       "crapkit.toml sits below it in packages/api: pass --repo packages/api")
     assert message.isascii()
 
 
@@ -56,12 +56,42 @@ def test_a_root_named_from_elsewhere_is_spelled_from_where_the_caller_stands(tmp
     assert _refusal(top).endswith("pass --repo repo/packages/api")
 
 
+def test_a_root_outside_the_working_directory_is_spelled_in_full(tmp_path, monkeypatch):
+    """No relative spelling reaches it from a sibling directory, so the
+    refusal hands back the whole path."""
+    top = _repo(tmp_path / "repo", "packages/api")
+    (tmp_path / "elsewhere").mkdir()
+    monkeypatch.chdir(tmp_path / "elsewhere")
+
+    assert _refusal(top).endswith(f"pass --repo {top / 'packages' / 'api'}")
+
+
+def test_a_config_deleted_from_the_top_is_not_named_as_one_below(tmp_path, monkeypatch):
+    """The index still lists a crapkit.toml removed from the disk at the top;
+    it is the one the refusal is about, not one below."""
+    top = _repo(tmp_path / "repo", "packages/api")
+    (top / "crapkit.toml").write_text("[crapkit]\n", encoding="utf-8")
+    subprocess.run(["git", "add", "crapkit.toml"], cwd=top, check=True)
+    (top / "crapkit.toml").unlink()
+    monkeypatch.chdir(top)
+
+    assert _refusal(top).endswith("; crapkit.toml sits below it in packages/api: pass --repo packages/api")
+
+
 def test_several_below_are_named_and_the_choice_is_the_callers(tmp_path, monkeypatch):
     top = _repo(tmp_path / "repo", "packages/web", "packages/api", "tools/lint", "tools/zz")
     monkeypatch.chdir(top)
 
     assert _refusal(top).endswith("; crapkit.toml sits below it in packages/api, packages/web, "
                                   "tools/lint and 1 more: pass --repo with the one to score")
+
+
+def test_two_below_are_both_named_with_nothing_counted(tmp_path, monkeypatch):
+    top = _repo(tmp_path / "repo", "packages/web", "packages/api")
+    monkeypatch.chdir(top)
+
+    assert _refusal(top).endswith("; crapkit.toml sits below it in packages/api, packages/web: "
+                                  "pass --repo with the one to score")
 
 
 def test_an_untracked_config_or_no_repository_names_no_root_below(tmp_path, monkeypatch):

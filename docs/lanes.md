@@ -954,7 +954,7 @@ top, `packages/api/calc/grade.py:17`.
 
 A command other than the hook that runs at the git top, such as Route 4's `crapkit verify`
 in a CI step, finds no `crapkit.toml` there and exits 3, and the refusal says which flag to
-add: `no crapkit.toml at /repo - nothing to analyze; packages/api/crapkit.toml sits below it:
+add: `no crapkit.toml at /repo - nothing to analyze; crapkit.toml sits below it in packages/api:
 pass --repo packages/api`.
 
 ---

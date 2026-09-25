@@ -524,8 +524,8 @@ nothing. Each of these now gets a line naming the object and the next step:
   where it stands, never down. In a monorepo whose `crapkit.toml` sits in
   `packages/api`, `crapkit verify` there refused with `no crapkit.toml at <top> -
   nothing to analyze`. The refusal now names each tracked `crapkit.toml` below that
-  directory and the flag that reaches it: `...; packages/api/crapkit.toml sits below it:
-  pass --repo packages/api`. Several are listed, three by name. The lookup reads the git
+  directory and the flag that reaches it: `...; crapkit.toml sits below it in
+  packages/api: pass --repo packages/api`. Several are listed, three by name. The lookup reads the git
   index, only on the way to the refusal. With none below, the refusal names `crapkit
   init` and `--repo DIR` instead, and any configuration elsewhere in the checkout.
 - README's gate section and the lanes page give the spelling for each route:

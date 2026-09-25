@@ -491,7 +491,7 @@ command other than the hook that runs at the top exits 3, and the refusal names 
 below it:
 
 ```
-crapkit: no crapkit.toml at /repo - nothing to analyze; packages/api/crapkit.toml sits below it: pass --repo packages/api
+crapkit: no crapkit.toml at /repo - nothing to analyze; crapkit.toml sits below it in packages/api: pass --repo packages/api
 ```
 
 [Path and root rules](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery)

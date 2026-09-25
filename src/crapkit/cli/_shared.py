@@ -280,7 +280,7 @@ def _roots_below_hint(root: Path) -> str:
     if not roots:
         return ""
     if len(roots) == 1:
-        return f"; {roots[0]}/crapkit.toml sits below it: pass --repo {roots[0]}"
+        return f"; crapkit.toml sits below it in {roots[0]}: pass --repo {roots[0]}"
     more = f" and {len(roots) - _NAMED_ROOTS} more" if len(roots) > _NAMED_ROOTS else ""
     return (f"; crapkit.toml sits below it in {', '.join(roots[:_NAMED_ROOTS])}{more}: "
             "pass --repo with the one to score")

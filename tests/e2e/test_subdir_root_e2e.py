@@ -266,7 +266,7 @@ def test_verify_at_the_git_top_names_the_root_below_it(nested: Path):
     res = run_cli(nested, "verify")
 
     assert res.returncode == 3, res.stdout + res.stderr
-    assert "app/crapkit.toml sits below it: pass --repo app" in res.stderr
+    assert "crapkit.toml sits below it in app: pass --repo app" in res.stderr
 
 
 def test_readmes_hook_line_gates_a_root_below_the_top_through_git_commit(nested: Path):
