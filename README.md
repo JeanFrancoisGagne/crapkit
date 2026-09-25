@@ -288,10 +288,20 @@ Claude Code 2.1.139 or later: an older release drops the hook's arguments and ru
 `crapkit` after every matched edit, which prints its usage and exits 2, and
 `crapkit doctor --plugin-root` names the release it found.
 
+The hook is one shell command, `crapkit claude-hook --protocol 1`, so it runs as written in
+any Claude Code version with plugin support, and in the other agents that load Claude Code
+plugins: Cursor (which imports them), GitHub Copilot CLI and VS Code. Claude Code gets the
+advisory on stderr with exit 2 and wakes the model with it. Those three read exit 2 as a
+deny, a message for the user alone, or a blocking error, so there the hook exits 0 and
+hands the model the same lines as added context
+([other harnesses](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#other-harnesses)).
+
 A repo with no `crapkit.toml` costs a silent no-op per edit: 68 ms on Windows through the
-`crapkit.exe` launcher Claude Code starts, where a bare `python -c pass` took 32 ms on the
-same machine. After upgrading the CLI, refresh the marketplace before updating the
-installed plugin:
+`crapkit.exe` launcher, where a bare `python -c pass` took 32 ms on the same machine. Every
+edit starts it, whatever the file type; an edit to a type crapkit does not measure stops at
+a suffix check before any config is read. On Windows, Claude Code starts the hook through
+Git Bash, whose own startup comes on top, and runs it async, so no edit waits for it. After
+upgrading the CLI, refresh the marketplace before updating the installed plugin:
 
 ```
 claude plugin marketplace update crapkit
@@ -339,14 +349,12 @@ codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
 codex plugin add crapkit@crapkit
 ```
 
-Codex gets the three skills and the MCP server, and no hook. The plugin's
-`hooks/hooks.json` is Claude Code's advisory hook, and Codex keeps only each entry's
-`command` from it, so every entry would run a bare `crapkit`, which prints its usage and
-exits 2 after each edit. The plugin's `.codex-plugin/plugin.json` sets `hooks` to empty,
-and Codex loads none of them. Codex offers `crapkit-onboard` to the model only when you
+Use the three skills and MCP server in Codex. Codex loads no crapkit hook: the plugin's
+Codex manifest leaves hooks out, because Codex reports an edit as `apply_patch` patch text,
+which the advisory does not read. Codex offers `crapkit-onboard` to the model only when you
 ask for it by name. A plugin from 0.8.0 or earlier ships no Codex manifest: Codex
 0.156.1 lists its hooks as untrusted PostToolUse hooks that run a bare `crapkit`, and
-they should stay untrusted. The advisory hook instructions above are for Claude Code.
+they should stay untrusted.
 
 Codex upgrades each configured git marketplace when it starts, and refreshes the
 installed plugin from it, so the plugin can reach a release before your CLI does.
@@ -420,7 +428,7 @@ full verdict. The preview and hooks differ in what their available evidence can 
 
 | Surface | Fires | Power |
 |---|---|---|
-| `crapkit claude-hook` | after an agent's edit lands | **advisory.** Names the breach on stderr. Blocks nothing, because PostToolUse runs after the write |
+| `crapkit claude-hook` | after an agent's edit lands | **advisory.** Names the breach to the agent: on stderr in Claude Code, as added context in Cursor, Copilot CLI and VS Code. Blocks nothing, because PostToolUse runs after the write |
 | `crapkit rescore FILE --gate` | when you ask, after the first coverage run | **preview.** A stricter preview of the commit gate, sub-second, before you stage: a ratchet mark pardons a function only while its CRAP is at or under the mark. With no run behind it, exit 1 and `no snapshot` |
 | `crapkit hook-precommit` | `git commit` | **blocks.** The hook exits 6; git reports 1. Staged blobs only, so it costs the size of the commit and needs no coverage |
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
@@ -882,7 +890,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. Both lists pass through the scored corpus first, the same predicate `coverage` uses (scopes, excludes, the test-file cut, `max_file_bytes`): a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims is named on stderr and never mutated, `--json` lists it under `outside_corpus`, and when nothing is left stdout says `nothing to mutate` at exit 0 without starting the suite. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. Every worker uses a kept worktree, including one; see [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees). `--drop-pool` removes them and exits. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
 | `hook-precommit [--base REF]` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. `--base REF` compares the index with the merge base of REF and HEAD, the form a CI checkout runs. |
-| `claude-hook [--protocol N]` | Reads one Claude Code PostToolUse payload from stdin and judges the file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. Exit 2 and an advisory on stderr is the only thing it ever says, one block per judged file (a head line, one line per breaching function, a closing line): no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
+| `claude-hook [--protocol N]` | Reads one PostToolUse payload from stdin, as Claude Code, Copilot CLI, Cursor or VS Code sends it, and judges each file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. The advisory is the only thing it ever says, one block per judged file (a head line, one line per breaching function, a closing line): on stderr with exit 2 for Claude Code, and as one JSON object on stdout with exit 0 for Copilot CLI, Cursor and VS Code, which read exit 2 otherwise. A file type crapkit does not measure, no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `help [TOPIC]` | The help git, npm and docker answer to. With no TOPIC it prints the command list; with one it prints that subcommand's own help, the same page as `crapkit TOPIC --help`. A TOPIC that names no subcommand exits 3. |
 | `mcp` | A stdio MCP server with no extra dependency, exposing twelve read-side tools named `verb_noun`, each with a title and output schema. Tools call the CLI to inspect current scores, source and edited-file gates. They take no claims and run no verification; calls can write caches or store metadata. See [the MCP contract and setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server). |
@@ -1440,7 +1448,7 @@ with no debt.
 | [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
 | [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md) | Where crapkit sits next to radon, xenon, wily, coverage.py and SonarQube, and how they run together. |
 | [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md) | The burn-down loop an agent runs, and the rules for changing crapkit itself. |
-| [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | Three skills and the MCP server for Claude Code and Codex, with advisory PostToolUse hook instructions for Claude Code. |
+| [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | Three skills and the MCP server for Claude Code and Codex, and the advisory PostToolUse hook that Claude Code, Cursor, Copilot CLI and VS Code run. |
 
 [crapkit.schema.json](https://github.com/JeanFrancoisGagne/crapkit/blob/main/crapkit.schema.json) is the authority on the config file shape.
 

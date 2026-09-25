@@ -303,7 +303,9 @@ summary line splits them. In a shared checkout, dirty findings may not be yours.
 ## The advisory hook
 
 With the Claude Code plugin installed, `crapkit claude-hook` runs after every edit you
-make and writes three lines to stderr when that edit pushed a function over its ceiling:
+make and writes three lines to stderr when that edit pushed a function over its ceiling.
+In Cursor, Copilot CLI and VS Code, which load the same plugin, the same three lines
+arrive as added context instead, and the hook exits 0:
 
     crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)
       ccn 9  calc/grade.py:67  curve( scores , mode , floor , ceiling , skip_none )
@@ -752,6 +754,7 @@ Shared rules belong to these modules:
 | Module | What it answers |
 |---|---|
 | `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins |
+| `languages.py` | which file types crapkit measures, as suffixes per language. It imports nothing, so `claude-hook` screens an edited file against it before reading any config |
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
 | `procs.py` | how an owned command starts, is waited on and is bounded. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |

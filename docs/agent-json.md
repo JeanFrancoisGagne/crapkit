@@ -1264,23 +1264,27 @@ on an error.
 
 ## `claude-hook`
 
-The one command on this page Claude Code runs for you, after every Edit or Write of a source
-file, and after every Bash command wherever you register that matcher. It names functions that edit pushed over their ceiling, while the session can still act
-on it.
+The one command on this page your agent runs for you: Claude Code runs it after every Edit
+or Write, and so do Cursor, GitHub Copilot CLI and VS Code wherever they load the plugin,
+plus after every Bash command wherever you register that matcher. It names functions that
+edit pushed over their ceiling, while the session can still act on it.
 
 ```
 crapkit claude-hook --protocol 1
 ```
 
-**In:** one Claude Code PostToolUse event, as JSON on stdin. **Out:** nothing on stdout,
-ever. Protocol 1 reserves stdout for a future JSON channel, and Claude Code parses stdout
-JSON on exit 0. There is no `--repo`: the root is the first `crapkit.toml` above the edited
-file. The plugin registers it async with a 20-second timeout, so no edit waits on it.
+**In:** one PostToolUse event, as JSON on stdin, in the shape the harness sends it.
+**Out:** for Claude Code, the advisory on stderr and nothing on stdout, ever, because Claude
+Code parses stdout JSON on exit 0. For Cursor, Copilot CLI and VS Code, the same lines as one
+JSON object on stdout ([Other harnesses](#other-harnesses)). There is no `--repo`: the root
+is the first `crapkit.toml` above the edited file. The plugin registers it async with a
+20-second timeout, so no Claude Code edit waits on it.
 
 | Exit | Means | Output |
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
-| `2` | a changed function is over its ceiling | three or more lines on stderr, which reach the model |
+| `2` | a changed function is over its ceiling, in Claude Code | three or more lines on stderr, which reach the model |
+| `0` | the same, in Cursor, Copilot CLI or VS Code | one line of JSON on stdout carrying those lines; stderr empty |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1294,6 +1298,36 @@ the commit gate enforces this; decompose there or mark the debt
 already on disk and nothing can block it. `hook-precommit` stays the only enforcement point.
 The head line states that outright, because the reader is a model holding a nonzero exit
 code.
+
+### Other harnesses
+
+The plugin's hook is one shell command, the one handler field every harness that loads Claude
+Code plugins keeps, so Cursor (which imports them), GitHub Copilot CLI and VS Code run it as
+written. Each names the edited file its own way and reads exit 2 its own way:
+
+| Harness | The event, and where it names the file | The advisory |
+|---|---|---|
+| Claude Code | `PostToolUse`, `tool_input.file_path` | stderr and exit 2; `asyncRewake` wakes the model with it |
+| GitHub Copilot CLI | `PostToolUse`, `tool_input.path` | JSON on exit 0: Copilot shows exit 2's stderr to the user and never to the model |
+| Cursor | `postToolUse`, `tool_input.file_path` | JSON on exit 0: Cursor reads exit 2 as a deny |
+| VS Code | `PostToolUse`, `tool_input.filePath`, each `replacements[].filePath`, or the file lines of an `apply_patch` | JSON on exit 0: VS Code reads exit 2 as a blocking error |
+| Codex | none: the plugin's Codex manifest registers no hook, since Codex reports an edit as `apply_patch` patch text | none |
+
+The JSON carries the advisory under both keys those three read, top-level `additionalContext`
+for Copilot CLI and Cursor, and the nested one for VS Code:
+
+```json
+{"additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in app/m.py (the edit landed; nothing was blocked)\n  ccn 7  app/m.py:1  route( a , b , c , d )\nthe commit gate enforces this; decompose there or mark the debt", "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "..."}}
+```
+
+VS Code runs a plugin's hooks on every tool call and ignores the `Edit|Write` matcher, so the
+hook applies it there: only VS Code's tools that write a file are judged (`create_file`,
+`replace_string_in_file`, `insert_edit_into_file`, `multi_replace_string_in_file`,
+`apply_patch`), and a read or a terminal call beside a breaching file stays silent.
+
+Every harness starts it on every edit, whatever the file type. An edit to a file whose suffix
+crapkit does not measure (see [Languages](https://github.com/JeanFrancoisGagne/crapkit#languages))
+stops at that check, before any config is read.
 
 It judges the functions the edit touched, not the whole file. Judging the file would fire on
 every edit in a repo with seeded debt and say nothing new. An untracked file is the one
@@ -1319,7 +1353,9 @@ which is what keeps the fallback cheap enough to pay per shell call. The status 
 arrives as its files rather than as one collapsed `?? newdir/` row.
 
 The shipped plugin registers `Edit|Write` only. A `Bash` matcher is the consumer's choice: a
-second entry in your own settings hooks, same command, matcher `Bash`.
+second entry in your own settings hooks, same command, matcher `Bash`. The fallback answers
+the shell tool by name, `Bash` (Cursor maps that matcher onto its `Shell`), so a VS Code
+terminal call, which reaches the hook whatever the matcher says, never scans the tree.
 
 ```json
 {
@@ -1347,7 +1383,7 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | Rung | Silent when |
 |---|---|
 | protocol | `--protocol` is anything but `1` |
-| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
+| event | stdin is not one JSON object, or not a `PostToolUse` (`postToolUse` from Cursor) naming the file it wrote or a shell tool's `tool_input.command`, or the file it names has a suffix crapkit does not measure |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
 | verdict | no scope claims the file, the source parses to no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |

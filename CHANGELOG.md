@@ -65,6 +65,36 @@ version stays 11, so no repo re-seeds.
 - A `working-directory` input runs every crapkit step from the directory holding
   `crapkit.toml`, for a monorepo whose crapkit root sits below the repository top. At the
   top, coverage found no `crapkit.toml` and the gate failed with exit 3.
+### The advisory hook runs in every agent that loads the plugin
+
+- The plugin's hook is one shell command, `crapkit claude-hook --protocol 1`, where it
+  was 50 exec-form handlers, one per file type. Every agent that loads a Claude Code
+  plugin keeps a handler's `command` and drops the fields it does not know, and only
+  Claude Code 2.1.139 and later read the `args` and `if` those handlers used. Codex,
+  Cursor, GitHub Copilot CLI, VS Code and Claude Code 2.1.138 each started a bare
+  `crapkit` per handler, up to 50 on one edit, each printing its usage and exiting 2:
+  Cursor recorded the edit as denied, VS Code stopped the agent, Copilot held one edit
+  for 30 to 100 s, and Claude Code 2.1.138 woke the model with the usage text. The hook
+  now needs no minimum Claude Code version.
+- `claude-hook` reads each agent's payload: Copilot CLI's `tool_input.path`, Cursor's
+  `postToolUse` event, and VS Code's `filePath`, multi-replace and `apply_patch` edits.
+  It skips a file whose suffix crapkit does not measure before it reads any config, the
+  job the per-file-type `if` rules did.
+- Cursor, Copilot CLI and VS Code get the advisory as one JSON object on stdout with exit
+  0, carrying the lines as `additionalContext` and `hookSpecificOutput.additionalContext`.
+  Cursor reads exit 2 as a deny, VS Code as a blocking error, and Copilot CLI shows it to
+  the user and never to the model, so a Copilot user with the documented `Bash` entry in
+  `.claude/settings.json` heard nothing either. Claude Code keeps stderr and exit 2.
+- VS Code runs a plugin's hook on every tool call and ignores its matcher, so there the
+  hook judges VS Code's file-writing tools alone; a read or a terminal call beside a
+  breaching file stays silent. The `Bash` fallback answers the shell tool by name, `Bash`
+  or Cursor's `Shell`, rather than any event carrying a `command`.
+- Codex gets its own manifest, `plugin/.codex-plugin/plugin.json`: the three skills, the
+  MCP server and `"hooks": {}`. Codex reports an edit as `apply_patch` patch text the hook
+  does not read, and without the key it loaded all 50 handlers.
+- Update the plugin together with the CLI: `claude plugin marketplace update crapkit`,
+  then `claude plugin update crapkit@crapkit --scope user`, then
+  `crapkit doctor --plugin-root`, and restart open sessions.
 
 ## 0.8.0 — 2026-09-23
 

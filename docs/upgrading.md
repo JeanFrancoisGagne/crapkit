@@ -233,9 +233,9 @@ Use the installed Codex plugin directory for `PATH`, not the marketplace's sourc
 checkout. In the default cache this is
 `~/.codex/plugins/cache/crapkit/crapkit/VERSION`, using the installed version from
 the listing. With no explicit path, doctor checks Claude Code's cache instead.
-Codex loads the three skills and the MCP server; the plugin's Codex manifest keeps
-Claude Code's advisory hook out of it. Start a new Codex task to load updated plugin
-skills and tools.
+Use the three skills and MCP server in Codex. Codex loads no crapkit hook: the
+plugin's Codex manifest leaves hooks out. Start a new Codex task to load updated
+plugin skills and tools.
 
 Codex does the first two steps on its own. Each start upgrades the configured git
 marketplaces and refreshes the installed plugin from them: with Codex 0.156.1, one

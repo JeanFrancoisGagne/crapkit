@@ -229,7 +229,9 @@ claude plugin install crapkit@crapkit
 
 It carries three skills, the read-side MCP server, and one advisory PostToolUse hook that
 names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
-stays the only enforcement point. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
+stays the only enforcement point. Cursor imports Claude Code plugins from the same home, and
+GitHub Copilot CLI and VS Code load them too, so the hook runs there as well and hands the
+advisory to the model as added context. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
 compares the two and prints nothing when they agree.
 
 The plugin registers that hook on `Edit|Write`. A session that writes source through a
@@ -247,10 +249,9 @@ codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
 codex plugin add crapkit@crapkit
 ```
 
-The advisory hook instructions above configure Claude Code's PostToolUse event. The
-plugin's Codex manifest keeps that hook out of Codex, which would run each entry as a
-bare `crapkit` ([README: Codex](../README.md#codex)).
-After a CLI upgrade, follow
+Codex loads the skills and the MCP server and no hook: the plugin's Codex manifest leaves
+hooks out, because Codex reports an edit as `apply_patch` patch text
+([README: Codex](../README.md#codex)). After a CLI upgrade, follow
 [plugin and MCP client updates](upgrading.md#plugin-and-mcp-clients): refresh the
 marketplace first, update the installed plugin, then check its version and start a
 fresh client session. Codex refreshes git marketplaces on its own when it starts, so
@@ -265,8 +266,7 @@ Every other agent takes the MCP server from its own config file, and
 | Codex | the plugin: three skills and the MCP server |
 | Continue | `crapkit mcp` from [its config](harnesses.md#continue), and the skills when you copy them into `.continue/skills`, `.claude/skills` or `~/.continue/skills` |
 | Zed | `crapkit mcp` from [its config](harnesses.md#zed), and the skills when you copy them into `~/.agents/skills` |
-| Cursor | `crapkit mcp` from [its config](harnesses.md#cursor). Cursor can import a Claude Code plugin installed in the same home, but it keeps only each hook's `command`, so crapkit's hook would run there as a bare `crapkit` that exits 2; its agent CLI lists no MCP server from the plugin |
-| GitHub Copilot CLI | `crapkit mcp` from [its config](harnesses.md#github-copilot-cli). Do not install crapkit's plugin with `copilot plugin install`: Copilot keeps only each hook's `command`, and one edit then starts 50 bare `crapkit` processes |
+| Cursor, GitHub Copilot CLI, VS Code | the advisory hook, from the Claude Code plugin they load; `crapkit mcp` from its config ([Cursor](harnesses.md#cursor), [GitHub Copilot CLI](harnesses.md#github-copilot-cli)) for the tools |
 | every other MCP client | `crapkit mcp` as a stdio server, from [its section](harnesses.md): twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
 | Aider | `crapkit rescore --gate` as its [lint command](harnesses.md#aider) |
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
