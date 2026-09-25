@@ -117,8 +117,8 @@ def normalized_diff(text: str) -> list[str]:
     """The changed lines of a unified diff, with the line numbers (the @@ headers),
     the file headers and mutmut's per-mutant numbering removed."""
     lines = []
-    for line in text.replace("\r\n", "\n").split("\n"):
-        if line.startswith(("+++", "---", "@@")) or not line.startswith(("+", "-")):
+    for line in text.split("\n"):
+        if line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
             continue
         lines.append(_NUMBERING.sub("__mutmut", line.rstrip()))
     return lines
@@ -126,7 +126,7 @@ def normalized_diff(text: str) -> list[str]:
 
 def mutant_key(diff_text: str) -> str:
     """sha256 over the normalized diff: the survivor's identity within its function."""
-    return hashlib.sha256("\n".join(normalized_diff(diff_text)).encode("utf-8")).hexdigest()
+    return hashlib.sha256("\n".join(normalized_diff(diff_text)).encode()).hexdigest()
 
 
 def split_name(mutant_name: str) -> tuple[str, str]:
@@ -475,8 +475,8 @@ def shard(modules: list[str], number: int, of: int) -> list[str]:
 
 
 def _covered_pairs(diffs: list[dict]) -> set[tuple]:
-    complete = [receipt for receipt in diffs if receipt.get("complete")]
-    return {tuple(pair) for receipt in complete for pair in receipt.get("functions", [])}
+    complete = [receipt for receipt in diffs if receipt["complete"]]
+    return {tuple(pair) for receipt in complete for pair in receipt["functions"]}
 
 
 def _of_kind(receipts: list[dict], kind: str) -> list[dict]:
@@ -491,8 +491,8 @@ def receipts_in(directory: Path) -> tuple[list[dict], list[dict]]:
 
 
 def _missing_shards(weeklies: list[dict]) -> list[int]:
-    of = max(receipt.get("of", 0) for receipt in weeklies)
-    return sorted(set(range(1, of + 1)) - {receipt.get("shard") for receipt in weeklies})
+    of = max(receipt["of"] for receipt in weeklies)
+    return sorted(set(range(1, of + 1)) - {receipt["shard"] for receipt in weeklies})
 
 
 def weekly_head(weeklies: list[dict]) -> str:

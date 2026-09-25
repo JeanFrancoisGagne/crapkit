@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import importlib.util
+import inspect
 import json
 import re
 from pathlib import Path
@@ -825,3 +826,119 @@ def test_changed_functions_name_what_a_diff_from_the_base_touches(tmp_path):
     base = mutation._git(repo, "rev-list", "-1", "HEAD~1").strip()
 
     assert mutation.changed_functions(repo, base, ["m.py", "gone.py"]) == [("m.py", "b")]
+
+
+# --- what the tools mutation run left alive in the calc functions ------------------------------------
+#
+# Each test below pins a value the survivor set of the tools run showed no test
+# looked at: an exact message, a rounding, a boundary, a default.
+
+def test_a_key_ignores_trailing_blanks_and_crlf_but_not_leading_ones():
+    crlf = SHOW_3.replace("\n", "\r\n")
+    indented = SHOW_3.replace("+    return", "+     return")
+
+    assert mutation.normalized_diff(crlf) == KEPT
+    assert mutation.normalized_diff(SHOW_3.replace("- ccn", "- ccn   ")) == KEPT
+    assert mutation.mutant_key(indented) != mutation.mutant_key(SHOW_3)
+
+
+def test_an_outcome_is_the_value_or_the_exception_s_type():
+    assert mutation._outcome(max, (1, 2)) == ("value", 2)
+    assert mutation._outcome(int, ("x",)) == ("raises", "ValueError")
+
+
+def test_raising_another_exception_type_is_a_difference():
+    def parse(text):
+        return int(text)
+
+    def parse_mutant(text):
+        return {}[text]
+
+    with pytest.raises(mutation.MutationError, match="differs on"):
+        mutation.equivalence_evidence(parse, parse_mutant, st.tuples(st.just("x")), examples=5)
+
+
+def test_equivalence_evidence_takes_ten_thousand_examples_unless_told():
+    signature = inspect.signature(mutation.equivalence_evidence)
+
+    assert signature.parameters["examples"].default == 10_000
+
+
+def test_a_floor_rate_is_rounded_to_two_places():
+    run = [_crap(KEYS[0], "killed"), _crap(KEYS[1], "survived"), _crap(KEYS[2], "survived")]
+
+    (core, _) = mutation.floors(run, [], GROUPS)
+
+    assert (core.rate, core.killed, core.counted) == (33.33, 1, 3)
+
+
+def test_a_missing_first_shard_is_named():
+    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": shard, "of": 3} for shard in (2, 3)]
+
+    with pytest.raises(mutation.MutationError, match=r"weekly shards \[1\] have no receipt"):
+        mutation.weekly_head(weekly)
+
+
+def test_two_heads_are_both_named():
+    weekly = [{"kind": "weekly", "head": head, "shard": shard, "of": 2}
+              for shard, head in ((1, HEAD_A), (2, HEAD_B))]
+
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation.weekly_head(weekly)
+
+    assert str(refused.value) == f"the weekly receipts measured 2 heads: {HEAD_A}, {HEAD_B}"
+
+
+@pytest.mark.parametrize("call, says", [
+    (lambda: mutation.split_name("crap__mutmut_3"), "'crap__mutmut_3' is not a mutmut mutant name"),
+    (lambda: mutation.split_name("a.b__mutmut_"), "'a.b__mutmut_' is not a mutmut mutant name"),
+    (lambda: mutation.split_name("crapkit.store.xǁA__mutmut_1"),
+     "'crapkit.store.xǁA__mutmut_1' names no function mutmut mangles"),
+    (lambda: mutation.module_path("crapkit.nope", REPO),
+     f"no file for module crapkit.nope under {REPO}"),
+    (lambda: mutation.shard(["a.py"], 3, 2), "shard 3 of 2 does not exist"),
+])
+def test_each_refusal_says_what_it_refused(call, says):
+    with pytest.raises(mutation.MutationError) as refused:
+        call()
+
+    assert str(refused.value) == says
+
+
+def test_the_canary_says_which_mutants_lived():
+    run = [_crap(KEYS[0], "survived"), _crap(KEYS[1], "no tests"), _crap(KEYS[2], "killed")]
+
+    assert mutation.canary_problem(run) == (
+        f"canary mutants of score.crap survived: src/crapkit/score.py:crap:{KEYS[0][:6]}, "
+        f"src/crapkit/score.py:crap:{KEYS[1][:6]}")
+    assert mutation.canary_problem([]) == "the canary score.crap was not mutated in this run"
+
+
+def test_an_unjudged_run_names_every_status_it_saw():
+    run = [_crap(KEYS[n], status) for n, status in enumerate(("not checked", "suspicious"))]
+
+    assert mutation.unjudged_problem(run) == (
+        "2 mutants were never judged (mutmut says not checked, suspicious): "
+        f"src/crapkit/score.py:crap:{KEYS[0][:6]}, src/crapkit/score.py:crap:{KEYS[1][:6]}")
+
+
+def test_a_run_with_six_unjudged_mutants_names_five():
+    run = [_result("m.py", "f", f"{n:06x}".ljust(64, "0"), "not checked") for n in range(6)]
+
+    assert mutation.unjudged_problem(run).endswith(": m.py:f:000000, m.py:f:000001, "
+                                                   "m.py:f:000002, m.py:f:000003, m.py:f:000004, ...")
+
+
+def test_a_verdict_with_nothing_to_say_prints_nothing():
+    assert mutation.verdict_lines(mutation.Verdict()) == []
+
+
+def test_a_line_after_a_function_does_not_touch_it():
+    # SOURCE's a() spans lines 1-2; line 3 is the blank line after it.
+    assert mutation.touched_functions(SOURCE, {3}) == []
+    assert mutation.touched_functions(SOURCE, {2}) == ["a"]
+
+
+def test_a_kit_module_s_glob_leaves_tests_off_the_name():
+    assert mutation.mutmut_glob("tests/accuracy/kit/exact.py", "crap") == (
+        "accuracy.kit.exact.x_crap__mutmut_*")

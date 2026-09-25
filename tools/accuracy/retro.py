@@ -57,6 +57,8 @@ import venv as venv_module
 
 REPO = Path(__file__).resolve().parents[2]
 RETRO = REPO / "tests" / "accuracy" / "suite_strength" / "retro"
+# The digest reads each check's import closure through the kit (accuracy.kit.closure).
+sys.path.insert(0, str(REPO / "tests"))
 BUGS = RETRO / "bugs.tsv"
 LEDGER = RETRO / "ledger.tsv"
 WORK_ENV = "CRAPKIT_RETRO_WORK"
@@ -224,7 +226,6 @@ def _roots(repo: Path) -> tuple[Path, ...]:
 
 
 def _closure_files(test_file: Path, repo: Path) -> set[Path]:
-    sys.path.insert(0, str(REPO / "tests"))
     from accuracy.kit import closure
     return closure.closure(test_file, _roots(repo.resolve()))
 
@@ -239,10 +240,20 @@ def _packet_data(test_file: Path, repo: Path) -> set[Path]:
     return {path.resolve() for path in packet.rglob("*") if _is_data(path, packet)}
 
 
+def _package_inits(test_file: Path, repo: Path) -> set[Path]:
+    """The __init__.py of every package the check's module sits in under tests/:
+    pytest runs each of them before the check."""
+    top = (repo / "tests").resolve()
+    folders = [folder for folder in test_file.parents if top in folder.parents]
+    return {folder / "__init__.py" for folder in folders if (folder / "__init__.py").is_file()}
+
+
 def check_files(test: str, probe: str = "", repo: Path = REPO) -> list[Path]:
-    """The check's file, its import closure and its packet's data files."""
+    """The check's file, its import closure, the packages it sits in and its packet's
+    data files."""
     test_file = (repo / test.split("::")[0]).resolve()
-    files = _closure_files(test_file, repo) | _packet_data(test_file, repo)
+    files = (_closure_files(test_file, repo) | _package_inits(test_file, repo)
+             | _packet_data(test_file, repo))
     if probe:
         files.add((repo / RETRO.relative_to(REPO) / "probes" / probe).resolve())
     return sorted(files)
@@ -253,7 +264,7 @@ def digest(test: str, probe: str = "", repo: Path = REPO) -> str:
     root = repo.resolve()
     hashed = hashlib.sha256()
     for path in check_files(test, probe, repo):
-        hashed.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
+        hashed.update(path.relative_to(root).as_posix().encode() + b"\0")
         hashed.update(hashlib.sha256(path.read_bytes()).digest())
     return hashed.hexdigest()[:16]
 

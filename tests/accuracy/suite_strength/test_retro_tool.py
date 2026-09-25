@@ -11,6 +11,7 @@ they run nightly; the verdict, digest and slicing rules run on every push.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 from pathlib import Path
 import shutil
@@ -497,3 +498,130 @@ def test_sync_leaves_bugs_tsv_as_it_was_when_every_packet_lists_what_it_holds():
     tables = {"p2": [{"id": "R1", "test": "tests/accuracy/p2/test_b.py::test_kept"}]}
 
     assert retro.synced_bugs(BUGS_BEFORE, tables) == BUGS_BEFORE
+
+
+# --- what the tools mutation run left alive in the verdict and digest code ---------------------------
+
+def test_a_record_carries_every_field_the_replay_reads():
+    assert retro._record("t::a", _call(None)) == {
+        "nodeid": "t::a", "outcome": "passed", "exc_type": "", "assertion": False, "message": ""}
+    assert retro._record("t::b", _call(KeyError("x" * 400))) == {
+        "nodeid": "t::b", "outcome": "failed", "exc_type": "KeyError", "assertion": False,
+        "message": "'" + "x" * 299}
+
+
+def test_an_xfail_is_not_a_failure_either():
+    xfailed = type("XFailed", (Exception,), {})
+
+    assert retro._record("t::a", _call(xfailed("x")))["outcome"] == "skipped"
+
+
+def _line(nodeid: str, outcome: str, exc_type: str = "") -> str:
+    return (f'{{"nodeid": "{nodeid}", "outcome": "{outcome}", "exc_type": "{exc_type}", '
+            f'"assertion": false, "message": ""}}')
+
+
+def test_an_item_keeps_its_first_failure_and_a_skipped_item_is_left_out():
+    lines = [_line("t::a", "failed", "KeyError"), _line("t::a", "failed", "OSError"),
+             _line("t::b", "skipped", "Skipped"), _line("t::c", "passed")]
+
+    assert [(row["nodeid"], row["exc_type"]) for row in retro.item_outcomes(lines)] == [
+        ("t::a", "KeyError"), ("t::c", "")]
+
+
+def _rec(nodeid: str, exc_type: str = "", assertion: bool = False) -> dict:
+    outcome = "failed" if exc_type else "passed"
+    return {"nodeid": nodeid, "outcome": outcome, "exc_type": exc_type, "assertion": assertion,
+            "message": f"m {nodeid}"}
+
+
+@pytest.mark.parametrize("records, outcome", [
+    ([_rec("t::a"), _rec("t::b")], retro.Outcome("green", "", "2 item(s) passed")),
+    ([_rec("t::a", "KeyError"), _rec("t::b", "AssertionError", True)],
+     retro.Outcome("red", "AssertionError", "m t::b")),
+    ([_rec("t::a", "KeyError")], retro.Outcome("not replayable", "KeyError", "m t::a")),
+    ([], retro.Outcome("not replayable", "NotCollected", "the check collected no test")),
+])
+def test_before_names_the_record_that_decided_it(records, outcome):
+    assert retro.classify_before(records) == outcome
+
+
+@pytest.mark.parametrize("records, outcome", [
+    ([_rec("t::a")], retro.Outcome("pass", "", "1 item(s) passed")),
+    ([_rec("t::a"), _rec("t::b", "OSError")], retro.Outcome("fail", "OSError", "m t::b")),
+    ([], retro.Outcome("fail", "NotCollected", "the check collected no test")),
+])
+def test_the_fix_names_the_record_that_decided_it(records, outcome):
+    assert retro.classify_fix(records) == outcome
+
+
+def test_a_failing_fix_quotes_two_hundred_characters_of_its_evidence():
+    got = retro.contradiction({"id": "R1"}, retro.Outcome("red"), retro.Outcome("fail", "E", "e" * 300))
+
+    assert got == "R1: the check fails on its fix commit: " + "e" * 200
+
+
+# The digest, worked out here from its definition: sha256 over each file's
+# repo path, a NUL and the sha256 of its bytes, in path order; 16 hex digits.
+
+def _expected_digest(tree: Path, relative: list[str]) -> str:
+    hashed = hashlib.sha256()
+    for name in sorted(relative):
+        hashed.update(name.encode() + b"\0")
+        hashed.update(hashlib.sha256((tree / name).read_bytes()).digest())
+    return hashed.hexdigest()[:16]
+
+
+READS = ["tests/accuracy/__init__.py", "tests/accuracy/kit/__init__.py",
+         "tests/accuracy/kit/helper.py", "tests/accuracy/pkt/__init__.py",
+         "tests/accuracy/pkt/fixtures/data.txt", "tests/accuracy/pkt/test_x.py"]
+
+
+def test_the_digest_is_sha256_over_each_file_s_path_and_bytes(small_tree):
+    assert retro.digest(TEST, repo=small_tree) == _expected_digest(small_tree, READS)
+
+
+def test_the_check_s_files_are_its_closure_and_its_packet_s_data(small_tree):
+    files = retro.check_files(TEST, repo=small_tree)
+
+    assert [path.relative_to(small_tree.resolve()).as_posix() for path in files] == sorted(READS)
+
+
+def test_a_probe_is_one_more_file_and_editing_it_moves_the_digest(small_tree):
+    probe = small_tree / "tests/accuracy/suite_strength/retro/probes/R0.py"
+    probe.parent.mkdir(parents=True)
+    probe.write_text("VALUE = 1\n", encoding="utf-8")
+    with_probe = READS + ["tests/accuracy/suite_strength/retro/probes/R0.py"]
+
+    assert retro.digest(TEST, "R0.py", repo=small_tree) == _expected_digest(small_tree, with_probe)
+    probe.write_text("VALUE = 2\n", encoding="utf-8")
+    assert retro.digest(TEST, "R0.py", repo=small_tree) == _expected_digest(small_tree, with_probe)
+
+
+TOOL_TREE = {
+    "tests/accuracy/pkt/test_t.py": "import toolmod\nfrom helpers import shared\n\n\n"
+                                    "def test_t():\n    assert toolmod.X == shared.Y\n",
+    "tools/accuracy/toolmod.py": "X = 1\n",
+    "tools/helpers/__init__.py": "",
+    "tools/helpers/shared.py": "Y = 1\n",
+    "tests/accuracy/pkt/README.md": "notes\n",
+    "tests/accuracy/pkt/cases/fixtures/deep.txt": "three\n",
+}
+
+
+@pytest.mark.parametrize("edited, moves", [
+    ("tools/accuracy/toolmod.py", True),                  # imported through tools/accuracy
+    ("tools/helpers/shared.py", True),                    # imported through tools/
+    ("tests/accuracy/pkt/cases/fixtures/deep.txt", True),  # a data dir below the packet's top
+    ("tests/accuracy/pkt/README.md", False),              # a packet file in no data dir
+])
+def test_the_closure_reaches_through_both_tool_roots(small_tree, edited, moves):
+    for name, text in TOOL_TREE.items():
+        (small_tree / name).parent.mkdir(parents=True, exist_ok=True)
+        (small_tree / name).write_text(text, encoding="utf-8")
+    test = "tests/accuracy/pkt/test_t.py::test_t"
+    before = retro.digest(test, repo=small_tree)
+    with (small_tree / edited).open("a", encoding="utf-8") as handle:
+        handle.write("# edited\n")
+
+    assert (retro.digest(test, repo=small_tree) != before) == moves
