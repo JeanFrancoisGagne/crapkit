@@ -173,7 +173,8 @@ def _help_topics(parser: argparse.ArgumentParser) -> dict:
 # from the walk (ADR 0002); under --repo it is root-relative as before.
 _WHERE = " (repo-relative; without --repo, read from the working directory)"
 _REPO_FLAG = {"default": None,
-              "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
+              "help": "crapkit root (default: the nearest crapkit.toml at or above cwd); a "
+                      "leading ~ is your home directory"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -442,9 +443,10 @@ def build_parser() -> argparse.ArgumentParser:
     srv.add_argument("--repo", default=None,
                      help="crapkit root (default: the nearest crapkit.toml at or above cwd, else "
                           "the first workspace folder a client that declares roots names; a cwd "
-                          "inside the client's plugin directory is never walked up from); a value "
-                          "holding a ${...} variable the client did not expand is ignored, with a "
-                          "warning on stderr")
+                          "inside the client's plugin directory is never walked up from); a "
+                          "leading ~ is your home directory, and a value holding a ${...} "
+                          "variable the client did not expand is ignored, with a warning on "
+                          "stderr")
     srv.set_defaults(func=_Handler("analyses", "cmd_mcp"))
 
     mut = sub.add_parser("mutate", help="diff-scoped mutation testing: flip operators on changed lines, run the suite per mutant")

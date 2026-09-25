@@ -339,6 +339,10 @@ nothing. Each of these now gets a line naming the object and the next step:
   below its own and answered every call `no crapkit.toml in <cwd>/${workspaceFolder}`
   while the client listed it as ready. A `--repo` that holds `${...}` is now ignored and
   stderr names it; `crapkit mcp --help` says so.
+- A leading `~` in `--repo` or in a tool's `repo` argument is the home directory. An MCP
+  client starts the server without a shell, and cmd.exe expands no `~`, so `--repo
+  ~/app` named `<cwd>/~/app` and every call answered `no crapkit.toml` there. Every
+  subcommand's `--help` says so.
 
 ### A process that outlives an upgrade says to restart it
 

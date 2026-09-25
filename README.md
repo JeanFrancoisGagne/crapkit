@@ -244,7 +244,8 @@ crapkit 0.8.0
 source checkout. Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
 at or above the current directory, so a monorepo workspace finds the root's), and with it
 you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows
-where the flag goes.
+where the flag goes. A leading `~` in PATH is your home directory, also in cmd.exe and in
+an MCP client's `args`, where no shell expands it.
 
 ## Upgrading
 

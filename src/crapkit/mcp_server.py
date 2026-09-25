@@ -26,7 +26,8 @@ from .rootfind import CONFIG_NAME, find_root
 SUPPORTED_PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 _REPO = {"repo": {"type": "string", "description": (
-    "path to the scored repo's root (default: the repo the server was started in)")}}
+    "path to the scored repo's root (default: the repo the server was started in); a leading ~ "
+    "is the home directory")}}
 
 # brief and explain resolve NAME by one rule, so they describe it with one
 # string. The bare identifier is the long name's leading token, which is all
@@ -1748,8 +1749,8 @@ def _config_root(repo: str) -> Path | None:
     """The crapkit root at or above `repo`, a call's own argument, found the
     way every command finds it (ADR 0002). A `repo` naming no directory finds
     nothing: a typo must not be adopted by an ancestor's configuration and
-    read back as data."""
-    start = Path(repo).resolve()
+    read back as data. A leading `~` is the user's home, as on `--repo`."""
+    start = Path(os.path.expanduser(repo)).resolve()
     return find_root(start) if start.is_dir() else None
 
 

@@ -15,7 +15,8 @@ Every command below runs as `crapkit <sub>` (console script) or
 `python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
 nearest `crapkit.toml` at or above the working directory
 (docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
-reads its root from the hook payload on stdin.
+reads its root from the hook payload on stdin. A leading `~` in PATH is your home directory
+even where no shell expands it: cmd.exe, or an MCP client's `args`.
 
 ---
 

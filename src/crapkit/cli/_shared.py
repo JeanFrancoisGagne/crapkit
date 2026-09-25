@@ -87,10 +87,12 @@ def _command_root(repo: str | None) -> Path:
     is not the working directory itself, so `cd web && crapkit worklist` reads
     the root configuration that claims web/ and says which file it read. When
     the walk finds nothing the working directory is the root, so the refusal
-    `_load_repo_config` raises names where the user stands.
+    `_load_repo_config` raises names where the user stands. A leading `~` is
+    the user's home: an MCP client starts the server without a shell, and
+    cmd.exe expands none, so `--repo ~/app` named `<cwd>/~/app`.
     """
     if repo is not None:
-        return Path(repo).resolve()
+        return Path(os.path.expanduser(repo)).resolve()
     cwd = Path.cwd().resolve()
     found = find_root(cwd)
     if found is None:
