@@ -737,7 +737,7 @@ Shared rules belong to these modules:
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
 | `procs.py` | how an owned command starts, is waited on and is bounded. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
-| `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread; the owner's stderr goes to the `owner.log` `_log_path` names |
+| `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread; the owner's stderr goes to the `owner.log` `_log_path` names; `helper_flags` starts crapkit's own helper interpreters (the owner, the POSIX start gate) in this process's UTF-8 mode, and a lane's command never gets it |
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |

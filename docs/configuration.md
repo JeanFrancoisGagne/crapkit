@@ -87,9 +87,12 @@ encoding. Under a locale that is not UTF-8 (`LANG=en_US.ISO-8859-1`), `pkg/café
 would go out as `pkg/caf\xe9.py`, a file that does not exist. So `crapkit` (the
 console script and `python -m crapkit`) starts itself again once with `python -X
 utf8` when the filesystem encoding is not UTF-8 and UTF-8 mode is off, before it
-reads stdin, and every path it opens is spelled in UTF-8. It sets the flag and not
-`PYTHONUTF8`, so lane and mutation commands keep the environment you gave them.
-`-X utf8=0` turns the restart off. Windows and macOS always spell paths in UTF-8.
+reads stdin, and every path it opens is spelled in UTF-8. Its own helper processes,
+the POSIX start gate that runs each command and the measurement owner that holds its
+outputs, start in UTF-8 mode with it, so an MCP tool reaches `pkg/café.py` as well. It
+sets the flag and not `PYTHONUTF8`, so lane and mutation commands keep the environment
+you gave them. `-X utf8=0` turns the restart off. Windows and macOS always spell paths
+in UTF-8.
 
 Under such a locale a Python lane's child still spells paths in the locale's
 encoding, so its coverage.py names `pkg/café.py` as `pkg/cafÃ©.py`, and that file's

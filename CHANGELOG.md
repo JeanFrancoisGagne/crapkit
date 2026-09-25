@@ -29,7 +29,10 @@ A commit, file name, report or MCP frame that is not UTF-8 no longer ends a comm
   untracked one included, is left out and named once on stderr.
 - Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
   so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
-  `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. Lane and
+  `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX
+  start gate and the measurement owner start in UTF-8 mode with it, so the MCP tools
+  (`get_function_brief`, `check_gate` and the rest) reach such a file too, and the owner
+  holds the lane output crapkit means rather than a file beside it. Lane and
   mutation children keep your locale: set `PYTHONUTF8 = "1"` in a Python lane's `env`
   to have its coverage.py name such a file.
 - A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),

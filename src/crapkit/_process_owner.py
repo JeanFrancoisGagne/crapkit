@@ -241,6 +241,19 @@ def own_processes(paths, *, optional: bool = False, label: str = "measurement"):
         yield owner
 
 
+def helper_flags() -> tuple[str, ...]:
+    """The interpreter options a helper crapkit starts takes, so it hands the OS
+    the bytes this process would for the same text.
+
+    A helper gets its command and its lease paths as text and spells them for
+    the OS itself. Under a Latin-1 locale crapkit runs in UTF-8 mode (the
+    restart cli.main makes), and a helper started without the flag spelled
+    `café` as b"caf\\xe9": the command's argument named no file, and the owner
+    locked a file beside the one this process meant. A lane's own command is
+    not a helper and keeps the locale it was given."""
+    return ("-X", "utf8") if sys.flags.utf8_mode else ()
+
+
 @contextmanager
 def _external_owner(paths, *, optional: bool = False, label: str = "measurement"):
     """Own measurement outputs across caller crashes and command cleanup."""
@@ -251,7 +264,8 @@ def _external_owner(paths, *, optional: bool = False, label: str = "measurement"
     log = _OwnerLog(paths)
     with _OWNER_INPUTS_LOCK:
         try:
-            process = subprocess.Popen([sys.executable, "-c", bootstrap, package_root, json.dumps(options)],
+            process = subprocess.Popen([sys.executable, *helper_flags(), "-c", bootstrap, package_root,
+                                        json.dumps(options)],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                        stderr=log.target(), text=True, encoding="utf-8", **_OWN_GROUP)
         finally:

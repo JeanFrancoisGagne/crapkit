@@ -227,6 +227,35 @@ def test_the_lane_keeps_the_locale_it_was_given(tmp_path, locpath):
     assert (child["utf8_mode"], child["PYTHONUTF8"]) == (1, "1")
 
 
+def _mcp_frames(tool: str, arguments: dict) -> str:
+    return "\n".join(json.dumps(frame, ensure_ascii=False) for frame in (
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"protocolVersion": "2025-06-18", "capabilities": {}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": tool, "arguments": arguments}}))
+
+
+@pytest.mark.parametrize("locale, expected", [row[1:] for row in LOCALES], ids=[row[0] for row in LOCALES])
+@pytest.mark.parametrize("tool, arguments", [
+    ("get_function_brief", {"path": TARGET, "name": "accent"}),
+    ("check_gate", {"path": TARGET}),
+], ids=["brief", "check-gate"])
+def test_every_locale_answers_an_mcp_call_on_a_name_with_an_accent(tmp_path, locpath, locale, expected,
+                                                                    tool, arguments):
+    """The server runs in UTF-8 mode and starts the CLI through the owned
+    launcher. Under Latin-1 that launcher handed `pkg/café.py` on as
+    b"pkg/caf\\xe9.py", even with PYTHONUTF8=1, which its `-I` ignores, and
+    each tool answered isError true about pkg/caf�.py."""
+    env = _in_force(locpath, locale, expected)
+    repo = _repo(tmp_path, {TARGET: CALC.replace("grade", "accent")})
+    _coverage(repo, env)
+
+    result = run_cli(repo, "mcp", env_extra=env, stdin=_mcp_frames(tool, arguments))
+    reply = json.loads(result.stdout.splitlines()[-1])["result"]
+
+    assert reply.get("isError") is not True, reply
+    assert TARGET in json.dumps(json.loads(reply["content"][0]["text"]), ensure_ascii=False), reply
+
+
 def test_the_larger_repo_scores_the_same_under_latin1_as_under_utf8(tmp_path, locpath):
     """Nine functions and CRAP load 127.87 under both, the accented file's
     function included."""
