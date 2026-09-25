@@ -39,4 +39,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_lizard_tripwire.py"]},
     {"name": "near-duplicate pairs against hand containment and jscpd", "seconds": 5,
      "pytest": [_PACKET + "test_duplicates.py"]},
+    {"name": "init proposes the scopes, lanes and ignores the docs name", "seconds": 6,
+     "pytest": [_PACKET + "test_init_scaffold.py"]},
+    {"name": "watch names each changed tracked file once", "seconds": 3,
+     "pytest": [_PACKET + "test_watch.py"]},
 ]
