@@ -96,6 +96,14 @@ SURFACES = (
     Surface("server.json", '"version": "{v}"', 2),
 )
 
+# The deploy suite (.github/workflows/deploy.yml) installs the candidate the way
+# users do, through every channel and harness it models. A release waits for a
+# green run of its release cadence at the commit being released; the published
+# cadence then repeats the install from the real surfaces once they hold it.
+DEPLOY_WORKFLOW = "deploy.yml"
+DEPLOY_RELEASE_CADENCE = "release"
+DEPLOY_PUBLISHED_CADENCE = "published"
+
 # The contract files stage 2a runs on the tagged tree. Two of them read the
 # newest tag (the README rev contracts), which is why the tag comes first.
 CONTRACT_FILES = (
@@ -230,6 +238,60 @@ def preflight(*, locate: Callable | None = None,
     catches it before stage 1."""
     return (_tooling_problems(locate or _module_origin)
             + _credential_problems(credential or _twine_credential))
+
+
+# --- the deploy gate ---------------------------------------------------------------
+
+def _deploy_runs(root: Path, head: str) -> list:
+    """deploy.yml's runs at `head`, as gh lists them."""
+    done = subprocess.run(["gh", "run", "list", "--repo", GITHUB_REPO, "--workflow", DEPLOY_WORKFLOW,
+                           "--commit", head, "--json", "conclusion,displayTitle,event,url",
+                           "--limit", "100"], cwd=root, capture_output=True, text=True,
+                          timeout=READ_TIMEOUT)
+    if done.returncode:
+        raise ReleaseError(f"gh run list failed: {_first_line(done)}")
+    return json.loads(done.stdout or "[]")
+
+
+def _release_cadence(run: dict) -> bool:
+    """A run of deploy.yml that workflow_dispatch started with the release
+    cadence. The workflow's run-name puts the cadence in the title gh lists."""
+    return (run.get("event") == "workflow_dispatch"
+            and DEPLOY_RELEASE_CADENCE in str(run.get("displayTitle", "")).split())
+
+
+def _release_runs(root: Path, runs: Callable) -> tuple[str, list]:
+    head = _git(root, "rev-parse", "HEAD")
+    return head, [run for run in runs(root, head) if _release_cadence(run)]
+
+
+def _green(found: list) -> bool:
+    return any(run.get("conclusion") == "success" for run in found)
+
+
+def _run_label(run: dict) -> str:
+    return f"{run.get('conclusion') or 'not finished'} {run.get('url', '')}".rstrip()
+
+
+def _deploy_refusal(head: str, found: list) -> str:
+    seen = f" (release runs at this commit: {', '.join(map(_run_label, found))})" if found else ""
+    return (f"deploy gate: no green {DEPLOY_RELEASE_CADENCE}-cadence run of {DEPLOY_WORKFLOW} at "
+            f"{head[:12]}{seen}; push HEAD, run `gh workflow run {DEPLOY_WORKFLOW} --ref main "
+            f"-f cadence={DEPLOY_RELEASE_CADENCE}`, wait for it to pass, then rerun check")
+
+
+def deploy_gate(root: Path, *, runs: Callable | None = None) -> list[str]:
+    """One problem unless deploy.yml ran its release cadence green at HEAD.
+
+    `check` is stage 1's first command, so a candidate the deploy suite never
+    installed through pip, uv, the plugin marketplaces and the hook routes stops
+    here, before anything is bumped. A gh that is missing, logged out or
+    offline is a problem too: the gate cannot say the run passed."""
+    try:
+        head, found = _release_runs(root, runs or _deploy_runs)
+    except (ReleaseError, OSError, ValueError, subprocess.SubprocessError) as exc:
+        return [f"deploy gate: {exc}"]
+    return [] if _green(found) else [_deploy_refusal(head, found)]
 
 
 # --- bump ------------------------------------------------------------------------
@@ -589,6 +651,11 @@ def plan(version: str) -> list:
              note="Sync Server on the Repository admin tab; the sync builds and publishes the "
                   "release with the GitHub notes on its own"),
         Step("surfaces", "surfaces", ((*tool, "verify", version),)),
+        Step("published", "surfaces", (("gh", "workflow", "run", DEPLOY_WORKFLOW, "--repo", GITHUB_REPO,
+                                        "--ref", "main", "-f", f"cadence={DEPLOY_PUBLISHED_CADENCE}",
+                                        "-f", f"ref=v{version}"),),
+             note=f"the deploy suite installs v{version} from PyPI, the tag, pre-commit and the MCP "
+                  "registry the way a user does; a red run there fails the release"),
     ]
 
 
@@ -1293,7 +1360,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _cmd_check(root: Path, version: str, args: argparse.Namespace) -> int:
     report = check(root, version)
-    problems = report.problems + preflight()
+    problems = report.problems + preflight() + deploy_gate(root)
     print(NL.join(problems) or f"ok: every surface at {report.current}, {version} next")
     return 1 if problems else 0
 
