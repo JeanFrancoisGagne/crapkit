@@ -379,13 +379,15 @@ def _action_step(name: str) -> str:
 
 def pr_clone(tmp_path: Path, changed: int, *clone_args: str) -> tuple[Path, str]:
     """A pull request branch that edits `changed` files, cloned the way
-    actions/checkout clones it; returns the clone and the base commit."""
+    actions/checkout clones it; returns the clone and the base commit. With
+    none changed the branch sits on its base."""
     src = cc_only_repo(tmp_path / "src", {f"m{i}.py": f"X = {i}\n" for i in range(5)})
     base = head(src)
     git(src, "checkout", "-q", "-b", "pr")
     for i in range(changed):
         (src / f"m{i}.py").write_text(f"X = {i + 10}\n", encoding="utf-8")
-    git_commit_all(src, "pr change")
+    if changed:
+        git_commit_all(src, "pr change")
     dst = tmp_path / "clone"
     subprocess.run(["git", "clone", "-q", *clone_args, "--branch", "pr", src.as_uri(), str(dst)],
                    check=True, capture_output=True)
@@ -394,14 +396,19 @@ def pr_clone(tmp_path: Path, changed: int, *clone_args: str) -> tuple[Path, str]
 
 def run_changed_step(clone: Path, base_sha: str) -> tuple[str, Path]:
     """The step's body under `bash --noprofile --norc -eo pipefail`, which is
-    what `shell: bash` means on a runner. Returns its log and the state dir."""
+    what `shell: bash` means on a runner. Returns its log and the state dir.
+
+    The runner's `python` is the one the action installed crapkit into, and
+    GITHUB_ACTION_PATH is the action's own checkout, which here is this one."""
     state = clone.parent / "state"
     state.mkdir()
     script = clone.parent / "changed-step.sh"
     script.write_text(_action_step("the changed files"), encoding="utf-8", newline="\n")
+    env = {**os.environ, "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base_sha,
+           "GITHUB_ACTION_PATH": ROOT.as_posix(),
+           "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}"}
     res = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
-                         cwd=clone, capture_output=True, text=True, encoding="utf-8",
-                         env={**os.environ, "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base_sha})
+                         cwd=clone, capture_output=True, text=True, encoding="utf-8", env=env)
     assert res.returncode == 0, res.stdout + res.stderr
     return (res.stdout + res.stderr).strip(), state
 
@@ -447,12 +454,19 @@ def test_a_full_history_checkout_names_the_changed_file_and_leaves_no_error(tmp_
     assert "The base diff failed" not in comment, comment
 
 
-def test_the_step_log_names_three_changed_files_and_counts_the_rest(tmp_path: Path):
-    clone, base = pr_clone(tmp_path, 5)
+@pytest.mark.parametrize("changed, logged", [
+    (0, "0 changed file(s)"),
+    (3, "3 changed file(s): m0.py, m1.py, m2.py"),
+    (4, "4 changed file(s): m0.py, m1.py, m2.py and 1 more"),
+    (5, "5 changed file(s): m0.py, m1.py, m2.py and 2 more"),
+])
+def test_the_step_log_names_three_changed_files_and_counts_the_rest(tmp_path: Path, changed, logged):
+    """The line comes from the comment builder, under the runner's python."""
+    clone, base = pr_clone(tmp_path, changed)
 
     log, _ = run_changed_step(clone, base)
 
-    assert log == "5 changed file(s): m0.py, m1.py, m2.py and 2 more", log
+    assert log == logged, log
 
 
 def test_a_push_names_no_base_commit_instead_of_zero_changed_files(tmp_path: Path):

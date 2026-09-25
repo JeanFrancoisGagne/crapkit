@@ -4,7 +4,9 @@ of the rest, and that rule lives in one module (crapkit.named).
 It had grown five copies: the lane pages' sample, init's untracked source,
 the worklist's changed files, prune's renames and verify's changed files and
 debt, and one of them sorted what it was given while the others kept the
-caller's order.
+caller's order. The GitHub Action grew two more, in its comment's verdict line
+and in the bash counter of its changed-files step; both run under the Python
+the Action installs crapkit into, so both call it too.
 """
 from __future__ import annotations
 
@@ -15,7 +17,8 @@ import pytest
 
 from crapkit.named import first_few
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "crapkit"
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "src" / "crapkit"
 
 CASES = {
     "none": ([], ""),
@@ -38,13 +41,22 @@ def test_it_takes_any_iterable_of_names():
     assert first_few({"x.py": 1}) == "x.py"
 
 
-# The shape each copy spelled, one line that joins the shown names and counts
-# the rest.
-_COPY = re.compile(r'f"\{shown\} and \{')
+# The shape each copy spelled: src's one line that joins the shown names and
+# counts the rest, the Action comment's tail and the Action step's bash counter.
+_COPIES = (re.compile(r'f"\{shown\} and \{'),
+           re.compile(r'" and \{[^}]*\} more"'),
+           re.compile(r'" and \$\(\([^)]*\)\) more"'))
+
+
+def _builds_the_sentence(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    return any(copy.search(text) for copy in _COPIES)
 
 
 def test_no_other_module_builds_the_sentence():
-    homes = sorted(path.relative_to(SRC).as_posix() for path in SRC.rglob("*.py")
-                   if _COPY.search(path.read_text(encoding="utf-8")))
+    """src, the Action's own Python and the Action's steps."""
+    scanned = [*SRC.rglob("*.py"), *(ROOT / "tools").rglob("*.py"), ROOT / "action.yml"]
 
-    assert homes == ["named.py"]
+    homes = sorted(path.relative_to(ROOT).as_posix() for path in scanned if _builds_the_sentence(path))
+
+    assert homes == ["src/crapkit/named.py"]

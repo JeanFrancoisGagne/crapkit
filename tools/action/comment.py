@@ -9,6 +9,10 @@ escaping is json.dumps' problem and never a shell quoting question.
 It reads the payloads and nothing else: no git, no network, no clock. Run it on
 three saved files and you get the byte-identical comment the job would post,
 which is how the rendering in README's action section was produced.
+
+It runs under the Python the action installs crapkit into, so a list it names
+goes through crapkit.named, the one rule for the first three names and a count.
+With --changed-line it prints the line the changed-files step logs instead.
 """
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ import argparse
 import itertools
 import json
 from pathlib import Path
+
+from crapkit.named import first_few
 
 # The line that makes the comment findable. The action greps for it to decide
 # between a POST and a PATCH, so a second spelling means a comment per push
@@ -195,10 +201,12 @@ def _named(paths: list) -> str:
     """` (`a`, `b`, `c` and 2 more)`: the files behind verify's count, so a
     reader can check what it judged. "" for a verify that listed none (0.8.0
     printed the count alone)."""
-    if not paths:
-        return ""
-    rest = f" and {len(paths) - 3} more" if len(paths) > 3 else ""
-    return f" ({', '.join(_code(path) for path in paths[:3])}{rest})"
+    return f" ({first_few(_code(path) for path in paths)})" if paths else ""
+
+
+def changed_line(paths: list[str]) -> str:
+    """The changed-files step's log line: `5 changed file(s): a, b, c and 2 more`."""
+    return f"{len(paths)} changed file(s)" + (f": {first_few(paths)}" if paths else "")
 
 
 def _against(verify: dict) -> str:
@@ -401,13 +409,21 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--changed-error", help="file holding git's error when the base diff "
                         "failed; empty or missing when it ran")
     parser.add_argument("--top", type=int, default=5, help="rows to render (default 5)")
-    parser.add_argument("--out", required=True, help="where to write the markdown")
+    parser.add_argument("--out", help="where to write the markdown; required unless --changed-line")
     parser.add_argument("--json-out", help="where to write the {\"body\": ...} gh api sends")
-    return parser.parse_args(argv)
+    parser.add_argument("--changed-line", action="store_true",
+                        help="print the changed-files step's log line for --changed-z and write nothing")
+    args = parser.parse_args(argv)
+    if args.out is None and not args.changed_line:
+        parser.error("--out is required to render the comment")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
+    if args.changed_line:
+        print(changed_line(_changed_paths(args)))
+        return 0
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
                 _read_json(args.worklist), _changed_paths(args), args.top,
                 _base_reason(args.base_sha, args.base_reason), args.coverage_exit,

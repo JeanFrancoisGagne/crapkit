@@ -198,7 +198,8 @@ runs:
     # instead of a slice of it. git's refusal goes to the log and to
     # crapkit-changed.error, so a list the diff never produced does not read as
     # "the pull request changed nothing" and the comment can say why it ranks
-    # everything.
+    # everything. The count's line comes from the comment builder, which names
+    # the first three files by crapkit's one rule for such lists.
     - name: the changed files
       shell: bash
       env:
@@ -222,15 +223,7 @@ runs:
         elif [ -n "$BASE_SHA" ]; then
           cat "$failed" >&2
           : > "$failed"
-          count=0
-          names=""
-          while IFS= read -r -d '' path; do
-            count=$((count + 1))
-            if [ "$count" -le 3 ]; then names="$names${names:+, }$path"; fi
-          done < "$changed"
-          more=""
-          if [ "$count" -gt 3 ]; then more=" and $((count - 3)) more"; fi
-          echo "$count changed file(s)${names:+: $names$more}"
+          python "$GITHUB_ACTION_PATH/tools/action/comment.py" --changed-z "$changed" --changed-line
         fi
 
     - name: build the comment

@@ -1179,3 +1179,38 @@ def test_the_comment_step_hands_the_builder_the_base_diffs_error():
     line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
 
     assert '--changed-error "$CRAPKIT_STATE/crapkit-changed.error"' in line
+
+
+# The changed-files step logged its count with a bash counter that copied the
+# first-three rule. It now asks the builder, which runs under the same python.
+
+@pytest.mark.parametrize("paths, logged", [
+    ([], "0 changed file(s)"),
+    (["src/app.ts"], "1 changed file(s): src/app.ts"),
+    (["a.py", "b.py", "c.py"], "3 changed file(s): a.py, b.py, c.py"),
+    (["a.py", "b.py", "c.py", "d.py", "e.py"], "5 changed file(s): a.py, b.py, c.py and 2 more"),
+])
+def test_the_changed_line_mode_prints_the_step_log_and_writes_nothing(tmp_path, capsys, paths, logged):
+    listed = tmp_path / "changed.txt"
+    listed.write_bytes("".join(f"{path}\0" for path in paths).encode("utf-8"))
+
+    assert _builder().main(["--changed-z", str(listed), "--changed-line"]) == 0
+
+    assert capsys.readouterr().out == logged + "\n"
+    assert [path.name for path in tmp_path.iterdir()] == ["changed.txt"]
+
+
+def test_a_render_without_out_is_refused(capsys):
+    with pytest.raises(SystemExit) as refused:
+        _builder().main([])
+
+    assert refused.value.code == 2
+    assert "--out is required to render the comment" in capsys.readouterr().err
+
+
+def test_the_changed_files_step_logs_the_builders_line():
+    body = _step_named("the changed files")["run"]
+    line = next(ln for ln in _logical_lines(body) if "comment.py" in ln)
+
+    assert line.strip() == ('python "$GITHUB_ACTION_PATH/tools/action/comment.py" '
+                            '--changed-z "$changed" --changed-line')
