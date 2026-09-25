@@ -25,7 +25,8 @@ checks off.
 Each check adds its calls and nanoseconds to COST under its site's name. When
 CRAPKIT_INVARIANT_RECEIPT names a directory, each process, the command and
 every analysis-pool worker alike, writes its own tally there as one JSON file
-when it exits, so a harness can set their sum against the command's wall time.
+when it exits: each site's calls and nanoseconds, and how long the process
+ran, so a harness can tell what share of a run's time the checks took.
 """
 from __future__ import annotations
 
@@ -66,6 +67,7 @@ _PRECEDENCE = ((6, "gate_violations"), (7, "ratchet_regressions"), (8, "new_fail
                (9, "uncovered_violations"))
 
 COST: dict[str, list[int]] = {}
+_BORN = [perf_counter_ns()]  # when this process's tally began
 
 
 def message(check: str, at: str, kept: str) -> str:
@@ -90,8 +92,8 @@ def _spent(site: str, began: int) -> None:
 def _write_receipt(directory: str) -> None:
     """This process's tally, in a file no other process writes: processes that
     exit together would interleave appends to one shared file."""
-    tally = {"pid": os.getpid(), "sites": {site: {"calls": calls, "ns": ns}
-                                           for site, (calls, ns) in sorted(COST.items())}}
+    sites = {site: {"calls": calls, "ns": ns} for site, (calls, ns) in sorted(COST.items())}
+    tally = {"pid": os.getpid(), "alive_ns": perf_counter_ns() - _BORN[0], "sites": sites}
     try:
         handle, _ = tempfile.mkstemp(suffix=".json", prefix=f"{os.getpid()}-", dir=directory)
         with open(handle, "w", encoding="utf-8") as receipt:
@@ -112,6 +114,7 @@ def _forked() -> None:
     """A forked worker starts from a copy of the command's tally, which the
     command reports itself."""
     COST.clear()
+    _BORN[0] = perf_counter_ns()
     _watch_receipt()
 
 

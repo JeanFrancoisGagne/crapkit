@@ -2,11 +2,11 @@
 
 crapkit.invariants adds each check's nanoseconds to a tally per site, and a
 process started with CRAPKIT_INVARIANT_RECEIPT writes its tally into that
-directory as one JSON file when it exits, as does each analysis-pool worker.
-The ratio is the tallies' sum over the command's own wall clock, measured with
-perf_counter_ns around the child. The
-in-process timing runs the row check over 137,715 rows, one large consumer
-repo's run, and records nanoseconds per row on the JUnit report as the
+directory as one JSON file when it exits, as does each analysis-pool worker,
+with how long the process ran. The ratio is the tallies' check time over the
+processes' lifetimes, each measured with perf_counter_ns. The in-process
+timing runs the row check over 137,715 rows, one large consumer repo's run,
+and records nanoseconds per row on the JUnit report as the
 `invariant_ns_per_row` property.
 """
 from __future__ import annotations
@@ -59,21 +59,20 @@ def test_the_row_check_over_a_large_repo_s_run(record_property):
     assert per_row < MAX_NS_PER_ROW
 
 
-def spent_ns(receipts) -> int:
-    """Every site's nanoseconds, over every process that wrote a tally."""
-    tallies = [json.loads(path.read_text(encoding="utf-8")) for path in receipts.glob("*.json")]
-    return sum(site["ns"] for tally in tallies for site in tally["sites"].values())
+def spent_ns(tally: dict) -> int:
+    return sum(site["ns"] for site in tally["sites"].values())
 
 
-def cost_ratio(root, receipts, *argv: str) -> float:
-    """A spawned run's checks over its wall clock, read off its processes' tallies."""
+def cost_share(root, receipts, *argv: str) -> float:
+    """What share of a spawned run's process time its checks took: every
+    process's check nanoseconds over every process's lifetime. The command and
+    its analysis-pool workers run side by side, so setting all their checks
+    against the command's wall clock alone would count parallel work as serial."""
     receipts.mkdir()
-    driver = drive.Driver(root, spawn=True, env={RECEIPT_ENV: str(receipts)})
-    began = perf_counter_ns()
-    done = driver.run(*argv)
-    wall = perf_counter_ns() - began
+    done = drive.Driver(root, spawn=True, env={RECEIPT_ENV: str(receipts)}).run(*argv)
     assert done.code == 0, done.stderr
-    return spent_ns(receipts) / wall
+    tallies = [json.loads(path.read_text(encoding="utf-8")) for path in receipts.glob("*.json")]
+    return sum(map(spent_ns, tallies)) / sum(tally["alive_ns"] for tally in tallies)
 
 
 def _tallied() -> int:
@@ -103,6 +102,6 @@ def test_the_checks_cost_at_most_one_percent_of_each_full_corpus_run(tmp_path, r
     ratios = {}
     for member in members:
         root = corpora.member_repo(member, tmp_path / member.name)
-        ratios[member.name] = cost_ratio(root, tmp_path / f"{member.name}-tallies", "coverage")
+        ratios[member.name] = cost_share(root, tmp_path / f"{member.name}-tallies", "coverage")
     record_property("invariant_cost_ratios", json.dumps(ratios, sort_keys=True))
     assert {name: ratio for name, ratio in ratios.items() if ratio > 0.01} == {}

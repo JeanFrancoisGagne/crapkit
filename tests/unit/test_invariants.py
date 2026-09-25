@@ -629,6 +629,8 @@ def test_the_receipt_holds_each_site_s_calls_and_nanoseconds(tmp_path):
     (tally,) = _run_with_receipts(code, tmp_path)
     assert set(tally["sites"]) == {"record", "totals"}
     assert tally["sites"]["record"]["calls"] == 1 and tally["sites"]["record"]["ns"] > 0
+    spent = sum(site["ns"] for site in tally["sites"].values())
+    assert tally["alive_ns"] > spent, "the process ran longer than its checks did"
 
 
 def test_a_pool_worker_writes_its_own_tally_and_repeats_none_of_the_command_s(tmp_path):
